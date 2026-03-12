@@ -25,7 +25,7 @@
           ],
           "returns": "DepsGenerator",
           "is_pub": true,
-          "line": 9
+          "line": 8
         }
     ,    {
           "type": "fn_decl",
@@ -38,7 +38,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 16
+          "line": 15
         }
     ,    {
           "type": "fn_private",
@@ -52,7 +52,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 136
+          "line": 132
         }
     ,    {
           "type": "fn_private",
@@ -65,10 +65,10 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 161
+          "line": 157
         }
       ],
-      "line": 5
+      "line": 4
     }
   ]
 }
