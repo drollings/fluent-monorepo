@@ -145,6 +145,20 @@ clean: ## Remove build artifacts and markers (keeps venv)
 clean-all: clean ## Nuclear cleanup (includes venv)
 	$(Q)rm -rf $(VENV) $(HOME)/.cache/uv/
 
+##@ Guidance Management
+
+.PHONY: guidance-prune
+guidance-prune: ## Remove stale JSON files from .ast-guidance/src (files deleted from src/)
+	$(Q)find .ast-guidance/src -name '*.json' -type f -print0 | \
+		while IFS= read -r -d '' json; do \
+			rel=$${json#.ast-guidance/}; \
+			src=$${rel%.json}; \
+			if [ ! -f "$$src" ]; then \
+				echo "Pruning: $$json"; \
+				rm -f "$$json"; \
+			fi; \
+		done
+
 ##@ Zig Build & RALPH Loop (incremental per-file)
 
 $(TARGET_BIN): STRUCTURE.md
