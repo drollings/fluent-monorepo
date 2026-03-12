@@ -10,22 +10,66 @@
     {
       "type": "struct",
       "name": "CommonArgs",
-      "match_hash": "b9340fa17af85a207012d6a3cf7aaa2e7c264f70a640bfdf7a78578f9223add3",
+      "match_hash": "98a28a70852ae1cb8ab49bf9bf8d7a0d37fb79100709824dfb8cabe94c5af13b",
       "signature": "keyword_struct CommonArgs { ... }",
       "is_pub": true,
-      "line": 3
+      "line": 5
     },
     {
       "type": "fn_decl",
       "name": "parseCommonArgs",
-      "match_hash": "7e29a104053f4aade438028405a507f2976b8ad564156672c39855d69e4ec4d6",
-      "signature": "fn parseCommonArgs(args: []const []const u8) -> CommonArgs",
+      "match_hash": "477daa7c5586aea94d2fa1ad61b817bb0cb944838d403657117a800fdd26ce62",
+      "signature": "fn parseCommonArgs(args: []const []const u8, positional_buf: *std.ArrayListUnmanaged([]const u8), allocator: std.mem.Allocator) -> CommonArgs",
       "params": [
-        { "name": "args", "type": "[]const []const u8" }
+        { "name": "args", "type": "[]const []const u8" },
+        { "name": "positional_buf", "type": "*std.ArrayListUnmanaged([]const u8)" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "CommonArgs",
       "is_pub": true,
-      "line": 15
+      "line": 42
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: basic flags",
+      "is_pub": false,
+      "line": 107
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: model and api-url with set flags",
+      "is_pub": false,
+      "line": 120
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: positional arguments collected",
+      "is_pub": false,
+      "line": 133
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: --file and --llm-query",
+      "is_pub": false,
+      "line": 146
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: unknown flags are skipped (permissive mode)",
+      "is_pub": false,
+      "line": 157
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: missing value for -m returns error",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: defaults when no args given",
+      "is_pub": false,
+      "line": 177
     }
   ]
 }

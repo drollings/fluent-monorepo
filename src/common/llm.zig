@@ -4,6 +4,10 @@ const args = @import("args.zig");
 pub const CommonArgs = args.CommonArgs;
 pub const parseCommonArgs = args.parseCommonArgs;
 
+const io = @import("io.zig");
+pub const WriterState = io.WriterState;
+pub const ReaderState = io.ReaderState;
+
 pub const LlmError = error{
     InvalidUrl,
     ConnectionFailed,
@@ -28,8 +32,6 @@ fn writeEscapedString(writer: anytype, s: []const u8) !void {
             '\n' => try writer.writeAll("\\n"),
             '\r' => try writer.writeAll("\\r"),
             '\t' => try writer.writeAll("\\t"),
-            '{' => try writer.writeAll("\\u007B"),
-            '}' => try writer.writeAll("\\u007D"),
             else => try writer.writeByte(c),
         }
     }
@@ -279,12 +281,7 @@ pub const LlmClient = struct {
             // (DeepSeek-R1, qwen3, etc.) so reasoning tokens don't consume the
             // num_predict budget before the model can emit a useful response.
             try writer.writeAll("\"}],\"stream\":false,\"think\":false,\"options\":{\"temperature\":");
-            if (temperature < 1.0) {
-                try writer.writeAll("0.");
-                try writer.print("{d}", .{@as(u32, @intFromFloat(temperature * 10))});
-            } else {
-                try writer.print("{d}", .{@as(u32, @intFromFloat(temperature))});
-            }
+            try writer.print("{d:.2}", .{temperature});
             try writer.writeAll(",\"num_predict\":");
             try writer.print("{d}", .{@as(usize, @max(100, max_tokens))});
             try writer.writeAll("}}");
@@ -599,4 +596,13 @@ test "writeEscapedString escapes properly" {
 
     try writeEscapedString(writer, "Hello \"world\"\n");
     try std.testing.expectEqualStrings("Hello \\\"world\\\"\\n", fbs.getWritten());
+}
+
+test "writeEscapedString does not escape braces" {
+    var buf: [256]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+
+    try writeEscapedString(writer, "{key: value}");
+    try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }

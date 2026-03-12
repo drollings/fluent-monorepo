@@ -36,7 +36,6 @@ Then you you must read
 ```
 .
 ├── bin
-│   ├── ast-guidance
 │   └── ast-guidance-py
 ├── doc
 │   └── DESIGN.md
@@ -77,6 +76,7 @@ Then you you must read
 │   │   └── types.zig                             # Defines data structures for Zig AST analysis, storing members, patterns, signatures, and guidance metadata in a struc...
 │   └── common
 │       ├── args.zig                                # Handles argument parsing for Zig project, interpreting flags and defaults.
+│       ├── io.zig                                  # Provides buffered writer/reader utilities for std.fs, managing large buffers efficiently.
 │       └── llm.zig                                 # Handles LLM response formatting, strips thinking blocks, and cleans preamble patterns.
 ├── AGENTS.md
 ├── build.zig
@@ -88,5 +88,6 @@ Then you you must read
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+└── STRUCTURE.md
 ```

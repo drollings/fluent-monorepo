@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "module": "src.common.io",
+    "source": "src/common/io.zig",
+    "language": "zig"
+  },
+  "comment": "Provides buffered writer/reader utilities for std.fs, managing large buffers efficiently.",
+  "used_by": ["src/common/llm.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "WriterState",
+      "match_hash": "575a81f7eb81fe5c26806e5f1b09ef78aa87ad321a5245ce0e70e6fc1b858bcd",
+      "signature": "keyword_struct WriterState { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "stdout",
+          "match_hash": "400fa954514d0fe60b7e07ae84e2843a8c8d4a192c235e8d5ebe957b546744b0",
+          "signature": "fn stdout() -> WriterState",
+          "returns": "WriterState",
+          "is_pub": true,
+          "line": 19
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "writer",
+          "match_hash": "599ebfc96f211231f21891fb0ddc1e622eac9ed02ef430e9f74687002b988b2f",
+          "signature": "fn writer(self: *WriterState) -> *std.Io.Writer",
+          "params": [
+            { "name": "self", "type": "*WriterState" }
+          ],
+          "returns": "*std.Io.Writer",
+          "is_pub": true,
+          "line": 25
+        }
+      ],
+      "line": 15
+    },
+    {
+      "type": "struct",
+      "name": "ReaderState",
+      "match_hash": "158a20440d85242b915d906c8b5a9bcef272064d6763da38e6edf207c8a54d84",
+      "signature": "keyword_struct ReaderState { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "stdin",
+          "match_hash": "384348b527518ac6d49fe3422d9c0561a76d9128fdfafec38a0bf902254df319",
+          "signature": "fn stdin() -> ReaderState",
+          "returns": "ReaderState",
+          "is_pub": true,
+          "line": 35
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "reader",
+          "match_hash": "86e6356dfbcf330df4383498f5737e794aade4ac48375e0a7a2d68c92019f2fc",
+          "signature": "fn reader(self: *ReaderState) -> *std.Io.Reader",
+          "params": [
+            { "name": "self", "type": "*ReaderState" }
+          ],
+          "returns": "*std.Io.Reader",
+          "is_pub": true,
+          "line": 41
+        }
+      ],
+      "line": 31
+    }
+  ]
+}

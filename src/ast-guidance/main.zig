@@ -67,9 +67,8 @@ pub fn main() !void {
 }
 
 fn printHelp() !void {
-    var out_buf: [8192]u8 = undefined;
-    var fw = std.fs.File.stdout().writer(&out_buf);
-    const stdout = &fw.interface;
+    var ws = llm.WriterState.stdout();
+    const stdout = ws.writer();
 
     try stdout.writeAll(
         \\ast-guidance-zig v0.2.0: Zig-primary guidance system for agentic coding loops
@@ -693,7 +692,18 @@ fn grepFile(
 // =============================================================================
 
 fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const common = llm.parseCommonArgs(args);
+    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    defer positional.deinit(allocator);
+
+    const common = llm.parseCommonArgs(args, &positional, allocator) catch |err| {
+        switch (err) {
+            error.MissingValue => {
+                std.debug.print("Error: flag requires a value\n", .{});
+                return;
+            },
+            else => return err,
+        }
+    };
 
     var query_str: ?[]const u8 = null;
     var guidance_dir_arg: ?[]const u8 = null;
@@ -1372,9 +1382,8 @@ fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // -------------------------------------------------------------------------
     // Render output in requested format.
     // -------------------------------------------------------------------------
-    var out_buf: [65536]u8 = undefined;
-    var fw_explore = std.fs.File.stdout().writer(&out_buf);
-    const stdout = &fw_explore.interface;
+    var ws_explore = llm.WriterState.stdout();
+    const stdout = ws_explore.writer();
 
     switch (format) {
 
@@ -1640,7 +1649,18 @@ fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // ── Argument parsing ──────────────────────────────────────────────────────
-    const common = llm.parseCommonArgs(args);
+    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    defer positional.deinit(allocator);
+
+    const common = llm.parseCommonArgs(args, &positional, allocator) catch |err| {
+        switch (err) {
+            error.MissingValue => {
+                std.debug.print("Error: flag requires a value\n", .{});
+                return;
+            },
+            else => return err,
+        }
+    };
     var query_str: ?[]const u8 = null;
     var guidance_dir_arg: ?[]const u8 = null;
     var i: usize = 0;
@@ -2351,9 +2371,8 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     // ── PHASE E: Output ───────────────────────────────────────────────────────
-    var out_buf: [65536]u8 = undefined;
-    var fw_explain = std.fs.File.stdout().writer(&out_buf);
-    const stdout = &fw_explain.interface;
+    var ws_explain = llm.WriterState.stdout();
+    const stdout = ws_explain.writer();
 
     // Header.
     try stdout.print("# Explain: {s}\n\n", .{q});
@@ -2491,9 +2510,8 @@ fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{}) catch return;
     defer parsed.deinit();
 
-    var out_buf: [65536]u8 = undefined;
-    var fw_clean = std.fs.File.stdout().writer(&out_buf);
-    const stdout = &fw_clean.interface;
+    var ws_clean = llm.WriterState.stdout();
+    const stdout = ws_clean.writer();
     try std.json.Stringify.value(parsed.value, .{ .whitespace = .indent_2 }, stdout);
     try stdout.flush();
 }
@@ -2867,7 +2885,18 @@ fn loadCommitModel(allocator: std.mem.Allocator, cwd: []const u8) ![]const u8 {
 }
 
 fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const common = llm.parseCommonArgs(args);
+    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    defer positional.deinit(allocator);
+
+    const common = llm.parseCommonArgs(args, &positional, allocator) catch |err| {
+        switch (err) {
+            error.MissingValue => {
+                std.debug.print("Error: flag requires a value\n", .{});
+                return;
+            },
+            else => return err,
+        }
+    };
     const dry_run = common.dry_run;
     const debug = common.debug;
 
@@ -3491,7 +3520,18 @@ fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
 // =============================================================================
 
 fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const common = llm.parseCommonArgs(args);
+    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    defer positional.deinit(allocator);
+
+    const common = llm.parseCommonArgs(args, &positional, allocator) catch |err| {
+        switch (err) {
+            error.MissingValue => {
+                std.debug.print("Error: flag requires a value\n", .{});
+                return;
+            },
+            else => return err,
+        }
+    };
 
     var guidance_dir_arg: ?[]const u8 = null;
     var i: usize = 0;
@@ -3564,9 +3604,8 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const llm_available = if (llm_client) |*c| c.available() else false;
 
-    var out_buf: [8192]u8 = undefined;
-    var fw_learn = std.fs.File.stdout().writer(&out_buf);
-    const stdout = &fw_learn.interface;
+    var ws_learn = llm.WriterState.stdout();
+    const stdout = ws_learn.writer();
 
     for (inbox_files) |inbox| {
         // inbox.path is already an absolute path (derived from guidance_dir).
@@ -3766,7 +3805,18 @@ fn classifyBulletKeyword(
 // =============================================================================
 
 fn cmdTriage(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const common = llm.parseCommonArgs(args);
+    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    defer positional.deinit(allocator);
+
+    const common = llm.parseCommonArgs(args, &positional, allocator) catch |err| {
+        switch (err) {
+            error.MissingValue => {
+                std.debug.print("Error: flag requires a value\n", .{});
+                return;
+            },
+            else => return err,
+        }
+    };
 
     var todo_path: ?[]const u8 = null;
     var guidance_dir_arg: ?[]const u8 = null;
