@@ -19,7 +19,6 @@ const Command = enum {
     explain,
     clean,
     structure,
-    diary,
     commit,
     learn,
     deps,
@@ -55,7 +54,6 @@ pub fn main() !void {
         .clean => try cmdClean(allocator, args[2..]),
         .commit => try cmdCommit(allocator, args[2..]),
         .deps => try cmdDeps(allocator, args[2..]),
-        .diary => try cmdDiary(allocator, args[2..]),
         .explain => try cmdExplain(allocator, args[2..]),
         .explore => try cmdExplore(allocator, args[2..]),
         .learn => try cmdLearn(allocator, args[2..]),
@@ -81,7 +79,6 @@ fn printHelp() !void {
         \\  clean      Strip ephemeral fields from a guidance JSON file (stdout)
         \\  commit     Generate AI git commit message and open editor
         \\  deps       Generate Makefile .depend file from Zig imports
-        \\  diary      Append a timestamped diary entry
         \\  explore    Comprehensive exploration of a module (primary for 'make explain')
         \\  explain    Explain a module with AI summary (like bin/guidance.py explain)
         \\  learn      Drain INSIGHTS.md and CAPABILITIES.md into structured knowledge
@@ -157,7 +154,6 @@ fn printHelp() !void {
         \\  ast-guidance-zig explore --no-ai --format json "sync"
         \\  ast-guidance-zig explore "[SyncProcessor] what flags does it support?"
         \\  ast-guidance-zig structure
-        \\  ast-guidance-zig diary "Fixed the ring buffer race condition"
         \\  ast-guidance-zig commit
         \\  ast-guidance-zig learn --dry-run
         \\  ast-guidance-zig query "hash"
@@ -2669,189 +2665,6 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
 }
 
 // =============================================================================
-// diary
-// =============================================================================
-
-fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var guidance_dir_arg: ?[]const u8 = null;
-    var note_parts: std.ArrayList([]const u8) = .{};
-    defer note_parts.deinit(allocator);
-
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--guidance")) {
-            i += 1;
-            if (i >= args.len) return;
-            guidance_dir_arg = args[i];
-        } else if (!std.mem.startsWith(u8, arg, "-")) {
-            try note_parts.append(allocator, arg);
-        }
-    }
-
-    if (guidance_dir_arg == null) {
-        std.debug.print("❌ Error: --guidance is required. Usage: ast-guidance diary <note> --guidance <dir>\n", .{});
-        return;
-    }
-
-    if (note_parts.items.len == 0) {
-        std.debug.print("Error: diary note required\n", .{});
-        return;
-    }
-
-    const note = try std.mem.join(allocator, " ", note_parts.items);
-    defer allocator.free(note);
-
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-
-    // Get local wall-clock time via localtime_r (POSIX).
-    // Falls back to UTC with a "(UTC)" annotation when unavailable.
-    const LocalTime = struct {
-        year: u32,
-        month: u32,
-        day: u32,
-        hour: u32,
-        minute: u32,
-        is_local: bool,
-    };
-    const local_time: LocalTime = blk: {
-        const ts = std.time.timestamp();
-        const tm = getLocalTime(ts) catch null;
-        if (tm) |t| {
-            // struct tm: tm_year = years since 1900, tm_mon = 0-based, tm_mday = 1-based
-            break :blk .{
-                .year = @intCast(t.year + 1900),
-                .month = @intCast(t.month + 1),
-                .day = @intCast(t.mday),
-                .hour = @intCast(t.hour),
-                .minute = @intCast(t.minute),
-                .is_local = true,
-            };
-        }
-        // UTC fallback.
-        const epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
-        const epoch_day = epoch_secs.getEpochDay();
-        const year_day = epoch_day.calculateYearDay();
-        const month_day = year_day.calculateMonthDay();
-        const day_secs = epoch_secs.getDaySeconds();
-        break :blk .{
-            .year = year_day.year,
-            .month = month_day.month.numeric(),
-            .day = month_day.day_index + 1,
-            .hour = day_secs.getHoursIntoDay(),
-            .minute = day_secs.getMinutesIntoHour(),
-            .is_local = false,
-        };
-    };
-
-    const today = try std.fmt.allocPrint(
-        allocator,
-        "{d:0>4}-{d:0>2}-{d:0>2}",
-        .{ local_time.year, local_time.month, local_time.day },
-    );
-    defer allocator.free(today);
-
-    const hour = local_time.hour;
-    const minute = local_time.minute;
-    _ = local_time.is_local; // could append "(UTC)" but keep format clean
-
-    // Get git author name (best-effort).
-    var author_buf: [128]u8 = undefined;
-    const author = getGitAuthor(allocator, cwd, &author_buf) catch "unknown";
-
-    // Diary file path: {guidance_dir}/.doc/diary/<today>.md
-    const guidance_dir = if (std.fs.path.isAbsolute(guidance_dir_arg.?))
-        try allocator.dupe(u8, guidance_dir_arg.?)
-    else
-        try std.fs.path.join(allocator, &.{ cwd, guidance_dir_arg.? });
-    defer allocator.free(guidance_dir);
-
-    const diary_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".doc", "diary" });
-    defer allocator.free(diary_dir);
-    std.fs.makeDirAbsolute(diary_dir) catch {};
-
-    const diary_file_path = try std.fmt.allocPrint(allocator, "{s}/{s}.md", .{ diary_dir, today });
-    defer allocator.free(diary_file_path);
-
-    // Create file with header if it doesn't exist.
-    const file_existed = if (std.fs.accessAbsolute(diary_file_path, .{})) true else |_| false;
-
-    const diary_file = try std.fs.createFileAbsolute(diary_file_path, .{ .truncate = false });
-    defer diary_file.close();
-
-    if (!file_existed) {
-        try diary_file.seekTo(0);
-        const header = try std.fmt.allocPrint(allocator, "# Diary: {s}\n\n", .{today});
-        defer allocator.free(header);
-        try diary_file.writeAll(header);
-    } else {
-        // Append mode: seek to end.
-        try diary_file.seekFromEnd(0);
-    }
-
-    const entry = try std.fmt.allocPrint(allocator, "- [{d:0>2}:{d:0>2}] ({s}) {s}\n", .{ hour, minute, author, note });
-    defer allocator.free(entry);
-    try diary_file.writeAll(entry);
-
-    std.debug.print("✓ Added to {s}\n", .{diary_file_path});
-}
-
-/// POSIX struct tm fields we care about (subset of C struct tm).
-pub const PosixTm = struct {
-    year: i32, // years since 1900
-    month: i32, // months since January [0–11]
-    mday: i32, // day of the month [1–31]
-    hour: i32, // hours since midnight [0–23]
-    minute: i32, // minutes after the hour [0–59]
-};
-
-/// Full POSIX struct tm (9 i32 fields).  We use this as the target for
-/// localtime_r and read out the fields we need.
-const CStructTm = extern struct {
-    tm_sec: c_int, // 0
-    tm_min: c_int, // 1
-    tm_hour: c_int, // 2
-    tm_mday: c_int, // 3
-    tm_mon: c_int, // 4
-    tm_year: c_int, // 5
-    tm_wday: c_int, // 6
-    tm_yday: c_int, // 7
-    tm_isdst: c_int, // 8
-};
-
-extern "c" fn localtime_r(timep: *const c_long, result: *CStructTm) ?*CStructTm;
-
-/// Call localtime_r to get local wall-clock fields.
-/// Returns error if the libc call fails or the platform doesn't support it.
-pub fn getLocalTime(timestamp: i64) !PosixTm {
-    var ctm: CStructTm = undefined;
-    const ts_c: c_long = @intCast(timestamp);
-    const result = localtime_r(&ts_c, &ctm);
-    if (result == null) return error.LocaltimeFailed;
-    return PosixTm{
-        .year = ctm.tm_year,
-        .month = ctm.tm_mon,
-        .mday = ctm.tm_mday,
-        .hour = ctm.tm_hour,
-        .minute = ctm.tm_min,
-    };
-}
-
-fn getGitAuthor(allocator: std.mem.Allocator, cwd: []const u8, buf: []u8) ![]const u8 {
-    var child = std.process.Child.init(&.{ "git", "config", "user.name" }, allocator);
-    child.cwd = cwd;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    const n = try child.stdout.?.readAll(buf);
-    _ = try child.wait();
-    const trimmed = std.mem.trim(u8, buf[0..n], " \t\r\n");
-    if (trimmed.len == 0) return error.NoAuthor;
-    return trimmed;
-}
-
-// =============================================================================
 // commit
 // =============================================================================
 
@@ -3562,43 +3375,21 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try std.fs.path.join(allocator, &.{ cwd, guidance_dir_arg.? });
     defer allocator.free(guidance_dir);
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
-    defer allocator.free(skills_dir);
-
-    // Collect available skill names.
-    var skill_names: std.ArrayList([]const u8) = .{};
-    defer {
-        for (skill_names.items) |s| allocator.free(s);
-        skill_names.deinit(allocator);
-    }
-    if (std.fs.openDirAbsolute(skills_dir, .{ .iterate = true })) |sd| {
-        var skill_dir = sd;
-        defer skill_dir.close();
-        var it = skill_dir.iterate();
-        while (try it.next()) |entry| {
-            if (entry.kind == .directory) {
-                try skill_names.append(allocator, try allocator.dupe(u8, entry.name));
-            }
-        }
-    } else |err| {
-        std.debug.print("warning: skills directory not found ({s}): {} — skill context will be empty\n", .{ skills_dir, err });
-    }
-
-    // Build skills list string for the LLM prompt.
-    const skills_list = try std.mem.join(allocator, ", ", skill_names.items);
-    defer allocator.free(skills_list);
-
     const insights_path = try std.fs.path.join(allocator, &.{ guidance_dir, ".doc", "inbox", "INSIGHTS.md" });
     defer allocator.free(insights_path);
     const capabilities_path = try std.fs.path.join(allocator, &.{ guidance_dir, ".doc", "inbox", "CAPABILITIES.md" });
     defer allocator.free(capabilities_path);
 
-    const inbox_files = [_]struct { path: []const u8, kind: []const u8 }{
-        .{ .path = insights_path, .kind = "insights" },
-        .{ .path = capabilities_path, .kind = "capabilities" },
+    const insights_dest_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".doc", "insights" });
+    defer allocator.free(insights_dest_dir);
+    const capabilities_dest_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".doc", "capabilities" });
+    defer allocator.free(capabilities_dest_dir);
+
+    const inbox_files = [_]struct { path: []const u8, kind: []const u8, dest_dir: []const u8 }{
+        .{ .path = insights_path, .kind = "insights", .dest_dir = insights_dest_dir },
+        .{ .path = capabilities_path, .kind = "capabilities", .dest_dir = capabilities_dest_dir },
     };
 
-    // Init LLM client (best-effort — works without LLM via keyword matching).
     var llm_client: ?llm.LlmClient = if (llm.LlmClient.init(allocator, .{ .api_url = api_url, .model = model })) |c| c else |_| null;
     defer if (llm_client) |*c| c.deinit();
 
@@ -3608,7 +3399,6 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const stdout = ws_learn.writer();
 
     for (inbox_files) |inbox| {
-        // inbox.path is already an absolute path (derived from guidance_dir).
         const file = std.fs.openFileAbsolute(inbox.path, .{}) catch {
             std.debug.print("No {s} found.\n", .{inbox.path});
             continue;
@@ -3616,6 +3406,23 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const content = try file.readToEndAlloc(allocator, 1024 * 1024);
         file.close();
         defer allocator.free(content);
+
+        std.fs.makeDirAbsolute(inbox.dest_dir) catch {};
+
+        var existing_files: std.ArrayList([]const u8) = .{};
+        defer {
+            for (existing_files.items) |f| allocator.free(f);
+            existing_files.deinit(allocator);
+        }
+        if (std.fs.openDirAbsolute(inbox.dest_dir, .{ .iterate = true })) |dest_dir| {
+            var it = dest_dir.iterate();
+            while (try it.next()) |entry| {
+                if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".md")) {
+                    const name = entry.name[0 .. entry.name.len - 3];
+                    try existing_files.append(allocator, try allocator.dupe(u8, name));
+                }
+            }
+        } else |_| {}
 
         var remaining: std.ArrayList([]const u8) = .{};
         defer {
@@ -3633,28 +3440,26 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
             }
 
             const bullet = stripped[2..];
-            // Classify: LLM if available, keyword-match fallback.
-            const target_skill = if (llm_available)
-                try classifyBulletLlm(allocator, &llm_client.?, bullet, skills_list, skills_dir)
+            const target_file = if (llm_available)
+                try classifyLearnBulletLlm(allocator, &llm_client.?, bullet, inbox.kind, inbox.dest_dir, existing_files.items)
             else
-                try classifyBulletKeyword(allocator, bullet, skill_names.items, skills_dir);
+                try classifyLearnBulletKeyword(allocator, bullet, inbox.dest_dir, existing_files.items);
 
-            if (target_skill) |ts| {
-                defer allocator.free(ts);
+            if (target_file) |tf| {
+                defer allocator.free(tf);
                 if (dry_run) {
-                    try stdout.print("[DRY-RUN] Would promote to {s}: {s}\n", .{ ts, bullet[0..@min(bullet.len, 60)] });
+                    try stdout.print("[DRY-RUN] Would promote to {s}: {s}\n", .{ tf, bullet[0..@min(bullet.len, 60)] });
                     try remaining.append(allocator, try allocator.dupe(u8, line));
                 } else {
-                    // Append bullet to the target skill file.
-                    const skill_file = std.fs.openFileAbsolute(ts, .{ .mode = .write_only }) catch
-                        try std.fs.createFileAbsolute(ts, .{});
-                    defer skill_file.close();
-                    try skill_file.seekFromEnd(0);
+                    const dest_file = std.fs.openFileAbsolute(tf, .{ .mode = .write_only }) catch
+                        try std.fs.createFileAbsolute(tf, .{});
+                    defer dest_file.close();
+                    try dest_file.seekFromEnd(0);
                     const bullet_line = try std.fmt.allocPrint(allocator, "\n- {s}\n", .{bullet});
                     defer allocator.free(bullet_line);
-                    try skill_file.writeAll(bullet_line);
+                    try dest_file.writeAll(bullet_line);
                     promoted_count += 1;
-                    try stdout.print("Promoted to {s}: {s}\n", .{ ts, bullet[0..@min(bullet.len, 60)] });
+                    try stdout.print("Promoted to {s}: {s}\n", .{ tf, bullet[0..@min(bullet.len, 60)] });
                 }
             } else {
                 try remaining.append(allocator, try allocator.dupe(u8, line));
@@ -3662,7 +3467,6 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
 
         if (!dry_run and promoted_count > 0) {
-            // Rewrite the inbox file with unpromoted lines.
             const out_file = try std.fs.createFileAbsolute(inbox.path, .{ .truncate = true });
             defer out_file.close();
             for (remaining.items) |ln| {
@@ -3676,128 +3480,150 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try stdout.flush();
 }
 
-/// Classify a bullet using LLM.  Returns an owned absolute path to the skill file, or null.
-///
-/// The LLM is prompted to return a path like `.ast-guidance/.skills/NAME/SKILL.md`.
-/// We extract the skill short-name and resolve it to `.ast-guidance/.skills/NAME/SKILL.md`
-/// (preferred), then `.opencode/skills/NAME/SKILL.md`, or `doc/skills/NAME/SKILL.md` (fallback).  The returned path
-/// always starts with the project root and ends with `SKILL.md`.
-fn classifyBulletLlm(
+fn classifyLearnBulletLlm(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
     bullet: []const u8,
-    skills_list: []const u8,
-    skills_dir: []const u8,
+    kind: []const u8,
+    dest_dir: []const u8,
+    existing_files: []const []const u8,
 ) !?[]const u8 {
+    const existing_list = try std.mem.join(allocator, ", ", existing_files);
+    defer allocator.free(existing_list);
+
     const prompt = try std.fmt.allocPrint(
         allocator,
-        "Given this knowledge bullet, which skill file should it be added to?\nBullet: {s}\nAvailable skills: {s}\n\nReturn only the relative path like: .ast-guidance/.skills/SKILL-NAME/SKILL.md\nOr return: NONE if it doesn't fit any skill.",
-        .{ bullet, skills_list },
+        \\Given this {s} bullet, suggest a short kebab-case filename (without .md) for it.
+        \\If it matches an existing file, return that filename.
+        \\Bullet: {s}
+        \\Existing files: {s}
+        \\
+        \\Return only the filename (e.g., "feature-name" or "insight-topic").
+        \\Keep filenames concise and descriptive.
+    ,
+        .{ kind, bullet, existing_list },
     );
     defer allocator.free(prompt);
 
     const resp = try client.complete(prompt, 50, 0.1, null) orelse return null;
     defer allocator.free(resp);
 
-    const trimmed = std.mem.trim(u8, resp, " \t\r\n");
-    if (std.ascii.eqlIgnoreCase(trimmed, "NONE")) return null;
+    const trimmed = std.mem.trim(u8, resp, " \t\r\n`\"");
+    if (trimmed.len == 0 or std.ascii.eqlIgnoreCase(trimmed, "NONE")) return null;
 
-    // Extract the first path-looking token from the response.
-    const space = std.mem.indexOfScalar(u8, trimmed, ' ') orelse trimmed.len;
-    const raw_path = trimmed[0..space];
-
-    // Extract skill short-name: second-to-last path component.
-    // e.g. ".ast-guidance/.skills/gof-patterns/SKILL.md" → "gof-patterns"
-    const skill_name = blk: {
-        // Find basename and parent.
-        var path = raw_path;
-        // strip trailing /SKILL.md or similar
-        if (std.mem.endsWith(u8, path, "/SKILL.md")) {
-            path = path[0 .. path.len - "/SKILL.md".len];
+    // Sanitize filename: keep only alphanumeric, hyphens, underscores
+    var sanitized: std.ArrayList(u8) = .{};
+    defer sanitized.deinit(allocator);
+    for (trimmed) |c| {
+        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_') {
+            try sanitized.append(allocator, c);
+        } else if (c == ' ') {
+            try sanitized.append(allocator, '-');
         }
-        // The skill name is the last component.
-        const slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse 0;
-        const name = if (slash > 0) path[slash + 1 ..] else path;
-        break :blk name;
-    };
-
-    if (skill_name.len == 0) return null;
-
-    // Derive project root from skills_dir (.ast-guidance/.skills → project root).
-    const project_root = blk: {
-        // skills_dir is like /project/.ast-guidance/.skills
-        if (std.mem.lastIndexOf(u8, skills_dir, "/.ast-guidance/")) |pos| {
-            break :blk skills_dir[0..pos];
-        }
-        // Fallback: use skills_dir parent's parent.
-        const p1 = std.fs.path.dirname(skills_dir) orelse skills_dir;
-        const p2 = std.fs.path.dirname(p1) orelse p1;
-        break :blk p2;
-    };
-
-    // Try .ast-guidance/.skills/<name>/SKILL.md first (preferred).
-    const primary_path = try std.fs.path.join(allocator, &.{ project_root, ".ast-guidance", ".skills", skill_name, "SKILL.md" });
-    if (std.fs.accessAbsolute(primary_path, .{})) {
-        if (std.debug.runtime_safety) {
-            std.debug.print("[learn] LLM classified to .ast-guidance skill: {s}\n", .{primary_path});
-        }
-        return primary_path;
-    } else |_| {
-        allocator.free(primary_path);
     }
+    if (sanitized.items.len == 0) return null;
 
-    // Fall back to doc/skills/<name>/SKILL.md.
-    const fallback_path = try std.fs.path.join(allocator, &.{ project_root, "doc", "skills", skill_name, "SKILL.md" });
-    if (std.fs.accessAbsolute(fallback_path, .{})) {
-        if (std.debug.runtime_safety) {
-            std.debug.print("[learn] LLM classified to doc skill: {s}\n", .{fallback_path});
-        }
-        return fallback_path;
-    } else |_| {
-        allocator.free(fallback_path);
-    }
+    const filename = try std.fmt.allocPrint(allocator, "{s}.md", .{sanitized.items});
+    defer allocator.free(filename);
 
-    return null;
+    const path = try std.fs.path.join(allocator, &.{ dest_dir, filename });
+    return @as([]const u8, path);
 }
 
-/// Keyword-based fallback: pick the skill whose name has the most tokens in common with bullet.
-pub const classifyBulletKeywordPub = classifyBulletKeyword;
-fn classifyBulletKeyword(
+pub fn classifyLearnBulletKeyword(
     allocator: std.mem.Allocator,
     bullet: []const u8,
-    skill_names: []const []const u8,
-    skills_dir: []const u8,
+    dest_dir: []const u8,
+    existing_files: []const []const u8,
 ) !?[]const u8 {
     const bullet_lower = try std.ascii.allocLowerString(allocator, bullet);
     defer allocator.free(bullet_lower);
 
-    var best_skill: ?[]const u8 = null;
+    var best_match: ?[]const u8 = null;
     var best_score: u32 = 0;
 
-    for (skill_names) |sname| {
-        const sname_lower = try std.ascii.allocLowerString(allocator, sname);
-        defer allocator.free(sname_lower);
+    for (existing_files) |ef| {
+        const ef_lower = try std.ascii.allocLowerString(allocator, ef);
+        defer allocator.free(ef_lower);
         var score: u32 = 0;
-        var parts = std.mem.splitScalar(u8, sname_lower, '-');
+        var parts = std.mem.splitScalar(u8, ef_lower, '-');
         while (parts.next()) |part| {
             if (part.len < 3) continue;
             if (std.mem.indexOf(u8, bullet_lower, part) != null) score += 1;
         }
         if (score > best_score) {
             best_score = score;
-            best_skill = sname;
+            best_match = ef;
         }
     }
 
-    if (best_score == 0 or best_skill == null) return null;
+    if (best_score > 0 and best_match != null) {
+        const filename = try std.fmt.allocPrint(allocator, "{s}.md", .{best_match.?});
+        defer allocator.free(filename);
+        const path = try std.fs.path.join(allocator, &.{ dest_dir, filename });
+        return @as([]const u8, path);
+    }
 
-    // Build absolute path: skills_dir/<name>/SKILL.md
-    const skill_file = try std.fs.path.join(allocator, &.{ skills_dir, best_skill.?, "SKILL.md" });
-    std.fs.accessAbsolute(skill_file, .{}) catch {
-        allocator.free(skill_file);
-        return null;
+    // Create new file from first few words of bullet
+    var words: std.ArrayList(u8) = .{};
+    defer words.deinit(allocator);
+    var word_count: usize = 0;
+    var iter = std.mem.splitScalar(u8, bullet, ' ');
+    while (iter.next()) |word| {
+        if (word_count >= 3) break;
+        const w = std.mem.trim(u8, word, " \t\r\n,.;:!?\"'()[]{}/");
+        if (w.len == 0) continue;
+        if (words.items.len > 0) try words.append(allocator, '-');
+        for (w) |c| {
+            if (std.ascii.isAlphanumeric(c)) {
+                try words.append(allocator, std.ascii.toLower(c));
+            }
+        }
+        word_count += 1;
+    }
+    if (words.items.len == 0) return null;
+
+    const filename = try std.fmt.allocPrint(allocator, "{s}.md", .{words.items});
+    defer allocator.free(filename);
+    const path = try std.fs.path.join(allocator, &.{ dest_dir, filename });
+    return @as([]const u8, path);
+}
+
+/// POSIX struct tm fields we care about (subset of C struct tm).
+pub const PosixTm = struct {
+    year: i32,
+    month: i32,
+    mday: i32,
+    hour: i32,
+    minute: i32,
+};
+
+const CStructTm = extern struct {
+    tm_sec: c_int,
+    tm_min: c_int,
+    tm_hour: c_int,
+    tm_mday: c_int,
+    tm_mon: c_int,
+    tm_year: c_int,
+    tm_wday: c_int,
+    tm_yday: c_int,
+    tm_isdst: c_int,
+};
+
+extern "c" fn localtime_r(timep: *const c_long, result: *CStructTm) ?*CStructTm;
+
+pub fn getLocalTime(timestamp: i64) !PosixTm {
+    var ctm: CStructTm = undefined;
+    const ts_c: c_long = @intCast(timestamp);
+    const result = localtime_r(&ts_c, &ctm);
+    if (result == null) return error.LocaltimeFailed;
+    return PosixTm{
+        .year = ctm.tm_year,
+        .month = ctm.tm_mon,
+        .mday = ctm.tm_mday,
+        .hour = ctm.tm_hour,
+        .minute = ctm.tm_min,
     };
-    return skill_file;
 }
 
 // =============================================================================

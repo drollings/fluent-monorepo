@@ -87,8 +87,12 @@ consult `.ast-guidance/.doc/capabilities/*.md` to enforce DRY — an existing
 implementation may already cover the need.
 
 ### Promoting Knowledge  (`make learn`)
-Runs `ast-guidance learn --guidance .ast-guidance` to drain both inbox files
-into structured skill / capability documents, then clears promoted items.
+Runs `ast-guidance learn --guidance .ast-guidance` to drain inbox files:
+- INSIGHTS.md → `.ast-guidance/.doc/insights/<name>.md`
+- CAPABILITIES.md → `.ast-guidance/.doc/capabilities/<name>.md`
+
+The `<name>.md` is derived from each bullet's content. Promoted items are removed
+from the inbox files.
 
 ---
 

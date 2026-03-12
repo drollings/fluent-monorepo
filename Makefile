@@ -69,13 +69,8 @@ explain: $(DOCUMENTOR) ## Explain a module, function, or concept  make explain Q
 	@if [ -z "$(QUERY)" ]; then echo "Usage: make explain QUERY=\"<term>\""; exit 1; fi
 	$(Q)$(DOCUMENTOR) explain "$(QUERY)" --guidance $(GUIDANCE_DIR)
 
-.PHONY: diary
-diary: $(DOCUMENTOR) ## Append a diary entry  make diary NOTE="fixed bug"
-	@if [ -z "$(NOTE)" ]; then echo "Usage: make diary NOTE=\"<what you did>\""; exit 1; fi
-	$(Q)$(DOCUMENTOR) diary "$(NOTE)" --guidance $(GUIDANCE_DIR)
-
 .PHONY: learn
-learn: $(DOCUMENTOR) ## Drain INSIGHTS.md / CAPABILITIES.md inbox into structured knowledge
+learn: $(DOCUMENTOR) ## Drain inbox into .doc/insights/ and .doc/capabilities/
 	$(Q)$(DOCUMENTOR) learn --guidance $(GUIDANCE_DIR)
 
 .PHONY: commit

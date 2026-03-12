@@ -208,38 +208,63 @@ test "getLocalTime returns valid ranges" {
 }
 
 // ---------------------------------------------------------------------------
-// M5: learn skills path consistency
+// M5: learn routing to .doc/insights and .doc/capabilities
 // ---------------------------------------------------------------------------
 
-test "classifyBulletKeyword returns path under skills_dir" {
+test "classifyLearnBulletKeyword matches existing file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create a temp dir structure with .opencode/skills/zig-current/SKILL.md
+    // Create a temp dir structure with .doc/capabilities/existing-cap.md
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create the skills directory and a SKILL.md file.
-    try tmp.dir.makePath(".opencode/skills/zig-current");
-    const skill_path = try std.fs.path.join(allocator, &.{ tmp_path, ".opencode", "skills", "zig-current", "SKILL.md" });
-    defer allocator.free(skill_path);
-    const sf = try std.fs.createFileAbsolute(skill_path, .{});
+    // Create the capabilities directory and an existing file.
+    try tmp.dir.makePath(".doc/capabilities");
+    const cap_path = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "capabilities", "existing-cap.md" });
+    defer allocator.free(cap_path);
+    const sf = try std.fs.createFileAbsolute(cap_path, .{});
     sf.close();
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ tmp_path, ".opencode", "skills" });
-    defer allocator.free(skills_dir);
+    const dest_dir = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "capabilities" });
+    defer allocator.free(dest_dir);
 
-    const skill_names = [_][]const u8{"zig-current"};
-    const result = try main.classifyBulletKeywordPub(allocator, "use zig comptime for type reflection", &skill_names, skills_dir);
+    const existing_files = [_][]const u8{"existing-cap"};
+    const result = try main.classifyLearnBulletKeyword(allocator, "use existing-cap for something", dest_dir, &existing_files);
     defer if (result) |r| allocator.free(r);
 
-    // Path must exist and end with SKILL.md
+    // Path must exist and end with .md
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.startsWith(u8, result.?, tmp_path));
-    try std.testing.expect(std.mem.endsWith(u8, result.?, "SKILL.md"));
+    try std.testing.expect(std.mem.endsWith(u8, result.?, "existing-cap.md"));
+}
+
+test "classifyLearnBulletKeyword creates new filename from bullet" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.makePath(".doc/insights");
+    const dest_dir = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "insights" });
+    defer allocator.free(dest_dir);
+
+    // No existing files
+    const existing_files = [_][]const u8{};
+    const result = try main.classifyLearnBulletKeyword(allocator, "New Feature Works Well", dest_dir, &existing_files);
+    defer if (result) |r| allocator.free(r);
+
+    // Should create a filename from first words of bullet
+    try std.testing.expect(result != null);
+    try std.testing.expect(std.mem.endsWith(u8, result.?, ".md"));
+    // Filename derived from first 3 words: "new-feature-works"
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "new") != null);
 }
 
 // ---------------------------------------------------------------------------
