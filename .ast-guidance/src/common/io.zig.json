@@ -16,12 +16,15 @@
       "members": [
         {
           "type": "fn_decl",
-          "name": "stdout",
-          "match_hash": "400fa954514d0fe60b7e07ae84e2843a8c8d4a192c235e8d5ebe957b546744b0",
-          "signature": "fn stdout() -> WriterState",
-          "returns": "WriterState",
+          "name": "initStdout",
+          "match_hash": "78c1947ebdb5fbabbf9a84cdb34776914b76454f94f7ab3127d2dc24c02f31cc",
+          "signature": "fn initStdout(self: *WriterState) -> void",
+          "params": [
+            { "name": "self", "type": "*WriterState" }
+          ],
+          "returns": "void",
           "is_pub": true,
-          "line": 19
+          "line": 23
         }
     ,    {
           "type": "fn_decl",
@@ -33,10 +36,10 @@
           ],
           "returns": "*std.Io.Writer",
           "is_pub": true,
-          "line": 25
+          "line": 27
         }
       ],
-      "line": 15
+      "line": 17
     },
     {
       "type": "struct",
@@ -47,12 +50,15 @@
       "members": [
         {
           "type": "fn_decl",
-          "name": "stdin",
-          "match_hash": "384348b527518ac6d49fe3422d9c0561a76d9128fdfafec38a0bf902254df319",
-          "signature": "fn stdin() -> ReaderState",
-          "returns": "ReaderState",
+          "name": "initStdin",
+          "match_hash": "ce1c030fbe342ebd3ec38d52222f19c0a5539c443db7dfb61c594ca374866c2b",
+          "signature": "fn initStdin(self: *ReaderState) -> void",
+          "params": [
+            { "name": "self", "type": "*ReaderState" }
+          ],
+          "returns": "void",
           "is_pub": true,
-          "line": 35
+          "line": 39
         }
     ,    {
           "type": "fn_decl",
@@ -64,10 +70,22 @@
           ],
           "returns": "*std.Io.Reader",
           "is_pub": true,
-          "line": 41
+          "line": 43
         }
       ],
-      "line": 31
+      "line": 33
+    },
+    {
+      "type": "test_decl",
+      "name": "WriterState writes to a pipe without emitting garbage",
+      "is_pub": false,
+      "line": 52
+    },
+    {
+      "type": "test_decl",
+      "name": "WriterState buf pointer stays valid after initStdout (no dangling)",
+      "is_pub": false,
+      "line": 75
     }
   ]
 }

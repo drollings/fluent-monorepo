@@ -36,7 +36,10 @@ Then you you must read
 ```
 .
 ├── bin
-│   └── ast-guidance-py
+│   ├── admin.py
+│   ├── ast-guidance-py
+│   ├── build_guidance_index.py
+│   └── validate_guidance.py
 ├── doc
 │   └── DESIGN.md
 ├── env

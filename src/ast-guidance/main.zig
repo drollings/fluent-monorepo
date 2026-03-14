@@ -65,7 +65,8 @@ pub fn main() !void {
 }
 
 fn printHelp() !void {
-    var ws = llm.WriterState.stdout();
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
     const stdout = ws.writer();
 
     try stdout.writeAll(
@@ -992,8 +993,12 @@ fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // -------------------------------------------------------------------------
     if (primary_docs.len == 0 and secondary_docs.len == 0 and llm_available and !no_ai) {
         var tried_terms: std.StringHashMapUnmanaged(void) = .{};
-        defer tried_terms.deinit(allocator);
-        for (search_terms.items) |t| try tried_terms.put(allocator, t, {});
+        defer {
+            var kit = tried_terms.keyIterator();
+            while (kit.next()) |k| allocator.free(k.*);
+            tried_terms.deinit(allocator);
+        }
+        for (search_terms.items) |t| try tried_terms.put(allocator, try allocator.dupe(u8, t), {});
 
         var retry: usize = 0;
         while (retry < 5 and primary_docs.len == 0 and secondary_docs.len == 0) : (retry += 1) {
@@ -1025,7 +1030,7 @@ fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         allocator.free(lower_id);
                         continue;
                     }
-                    try tried_terms.put(allocator, lower_id, {});
+                    try tried_terms.put(allocator, try allocator.dupe(u8, lower_id), {});
                     try new_terms.append(allocator, lower_id);
                     added += 1;
                 }
@@ -1378,7 +1383,8 @@ fn cmdExplore(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // -------------------------------------------------------------------------
     // Render output in requested format.
     // -------------------------------------------------------------------------
-    var ws_explore = llm.WriterState.stdout();
+    var ws_explore: llm.WriterState = .{};
+    ws_explore.initStdout();
     const stdout = ws_explore.writer();
 
     switch (format) {
@@ -2367,7 +2373,8 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     // ── PHASE E: Output ───────────────────────────────────────────────────────
-    var ws_explain = llm.WriterState.stdout();
+    var ws_explain: llm.WriterState = .{};
+    ws_explain.initStdout();
     const stdout = ws_explain.writer();
 
     // Header.
@@ -2506,7 +2513,8 @@ fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{}) catch return;
     defer parsed.deinit();
 
-    var ws_clean = llm.WriterState.stdout();
+    var ws_clean: llm.WriterState = .{};
+    ws_clean.initStdout();
     const stdout = ws_clean.writer();
     try std.json.Stringify.value(parsed.value, .{ .whitespace = .indent_2 }, stdout);
     try stdout.flush();
@@ -3395,7 +3403,8 @@ fn cmdLearn(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const llm_available = if (llm_client) |*c| c.available() else false;
 
-    var ws_learn = llm.WriterState.stdout();
+    var ws_learn: llm.WriterState = .{};
+    ws_learn.initStdout();
     const stdout = ws_learn.writer();
 
     for (inbox_files) |inbox| {
