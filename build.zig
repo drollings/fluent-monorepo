@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // ---------------------------------------------------------------------------
-    // Common module — LLM helpers shared across ast-guidance source
+    // Common module — LLM helpers shared across explain-gen source
     // ---------------------------------------------------------------------------
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/llm.zig"),
@@ -14,12 +14,12 @@ pub fn build(b: *std.Build) void {
     });
 
     // ---------------------------------------------------------------------------
-    // ast-guidance executable
+    // explain-gen executable
     // ---------------------------------------------------------------------------
-    const guidance_exe = b.addExecutable(.{
-        .name = "ast-guidance",
+    const explain_exe = b.addExecutable(.{
+        .name = "explain-gen",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ast-guidance/main.zig"),
+            .root_source_file = b.path("src/explain-gen/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -27,22 +27,23 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    guidance_exe.linkLibC();
-    b.installArtifact(guidance_exe);
+    explain_exe.linkLibC();
+    explain_exe.linkSystemLibrary("sqlite3");
+    b.installArtifact(explain_exe);
 
-    const run_guidance = b.addRunArtifact(guidance_exe);
+    const run_explain = b.addRunArtifact(explain_exe);
     if (b.args) |args| {
-        run_guidance.addArgs(args);
+        run_explain.addArgs(args);
     }
-    const run_step = b.step("run", "Run ast-guidance");
-    run_step.dependOn(&run_guidance.step);
+    const run_step = b.step("run", "Run explain-gen");
+    run_step.dependOn(&run_explain.step);
 
     // ---------------------------------------------------------------------------
     // Tests
     // ---------------------------------------------------------------------------
-    const guidance_tests = b.addTest(.{
+    const explain_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/ast-guidance/main.zig"),
+            .root_source_file = b.path("src/explain-gen/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -50,9 +51,10 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
-    guidance_tests.linkLibC();
+    explain_tests.linkLibC();
+    explain_tests.linkSystemLibrary("sqlite3");
 
-    const run_tests = b.addRunArtifact(guidance_tests);
-    const test_step = b.step("test", "Run ast-guidance unit tests");
+    const run_tests = b.addRunArtifact(explain_tests);
+    const test_step = b.step("test", "Run explain-gen unit tests");
     test_step.dependOn(&run_tests.step);
 }

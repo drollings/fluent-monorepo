@@ -1,7 +1,7 @@
 .{
-    .name = .ast_guidance,
-    .version = "0.2.0",
-    .fingerprint = 0x68477b7105d8c792,
+    .name = .explain_gen,
+    .version = "0.1.0",
+    .fingerprint = 0x9033f9d86f8f53bc,
     .minimum_zig_version = "0.15.0",
     .dependencies = .{},
     .paths = .{

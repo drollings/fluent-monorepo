@@ -1,19 +1,20 @@
-//! ast-guidance SQLite FTS5 indexer.
+//! explain-gen SQLite FTS5 indexer.
 //!
-//! Maintains `.ast-guidance/ast-guidance.db` as a BM25-searchable index over
-//! all `.ast-guidance/src/**/*.json` guidance files.
+//! Produces `.explain.db` — a BM25-searchable SQLite database consumed by
+//! NullClaw's `explain` tool.
 //!
 //! Public API:
-//!   pub fn syncDatabase(allocator, guidance_dir) !void
-//!   pub fn openDb(allocator, guidance_dir) !AstDb
+//!   pub fn syncDatabase(allocator, guidance_dir, db_path) !void
+//!   pub fn openDb(allocator, db_path) !ExplainDb
 //!
-//! Schema:
-//!   ast_nodes          — relational table (metadata + mtime)
-//!   fts_search         — FTS5 virtual table (content= external-content)
+//! Schema (version 1):
+//!   schema_version     — single-row version table
+//!   ast_nodes          — relational table (all metadata + mtime)
+//!   fts_search         — FTS5 virtual table (external-content over ast_nodes)
 //!   Triggers           — keep fts_search in sync with ast_nodes
 
 const std = @import("std");
-const log = std.log.scoped(.ast_db);
+const log = std.log.scoped(.explain_db);
 
 pub const c = @cImport({
     @cInclude("sqlite3.h");
@@ -22,38 +23,48 @@ pub const c = @cImport({
 pub const SQLITE_STATIC: c.sqlite3_destructor_type = null;
 const BUSY_TIMEOUT_MS: c_int = 5000;
 
+/// Schema version.  Bump when the table layout changes incompatibly.
+pub const SCHEMA_VERSION: u32 = 1;
+
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
 
-/// Open (or create) the FTS5 index and synchronize it with every JSON file
-/// under `<guidance_dir>/src/`.  Uses an ArenaAllocator per file to bound
-/// peak memory usage.
-pub fn syncDatabase(allocator: std.mem.Allocator, guidance_dir: []const u8) !void {
-    var db = try AstDb.init(allocator, guidance_dir);
+/// Open (or create) `.explain.db` at `db_path` and synchronise it with every
+/// JSON file under `<guidance_dir>/src/`.  Uses per-file ArenaAllocators to
+/// bound peak memory usage.
+pub fn syncDatabase(
+    allocator: std.mem.Allocator,
+    guidance_dir: []const u8,
+    db_path: []const u8,
+) !void {
+    var db = try ExplainDb.init(allocator, db_path);
     defer db.deinit();
-    try db.sync(allocator);
+
+    const src_dir_path = try std.fmt.allocPrint(allocator, "{s}/src", .{guidance_dir});
+    defer allocator.free(src_dir_path);
+
+    try db.syncFromDir(allocator, src_dir_path);
 }
 
 // ---------------------------------------------------------------------------
-// AstDb — the database handle
+// ExplainDb — the database handle
 // ---------------------------------------------------------------------------
 
-pub const AstDb = struct {
+pub const ExplainDb = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
 
     const Self = @This();
 
-    /// Open the database at `<guidance_dir>/ast-guidance.db`, running schema
-    /// migrations as needed.
-    pub fn init(allocator: std.mem.Allocator, guidance_dir: []const u8) !Self {
-        // Build null-terminated path: <guidance_dir>/ast-guidance.db\0
-        const db_path = try std.fmt.allocPrintZ(allocator, "{s}/ast-guidance.db", .{guidance_dir});
-        defer allocator.free(db_path);
+    /// Open (or create) the database at `db_path`, running schema migrations
+    /// as needed.
+    pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !Self {
+        const db_path_z = try std.fmt.allocPrintSentinel(allocator, "{s}", .{db_path}, 0);
+        defer allocator.free(db_path_z);
 
         var db: ?*c.sqlite3 = null;
-        const rc = c.sqlite3_open(db_path.ptr, &db);
+        const rc = c.sqlite3_open(db_path_z.ptr, &db);
         if (rc != c.SQLITE_OK) {
             if (db) |d| _ = c.sqlite3_close(d);
             log.err("sqlite3_open({s}) failed: rc={d}", .{ db_path, rc });
@@ -97,6 +108,11 @@ pub const AstDb = struct {
 
     fn migrate(self: *Self) !void {
         const sql =
+            \\-- Schema version table
+            \\CREATE TABLE IF NOT EXISTS schema_version (
+            \\  version INTEGER PRIMARY KEY
+            \\);
+            \\
             \\-- Relational table: one row per indexed node (module or member)
             \\CREATE TABLE IF NOT EXISTS ast_nodes (
             \\  id            INTEGER PRIMARY KEY,
@@ -105,16 +121,25 @@ pub const AstDb = struct {
             \\  node_type     TEXT    NOT NULL,
             \\  name          TEXT    NOT NULL,
             \\  signature     TEXT,
+            \\  comment       TEXT,
+            \\  line          INTEGER,
+            \\  used_by       TEXT,
+            \\  language      TEXT    NOT NULL DEFAULT 'zig',
+            \\  file_type     TEXT    NOT NULL DEFAULT 'source',
+            \\  file_hash     TEXT,
             \\  last_modified INTEGER NOT NULL
             \\);
             \\CREATE INDEX IF NOT EXISTS idx_ast_file  ON ast_nodes(file_path);
             \\CREATE INDEX IF NOT EXISTS idx_ast_mtime ON ast_nodes(file_path, last_modified);
+            \\CREATE INDEX IF NOT EXISTS idx_ast_lang  ON ast_nodes(language);
             \\
             \\-- FTS5 virtual table — external-content backed by ast_nodes
+            \\-- Searchable columns: name, comment, module, signature
             \\CREATE VIRTUAL TABLE IF NOT EXISTS fts_search USING fts5(
             \\  name,
             \\  comment,
             \\  module,
+            \\  signature,
             \\  content='ast_nodes',
             \\  content_rowid='id'
             \\);
@@ -122,22 +147,46 @@ pub const AstDb = struct {
             \\-- Triggers: keep fts_search in sync with ast_nodes
             \\CREATE TRIGGER IF NOT EXISTS ast_nodes_ai
             \\  AFTER INSERT ON ast_nodes BEGIN
-            \\    INSERT INTO fts_search(rowid, name, comment, module)
-            \\    VALUES (new.id, new.name, '', new.module);
+            \\    INSERT INTO fts_search(rowid, name, comment, module, signature)
+            \\    VALUES (
+            \\      new.id,
+            \\      new.name,
+            \\      COALESCE(new.comment, ''),
+            \\      new.module,
+            \\      COALESCE(new.signature, '')
+            \\    );
             \\  END;
             \\
             \\CREATE TRIGGER IF NOT EXISTS ast_nodes_ad
             \\  AFTER DELETE ON ast_nodes BEGIN
-            \\    INSERT INTO fts_search(fts_search, rowid, name, comment, module)
-            \\    VALUES ('delete', old.id, old.name, '', old.module);
+            \\    INSERT INTO fts_search(fts_search, rowid, name, comment, module, signature)
+            \\    VALUES (
+            \\      'delete', old.id,
+            \\      old.name,
+            \\      COALESCE(old.comment, ''),
+            \\      old.module,
+            \\      COALESCE(old.signature, '')
+            \\    );
             \\  END;
             \\
             \\CREATE TRIGGER IF NOT EXISTS ast_nodes_au
             \\  AFTER UPDATE ON ast_nodes BEGIN
-            \\    INSERT INTO fts_search(fts_search, rowid, name, comment, module)
-            \\    VALUES ('delete', old.id, old.name, '', old.module);
-            \\    INSERT INTO fts_search(rowid, name, comment, module)
-            \\    VALUES (new.id, new.name, '', new.module);
+            \\    INSERT INTO fts_search(fts_search, rowid, name, comment, module, signature)
+            \\    VALUES (
+            \\      'delete', old.id,
+            \\      old.name,
+            \\      COALESCE(old.comment, ''),
+            \\      old.module,
+            \\      COALESCE(old.signature, '')
+            \\    );
+            \\    INSERT INTO fts_search(rowid, name, comment, module, signature)
+            \\    VALUES (
+            \\      new.id,
+            \\      new.name,
+            \\      COALESCE(new.comment, ''),
+            \\      new.module,
+            \\      COALESCE(new.signature, '')
+            \\    );
             \\  END;
         ;
         var err_msg: [*c]u8 = null;
@@ -147,23 +196,20 @@ pub const AstDb = struct {
             if (err_msg) |msg| c.sqlite3_free(msg);
             return error.MigrationFailed;
         }
+
+        // Upsert schema version row.
+        const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, ver_sql, -1, &stmt, null) == c.SQLITE_OK) {
+            _ = c.sqlite3_bind_int64(stmt, 1, SCHEMA_VERSION);
+            _ = c.sqlite3_step(stmt);
+            _ = c.sqlite3_finalize(stmt);
+        }
     }
 
     // ── Sync ───────────────────────────────────────────────────────
 
-    /// Walk `<guidance_dir>/src/**/*.json` and upsert any file whose mtime has
-    /// changed since the last index run.
-    pub fn sync(self: *Self, allocator: std.mem.Allocator) !void {
-        // guidance_dir is the parent of "src/" — reconstruct from db path.
-        // We store it in the allocator so we need to pass it explicitly.
-        // syncDatabase passes through guidance_dir; this overload is used via
-        // AstDb.init so we need to receive guidance_dir separately.
-        // NOTE: this method is only called from syncDatabase which owns db.
-        _ = allocator;
-        // Implementation delegates to syncFromDir, called by syncDatabase.
-    }
-
-    /// Walk `src_dir` (`.ast-guidance/src`) and upsert stale JSON files.
+    /// Walk `src_dir_path` (`.explain-gen/src`) and upsert stale JSON files.
     pub fn syncFromDir(self: *Self, allocator: std.mem.Allocator, src_dir_path: []const u8) !void {
         var src_dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
@@ -184,24 +230,20 @@ pub const AstDb = struct {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
 
-            // Build absolute-style relative path: src_dir_path/entry.path
             const rel_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ src_dir_path, entry.path });
             defer allocator.free(rel_path);
 
-            // Stat the file for mtime
             const stat = std.fs.cwd().statFile(rel_path) catch |err| {
                 log.warn("stat({s}): {s}", .{ rel_path, @errorName(err) });
                 continue;
             };
             const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime, std.time.ns_per_s));
 
-            // Check whether DB record is up-to-date
             if (try self.fileIsUpToDate(rel_path, mtime_sec)) {
                 skipped += 1;
                 continue;
             }
 
-            // Use a per-file arena to avoid fragmentation
             var file_arena = std.heap.ArenaAllocator.init(allocator);
             defer file_arena.deinit();
             const fa = file_arena.allocator();
@@ -246,9 +288,9 @@ pub const AstDb = struct {
         errdefer _ = self.execSimpleNoErr("ROLLBACK");
 
         try self.deleteFileRecords(file_path);
-        try self.insertModule(file_path, parsed.module, parsed.module_comment, mtime);
+        try self.insertModule(file_path, parsed, mtime);
         for (parsed.members) |m| {
-            try self.insertMember(file_path, parsed.module, m, mtime);
+            try self.insertMember(file_path, parsed, m, mtime);
         }
 
         try self.execSimple("COMMIT");
@@ -265,79 +307,117 @@ pub const AstDb = struct {
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
     }
 
-    fn insertModule(self: *Self, file_path: []const u8, module: []const u8, comment: ?[]const u8, mtime: i64) !void {
+    fn insertModule(self: *Self, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
         const sql =
-            "INSERT INTO ast_nodes(file_path, module, node_type, name, signature, last_modified) " ++
-            "VALUES (?1, ?2, 'module', ?3, NULL, ?4)";
+            "INSERT INTO ast_nodes(" ++
+            "  file_path, module, node_type, name, signature," ++
+            "  comment, line, used_by, language, file_type, file_hash, last_modified" ++
+            ") VALUES (?1,?2,'module',?3,NULL,?4,NULL,?5,?6,'source',?7,?8)";
+
         var stmt: ?*c.sqlite3_stmt = null;
         const rc = c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
         if (rc != c.SQLITE_OK) return error.PrepareFailed;
         defer _ = c.sqlite3_finalize(stmt);
 
+        // ?1 file_path
         _ = c.sqlite3_bind_text(stmt, 1, file_path.ptr, @intCast(file_path.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_text(stmt, 2, module.ptr, @intCast(module.len), SQLITE_STATIC);
-        const name = comment orelse module;
+        // ?2 module
+        _ = c.sqlite3_bind_text(stmt, 2, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
+        // ?3 name (module comment or module name)
+        const name = doc.module_comment orelse doc.module;
         _ = c.sqlite3_bind_text(stmt, 3, name.ptr, @intCast(name.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_int64(stmt, 4, mtime);
+        // ?4 comment
+        if (doc.module_comment) |cm| {
+            _ = c.sqlite3_bind_text(stmt, 4, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 4);
+        }
+        // ?5 used_by (JSON array)
+        const ub_json = try serializeUsedBy(self.allocator, doc.used_by);
+        defer self.allocator.free(ub_json);
+        if (ub_json.len > 2) { // more than just "[]"
+            _ = c.sqlite3_bind_text(stmt, 5, ub_json.ptr, @intCast(ub_json.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 5);
+        }
+        // ?6 language
+        _ = c.sqlite3_bind_text(stmt, 6, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
+        // ?7 file_hash
+        if (doc.file_hash) |fh| {
+            _ = c.sqlite3_bind_text(stmt, 7, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 7);
+        }
+        // ?8 last_modified
+        _ = c.sqlite3_bind_int64(stmt, 8, mtime);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
     }
 
-    fn insertMember(self: *Self, file_path: []const u8, module: []const u8, m: ParsedMember, mtime: i64) !void {
+    fn insertMember(self: *Self, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
         const sql =
-            "INSERT INTO ast_nodes(file_path, module, node_type, name, signature, last_modified) " ++
-            "VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+            "INSERT INTO ast_nodes(" ++
+            "  file_path, module, node_type, name, signature," ++
+            "  comment, line, used_by, language, file_type, file_hash, last_modified" ++
+            ") VALUES (?1,?2,?3,?4,?5,?6,?7,NULL,?8,'source',?9,?10)";
+
         var stmt: ?*c.sqlite3_stmt = null;
         const rc = c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
         if (rc != c.SQLITE_OK) return error.PrepareFailed;
         defer _ = c.sqlite3_finalize(stmt);
 
+        // ?1 file_path
         _ = c.sqlite3_bind_text(stmt, 1, file_path.ptr, @intCast(file_path.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_text(stmt, 2, module.ptr, @intCast(module.len), SQLITE_STATIC);
+        // ?2 module
+        _ = c.sqlite3_bind_text(stmt, 2, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
+        // ?3 node_type
         _ = c.sqlite3_bind_text(stmt, 3, m.node_type.ptr, @intCast(m.node_type.len), SQLITE_STATIC);
+        // ?4 name
         _ = c.sqlite3_bind_text(stmt, 4, m.name.ptr, @intCast(m.name.len), SQLITE_STATIC);
+        // ?5 signature
         if (m.signature) |sig| {
             _ = c.sqlite3_bind_text(stmt, 5, sig.ptr, @intCast(sig.len), SQLITE_STATIC);
         } else {
             _ = c.sqlite3_bind_null(stmt, 5);
         }
-        _ = c.sqlite3_bind_int64(stmt, 6, mtime);
+        // ?6 comment
+        if (m.comment) |cm| {
+            _ = c.sqlite3_bind_text(stmt, 6, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 6);
+        }
+        // ?7 line
+        if (m.line) |ln| {
+            _ = c.sqlite3_bind_int64(stmt, 7, @intCast(ln));
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 7);
+        }
+        // ?8 language
+        _ = c.sqlite3_bind_text(stmt, 8, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
+        // ?9 file_hash
+        if (doc.file_hash) |fh| {
+            _ = c.sqlite3_bind_text(stmt, 9, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 9);
+        }
+        // ?10 last_modified
+        _ = c.sqlite3_bind_int64(stmt, 10, mtime);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
-
-        // Also update FTS with comment if present — triggers only push name/module.
-        // For richer search, we re-update the fts row with the comment text.
-        if (m.comment) |comment| {
-            try self.updateFtsComment(c.sqlite3_last_insert_rowid(self.db), m.name, comment, module);
-        }
     }
 
-    /// Patch the FTS5 row for the just-inserted node to include its doc-comment.
-    /// The INSERT trigger only writes name+module; this replaces that with
-    /// the full comment so BM25 can score against it.
-    fn updateFtsComment(self: *Self, rowid: i64, name: []const u8, comment: []const u8, module: []const u8) !void {
-        // Delete the partial row written by trigger, then reinsert with comment.
-        const del_sql = "INSERT INTO fts_search(fts_search, rowid, name, comment, module) VALUES('delete',?1,?2,'',?3)";
-        const ins_sql = "INSERT INTO fts_search(rowid, name, comment, module) VALUES(?1,?2,?3,?4)";
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        if (c.sqlite3_prepare_v2(self.db, del_sql, -1, &stmt, null) == c.SQLITE_OK) {
-            _ = c.sqlite3_bind_int64(stmt, 1, rowid);
-            _ = c.sqlite3_bind_text(stmt, 2, name.ptr, @intCast(name.len), SQLITE_STATIC);
-            _ = c.sqlite3_bind_text(stmt, 3, module.ptr, @intCast(module.len), SQLITE_STATIC);
-            _ = c.sqlite3_step(stmt);
-            _ = c.sqlite3_finalize(stmt);
-        }
-
-        stmt = null;
-        if (c.sqlite3_prepare_v2(self.db, ins_sql, -1, &stmt, null) == c.SQLITE_OK) {
-            _ = c.sqlite3_bind_int64(stmt, 1, rowid);
-            _ = c.sqlite3_bind_text(stmt, 2, name.ptr, @intCast(name.len), SQLITE_STATIC);
-            _ = c.sqlite3_bind_text(stmt, 3, comment.ptr, @intCast(comment.len), SQLITE_STATIC);
-            _ = c.sqlite3_bind_text(stmt, 4, module.ptr, @intCast(module.len), SQLITE_STATIC);
-            _ = c.sqlite3_step(stmt);
-            _ = c.sqlite3_finalize(stmt);
-        }
+    /// Run FTS optimize pass to merge segment files.
+    pub fn optimize(self: *Self) void {
+        var err_msg: [*c]u8 = null;
+        const rc = c.sqlite3_exec(
+            self.db,
+            "INSERT INTO fts_search(fts_search) VALUES('optimize')",
+            null,
+            null,
+            &err_msg,
+        );
+        if (err_msg) |msg| c.sqlite3_free(msg);
+        if (rc != c.SQLITE_OK) log.warn("fts optimize failed: rc={d}", .{rc});
     }
 
     // ── Search ─────────────────────────────────────────────────────
@@ -348,11 +428,14 @@ pub const AstDb = struct {
         node_type: []const u8,
         name: []const u8,
         signature: ?[]const u8,
+        comment: ?[]const u8,
+        line: ?u32,
+        language: []const u8,
         score: f64,
     };
 
     /// BM25 full-text search.  Returns results ordered best-first (score desc).
-    /// Caller must free each `SearchResult` field with `allocator`.
+    /// Caller must free each `SearchResult` field and the slice with `allocator`.
     pub fn search(
         self: *Self,
         allocator: std.mem.Allocator,
@@ -362,25 +445,26 @@ pub const AstDb = struct {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
-        // Build quoted-OR FTS5 query from whitespace-separated tokens
-        var fts_buf = std.ArrayList(u8).init(allocator);
-        defer fts_buf.deinit();
+        // Build quoted-OR FTS5 query from whitespace-separated tokens.
+        var fts_buf: std.ArrayList(u8) = .{};
+        defer fts_buf.deinit(allocator);
         var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
         var first = true;
         while (it.next()) |word| {
-            if (!first) try fts_buf.appendSlice(" OR ");
-            try fts_buf.append('"');
+            if (!first) try fts_buf.appendSlice(allocator, " OR ");
+            try fts_buf.append(allocator, '"');
             for (word) |ch| {
-                if (ch == '"') try fts_buf.appendSlice("\"\"") else try fts_buf.append(ch);
+                if (ch == '"') try fts_buf.appendSlice(allocator, "\"\"") else try fts_buf.append(allocator, ch);
             }
-            try fts_buf.append('"');
+            try fts_buf.append(allocator, '"');
             first = false;
         }
         if (fts_buf.items.len == 0) return allocator.alloc(SearchResult, 0);
-        try fts_buf.append(0); // null-terminate
+        try fts_buf.append(allocator, 0);
 
         const sql =
-            "SELECT n.file_path, n.module, n.node_type, n.name, n.signature, " ++
+            "SELECT n.file_path, n.module, n.node_type, n.name, n.signature," ++
+            "       n.comment, n.line, n.language," ++
             "       bm25(fts_search) as score " ++
             "FROM fts_search f " ++
             "JOIN ast_nodes n ON n.id = f.rowid " ++
@@ -397,28 +481,37 @@ pub const AstDb = struct {
         _ = c.sqlite3_bind_text(stmt, 1, fts_query.ptr, @intCast(fts_query.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
 
-        var results = std.ArrayList(SearchResult).init(allocator);
+        var results: std.ArrayList(SearchResult) = .{};
         errdefer {
             for (results.items) |r| freeSearchResult(allocator, r);
-            results.deinit();
+            results.deinit(allocator);
         }
 
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
             const result = try readSearchResult(stmt.?, allocator);
-            try results.append(result);
+            try results.append(allocator, result);
         }
 
-        return results.toOwnedSlice();
+        return results.toOwnedSlice(allocator);
     }
 
     fn readSearchResult(stmt: *c.sqlite3_stmt, allocator: std.mem.Allocator) !SearchResult {
+        const line_type = c.sqlite3_column_type(stmt, 6);
+        const line: ?u32 = if (line_type == c.SQLITE_NULL)
+            null
+        else
+            @intCast(c.sqlite3_column_int(stmt, 6));
+
         return SearchResult{
             .file_path = try dupeCol(stmt, 0, allocator),
             .module = try dupeCol(stmt, 1, allocator),
             .node_type = try dupeCol(stmt, 2, allocator),
             .name = try dupeCol(stmt, 3, allocator),
             .signature = try dupeColNullable(stmt, 4, allocator),
-            .score = -c.sqlite3_column_double(stmt, 5), // BM25 negative → positive
+            .comment = try dupeColNullable(stmt, 5, allocator),
+            .line = line,
+            .language = try dupeCol(stmt, 7, allocator),
+            .score = -c.sqlite3_column_double(stmt, 8), // BM25 negative → positive
         };
     }
 
@@ -428,6 +521,8 @@ pub const AstDb = struct {
         allocator.free(r.node_type);
         allocator.free(r.name);
         if (r.signature) |s| allocator.free(s);
+        if (r.comment) |cm| allocator.free(cm);
+        allocator.free(r.language);
     }
 
     // ── SQL utilities ──────────────────────────────────────────────
@@ -459,59 +554,110 @@ const ParsedMember = struct {
     name: []const u8,
     signature: ?[]const u8,
     comment: ?[]const u8,
+    line: ?u32,
 };
 
 const ParsedDoc = struct {
     module: []const u8,
+    source: []const u8,
+    language: []const u8,
     module_comment: ?[]const u8,
+    used_by: []const []const u8,
+    file_hash: ?[]const u8,
     members: []ParsedMember,
 };
 
-/// Parse a GuidanceDoc JSON blob, extracting only the fields we need for FTS.
-/// All returned strings are owned by the arena passed in.
+/// Parse a GuidanceDoc JSON blob, extracting all fields needed for the DB.
+/// All returned strings are slices into the arena-owned JSON parse tree.
 fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc {
     const Value = std.json.Value;
     const parsed = try std.json.parseFromSlice(Value, arena, json_data, .{
         .ignore_unknown_fields = true,
     });
-    // parsed.value owned by arena — no need to call parsed.deinit()
 
     const root = parsed.value;
     if (root != .object) return error.InvalidJson;
 
-    // meta.module and meta.source
+    // ── meta ──────────────────────────────────────────────────────
     const meta_val = root.object.get("meta") orelse return error.MissingMeta;
     if (meta_val != .object) return error.MissingMeta;
-    const module_val = meta_val.object.get("module") orelse return error.MissingModule;
-    if (module_val != .string) return error.MissingModule;
-    const module = module_val.string;
 
-    const comment: ?[]const u8 = blk: {
+    const module: []const u8 = blk: {
+        const v = meta_val.object.get("module") orelse return error.MissingModule;
+        if (v != .string) return error.MissingModule;
+        break :blk v.string;
+    };
+    const source: []const u8 = blk: {
+        const v = meta_val.object.get("source") orelse break :blk module;
+        if (v != .string) break :blk module;
+        break :blk v.string;
+    };
+    const language: []const u8 = blk: {
+        const v = meta_val.object.get("language") orelse break :blk "zig";
+        if (v != .string) break :blk "zig";
+        break :blk v.string;
+    };
+
+    // ── top-level comment ─────────────────────────────────────────
+    const module_comment: ?[]const u8 = blk: {
         const cv = root.object.get("comment") orelse break :blk null;
         if (cv != .string) break :blk null;
         break :blk cv.string;
     };
 
-    var members_list = std.ArrayList(ParsedMember).init(arena);
+    // ── used_by ───────────────────────────────────────────────────
+    var used_by_list: std.ArrayList([]const u8) = .{};
+    if (root.object.get("used_by")) |ubv| {
+        if (ubv == .array) {
+            for (ubv.array.items) |item| {
+                if (item == .string) try used_by_list.append(arena, item.string);
+            }
+        }
+    }
+
+    // ── file_hash (optional) ──────────────────────────────────────
+    const file_hash: ?[]const u8 = blk: {
+        const v = root.object.get("file_hash") orelse break :blk null;
+        if (v != .string) break :blk null;
+        break :blk v.string;
+    };
+
+    // ── members ───────────────────────────────────────────────────
+    var members_list: std.ArrayList(ParsedMember) = .{};
 
     const members_val = root.object.get("members") orelse {
-        return .{ .module = module, .module_comment = comment, .members = &.{} };
+        return .{
+            .module = module,
+            .source = source,
+            .language = language,
+            .module_comment = module_comment,
+            .used_by = try used_by_list.toOwnedSlice(arena),
+            .file_hash = file_hash,
+            .members = &.{},
+        };
     };
     if (members_val != .array) {
-        return .{ .module = module, .module_comment = comment, .members = &.{} };
+        return .{
+            .module = module,
+            .source = source,
+            .language = language,
+            .module_comment = module_comment,
+            .used_by = try used_by_list.toOwnedSlice(arena),
+            .file_hash = file_hash,
+            .members = &.{},
+        };
     }
 
     for (members_val.array.items) |item| {
         if (item != .object) continue;
-        const m = try parseMemberValue(arena, item);
-        try members_list.append(m);
-        // Also recurse into nested members (e.g. methods inside a struct)
+        const m = parseMemberValue(item);
+        try members_list.append(arena, m);
+        // Recurse into nested members (e.g. methods inside a struct).
         if (item.object.get("members")) |nested_val| {
             if (nested_val == .array) {
                 for (nested_val.array.items) |nested_item| {
                     if (nested_item != .object) continue;
-                    const nm = try parseMemberValue(arena, nested_item);
-                    try members_list.append(nm);
+                    try members_list.append(arena, parseMemberValue(nested_item));
                 }
             }
         }
@@ -519,13 +665,16 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
 
     return .{
         .module = module,
-        .module_comment = comment,
-        .members = try members_list.toOwnedSlice(),
+        .source = source,
+        .language = language,
+        .module_comment = module_comment,
+        .used_by = try used_by_list.toOwnedSlice(arena),
+        .file_hash = file_hash,
+        .members = try members_list.toOwnedSlice(arena),
     };
 }
 
-fn parseMemberValue(arena: std.mem.Allocator, item: std.json.Value) !ParsedMember {
-    _ = arena;
+fn parseMemberValue(item: std.json.Value) ParsedMember {
     const node_type: []const u8 = blk: {
         const tv = item.object.get("type") orelse break :blk "unknown";
         if (tv != .string) break :blk "unknown";
@@ -544,16 +693,50 @@ fn parseMemberValue(arena: std.mem.Allocator, item: std.json.Value) !ParsedMembe
     const comment: ?[]const u8 = blk: {
         const cv = item.object.get("comment") orelse break :blk null;
         if (cv != .string) break :blk null;
-        // Skip primitive/boilerplate comments
-        if (cv.string.len < 4) break :blk null;
+        if (cv.string.len < 4) break :blk null; // skip trivial stubs
         break :blk cv.string;
     };
-    return .{ .node_type = node_type, .name = name, .signature = signature, .comment = comment };
+    const line: ?u32 = blk: {
+        const lv = item.object.get("line") orelse break :blk null;
+        switch (lv) {
+            .integer => |i| break :blk if (i >= 0) @intCast(i) else null,
+            else => break :blk null,
+        }
+    };
+    return .{
+        .node_type = node_type,
+        .name = name,
+        .signature = signature,
+        .comment = comment,
+        .line = line,
+    };
 }
 
 // ---------------------------------------------------------------------------
-// Column helpers
+// Helpers
 // ---------------------------------------------------------------------------
+
+/// Serialize a slice of strings into a JSON array: ["a","b",...].
+/// Caller owns the returned allocation.
+fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u8 {
+    var buf: std.ArrayList(u8) = .{};
+    errdefer buf.deinit(allocator);
+    try buf.append(allocator, '[');
+    for (items, 0..) |item, i| {
+        if (i > 0) try buf.appendSlice(allocator, ",");
+        try buf.append(allocator, '"');
+        for (item) |ch| {
+            switch (ch) {
+                '"' => try buf.appendSlice(allocator, "\\\""),
+                '\\' => try buf.appendSlice(allocator, "\\\\"),
+                else => try buf.append(allocator, ch),
+            }
+        }
+        try buf.append(allocator, '"');
+    }
+    try buf.append(allocator, ']');
+    return buf.toOwnedSlice(allocator);
+}
 
 fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![]u8 {
     const raw = c.sqlite3_column_text(stmt, col);
@@ -586,33 +769,40 @@ fn logSqliteErr(context: []const u8, sql: []const u8, rc: c_int, err_msg: [*c]u8
 // Tests
 // ---------------------------------------------------------------------------
 
-test "db init with in-memory path" {
+test "db init and schema_version" {
     const allocator = std.testing.allocator;
-    // Use a temp dir so we can clean up
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    var db = try AstDb.init(allocator, tmp_path);
+    const db_path = try std.fmt.allocPrint(allocator, "{s}/test.explain.db", .{tmp_path});
+    defer allocator.free(db_path);
+
+    var db = try ExplainDb.init(allocator, db_path);
     defer db.deinit();
 
-    // Basic health check: SELECT 1 must work
-    var err_msg: [*c]u8 = null;
-    const rc = c.sqlite3_exec(db.db, "SELECT 1", null, null, &err_msg);
-    if (err_msg) |msg| c.sqlite3_free(msg);
+    // Verify schema_version row was inserted.
+    var stmt: ?*c.sqlite3_stmt = null;
+    const rc = c.sqlite3_prepare_v2(db.db, "SELECT version FROM schema_version", -1, &stmt, null);
     try std.testing.expectEqual(@as(c_int, c.SQLITE_OK), rc);
+    defer _ = c.sqlite3_finalize(stmt);
+    try std.testing.expectEqual(@as(c_int, c.SQLITE_ROW), c.sqlite3_step(stmt));
+    const ver = c.sqlite3_column_int(stmt, 0);
+    try std.testing.expectEqual(@as(c_int, 1), ver);
 }
 
-test "parseGuidanceJson extracts module and members" {
+test "parseGuidanceJson extracts all fields" {
     const json =
         \\{
         \\  "meta": { "module": "src.foo.bar", "source": "src/foo/bar.zig", "language": "zig" },
         \\  "comment": "Does something useful.",
+        \\  "used_by": ["src/main.zig", "src/other.zig"],
         \\  "members": [
-        \\    { "type": "fn_decl", "name": "doThing", "signature": "fn doThing() void", "comment": "Does the thing." },
-        \\    { "type": "struct",  "name": "MyState", "is_pub": true }
+        \\    { "type": "fn_decl", "name": "doThing", "signature": "fn doThing() void",
+        \\      "comment": "Does the thing.", "line": 42 },
+        \\    { "type": "struct",  "name": "MyState", "is_pub": true, "line": 10 }
         \\  ]
         \\}
     ;
@@ -621,15 +811,21 @@ test "parseGuidanceJson extracts module and members" {
 
     const doc = try parseGuidanceJson(arena.allocator(), json);
     try std.testing.expectEqualStrings("src.foo.bar", doc.module);
+    try std.testing.expectEqualStrings("src/foo/bar.zig", doc.source);
+    try std.testing.expectEqualStrings("zig", doc.language);
     try std.testing.expectEqualStrings("Does something useful.", doc.module_comment.?);
+    try std.testing.expectEqual(@as(usize, 2), doc.used_by.len);
+    try std.testing.expectEqualStrings("src/main.zig", doc.used_by[0]);
     try std.testing.expectEqual(@as(usize, 2), doc.members.len);
     try std.testing.expectEqualStrings("doThing", doc.members[0].name);
     try std.testing.expectEqualStrings("fn_decl", doc.members[0].node_type);
     try std.testing.expectEqualStrings("Does the thing.", doc.members[0].comment.?);
-    try std.testing.expectEqualStrings("MyState", doc.members[1].name);
+    try std.testing.expectEqualStrings("fn doThing() void", doc.members[0].signature.?);
+    try std.testing.expectEqual(@as(?u32, 42), doc.members[0].line);
+    try std.testing.expectEqual(@as(?u32, 10), doc.members[1].line);
 }
 
-test "full index + search round-trip" {
+test "full index + search round-trip with new schema" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -637,33 +833,61 @@ test "full index + search round-trip" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create a fake src/ dir with one JSON file
+    const db_path = try std.fmt.allocPrint(allocator, "{s}/test.explain.db", .{tmp_path});
+    defer allocator.free(db_path);
+
+    // Create a fake src/ dir with one JSON guidance file.
     try tmp.dir.makeDir("src");
     const json =
         \\{
         \\  "meta": { "module": "src.mymod", "source": "src/mymod.zig", "language": "zig" },
         \\  "comment": "The best module.",
+        \\  "used_by": ["src/main.zig"],
         \\  "members": [
-        \\    { "type": "fn_decl", "name": "frobnicate", "comment": "Frobnicates the widget." }
+        \\    { "type": "fn_decl", "name": "frobnicate",
+        \\      "signature": "fn frobnicate(x: u32) u32",
+        \\      "comment": "Frobnicates the widget.", "line": 7 }
         \\  ]
         \\}
     ;
     try tmp.dir.writeFile(.{ .sub_path = "src/mymod.zig.json", .data = json });
 
-    var db = try AstDb.init(allocator, tmp_path);
+    var db = try ExplainDb.init(allocator, db_path);
     defer db.deinit();
 
     const src_dir = try std.fmt.allocPrint(allocator, "{s}/src", .{tmp_path});
     defer allocator.free(src_dir);
 
     try db.syncFromDir(allocator, src_dir);
+    db.optimize();
 
+    // Search by name.
     const results = try db.search(allocator, "frobnicate", 10);
     defer {
-        for (results) |r| AstDb.freeSearchResult(allocator, r);
+        for (results) |r| ExplainDb.freeSearchResult(allocator, r);
         allocator.free(results);
     }
 
     try std.testing.expect(results.len >= 1);
     try std.testing.expectEqualStrings("frobnicate", results[0].name);
+    try std.testing.expectEqualStrings("zig", results[0].language);
+    try std.testing.expectEqualStrings("Frobnicates the widget.", results[0].comment.?);
+    try std.testing.expectEqualStrings("fn frobnicate(x: u32) u32", results[0].signature.?);
+    try std.testing.expectEqual(@as(?u32, 7), results[0].line);
+
+    // Also confirm comment text is searchable.
+    const comment_results = try db.search(allocator, "widget", 10);
+    defer {
+        for (comment_results) |r| ExplainDb.freeSearchResult(allocator, r);
+        allocator.free(comment_results);
+    }
+    try std.testing.expect(comment_results.len >= 1);
+}
+
+test "serializeUsedBy produces valid JSON array" {
+    const allocator = std.testing.allocator;
+    const items = [_][]const u8{ "src/a.zig", "src/b.zig" };
+    const result = try serializeUsedBy(allocator, &items);
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("[\"src/a.zig\",\"src/b.zig\"]", result);
 }

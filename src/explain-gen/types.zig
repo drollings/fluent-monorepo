@@ -1,5 +1,49 @@
 const std = @import("std");
 
+/// Classification of a source file's content type.
+/// Used in the `file_type` column of `ast_nodes` and by the plugin registry
+/// to route non-code files to appropriate handlers.
+pub const FileType = enum {
+    source, // Zig, Python, Rust, Go, etc.
+    markdown, // .md, .markdown
+    config, // .json, .toml, .yaml, .ini, .env
+    data, // structured data not fitting other categories
+    pdf, // future: pdftotext extraction
+    audio, // future: whisper transcript
+    unknown,
+
+    /// Infer FileType from a file extension.
+    pub fn fromExtension(ext: []const u8) FileType {
+        const known_source = [_][]const u8{
+            ".zig", ".zon",  ".py",    ".rs",  ".go", ".ts",  ".tsx",
+            ".js",  ".jsx",  ".c",     ".cpp", ".h",  ".hpp", ".lua",
+            ".rb",  ".java", ".swift", ".kt",
+        };
+        const known_markdown = [_][]const u8{ ".md", ".markdown", ".mdx" };
+        const known_config = [_][]const u8{
+            ".json", ".toml", ".yaml", ".yml", ".ini", ".env", ".cfg", ".conf",
+        };
+
+        for (known_source) |e| if (std.ascii.eqlIgnoreCase(ext, e)) return .source;
+        for (known_markdown) |e| if (std.ascii.eqlIgnoreCase(ext, e)) return .markdown;
+        for (known_config) |e| if (std.ascii.eqlIgnoreCase(ext, e)) return .config;
+        return .unknown;
+    }
+
+    /// Return the canonical string stored in the `file_type` DB column.
+    pub fn toStr(self: FileType) []const u8 {
+        return switch (self) {
+            .source => "source",
+            .markdown => "markdown",
+            .config => "config",
+            .data => "data",
+            .pdf => "pdf",
+            .audio => "audio",
+            .unknown => "unknown",
+        };
+    }
+};
+
 pub const MemberType = enum {
     fn_decl,
     fn_private,

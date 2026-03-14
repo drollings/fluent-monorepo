@@ -1,8 +1,8 @@
-/// ast-guidance project configuration loader.
+/// explain-gen project configuration loader.
 ///
-/// Resolves paths for the guidance system using a two-level fallback chain:
-///   1. {cwd}/.ast-guidance/ast-guidance-config.json  (project-local)
-///   2. ~/.config/ast-guidance/ast-guidance-config.json  (user global)
+/// Resolves paths for the explain-gen system using a two-level fallback chain:
+///   1. {cwd}/.explain-gen/explain-gen-config.json  (project-local)
+///   2. ~/.config/explain-gen/explain-gen-config.json  (user global)
 ///   3. Built-in defaults
 ///
 /// All path fields in ProjectConfig are pre-computed absolute paths so callers
@@ -14,28 +14,28 @@ const builtin = @import("builtin");
 // Defaults
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_GUIDANCE_DIR = ".ast-guidance";
+pub const DEFAULT_GUIDANCE_DIR = ".explain-gen";
 pub const DEFAULT_SRC_DIR = "src";
+pub const DEFAULT_DB_PATH = ".explain.db";
 pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_API_URL = "http://localhost:11434/api/chat";
+pub const CONFIG_FILENAME = "explain-gen-config.json";
 
 // ---------------------------------------------------------------------------
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Resolved, absolute paths for a single ast-guidance project instance.
+/// Resolved, absolute paths for a single explain-gen project instance.
 /// All strings are owned by this struct; call deinit() to free them.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
-    /// Absolute path to the guidance root (e.g. /project/.ast-guidance).
+    /// Absolute path to the explain-gen root (e.g. /project/.explain-gen).
     guidance_root: []const u8,
 
     /// Absolute path to the guidance JSON source tree
-    /// ({guidance_root}/{src_rel_prefix}).
-    /// JSON for src/foo.zig lives at {guidance_root}/src/foo.zig.json
-    /// so the formula is: {guidance_root}/{rel_from_project_root}.json
-    /// This field stores guidance_root for that formula (callers append the rel path).
+    /// ({guidance_root}/src/<path>.json).
+    /// This field stores guidance_root; callers append the rel path.
     json_base: []const u8,
 
     /// Absolute path to the skills directory ({guidance_root}/.skills).
@@ -75,7 +75,7 @@ pub const ProjectConfig = struct {
 pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     // 1. Project-local config.
     {
-        const path = try std.fs.path.join(allocator, &.{ cwd, DEFAULT_GUIDANCE_DIR, "ast-guidance-config.json" });
+        const path = try std.fs.path.join(allocator, &.{ cwd, DEFAULT_GUIDANCE_DIR, CONFIG_FILENAME });
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
             if (err != error.FileNotFound and !builtin.is_test) {
@@ -84,10 +84,10 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
         }
     }
 
-    // 2. User-global config (~/.config/ast-guidance/ast-guidance-config.json).
+    // 2. User-global config (~/.config/explain-gen/explain-gen-config.json).
     if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |home| {
         defer allocator.free(home);
-        const path = try std.fs.path.join(allocator, &.{ home, ".config", "ast-guidance", "ast-guidance-config.json" });
+        const path = try std.fs.path.join(allocator, &.{ home, ".config", "explain-gen", CONFIG_FILENAME });
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
             if (err != error.FileNotFound and !builtin.is_test) {
@@ -162,9 +162,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
                 const base = if (ollama.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
                 const ep = if (ollama.object.get("chat_endpoint")) |e| if (e == .string) e.string else DEFAULT_API_URL else DEFAULT_API_URL;
                 if (base.len > 0 and ep.len > 0) {
-                    // Avoid double slash between base and endpoint.
-                    const ep_clean = if (ep.len > 0 and ep[0] == '/') ep else ep;
-                    break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep_clean });
+                    break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep });
                 }
             }
         }

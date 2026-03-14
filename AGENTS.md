@@ -1,38 +1,38 @@
-# Agent Bootloader — ast-guidance
+# Agent Bootloader — explain-gen
 
-**Context**: ast-guidance is a Zig-native, deterministic codebase documentation engine.
-It analyzes source files (Zig, Python, and future languages) via AST, generates JSON
-guidance files in `.ast-guidance/`, and exposes an AI-assisted query layer through the
-Makefile.  It is designed to drop into any project with zero footprint beyond the Makefile.
+**Context**: explain-gen is a Zig-native, deterministic AST-guided SQLite FTS5 database
+generator for NullClaw. It analyzes source files (Zig, Python, and future languages) via
+AST, generates JSON metadata files in `.explain-gen/src/`, and compiles them into
+`.explain.db` for NullClaw's `explain` tool.
 
 ## Prime Directive
 
 1. **Current Zig knowledge**: Read `doc/skills/zig-current/SKILL.md` before writing any Zig
-2. **Project structure**: When unsure where things live, run `make explain QUERY="<terms>"`
-3. **Never guess**: use `make explain` to locate code — never invent file paths
-4. **Config**: model names and provider registry live in `.ast-guidance/ast-guidance-config.json`
+2. **Project structure**: Run `make gen-status` or inspect `.explain-gen/src/` for guidance
+3. **Never guess**: use the JSON files in `.explain-gen/src/` to locate code
+4. **Config**: model names and provider registry live in `.explain-gen/explain-gen-config.json`
 
 ---
 
 ## Quick Start: RALPH Loop (Discovery → Implementation)
 
 ```
-1. DISCOVER (make):  make explain QUERY="<short phrase>"
-                     Prefer phrases: "sync guidance json" > "json"
-                     Scan: module purpose, pattern type, skill list
+1. DISCOVER (make):  make gen-status
+                     Inspect .explain-gen/src/ for module JSON files
+                     grep -ri "<term>" src/
 
-2. UNDERSTAND (MCP): Read the primary source file(s) from step 1
+2. UNDERSTAND (MCP): Read the primary source file(s) identified above
                      Grep callers: who @import's this file?
                      Ask: do the listed skills actually apply?
 
 3. DECIDE:           If skills match → read them
                      If not → proceed to implementation
 
-4. IMPLEMENT:        Write to src/ast-guidance/ or bin/ (Python providers)
+4. IMPLEMENT:        Write to src/explain-gen/ or bin/ (Python providers)
                      Follow source patterns and applicable skills only
 
 5. VERIFY (make):    make pre-commit
-                     build → test → guidance sync → lint → STRUCTURE.md
+                     build → test → guidance gen → lint → STRUCTURE.md
 ```
 
 ---
@@ -41,16 +41,17 @@ Makefile.  It is designed to drop into any project with zero footprint beyond th
 
 ```
 src/
-  ast-guidance/     Zig core engine (AST parser, sync, query, structure, triage)
+  explain-gen/      Zig core engine (AST parser, sync, db, structure, deps)
   common/           Zig shared LLM HTTP client and arg helpers
 bin/
-  ast-guidance      Compiled binary — zig-out/bin/ast-guidance (via zig build)
-  ast-guidance-py   Python AST provider (Python files → .ast-guidance/ JSON)
-.ast-guidance/
-  ast-guidance-config.json   Model / provider configuration
+  explain-gen       Compiled binary — zig-out/bin/explain-gen (via zig build)
+  ast-guidance-py   Python AST provider (Python files → .explain-gen/ JSON)
+.explain-gen/
+  explain-gen-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)
   .doc/             Capabilities, diary, inbox
   src/              Generated guidance JSON (mirrors src/ tree)
+.explain.db         SQLite FTS5 database consumed by NullClaw explain tool
 env/
   mk/               Shared Makefile helpers and per-language target overrides
   mise/             Language-specific mise.toml fragments
@@ -60,48 +61,76 @@ doc/
 
 ---
 
+## NullClaw Integration
+
+`.explain.db` is the hand-off artifact to NullClaw. Run:
+
+```bash
+make gen                     # Generate .explain-gen/ JSON and .explain.db
+make gen-infill              # Same, with LLM comment infill
+make gen-status              # Show sync status
+make gen-clean               # Remove .explain-gen/src and .explain.db
+```
+
+NullClaw reads `.explain.db` for BM25 FTS5 search. Schema version is tracked in the
+`schema_version` table. Current version: **1**.
+
+### .explain.db Schema
+
+```sql
+schema_version(version)          -- always 1
+ast_nodes(id, file_path, module, node_type, name, signature, comment,
+          line, used_by, language, file_type, file_hash, last_modified)
+fts_search USING fts5(name, comment, module, signature)
+```
+
+### CLI
+
+```bash
+explain-gen gen [--workspace DIR] [--json-dir DIR] [-o/--db PATH] [--infill] [--regen]
+explain-gen status [--json-dir DIR] [-o/--db PATH]
+explain-gen clean [--json-dir DIR] [-o/--db PATH]
+explain-gen structure [--json-dir DIR]
+explain-gen deps [--src DIR]
+```
+
+---
+
 ## Skill Reading Strategy
 
 **DO:**
-- Run `make explain QUERY="<phrase>"` — phrase searches outperform single terms
-- Read the primary source file identified in explain output
+- Read the JSON files in `.explain-gen/src/` to understand module structure
+- Read the primary source file identified from JSON metadata
 - Ask: "What design pattern is used here?" before consulting skills
 - Read skills **only** if source analysis confirms they apply
 
 **DON'T:**
 - Assume skills apply without validating against source code
-- Read `.ast-guidance/**/*.json` directly — use `make query` instead
+- Read `.explain-gen/**/*.json` directly for search — query `.explain.db` instead
 - Skip source reading before implementation
 
 ---
 
 ## Capturing Knowledge
 
-### Insights  (`.ast-guidance/.doc/inbox/INSIGHTS.md`)
-Append major discoveries here as markdown bullets.  Unprocessed items are
-automatically surfaced by `make explain` when relevant to the current query.
+### Insights  (`.explain-gen/.doc/inbox/INSIGHTS.md`)
+Append major discoveries here as markdown bullets.
 
-### New Capabilities  (`.ast-guidance/.doc/inbox/CAPABILITIES.md`)
+### New Capabilities  (`.explain-gen/.doc/inbox/CAPABILITIES.md`)
 Append major new features here as markdown bullets.  Before implementing,
-consult `.ast-guidance/.doc/capabilities/*.md` to enforce DRY — an existing
-implementation may already cover the need.
-
-### Promoting Knowledge  (`make learn`)
-Runs `ast-guidance learn --guidance .ast-guidance` to drain inbox files:
-- INSIGHTS.md → `.ast-guidance/.doc/insights/<name>.md`
-- CAPABILITIES.md → `.ast-guidance/.doc/capabilities/<name>.md`
-
-The `<name>.md` is derived from each bullet's content. Promoted items are removed
-from the inbox files.
+consult `.explain-gen/.doc/capabilities/*.md` to enforce DRY.
 
 ---
 
 ## Language Provider Convention
 
-Each language provider (`ast-guidance-py`, `ast-guidance-cpp`, …) must:
+Each language provider (`ast-guidance-py`, `explain-gen-cpp`, …) must:
 
-1. Accept: `sync --file <path> --output <guidance_dir> [--infill]`
-2. Accept: `sync --scan <dir>  --output <guidance_dir> [--infill]`
-3. Emit canonical JSON at `<guidance_dir>/src/<rel_path>.<ext>.json`
+1. Accept: `sync --file <path> --output <json_dir> [--infill]`
+2. Accept: `sync --scan <dir>  --output <json_dir> [--infill]`
+3. Emit canonical JSON at `<json_dir>/src/<rel_path>.<ext>.json`
 4. Use the schema: `{ meta, comment, skills, hashtags, used_by, members[] }`
-5. Read model name from `.ast-guidance/ast-guidance-config.json` → `models.infill`
+5. Read model name from `.explain-gen/explain-gen-config.json` → `models.infill`
+
+When making function calls using tools that accept array or object parameters ensure those
+are structured using JSON.
