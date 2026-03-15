@@ -4,7 +4,6 @@
     "source": "src/explain-gen/query.zig",
     "language": "zig"
   },
-  "used_by": ["src/explain-gen/tests.zig"],
   "members": [
     {
       "type": "fn_decl",

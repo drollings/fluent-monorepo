@@ -8,7 +8,7 @@
   "skills": [
     { "ref": ".explain-gen/.skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "used_by": ["src/explain-gen/query.zig", "src/explain-gen/structure.zig", "src/explain-gen/sync.zig", "src/explain-gen/tests.zig"],
+  "used_by": ["src/explain-gen/query.zig", "src/explain-gen/structure.zig", "src/explain-gen/sync.zig"],
   "members": [
     {
       "type": "struct",

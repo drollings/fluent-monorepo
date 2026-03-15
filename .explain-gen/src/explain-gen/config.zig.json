@@ -4,7 +4,7 @@
     "source": "src/explain-gen/config.zig",
     "language": "zig"
   },
-  "used_by": ["src/explain-gen/main.zig", "src/explain-gen/query.zig", "src/explain-gen/tests.zig"],
+  "used_by": ["src/explain-gen/main.zig", "src/explain-gen/query.zig"],
   "members": [
     {
       "type": "struct",

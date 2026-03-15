@@ -767,6 +767,23 @@ pub const SyncProcessor = struct {
         return changed;
     }
 
+    /// Check if a file path matches common test file patterns (language-agnostic).
+    fn isTestPath(rel_path: []const u8) bool {
+        const basename = std.fs.path.basename(rel_path);
+        const stem = blk: {
+            const ext = std.fs.path.extension(basename);
+            break :blk if (ext.len > 0) basename[0 .. basename.len - ext.len] else basename;
+        };
+        if (std.mem.endsWith(u8, stem, "_test")) return true;
+        if (std.mem.startsWith(u8, stem, "test_")) return true;
+        if (std.mem.eql(u8, stem, "tests")) return true;
+        if (std.mem.indexOf(u8, rel_path, "/test/") != null) return true;
+        if (std.mem.indexOf(u8, rel_path, "/tests/") != null) return true;
+        if (std.mem.indexOf(u8, rel_path, "\\test\\") != null) return true;
+        if (std.mem.indexOf(u8, rel_path, "\\tests\\") != null) return true;
+        return false;
+    }
+
     /// Scan src/ directory for Zig files that @import the given module.
     /// rel_path is the relative path of the file being processed (e.g. "src/foo.zig").
     fn findReverseDeps(self: *SyncProcessor, rel_path: []const u8) ![]const []const u8 {
@@ -796,6 +813,9 @@ pub const SyncProcessor = struct {
         while (try walker.next()) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+
+            // Skip test files - we don't want them in used_by.
+            if (isTestPath(entry.path)) continue;
 
             const full_path = try std.fs.path.join(self.allocator, &.{ src_dir_path, entry.path });
             defer self.allocator.free(full_path);

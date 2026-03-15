@@ -11,6 +11,24 @@ const std = @import("std");
 const db_mod = @import("db.zig");
 const types = @import("types.zig");
 
+/// Check if a file path matches common test file patterns (language-agnostic).
+/// Used to filter test files from "Used by" display.
+fn isTestPath(rel_path: []const u8) bool {
+    const basename = std.fs.path.basename(rel_path);
+    const stem = blk: {
+        const ext = std.fs.path.extension(basename);
+        break :blk if (ext.len > 0) basename[0 .. basename.len - ext.len] else basename;
+    };
+    if (std.mem.endsWith(u8, stem, "_test")) return true;
+    if (std.mem.startsWith(u8, stem, "test_")) return true;
+    if (std.mem.eql(u8, stem, "tests")) return true;
+    if (std.mem.indexOf(u8, rel_path, "/test/") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "/tests/") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "\\test\\") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "\\tests\\") != null) return true;
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Stage collection entry point
 // ---------------------------------------------------------------------------
@@ -386,9 +404,9 @@ pub fn formatStaged(
                     if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
                     try all_keywords.appendSlice(allocator, p);
                 }
-            } else if (std.mem.startsWith(u8, line, "see_also: ")) {
+            } else if (std.mem.startsWith(u8, line, "used_by: ")) {
                 // Split comma-separated paths and deduplicate.
-                const v = line["see_also: ".len..];
+                const v = line["used_by: ".len..];
                 var parts = std.mem.splitSequence(u8, v, ", ");
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
@@ -417,7 +435,7 @@ pub fn formatStaged(
             ref_header_written = true;
         }
         if (all_keywords.items.len > 0) try w.print("- **Keywords**: {s}\n", .{all_keywords.items});
-        if (all_see_also.items.len > 0) try w.print("- **See also**: {s}\n", .{all_see_also.items});
+        if (all_see_also.items.len > 0) try w.print("- **Used by**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
     }
 
@@ -636,16 +654,23 @@ fn buildMetadataStage(
         }
     }
 
-    // see_also: used_by paths.
+    // used_by: reverse dependency paths (exclude test files).
     if (root.get("used_by")) |ubv| {
         if (ubv == .array and ubv.array.items.len > 0) {
-            try mw.writeAll("see_also: ");
-            for (ubv.array.items[0..@min(5, ubv.array.items.len)], 0..) |item, i| {
+            var count: usize = 0;
+            for (ubv.array.items) |item| {
                 if (item != .string) continue;
-                if (i > 0) try mw.writeAll(", ");
+                if (isTestPath(item.string)) continue;
+                if (count == 0) {
+                    try mw.writeAll("used_by: ");
+                } else {
+                    try mw.writeAll(", ");
+                }
                 try mw.writeAll(item.string);
+                count += 1;
+                if (count >= 5) break;
             }
-            try mw.writeByte('\n');
+            if (count > 0) try mw.writeByte('\n');
         }
     }
 

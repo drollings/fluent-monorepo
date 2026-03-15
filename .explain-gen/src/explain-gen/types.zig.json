@@ -4,7 +4,7 @@
     "source": "src/explain-gen/types.zig",
     "language": "zig"
   },
-  "used_by": ["src/explain-gen/ast_parser.zig", "src/explain-gen/hash.zig", "src/explain-gen/json_store.zig", "src/explain-gen/llm_filter.zig", "src/explain-gen/main.zig", "src/explain-gen/pattern.zig", "src/explain-gen/plugin.zig", "src/explain-gen/query.zig", "src/explain-gen/staged.zig", "src/explain-gen/sync.zig", "src/explain-gen/synthesize.zig", "src/explain-gen/tests.zig"],
+  "used_by": ["src/explain-gen/ast_parser.zig", "src/explain-gen/hash.zig", "src/explain-gen/json_store.zig", "src/explain-gen/llm_filter.zig", "src/explain-gen/main.zig", "src/explain-gen/pattern.zig", "src/explain-gen/plugin.zig", "src/explain-gen/query.zig", "src/explain-gen/staged.zig", "src/explain-gen/sync.zig", "src/explain-gen/synthesize.zig"],
   "members": [
     {
       "type": "enum",
