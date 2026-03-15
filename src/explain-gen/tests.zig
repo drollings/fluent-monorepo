@@ -109,8 +109,8 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Write guidance JSON at {tmp_path}/src/foo.zig.json
-    try tmp.dir.makePath("src");
+    // Create .explain-gen/src directory structure (matching what loadChangedMembers expects)
+    try tmp.dir.makePath(".explain-gen/src");
     const json_content =
         \\{
         \\  "meta": {"module": "foo", "source": "src/foo.zig", "language": "zig"},
@@ -125,12 +125,16 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile("src/foo.zig.json", .{});
+    const f = try tmp.dir.createFile(".explain-gen/src/foo.zig.json", .{});
     try f.writeAll(json_content);
     f.close();
 
-    // Empty hunk_ranges → all members returned.
-    const members = try main.loadChangedMembersPub(allocator, tmp_path, "src/foo.zig", &.{});
+    // guidance_root should be the .explain-gen directory
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".explain-gen" });
+    defer allocator.free(guidance_root);
+
+    // rel_path is just "foo.zig" (without src prefix), function adds src/
+    const members = try main.loadChangedMembersPub(allocator, guidance_root, "foo.zig", &.{});
     defer {
         for (members) |m| m.deinit(allocator);
         allocator.free(members);
@@ -153,7 +157,7 @@ test "loadChangedMembers filters by hunk range with context window" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath("src");
+    try tmp.dir.makePath(".explain-gen/src");
     const json_content =
         \\{
         \\  "meta": {"module": "bar", "source": "src/bar.zig", "language": "zig"},
@@ -168,13 +172,16 @@ test "loadChangedMembers filters by hunk range with context window" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile("src/bar.zig.json", .{});
+    const f = try tmp.dir.createFile(".explain-gen/src/bar.zig.json", .{});
     try f.writeAll(json_content);
     f.close();
 
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".explain-gen" });
+    defer allocator.free(guidance_root);
+
     // Hunk touches new-file lines 25–35 → "near" (line 20) is within ±15 context, "far" (200) is not.
     const hunk_ranges = [_][2]u32{.{ 25, 35 }};
-    const members = try main.loadChangedMembersPub(allocator, tmp_path, "src/bar.zig", &hunk_ranges);
+    const members = try main.loadChangedMembersPub(allocator, guidance_root, "bar.zig", &hunk_ranges);
     defer {
         for (members) |m| m.deinit(allocator);
         allocator.free(members);
@@ -185,63 +192,38 @@ test "loadChangedMembers filters by hunk range with context window" {
 }
 
 // ---------------------------------------------------------------------------
-// Diary local timezone tests (M4)
+// isExactNameMatch
 // ---------------------------------------------------------------------------
 
-test "getLocalTime returns valid ranges" {
-    // Use a known UTC timestamp: 2025-01-15 12:30:00 UTC = 1736944200
-    const ts: i64 = 1736944200;
-    const lt = main.getLocalTime(ts) catch {
-        // If localtime_r is unavailable, skip the test gracefully.
-        return;
-    };
-    // year field is years since 1900; 2024 = 124, 2026 = 126.
-    try std.testing.expect(lt.year >= 124); // year >= 2024
-    // month is 0-based [0–11]
-    try std.testing.expect(lt.month >= 0 and lt.month <= 11);
-    // mday [1–31]
-    try std.testing.expect(lt.mday >= 1 and lt.mday <= 31);
-    // hour [0–23]
-    try std.testing.expect(lt.hour >= 0 and lt.hour <= 23);
-    // minute [0–59]
-    try std.testing.expect(lt.minute >= 0 and lt.minute <= 59);
+test "isExactNameMatch matches case-insensitively" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const terms = [_][]const u8{ "cmdexplain", "sync" };
+    try std.testing.expect(main.isExactNameMatchPub("cmdExplain", &terms));
+    try std.testing.expect(main.isExactNameMatchPub("CMDEXPLAIN", &terms));
+    try std.testing.expect(!main.isExactNameMatchPub("other", &terms));
+}
+
+test "isExactNameMatch handles empty terms" {
+    const terms = [_][]const u8{};
+    try std.testing.expect(!main.isExactNameMatchPub("anything", &terms));
 }
 
 // ---------------------------------------------------------------------------
-// M5: learn routing to .doc/insights and .doc/capabilities
+// loadSkillsFromJson
 // ---------------------------------------------------------------------------
 
-test "classifyLearnBulletKeyword matches existing file" {
+test "loadSkillsFromJson returns null for missing file" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    // Create a temp dir structure with .doc/capabilities/existing-cap.md
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    // Create the capabilities directory and an existing file.
-    try tmp.dir.makePath(".doc/capabilities");
-    const cap_path = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "capabilities", "existing-cap.md" });
-    defer allocator.free(cap_path);
-    const sf = try std.fs.createFileAbsolute(cap_path, .{});
-    sf.close();
-
-    const dest_dir = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "capabilities" });
-    defer allocator.free(dest_dir);
-
-    const existing_files = [_][]const u8{"existing-cap"};
-    const result = try main.classifyLearnBulletKeyword(allocator, "use existing-cap for something", dest_dir, &existing_files);
-    defer if (result) |r| allocator.free(r);
-
-    // Path must exist and end with .md
-    try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.endsWith(u8, result.?, "existing-cap.md"));
+    const result = main.loadSkillsFromJsonPub(allocator, "/nonexistent/path/file.json");
+    try std.testing.expect(result == null);
 }
 
-test "classifyLearnBulletKeyword creates new filename from bullet" {
+test "loadSkillsFromJson extracts skill refs from array" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -251,20 +233,299 @@ test "classifyLearnBulletKeyword creates new filename from bullet" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".doc/insights");
-    const dest_dir = try std.fs.path.join(allocator, &.{ tmp_path, ".doc", "insights" });
-    defer allocator.free(dest_dir);
+    const json_content =
+        \\{"skills": ["zig-current", "gof-patterns"], "members": []}
+    ;
+    const f = try tmp.dir.createFile("test.json", .{});
+    try f.writeAll(json_content);
+    f.close();
 
-    // No existing files
-    const existing_files = [_][]const u8{};
-    const result = try main.classifyLearnBulletKeyword(allocator, "New Feature Works Well", dest_dir, &existing_files);
-    defer if (result) |r| allocator.free(r);
+    const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test.json" });
+    defer allocator.free(json_path);
 
-    // Should create a filename from first words of bullet
+    const result = main.loadSkillsFromJsonPub(allocator, json_path);
     try std.testing.expect(result != null);
-    try std.testing.expect(std.mem.endsWith(u8, result.?, ".md"));
-    // Filename derived from first 3 words: "new-feature-works"
-    try std.testing.expect(std.mem.indexOf(u8, result.?, "new") != null);
+    defer allocator.free(result.?);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "zig-current") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "gof-patterns") != null);
+}
+
+test "loadSkillsFromJson handles object format with ref field" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const json_content =
+        \\{"skills": [{"ref": "zig-current", "context": "API changes"}], "members": []}
+    ;
+    const f = try tmp.dir.createFile("test2.json", .{});
+    try f.writeAll(json_content);
+    f.close();
+
+    const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test2.json" });
+    defer allocator.free(json_path);
+
+    const result = main.loadSkillsFromJsonPub(allocator, json_path);
+    try std.testing.expect(result != null);
+    defer allocator.free(result.?);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "zig-current") != null);
+}
+
+// ---------------------------------------------------------------------------
+// loadUsedByFromJson
+// ---------------------------------------------------------------------------
+
+test "loadUsedByFromJson returns null for missing file" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const result = main.loadUsedByFromJsonPub(allocator, "/nonexistent/path/file.json");
+    try std.testing.expect(result == null);
+}
+
+test "loadUsedByFromJson extracts used_by array" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const json_content =
+        \\{"used_by": ["src/main.zig", "src/db.zig"], "members": []}
+    ;
+    const f = try tmp.dir.createFile("test3.json", .{});
+    try f.writeAll(json_content);
+    f.close();
+
+    const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test3.json" });
+    defer allocator.free(json_path);
+
+    const result = main.loadUsedByFromJsonPub(allocator, json_path);
+    try std.testing.expect(result != null);
+    defer {
+        for (result.?) |r| allocator.free(r);
+        allocator.free(result.?);
+    }
+
+    try std.testing.expect(result.?.len == 2);
+    try std.testing.expectEqualStrings("src/main.zig", result.?[0]);
+    try std.testing.expectEqualStrings("src/db.zig", result.?[1]);
+}
+
+// ---------------------------------------------------------------------------
+// loadPublicMemberNames
+// ---------------------------------------------------------------------------
+
+test "loadPublicMemberNames returns null for missing file" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const result = main.loadPublicMemberNamesPub(allocator, "/nonexistent/path/file.json");
+    try std.testing.expect(result == null);
+}
+
+test "loadPublicMemberNames filters public non-test members" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const json_content =
+        \\{"members": [
+        \\  {"type": "fn_decl", "name": "publicFunc", "is_pub": true, "line": 1},
+        \\  {"type": "fn_decl", "name": "privateFunc", "is_pub": false, "line": 2},
+        \\  {"type": "test_decl", "name": "testSomething", "is_pub": true, "line": 3}
+        \\]}
+    ;
+    const f = try tmp.dir.createFile("test4.json", .{});
+    try f.writeAll(json_content);
+    f.close();
+
+    const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test4.json" });
+    defer allocator.free(json_path);
+
+    const result = main.loadPublicMemberNamesPub(allocator, json_path);
+    try std.testing.expect(result != null);
+    defer {
+        for (result.?) |r| allocator.free(r);
+        allocator.free(result.?);
+    }
+
+    try std.testing.expect(result.?.len == 1);
+    try std.testing.expectEqualStrings("publicFunc", result.?[0]);
+}
+
+// ---------------------------------------------------------------------------
+// explainExtractExcerpt
+// ---------------------------------------------------------------------------
+
+test "explainExtractExcerpt extracts function body" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const src =
+        \\fn foo() void {
+        \\    const x = 1;
+        \\    _ = x;
+        \\}
+        \\
+        \\fn bar() void {
+        \\    // another function
+        \\}
+    ;
+
+    const result = try main.explainExtractExcerptPub(allocator, src, 1, "fn_decl");
+    defer allocator.free(result);
+
+    try std.testing.expect(std.mem.indexOf(u8, result, "fn foo()") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "const x = 1") != null);
+    // Should stop at closing brace
+    try std.testing.expect(std.mem.indexOf(u8, result, "fn bar()") == null);
+}
+
+test "explainExtractExcerpt handles empty source" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const result = try main.explainExtractExcerptPub(allocator, "", 1, "fn_decl");
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings("", result);
+}
+
+// ---------------------------------------------------------------------------
+// explainGrepFile
+// ---------------------------------------------------------------------------
+
+test "explainGrepFile returns empty for missing file" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const terms = [_][]const u8{"test"};
+    const result = try main.explainGrepFilePub(allocator, "/nonexistent/file.zig", &terms, 10);
+    defer allocator.free(result);
+
+    try std.testing.expect(result.len == 0);
+}
+
+test "explainGrepFile finds matching lines" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const src =
+        \\fn foo() void {
+        \\    // test comment
+        \\    const x = 42;
+        \\}
+        \\// Test line
+        \\fn bar() void {}
+    ;
+    const f = try tmp.dir.createFile("test.src", .{});
+    try f.writeAll(src);
+    f.close();
+
+    const file_path = try std.fs.path.join(allocator, &.{ tmp_path, "test.src" });
+    defer allocator.free(file_path);
+
+    const terms = [_][]const u8{ "foo", "bar" };
+    const result = try main.explainGrepFilePub(allocator, file_path, &terms, 10);
+    defer allocator.free(result);
+
+    // Lines 1 (fn foo) and 6 (fn bar) should match
+    try std.testing.expect(result.len >= 1);
+    try std.testing.expect(result[0] == 1); // fn foo is on line 1
+
+    // The test line should not match (starts with //)
+    for (result) |line| {
+        try std.testing.expect(line != 2); // // test comment should not match
+        try std.testing.expect(line != 5); // // Test line should not match
+    }
+}
+
+// ---------------------------------------------------------------------------
+// isShortQuery
+// ---------------------------------------------------------------------------
+
+test "isShortQuery returns true for short queries" {
+    try std.testing.expect(main.isShortQueryPub("sync"));
+    try std.testing.expect(main.isShortQueryPub("cmdExplain"));
+    try std.testing.expect(main.isShortQueryPub("get member by name"));
+}
+
+test "isShortQuery returns false for long queries" {
+    try std.testing.expect(!main.isShortQueryPub("How do I find all the functions that implement a specific pattern in the codebase"));
+    try std.testing.expect(!main.isShortQueryPub("What is the relationship between the sync module and the database module"));
+}
+
+// ---------------------------------------------------------------------------
+// loadSkillPara
+// ---------------------------------------------------------------------------
+
+test "loadSkillPara returns null for missing skill" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const result = main.loadSkillParaPub(allocator, tmp_path, tmp_path, "nonexistent-skill");
+    try std.testing.expect(result == null);
+}
+
+test "loadSkillPara extracts first paragraph from SKILL.md" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    // loadSkillPara looks for SKILL.md in {guidance_dir}/.skills/{name}/SKILL.md
+    // or {cwd}/doc/skills/{name}/SKILL.md
+    // Create .skills/test-skill/SKILL.md under the guidance_dir
+    try tmp.dir.makePath(".skills/test-skill");
+    const skill_content = "This is the first paragraph.\n\nThis is the second paragraph.";
+    const skill_file = try tmp.dir.createFile(".skills/test-skill/SKILL.md", .{});
+    try skill_file.writeAll(skill_content);
+    skill_file.close();
+
+    // The guidance_dir should be where .skills/ is located (tmp_path itself in this case)
+    const result = main.loadSkillParaPub(allocator, tmp_path, tmp_path, "test-skill");
+    try std.testing.expect(result != null);
+    defer allocator.free(result.?);
+
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "This is the first paragraph") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.?, "second") == null); // Should stop at paragraph boundary
 }
 
 // ---------------------------------------------------------------------------

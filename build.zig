@@ -54,7 +54,23 @@ pub fn build(b: *std.Build) void {
     explain_tests.linkLibC();
     explain_tests.linkSystemLibrary("sqlite3");
 
-    const run_tests = b.addRunArtifact(explain_tests);
+    const tests_module = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/explain-gen/tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    tests_module.linkLibC();
+    tests_module.linkSystemLibrary("sqlite3");
+
+    const run_main_tests = b.addRunArtifact(explain_tests);
+    const run_tests_module = b.addRunArtifact(tests_module);
+
     const test_step = b.step("test", "Run explain-gen unit tests");
-    test_step.dependOn(&run_tests.step);
+    test_step.dependOn(&run_main_tests.step);
+    test_step.dependOn(&run_tests_module.step);
 }

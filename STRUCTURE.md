@@ -88,6 +88,8 @@ Then you you must read
 │       ├── triage.zig
 │       ├── types.zig
 │       └── utils.zig
+├── tests
+│   └── explain_integration.sh
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c

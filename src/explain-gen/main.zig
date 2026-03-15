@@ -2455,6 +2455,62 @@ fn cmdExplainStaged(
 }
 
 // =============================================================================
+// Public wrappers for testing
+// =============================================================================
+
+pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
+    return parseHunkRanges(allocator, chunk);
+}
+
+pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) ![]CommitMemberInfo {
+    return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
+}
+
+pub fn chunkIsIgnoredPub(chunk: []const u8) bool {
+    return chunkIsExplainGenJson(chunk);
+}
+
+pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
+    return chunkFilePath(chunk);
+}
+
+pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
+    return splitDiffByFile(diff, out, allocator);
+}
+
+pub fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) bool {
+    return isExactNameMatch(name, terms);
+}
+
+pub fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
+    return loadSkillsFromJson(allocator, json_path);
+}
+
+pub fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    return loadUsedByFromJson(allocator, json_path);
+}
+
+pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    return loadPublicMemberNames(allocator, json_path);
+}
+
+pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
+    return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
+}
+
+pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
+    return explainExtractExcerpt(allocator, src, start_line, node_type);
+}
+
+pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) ![]usize {
+    return explainGrepFile(allocator, file_path, terms, max_results);
+}
+
+pub fn isShortQueryPub(query: []const u8) bool {
+    return isShortQuery(query);
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
