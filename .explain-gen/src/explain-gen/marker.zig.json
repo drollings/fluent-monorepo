@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "module": "src.explain-gen.marker",
+    "source": "src/explain-gen/marker.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/explain-gen/main.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "fileNeedsProcessing",
+      "match_hash": "b526235a30c8c21f2653a5630d8aed4adad1cb4edc7e3316e18431ff71f919e7",
+      "signature": "fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) -> bool",
+      "params": [
+        { "name": "src_abs", "type": "[]const u8" },
+        { "name": "json_abs", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 37
+    },
+    {
+      "type": "fn_decl",
+      "name": "fileMtime",
+      "match_hash": "cc7b532687c5ba2e7739740fe9e69621e2b34b09b18db587033c52e004805a95",
+      "signature": "fn fileMtime(path: []const u8) -> ?i128",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "?i128",
+      "is_pub": true,
+      "line": 45
+    },
+    {
+      "type": "test_decl",
+      "name": "fileNeedsProcessing: absent JSON → stale",
+      "is_pub": false,
+      "line": 56
+    },
+    {
+      "type": "test_decl",
+      "name": "fileNeedsProcessing: JSON written after source → fresh",
+      "is_pub": false,
+      "line": 76
+    }
+  ]
+}

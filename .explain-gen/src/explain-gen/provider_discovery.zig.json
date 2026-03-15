@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "module": "src.explain-gen.provider_discovery",
+    "source": "src/explain-gen/provider_discovery.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/explain-gen/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Provider",
+      "match_hash": "d67a9c4857b714b8591f9a9708508063079adba16cc906377e372499b4ab6b9a",
+      "signature": "keyword_struct Provider { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b28762fd0c071386871f3573f6bd6318e02046ca70d5fda2a35f5fb95d1bdf5b",
+          "signature": "fn deinit(self: Provider, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Provider" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 27
+        }
+      ],
+      "line": 19
+    },
+    {
+      "type": "fn_decl",
+      "name": "discoverProvider",
+      "match_hash": "e66b11613b7a81f7a665ead383f8e595238732f6655230e14b566c63434e70fc",
+      "signature": "fn discoverProvider(allocator: std.mem.Allocator, workspace: []const u8, ext: []const u8) -> ?Provider",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "ext", "type": "[]const u8" }
+      ],
+      "returns": "?Provider",
+      "is_pub": true,
+      "line": 41
+    },
+    {
+      "type": "fn_decl",
+      "name": "invokeProviderFile",
+      "match_hash": "83f94fc5c8f80ac69f967a6373d1c6b6aa5722eae587a8188673f6e804e780e9",
+      "signature": "fn invokeProviderFile(allocator: std.mem.Allocator, provider: Provider, src_abs: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "provider", "type": "Provider" },
+        { "name": "src_abs", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "extra_args", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 86
+    },
+    {
+      "type": "fn_decl",
+      "name": "invokeProviderScan",
+      "match_hash": "14ba8e541d76a8cf7aec3e9958967a641ea43c2d4273583e3aa27d062c196782",
+      "signature": "fn invokeProviderScan(allocator: std.mem.Allocator, provider: Provider, scan_dir: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "provider", "type": "Provider" },
+        { "name": "scan_dir", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "extra_args", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 113
+    },
+    {
+      "type": "fn_private",
+      "name": "isExecutable",
+      "match_hash": "3e3c69769996964a630e08270e6ac6867b296be60661508d3c5af1df47cefe39",
+      "signature": "fn isExecutable(path: []const u8) -> bool",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 139
+    },
+    {
+      "type": "fn_private",
+      "name": "findInPath",
+      "match_hash": "33f1e28323f60f82dfd66306b7a27f383306e16d329d6819310accbcd7a313f8",
+      "signature": "fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "binary_name", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 154
+    },
+    {
+      "type": "fn_private",
+      "name": "runCommand",
+      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
+      "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "argv", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 173
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: returns null for unknown extension",
+      "is_pub": false,
+      "line": 187
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: returns null for bare extension without dot",
+      "is_pub": false,
+      "line": 193
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: workspace-local bin takes priority",
+      "is_pub": false,
+      "line": 198
+    }
+  ]
+}

@@ -1057,6 +1057,104 @@ Return ONLY the description text, no quotes, no markdown."""
 # ============================================================================
 
 
+# ============================================================================
+# Phase runner — test → lint → fmt (per-file helpers)
+# ============================================================================
+
+
+def _run_command(argv: List[str], cwd: Optional[Path] = None, label: str = "") -> bool:
+    """Run argv as a subprocess; return True on exit code 0."""
+    display = label or " ".join(argv)
+    try:
+        result = subprocess.run(argv, cwd=str(cwd or PROJECT_ROOT))
+        return result.returncode == 0
+    except FileNotFoundError:
+        cprint(f"  warning: command not found: {argv[0]}", Colors.YELLOW)
+        return False
+    except Exception as e:
+        cprint(f"  warning: {display} failed: {e}", Colors.YELLOW)
+        return False
+
+
+def _run_test_suite(cfg: dict, cwd: Path, debug: bool = False) -> bool:
+    """Run the configured Python test suite once.  Returns True on success."""
+    test_argv = cfg.get("test_command", ["python3", "-m", "pytest"])
+    if isinstance(test_argv, list) and test_argv:
+        cprint(f"test:     {' '.join(test_argv)}", Colors.CYAN)
+        ok = _run_command(test_argv, cwd=cwd, label="test suite")
+        if ok:
+            cprint("test:     passed", Colors.GREEN)
+        else:
+            cprint("test:     FAILED", Colors.RED)
+        return ok
+    return True  # no test command configured → skip silently
+
+
+def _run_lint_file(cfg: dict, filepath: Path, debug: bool = False) -> bool:
+    """Run per-file lint command from config.  Returns True on success or if unconfigured."""
+    lc = cfg.get("lint_commands", {})
+    argv_tmpl = lc.get(".py") if isinstance(lc, dict) else None
+    if not argv_tmpl:
+        return True
+    argv = [str(filepath) if tok == "{file}" else tok for tok in argv_tmpl]
+    if debug:
+        cprint(f"  lint: {' '.join(argv)}", Colors.CYAN)
+    return _run_command(argv, cwd=filepath.parent, label=f"lint {filepath.name}")
+
+
+def _run_fmt_file(cfg: dict, filepath: Path, debug: bool = False) -> bool:
+    """Run per-file format command from config.  Returns True on success or if unconfigured.
+
+    Formatting must happen BEFORE guidance generation so that line numbers in
+    the JSON reflect the final formatted source.
+    """
+    fc = cfg.get("fmt_commands", {})
+    argv_tmpl = fc.get(".py") if isinstance(fc, dict) else None
+    if not argv_tmpl:
+        return True
+    argv = [str(filepath) if tok == "{file}" else tok for tok in argv_tmpl]
+    if debug:
+        cprint(f"  fmt:  {' '.join(argv)}", Colors.CYAN)
+    return _run_command(argv, cwd=filepath.parent, label=f"fmt {filepath.name}")
+
+
+def _touch_json(json_path: Path) -> None:
+    """Advance json_path's mtime to now without changing its content.
+
+    This makes the JSON mtime the universal 'all phases passed' marker that
+    explain-gen uses for incremental change detection across all languages.
+    Even when guidance content is unchanged, we still touch so the JSON mtime
+    is >= source mtime and the file is correctly seen as 'fresh' next run.
+    """
+    try:
+        json_path.touch()
+    except Exception:
+        pass
+
+
+def _json_path_for(filepath: Path, output_dir: Path) -> Path:
+    """Compute the guidance JSON path for a source file.
+
+    Mirrors the formula used by explain-gen (Zig):
+      {output_dir}/src/{relative_path}.json
+    """
+    try:
+        rel = filepath.relative_to(PROJECT_ROOT)
+    except ValueError:
+        rel = Path(filepath.name)
+    return output_dir / "src" / (str(rel) + ".json")
+
+
+def _file_needs_processing(filepath: Path, json_path: Path) -> bool:
+    """Return True when filepath is newer than json_path (or json_path absent)."""
+    if not json_path.exists():
+        return True
+    try:
+        return filepath.stat().st_mtime > json_path.stat().st_mtime
+    except OSError:
+        return True
+
+
 def cmd_sync(
     scan: Optional[str],
     file: Optional[str],
@@ -1066,10 +1164,22 @@ def cmd_sync(
     dry_run: bool = False,
     model: str = DEFAULT_MODEL,
     debug: bool = False,
+    skip_tests: bool = False,
+    skip_lint: bool = False,
+    skip_fmt: bool = False,
 ) -> None:
-    """Phase 1: Python AST → JSON for all .py files found.
-    Phase 1.5: Scrub synthetic comments.
-    Phase 2 (if --infill/--regen): AI fill blank comments.
+    """Full provider pipeline: test → lint → fmt → guidance → touch JSON.
+
+    Phase order per file:
+      1. test  — run the configured test suite once (whole-project, not per-file)
+      2. lint  — per-file semantic lint (catch errors before modifying the file)
+      3. fmt   — per-file auto-format  (must precede guidance so line numbers
+                 in the JSON reflect the final formatted source)
+      4. guidance — Python AST → JSON
+      5. touch — always touch the JSON mtime, even when content is unchanged,
+                 so it acts as the universal 'all phases passed' marker
+      Phase 1.5: scrub synthetic comments from generated JSON
+      Phase 2 (if --infill/--regen): AI fill blank comments
     """
     output_dir = Path(output) if Path(output).is_absolute() else PROJECT_ROOT / output
 
@@ -1082,45 +1192,83 @@ def cmd_sync(
 
     processor = ModuleProcessor(PROJECT_ROOT, output_dir, llm=None, infill=False, regen=False, debug=debug)
 
-    py_count = 0
+    # Collect the set of .py files to process.
+    py_files: List[Path] = []
     if file:
         filepath = Path(file) if Path(file).is_absolute() else PROJECT_ROOT / file
         if filepath.suffix == ".py":
-            processor.process(filepath)
-            py_count = 1
+            py_files = [filepath]
         else:
             cprint(f"Unsupported file type for guidance_ast_py: {filepath.suffix}", Colors.YELLOW)
             return
     elif scan:
         scan_dir = Path(scan) if Path(scan).is_absolute() else PROJECT_ROOT / scan
-        for fp in sorted(scan_dir.rglob("*.py")):
-            if fp.is_file():
-                processor.process(fp)
-                py_count += 1
+        py_files = sorted(fp for fp in scan_dir.rglob("*.py") if fp.is_file())
     else:
         print("Error: --scan or --file required.", file=sys.stderr)
         return
 
-    print(f"✓ Phase 1 complete: {py_count} Python files synced.")
+    # Filter to stale files only (incremental, default behaviour).
+    stale_files = [fp for fp in py_files if _file_needs_processing(fp, _json_path_for(fp, output_dir))]
+
+    if not stale_files:
+        print(f"✓ All {len(py_files)} Python file(s) up to date.")
+        return
+
+    # ── Phase 0: Test suite (once, before touching any files) ────────────────
+    if not skip_tests and stale_files:
+        ok = _run_test_suite(_PROJECT_CONFIG, PROJECT_ROOT, debug=debug)
+        if not ok:
+            cprint("error: test suite failed — aborting guidance generation", Colors.RED)
+            sys.exit(1)
+
+    # ── Phases 1-5: Per-file lint → fmt → guidance → touch ──────────────────
+    py_count = 0
+    lint_failures = 0
+    for filepath in stale_files:
+        json_path = _json_path_for(filepath, output_dir)
+
+        # Phase 1: Lint (semantic check before modifying the file)
+        if not skip_lint:
+            if not _run_lint_file(_PROJECT_CONFIG, filepath, debug=debug):
+                cprint(f"  error: lint failed for {filepath} — skipping", Colors.RED)
+                lint_failures += 1
+                continue  # Don't touch JSON; keep it stale so next run retries
+
+        # Phase 2: Format (normalise whitespace before AST parse)
+        if not skip_fmt:
+            _run_fmt_file(_PROJECT_CONFIG, filepath, debug=debug)
+
+        # Phase 3: Guidance (AST → JSON from now-formatted source)
+        if not dry_run:
+            processor.process(filepath)
+        py_count += 1
+
+        # Phase 4: Touch JSON — always, even when content unchanged
+        if not dry_run:
+            _touch_json(json_path)
+
+    print(f"✓ Phase 1 complete: {py_count}/{len(stale_files)} stale Python file(s) synced"
+          + (f" ({lint_failures} lint failure(s) skipped)" if lint_failures else "") + ".")
 
     # Phase 1.5 — scrub synthetic comments
     scrubbed_count = 0
-    for json_path in sorted(output_dir.rglob("*.json")):
-        try:
-            doc = json.loads(json_path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if "meta" not in doc or "members" not in doc:
-            continue
-        # Only scrub Python guidance files
-        if doc.get("meta", {}).get("language") != "python":
-            continue
-        original = json.dumps(doc, indent=2)
-        if scrub_guidance_doc(doc, debug=debug):
-            new_text = json.dumps(doc, indent=2)
-            if new_text != original and not dry_run:
-                json_path.write_text(new_text, encoding="utf-8")
-                scrubbed_count += 1
+    if not dry_run:
+        for json_path in sorted(output_dir.rglob("*.json")):
+            try:
+                doc = json.loads(json_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if "meta" not in doc or "members" not in doc:
+                continue
+            if doc.get("meta", {}).get("language") != "python":
+                continue
+            original = json.dumps(doc, indent=2)
+            if scrub_guidance_doc(doc, debug=debug):
+                new_text = json.dumps(doc, indent=2)
+                if new_text != original:
+                    json_path.write_text(new_text, encoding="utf-8")
+                    scrubbed_count += 1
     if scrubbed_count:
         print(f"  Scrubbed {scrubbed_count} JSON file(s) with synthetic comments.")
 
@@ -1129,6 +1277,9 @@ def cmd_sync(
         print("Running AI infill over Python guidance JSON…")
         changed = _infill_all_py_json(output_dir, llm_client, regen=regen, dry_run=dry_run, debug=debug)
         print(f"✓ Phase 2 complete: {changed} JSON files updated by AI.")
+
+    if lint_failures:
+        sys.exit(1)
 
 
 def _infill_all_py_json(guidance_dir: Path, llm_client: LLMClient, regen: bool, dry_run: bool, debug: bool) -> int:
@@ -1235,6 +1386,9 @@ def main() -> None:
     p_sync.add_argument("--dry-run", action="store_true", help="Show what would change without writing")
     p_sync.add_argument("-m", "--model", default=DEFAULT_MODEL, help="LLM model name")
     p_sync.add_argument("--debug", action="store_true")
+    p_sync.add_argument("--skip-tests", action="store_true", help="Skip the test-suite phase")
+    p_sync.add_argument("--skip-lint", action="store_true", help="Skip per-file lint phase")
+    p_sync.add_argument("--skip-fmt", action="store_true", help="Skip per-file format phase")
 
     # scrub
     p_scrub = sub.add_parser("scrub", help="Blank synthetic/mangled comments in Python guidance JSON files")
@@ -1255,6 +1409,9 @@ def main() -> None:
             dry_run=args.dry_run,
             model=args.model,
             debug=args.debug,
+            skip_tests=args.skip_tests,
+            skip_lint=args.skip_lint,
+            skip_fmt=args.skip_fmt,
         )
     elif args.command == "scrub":
         cmd_scrub(

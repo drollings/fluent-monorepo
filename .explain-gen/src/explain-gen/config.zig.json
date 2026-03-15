@@ -8,8 +8,31 @@
   "members": [
     {
       "type": "struct",
+      "name": "LintCommand",
+      "match_hash": "eb1b4c07333d26cf4189b2bd438bdd460d3d9c3120bd96f7bc28c9d9b27dd6ed",
+      "signature": "keyword_struct LintCommand { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "01cf8f226ace115d2ce26bc1613c0b1cd04961187c71f5a510306dc14c5b2e07",
+          "signature": "fn deinit(self: LintCommand, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "LintCommand" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 37
+        }
+      ],
+      "line": 31
+    },
+    {
+      "type": "struct",
       "name": "ProjectConfig",
-      "match_hash": "112d778ac3a1ff96e2480b8e7b3662c3cd85050e690ee0b05869375536ab52bc",
+      "match_hash": "88741b090953228085f00ad02c0596aaba8e14da746a721dbd1dc82b3fb6b119",
       "signature": "keyword_struct ProjectConfig { ... }",
       "is_pub": true,
       "members": [
@@ -23,10 +46,36 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 57
+          "line": 92
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "lintCommandForExt",
+          "match_hash": "29e27a4386b40bacf55c7f37e705aa0c1e519f1c1ed08e7cd0361506d8c839a2",
+          "signature": "fn lintCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "?[]const []const u8",
+          "is_pub": true,
+          "line": 110
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "fmtCommandForExt",
+          "match_hash": "84583a00d969d38bdf4f179c6514e89243012a55b3ffbc0de7ac848a32cf4338",
+          "signature": "fn fmtCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "?[]const []const u8",
+          "is_pub": true,
+          "line": 118
         }
       ],
-      "line": 30
+      "line": 50
     },
     {
       "type": "fn_decl",
@@ -39,7 +88,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": true,
-      "line": 75
+      "line": 132
     },
     {
       "type": "fn_private",
@@ -53,7 +102,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 109
+      "line": 166
     },
     {
       "type": "fn_private",
@@ -66,24 +115,39 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 183
+      "line": 335
+    },
+    {
+      "type": "fn_private",
+      "name": "dupeDefaultTestCommand",
+      "match_hash": "bc0db5c732546dcee8bcb376f3873ac96a1b3348925f1e351a9f12ee32527940",
+      "signature": "fn dupeDefaultTestCommand(allocator: std.mem.Allocator) -> []const []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "[]const []const u8",
+      "is_pub": false,
+      "line": 352
     },
     {
       "type": "fn_private",
       "name": "buildFromParts",
-      "match_hash": "6c1708ec9a6cea5e0f527d87ede44965504675ab306b97290a127bbd95244e6a",
-      "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8) -> ProjectConfig",
+      "match_hash": "8b248bd99ea7828d8d0c06c571680d1cb18aeee5d66d21b85cf2045c78eedeb0",
+      "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8, test_command: []const []const u8, lint_commands: []const LintCommand, fmt_commands: []const LintCommand) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "cwd", "type": "[]const u8" },
         { "name": "guidance_dir_rel", "type": "[]const u8" },
         { "name": "src_dirs", "type": "[]const []const u8" },
         { "name": "model", "type": "[]const u8" },
-        { "name": "api_url", "type": "[]const u8" }
+        { "name": "api_url", "type": "[]const u8" },
+        { "name": "test_command", "type": "[]const []const u8" },
+        { "name": "lint_commands", "type": "[]const LintCommand" },
+        { "name": "fmt_commands", "type": "[]const LintCommand" }
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 196
+      "line": 361
     }
   ]
 }

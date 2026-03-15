@@ -2,19 +2,16 @@
 # Context: Zig-native AST-guided SQLite FTS5 database generator for NullClaw
 # Maintainer: AI & Human Co-Pilot
 #
-# RALPH LOOP: build → test → lint → guidance (per-file) → STRUCTURE.md
+# RALPH LOOP (delegated to explain-gen check):
+#   build → explain-gen check
+#     └─► test → lint → fmt → guidance (per stale file, all languages)
+#           └─► .explain-gen/src/**/*.json  (JSON mtime = universal marker)
+#                 └─► .explain.db
+#                       └─► STRUCTURE.md
 #
 # Key invariant: $(TARGET_BIN) depends ONLY on source files — never on
 # STRUCTURE.md or markers that themselves depend on the binary.
-#
-# Dependency chain:
-#   $(ZIG_SRC_FILES)
-#     └─► $(TARGET_BIN)                    (zig build)
-#     └─► zig-out/mark/.tests-passed     (zig build test — single pass)
-#           └─► zig-out/mark/lint/*.zig     (zig fmt --check)
-#                 └─► zig-out/mark/guidance/*.zig  (explain-gen gen --file)
-#
-#   All GUIDANCE_MARKERS → STRUCTURE.md
+# Change detection: source mtime vs guidance JSON mtime (no separate marker files).
 
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -45,11 +42,6 @@ EXPLAIN_DB   := .explain.db
 ENV_DIR      := .env
 HASH_DIR     := $(ENV_DIR)/.make_hashes
 
-# Marker directories — store per-file success stamps for incremental builds
-LINT_MARKER_DIR     := zig-out/mark/lint
-GUIDANCE_MARKER_DIR := zig-out/mark/guidance
-TEST_PASSED         := zig-out/mark/.tests-passed
-
 # Verbosity control: V=1 enables shell echo
 V ?= 0
 Q := $(if $(filter 1,$V),,@)
@@ -71,31 +63,12 @@ help: ## Show this help
 
 ##@ Intelligence Layer
 
-# Database target: depends on guidance JSON files being present
-# Only rebuilds when source files change (via guidance markers)
-$(EXPLAIN_DB): $(GUIDANCE_MARKERS) | $(TARGET_BIN)
+# Database target: rebuilt by explain-gen check automatically.
+# This rule is kept for direct `make .explain.db` invocations.
+$(EXPLAIN_DB): | $(TARGET_BIN)
 	$(Q)echo "Syncing database: $@"
 	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(EXPLAIN_DIR) --db $(EXPLAIN_DB)
 	$(Q)touch $@
-
-.PHONY: gen
-gen: $(EXPLAIN_DB) ## Generate .explain-gen/ JSON and .explain.db
-
-.PHONY: gen-infill
-gen-infill: $(TARGET_BIN) ## Generate with LLM comment infill
-	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(EXPLAIN_DIR) --db $(EXPLAIN_DB) --infill
-
-.PHONY: gen-status
-gen-status: $(TARGET_BIN) ## Show generation status
-	$(Q)$(TARGET_BIN) status --json-dir $(EXPLAIN_DIR) --db $(EXPLAIN_DB)
-
-.PHONY: gen-clean
-gen-clean: ## Remove .explain-gen/src and .explain.db
-	$(Q)rm -rf $(EXPLAIN_DIR)/src $(EXPLAIN_DB)
-
-.PHONY: learn
-learn: ## (legacy) Drain inbox — kept for compatibility
-	@echo "learn: use explain-gen for this operation"
 
 .PHONY: commit
 commit: $(TARGET_BIN) ## Generate AI commit message from staged diff + guidance JSON context
@@ -151,7 +124,7 @@ env-init: check-prereqs venv ## Initialize development environment
 
 .PHONY: clean
 clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .explain-gen config)
-	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(LINT_MARKER_DIR) $(GUIDANCE_MARKER_DIR) $(TEST_PASSED) $(EXPLAIN_DB)
+	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(EXPLAIN_DB)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
 
 ##@ Guidance Management
@@ -176,14 +149,9 @@ explain: $(EXPLAIN_DB) ## Explain a module, function, or concept  make explain Q
 
 ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 
-# Derive marker sets from source files
-LINT_MARKERS     := $(patsubst $(SRC_DIR)/%.zig,$(LINT_MARKER_DIR)/%.zig,$(ZIG_SRC_FILES))
-GUIDANCE_MARKERS := $(patsubst $(SRC_DIR)/%.zig,$(GUIDANCE_MARKER_DIR)/%.zig,$(ZIG_SRC_FILES))
-
-# ── Binary ──────────────────────────────────────────────────────────────────
+# ── Binary ───────────────────────────────────────────────────────────────────
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
-	$(Q)mkdir -p $(LINT_MARKER_DIR) $(GUIDANCE_MARKER_DIR)
 	$(Q)echo "Building explain-gen..."
 	$(Q)zig build
 	$(Q)echo "Build complete: $@"
@@ -192,45 +160,9 @@ $(TARGET_BIN): $(ZIG_SRC_FILES)
 install: $(TARGET_BIN)
 	cp $(TARGET_BIN) $(shell dirname $(shell which explain-gen 2>/dev/null || echo $(INSTALLDIR)/explain-gen))/explain-gen
 
-.PRECIOUS: $(GUIDANCE_MARKERS) $(LINT_MARKERS)
-
-# ── Testpass ─────────────────────────────────────────────────────────────────
-# Single test run - depends on source files so tests re-run when code changes.
-
-$(TEST_PASSED): $(ZIG_SRC_FILES)
-	$(Q)mkdir -p $(dir $@)
-	$(Q)echo "Testing:  zig build test"
-	$(Q)zig build test --summary all 2>&1 || exit 1
-	$(Q)touch $@
-
-# ── Per-file lint marker ─────────────────────────────────────────────────────
-
-$(LINT_MARKER_DIR)/%.zig: $(SRC_DIR)/%.zig $(TEST_PASSED) | $(LINT_MARKER_DIR)
-	$(Q)mkdir -p $(dir $@)
-	$(Q)echo "Linting:  $<"
-	$(Q)zig fmt $< 2>&1
-	$(Q)zig fmt --check $< 2>&1 || (echo "Format errors in $<. Run 'zig fmt $<' to fix."; exit 1)
-	$(Q)touch $@
-
-# ── Per-file guidance marker ─────────────────────────────────────────────────
-# Uses --file for single-file incremental processing.
-# Uses --no-db to skip full DB recompile on every file (gen-status/gen does full DB).
-
-$(GUIDANCE_MARKER_DIR)/%.zig: $(SRC_DIR)/%.zig $(LINT_MARKER_DIR)/%.zig | $(TARGET_BIN) $(GUIDANCE_MARKER_DIR)
-	$(Q)mkdir -p $(dir $@)
-	$(Q)echo "Guidance: $<"
-	$(Q)$(TARGET_BIN) gen --file $< --json-dir $(EXPLAIN_DIR) --no-db
-	$(Q)[ -f $(EXPLAIN_DIR)/src/$*.zig.json ] || touch $(EXPLAIN_DIR)/src/$*.zig.json
-	$(Q)touch $@
-
-# ── Marker directory creation ────────────────────────────────────────────────
-
-$(LINT_MARKER_DIR) $(GUIDANCE_MARKER_DIR):
-	$(Q)mkdir -p $@
-
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
-# Rebuilt when guidance markers are complete and database is synced.
-# Depends on $(TARGET_BIN) being available but not through marker chain.
+# Delegated: explain-gen check always regenerates STRUCTURE.md after guidance.
+# The target below is kept for direct `make STRUCTURE.md` invocations.
 
 STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
 	$(Q)$(TARGET_BIN) structure --json-dir $(EXPLAIN_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
@@ -238,10 +170,11 @@ STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
 
 ##@ Gate Targets
 
-# Full RALPH loop: build → test → lint → guidance → STRUCTURE.md
-# TARGET_BIN is built first as an order-only prerequisite, then the chain runs.
+# Full RALPH loop: build → explain-gen check (test/lint/fmt/guidance/structure/db)
+# explain-gen check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
-pre-commit: $(TARGET_BIN) STRUCTURE.md ## Run full RALPH loop (build/test/lint/guidance/structure)
+pre-commit: $(TARGET_BIN) ## Run full RALPH loop via explain-gen check
+	$(Q)$(TARGET_BIN) check
 	$(Q)echo "All checks passed."
 
 .PHONY: fmt

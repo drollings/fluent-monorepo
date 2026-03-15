@@ -21,6 +21,26 @@ pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_API_URL = "http://localhost:11434/api/chat";
 pub const CONFIG_FILENAME = "explain-gen-config.json";
 
+/// Default test command tokens.  Kept as a comptime slice so callers can
+/// reference it without allocating when the config carries no override.
+pub const DEFAULT_TEST_COMMAND = [_][]const u8{ "zig", "build", "test", "--summary", "all" };
+
+/// A single lint-command entry: one file extension → shell-style argv template.
+/// The template may contain the literal substring `{file}` which is replaced
+/// with the source file path at invocation time.
+pub const LintCommand = struct {
+    /// File extension including the leading dot (e.g. ".zig").
+    extension: []const u8,
+    /// argv tokens; `{file}` is substituted with the source path.
+    argv: []const []const u8,
+
+    pub fn deinit(self: LintCommand, allocator: std.mem.Allocator) void {
+        allocator.free(self.extension);
+        for (self.argv) |a| allocator.free(a);
+        allocator.free(self.argv);
+    }
+};
+
 // ---------------------------------------------------------------------------
 // ProjectConfig
 // ---------------------------------------------------------------------------
@@ -54,6 +74,21 @@ pub const ProjectConfig = struct {
     /// Model name for infill/regen (from config or default).
     model: []const u8,
 
+    /// Command to run the project test suite.
+    /// Tokens are joined by spaces; {file} is NOT substituted (test runs the
+    /// whole suite).  Defaults to DEFAULT_TEST_COMMAND.
+    /// Owned slice of owned strings.
+    test_command: []const []const u8,
+
+    /// Per-extension lint commands.  Run before formatting.  May be empty.
+    /// Owned slice of owned LintCommand values.
+    lint_commands: []const LintCommand,
+
+    /// Per-extension format commands.  Run after lint, before guidance.
+    /// Formatting may shift line numbers, so it must precede AST parsing.
+    /// Owned slice of owned LintCommand values (same structure).
+    fmt_commands: []const LintCommand,
+
     pub fn deinit(self: *ProjectConfig) void {
         self.allocator.free(self.guidance_root);
         self.allocator.free(self.json_base);
@@ -63,6 +98,28 @@ pub const ProjectConfig = struct {
         self.allocator.free(self.src_dirs);
         self.allocator.free(self.api_url);
         self.allocator.free(self.model);
+        for (self.test_command) |t| self.allocator.free(t);
+        self.allocator.free(self.test_command);
+        for (self.lint_commands) |lc| lc.deinit(self.allocator);
+        self.allocator.free(self.lint_commands);
+        for (self.fmt_commands) |fc| fc.deinit(self.allocator);
+        self.allocator.free(self.fmt_commands);
+    }
+
+    /// Return the lint argv template for `ext`, or null if none is configured.
+    pub fn lintCommandForExt(self: *const ProjectConfig, ext: []const u8) ?[]const []const u8 {
+        for (self.lint_commands) |lc| {
+            if (std.mem.eql(u8, lc.extension, ext)) return lc.argv;
+        }
+        return null;
+    }
+
+    /// Return the format argv template for `ext`, or null if none is configured.
+    pub fn fmtCommandForExt(self: *const ProjectConfig, ext: []const u8) ?[]const []const u8 {
+        for (self.fmt_commands) |fc| {
+            if (std.mem.eql(u8, fc.extension, ext)) return fc.argv;
+        }
+        return null;
     }
 };
 
@@ -170,6 +227,98 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     };
     errdefer allocator.free(api_url);
 
+    // --- test_command (array of strings, optional) ---
+    var test_command: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (test_command.items) |t| allocator.free(t);
+        test_command.deinit(allocator);
+    }
+    if (root.object.get("test_command")) |tc| {
+        if (tc == .array) {
+            for (tc.array.items) |item| {
+                if (item == .string) {
+                    try test_command.append(allocator, try allocator.dupe(u8, item.string));
+                }
+            }
+        }
+    }
+    if (test_command.items.len == 0) {
+        // Default: zig build test --summary all
+        for (&DEFAULT_TEST_COMMAND) |tok| {
+            try test_command.append(allocator, try allocator.dupe(u8, tok));
+        }
+    }
+
+    // --- lint_commands (object: ext → [argv...], optional) ---
+    var lint_commands: std.ArrayList(LintCommand) = .{};
+    errdefer {
+        for (lint_commands.items) |lc| lc.deinit(allocator);
+        lint_commands.deinit(allocator);
+    }
+    if (root.object.get("lint_commands")) |lc_val| {
+        if (lc_val == .object) {
+            var it = lc_val.object.iterator();
+            while (it.next()) |entry| {
+                const ext_str = entry.key_ptr.*;
+                const argv_val = entry.value_ptr.*;
+                if (argv_val != .array) continue;
+                var argv: std.ArrayList([]const u8) = .{};
+                errdefer {
+                    for (argv.items) |a| allocator.free(a);
+                    argv.deinit(allocator);
+                }
+                for (argv_val.array.items) |tok| {
+                    if (tok == .string) {
+                        try argv.append(allocator, try allocator.dupe(u8, tok.string));
+                    }
+                }
+                if (argv.items.len == 0) {
+                    argv.deinit(allocator);
+                    continue;
+                }
+                try lint_commands.append(allocator, LintCommand{
+                    .extension = try allocator.dupe(u8, ext_str),
+                    .argv = try argv.toOwnedSlice(allocator),
+                });
+            }
+        }
+    }
+
+    // --- fmt_commands (object: ext → [argv...], optional) ---
+    var fmt_commands: std.ArrayList(LintCommand) = .{};
+    errdefer {
+        for (fmt_commands.items) |fc| fc.deinit(allocator);
+        fmt_commands.deinit(allocator);
+    }
+    if (root.object.get("fmt_commands")) |fc_val| {
+        if (fc_val == .object) {
+            var it = fc_val.object.iterator();
+            while (it.next()) |entry| {
+                const ext_str = entry.key_ptr.*;
+                const argv_val = entry.value_ptr.*;
+                if (argv_val != .array) continue;
+                var argv: std.ArrayList([]const u8) = .{};
+                errdefer {
+                    for (argv.items) |a| allocator.free(a);
+                    argv.deinit(allocator);
+                }
+                for (argv_val.array.items) |tok| {
+                    if (tok == .string) {
+                        try argv.append(allocator, try allocator.dupe(u8, tok.string));
+                    }
+                }
+                if (argv.items.len == 0) {
+                    argv.deinit(allocator);
+                    continue;
+                }
+                try fmt_commands.append(allocator, LintCommand{
+                    .extension = try allocator.dupe(u8, ext_str),
+                    .argv = try argv.toOwnedSlice(allocator),
+                });
+            }
+        }
+    }
+
     return buildFromParts(
         allocator,
         cwd,
@@ -177,6 +326,9 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         try src_dirs.toOwnedSlice(allocator),
         try allocator.dupe(u8, model),
         api_url,
+        try test_command.toOwnedSlice(allocator),
+        try lint_commands.toOwnedSlice(allocator),
+        try fmt_commands.toOwnedSlice(allocator),
     );
 }
 
@@ -190,7 +342,20 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         src_dirs,
         try allocator.dupe(u8, DEFAULT_MODEL),
         try allocator.dupe(u8, DEFAULT_API_URL),
+        try dupeDefaultTestCommand(allocator),
+        &.{}, // no lint commands in built-in defaults
+        &.{}, // no fmt commands in built-in defaults
     );
+}
+
+/// Duplicate the DEFAULT_TEST_COMMAND comptime slice into owned heap memory.
+fn dupeDefaultTestCommand(allocator: std.mem.Allocator) ![]const []const u8 {
+    const cmds = &DEFAULT_TEST_COMMAND;
+    const out = try allocator.alloc([]const u8, cmds.len);
+    for (cmds, 0..) |tok, i| {
+        out[i] = try allocator.dupe(u8, tok);
+    }
+    return out;
 }
 
 fn buildFromParts(
@@ -200,6 +365,9 @@ fn buildFromParts(
     src_dirs: []const []const u8,
     model: []const u8,
     api_url: []const u8,
+    test_command: []const []const u8,
+    lint_commands: []const LintCommand,
+    fmt_commands: []const LintCommand,
 ) !ProjectConfig {
     const guidance_root = if (std.fs.path.isAbsolute(guidance_dir_rel))
         try allocator.dupe(u8, guidance_dir_rel)
@@ -226,5 +394,8 @@ fn buildFromParts(
         .src_dirs = src_dirs,
         .api_url = api_url,
         .model = model,
+        .test_command = test_command,
+        .lint_commands = lint_commands,
+        .fmt_commands = fmt_commands,
     };
 }

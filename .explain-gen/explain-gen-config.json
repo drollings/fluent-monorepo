@@ -29,5 +29,20 @@
     "max_comment_chars": 200,
     "max_module_comment_chars": 80
   },
+
+  "_pipeline_comment": "Per-language test/lint/fmt commands for explain-gen check pipeline.",
+
+  "test_command": ["zig", "build", "test", "--summary", "all"],
+
+  "lint_commands": {
+    ".zig": ["zig", "fmt", "--check", "{file}"],
+    ".py":  ["ruff", "check", "{file}"]
+  },
+
+  "fmt_commands": {
+    ".zig": ["zig", "fmt", "{file}"],
+    ".py":  ["ruff", "format", "{file}"]
+  },
+
   "comment": "explain-gen: produces .explain.db SQLite FTS5 index and .explain-gen/ JSON mirror for NullClaw."
 }

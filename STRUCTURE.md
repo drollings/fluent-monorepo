@@ -76,9 +76,11 @@ Then you you must read
 │       ├── json_store.zig                          # [gof-patterns]
 │       ├── llm_filter.zig
 │       ├── main.zig                                # [gof-patterns]
+│       ├── marker.zig
 │       ├── pattern.zig                             # [gof-patterns]
 │       ├── plugin.zig
 │       ├── plugin_registry.zig
+│       ├── provider_discovery.zig
 │       ├── query.zig
 │       ├── staged.zig
 │       ├── structure.zig

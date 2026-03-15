@@ -26,6 +26,8 @@ const plugin_registry = @import("plugin_registry.zig");
 const staged_mod = @import("staged.zig");
 const llm_filter_mod = @import("llm_filter.zig");
 const synthesize_mod = @import("synthesize.zig");
+const marker_mod = @import("marker.zig");
+const provider_mod = @import("provider_discovery.zig");
 
 pub const version = "0.1.0";
 
@@ -38,6 +40,7 @@ const Command = enum {
     query,
     explain,
     commit,
+    check,
 };
 
 pub fn main() !void {
@@ -77,6 +80,7 @@ pub fn main() !void {
         .query => try cmdQuery(allocator, args[2..]),
         .explain => try cmdExplain(allocator, args[2..]),
         .commit => try cmdCommit(allocator, args[2..]),
+        .check => try cmdCheck(allocator, args[2..]),
     }
 }
 
@@ -770,6 +774,16 @@ const GenArgs = struct {
     infill_comments: bool = false,
     regen_comments: bool = false,
     compile_db: bool = true,
+    /// Re-process all files even when guidance JSON is fresh.
+    force: bool = false,
+    /// Discover and invoke external providers for non-built-in extensions.
+    all_languages: bool = false,
+    /// Skip the test-suite phase (useful when tests were just run externally).
+    skip_tests: bool = false,
+    /// Skip the lint phase.
+    skip_lint: bool = false,
+    /// Skip the format phase.
+    skip_fmt: bool = false,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -808,6 +822,16 @@ const GenArgs = struct {
                 ga.regen_comments = true;
             } else if (std.mem.eql(u8, arg, "--no-db")) {
                 ga.compile_db = false;
+            } else if (std.mem.eql(u8, arg, "--force")) {
+                ga.force = true;
+            } else if (std.mem.eql(u8, arg, "--all-languages")) {
+                ga.all_languages = true;
+            } else if (std.mem.eql(u8, arg, "--skip-tests")) {
+                ga.skip_tests = true;
+            } else if (std.mem.eql(u8, arg, "--skip-lint")) {
+                ga.skip_lint = true;
+            } else if (std.mem.eql(u8, arg, "--skip-fmt")) {
+                ga.skip_fmt = true;
             } else if (std.mem.eql(u8, arg, "--api-url")) {
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
@@ -878,7 +902,7 @@ fn processFiles(
         const full_path = try resolveAbsOrJoin(allocator, paths.workspace, file_arg);
         defer allocator.free(full_path);
         _ = try processor.processFile(full_path);
-        std.debug.print("gen: processed {s}\n", .{full_path});
+        if (ga.verbose) std.debug.print("gen: processed {s}\n", .{full_path});
         return 1;
     }
 
@@ -909,7 +933,19 @@ fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("error: gen flag missing value ({s})\n", .{@errorName(err)});
         return err;
     };
+    try cmdGenImpl(allocator, ga);
+}
 
+/// Core gen implementation shared by `gen` and `check`.
+///
+/// Pipeline (per source file):
+///   incremental check → test (once/language) → lint → fmt → guidance → touch JSON
+///
+/// Incremental detection is always active: a file is skipped when its guidance
+/// JSON is at least as new as the source.  Pass `ga.force = true` to override.
+/// The guidance JSON is always touched after successful processing so its mtime
+/// acts as the universal "all phases passed" marker across all languages.
+fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
@@ -922,12 +958,229 @@ fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
         });
     }
 
-    var processor = sync_mod.SyncProcessor.init(allocator, paths.workspace, paths.json_dir, ga.dry_run, ga.verbose);
-    defer processor.deinit();
+    // Load config for test/lint/fmt commands.
+    var cfg = config_mod.loadConfig(allocator, paths.workspace) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer cfg.deinit();
 
+    var processor = sync_mod.SyncProcessor.init(
+        allocator,
+        paths.workspace,
+        paths.json_dir,
+        ga.dry_run,
+        ga.verbose,
+    );
+    defer processor.deinit();
     setupEnhancer(allocator, ga, &processor);
 
-    _ = try processFiles(allocator, &processor, ga, paths);
+    // ── Single-file mode ──────────────────────────────────────────────────────
+    if (ga.file) |file_arg| {
+        const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, file_arg);
+        defer allocator.free(src_abs);
+
+        const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
+        defer allocator.free(json_path);
+
+        if (!ga.force and !marker_mod.fileNeedsProcessing(src_abs, json_path)) {
+            if (ga.verbose) std.debug.print("gen: {s} is up to date\n", .{src_abs});
+        } else {
+            const ext = std.fs.path.extension(src_abs);
+            const is_builtin = plugin_registry.PluginRegistry.init(allocator).getForExtension(ext) != null;
+            if (is_builtin) {
+                const ok = try runBuiltinFilePipeline(
+                    allocator,
+                    &cfg,
+                    &processor,
+                    src_abs,
+                    ga,
+                );
+                if (!ok) return error.LintFailed;
+            } else if (ga.all_languages) {
+                if (try provider_mod.discoverProvider(allocator, paths.workspace, ext)) |prov| {
+                    defer prov.deinit(allocator);
+                    _ = try provider_mod.invokeProviderFile(
+                        allocator,
+                        prov,
+                        src_abs,
+                        paths.json_dir,
+                        &.{},
+                    );
+                }
+            }
+        }
+
+        if (ga.dry_run) {
+            std.debug.print("(dry-run — no files written)\n", .{});
+            return;
+        }
+        if (ga.compile_db) {
+            try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
+        }
+        return;
+    }
+
+    // ── Explicit scan-dir mode  (--scan) ─────────────────────────────────────
+    if (ga.scan) |scan_arg| {
+        const scan_abs = try resolveAbsOrJoin(allocator, paths.workspace, scan_arg);
+        defer allocator.free(scan_abs);
+
+        const builtin_exts = [_][]const u8{ ".zig", ".md" };
+        const zig_files = try collectFilesWithExts(allocator, scan_abs, &builtin_exts);
+        defer {
+            for (zig_files) |p| allocator.free(p);
+            allocator.free(zig_files);
+        }
+
+        // Collect stale files only.
+        var stale: std.ArrayList([]const u8) = .{};
+        defer stale.deinit(allocator);
+        for (zig_files) |src_abs| {
+            const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
+            defer allocator.free(json_path);
+            if (ga.force or marker_mod.fileNeedsProcessing(src_abs, json_path))
+                try stale.append(allocator, src_abs);
+        }
+
+        if (stale.items.len > 0) {
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, ga);
+        } else {
+            if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{zig_files.len});
+        }
+
+        if (ga.verbose) std.debug.print("gen: {d}/{d} file(s) processed from {s}\n", .{
+            stale.items.len, zig_files.len, scan_abs,
+        });
+
+        if (ga.dry_run) {
+            std.debug.print("(dry-run — no files written)\n", .{});
+            return;
+        }
+        if (ga.compile_db) {
+            try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
+            if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
+        }
+        return;
+    }
+
+    // ── Full workspace scan (default) ─────────────────────────────────────────
+    // Group source files by built-in vs. external so each language runs its
+    // own test suite exactly once, before per-file lint/fmt/guidance.
+
+    // Built-in languages (Zig + Markdown — handled natively).
+    const builtin_exts = [_][]const u8{ ".zig", ".md" };
+    {
+        var all_builtin: std.ArrayList([]const u8) = .{};
+        defer {
+            for (all_builtin.items) |p| allocator.free(p);
+            all_builtin.deinit(allocator);
+        }
+        for (cfg.src_dirs) |src_rel| {
+            const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+            defer allocator.free(src_abs);
+            const files = try collectFilesWithExts(allocator, src_abs, &builtin_exts);
+            defer allocator.free(files);
+            for (files) |p| try all_builtin.append(allocator, p);
+            // Note: `p` is now owned by `all_builtin`; `files` slice freed above.
+        }
+
+        // Filter to stale only.
+        var stale: std.ArrayList([]const u8) = .{};
+        defer stale.deinit(allocator);
+        for (all_builtin.items) |src_abs| {
+            const json_path = try guidanceJsonPath(
+                allocator,
+                paths.workspace,
+                paths.json_dir,
+                src_abs,
+            );
+            defer allocator.free(json_path);
+            if (ga.force or marker_mod.fileNeedsProcessing(src_abs, json_path))
+                try stale.append(allocator, src_abs);
+        }
+
+        if (stale.items.len > 0) {
+            if (ga.verbose) std.debug.print("gen: {d}/{d} built-in file(s) stale\n", .{
+                stale.items.len, all_builtin.items.len,
+            });
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, ga);
+        } else {
+            if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{all_builtin.items.len});
+        }
+    }
+
+    // External providers (e.g. explain-gen-py for .py files).
+    if (ga.all_languages) {
+        // Collect every distinct extension found in src_dirs that is NOT built-in.
+        var foreign_exts: std.StringHashMapUnmanaged(void) = .{};
+        defer foreign_exts.deinit(allocator);
+
+        for (cfg.src_dirs) |src_rel| {
+            const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+            defer allocator.free(src_abs);
+
+            var dir = std.fs.openDirAbsolute(src_abs, .{ .iterate = true }) catch continue;
+            defer dir.close();
+            var walker = try dir.walk(allocator);
+            defer walker.deinit();
+
+            while (try walker.next()) |entry| {
+                if (entry.kind != .file) continue;
+                const ext = std.fs.path.extension(entry.basename);
+                if (ext.len == 0) continue;
+                // Skip built-in extensions.
+                const is_builtin = for (builtin_exts) |be| {
+                    if (std.mem.eql(u8, ext, be)) break true;
+                } else false;
+                if (is_builtin) continue;
+                // Check whether any file with this extension is stale before
+                // recording the extension (avoids probing providers unnecessarily).
+                const file_abs = try std.fs.path.join(allocator, &.{ src_abs, entry.path });
+                defer allocator.free(file_abs);
+                const json_path = try guidanceJsonPath(
+                    allocator,
+                    paths.workspace,
+                    paths.json_dir,
+                    file_abs,
+                );
+                defer allocator.free(json_path);
+                if (ga.force or marker_mod.fileNeedsProcessing(file_abs, json_path)) {
+                    if (!foreign_exts.contains(ext)) {
+                        try foreign_exts.put(allocator, try allocator.dupe(u8, ext), {});
+                    }
+                }
+            }
+        }
+
+        // Invoke one provider per stale extension group via --scan.
+        var ext_it = foreign_exts.keyIterator();
+        while (ext_it.next()) |ext_ptr| {
+            const ext = ext_ptr.*;
+            defer allocator.free(ext);
+            const prov_opt = try provider_mod.discoverProvider(allocator, paths.workspace, ext);
+            if (prov_opt == null) {
+                if (ga.verbose) std.debug.print("gen: no provider found for {s} — skipping\n", .{ext});
+                continue;
+            }
+            const prov = prov_opt.?;
+            defer prov.deinit(allocator);
+
+            // Invoke provider once per src_dir that contains stale files of this extension.
+            for (cfg.src_dirs) |src_rel| {
+                const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+                defer allocator.free(src_abs);
+                if (ga.verbose) std.debug.print("gen: invoking {s} provider for {s} in {s}\n", .{
+                    prov.name, ext, src_abs,
+                });
+                _ = try provider_mod.invokeProviderScan(
+                    allocator,
+                    prov,
+                    src_abs,
+                    paths.json_dir,
+                    &.{},
+                );
+            }
+        }
+    }
 
     if (ga.dry_run) {
         std.debug.print("(dry-run — no files written)\n", .{});
@@ -936,7 +1189,7 @@ fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (ga.compile_db) {
         try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
-        std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
+        if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
     }
 }
 
@@ -1302,12 +1555,13 @@ const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 // =============================================================================
 
 /// Resolve `path`: if absolute, dupe it; otherwise join with `base`.
+/// The special value `"."` returns `base` unchanged (avoids trailing `/.`
+/// which would break prefix-stripping in `guidanceJsonPath` and friends).
 /// Returns an owned allocation the caller must free.
 fn resolveAbsOrJoin(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
-    return if (std.fs.path.isAbsolute(path))
-        try allocator.dupe(u8, path)
-    else
-        try std.fs.path.join(allocator, &.{ base, path });
+    if (std.fs.path.isAbsolute(path)) return try allocator.dupe(u8, path);
+    if (std.mem.eql(u8, path, ".")) return try allocator.dupe(u8, base);
+    return try std.fs.path.join(allocator, &.{ base, path });
 }
 
 /// Construct an LlmConfig from the parsed ExplainArgs.
@@ -2449,6 +2703,253 @@ fn emitStagedOutput(
     const stdout = ws.writer();
     try stdout.writeAll(output);
     try stdout.flush();
+}
+
+// =============================================================================
+// Pipeline helpers — test → lint → fmt → guidance → touch
+// =============================================================================
+
+/// Derive the guidance JSON path for `src_abs` within a workspace.
+///
+/// Mirrors the path formula used by SyncProcessor.processFile exactly:
+///   `{json_dir}/{rel_path}.json`
+/// where `rel_path` is `src_abs` stripped of the leading `{workspace}/`.
+///
+/// Example:
+///   workspace = "/project"
+///   json_dir  = "/project/.explain-gen"
+///   src_abs   = "/project/src/foo.zig"
+///   → "/project/.explain-gen/src/foo.zig.json"
+///
+/// There is NO extra `/src/` injected here — the `src/` already present in
+/// `rel_path` (because source lives under `src/`) provides the single prefix.
+pub fn guidanceJsonPath(
+    allocator: std.mem.Allocator,
+    workspace: []const u8,
+    json_dir: []const u8,
+    src_abs: []const u8,
+) ![]const u8 {
+    const rel: []const u8 = if (std.mem.startsWith(u8, src_abs, workspace)) blk: {
+        const stripped = src_abs[workspace.len..];
+        break :blk if (stripped.len > 0 and stripped[0] == '/') stripped[1..] else stripped;
+    } else src_abs;
+    return std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ json_dir, rel });
+}
+
+/// Substitute `{file}` tokens in `argv_template` with `file_path`, then run
+/// the resulting command as a child process with inherited stdout/stderr.
+///
+/// Returns true on exit code 0, false otherwise.
+fn runPhaseCommand(
+    allocator: std.mem.Allocator,
+    argv_template: []const []const u8,
+    file_path: []const u8,
+) !bool {
+    var argv: std.ArrayList([]const u8) = .{};
+    defer argv.deinit(allocator);
+    for (argv_template) |tok| {
+        if (std.mem.eql(u8, tok, "{file}")) {
+            try argv.append(allocator, file_path);
+        } else {
+            try argv.append(allocator, tok);
+        }
+    }
+    var child = std.process.Child.init(argv.items, allocator);
+    child.stdin_behavior = .Ignore;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    try child.spawn();
+    const term = try child.wait();
+    return term == .Exited and term.Exited == 0;
+}
+
+/// Run an arbitrary command (full argv, no template substitution).
+/// Returns true on exit code 0.
+fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
+    var child = std.process.Child.init(argv, allocator);
+    child.stdin_behavior = .Ignore;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    try child.spawn();
+    const term = try child.wait();
+    return term == .Exited and term.Exited == 0;
+}
+
+/// Walk `dir_abs` recursively and collect all files whose extension matches
+/// any member of `exts` (e.g. `.{".zig"}`).
+/// Returns an owned slice of owned absolute paths; caller must free each and
+/// then the slice.
+fn collectFilesWithExts(
+    allocator: std.mem.Allocator,
+    dir_abs: []const u8,
+    exts: []const []const u8,
+) ![][]const u8 {
+    var results: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (results.items) |p| allocator.free(p);
+        results.deinit(allocator);
+    }
+
+    var dir = std.fs.openDirAbsolute(dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        const ext = std.fs.path.extension(entry.basename);
+        const matched = for (exts) |e| {
+            if (std.mem.eql(u8, ext, e)) break true;
+        } else false;
+        if (!matched) continue;
+        const full = try std.fs.path.join(allocator, &.{ dir_abs, entry.path });
+        try results.append(allocator, full);
+    }
+
+    return results.toOwnedSlice(allocator);
+}
+
+/// Run the per-file pipeline for one built-in source file:
+///   1. lint  (if configured and not skip_lint)
+///   2. fmt   (if configured and not skip_fmt)
+///   3. guidance  (AST → JSON via SyncProcessor)
+///   4. touch JSON  (always — makes JSON mtime the universal "all phases passed" marker)
+///
+/// Formatting runs AFTER lint so that:
+///   - Semantic lint errors are caught before any file modification.
+///   - The formatter normalises whitespace before the AST is parsed, ensuring
+///     line numbers in the JSON are stable and accurate.
+///
+/// Returns false when lint fails (caller should abort the batch).
+fn runBuiltinFilePipeline(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+    processor: *sync_mod.SyncProcessor,
+    src_abs: []const u8,
+    ga: GenArgs,
+) !bool {
+    const ext = std.fs.path.extension(src_abs);
+
+    // ── 1. Lint ───────────────────────────────────────────────────────────
+    if (!ga.skip_lint) {
+        if (cfg.lintCommandForExt(ext)) |lint_argv| {
+            if (ga.verbose) std.debug.print("lint:     {s}\n", .{src_abs});
+            const ok = try runPhaseCommand(allocator, lint_argv, src_abs);
+            if (!ok) {
+                std.debug.print("error: lint failed for {s}\n", .{src_abs});
+                return false;
+            }
+        }
+    }
+
+    // ── 2. Format ─────────────────────────────────────────────────────────
+    if (!ga.skip_fmt) {
+        if (cfg.fmtCommandForExt(ext)) |fmt_argv| {
+            if (ga.verbose) std.debug.print("fmt:      {s}\n", .{src_abs});
+            _ = try runPhaseCommand(allocator, fmt_argv, src_abs);
+        }
+    }
+
+    // ── 3. Guidance ───────────────────────────────────────────────────────
+    // processFile writes the JSON unconditionally (merge + save), which
+    // advances the file's mtime naturally — no separate touch needed.
+    // Touching would truncate the file we just wrote.
+    _ = processor.processFile(src_abs) catch |err| {
+        std.debug.print("warning: guidance failed for {s}: {s}\n", .{ src_abs, @errorName(err) });
+        // Leave JSON stale on failure so the next run retries this file.
+        return true;
+    };
+
+    return true;
+}
+
+/// Run the full built-in pipeline over a set of source files that share the
+/// same language group:
+///   1. Test suite (once, if any file is stale relative to the test marker)
+///   2. Per-file: lint → fmt → guidance → touch JSON
+///
+/// `language` is a short tag (e.g. "zig") used for the test marker path.
+/// `src_files` are absolute paths to the files that need processing.
+fn runBuiltinLanguagePipeline(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+    processor: *sync_mod.SyncProcessor,
+    language: []const u8,
+    src_files: []const []const u8,
+    ga: GenArgs,
+) !void {
+    if (src_files.len == 0) return;
+
+    // ── Test suite (once per language group, before any file is modified) ─
+    if (!ga.skip_tests) {
+        if (ga.verbose) std.debug.print("test:     {s} ({d} file(s) changed)\n", .{ language, src_files.len });
+        const ok = try runCommand(allocator, cfg.test_command);
+        if (!ok) {
+            std.debug.print("error: test suite failed for language '{s}'\n", .{language});
+            return error.TestFailed;
+        }
+        if (ga.verbose) std.debug.print("test:     passed\n", .{});
+    }
+
+    // ── Per-file phases ───────────────────────────────────────────────────
+    for (src_files) |src_abs| {
+        const ok = try runBuiltinFilePipeline(allocator, cfg, processor, src_abs, ga);
+        if (!ok) return error.LintFailed;
+    }
+}
+
+// =============================================================================
+// check — orchestrate the full RALPH loop
+// =============================================================================
+
+/// `explain-gen check` runs the complete RALPH loop:
+///   test → lint → fmt → guidance (all languages) → structure → db
+///
+/// It is the recommended entry point for pre-commit hooks and CI.
+/// Incremental detection is always active: only stale files are processed.
+fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    // Forward-compatible flag parsing: honour --skip-* overrides.
+    var ga: GenArgs = .{ .all_languages = true, .compile_db = true };
+    var run_structure = true;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--skip-tests")) {
+            ga.skip_tests = true;
+        } else if (std.mem.eql(u8, arg, "--skip-lint")) {
+            ga.skip_lint = true;
+        } else if (std.mem.eql(u8, arg, "--skip-fmt")) {
+            ga.skip_fmt = true;
+        } else if (std.mem.eql(u8, arg, "--no-db")) {
+            ga.compile_db = false;
+        } else if (std.mem.eql(u8, arg, "--no-structure")) {
+            run_structure = false;
+        } else if (std.mem.eql(u8, arg, "--force")) {
+            ga.force = true;
+        } else if (std.mem.eql(u8, arg, "--verbose")) {
+            ga.verbose = true;
+        }
+    }
+
+    // Delegate to the enhanced gen implementation.
+    try cmdGenImpl(allocator, ga);
+
+    // Update STRUCTURE.md after guidance is complete.
+    if (run_structure) {
+        const cwd = try std.process.getCwdAlloc(allocator);
+        defer allocator.free(cwd);
+        const json_dir = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
+        defer allocator.free(json_dir);
+        var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
+        defer gen.deinit();
+        gen.generate() catch |err| {
+            std.debug.print("warning: structure update failed: {s}\n", .{@errorName(err)});
+        };
+        if (ga.verbose) std.debug.print("check:    STRUCTURE.md updated\n", .{});
+    }
+
+    if (ga.verbose) std.debug.print("check:    done\n", .{});
 }
 
 // =============================================================================
