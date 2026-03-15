@@ -324,7 +324,7 @@ pub const QueryEngine = struct {
                 continue;
             }
             // Any source file — derive guidance path as {json_base}/{rel}.json
-            // e.g. src/ast-guidance/query.zig → .ast-guidance/src/ast-guidance/query.zig.json
+            // e.g. src/explain-gen/query.zig → .explain-gen/src/explain-gen/query.zig.json
             const rel = self.relPath(match.filepath);
             const gpath = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.config.json_base, rel });
             defer self.allocator.free(gpath);

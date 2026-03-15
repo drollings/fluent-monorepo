@@ -1,4 +1,4 @@
-# .ast-guidance/.todo/ — Work Item Lifecycle
+# .explain-gen/.todo/ — Work Item Lifecycle
 
 Each subdirectory is a **work item** that moves through a dependency chain:
 
@@ -19,9 +19,9 @@ TODO.md → TRIAGE.md → WORK.md → COMPLETE.md → COMMITTED.md
 ## Creating a Work Item
 
 ```bash
-mkdir .ast-guidance/.todo/my-feature
+mkdir .explain-gen/.todo/my-feature
 # Write the work description:
-cat > .ast-guidance/.todo/my-feature/TODO.md << 'EOF'
+cat > .explain-gen/.todo/my-feature/TODO.md << 'EOF'
 # Add feature X
 
 ## Goal

@@ -48,7 +48,7 @@ src/
   common/           Zig shared LLM HTTP client and arg helpers
 bin/
   explain-gen       Compiled binary — zig-out/bin/explain-gen (via zig build)
-  ast-guidance-py   Python AST provider (Python files → .explain-gen/ JSON)
+  explain-gen-py    Python AST provider (Python files → .explain-gen/ JSON)
 .explain-gen/
   explain-gen-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)

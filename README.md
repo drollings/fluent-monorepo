@@ -1,7 +1,7 @@
-# ast-guidance
+# explain-gen
 
 A Zig-native, deterministic codebase documentation engine.  It analyzes source
-files via AST, generates structured JSON guidance in `.ast-guidance/`, and
+files via AST, generates structured JSON guidance in `.explain-gen/`, and
 exposes an AI-assisted query layer through the Makefile — with minimal footprint
 so it can drop into any project.
 
@@ -23,8 +23,8 @@ It is released under a dual GPL/Commercial license.  See below.
 - **Incremental RALPH loop**: The Makefile chains `build → test → guidance sync
   → lint → STRUCTURE.md` with per-file stamp files so only changed files are
   re-processed.
-- **Multi-language via providers**: `bin/ast-guidance-py` handles Python; future
-  providers (`ast-guidance-cpp`, `ast-guidance-php`, …) follow the same
+- **Multi-language via providers**: `bin/explain-gen-py` handles Python; future
+  providers (`explain-gen-cpp`, `explain-gen-php`, …) follow the same
   `sync --file src --scan` contract.
 - **Knowledge management**: `make explain`, `make query`, `make learn`, and
   `make diary` give AI agents a structured way to read, annotate, and promote
@@ -40,7 +40,7 @@ mise install          # installs Zig + Python + uv from mise.toml
 make env-init
 
 # Build the Zig binary
-make build            # → zig-out/bin/ast-guidance
+make build            # → zig-out/bin/explain-gen
 
 # Run the full RALPH loop gate
 make pre-commit
@@ -54,12 +54,12 @@ make query   QUERY="ring buffer"
 
 ```
 src/
-  ast-guidance/   Zig core engine
+  explain-gen/   Zig core engine
   common/         Shared LLM HTTP client
 bin/
-  ast-guidance-py Python AST provider
-.ast-guidance/
-  ast-guidance-config.json  Model / provider configuration
+  explain-gen-py Python AST provider
+.explain-gen/
+  explain-gen-config.json  Model / provider configuration
   .skills/                  Design-pattern skill documents
   .doc/                     Capabilities, diary, inbox
   src/                      Generated guidance JSON
@@ -72,11 +72,11 @@ doc/
 
 ## Adding a new language provider
 
-Create `bin/ast-guidance-<lang>` and ensure it accepts:
+Create `bin/explain-gen-<lang>` and ensure it accepts:
 
 ```
-ast-guidance-<lang> sync --file <path> --output <guidance_dir> [--infill]
-ast-guidance-<lang> sync --scan <dir>  --output <guidance_dir> [--infill]
+explain-gen-<lang> sync --file <path> --output <guidance_dir> [--infill]
+explain-gen-<lang> sync --scan <dir>  --output <guidance_dir> [--infill]
 ```
 
 Output JSON must follow the canonical schema:
@@ -92,12 +92,12 @@ Output JSON must follow the canonical schema:
 }
 ```
 
-Register the provider in `.ast-guidance/ast-guidance-config.json` under
+Register the provider in `.explain-gen/explain-gen-config.json` under
 `providers`.
 
 ## Configuration
 
-`.ast-guidance/ast-guidance-config.json` controls model selection and
+`.explain-gen/explain-gen-config.json` controls model selection and
 provider registration.  All Makefile targets read from this file.
 
 ## License

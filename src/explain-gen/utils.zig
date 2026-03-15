@@ -1,6 +1,6 @@
-// Utility functions for explain-gen, adapted from ast-guidance (MIT License)
+// Utility functions for explain-gen, adapted from explain-gen (MIT License)
 // Copyright (c) 2024 Daniel Richards
-// See: https://github.com/anomalyco/ast-guidance
+// See: https://github.com/anomalyco/explain-gen
 
 const std = @import("std");
 

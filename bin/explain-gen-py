@@ -3,7 +3,7 @@
 """
 guidance_ast_py: Python AST → JSON guidance files.
 
-Handles ONLY Python source files (.py).  For Zig files use ast-guidance.
+Handles ONLY Python source files (.py).  For Zig files use explain-gen.
 This tool is the definitive Python language provider for the guidance system.
 
 Usage:
@@ -43,15 +43,15 @@ SRC_DIR = PROJECT_ROOT / "src"
 
 
 def _load_project_config() -> dict:
-    """Load ast-guidance-config.json with two-level fallback chain.
+    """Load explain-gen-config.json with two-level fallback chain.
 
-    1. {PROJECT_ROOT}/.ast-guidance/ast-guidance-config.json  (project-local)
-    2. ~/.config/ast-guidance/ast-guidance-config.json         (user global)
+    1. {PROJECT_ROOT}/.explain-gen/explain-gen-config.json  (project-local)
+    2. ~/.config/explain-gen/explain-gen-config.json         (user global)
     3. Built-in defaults
     """
     candidates = [
-        PROJECT_ROOT / ".ast-guidance" / "ast-guidance-config.json",
-        Path.home() / ".config" / "ast-guidance" / "ast-guidance-config.json",
+        PROJECT_ROOT / ".explain-gen" / "explain-gen-config.json",
+        Path.home() / ".config" / "explain-gen" / "explain-gen-config.json",
     ]
     for path in candidates:
         try:
@@ -63,7 +63,7 @@ def _load_project_config() -> dict:
 
 
 def _cfg_output_dir(cfg: dict) -> str:
-    return cfg.get("guidance_dir", ".ast-guidance")
+    return cfg.get("guidance_dir", ".explain-gen")
 
 
 def _cfg_model(cfg: dict) -> str:
@@ -1221,7 +1221,7 @@ def _infill_members_json(members: List[Dict], llm_client: LLMClient, source: str
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="guidance_ast_py",
-        description="Python AST → JSON guidance files (language provider for ast-guidance orchestration)",
+        description="Python AST → JSON guidance files (language provider for explain-gen orchestration)",
     )
     sub = parser.add_subparsers(dest="command")
 

@@ -14,11 +14,11 @@ UV_PROJECT_ENVIRONMENT = "{{cwd}}/.venv"
 # mise tasks — thin wrappers; Makefile handles multi-language orchestration
 
 [tasks.build]
-description = "Build ast-guidance Zig binary"
+description = "Build explain-gen Zig binary"
 run = "zig build"
 
 [tasks.test]
-description = "Run ast-guidance Zig unit tests"
+description = "Run explain-gen Zig unit tests"
 run = "zig build test"
 
 [tasks.fmt]
@@ -30,8 +30,8 @@ description = "Lint Python code (ruff)"
 run = "uv run ruff check bin/"
 
 [tasks.py-sync]
-description = "Sync guidance JSON for Python files (ast-guidance-py)"
-run = ".venv/bin/python bin/ast-guidance-py sync --scan src/ --output .ast-guidance/"
+description = "Sync guidance JSON for Python files (explain-gen-py)"
+run = ".venv/bin/python bin/explain-gen-py sync --scan src/ --output .explain-gen/"
 
 [tasks.pre-commit]
 description = "Run full RALPH loop gate (build → test → guidance → lint → STRUCTURE.md)"
