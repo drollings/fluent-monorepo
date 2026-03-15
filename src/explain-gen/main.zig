@@ -1134,8 +1134,11 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             if (ga.verbose) std.debug.print("gen: {s} is up to date\n", .{src_abs});
         } else {
             const ext = std.fs.path.extension(src_abs);
-            const is_builtin = plugin_registry.PluginRegistry.init(allocator).getForExtension(ext) != null;
-            if (is_builtin) {
+            // Only .zig files are handled by the built-in Zig AST pipeline.
+            // .md and other files registered in the plugin registry go through
+            // the provider/plugin path below, not through processFile (Zig-only).
+            const is_zig_builtin = std.mem.eql(u8, ext, ".zig");
+            if (is_zig_builtin) {
                 const ok = try runBuiltinFilePipeline(
                     allocator,
                     &cfg,
@@ -1173,7 +1176,9 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         const scan_abs = try resolveAbsOrJoin(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
 
-        const builtin_exts = [_][]const u8{ ".zig", ".md" };
+        // Only collect .zig files for the built-in Zig AST pipeline.
+        // .md files use the MarkdownPlugin path, not the Zig AST parser.
+        const builtin_exts = [_][]const u8{".zig"};
         const zig_files = try collectFilesWithExts(allocator, scan_abs, &builtin_exts);
         defer {
             for (zig_files) |p| allocator.free(p);
@@ -1191,7 +1196,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
 
         if (stale.items.len > 0) {
-            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, ga);
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, zig_files, paths.json_dir, ga);
         } else {
             if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{zig_files.len});
         }
@@ -1215,8 +1220,10 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     // Group source files by built-in vs. external so each language runs its
     // own test suite exactly once, before per-file lint/fmt/guidance.
 
-    // Built-in languages (Zig + Markdown — handled natively).
-    const builtin_exts = [_][]const u8{ ".zig", ".md" };
+    // Built-in language: Zig only. The Zig AST pipeline uses AstParser which
+    // only understands Zig syntax. .md files are registered in the plugin
+    // registry (MarkdownPlugin) and processed via the external-provider path.
+    const builtin_exts = [_][]const u8{".zig"};
     {
         var all_builtin: std.ArrayList([]const u8) = .{};
         defer {
@@ -1251,7 +1258,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             if (ga.verbose) std.debug.print("gen: {d}/{d} built-in file(s) stale\n", .{
                 stale.items.len, all_builtin.items.len,
             });
-            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, ga);
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga);
         } else {
             if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{all_builtin.items.len});
         }
@@ -3019,16 +3026,20 @@ fn runBuiltinFilePipeline(
 ///   2. Per-file: lint → fmt → guidance → touch JSON
 ///
 /// `language` is a short tag (e.g. "zig") used for the test marker path.
-/// `src_files` are absolute paths to the files that need processing.
+/// `stale_files` are the files that need processing (source newer than JSON).
+/// `all_files` are ALL source files for this language (used for test marker check).
+/// `guidance_root` is the absolute path to the guidance directory (e.g. .explain-gen).
 fn runBuiltinLanguagePipeline(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,
     processor: *sync_mod.SyncProcessor,
     language: []const u8,
-    src_files: []const []const u8,
+    stale_files: []const []const u8,
+    all_files: []const []const u8,
+    guidance_root: []const u8,
     ga: GenArgs,
 ) !void {
-    if (src_files.len == 0) return;
+    if (stale_files.len == 0) return;
 
     // ── Test suite (once per language group, before any file is modified) ─
     // Derive extension from language (e.g. "zig" -> ".zig")
@@ -3036,22 +3047,36 @@ fn runBuiltinLanguagePipeline(
     const ext = std.fmt.bufPrint(&ext_buf, ".{s}", .{language}) catch language;
 
     if (!ga.skip_tests) {
-        if (ga.verbose) std.debug.print("test:     {s} ({d} file(s) changed)\n", .{ language, src_files.len });
         const test_argv = cfg.testCommandForExt(ext);
         if (test_argv) |argv| {
-            const ok = try runCommand(allocator, argv);
-            if (!ok) {
-                std.debug.print("error: test suite failed for language '{s}'\n", .{language});
-                return error.TestFailed;
+            // Check if we can skip tests (marker newer than ALL source files)
+            const marker_path = marker_mod.testMarkerPath(allocator, guidance_root) catch
+                return error.OutOfMemory;
+            defer allocator.free(marker_path);
+
+            const can_skip = !ga.force and marker_mod.testsCanBeSkipped(marker_path, all_files);
+            if (can_skip) {
+                if (ga.verbose) std.debug.print("test:     {s} skipped (test_passed marker is fresh)\n", .{language});
+            } else {
+                if (ga.verbose) std.debug.print("test:     {s} ({d} file(s) changed)\n", .{ language, stale_files.len });
+                const ok = try runCommand(allocator, argv);
+                if (!ok) {
+                    std.debug.print("error: test suite failed for language '{s}'\n", .{language});
+                    return error.TestFailed;
+                }
+                // Touch the marker to record successful test run
+                marker_mod.touchTestMarker(marker_path) catch |err| {
+                    std.debug.print("warning: could not create test_passed marker: {s}\n", .{@errorName(err)});
+                };
+                if (ga.verbose) std.debug.print("test:     passed\n", .{});
             }
-            if (ga.verbose) std.debug.print("test:     passed\n", .{});
         } else {
             if (ga.verbose) std.debug.print("test:     skipped (no test command for {s})\n", .{language});
         }
     }
 
     // ── Per-file phases ───────────────────────────────────────────────────
-    for (src_files) |src_abs| {
+    for (stale_files) |src_abs| {
         const ok = try runBuiltinFilePipeline(allocator, cfg, processor, src_abs, ga);
         if (!ok) return error.LintFailed;
     }

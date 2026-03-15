@@ -11,6 +11,13 @@
 //!   source mtime > JSON mtime  →  stale, needs processing
 //!   source mtime ≤ JSON mtime  →  fresh, skip
 //!
+//! ## Test marker
+//!
+//! A separate marker file `.explain-gen/.marks/test_passed` records the last
+//! successful test run.  If no source file is newer than this marker, tests
+//! can be skipped.  This enables fast incremental runs of lint→fmt→guidance
+//! without re-running the full test suite.
+//!
 //! ## Provider contract
 //!
 //! Each provider (built-in or external) must:
@@ -47,6 +54,82 @@ pub fn fileMtime(path: []const u8) ?i128 {
     defer f.close();
     const stat = f.stat() catch return null;
     return stat.mtime;
+}
+
+// ---------------------------------------------------------------------------
+// Test marker for skip-test optimization
+// ---------------------------------------------------------------------------
+
+/// Default test marker path relative to guidance directory.
+pub const TEST_MARKER_NAME = "test_passed";
+
+/// Build the absolute path to the test_passed marker file.
+/// Returns an owned allocation; caller must free.
+pub fn testMarkerPath(allocator: std.mem.Allocator, guidance_root: []const u8) ![]const u8 {
+    return std.fs.path.join(allocator, &.{ guidance_root, ".marks", TEST_MARKER_NAME });
+}
+
+/// Check if tests can be skipped because the test_passed marker is at least
+/// as new as all source files in `src_files`.
+///
+/// Returns `true` if:
+///   - The test_passed marker exists
+///   - AND no source file has mtime > marker mtime
+///
+/// Returns `false` if:
+///   - Marker doesn't exist
+///   - OR any source file is newer than the marker
+///   - OR any source file can't be stat'd
+pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8) bool {
+    const marker_mtime = fileMtime(marker_path) orelse return false;
+    for (src_files) |src| {
+        const src_mtime = fileMtime(src) orelse return false;
+        if (src_mtime > marker_mtime) return false;
+    }
+    return true;
+}
+
+/// Create or touch the test_passed marker file to record a successful test run.
+/// Creates parent `.marks/` directory if needed.
+pub fn touchTestMarker(marker_path: []const u8) !void {
+    const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
+    // Create parent directory tree (idempotent)
+    makePathAbsolute(parent) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+    const f = try std.fs.createFileAbsolute(marker_path, .{});
+    f.close();
+}
+
+/// Create a directory tree from an absolute path (idempotent).
+fn makePathAbsolute(abs_path: []const u8) !void {
+    var buf: [4096]u8 = undefined;
+    var pos: usize = 0;
+
+    var parts = std.mem.splitScalar(u8, abs_path, std.fs.path.sep);
+    var is_first = true;
+
+    while (parts.next()) |part| {
+        if (part.len == 0) continue;
+
+        if (is_first) {
+            buf[0] = '/';
+            @memcpy(buf[1 .. 1 + part.len], part);
+            pos = 1 + part.len;
+            is_first = false;
+        } else {
+            buf[pos] = std.fs.path.sep;
+            @memcpy(buf[pos + 1 .. pos + 1 + part.len], part);
+            pos += 1 + part.len;
+        }
+
+        const current = buf[0..pos];
+        std.fs.makeDirAbsolute(current) catch |err| switch (err) {
+            error.PathAlreadyExists => {},
+            else => return err,
+        };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,4 +180,71 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
     }
 
     try std.testing.expect(!fileNeedsProcessing(src_abs, json_abs));
+}
+
+test "testsCanBeSkipped: no marker → false" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const marker = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, ".marks", TEST_MARKER_NAME });
+    defer std.testing.allocator.free(marker);
+
+    const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
+    defer std.testing.allocator.free(src);
+    {
+        const f = try std.fs.createFileAbsolute(src, .{});
+        f.close();
+    }
+
+    const files = [_][]const u8{src};
+    try std.testing.expect(!testsCanBeSkipped(marker, &files));
+}
+
+test "testsCanBeSkipped: marker newer than source → true" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
+    defer std.testing.allocator.free(src);
+    {
+        const f = try std.fs.createFileAbsolute(src, .{});
+        f.close();
+    }
+
+    const marker = try testMarkerPath(std.testing.allocator, tmp_path);
+    defer std.testing.allocator.free(marker);
+    try touchTestMarker(marker);
+
+    const files = [_][]const u8{src};
+    try std.testing.expect(testsCanBeSkipped(marker, &files));
+}
+
+test "testsCanBeSkipped: source newer than marker → false" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const marker = try testMarkerPath(std.testing.allocator, tmp_path);
+    defer std.testing.allocator.free(marker);
+    try touchTestMarker(marker);
+
+    // Create source AFTER marker (simulate edit)
+    std.Thread.sleep(1_000_000); // 1ms to ensure mtime difference
+    const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
+    defer std.testing.allocator.free(src);
+    {
+        const f = try std.fs.createFileAbsolute(src, .{});
+        f.close();
+    }
+
+    const files = [_][]const u8{src};
+    try std.testing.expect(!testsCanBeSkipped(marker, &files));
 }

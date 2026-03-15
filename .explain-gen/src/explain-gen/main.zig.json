@@ -419,7 +419,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1349
+      "line": 1356
     },
     {
       "type": "fn_private",
@@ -432,7 +432,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1413
+      "line": 1420
     },
     {
       "type": "fn_private",
@@ -445,7 +445,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1466
+      "line": 1473
     },
     {
       "type": "fn_private",
@@ -458,7 +458,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1501
+      "line": 1508
     },
     {
       "type": "struct",
@@ -477,10 +477,10 @@
           ],
           "returns": "error{MissingValue}!QueryArgs",
           "is_pub": false,
-          "line": 1533
+          "line": 1540
         }
       ],
-      "line": 1524
+      "line": 1531
     },
     {
       "type": "fn_private",
@@ -493,7 +493,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1560
+      "line": 1567
     },
     {
       "type": "fn_private",
@@ -506,7 +506,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1607
+      "line": 1614
     },
     {
       "type": "fn_private",
@@ -519,7 +519,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1637
+      "line": 1644
     },
     {
       "type": "fn_private",
@@ -532,7 +532,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1650
+      "line": 1657
     },
     {
       "type": "struct",
@@ -540,7 +540,7 @@
       "match_hash": "5dfacfdcd3c37ae2c97ab657ba39170612792e61a68e3af15ebf04c763eea4e4",
       "signature": "keyword_struct ExcerptEntry { ... }",
       "is_pub": false,
-      "line": 1694
+      "line": 1701
     },
     {
       "type": "struct",
@@ -548,7 +548,7 @@
       "match_hash": "23f4c35f666d8d1733d5bc6bd1a46ae8a310ee4ba0e02e7348956137e83daef3",
       "signature": "keyword_struct FileMatchItem { ... }",
       "is_pub": false,
-      "line": 1700
+      "line": 1707
     },
     {
       "type": "fn_private",
@@ -562,7 +562,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 1710
+      "line": 1717
     },
     {
       "type": "fn_private",
@@ -577,7 +577,7 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 1717
+      "line": 1724
     },
     {
       "type": "enum",
@@ -590,22 +590,22 @@
           "type": "enum_field",
           "name": "auto",
           "is_pub": false,
-          "line": 1728
+          "line": 1735
         }
     ,    {
           "type": "enum_field",
           "name": "force",
           "is_pub": false,
-          "line": 1730
+          "line": 1737
         }
     ,    {
           "type": "enum_field",
           "name": "skip",
           "is_pub": false,
-          "line": 1732
+          "line": 1739
         }
       ],
-      "line": 1726
+      "line": 1733
     },
     {
       "type": "struct",
@@ -613,7 +613,7 @@
       "match_hash": "d3681f77b57a6fa7eaa5b64d18ded251dc6ea83988c596902518a93d8f1406d6",
       "signature": "keyword_struct ExplainArgs { ... }",
       "is_pub": false,
-      "line": 1735
+      "line": 1742
     },
     {
       "type": "fn_private",
@@ -625,7 +625,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 1754
+      "line": 1761
     },
     {
       "type": "fn_private",
@@ -640,7 +640,7 @@
       ],
       "returns": "[]SkillExcerpt",
       "is_pub": false,
-      "line": 1770
+      "line": 1777
     },
     {
       "type": "fn_private",
@@ -655,7 +655,7 @@
       ],
       "returns": "[]ExcerptEntry",
       "is_pub": false,
-      "line": 1808
+      "line": 1815
     },
     {
       "type": "fn_private",
@@ -670,7 +670,7 @@
       ],
       "returns": "[]FileMatchItem",
       "is_pub": false,
-      "line": 1873
+      "line": 1880
     },
     {
       "type": "fn_private",
@@ -689,7 +689,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1913
+      "line": 1920
     },
     {
       "type": "fn_private",
@@ -702,7 +702,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2023
+      "line": 2030
     },
     {
       "type": "fn_private",
@@ -715,7 +715,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2211
+      "line": 2218
     },
     {
       "type": "fn_private",
@@ -728,7 +728,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2236
+      "line": 2243
     },
     {
       "type": "fn_private",
@@ -741,7 +741,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2249
+      "line": 2256
     },
     {
       "type": "fn_private",
@@ -754,7 +754,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2294
+      "line": 2301
     },
     {
       "type": "fn_private",
@@ -769,7 +769,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2336
+      "line": 2343
     },
     {
       "type": "fn_private",
@@ -784,7 +784,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 2394
+      "line": 2401
     },
     {
       "type": "fn_private",
@@ -799,7 +799,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 2519
+      "line": 2526
     },
     {
       "type": "fn_private",
@@ -816,7 +816,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2553
+      "line": 2560
     },
     {
       "type": "fn_private",
@@ -829,7 +829,7 @@
       ],
       "returns": "?db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 2649
+      "line": 2656
     },
     {
       "type": "fn_private",
@@ -843,7 +843,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2657
+      "line": 2664
     },
     {
       "type": "fn_private",
@@ -861,7 +861,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2700
+      "line": 2707
     },
     {
       "type": "fn_private",
@@ -877,7 +877,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2841
+      "line": 2848
     },
     {
       "type": "fn_decl",
@@ -892,7 +892,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2875
+      "line": 2882
     },
     {
       "type": "fn_private",
@@ -906,7 +906,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2892
+      "line": 2899
     },
     {
       "type": "fn_private",
@@ -919,7 +919,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2917
+      "line": 2924
     },
     {
       "type": "fn_private",
@@ -933,7 +933,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2931
+      "line": 2938
     },
     {
       "type": "fn_private",
@@ -949,24 +949,26 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2974
+      "line": 2981
     },
     {
       "type": "fn_private",
       "name": "runBuiltinLanguagePipeline",
-      "match_hash": "7d846a02048da4b44ef493f86bf09ac798d09a348398d6357aa50df8a20865f9",
-      "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, src_files: []const []const u8, ga: GenArgs) -> void",
+      "match_hash": "2b7a0cd08ab8917871e6dabef9af13c3fb0f6d9875ae96fd5cd38a1710af2b70",
+      "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
         { "name": "processor", "type": "*sync_mod.SyncProcessor" },
         { "name": "language", "type": "[]const u8" },
-        { "name": "src_files", "type": "[]const []const u8" },
+        { "name": "stale_files", "type": "[]const []const u8" },
+        { "name": "all_files", "type": "[]const []const u8" },
+        { "name": "guidance_root", "type": "[]const u8" },
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3023
+      "line": 3032
     },
     {
       "type": "fn_private",
@@ -979,7 +981,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3069
+      "line": 3094
     },
     {
       "type": "fn_decl",
@@ -992,7 +994,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 3120
+      "line": 3145
     },
     {
       "type": "fn_decl",
@@ -1007,7 +1009,7 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 3124
+      "line": 3149
     },
     {
       "type": "fn_decl",
@@ -1020,7 +1022,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3128
+      "line": 3153
     },
     {
       "type": "fn_decl",
@@ -1032,7 +1034,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 3132
+      "line": 3157
     },
     {
       "type": "fn_decl",
@@ -1046,7 +1048,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3136
+      "line": 3161
     },
     {
       "type": "fn_decl",
@@ -1059,7 +1061,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3140
+      "line": 3165
     },
     {
       "type": "fn_decl",
@@ -1072,7 +1074,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 3144
+      "line": 3169
     },
     {
       "type": "fn_decl",
@@ -1085,7 +1087,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 3148
+      "line": 3173
     },
     {
       "type": "fn_decl",
@@ -1098,7 +1100,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 3152
+      "line": 3177
     },
     {
       "type": "fn_decl",
@@ -1113,7 +1115,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 3156
+      "line": 3181
     },
     {
       "type": "fn_decl",
@@ -1128,7 +1130,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 3160
+      "line": 3185
     },
     {
       "type": "fn_decl",
@@ -1143,7 +1145,7 @@
       ],
       "returns": "[]usize",
       "is_pub": true,
-      "line": 3164
+      "line": 3189
     },
     {
       "type": "fn_decl",
@@ -1155,13 +1157,13 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3168
+      "line": 3193
     },
     {
       "type": "test_decl",
       "name": "main compiles",
       "is_pub": false,
-      "line": 3176
+      "line": 3201
     }
   ]
 }

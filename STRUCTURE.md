@@ -76,7 +76,7 @@ Then you you must read
 │       ├── json_store.zig                          # [gof-patterns]
 │       ├── llm_filter.zig
 │       ├── main.zig                                # [gof-patterns]
-│       ├── marker.zig
+│       ├── marker.zig                              # [gof-patterns]
 │       ├── pattern.zig                             # [gof-patterns]
 │       ├── plugin.zig
 │       ├── plugin_registry.zig
