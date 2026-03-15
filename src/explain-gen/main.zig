@@ -770,164 +770,173 @@ const GenArgs = struct {
     infill_comments: bool = false,
     regen_comments: bool = false,
     compile_db: bool = true,
+
+    /// Parse gen subcommand arguments. Returns error.MissingValue when a
+    /// flag-with-value is the last argument (fail fast; do not silently drop).
+    fn parse(args: []const []const u8) error{MissingValue}!GenArgs {
+        var ga: GenArgs = .{};
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (std.mem.eql(u8, arg, "--file")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.file = args[i];
+            } else if (std.mem.eql(u8, arg, "--scan")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.scan = args[i];
+            } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.workspace = args[i];
+            } else if (std.mem.eql(u8, arg, "--json-dir") or std.mem.eql(u8, arg, "--output")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.json_dir = args[i];
+            } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.db_path = args[i];
+            } else if (std.mem.eql(u8, arg, "--dry-run")) {
+                ga.dry_run = true;
+            } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+                ga.verbose = true;
+            } else if (std.mem.eql(u8, arg, "--infill")) {
+                ga.infill_comments = true;
+            } else if (std.mem.eql(u8, arg, "--regen")) {
+                ga.regen_comments = true;
+            } else if (std.mem.eql(u8, arg, "--no-db")) {
+                ga.compile_db = false;
+            } else if (std.mem.eql(u8, arg, "--api-url")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.api_url = args[i];
+            } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.model = args[i];
+            }
+        }
+        return ga;
+    }
 };
 
-fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var ga: GenArgs = .{};
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--file")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.file = args[i];
-        } else if (std.mem.eql(u8, arg, "--scan")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.scan = args[i];
-        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.workspace = args[i];
-        } else if (std.mem.eql(u8, arg, "--json-dir") or std.mem.eql(u8, arg, "--output")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.json_dir = args[i];
-        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.db_path = args[i];
-        } else if (std.mem.eql(u8, arg, "--dry-run")) {
-            ga.dry_run = true;
-        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
-            ga.verbose = true;
-        } else if (std.mem.eql(u8, arg, "--infill")) {
-            ga.infill_comments = true;
-        } else if (std.mem.eql(u8, arg, "--regen")) {
-            ga.regen_comments = true;
-        } else if (std.mem.eql(u8, arg, "--no-db")) {
-            ga.compile_db = false;
-        } else if (std.mem.eql(u8, arg, "--api-url")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.api_url = args[i];
-        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
-            i += 1;
-            if (i >= args.len) return;
-            ga.model = args[i];
-        }
+/// Resolved absolute paths for a gen run. All fields are owned; call deinit().
+const ResolvedGenPaths = struct {
+    workspace: []const u8,
+    json_dir: []const u8,
+    db_path: []const u8,
+
+    fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.workspace);
+        allocator.free(self.json_dir);
+        allocator.free(self.db_path);
     }
+};
+
+/// Resolve workspace, json_dir, and db_path to absolute paths using `cwd` as
+/// the base for any relative values. Reuses the resolveAbsOrJoin helper.
+fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
+    const workspace = try resolveAbsOrJoin(allocator, cwd, ga.workspace orelse cwd);
+    errdefer allocator.free(workspace);
+
+    const json_dir = try resolveAbsOrJoin(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    errdefer allocator.free(json_dir);
+
+    const db_path = try resolveAbsOrJoin(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_DB_PATH);
+    return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
+}
+
+/// Wire up the LLM enhancer on processor when --infill or --regen is active.
+/// Logs a warning and leaves processor.enhancer null if initialisation fails.
+fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, processor: *sync_mod.SyncProcessor) void {
+    if (!ga.infill_comments and !ga.regen_comments) return;
+    const llm_config: llm.LlmConfig = .{
+        .api_url = ga.api_url,
+        .model = ga.model,
+        .debug = ga.verbose,
+    };
+    processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {
+        std.debug.print("warning: could not init LLM enhancer: {}\n", .{err});
+        break :blk null;
+    };
+    processor.infill_comments = ga.infill_comments;
+    processor.regen_comments = ga.regen_comments;
+}
+
+/// Dispatch to single-file, explicit-scan, or full-workspace processing.
+/// Fails fast and propagates the first error encountered.
+/// Returns the count of source files processed.
+fn processFiles(
+    allocator: std.mem.Allocator,
+    processor: *sync_mod.SyncProcessor,
+    ga: GenArgs,
+    paths: ResolvedGenPaths,
+) !usize {
+    if (ga.file) |file_arg| {
+        const full_path = try resolveAbsOrJoin(allocator, paths.workspace, file_arg);
+        defer allocator.free(full_path);
+        _ = try processor.processFile(full_path);
+        std.debug.print("gen: processed {s}\n", .{full_path});
+        return 1;
+    }
+
+    if (ga.scan) |scan_arg| {
+        const scan_abs = try resolveAbsOrJoin(allocator, paths.workspace, scan_arg);
+        defer allocator.free(scan_abs);
+        const count = try processor.processDirectory(scan_abs);
+        std.debug.print("gen: {d} source files processed from {s}\n", .{ count, scan_abs });
+        return count;
+    }
+
+    // Full workspace scan: read src_dirs from config, fail fast on any error.
+    var cfg = try config_mod.loadConfig(allocator, paths.workspace);
+    defer cfg.deinit();
+
+    var total: usize = 0;
+    for (cfg.src_dirs) |src_rel| {
+        const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+        defer allocator.free(src_abs);
+        total += try processor.processDirectory(src_abs);
+    }
+    std.debug.print("gen: {d} source files processed\n", .{total});
+    return total;
+}
+
+fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const ga = GenArgs.parse(args) catch |err| {
+        std.debug.print("error: gen flag missing value ({s})\n", .{@errorName(err)});
+        return err;
+    };
 
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    // Resolve workspace (default: cwd)
-    const workspace = if (ga.workspace) |w|
-        if (std.fs.path.isAbsolute(w)) try allocator.dupe(u8, w) else try std.fs.path.join(allocator, &.{ cwd, w })
-    else
-        try allocator.dupe(u8, cwd);
-    defer allocator.free(workspace);
-
-    // Resolve json_dir (default: .explain-gen in workspace)
-    const json_dir = if (ga.json_dir) |jd|
-        if (std.fs.path.isAbsolute(jd)) try allocator.dupe(u8, jd) else try std.fs.path.join(allocator, &.{ workspace, jd })
-    else
-        try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_GUIDANCE_DIR });
-    defer allocator.free(json_dir);
-
-    // Resolve db_path (default: .explain.db in workspace)
-    const db_path = if (ga.db_path) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ workspace, dp })
-    else
-        try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_DB_PATH });
-    defer allocator.free(db_path);
+    var paths = try resolveGenPaths(allocator, ga, cwd);
+    defer paths.deinit(allocator);
 
     if (ga.verbose) {
         std.debug.print("explain-gen gen:\n  workspace: {s}\n  json_dir:  {s}\n  db_path:   {s}\n", .{
-            workspace, json_dir, db_path,
+            paths.workspace, paths.json_dir, paths.db_path,
         });
     }
 
-    // ── Build SyncProcessor ──────────────────────────────────────────────────
-    var processor = sync_mod.SyncProcessor.init(allocator, workspace, json_dir, ga.dry_run, ga.verbose);
+    var processor = sync_mod.SyncProcessor.init(allocator, paths.workspace, paths.json_dir, ga.dry_run, ga.verbose);
     defer processor.deinit();
 
-    if (ga.infill_comments or ga.regen_comments) {
-        const llm_config: llm.LlmConfig = .{
-            .api_url = ga.api_url,
-            .model = ga.model,
-            .debug = ga.verbose,
-        };
-        processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {
-            std.debug.print("warning: could not init LLM enhancer: {}\n", .{err});
-            break :blk null;
-        };
-        processor.infill_comments = ga.infill_comments;
-        processor.regen_comments = ga.regen_comments;
-    }
+    setupEnhancer(allocator, ga, &processor);
 
-    // ── Step 1: Process source files → JSON ─────────────────────────────────
-
-    if (ga.file) |file_arg| {
-        // ── Single-file mode (used by per-file Makefile rule) ────────────────
-        const full_path = if (std.fs.path.isAbsolute(file_arg))
-            try allocator.dupe(u8, file_arg)
-        else
-            try std.fs.path.join(allocator, &.{ workspace, file_arg });
-        defer allocator.free(full_path);
-
-        _ = processor.processFile(full_path) catch |err| {
-            std.debug.print("error processing {s}: {}\n", .{ full_path, err });
-        };
-        std.debug.print("gen: processed {s}\n", .{full_path});
-    } else if (ga.scan) |scan_arg| {
-        // ── Explicit --scan DIR mode ─────────────────────────────────────────
-        const scan_abs = if (std.fs.path.isAbsolute(scan_arg))
-            try allocator.dupe(u8, scan_arg)
-        else
-            try std.fs.path.join(allocator, &.{ workspace, scan_arg });
-        defer allocator.free(scan_abs);
-
-        const count = processor.processDirectory(scan_abs) catch |err| {
-            std.debug.print("error scanning {s}: {}\n", .{ scan_abs, err });
-            return;
-        };
-        std.debug.print("gen: {d} source files processed from {s}\n", .{ count, scan_abs });
-    } else {
-        // ── Full workspace scan (default) ────────────────────────────────────
-        var cfg = config_mod.loadConfig(allocator, workspace) catch
-            try config_mod.loadConfig(allocator, workspace);
-        defer cfg.deinit();
-
-        var total: usize = 0;
-        for (cfg.src_dirs) |src_rel| {
-            const src_abs = if (std.fs.path.isAbsolute(src_rel))
-                try allocator.dupe(u8, src_rel)
-            else
-                try std.fs.path.join(allocator, &.{ workspace, src_rel });
-            defer allocator.free(src_abs);
-
-            const count = processor.processDirectory(src_abs) catch |err| {
-                std.debug.print("warning: processDirectory({s}): {}\n", .{ src_abs, err });
-                continue;
-            };
-            total += count;
-        }
-        std.debug.print("gen: {d} source files processed\n", .{total});
-    }
+    _ = try processFiles(allocator, &processor, ga, paths);
 
     if (ga.dry_run) {
         std.debug.print("(dry-run — no files written)\n", .{});
         return;
     }
 
-    // ── Step 2: Compile JSON → .explain.db ──────────────────────────────────
     if (ga.compile_db) {
-        db_mod.syncDatabase(allocator, json_dir, db_path) catch |err| {
-            std.debug.print("error: database compilation failed: {}\n", .{err});
-            return;
-        };
-        std.debug.print("gen: .explain.db written to {s}\n", .{db_path});
+        try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
+        std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
     }
 }
 
