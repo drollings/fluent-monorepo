@@ -147,6 +147,47 @@ pub const QueryResult = struct {
     recent_capabilities: []const []const u8 = &.{},
 };
 
+// ---------------------------------------------------------------------------
+// Staged explain pipeline types
+// ---------------------------------------------------------------------------
+
+/// Classifies the kind of content in a Stage.
+pub const StageKind = enum {
+    /// Human-readable explanation from module or member comment.
+    prose,
+    /// Verbatim source code excerpt.  Never altered by LLM.
+    code,
+    /// Structured metadata: keywords, see_also, skills from guidance JSON.
+    metadata,
+    /// Matching bullet from INSIGHTS.md or CAPABILITIES.md.
+    insight,
+    /// Excerpt from a SKILL.md document.
+    skill_doc,
+};
+
+/// A single unit of information collected by the staged explain pipeline.
+/// All string fields are owned by this struct; call freeStage() to release.
+pub const Stage = struct {
+    kind: StageKind,
+    /// Content to display (prose text, code block, metadata text, etc.).
+    content: []const u8,
+    /// Origin of this stage: relative source path, skill name, or "inbox".
+    source: []const u8,
+    /// Line number within `source` (optional, for code stages).
+    line: ?u32 = null,
+};
+
+/// Free all allocations owned by a single Stage.
+pub fn freeStage(allocator: std.mem.Allocator, s: Stage) void {
+    allocator.free(s.content);
+    allocator.free(s.source);
+}
+
+/// Free a slice of Stages and all allocations they own.
+pub fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) void {
+    for (stages) |s| freeStage(allocator, s);
+}
+
 pub const SyncResult = struct {
     filepath: []const u8,
     members_added: usize = 0,

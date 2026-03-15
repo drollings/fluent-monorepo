@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "module": "src.explain-gen.plugin",
+    "source": "src/explain-gen/plugin.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/explain-gen/main.zig", "src/explain-gen/plugin_registry.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ParsedFile",
+      "match_hash": "2cfd9b5dd016a6125a891b7abfa45b51f0766d52d7822c8a92856035c247870b",
+      "signature": "keyword_struct ParsedFile { ... }",
+      "is_pub": true,
+      "line": 16
+    },
+    {
+      "type": "struct",
+      "name": "LanguagePlugin",
+      "match_hash": "c78111d5e007e7098ad75d1efce81a7addf20bca210e0bd2f1b209cfd857d927",
+      "signature": "keyword_struct LanguagePlugin { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "parse",
+          "match_hash": "f3d2853baae5b8241c343459db8bbf9d93f6169387492216a5e65544ea96c041",
+          "signature": "fn parse(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> ParsedFile",
+          "params": [
+            { "name": "self", "type": "*const LanguagePlugin" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[:0]const u8" },
+            { "name": "file_path", "type": "[]const u8" }
+          ],
+          "returns": "ParsedFile",
+          "is_pub": true,
+          "line": 55
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "extractImports",
+          "match_hash": "741dad85c3649a641dfbc59de68543e5e240ea0182740adaff5f41d89c0967f5",
+          "signature": "fn extractImports(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const LanguagePlugin" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[:0]const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "is_pub": true,
+          "line": 65
+        }
+      ],
+      "line": 33
+    },
+    {
+      "type": "test_decl",
+      "name": "LanguagePlugin interface is callable",
+      "is_pub": false,
+      "line": 78
+    }
+  ]
+}

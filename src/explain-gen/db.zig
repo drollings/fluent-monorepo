@@ -117,6 +117,7 @@ pub const ExplainDb = struct {
             \\CREATE TABLE IF NOT EXISTS ast_nodes (
             \\  id            INTEGER PRIMARY KEY,
             \\  file_path     TEXT    NOT NULL,
+            \\  source        TEXT,
             \\  module        TEXT    NOT NULL,
             \\  node_type     TEXT    NOT NULL,
             \\  name          TEXT    NOT NULL,
@@ -195,6 +196,21 @@ pub const ExplainDb = struct {
             logSqliteErr("migrate", "CREATE TABLE/FTS/triggers", rc, err_msg, self.db);
             if (err_msg) |msg| c.sqlite3_free(msg);
             return error.MigrationFailed;
+        }
+
+        // Add 'source' column to existing databases that pre-date this schema change.
+        // SQLite returns SQLITE_ERROR ("duplicate column name") if the column already exists;
+        // we intentionally ignore that specific error.
+        {
+            var alter_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(
+                self.db,
+                "ALTER TABLE ast_nodes ADD COLUMN source TEXT",
+                null,
+                null,
+                &alter_err,
+            );
+            if (alter_err) |msg| c.sqlite3_free(msg);
         }
 
         // Upsert schema version row.
@@ -310,9 +326,9 @@ pub const ExplainDb = struct {
     fn insertModule(self: *Self, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
         const sql =
             "INSERT INTO ast_nodes(" ++
-            "  file_path, module, node_type, name, signature," ++
+            "  file_path, source, module, node_type, name, signature," ++
             "  comment, line, used_by, language, file_type, file_hash, last_modified" ++
-            ") VALUES (?1,?2,'module',?3,NULL,?4,NULL,?5,?6,'source',?7,?8)";
+            ") VALUES (?1,?2,?3,'module',?4,NULL,?5,NULL,?6,?7,'source',?8,?9)";
 
         var stmt: ?*c.sqlite3_stmt = null;
         const rc = c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
@@ -321,35 +337,37 @@ pub const ExplainDb = struct {
 
         // ?1 file_path
         _ = c.sqlite3_bind_text(stmt, 1, file_path.ptr, @intCast(file_path.len), SQLITE_STATIC);
-        // ?2 module
-        _ = c.sqlite3_bind_text(stmt, 2, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
-        // ?3 name (module comment or module name)
+        // ?2 source (meta.source — relative source file path)
+        _ = c.sqlite3_bind_text(stmt, 2, doc.source.ptr, @intCast(doc.source.len), SQLITE_STATIC);
+        // ?3 module
+        _ = c.sqlite3_bind_text(stmt, 3, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
+        // ?4 name (module comment or module name)
         const name = doc.module_comment orelse doc.module;
-        _ = c.sqlite3_bind_text(stmt, 3, name.ptr, @intCast(name.len), SQLITE_STATIC);
-        // ?4 comment
+        _ = c.sqlite3_bind_text(stmt, 4, name.ptr, @intCast(name.len), SQLITE_STATIC);
+        // ?5 comment
         if (doc.module_comment) |cm| {
-            _ = c.sqlite3_bind_text(stmt, 4, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
-        } else {
-            _ = c.sqlite3_bind_null(stmt, 4);
-        }
-        // ?5 used_by (JSON array)
-        const ub_json = try serializeUsedBy(self.allocator, doc.used_by);
-        defer self.allocator.free(ub_json);
-        if (ub_json.len > 2) { // more than just "[]"
-            _ = c.sqlite3_bind_text(stmt, 5, ub_json.ptr, @intCast(ub_json.len), SQLITE_STATIC);
+            _ = c.sqlite3_bind_text(stmt, 5, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
         } else {
             _ = c.sqlite3_bind_null(stmt, 5);
         }
-        // ?6 language
-        _ = c.sqlite3_bind_text(stmt, 6, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
-        // ?7 file_hash
-        if (doc.file_hash) |fh| {
-            _ = c.sqlite3_bind_text(stmt, 7, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        // ?6 used_by (JSON array)
+        const ub_json = try serializeUsedBy(self.allocator, doc.used_by);
+        defer self.allocator.free(ub_json);
+        if (ub_json.len > 2) { // more than just "[]"
+            _ = c.sqlite3_bind_text(stmt, 6, ub_json.ptr, @intCast(ub_json.len), SQLITE_STATIC);
         } else {
-            _ = c.sqlite3_bind_null(stmt, 7);
+            _ = c.sqlite3_bind_null(stmt, 6);
         }
-        // ?8 last_modified
-        _ = c.sqlite3_bind_int64(stmt, 8, mtime);
+        // ?7 language
+        _ = c.sqlite3_bind_text(stmt, 7, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
+        // ?8 file_hash
+        if (doc.file_hash) |fh| {
+            _ = c.sqlite3_bind_text(stmt, 8, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 8);
+        }
+        // ?9 last_modified
+        _ = c.sqlite3_bind_int64(stmt, 9, mtime);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
     }
@@ -357,9 +375,9 @@ pub const ExplainDb = struct {
     fn insertMember(self: *Self, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
         const sql =
             "INSERT INTO ast_nodes(" ++
-            "  file_path, module, node_type, name, signature," ++
+            "  file_path, source, module, node_type, name, signature," ++
             "  comment, line, used_by, language, file_type, file_hash, last_modified" ++
-            ") VALUES (?1,?2,?3,?4,?5,?6,?7,NULL,?8,'source',?9,?10)";
+            ") VALUES (?1,?2,?3,?4,?5,?6,?7,?8,NULL,?9,'source',?10,?11)";
 
         var stmt: ?*c.sqlite3_stmt = null;
         const rc = c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null);
@@ -368,40 +386,42 @@ pub const ExplainDb = struct {
 
         // ?1 file_path
         _ = c.sqlite3_bind_text(stmt, 1, file_path.ptr, @intCast(file_path.len), SQLITE_STATIC);
-        // ?2 module
-        _ = c.sqlite3_bind_text(stmt, 2, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
-        // ?3 node_type
-        _ = c.sqlite3_bind_text(stmt, 3, m.node_type.ptr, @intCast(m.node_type.len), SQLITE_STATIC);
-        // ?4 name
-        _ = c.sqlite3_bind_text(stmt, 4, m.name.ptr, @intCast(m.name.len), SQLITE_STATIC);
-        // ?5 signature
+        // ?2 source (meta.source — relative source file path)
+        _ = c.sqlite3_bind_text(stmt, 2, doc.source.ptr, @intCast(doc.source.len), SQLITE_STATIC);
+        // ?3 module
+        _ = c.sqlite3_bind_text(stmt, 3, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
+        // ?4 node_type
+        _ = c.sqlite3_bind_text(stmt, 4, m.node_type.ptr, @intCast(m.node_type.len), SQLITE_STATIC);
+        // ?5 name
+        _ = c.sqlite3_bind_text(stmt, 5, m.name.ptr, @intCast(m.name.len), SQLITE_STATIC);
+        // ?6 signature
         if (m.signature) |sig| {
-            _ = c.sqlite3_bind_text(stmt, 5, sig.ptr, @intCast(sig.len), SQLITE_STATIC);
-        } else {
-            _ = c.sqlite3_bind_null(stmt, 5);
-        }
-        // ?6 comment
-        if (m.comment) |cm| {
-            _ = c.sqlite3_bind_text(stmt, 6, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
+            _ = c.sqlite3_bind_text(stmt, 6, sig.ptr, @intCast(sig.len), SQLITE_STATIC);
         } else {
             _ = c.sqlite3_bind_null(stmt, 6);
         }
-        // ?7 line
-        if (m.line) |ln| {
-            _ = c.sqlite3_bind_int64(stmt, 7, @intCast(ln));
+        // ?7 comment
+        if (m.comment) |cm| {
+            _ = c.sqlite3_bind_text(stmt, 7, cm.ptr, @intCast(cm.len), SQLITE_STATIC);
         } else {
             _ = c.sqlite3_bind_null(stmt, 7);
         }
-        // ?8 language
-        _ = c.sqlite3_bind_text(stmt, 8, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
-        // ?9 file_hash
-        if (doc.file_hash) |fh| {
-            _ = c.sqlite3_bind_text(stmt, 9, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        // ?8 line
+        if (m.line) |ln| {
+            _ = c.sqlite3_bind_int64(stmt, 8, @intCast(ln));
         } else {
-            _ = c.sqlite3_bind_null(stmt, 9);
+            _ = c.sqlite3_bind_null(stmt, 8);
         }
-        // ?10 last_modified
-        _ = c.sqlite3_bind_int64(stmt, 10, mtime);
+        // ?9 language
+        _ = c.sqlite3_bind_text(stmt, 9, doc.language.ptr, @intCast(doc.language.len), SQLITE_STATIC);
+        // ?10 file_hash
+        if (doc.file_hash) |fh| {
+            _ = c.sqlite3_bind_text(stmt, 10, fh.ptr, @intCast(fh.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 10);
+        }
+        // ?11 last_modified
+        _ = c.sqlite3_bind_int64(stmt, 11, mtime);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
     }
@@ -424,15 +444,36 @@ pub const ExplainDb = struct {
 
     pub const SearchResult = struct {
         file_path: []const u8,
+        source: []const u8, // meta.source — relative path to the actual source file
         module: []const u8,
         node_type: []const u8,
         name: []const u8,
         signature: ?[]const u8,
         comment: ?[]const u8,
         line: ?u32,
+        used_by: [][]const u8, // owned slice; each element owned
         language: []const u8,
         score: f64,
     };
+
+    /// Return true when `word` is a common English stop word that adds noise to
+    /// FTS5 queries.  Case-insensitive; only checks short words (≤ 6 chars).
+    fn isStopWord(word: []const u8) bool {
+        if (word.len > 6) return false;
+        // Stack-allocate lowercase copy (word is ≤ 6 bytes).
+        var buf: [6]u8 = undefined;
+        const lower = std.ascii.lowerString(buf[0..word.len], word);
+        const stops = [_][]const u8{
+            "a",    "an",   "and",  "are",  "as",   "at",   "be",   "by",
+            "do",   "for",  "get",  "has",  "how",  "i",    "if",   "in",
+            "is",   "it",   "its",  "no",   "not",  "of",   "on",   "or",
+            "our",  "out",  "so",   "the",  "to",   "use",  "used", "was",
+            "what", "when", "with", "do",   "from", "this", "that", "we",
+            "can",  "did",  "does", "does", "you",  "will", "why",  "any",
+        };
+        for (stops) |s| if (std.mem.eql(u8, lower, s)) return true;
+        return false;
+    }
 
     /// BM25 full-text search.  Returns results ordered best-first (score desc).
     /// Caller must free each `SearchResult` field and the slice with `allocator`.
@@ -446,25 +487,40 @@ pub const ExplainDb = struct {
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
         // Build quoted-OR FTS5 query from whitespace-separated tokens.
+        // Strip English stop words so natural-language queries ("how does X work")
+        // don't poison BM25 scores by matching on "how", "does", "are", etc.
         var fts_buf: std.ArrayList(u8) = .{};
         defer fts_buf.deinit(allocator);
         var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
         var first = true;
         while (it.next()) |word| {
+            // Strip trailing punctuation (e.g. "processed?" → "processed").
+            var clean = word;
+            while (clean.len > 0) {
+                const last = clean[clean.len - 1];
+                if (last == '?' or last == '.' or last == ',' or last == '!' or last == ':') {
+                    clean = clean[0 .. clean.len - 1];
+                } else break;
+            }
+            if (clean.len == 0) continue;
+            if (isStopWord(clean)) continue;
             if (!first) try fts_buf.appendSlice(allocator, " OR ");
             try fts_buf.append(allocator, '"');
-            for (word) |ch| {
+            for (clean) |ch| {
                 if (ch == '"') try fts_buf.appendSlice(allocator, "\"\"") else try fts_buf.append(allocator, ch);
             }
             try fts_buf.append(allocator, '"');
             first = false;
         }
-        if (fts_buf.items.len == 0) return allocator.alloc(SearchResult, 0);
+        // If all tokens were stop words, fall back to the raw trimmed query.
+        if (fts_buf.items.len == 0) {
+            try fts_buf.appendSlice(allocator, trimmed);
+        }
         try fts_buf.append(allocator, 0);
 
         const sql =
-            "SELECT n.file_path, n.module, n.node_type, n.name, n.signature," ++
-            "       n.comment, n.line, n.language," ++
+            "SELECT n.file_path, n.source, n.module, n.node_type, n.name, n.signature," ++
+            "       n.comment, n.line, n.used_by, n.language," ++
             "       bm25(fts_search) as score " ++
             "FROM fts_search f " ++
             "JOIN ast_nodes n ON n.id = f.rowid " ++
@@ -496,32 +552,41 @@ pub const ExplainDb = struct {
     }
 
     fn readSearchResult(stmt: *c.sqlite3_stmt, allocator: std.mem.Allocator) !SearchResult {
-        const line_type = c.sqlite3_column_type(stmt, 6);
+        // col 7: line
+        const line_type = c.sqlite3_column_type(stmt, 7);
         const line: ?u32 = if (line_type == c.SQLITE_NULL)
             null
         else
-            @intCast(c.sqlite3_column_int(stmt, 6));
+            @intCast(c.sqlite3_column_int(stmt, 7));
+
+        // col 8: used_by — stored as JSON array ["a","b"] or NULL
+        const used_by = try parseUsedByCol(stmt, 8, allocator);
 
         return SearchResult{
             .file_path = try dupeCol(stmt, 0, allocator),
-            .module = try dupeCol(stmt, 1, allocator),
-            .node_type = try dupeCol(stmt, 2, allocator),
-            .name = try dupeCol(stmt, 3, allocator),
-            .signature = try dupeColNullable(stmt, 4, allocator),
-            .comment = try dupeColNullable(stmt, 5, allocator),
+            .source = try dupeCol(stmt, 1, allocator),
+            .module = try dupeCol(stmt, 2, allocator),
+            .node_type = try dupeCol(stmt, 3, allocator),
+            .name = try dupeCol(stmt, 4, allocator),
+            .signature = try dupeColNullable(stmt, 5, allocator),
+            .comment = try dupeColNullable(stmt, 6, allocator),
             .line = line,
-            .language = try dupeCol(stmt, 7, allocator),
-            .score = -c.sqlite3_column_double(stmt, 8), // BM25 negative → positive
+            .used_by = used_by,
+            .language = try dupeCol(stmt, 9, allocator),
+            .score = -c.sqlite3_column_double(stmt, 10), // BM25 negative → positive
         };
     }
 
     pub fn freeSearchResult(allocator: std.mem.Allocator, r: SearchResult) void {
         allocator.free(r.file_path);
+        allocator.free(r.source);
         allocator.free(r.module);
         allocator.free(r.node_type);
         allocator.free(r.name);
         if (r.signature) |s| allocator.free(s);
         if (r.comment) |cm| allocator.free(cm);
+        for (r.used_by) |ub| allocator.free(ub);
+        allocator.free(r.used_by);
         allocator.free(r.language);
     }
 
@@ -736,6 +801,33 @@ fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u
     }
     try buf.append(allocator, ']');
     return buf.toOwnedSlice(allocator);
+}
+
+/// Parse a JSON-array column (e.g. `["a","b"]`) into an owned slice of owned strings.
+/// Returns an empty slice when the column is NULL or not a JSON array.
+fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![][]const u8 {
+    if (c.sqlite3_column_type(stmt, col) == c.SQLITE_NULL) return &.{};
+    const raw = c.sqlite3_column_text(stmt, col);
+    if (raw == null) return &.{};
+    const len: usize = @intCast(c.sqlite3_column_bytes(stmt, col));
+    const json_text = @as([*]const u8, @ptrCast(raw))[0..len];
+
+    // Parse JSON array — tolerate errors gracefully.
+    var parsed = std.json.parseFromSlice(std.json.Value, allocator, json_text, .{}) catch return &.{};
+    defer parsed.deinit();
+
+    if (parsed.value != .array) return &.{};
+    const arr = parsed.value.array.items;
+    var out: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (out.items) |s| allocator.free(s);
+        out.deinit(allocator);
+    }
+    for (arr) |item| {
+        if (item != .string) continue;
+        try out.append(allocator, try allocator.dupe(u8, item.string));
+    }
+    return try out.toOwnedSlice(allocator);
 }
 
 fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![]u8 {
