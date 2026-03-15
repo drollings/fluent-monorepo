@@ -150,27 +150,15 @@ env-init: check-prereqs venv ## Initialize development environment
 	@echo "Environment ready."
 
 .PHONY: clean
-clean: ## Remove build artifacts and markers (keeps venv and .explain-gen config)
-	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR)
+clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .explain-gen config)
+	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(LINT_MARKER_DIR) $(GUIDANCE_MARKER_DIR) $(TEST_PASSED) $(EXPLAIN_DB)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
-
-.PHONY: clean-all
-clean-all: clean ## Nuclear cleanup (includes venv)
-	$(Q)rm -rf $(VENV) $(HOME)/.cache/uv/
 
 ##@ Guidance Management
 
-.PHONY: guidance-prune
-guidance-prune: ## Remove stale JSON files from .explain-gen/src
-	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -print0 2>/dev/null | \
-		while IFS= read -r -d '' json; do \
-			rel=$${json#$(EXPLAIN_DIR)/}; \
-			src=$${rel%.json}; \
-			if [ ! -f "$$src" ]; then \
-				echo "Pruning: $$json"; \
-				rm -f "$$json"; \
-			fi; \
-		done
+.PHONY: _clean-guidance
+_clean-guidance: ## Remove stale JSON files from .explain-gen/src
+	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -exec rm -rf {} \;
 
 .PHONY: explain
 explain: $(EXPLAIN_DB) ## Explain a module, function, or concept  make explain QUERY="sma"

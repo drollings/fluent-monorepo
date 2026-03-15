@@ -100,16 +100,9 @@ Then you you must read
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
-├── MAKEFILE_GUIDANCE.md
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
-├── ROADMAP_EXPLAIN_ENHANCE.md
-├── ROADMAP_EXPLAIN_ENHANCE_CHECKLIST.md
-├── ROADMAP_NEW_EXPLAIN.md
-├── ROADMAP_NEW_EXPLAIN_CHECKLIST.md
-├── STRUCTURE.md
-├── TODO_EXPLORE.md
-└── TODO_EXPLORE_CHECKLIST.md
+└── STRUCTURE.md
 ```

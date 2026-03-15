@@ -1542,8 +1542,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const src = src_opt.?;
         defer allocator.free(src);
 
-        const end_line = start_line + 79;
-        const code = try explainExtractExcerpt(allocator, src, start_line, end_line);
+        const code = try explainExtractExcerpt(allocator, src, start_line, r.node_type);
         if (code.len == 0) {
             allocator.free(code);
             continue;
@@ -1926,65 +1925,123 @@ fn explainExtractExcerpt(
     allocator: std.mem.Allocator,
     src: []const u8,
     start_line: u32,
-    _end_line: u32, // advisory upper bound; real stop is next col-0 decl
+    node_type: []const u8,
 ) ![]const u8 {
-    _ = _end_line;
-    const MAX_LINES: usize = 80;
+    const is_fn = std.mem.eql(u8, node_type, "fn_decl") or
+        std.mem.eql(u8, node_type, "fn_private") or
+        std.mem.eql(u8, node_type, "method") or
+        std.mem.eql(u8, node_type, "method_private");
+    const is_container = std.mem.eql(u8, node_type, "struct") or
+        std.mem.eql(u8, node_type, "enum") or
+        std.mem.eql(u8, node_type, "union");
 
     var lines: std.ArrayList([]const u8) = .{};
     defer lines.deinit(allocator);
 
     var iter = std.mem.splitScalar(u8, src, '\n');
     var line_no: u32 = 0;
-    var saw_close_brace = false;
+    var brace_depth: usize = 0;
+    var saw_open_brace = false;
+    var container_opened = false;
 
     while (iter.next()) |raw| {
         line_no += 1;
         if (line_no < start_line) continue;
-        if (lines.items.len >= MAX_LINES) break;
 
         const trimmed = std.mem.trimRight(u8, raw, "\r");
         const is_first = line_no == start_line;
 
-        // Stop at next col-0 top-level declaration (not on the very first line).
-        if (!is_first and trimmed.len > 0 and trimmed[0] != ' ' and trimmed[0] != '\t') {
-            if (std.mem.startsWith(u8, trimmed, "pub ") or
-                std.mem.startsWith(u8, trimmed, "fn ") or
-                std.mem.startsWith(u8, trimmed, "const ") or
-                std.mem.startsWith(u8, trimmed, "var ") or
-                std.mem.startsWith(u8, trimmed, "test ") or
-                std.mem.startsWith(u8, trimmed, "// =") or
-                std.mem.startsWith(u8, trimmed, "// -") or
-                (saw_close_brace and std.mem.startsWith(u8, trimmed, "//")) or
-                (saw_close_brace and trimmed.len == 0))
+        if (is_fn) {
+            // For functions: track brace depth and extract entire function
+            if (lines.items.len > 0 and brace_depth == 0 and saw_open_brace) break;
+
+            // Count braces in this line
+            for (trimmed) |ch| {
+                if (ch == '{') {
+                    brace_depth += 1;
+                    saw_open_brace = true;
+                } else if (ch == '}') {
+                    if (brace_depth > 0) brace_depth -= 1;
+                }
+            }
+
+            // Include the line after counting braces
+            try lines.append(allocator, trimmed);
+
+            // Stop after closing brace if we've opened one
+            if (saw_open_brace and brace_depth == 0 and !std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "//")) {
+                // Check if this line only has the closing brace (or closing brace + comment)
+                const stripped = std.mem.trimLeft(u8, trimmed, " \t");
+                if (std.mem.startsWith(u8, stripped, "}") or std.mem.startsWith(u8, stripped, "};")) {
+                    break;
+                }
+            }
+        } else if (is_container) {
+            // For structs/enums/unions: abbreviate - show declaration and signatures only
+            if (is_first) {
+                try lines.append(allocator, trimmed);
+                continue;
+            }
+
+            // Track braces for containers
+            for (trimmed) |ch| {
+                if (ch == '{') {
+                    brace_depth += 1;
+                    container_opened = true;
+                } else if (ch == '}') {
+                    if (brace_depth > 0) brace_depth -= 1;
+                }
+            }
+
+            // Stop at container close
+            if (container_opened and brace_depth == 0) {
+                try lines.append(allocator, trimmed);
+                break;
+            }
+
+            // For abbreviated container: skip body content, show signatures
+            const stripped = std.mem.trimLeft(u8, trimmed, " \t");
+            if (stripped.len == 0) {
+                try lines.append(allocator, trimmed);
+            } else if (stripped[0] == '}') {
+                try lines.append(allocator, trimmed);
+            } else if (std.mem.startsWith(u8, stripped, "pub ") or
+                std.mem.startsWith(u8, stripped, "fn ") or
+                std.mem.startsWith(u8, stripped, "const ") or
+                std.mem.startsWith(u8, stripped, "var ") or
+                std.mem.startsWith(u8, stripped, "test ") or
+                std.mem.startsWith(u8, stripped, "//") or
+                std.mem.startsWith(u8, stripped, "///"))
             {
+                // Show declarations and comments at container level
+                if (brace_depth == 1) {
+                    try lines.append(allocator, trimmed);
+                } else {
+                    // Inside nested container - abbreviate
+                    try lines.append(allocator, trimmed);
+                }
+            } else if (std.mem.eql(u8, stripped, "};")) {
+                try lines.append(allocator, trimmed);
+            }
+        } else {
+            // Default behavior for other types (test_decl, enum_field, etc.)
+            if (lines.items.len >= 80) break;
+            try lines.append(allocator, trimmed);
+        }
+    }
+
+    if (is_fn) {
+        // For functions, remove trailing blank lines
+        while (lines.items.len > 0) {
+            const last = lines.items[lines.items.len - 1];
+            if (std.mem.trim(u8, last, " \t\r").len == 0) {
+                _ = lines.pop();
+            } else {
                 break;
             }
         }
-        // Track col-0 closing brace.
-        if (!is_first and std.mem.eql(u8, std.mem.trim(u8, trimmed, " \t"), "};")) {
-            saw_close_brace = true;
-        }
-        // Skip separator banners.
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
-
-        try lines.append(allocator, trimmed);
     }
-    if (lines.items.len == 0) return allocator.dupe(u8, "");
 
-    // Prune trailing blank then trailing comment-only lines (stable loop).
-    var changed = true;
-    while (changed) {
-        changed = false;
-        while (lines.items.len > 0 and std.mem.trim(u8, lines.items[lines.items.len - 1], " \t\r").len == 0) {
-            _ = lines.pop();
-            changed = true;
-        }
-        while (lines.items.len > 0 and std.mem.startsWith(u8, std.mem.trimLeft(u8, lines.items[lines.items.len - 1], " \t"), "//")) {
-            _ = lines.pop();
-            changed = true;
-        }
-    }
     if (lines.items.len == 0) return allocator.dupe(u8, "");
 
     var buf: std.ArrayList(u8) = .{};

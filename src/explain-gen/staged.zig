@@ -95,7 +95,7 @@ pub fn executeStagedWithAliases(
 
         try seen_code_files.put(allocator, r.source, {});
 
-        const excerpt = extractSourceExcerpt(allocator, workspace, r.source, line) catch continue;
+        const excerpt = extractSourceExcerpt(allocator, workspace, r.source, line, r.node_type) catch continue;
         if (excerpt.len == 0) {
             allocator.free(excerpt);
             continue;
@@ -144,7 +144,7 @@ pub fn executeStagedWithAliases(
             for (r.used_by[0..@min(3, r.used_by.len)]) |ub_path| {
                 if (seen_sources.contains(ub_path)) continue;
 
-                const excerpt = extractSourceExcerpt(allocator, workspace, ub_path, 1) catch continue;
+                const excerpt = extractSourceExcerpt(allocator, workspace, ub_path, 1, "module") catch continue;
                 if (excerpt.len == 0) {
                     allocator.free(excerpt);
                     continue;
@@ -430,12 +430,15 @@ pub fn formatStaged(
 
 /// Load source file and extract an excerpt starting at `start_line` (1-based).
 /// Extracts complete functions/structs by tracking brace depth.
+/// For functions: extracts the entire function.
+/// For structs/enums/unions: abbreviates to signatures.
 /// Returns an owned allocation; caller must free.
 pub fn extractSourceExcerpt(
     allocator: std.mem.Allocator,
     workspace: []const u8,
     rel_source: []const u8,
     start_line: u32,
+    node_type: []const u8,
 ) ![]u8 {
     const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
     defer allocator.free(abs_path);
@@ -446,18 +449,28 @@ pub fn extractSourceExcerpt(
     const src = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return allocator.dupe(u8, "");
     defer allocator.free(src);
 
-    return extractExcerptFromSource(allocator, src, start_line, 80);
+    return extractExcerptFromSource(allocator, src, start_line, node_type);
 }
 
 /// Extract a complete logical unit (function/struct/etc) starting at `start_line` (1-based).
 /// Uses brace counting to find the end of the scope.
+/// For functions: extracts the entire function (no line limit).
+/// For structs/enums/unions: abbreviates to declarations only.
 /// Returns an owned allocation.
 pub fn extractExcerptFromSource(
     allocator: std.mem.Allocator,
     src: []const u8,
     start_line: u32,
-    max_lines: usize,
+    node_type: []const u8,
 ) ![]u8 {
+    const is_fn = std.mem.eql(u8, node_type, "fn_decl") or
+        std.mem.eql(u8, node_type, "fn_private") or
+        std.mem.eql(u8, node_type, "method") or
+        std.mem.eql(u8, node_type, "method_private");
+    const is_container = std.mem.eql(u8, node_type, "struct") or
+        std.mem.eql(u8, node_type, "enum") or
+        std.mem.eql(u8, node_type, "union");
+
     var lines: std.ArrayList([]const u8) = .{};
     defer lines.deinit(allocator);
 
@@ -476,28 +489,44 @@ pub fn extractExcerptFromSource(
 
         // Count braces in this line
         var line_brace_delta: isize = 0;
-        var first_open_brace: usize = 0;
         var found_open = false;
-        for (trimmed, 0..) |ch, i| {
+        for (trimmed) |ch| {
             if (ch == '{') {
                 line_brace_delta += 1;
-                if (!found_open) {
-                    first_open_brace = i;
-                    found_open = true;
-                }
+                found_open = true;
             } else if (ch == '}') {
                 line_brace_delta -= 1;
             }
         }
 
         // Start tracking when we first see an opening brace
-        if (!started_scope and line_brace_delta > 0) {
+        if (!started_scope and found_open) {
             started_scope = true;
             scope_start_depth = brace_depth + 1;
         }
 
         // Skip separator comments
         if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
+
+        // For containers, abbreviate: show declarations and comments at container level
+        if (is_container and started_scope and brace_depth > scope_start_depth) {
+            // Inside nested container - skip body content
+            const stripped = std.mem.trimLeft(u8, trimmed, " \t");
+            if (stripped.len > 0 and stripped[0] != '/' and stripped[0] != '*' and
+                !std.mem.startsWith(u8, stripped, "pub ") and
+                !std.mem.startsWith(u8, stripped, "fn ") and
+                !std.mem.startsWith(u8, stripped, "const ") and
+                !std.mem.startsWith(u8, stripped, "var ") and
+                !std.mem.startsWith(u8, stripped, "//") and
+                !std.mem.startsWith(u8, stripped, "///") and
+                !std.mem.eql(u8, stripped, "},") and
+                !std.mem.eql(u8, stripped, "}"))
+            {
+                // Skip body content inside nested containers
+                brace_depth += line_brace_delta;
+                continue;
+            }
+        }
 
         try lines.append(allocator, trimmed);
 
@@ -523,8 +552,9 @@ pub fn extractExcerptFromSource(
             }
         }
 
-        // Hard limit
-        if (lines.items.len >= max_lines) break;
+        // No hard line limit for functions - they should be complete
+        // For other types (test_decl, enum_field, etc.), apply a default limit
+        if (!is_fn and !is_container and lines.items.len >= 200) break;
     }
 
     // Prune trailing blank/comment-only lines
