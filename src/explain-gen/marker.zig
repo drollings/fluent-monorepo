@@ -32,6 +32,7 @@
 //! own implementation.
 
 const std = @import("std");
+const llm = @import("common");
 
 // ---------------------------------------------------------------------------
 // Per-file change detection
@@ -93,43 +94,9 @@ pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8)
 /// Creates parent `.marks/` directory if needed.
 pub fn touchTestMarker(marker_path: []const u8) !void {
     const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
-    // Create parent directory tree (idempotent)
-    makePathAbsolute(parent) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
+    try llm.makePathAbsolute(parent);
     const f = try std.fs.createFileAbsolute(marker_path, .{});
     f.close();
-}
-
-/// Create a directory tree from an absolute path (idempotent).
-fn makePathAbsolute(abs_path: []const u8) !void {
-    var buf: [4096]u8 = undefined;
-    var pos: usize = 0;
-
-    var parts = std.mem.splitScalar(u8, abs_path, std.fs.path.sep);
-    var is_first = true;
-
-    while (parts.next()) |part| {
-        if (part.len == 0) continue;
-
-        if (is_first) {
-            buf[0] = '/';
-            @memcpy(buf[1 .. 1 + part.len], part);
-            pos = 1 + part.len;
-            is_first = false;
-        } else {
-            buf[pos] = std.fs.path.sep;
-            @memcpy(buf[pos + 1 .. pos + 1 + part.len], part);
-            pos += 1 + part.len;
-        }
-
-        const current = buf[0..pos];
-        std.fs.makeDirAbsolute(current) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
-        };
-    }
 }
 
 // ---------------------------------------------------------------------------

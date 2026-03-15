@@ -5,8 +5,20 @@ pub const CommonArgs = args.CommonArgs;
 pub const parseCommonArgs = args.parseCommonArgs;
 
 const io = @import("io.zig");
+const source = @import("source.zig");
+
 pub const WriterState = io.WriterState;
 pub const ReaderState = io.ReaderState;
+pub const makePathAbsolute = io.makePathAbsolute;
+pub const readFileAlloc = io.readFileAlloc;
+pub const readFileAllocErr = io.readFileAllocErr;
+pub const resolvePath = io.resolvePath;
+pub const DEFAULT_MAX_FILE_SIZE = io.DEFAULT_MAX_FILE_SIZE;
+
+pub const NodeType = source.NodeType;
+pub const DEFAULT_MAX_LINES = source.DEFAULT_MAX_LINES;
+pub const extractExcerpt = source.extractExcerpt;
+pub const extractSimpleExcerpt = source.extractSimpleExcerpt;
 
 pub const LlmError = error{
     InvalidUrl,

@@ -562,7 +562,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 1717
+      "line": 1713
     },
     {
       "type": "fn_private",
@@ -577,7 +577,7 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 1724
+      "line": 1718
     },
     {
       "type": "enum",
@@ -590,22 +590,22 @@
           "type": "enum_field",
           "name": "auto",
           "is_pub": false,
-          "line": 1735
+          "line": 1729
         }
     ,    {
           "type": "enum_field",
           "name": "force",
           "is_pub": false,
-          "line": 1737
+          "line": 1731
         }
     ,    {
           "type": "enum_field",
           "name": "skip",
           "is_pub": false,
-          "line": 1739
+          "line": 1733
         }
       ],
-      "line": 1733
+      "line": 1727
     },
     {
       "type": "struct",
@@ -613,7 +613,7 @@
       "match_hash": "d3681f77b57a6fa7eaa5b64d18ded251dc6ea83988c596902518a93d8f1406d6",
       "signature": "keyword_struct ExplainArgs { ... }",
       "is_pub": false,
-      "line": 1742
+      "line": 1736
     },
     {
       "type": "fn_private",
@@ -625,7 +625,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 1761
+      "line": 1755
     },
     {
       "type": "fn_private",
@@ -640,7 +640,7 @@
       ],
       "returns": "[]SkillExcerpt",
       "is_pub": false,
-      "line": 1777
+      "line": 1771
     },
     {
       "type": "fn_private",
@@ -655,7 +655,7 @@
       ],
       "returns": "[]ExcerptEntry",
       "is_pub": false,
-      "line": 1815
+      "line": 1809
     },
     {
       "type": "fn_private",
@@ -670,7 +670,7 @@
       ],
       "returns": "[]FileMatchItem",
       "is_pub": false,
-      "line": 1880
+      "line": 1874
     },
     {
       "type": "fn_private",
@@ -689,7 +689,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1920
+      "line": 1914
     },
     {
       "type": "fn_private",
@@ -702,7 +702,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2030
+      "line": 2024
     },
     {
       "type": "fn_private",
@@ -715,7 +715,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2218
+      "line": 2212
     },
     {
       "type": "fn_private",
@@ -728,7 +728,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2243
+      "line": 2237
     },
     {
       "type": "fn_private",
@@ -741,7 +741,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2256
+      "line": 2250
     },
     {
       "type": "fn_private",
@@ -754,7 +754,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2301
+      "line": 2295
     },
     {
       "type": "fn_private",
@@ -769,7 +769,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2343
+      "line": 2337
     },
     {
       "type": "fn_private",
@@ -784,7 +784,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 2401
+      "line": 2395
     },
     {
       "type": "fn_private",
@@ -799,7 +799,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 2526
+      "line": 2407
     },
     {
       "type": "fn_private",
@@ -816,7 +816,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2560
+      "line": 2441
     },
     {
       "type": "fn_private",
@@ -829,7 +829,7 @@
       ],
       "returns": "?db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 2656
+      "line": 2537
     },
     {
       "type": "fn_private",
@@ -843,7 +843,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2664
+      "line": 2545
     },
     {
       "type": "fn_private",
@@ -861,7 +861,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2707
+      "line": 2588
     },
     {
       "type": "fn_private",
@@ -877,7 +877,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2848
+      "line": 2729
     },
     {
       "type": "fn_decl",
@@ -892,7 +892,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2882
+      "line": 2763
     },
     {
       "type": "fn_private",
@@ -906,7 +906,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2899
+      "line": 2780
     },
     {
       "type": "fn_private",
@@ -919,7 +919,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2924
+      "line": 2805
     },
     {
       "type": "fn_private",
@@ -933,7 +933,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2938
+      "line": 2819
     },
     {
       "type": "fn_private",
@@ -949,7 +949,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2981
+      "line": 2862
     },
     {
       "type": "fn_private",
@@ -968,7 +968,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3032
+      "line": 2913
     },
     {
       "type": "fn_private",
@@ -981,7 +981,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3094
+      "line": 2975
     },
     {
       "type": "fn_decl",
@@ -994,7 +994,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 3145
+      "line": 3026
     },
     {
       "type": "fn_decl",
@@ -1009,7 +1009,7 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 3149
+      "line": 3030
     },
     {
       "type": "fn_decl",
@@ -1022,7 +1022,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3153
+      "line": 3034
     },
     {
       "type": "fn_decl",
@@ -1034,7 +1034,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 3157
+      "line": 3038
     },
     {
       "type": "fn_decl",
@@ -1048,7 +1048,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3161
+      "line": 3042
     },
     {
       "type": "fn_decl",
@@ -1061,7 +1061,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3165
+      "line": 3046
     },
     {
       "type": "fn_decl",
@@ -1074,7 +1074,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 3169
+      "line": 3050
     },
     {
       "type": "fn_decl",
@@ -1087,7 +1087,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 3173
+      "line": 3054
     },
     {
       "type": "fn_decl",
@@ -1100,7 +1100,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 3177
+      "line": 3058
     },
     {
       "type": "fn_decl",
@@ -1115,7 +1115,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 3181
+      "line": 3062
     },
     {
       "type": "fn_decl",
@@ -1130,7 +1130,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 3185
+      "line": 3066
     },
     {
       "type": "fn_decl",
@@ -1145,7 +1145,7 @@
       ],
       "returns": "[]usize",
       "is_pub": true,
-      "line": 3189
+      "line": 3070
     },
     {
       "type": "fn_decl",
@@ -1157,13 +1157,13 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3193
+      "line": 3074
     },
     {
       "type": "test_decl",
       "name": "main compiles",
       "is_pub": false,
-      "line": 3201
+      "line": 3082
     }
   ]
 }

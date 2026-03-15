@@ -60,8 +60,9 @@ Then you you must read
 ├── src
 │   ├── common
 │   │   ├── args.zig
-│   │   ├── io.zig
-│   │   └── llm.zig
+│   │   ├── io.zig                                # [gof-patterns]
+│   │   ├── llm.zig
+│   │   └── source.zig
 │   └── explain-gen
 │       ├── plugins
 │       │   ├── markdown_plugin.zig
@@ -73,10 +74,10 @@ Then you you must read
 │       ├── enhancer.zig
 │       ├── gitignore.zig
 │       ├── hash.zig
-│       ├── json_store.zig                          # [gof-patterns]
+│       ├── json_store.zig
 │       ├── llm_filter.zig
 │       ├── main.zig                                # [gof-patterns]
-│       ├── marker.zig                              # [gof-patterns]
+│       ├── marker.zig
 │       ├── pattern.zig                             # [gof-patterns]
 │       ├── plugin.zig
 │       ├── plugin_registry.zig

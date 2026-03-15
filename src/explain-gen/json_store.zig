@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const hash = @import("hash.zig");
+const llm = @import("common");
 
 pub const JsonStore = struct {
     allocator: std.mem.Allocator,
@@ -287,41 +288,12 @@ pub const JsonStore = struct {
         defer self.allocator.free(json_str);
 
         const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
-        try makePathAbsolute(dir_path);
+        try llm.makePathAbsolute(dir_path);
 
         const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
         defer file.close();
 
         try file.writeAll(json_str);
-    }
-
-    fn makePathAbsolute(abs_path: []const u8) !void {
-        var buf: [4096]u8 = undefined;
-        var pos: usize = 0;
-
-        var parts = std.mem.splitScalar(u8, abs_path, std.fs.path.sep);
-        var is_first = true;
-
-        while (parts.next()) |part| {
-            if (part.len == 0) continue;
-
-            if (is_first) {
-                buf[0] = '/';
-                @memcpy(buf[1 .. 1 + part.len], part);
-                pos = 1 + part.len;
-                is_first = false;
-            } else {
-                buf[pos] = std.fs.path.sep;
-                @memcpy(buf[pos + 1 .. pos + 1 + part.len], part);
-                pos += 1 + part.len;
-            }
-
-            const current = buf[0..pos];
-            std.fs.makeDirAbsolute(current) catch |err| switch (err) {
-                error.PathAlreadyExists => {},
-                else => return err,
-            };
-        }
     }
 
     /// Deep-copy a single Member; every string field is independently owned.

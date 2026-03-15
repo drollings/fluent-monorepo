@@ -4,10 +4,6 @@
     "source": "src/explain-gen/marker.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns]",
-  "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
-  ],
   "used_by": ["src/explain-gen/main.zig"],
   "members": [
     {
@@ -21,7 +17,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 44
+      "line": 45
     },
     {
       "type": "fn_decl",
@@ -33,7 +29,7 @@
       ],
       "returns": "?i128",
       "is_pub": true,
-      "line": 52
+      "line": 53
     },
     {
       "type": "fn_decl",
@@ -45,52 +41,37 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 94
-    },
-    {
-      "type": "fn_private",
-      "name": "makePathAbsolute",
-      "match_hash": "aaddfb3b47f0efdd1b9e1222c94403b27d22064d648165654fb5d6fe7720f203",
-      "signature": "fn makePathAbsolute(abs_path: []const u8) -> void",
-      "params": [
-        { "name": "abs_path", "type": "[]const u8" }
-      ],
-      "returns": "void",
-      "patterns": [
-        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
-      ],
-      "is_pub": false,
-      "line": 106
+      "line": 95
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: absent JSON → stale",
       "is_pub": false,
-      "line": 139
+      "line": 106
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON written after source → fresh",
       "is_pub": false,
-      "line": 159
+      "line": 126
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: no marker → false",
       "is_pub": false,
-      "line": 185
+      "line": 152
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: marker newer than source → true",
       "is_pub": false,
-      "line": 206
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: source newer than marker → false",
       "is_pub": false,
-      "line": 228
+      "line": 195
     }
   ]
 }

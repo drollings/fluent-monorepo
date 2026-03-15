@@ -11,7 +11,7 @@
       "match_hash": "fd5af9788a3a32d4473e8226b941eaeb0932dde57a60642e4db5b448c8ef7255",
       "signature": "keyword_struct LlmConfig { ... }",
       "is_pub": true,
-      "line": 20
+      "line": 32
     },
     {
       "type": "fn_private",
@@ -24,7 +24,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 27
+      "line": 39
     },
     {
       "type": "fn_decl",
@@ -36,7 +36,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 42
+      "line": 54
     },
     {
       "type": "fn_decl",
@@ -49,7 +49,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 83
+      "line": 95
     },
     {
       "type": "fn_decl",
@@ -61,7 +61,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 126
+      "line": 138
     },
     {
       "type": "fn_private",
@@ -73,7 +73,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 156
+      "line": 168
     },
     {
       "type": "fn_private",
@@ -85,7 +85,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 169
+      "line": 181
     },
     {
       "type": "fn_private",
@@ -97,7 +97,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 181
+      "line": 193
     },
     {
       "type": "fn_private",
@@ -110,7 +110,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 195
+      "line": 207
     },
     {
       "type": "fn_decl",
@@ -122,7 +122,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 209
+      "line": 221
     },
     {
       "type": "struct",
@@ -142,7 +142,7 @@
           ],
           "returns": "LlmClient",
           "is_pub": true,
-          "line": 227
+          "line": 239
         }
     ,    {
           "type": "fn_decl",
@@ -154,7 +154,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 253
+          "line": 265
         }
     ,    {
           "type": "fn_decl",
@@ -170,7 +170,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": true,
-          "line": 258
+          "line": 270
         }
     ,    {
           "type": "fn_private",
@@ -184,7 +184,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": false,
-          "line": 296
+          "line": 308
         }
     ,    {
           "type": "fn_private",
@@ -197,7 +197,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 329
+          "line": 341
         }
     ,    {
           "type": "fn_decl",
@@ -209,142 +209,142 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 384
+          "line": 396
         }
       ],
-      "line": 220
+      "line": 232
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with api/chat URL uses it directly",
       "is_pub": false,
-      "line": 415
+      "line": 427
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/completions URL converts to api/chat",
       "is_pub": false,
-      "line": 430
+      "line": 442
     },
     {
       "type": "test_decl",
       "name": "LlmClient OpenAI format",
       "is_pub": false,
-      "line": 445
+      "line": 457
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 460
+      "line": 472
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 474
+      "line": 486
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 481
+      "line": 493
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 487
+      "line": 499
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 506
+      "line": 518
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 511
+      "line": 523
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 516
+      "line": 528
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 520
+      "line": 532
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 526
+      "line": 538
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 532
+      "line": 544
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 539
+      "line": 551
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 545
+      "line": 557
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 556
+      "line": 568
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: trims whitespace inside tag",
       "is_pub": false,
-      "line": 563
+      "line": 575
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 570
+      "line": 582
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 576
+      "line": 588
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: chain-of-thought before tag is ignored",
       "is_pub": false,
-      "line": 580
+      "line": 592
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString escapes properly",
       "is_pub": false,
-      "line": 592
+      "line": 604
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString does not escape braces",
       "is_pub": false,
-      "line": 601
+      "line": 613
     }
   ]
 }

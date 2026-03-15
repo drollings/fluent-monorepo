@@ -1710,14 +1710,8 @@ const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 // explain — small path/config helpers
 // =============================================================================
 
-/// Resolve `path`: if absolute, dupe it; otherwise join with `base`.
-/// The special value `"."` returns `base` unchanged (avoids trailing `/.`
-/// which would break prefix-stripping in `guidanceJsonPath` and friends).
-/// Returns an owned allocation the caller must free.
 fn resolveAbsOrJoin(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
-    if (std.fs.path.isAbsolute(path)) return try allocator.dupe(u8, path);
-    if (std.mem.eql(u8, path, ".")) return try allocator.dupe(u8, base);
-    return try std.fs.path.join(allocator, &.{ base, path });
+    return llm.resolvePath(allocator, base, path);
 }
 
 /// Construct an LlmConfig from the parsed ExplainArgs.
@@ -2404,121 +2398,8 @@ fn explainExtractExcerpt(
     start_line: u32,
     node_type: []const u8,
 ) ![]const u8 {
-    const is_fn = std.mem.eql(u8, node_type, "fn_decl") or
-        std.mem.eql(u8, node_type, "fn_private") or
-        std.mem.eql(u8, node_type, "method") or
-        std.mem.eql(u8, node_type, "method_private");
-    const is_container = std.mem.eql(u8, node_type, "struct") or
-        std.mem.eql(u8, node_type, "enum") or
-        std.mem.eql(u8, node_type, "union");
-
-    var lines: std.ArrayList([]const u8) = .{};
-    defer lines.deinit(allocator);
-
-    var iter = std.mem.splitScalar(u8, src, '\n');
-    var line_no: u32 = 0;
-    var brace_depth: usize = 0;
-    var saw_open_brace = false;
-    var container_opened = false;
-
-    while (iter.next()) |raw| {
-        line_no += 1;
-        if (line_no < start_line) continue;
-
-        const trimmed = std.mem.trimRight(u8, raw, "\r");
-        const is_first = line_no == start_line;
-
-        if (is_fn) {
-            // For functions: track brace depth and extract entire function
-            if (lines.items.len > 0 and brace_depth == 0 and saw_open_brace) break;
-
-            // Count braces in this line
-            for (trimmed) |ch| {
-                if (ch == '{') {
-                    brace_depth += 1;
-                    saw_open_brace = true;
-                } else if (ch == '}') {
-                    if (brace_depth > 0) brace_depth -= 1;
-                }
-            }
-
-            // Include the line after counting braces
-            try lines.append(allocator, trimmed);
-
-            // Stop after closing brace if we've opened one
-            if (saw_open_brace and brace_depth == 0 and !std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "//")) {
-                // Check if this line only has the closing brace (or closing brace + comment)
-                const stripped = std.mem.trimLeft(u8, trimmed, " \t");
-                if (std.mem.startsWith(u8, stripped, "}") or std.mem.startsWith(u8, stripped, "};")) {
-                    break;
-                }
-            }
-        } else if (is_container) {
-            // For structs/enums/unions: abbreviate - show declaration and signatures only
-            if (is_first) {
-                try lines.append(allocator, trimmed);
-                continue;
-            }
-
-            // Track braces for containers
-            for (trimmed) |ch| {
-                if (ch == '{') {
-                    brace_depth += 1;
-                    container_opened = true;
-                } else if (ch == '}') {
-                    if (brace_depth > 0) brace_depth -= 1;
-                }
-            }
-
-            // Stop at container close
-            if (container_opened and brace_depth == 0) {
-                try lines.append(allocator, trimmed);
-                break;
-            }
-
-            // Show declarations, comments, closings; skip body expressions.
-            const stripped = std.mem.trimLeft(u8, trimmed, " \t");
-            if (stripped.len == 0 or
-                stripped[0] == '}' or
-                std.mem.startsWith(u8, stripped, "pub ") or
-                std.mem.startsWith(u8, stripped, "fn ") or
-                std.mem.startsWith(u8, stripped, "const ") or
-                std.mem.startsWith(u8, stripped, "var ") or
-                std.mem.startsWith(u8, stripped, "test ") or
-                std.mem.startsWith(u8, stripped, "//") or
-                std.mem.startsWith(u8, stripped, "///") or
-                std.mem.eql(u8, stripped, "};"))
-            {
-                try lines.append(allocator, trimmed);
-            }
-        } else {
-            // Default behavior for other types (test_decl, enum_field, etc.)
-            if (lines.items.len >= 80) break;
-            try lines.append(allocator, trimmed);
-        }
-    }
-
-    if (is_fn) {
-        // For functions, remove trailing blank lines
-        while (lines.items.len > 0) {
-            const last = lines.items[lines.items.len - 1];
-            if (std.mem.trim(u8, last, " \t\r").len == 0) {
-                _ = lines.pop();
-            } else {
-                break;
-            }
-        }
-    }
-
-    if (lines.items.len == 0) return allocator.dupe(u8, "");
-
-    var buf: std.ArrayList(u8) = .{};
-    errdefer buf.deinit(allocator);
-    for (lines.items, 0..) |line, idx| {
-        if (idx > 0) try buf.append(allocator, '\n');
-        try buf.appendSlice(allocator, line);
-    }
-    return buf.toOwnedSlice(allocator);
+    const node_type_enum = llm.NodeType.fromString(node_type);
+    return llm.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
 }
 
 /// Grep a file for search terms (case-insensitive substring, skipping comment lines).

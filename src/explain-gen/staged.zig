@@ -10,6 +10,7 @@
 const std = @import("std");
 const db_mod = @import("db.zig");
 const types = @import("types.zig");
+const llm = @import("common");
 
 /// Check if a file path matches common test file patterns (language-agnostic).
 /// Used to filter test files from "Used by" display.
@@ -461,10 +462,8 @@ pub fn extractSourceExcerpt(
     const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
     defer allocator.free(abs_path);
 
-    const file = std.fs.openFileAbsolute(abs_path, .{}) catch return allocator.dupe(u8, "");
-    defer file.close();
-
-    const src = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return allocator.dupe(u8, "");
+    const src = llm.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
+        return allocator.dupe(u8, "");
     defer allocator.free(src);
 
     return extractExcerptFromSource(allocator, src, start_line, node_type);
@@ -481,120 +480,9 @@ pub fn extractExcerptFromSource(
     start_line: u32,
     node_type: []const u8,
 ) ![]u8 {
-    const is_fn = std.mem.eql(u8, node_type, "fn_decl") or
-        std.mem.eql(u8, node_type, "fn_private") or
-        std.mem.eql(u8, node_type, "method") or
-        std.mem.eql(u8, node_type, "method_private");
-    const is_container = std.mem.eql(u8, node_type, "struct") or
-        std.mem.eql(u8, node_type, "enum") or
-        std.mem.eql(u8, node_type, "union");
-
-    var lines: std.ArrayList([]const u8) = .{};
-    defer lines.deinit(allocator);
-
-    var iter = std.mem.splitScalar(u8, src, '\n');
-    var line_no: u32 = 0;
-    var brace_depth: isize = 0;
-    var started_scope: bool = false;
-    var scope_start_depth: isize = 0;
-
-    while (iter.next()) |raw| {
-        line_no += 1;
-        if (line_no < start_line) continue;
-
-        const trimmed = std.mem.trimRight(u8, raw, "\r");
-        const is_first = line_no == start_line;
-
-        // Count braces in this line
-        var line_brace_delta: isize = 0;
-        var found_open = false;
-        for (trimmed) |ch| {
-            if (ch == '{') {
-                line_brace_delta += 1;
-                found_open = true;
-            } else if (ch == '}') {
-                line_brace_delta -= 1;
-            }
-        }
-
-        // Start tracking when we first see an opening brace
-        if (!started_scope and found_open) {
-            started_scope = true;
-            scope_start_depth = brace_depth + 1;
-        }
-
-        // Skip separator comments
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
-
-        // For containers, abbreviate: show declarations and comments at container level
-        if (is_container and started_scope and brace_depth > scope_start_depth) {
-            // Inside nested container - skip body content
-            const stripped = std.mem.trimLeft(u8, trimmed, " \t");
-            if (stripped.len > 0 and stripped[0] != '/' and stripped[0] != '*' and
-                !std.mem.startsWith(u8, stripped, "pub ") and
-                !std.mem.startsWith(u8, stripped, "fn ") and
-                !std.mem.startsWith(u8, stripped, "const ") and
-                !std.mem.startsWith(u8, stripped, "var ") and
-                !std.mem.startsWith(u8, stripped, "//") and
-                !std.mem.startsWith(u8, stripped, "///") and
-                !std.mem.eql(u8, stripped, "},") and
-                !std.mem.eql(u8, stripped, "}"))
-            {
-                // Skip body content inside nested containers
-                brace_depth += line_brace_delta;
-                continue;
-            }
-        }
-
-        try lines.append(allocator, trimmed);
-
-        // Update brace depth after adding the line
-        brace_depth += line_brace_delta;
-
-        // If we were in a scope and just closed back to where we started, we're done
-        if (started_scope and brace_depth < scope_start_depth) {
-            break;
-        }
-
-        // Stop at next top-level declaration (col 0) if we haven't started a scope yet
-        if (!started_scope and !is_first and trimmed.len > 0 and trimmed[0] != ' ' and trimmed[0] != '\t') {
-            if (std.mem.startsWith(u8, trimmed, "pub ") or
-                std.mem.startsWith(u8, trimmed, "fn ") or
-                std.mem.startsWith(u8, trimmed, "const ") or
-                std.mem.startsWith(u8, trimmed, "var ") or
-                std.mem.startsWith(u8, trimmed, "test ") or
-                std.mem.startsWith(u8, trimmed, "///"))
-            {
-                _ = lines.pop();
-                break;
-            }
-        }
-
-        // No hard line limit for functions - they should be complete
-        // For other types (test_decl, enum_field, etc.), apply a default limit
-        if (!is_fn and !is_container and lines.items.len >= 200) break;
-    }
-
-    // Prune trailing blank/comment-only lines
-    while (lines.items.len > 0) {
-        const last = lines.items[lines.items.len - 1];
-        const trimmed_last = std.mem.trim(u8, last, " \t\r");
-        if (trimmed_last.len == 0 or std.mem.startsWith(u8, trimmed_last, "//")) {
-            _ = lines.pop();
-        } else {
-            break;
-        }
-    }
-
-    if (lines.items.len == 0) return allocator.dupe(u8, "");
-
-    var buf: std.ArrayList(u8) = .{};
-    errdefer buf.deinit(allocator);
-    for (lines.items, 0..) |line, idx| {
-        if (idx > 0) try buf.append(allocator, '\n');
-        try buf.appendSlice(allocator, line);
-    }
-    return buf.toOwnedSlice(allocator);
+    const node_type_enum = llm.NodeType.fromString(node_type);
+    const result = try llm.extractExcerpt(allocator, src, start_line, node_type_enum, llm.DEFAULT_MAX_LINES);
+    return @constCast(result);
 }
 
 // ---------------------------------------------------------------------------
