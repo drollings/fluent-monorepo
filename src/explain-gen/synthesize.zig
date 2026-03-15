@@ -79,7 +79,7 @@ pub fn extractProseSources(
 
 /// Remove lines containing "absence" phrases from LLM output.
 /// Returns an owned copy with those lines stripped.
-fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     const absence_kws = [_][]const u8{
         "no other",       "not present",  "only has", "does not contain",
         "does not exist", "nothing else", "none are", "none were",

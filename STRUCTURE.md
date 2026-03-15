@@ -75,7 +75,7 @@ Then you you must read
 │       ├── hash.zig
 │       ├── json_store.zig                          # [gof-patterns]
 │       ├── llm_filter.zig
-│       ├── main.zig
+│       ├── main.zig                                # [gof-patterns]
 │       ├── pattern.zig                             # [gof-patterns]
 │       ├── plugin.zig
 │       ├── plugin_registry.zig
@@ -105,6 +105,7 @@ Then you you must read
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
+├── REFACTOR.md
 ├── requirements.txt
 └── STRUCTURE.md
 ```

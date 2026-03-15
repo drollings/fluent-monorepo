@@ -1266,6 +1266,25 @@ const ExcerptEntry = struct {
     code: []const u8, // owned: pruned source block
     lang: []const u8, // borrowed constant
 };
+const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
+
+// =============================================================================
+// explain — small path/config helpers
+// =============================================================================
+
+/// Resolve `path`: if absolute, dupe it; otherwise join with `base`.
+/// Returns an owned allocation the caller must free.
+fn resolveAbsOrJoin(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
+    return if (std.fs.path.isAbsolute(path))
+        try allocator.dupe(u8, path)
+    else
+        try std.fs.path.join(allocator, &.{ base, path });
+}
+
+/// Construct an LlmConfig from the parsed ExplainArgs.
+fn makeLlmConfig(ea: ExplainArgs) llm.LlmConfig {
+    return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.verbose };
+}
 
 // =============================================================================
 // explain
@@ -1301,20 +1320,272 @@ const ExplainArgs = struct {
 /// Return true when the query has 4 or fewer whitespace-separated words.
 /// Short queries use the fast path (no LLM calls).
 fn isShortQuery(query: []const u8) bool {
-    const trimmed = std.mem.trim(u8, query, " \t\n\r");
+    var tok = std.mem.tokenizeAny(u8, query, " \t\n\r");
     var count: usize = 0;
-    var in_word = false;
-    for (trimmed) |c| {
-        if (c == ' ' or c == '\t') {
-            in_word = false;
-        } else {
-            if (!in_word) {
-                count += 1;
-                in_word = true;
-            }
+    while (tok.next()) |_| {
+        count += 1;
+        if (count > 4) return false;
+    }
+    return true;
+}
+
+// =============================================================================
+// explain — phase helpers
+// =============================================================================
+
+/// Phase A: Load skill excerpts for the top search result's JSON guidance file.
+/// Returns owned slice; caller must free each `.name` and `.excerpt`, then free the slice.
+fn collectSkillExcerpts(
+    allocator: std.mem.Allocator,
+    top_json_path: []const u8,
+    guidance_dir: []const u8,
+    workspace: []const u8,
+) ![]SkillExcerpt {
+    var out: std.ArrayList(SkillExcerpt) = .{};
+    errdefer {
+        for (out.items) |se| {
+            allocator.free(se.name);
+            allocator.free(se.excerpt);
+        }
+        out.deinit(allocator);
+    }
+
+    const skills_str = loadSkillsFromJson(allocator, top_json_path) orelse return out.toOwnedSlice(allocator);
+    defer allocator.free(skills_str);
+
+    var seen: std.StringHashMapUnmanaged(void) = .{};
+    defer seen.deinit(allocator);
+
+    var sp = std.mem.splitScalar(u8, skills_str, '\n');
+    while (sp.next()) |raw| {
+        const name = std.mem.trim(u8, raw, " \t\r");
+        if (name.len == 0 or seen.contains(name)) continue;
+        try seen.put(allocator, name, {});
+        if (loadSkillPara(allocator, guidance_dir, workspace, name)) |para| {
+            try out.append(allocator, .{
+                .name = try allocator.dupe(u8, name),
+                .excerpt = para,
+            });
         }
     }
-    return count <= 4;
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase B: Collect up to 3 source excerpts, preferring exact-name matches.
+/// Returns owned slice; caller must free each `.label` and `.code`, then free the slice.
+fn collectSourceExcerpts(
+    allocator: std.mem.Allocator,
+    results: []const db_mod.ExplainDb.SearchResult,
+    search_terms: []const []const u8,
+    workspace: []const u8,
+) ![]ExcerptEntry {
+    var out: std.ArrayList(ExcerptEntry) = .{};
+    errdefer {
+        for (out.items) |e| {
+            allocator.free(e.label);
+            allocator.free(e.code);
+        }
+        out.deinit(allocator);
+    }
+
+    // Re-sort: exact-name-match first, then non-test, then score.
+    var sorted: std.ArrayList(db_mod.ExplainDb.SearchResult) = .{};
+    defer sorted.deinit(allocator);
+    for (results) |r| try sorted.append(allocator, r);
+    std.sort.insertion(db_mod.ExplainDb.SearchResult, sorted.items, search_terms, struct {
+        fn lessThan(terms: []const []const u8, a: db_mod.ExplainDb.SearchResult, b: db_mod.ExplainDb.SearchResult) bool {
+            const a_exact = isExactNameMatch(a.name, terms);
+            const b_exact = isExactNameMatch(b.name, terms);
+            if (a_exact != b_exact) return a_exact;
+            const a_test = std.mem.eql(u8, a.node_type, "test_decl");
+            const b_test = std.mem.eql(u8, b.node_type, "test_decl");
+            if (a_test != b_test) return !a_test;
+            return a.score > b.score;
+        }
+    }.lessThan);
+
+    var seen_files: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_files.deinit(allocator);
+
+    for (sorted.items) |r| {
+        if (out.items.len >= 3) break;
+        if (r.source.len == 0 or seen_files.contains(r.source)) continue;
+        const start_line = r.line orelse continue;
+
+        const src_abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
+        defer allocator.free(src_abs);
+
+        const src_opt: ?[]const u8 = blk: {
+            const f = std.fs.openFileAbsolute(src_abs, .{}) catch break :blk null;
+            defer f.close();
+            break :blk f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch null;
+        };
+        const src = src_opt orelse continue;
+        defer allocator.free(src);
+
+        const code = try explainExtractExcerpt(allocator, src, start_line, r.node_type);
+        if (code.len == 0) {
+            allocator.free(code);
+            continue;
+        }
+        const lang: []const u8 = if (std.mem.endsWith(u8, r.source, ".zig")) "zig" else if (std.mem.endsWith(u8, r.source, ".py")) "python" else "text";
+        const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
+        try out.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
+        try seen_files.put(allocator, r.source, {});
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase C: Grep top result files for search-term matches.
+/// Returns owned slice; caller must free each `.lines`, then free the slice.
+fn grepTopFiles(
+    allocator: std.mem.Allocator,
+    results: []const db_mod.ExplainDb.SearchResult,
+    search_terms: []const []const u8,
+    workspace: []const u8,
+) ![]FileMatchItem {
+    var out: std.ArrayList(FileMatchItem) = .{};
+    errdefer {
+        for (out.items) |fm| allocator.free(fm.lines);
+        out.deinit(allocator);
+    }
+
+    var seen: std.StringHashMapUnmanaged(void) = .{};
+    defer seen.deinit(allocator);
+
+    for (results[0..@min(5, results.len)]) |r| {
+        if (r.source.len == 0 or seen.contains(r.source)) continue;
+        try seen.put(allocator, r.source, {});
+
+        const abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
+        defer allocator.free(abs);
+
+        const matches = try explainGrepFile(allocator, abs, search_terms, 10);
+        if (matches.len > 0) {
+            try out.append(allocator, .{ .path = r.source, .count = matches.len, .lines = matches });
+        } else {
+            allocator.free(matches);
+        }
+    }
+
+    std.sort.insertion(FileMatchItem, out.items, {}, struct {
+        fn less(_: void, a: FileMatchItem, b: FileMatchItem) bool {
+            return a.count > b.count;
+        }
+    }.less);
+
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase E: Render the legacy explain output to stdout.
+fn renderExplainOutput(
+    allocator: std.mem.Allocator,
+    query_text: []const u8,
+    results: []const db_mod.ExplainDb.SearchResult,
+    search_terms: []const []const u8,
+    ai_summary: ?[]const u8,
+    skill_excerpts: []const SkillExcerpt,
+    excerpts: []const ExcerptEntry,
+    file_matches: []const FileMatchItem,
+) !void {
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    try stdout.print("# Explain: {s}\n\n", .{query_text});
+
+    if (ai_summary) |s| {
+        const trimmed_s = std.mem.trim(u8, s, " \t\n\r");
+        if (trimmed_s.len > 0) try stdout.print("{s}\n\n", .{trimmed_s});
+    }
+
+    try stdout.print("---\n", .{});
+    try stdout.print("**Source**: `{s}`\n", .{results[0].source});
+
+    for (skill_excerpts[0..@min(2, skill_excerpts.len)]) |se| {
+        const first_nl = std.mem.indexOfScalar(u8, se.excerpt, '\n') orelse se.excerpt.len;
+        try stdout.print("**Pattern**: `{s}` — {s}\n", .{ se.name, se.excerpt[0..@min(first_nl, 120)] });
+    }
+    try stdout.print("\n", .{});
+
+    for (excerpts) |e| {
+        try stdout.print("```{s}\n// {s}\n{s}\n```\n\n", .{ e.lang, e.label, e.code });
+    }
+
+    // Keywords: public non-test members from primary source JSON, excluding search terms.
+    {
+        var kw_buf: std.ArrayList(u8) = .{};
+        defer kw_buf.deinit(allocator);
+        var kw_count: usize = 0;
+
+        if (loadPublicMemberNames(allocator, results[0].file_path)) |names| {
+            defer {
+                for (names) |n| allocator.free(n);
+                allocator.free(names);
+            }
+            for (names) |mname| {
+                if (kw_count >= 8) break;
+                const mname_lower = try std.ascii.allocLowerString(allocator, mname);
+                defer allocator.free(mname_lower);
+                const is_term = for (search_terms) |term| {
+                    if (std.mem.eql(u8, mname_lower, term)) break true;
+                } else false;
+                if (is_term) continue;
+                if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
+                try kw_buf.writer(allocator).print("`{s}`", .{mname});
+                kw_count += 1;
+            }
+        }
+        if (kw_count > 0) try stdout.print("**Keywords**: {s}\n\n", .{kw_buf.items});
+    }
+
+    // See also: used_by from top result + secondary file paths.
+    {
+        var see_buf: std.ArrayList(u8) = .{};
+        defer see_buf.deinit(allocator);
+        var see_count: usize = 0;
+
+        var ub_from_json: ?[][]const u8 = null;
+        defer if (ub_from_json) |ub| {
+            for (ub) |s| allocator.free(s);
+            allocator.free(ub);
+        };
+        const top_used_by: [][]const u8 = if (results[0].used_by.len > 0)
+            results[0].used_by
+        else blk: {
+            ub_from_json = loadUsedByFromJson(allocator, results[0].file_path);
+            break :blk ub_from_json orelse &.{};
+        };
+
+        for (top_used_by[0..@min(4, top_used_by.len)]) |ub| {
+            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
+            try see_buf.writer(allocator).print("`{s}`", .{ub});
+            see_count += 1;
+        }
+        for (results[1..@min(results.len, 6)]) |r| {
+            if (see_count >= 6) break;
+            if (r.source.len == 0 or std.mem.eql(u8, r.source, results[0].source)) continue;
+            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
+            try see_buf.writer(allocator).print("`{s}`", .{r.source});
+            see_count += 1;
+        }
+        if (see_count > 0) try stdout.print("**See also**: {s}\n\n", .{see_buf.items});
+    }
+
+    if (file_matches.len > 0) {
+        try stdout.print("### Files with most matches\n\n", .{});
+        for (file_matches[0..@min(3, file_matches.len)]) |fm| {
+            try stdout.print("- `{s}` ({d} matches): lines ", .{ fm.path, fm.count });
+            for (fm.lines[0..@min(10, fm.lines.len)], 0..) |ln, li| {
+                if (li > 0) try stdout.print(", ", .{});
+                try stdout.print("{d}", .{ln});
+            }
+            try stdout.print("\n", .{});
+        }
+        try stdout.print("\n", .{});
+    }
+
+    try stdout.flush();
 }
 
 fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -1324,38 +1595,54 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --limit requires a value\n", .{});
+                return;
+            }
             ea.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --db requires a value\n", .{});
+                return;
+            }
             ea.db_path = args[i];
         } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --workspace requires a value\n", .{});
+                return;
+            }
             ea.workspace = args[i];
         } else if (std.mem.eql(u8, arg, "--api-url")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --api-url requires a value\n", .{});
+                return;
+            }
             ea.api_url = args[i];
         } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --model requires a value\n", .{});
+                return;
+            }
             ea.model = args[i];
         } else if (std.mem.eql(u8, arg, "--no-llm")) {
             ea.no_llm = true;
         } else if (std.mem.eql(u8, arg, "--guidance")) {
             i += 1;
-            if (i >= args.len) return;
+            if (i >= args.len) {
+                std.debug.print("Error: --guidance requires a value\n", .{});
+                return;
+            }
             ea.guidance = args[i];
         } else if (std.mem.startsWith(u8, arg, "--staged=")) {
-            const val = arg["--staged=".len..];
-            ea.staged = !std.mem.eql(u8, val, "false");
+            ea.staged = !std.mem.eql(u8, arg["--staged=".len..], "false");
         } else if (std.mem.eql(u8, arg, "--staged")) {
             ea.staged = true;
         } else if (std.mem.startsWith(u8, arg, "--filter=")) {
-            const val = arg["--filter=".len..];
-            ea.filter = std.meta.stringToEnum(FilterMode, val) orelse .auto;
+            ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             ea.query_str = arg;
         }
@@ -1366,21 +1653,23 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     };
 
+    // ── Resolve paths ─────────────────────────────────────────────────────────
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
     const workspace = if (ea.workspace) |w|
-        if (std.fs.path.isAbsolute(w)) try allocator.dupe(u8, w) else try std.fs.path.join(allocator, &.{ cwd, w })
+        try resolveAbsOrJoin(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
     defer allocator.free(workspace);
 
-    const db_path = if (ea.db_path) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ workspace, dp })
-    else
-        try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_DB_PATH });
+    const db_path = try resolveAbsOrJoin(allocator, workspace, ea.db_path orelse config_mod.DEFAULT_DB_PATH);
     defer allocator.free(db_path);
 
+    const guidance_dir = try resolveAbsOrJoin(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    defer allocator.free(guidance_dir);
+
+    // ── Validate DB ───────────────────────────────────────────────────────────
     std.fs.accessAbsolute(db_path, .{}) catch {
         std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
         std.debug.print("Run 'explain-gen gen' to generate it.\n", .{});
@@ -1395,24 +1684,12 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // ── Staged pipeline (default) ──────────────────────────────────────────────
     if (ea.staged) {
-        const guidance_dir_staged = if (ea.guidance) |g|
-            if (std.fs.path.isAbsolute(g)) try allocator.dupe(u8, g) else try std.fs.path.join(allocator, &.{ workspace, g })
-        else
-            try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_GUIDANCE_DIR });
-        defer allocator.free(guidance_dir_staged);
-
-        const llm_config_staged: llm.LlmConfig = .{
-            .api_url = ea.api_url,
-            .model = ea.model,
-            .debug = ea.verbose,
-        };
-
         staged_path: {
-            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir_staged, llm_config_staged, ea) catch |err| {
+            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, makeLlmConfig(ea), ea) catch |err| {
                 if (ea.verbose) std.debug.print("staged explain failed ({s}), falling back to legacy\n", .{@errorName(err)});
                 break :staged_path;
             };
-            return; // staged path completed successfully
+            return;
         }
     }
 
@@ -1444,292 +1721,53 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     {
         var tok = std.mem.tokenizeAny(u8, query_text, " \t_");
         while (tok.next()) |word| {
-            if (word.len == 0) continue;
             try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, word));
         }
         if (search_terms.items.len == 0)
             try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, query_text));
     }
 
-    // Guidance dir (for skill excerpts and inbox bullets).
-    const guidance_dir = if (ea.guidance) |g|
-        if (std.fs.path.isAbsolute(g)) try allocator.dupe(u8, g) else try std.fs.path.join(allocator, &.{ workspace, g })
-    else
-        try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_GUIDANCE_DIR });
-    defer allocator.free(guidance_dir);
-
-    // ── PHASE A: Skill excerpts ───────────────────────────────────────────────
-    var skill_excerpts: std.ArrayList(SkillExcerpt) = .{};
+    // ── Phase A: Skill excerpts ───────────────────────────────────────────────
+    const skill_excerpts = try collectSkillExcerpts(allocator, results[0].file_path, guidance_dir, workspace);
     defer {
-        for (skill_excerpts.items) |se| {
+        for (skill_excerpts) |se| {
             allocator.free(se.name);
             allocator.free(se.excerpt);
         }
-        skill_excerpts.deinit(allocator);
-    }
-    // For the top result, load skills from its JSON guidance file.
-    {
-        var seen_skills: std.StringHashMapUnmanaged(void) = .{};
-        defer seen_skills.deinit(allocator);
-
-        const top = results[0];
-        // top.file_path is the absolute path to the JSON guidance file.
-        const json_path = top.file_path;
-
-        if (loadSkillsFromJson(allocator, json_path)) |skills_json| {
-            defer allocator.free(skills_json);
-            var sp = std.mem.splitScalar(u8, skills_json, '\n');
-            while (sp.next()) |skill_name_raw| {
-                const skill_name = std.mem.trim(u8, skill_name_raw, " \t\r");
-                if (skill_name.len == 0) continue;
-                if (seen_skills.contains(skill_name)) continue;
-                try seen_skills.put(allocator, skill_name, {});
-                if (loadSkillPara(allocator, guidance_dir, workspace, skill_name)) |para| {
-                    try skill_excerpts.append(allocator, .{
-                        .name = try allocator.dupe(u8, skill_name),
-                        .excerpt = para,
-                    });
-                }
-            }
-        }
+        allocator.free(skill_excerpts);
     }
 
-    // ── PHASE B: Source excerpts ──────────────────────────────────────────────
-    var excerpts: std.ArrayList(ExcerptEntry) = .{};
+    // ── Phase B: Source excerpts ──────────────────────────────────────────────
+    const excerpts = try collectSourceExcerpts(allocator, results, search_terms.items, workspace);
     defer {
-        for (excerpts.items) |e| {
+        for (excerpts) |e| {
             allocator.free(e.label);
             allocator.free(e.code);
         }
-        excerpts.deinit(allocator);
+        allocator.free(excerpts);
     }
 
-    // Collect up to 3 excerpts. Prefer exact name matches over test_decls.
-    // Re-sort results slice by: exact-name-match first, then non-test, then score.
-    var sorted_results: std.ArrayList(db_mod.ExplainDb.SearchResult) = .{};
-    defer sorted_results.deinit(allocator);
-    for (results) |r| try sorted_results.append(allocator, r);
-    std.sort.insertion(db_mod.ExplainDb.SearchResult, sorted_results.items, search_terms.items, struct {
-        fn lessThan(terms: []const []const u8, a: db_mod.ExplainDb.SearchResult, b: db_mod.ExplainDb.SearchResult) bool {
-            const a_exact = isExactNameMatch(a.name, terms);
-            const b_exact = isExactNameMatch(b.name, terms);
-            if (a_exact != b_exact) return a_exact; // exact comes first
-            const a_test = std.mem.eql(u8, a.node_type, "test_decl");
-            const b_test = std.mem.eql(u8, b.node_type, "test_decl");
-            if (a_test != b_test) return !a_test; // non-test comes first
-            return a.score > b.score;
-        }
-    }.lessThan);
-
-    var seen_excerpt_files: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_excerpt_files.deinit(allocator);
-
-    for (sorted_results.items) |r| {
-        if (excerpts.items.len >= 3) break;
-        if (seen_excerpt_files.contains(r.source)) continue;
-        if (r.source.len == 0) continue;
-
-        const start_line = r.line orelse continue;
-        const src_abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
-        defer allocator.free(src_abs);
-
-        const src_opt: ?[]const u8 = blk: {
-            const f = std.fs.openFileAbsolute(src_abs, .{}) catch break :blk null;
-            defer f.close();
-            break :blk f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch null;
-        };
-        if (src_opt == null) continue;
-        const src = src_opt.?;
-        defer allocator.free(src);
-
-        const code = try explainExtractExcerpt(allocator, src, start_line, r.node_type);
-        if (code.len == 0) {
-            allocator.free(code);
-            continue;
-        }
-        const lang: []const u8 = if (std.mem.endsWith(u8, r.source, ".zig")) "zig" else if (std.mem.endsWith(u8, r.source, ".py")) "python" else "text";
-        const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
-        try excerpts.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
-        try seen_excerpt_files.put(allocator, r.source, {});
-    }
-
-    // ── PHASE C: Grep for files with most matches ─────────────────────────────
-    const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
-    var file_grep: std.ArrayList(FileMatchItem) = .{};
+    // ── Phase C: Grep top files ───────────────────────────────────────────────
+    const file_matches = try grepTopFiles(allocator, results, search_terms.items, workspace);
     defer {
-        for (file_grep.items) |fm| allocator.free(fm.lines);
-        file_grep.deinit(allocator);
+        for (file_matches) |fm| allocator.free(fm.lines);
+        allocator.free(file_matches);
     }
-    var grep_seen: std.StringHashMapUnmanaged(void) = .{};
-    defer grep_seen.deinit(allocator);
 
-    for (results[0..@min(5, results.len)]) |r| {
-        if (r.source.len == 0) continue;
-        if (grep_seen.contains(r.source)) continue;
-        try grep_seen.put(allocator, r.source, {});
-
-        const abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
-        defer allocator.free(abs);
-
-        const matches = try explainGrepFile(allocator, abs, search_terms.items, 10);
-        if (matches.len > 0) {
-            var lines_list: std.ArrayList(usize) = .{};
-            for (matches) |ln| try lines_list.append(allocator, ln);
-            allocator.free(matches);
-            try file_grep.append(allocator, .{
-                .path = r.source,
-                .count = lines_list.items.len,
-                .lines = try lines_list.toOwnedSlice(allocator),
-            });
-        } else {
-            allocator.free(matches);
-        }
-    }
-    // Sort descending by match count.
-    std.sort.insertion(FileMatchItem, file_grep.items, {}, struct {
-        fn less(_: void, a: FileMatchItem, b: FileMatchItem) bool {
-            return a.count > b.count;
-        }
-    }.less);
-
-    // ── PHASE D: LLM synthesis ────────────────────────────────────────────────
+    // ── Phase D: LLM synthesis ────────────────────────────────────────────────
     var ai_summary: ?[]const u8 = null;
     defer if (ai_summary) |s| allocator.free(s);
 
     if (!ea.no_llm) {
-        const llm_config: llm.LlmConfig = .{
-            .api_url = ea.api_url,
-            .model = ea.model,
-            .debug = ea.verbose,
-        };
-        var client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
+        var client_opt = llm.LlmClient.init(allocator, makeLlmConfig(ea)) catch null;
         defer if (client_opt) |*c| c.deinit();
-
         if (client_opt) |*client| {
-            ai_summary = buildLlmSummary(allocator, client, query_text, results, skill_excerpts.items, excerpts.items) catch null;
+            ai_summary = buildLlmSummary(allocator, client, query_text, results, skill_excerpts, excerpts) catch null;
         }
     }
 
-    // ── PHASE E: Output ───────────────────────────────────────────────────────
-    var ws: llm.WriterState = .{};
-    ws.initStdout();
-    const stdout = ws.writer();
-
-    try stdout.print("# Explain: {s}\n\n", .{query_text});
-
-    if (ai_summary) |s| {
-        const trimmed_s = std.mem.trim(u8, s, " \t\n\r");
-        if (trimmed_s.len > 0) try stdout.print("{s}\n\n", .{trimmed_s});
-    }
-
-    try stdout.print("---\n", .{});
-
-    // Primary source reference.
-    try stdout.print("**Source**: `{s}`\n", .{results[0].source});
-
-    // Pattern / skill line.
-    for (skill_excerpts.items[0..@min(2, skill_excerpts.items.len)]) |se| {
-        const first_nl = std.mem.indexOfScalar(u8, se.excerpt, '\n') orelse se.excerpt.len;
-        const first_line = se.excerpt[0..@min(first_nl, 120)];
-        try stdout.print("**Pattern**: `{s}` — {s}\n", .{ se.name, first_line });
-    }
-    try stdout.print("\n", .{});
-
-    // Code excerpts.
-    for (excerpts.items) |e| {
-        try stdout.print("```{s}\n// {s}\n{s}\n```\n\n", .{ e.lang, e.label, e.code });
-    }
-
-    // Keywords: public non-test members from the primary source file's JSON,
-    // excluding names that are identical to a search term.
-    {
-        const top_src = results[0].source;
-        var kw_buf: std.ArrayList(u8) = .{};
-        defer kw_buf.deinit(allocator);
-        var kw_count: usize = 0;
-
-        if (top_src.len > 0) {
-            // results[0].file_path is the absolute JSON guidance path.
-            const kw_json_path = results[0].file_path;
-
-            if (loadPublicMemberNames(allocator, kw_json_path)) |names| {
-                defer {
-                    for (names) |n| allocator.free(n);
-                    allocator.free(names);
-                }
-                for (names) |mname| {
-                    if (kw_count >= 8) break;
-                    const mname_lower = try std.ascii.allocLowerString(allocator, mname);
-                    defer allocator.free(mname_lower);
-                    var is_term = false;
-                    for (search_terms.items) |term| {
-                        if (std.mem.eql(u8, mname_lower, term)) {
-                            is_term = true;
-                            break;
-                        }
-                    }
-                    if (is_term) continue;
-                    if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
-                    try kw_buf.writer(allocator).print("`{s}`", .{mname});
-                    kw_count += 1;
-                }
-            }
-        }
-        if (kw_count > 0) try stdout.print("**Keywords**: {s}\n\n", .{kw_buf.items});
-    }
-
-    // See also: used_by from top result (or from JSON if member row), + secondary paths.
-    {
-        var see_buf: std.ArrayList(u8) = .{};
-        defer see_buf.deinit(allocator);
-        var see_count: usize = 0;
-
-        // Gather used_by: prefer the result's own slice, fall back to loading from JSON.
-        var ub_from_json: ?[][]const u8 = null;
-        defer if (ub_from_json) |ub| {
-            for (ub) |s| allocator.free(s);
-            allocator.free(ub);
-        };
-        const top_used_by: [][]const u8 = if (results[0].used_by.len > 0)
-            results[0].used_by
-        else blk: {
-            ub_from_json = loadUsedByFromJson(allocator, results[0].file_path);
-            break :blk ub_from_json orelse &.{};
-        };
-
-        for (top_used_by[0..@min(4, top_used_by.len)]) |ub| {
-            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{ub});
-            see_count += 1;
-        }
-        // Secondary results' file paths if still room.
-        for (results[1..@min(results.len, 6)]) |r| {
-            if (see_count >= 6) break;
-            // Skip if same file as primary.
-            if (std.mem.eql(u8, r.source, results[0].source)) continue;
-            if (r.source.len == 0) continue;
-            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{r.source});
-            see_count += 1;
-        }
-        if (see_count > 0) try stdout.print("**See also**: {s}\n\n", .{see_buf.items});
-    }
-
-    // Files with most matches.
-    if (file_grep.items.len > 0) {
-        try stdout.print("### Files with most matches\n\n", .{});
-        for (file_grep.items[0..@min(3, file_grep.items.len)]) |fm| {
-            try stdout.print("- `{s}` ({d} matches): lines ", .{ fm.path, fm.count });
-            for (fm.lines[0..@min(10, fm.lines.len)], 0..) |ln, li| {
-                if (li > 0) try stdout.print(", ", .{});
-                try stdout.print("{d}", .{ln});
-            }
-            try stdout.print("\n", .{});
-        }
-        try stdout.print("\n", .{});
-    }
-
-    try stdout.flush();
+    // ── Phase E: Render output ────────────────────────────────────────────────
+    try renderExplainOutput(allocator, query_text, results, search_terms.items, ai_summary, skill_excerpts, excerpts, file_matches);
 }
 
 // ---------------------------------------------------------------------------
@@ -1999,28 +2037,19 @@ fn explainExtractExcerpt(
                 break;
             }
 
-            // For abbreviated container: skip body content, show signatures
+            // Show declarations, comments, closings; skip body expressions.
             const stripped = std.mem.trimLeft(u8, trimmed, " \t");
-            if (stripped.len == 0) {
-                try lines.append(allocator, trimmed);
-            } else if (stripped[0] == '}') {
-                try lines.append(allocator, trimmed);
-            } else if (std.mem.startsWith(u8, stripped, "pub ") or
+            if (stripped.len == 0 or
+                stripped[0] == '}' or
+                std.mem.startsWith(u8, stripped, "pub ") or
                 std.mem.startsWith(u8, stripped, "fn ") or
                 std.mem.startsWith(u8, stripped, "const ") or
                 std.mem.startsWith(u8, stripped, "var ") or
                 std.mem.startsWith(u8, stripped, "test ") or
                 std.mem.startsWith(u8, stripped, "//") or
-                std.mem.startsWith(u8, stripped, "///"))
+                std.mem.startsWith(u8, stripped, "///") or
+                std.mem.eql(u8, stripped, "};"))
             {
-                // Show declarations and comments at container level
-                if (brace_depth == 1) {
-                    try lines.append(allocator, trimmed);
-                } else {
-                    // Inside nested container - abbreviate
-                    try lines.append(allocator, trimmed);
-                }
-            } else if (std.mem.eql(u8, stripped, "};")) {
                 try lines.append(allocator, trimmed);
             }
         } else {
@@ -2172,35 +2201,12 @@ fn buildLlmSummary(
     const raw = (client.complete(prompt, 1500, 0.15, null) catch null) orelse return null;
     defer allocator.free(raw);
 
-    // Strip absence sentences.
-    const absence_kws = [_][]const u8{
-        "no other",       "not present",  "only has", "does not contain",
-        "does not exist", "nothing else", "none are", "none were",
-    };
-    var out_buf: std.ArrayList(u8) = .{};
-    var line_it = std.mem.splitScalar(u8, raw, '\n');
-    while (line_it.next()) |line| {
-        const lower = try std.ascii.allocLowerString(allocator, line);
-        defer allocator.free(lower);
-        var is_absence = false;
-        for (absence_kws) |kw| {
-            if (std.mem.indexOf(u8, lower, kw) != null) {
-                is_absence = true;
-                break;
-            }
-        }
-        if (!is_absence) try out_buf.writer(allocator).print("{s}\n", .{line});
-    }
-    const result = out_buf.toOwnedSlice(allocator) catch return null;
-    const trimmed_result = std.mem.trim(u8, result, " \t\n\r");
-    if (trimmed_result.len == 0) {
-        allocator.free(result);
-        return null;
-    }
-    // Return a dupe of the trimmed slice (result may have trailing whitespace).
-    const final = try allocator.dupe(u8, trimmed_result);
-    allocator.free(result);
-    return final;
+    const cleaned = try synthesize_mod.stripAbsenceSentences(allocator, llm.stripThinkBlock(raw));
+    defer allocator.free(cleaned);
+
+    const trimmed = std.mem.trim(u8, cleaned, " \t\n\r");
+    if (trimmed.len == 0) return null;
+    return try allocator.dupe(u8, trimmed);
 }
 
 // =============================================================================
@@ -2271,13 +2277,8 @@ fn cmdExplainStaged(
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
     defer allocator.free(skills_dir);
 
-    // Load semantic aliases for query expansion.
     var aliases_opt: ?db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
     defer if (aliases_opt) |*a| a.deinit();
-
-    // For long queries with LLM, extract key terms first.
-    var expanded_query: ?[]const u8 = null;
-    defer if (expanded_query) |q| allocator.free(q);
 
     const use_llm = !ea.no_llm and switch (ea.filter) {
         .skip => false,
@@ -2285,18 +2286,21 @@ fn cmdExplainStaged(
         .auto => !isShortQuery(query_text),
     };
 
-    if (use_llm) {
-        var client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
-        defer if (client_opt) |*c| c.deinit();
+    // Create the LLM client once for the entire pipeline.
+    var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch null else null;
+    defer if (client_opt) |*c| c.deinit();
 
+    // For long queries, extract key terms to improve search recall.
+    var expanded_query: ?[]const u8 = null;
+    defer if (expanded_query) |q| allocator.free(q);
+
+    if (use_llm) {
         if (client_opt) |*client| {
-            // Try to extract key terms for better search.
             if (llmExtractKeyTerms(allocator, client, query_text) catch null) |terms| {
                 defer {
                     for (terms) |t| allocator.free(t);
                     allocator.free(terms);
                 }
-                // Build expanded query: original + extracted terms.
                 var buf: std.ArrayList(u8) = .{};
                 defer buf.deinit(allocator);
                 try buf.appendSlice(allocator, query_text);
@@ -2311,14 +2315,7 @@ fn cmdExplainStaged(
 
     const effective_query = expanded_query orelse query_text;
 
-    // ── Stage collection with alias expansion ──────────────────────────────────
-    const stages_raw = try staged_mod.executeStagedWithAliases(
-        allocator,
-        db,
-        effective_query,
-        workspace,
-        aliases_opt,
-    );
+    const stages_raw = try staged_mod.executeStagedWithAliases(allocator, db, effective_query, workspace, aliases_opt);
     defer {
         types.freeStages(allocator, stages_raw);
         allocator.free(stages_raw);
@@ -2333,120 +2330,91 @@ fn cmdExplainStaged(
         return;
     }
 
-    // Determine whether to use LLM (already computed above).
+    // ── Fast path: no LLM ─────────────────────────────────────────────────────
+    if (!use_llm or client_opt == null) {
+        if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
+        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace);
+    }
 
-    var summary: ?[]const u8 = null;
-    defer if (summary) |s| allocator.free(s);
+    // ── LLM path ─────────────────────────────────────────────────────────────
+    const client = &client_opt.?;
 
-    var stages_final: []types.Stage = undefined;
-    var stages_filtered_alloc: ?[]types.Stage = null;
-    defer if (stages_filtered_alloc) |sf| {
+    // M6: LLM relevance filter.
+    const stages_filtered: ?[]types.Stage = llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
+        if (ea.verbose) std.debug.print("llm_filter failed, using unfiltered stages\n", .{});
+        break :blk null;
+    };
+    defer if (stages_filtered) |sf| {
         types.freeStages(allocator, sf);
         allocator.free(sf);
     };
-    var stages_expanded_alloc: ?[]types.Stage = null;
-    defer if (stages_expanded_alloc) |se| {
-        types.freeStages(allocator, se);
-        allocator.free(se);
-    };
 
-    if (use_llm) {
-        // ── LLM path ─────────────────────────────────────────────────────────
-        var client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
-        defer if (client_opt) |*c| c.deinit();
+    const working_stages: []const types.Stage = stages_filtered orelse stages_raw;
 
-        if (client_opt) |*client| {
-            // M6: LLM relevance filter.
-            const filtered = llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
-                if (ea.verbose) std.debug.print("llm_filter failed, using unfiltered stages\n", .{});
-                break :blk null;
-            };
-
-            const working_stages: []const types.Stage = if (filtered) |f| blk: {
-                stages_filtered_alloc = f;
-                break :blk f;
-            } else stages_raw;
-
-            // M7: Follow-up expansion.
-            // Collect inputs: file_paths, sources, used_by from current working stages.
-            // We re-search the db briefly to get used_by lists.
-            const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
-            defer {
-                for (expansion_results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
-                allocator.free(expansion_results);
-            }
-
-            var fp_list: std.ArrayList([]const u8) = .{};
-            defer fp_list.deinit(allocator);
-            var src_list: std.ArrayList([]const u8) = .{};
-            defer src_list.deinit(allocator);
-            var ub_list: std.ArrayList([]const []const u8) = .{};
-            defer ub_list.deinit(allocator);
-
-            for (expansion_results) |r| {
-                try fp_list.append(allocator, r.file_path);
-                try src_list.append(allocator, r.source);
-                try ub_list.append(allocator, r.used_by);
-            }
-
-            // Collect already-seen sources to avoid duplicates.
-            var existing_srcs: std.ArrayList([]const u8) = .{};
-            defer existing_srcs.deinit(allocator);
-            for (working_stages) |s| {
-                if (s.kind == .code or s.kind == .prose) {
-                    try existing_srcs.append(allocator, s.source);
-                }
-            }
-
-            const extra_stages = staged_mod.expandFollowUps(
-                allocator,
-                fp_list.items,
-                src_list.items,
-                ub_list.items,
-                workspace,
-                guidance_dir,
-                skills_dir,
-                existing_srcs.items,
-                6, // limit extra stages
-            ) catch &.{};
-            stages_expanded_alloc = @constCast(extra_stages);
-
-            // Build combined working + extra stages view (no alloc, just a concatenated list).
-            var combined: std.ArrayList(types.Stage) = .{};
-            defer combined.deinit(allocator);
-            for (working_stages) |s| try combined.append(allocator, s);
-            for (extra_stages) |s| try combined.append(allocator, s);
-
-            // M8: LLM synthesis.
-            summary = synthesize_mod.synthesize(allocator, client, query_text, combined.items) catch null;
-
-            // Use combined as final display set.
-            // We can't deinit combined here since we need it for formatStaged;
-            // so transfer ownership to a separate slice.
-            const combined_slice = try combined.toOwnedSlice(allocator);
-            stages_final = combined_slice;
-            // Note: combined_slice borrows from working_stages + extra_stages (which are deferred-freed above),
-            // so we must NOT free individual Stage strings in combined_slice. We just free the slice itself.
-            defer allocator.free(combined_slice);
-
-            const output = try staged_mod.formatStaged(allocator, query_text, stages_final, summary, workspace);
-            defer allocator.free(output);
-
-            var ws: llm.WriterState = .{};
-            ws.initStdout();
-            const stdout = ws.writer();
-            try stdout.writeAll(output);
-            try stdout.flush();
-            return;
-        }
-        // LLM client init failed — fall through to fast path.
-        if (ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
+    // M7: Follow-up expansion — re-search to gather used_by for expansion inputs.
+    const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
+    defer {
+        for (expansion_results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
+        allocator.free(expansion_results);
     }
 
-    // ── Fast path: format stages directly without LLM ─────────────────────────
-    const output = try staged_mod.formatStaged(allocator, query_text, stages_raw, null, workspace);
-    defer allocator.free(output);
+    var fp_list: std.ArrayList([]const u8) = .{};
+    defer fp_list.deinit(allocator);
+    var src_list: std.ArrayList([]const u8) = .{};
+    defer src_list.deinit(allocator);
+    var ub_list: std.ArrayList([]const []const u8) = .{};
+    defer ub_list.deinit(allocator);
+    for (expansion_results) |r| {
+        try fp_list.append(allocator, r.file_path);
+        try src_list.append(allocator, r.source);
+        try ub_list.append(allocator, r.used_by);
+    }
 
+    var existing_srcs: std.ArrayList([]const u8) = .{};
+    defer existing_srcs.deinit(allocator);
+    for (working_stages) |s| {
+        if (s.kind == .code or s.kind == .prose) try existing_srcs.append(allocator, s.source);
+    }
+
+    const extra_stages: ?[]types.Stage = staged_mod.expandFollowUps(
+        allocator,
+        fp_list.items,
+        src_list.items,
+        ub_list.items,
+        workspace,
+        guidance_dir,
+        skills_dir,
+        existing_srcs.items,
+        6,
+    ) catch null;
+    defer if (extra_stages) |es| {
+        types.freeStages(allocator, es);
+        allocator.free(es);
+    };
+
+    // Combine working + extra stages (borrows — no new string copies).
+    var combined: std.ArrayList(types.Stage) = .{};
+    defer combined.deinit(allocator); // only frees the ArrayList spine; strings owned by above slices
+    for (working_stages) |s| try combined.append(allocator, s);
+    if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
+
+    // M8: LLM synthesis.
+    const summary = synthesize_mod.synthesize(allocator, client, query_text, combined.items) catch null;
+    defer if (summary) |s| allocator.free(s);
+
+    return emitStagedOutput(allocator, query_text, combined.items, summary, workspace);
+}
+
+/// Write formatted staged output to stdout and flush.
+fn emitStagedOutput(
+    allocator: std.mem.Allocator,
+    query_text: []const u8,
+    stages: []const types.Stage,
+    summary: ?[]const u8,
+    workspace: []const u8,
+) !void {
+    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace);
+    defer allocator.free(output);
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();

@@ -35,7 +35,7 @@
       "line": 66
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "stripAbsenceSentences",
       "match_hash": "4a01da80e5abbf20ae7d1da74c7a3c94443f159459a744ceb072bb483c473bf4",
       "signature": "fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) -> []u8",
@@ -44,7 +44,7 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "is_pub": false,
+      "is_pub": true,
       "line": 82
     }
   ]
