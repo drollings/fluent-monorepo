@@ -23,6 +23,22 @@
     },
     {
       "type": "fn_decl",
+      "name": "executeStagedWithAliases",
+      "match_hash": "2e047d307fab3623cec1195f684930348f34a902c019719cd1b2314fb5cca341",
+      "signature": "fn executeStagedWithAliases(allocator: std.mem.Allocator, db: *db_mod.ExplainDb, query: []const u8, workspace: []const u8, aliases: ?db_mod.SemanticAliases) -> []types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*db_mod.ExplainDb" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "aliases", "type": "?db_mod.SemanticAliases" }
+      ],
+      "returns": "[]types.Stage",
+      "is_pub": true,
+      "line": 33
+    },
+    {
+      "type": "fn_decl",
       "name": "expandFollowUps",
       "match_hash": "8fda68b4d2fea36a7c69a4ce9a98e91f7f431736e5633df1e011dff75949609c",
       "signature": "fn expandFollowUps(allocator: std.mem.Allocator, db_results_file_paths: []const []const u8, db_results_sources: []const []const u8, db_results_used_by: []const []const []const u8, workspace: []const u8, guidance_dir: []const u8, skills_dir: []const u8, existing_sources: []const []const u8, limit: usize) -> []types.Stage",
@@ -39,7 +55,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 120
+      "line": 177
     },
     {
       "type": "fn_decl",
@@ -55,7 +71,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 211
+      "line": 268
     },
     {
       "type": "fn_decl",
@@ -70,7 +86,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 374
+      "line": 437
     },
     {
       "type": "fn_decl",
@@ -85,7 +101,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 395
+      "line": 458
     },
     {
       "type": "fn_private",
@@ -99,7 +115,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": false,
-      "line": 470
+      "line": 533
     },
     {
       "type": "fn_private",
@@ -112,7 +128,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 574
+      "line": 637
     },
     {
       "type": "fn_private",
@@ -125,7 +141,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 592
+      "line": 655
     },
     {
       "type": "fn_decl",
@@ -139,7 +155,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 639
+      "line": 702
     },
     {
       "type": "fn_private",
@@ -151,7 +167,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 685
+      "line": 748
     },
     {
       "type": "fn_private",
@@ -164,7 +180,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 696
+      "line": 759
     }
   ]
 }

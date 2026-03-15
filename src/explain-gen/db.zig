@@ -27,6 +27,141 @@ const BUSY_TIMEOUT_MS: c_int = 5000;
 pub const SCHEMA_VERSION: u32 = 1;
 
 // ---------------------------------------------------------------------------
+// Semantic aliases for query expansion
+// ---------------------------------------------------------------------------
+
+/// A single alias entry mapping a key to expansion values.
+pub const SemanticAlias = struct {
+    key: []const u8,
+    values: []const []const u8,
+};
+
+/// Loaded semantic aliases (owned by caller).
+pub const SemanticAliases = struct {
+    aliases: []SemanticAlias,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *@This()) void {
+        for (self.aliases) |a| {
+            self.allocator.free(a.key);
+            for (a.values) |v| self.allocator.free(v);
+            self.allocator.free(a.values);
+        }
+        self.allocator.free(self.aliases);
+    }
+
+    /// Expand query tokens using aliases. Returns owned slice of owned strings.
+    /// Caller must free the returned slice and each string.
+    pub fn expandTokens(
+        self: @This(),
+        allocator: std.mem.Allocator,
+        tokens: []const []const u8,
+    ) ![]const []const u8 {
+        var expanded: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (expanded.items) |t| allocator.free(t);
+            expanded.deinit(allocator);
+        }
+
+        // Track lowercase versions to deduplicate (owned by this function)
+        var seen_lowercase: std.StringHashMapUnmanaged(void) = .{};
+        defer {
+            var it = seen_lowercase.keyIterator();
+            while (it.next()) |k| allocator.free(k.*);
+            seen_lowercase.deinit(allocator);
+        }
+
+        for (tokens) |tok| {
+            const lower = try std.ascii.allocLowerString(allocator, tok);
+            const contains_lower = seen_lowercase.contains(lower);
+            if (!contains_lower) {
+                try seen_lowercase.put(allocator, lower, {});
+            }
+            if (contains_lower) {
+                allocator.free(lower);
+                continue;
+            }
+
+            try expanded.append(allocator, try allocator.dupe(u8, tok));
+
+            // Check for aliases
+            for (self.aliases) |alias| {
+                if (std.ascii.eqlIgnoreCase(tok, alias.key)) {
+                    for (alias.values) |val| {
+                        const val_lower = try std.ascii.allocLowerString(allocator, val);
+                        if (seen_lowercase.contains(val_lower)) {
+                            allocator.free(val_lower);
+                            continue;
+                        }
+                        try seen_lowercase.put(allocator, val_lower, {});
+                        try expanded.append(allocator, try allocator.dupe(u8, val));
+                    }
+                }
+            }
+        }
+
+        return try expanded.toOwnedSlice(allocator);
+    }
+};
+
+/// Load semantic aliases from a JSON file.
+/// Returns null if file doesn't exist.
+pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?SemanticAliases {
+    const file = std.fs.openFileAbsolute(path, .{}) catch return null;
+    defer file.close();
+
+    const content = file.readToEndAlloc(allocator, 64 * 1024) catch return null;
+    defer allocator.free(content);
+
+    const Value = std.json.Value;
+    var parsed = std.json.parseFromSlice(Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    defer parsed.deinit();
+
+    if (parsed.value != .object) return null;
+    const aliases_arr = parsed.value.object.get("aliases") orelse return null;
+    if (aliases_arr != .array) return null;
+
+    var out: std.ArrayList(SemanticAlias) = .{};
+    errdefer {
+        for (out.items) |a| {
+            allocator.free(a.key);
+            for (a.values) |v| allocator.free(v);
+            allocator.free(a.values);
+        }
+        out.deinit(allocator);
+    }
+
+    for (aliases_arr.array.items) |item| {
+        if (item != .object) continue;
+        const key_val = item.object.get("key") orelse continue;
+        const values_val = item.object.get("values") orelse continue;
+        if (key_val != .string or values_val != .array) continue;
+
+        var vals: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (vals.items) |v| allocator.free(v);
+            vals.deinit(allocator);
+        }
+
+        for (values_val.array.items) |v| {
+            if (v == .string) {
+                try vals.append(allocator, try allocator.dupe(u8, v.string));
+            }
+        }
+
+        try out.append(allocator, .{
+            .key = try allocator.dupe(u8, key_val.string),
+            .values = try vals.toOwnedSlice(allocator),
+        });
+    }
+
+    return .{
+        .aliases = try out.toOwnedSlice(allocator),
+        .allocator = allocator,
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Public entry points
 // ---------------------------------------------------------------------------
 
@@ -477,11 +612,23 @@ pub const ExplainDb = struct {
 
     /// BM25 full-text search.  Returns results ordered best-first (score desc).
     /// Caller must free each `SearchResult` field and the slice with `allocator`.
+    /// If `aliases` is provided, expands query tokens using semantic aliases.
     pub fn search(
         self: *Self,
         allocator: std.mem.Allocator,
         query_text: []const u8,
         limit: usize,
+    ) ![]SearchResult {
+        return searchWithAliases(self, allocator, query_text, limit, null);
+    }
+
+    /// Search with optional semantic alias expansion.
+    pub fn searchWithAliases(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        limit: usize,
+        aliases: ?SemanticAliases,
     ) ![]SearchResult {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
@@ -489,10 +636,12 @@ pub const ExplainDb = struct {
         // Build quoted-OR FTS5 query from whitespace-separated tokens.
         // Strip English stop words so natural-language queries ("how does X work")
         // don't poison BM25 scores by matching on "how", "does", "are", etc.
-        var fts_buf: std.ArrayList(u8) = .{};
-        defer fts_buf.deinit(allocator);
+        var tokens: std.ArrayList([]const u8) = .{};
+        defer {
+            for (tokens.items) |t| allocator.free(t);
+            tokens.deinit(allocator);
+        }
         var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
-        var first = true;
         while (it.next()) |word| {
             // Strip trailing punctuation (e.g. "processed?" → "processed").
             var clean = word;
@@ -504,15 +653,31 @@ pub const ExplainDb = struct {
             }
             if (clean.len == 0) continue;
             if (isStopWord(clean)) continue;
+            try tokens.append(allocator, try allocator.dupe(u8, clean));
+        }
+
+        // Expand tokens with semantic aliases if available.
+        const expanded_tokens: []const []const u8 = if (aliases) |a| blk: {
+            const exp = a.expandTokens(allocator, tokens.items) catch break :blk tokens.items;
+            // Free original tokens since we have expanded ones
+            for (tokens.items) |t| allocator.free(t);
+            tokens.clearAndFree(allocator);
+            break :blk exp;
+        } else tokens.items;
+
+        // Build FTS query.
+        var fts_buf: std.ArrayList(u8) = .{};
+        defer fts_buf.deinit(allocator);
+        var first = true;
+        for (expanded_tokens) |tok| {
             if (!first) try fts_buf.appendSlice(allocator, " OR ");
             try fts_buf.append(allocator, '"');
-            for (clean) |ch| {
+            for (tok) |ch| {
                 if (ch == '"') try fts_buf.appendSlice(allocator, "\"\"") else try fts_buf.append(allocator, ch);
             }
             try fts_buf.append(allocator, '"');
             first = false;
         }
-        // If all tokens were stop words, fall back to the raw trimmed query.
         if (fts_buf.items.len == 0) {
             try fts_buf.appendSlice(allocator, trimmed);
         }
@@ -535,7 +700,7 @@ pub const ExplainDb = struct {
 
         const fts_query = fts_buf.items[0 .. fts_buf.items.len - 1];
         _ = c.sqlite3_bind_text(stmt, 1, fts_query.ptr, @intCast(fts_query.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
+        _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit * 2)); // Fetch extra forreranking
 
         var results: std.ArrayList(SearchResult) = .{};
         errdefer {
@@ -548,7 +713,58 @@ pub const ExplainDb = struct {
             try results.append(allocator, result);
         }
 
-        return results.toOwnedSlice(allocator);
+        // Rerank by node type: boost structs, functions; penalize tests.
+        rankByNodeType(results.items);
+
+        // Free expanded tokens if we allocated them (aliases case).
+        // Note: original tokens are freed by the defer block above.
+        if (aliases != null and expanded_tokens.ptr != tokens.items.ptr) {
+            for (expanded_tokens) |t| allocator.free(t);
+            allocator.free(@constCast(expanded_tokens));
+        }
+
+        // Return at most `limit` results.
+        const result_slice = try results.toOwnedSlice(allocator);
+        if (result_slice.len <= limit) return result_slice;
+        for (result_slice[limit..]) |r| freeSearchResult(allocator, r);
+        @memset(result_slice[limit..], result_slice[0]);
+        const final = allocator.realloc(result_slice, limit) catch result_slice[0..limit];
+        return @constCast(final);
+    }
+
+    /// Adjust scores based on node_type: boost definitions, penalize tests.
+    fn rankByNodeType(results: []SearchResult) void {
+        for (results) |*r| {
+            // Strong boost for struct/function/type definitions
+            if (std.mem.eql(u8, r.node_type, "struct") or
+                std.mem.eql(u8, r.node_type, "fn_decl") or
+                std.mem.eql(u8, r.node_type, "enum") or
+                std.mem.eql(u8, r.node_type, "const") or
+                std.mem.eql(u8, r.node_type, "type"))
+            {
+                r.score *= 1.5;
+            }
+            // Moderate boost for method definitions
+            else if (std.mem.eql(u8, r.node_type, "method") or
+                std.mem.eql(u8, r.node_type, "method_private"))
+            {
+                r.score *= 1.2;
+            }
+            // Penalize test declarations
+            else if (std.mem.eql(u8, r.node_type, "test_decl")) {
+                r.score *= 0.3;
+            }
+            // Slight penalty for module-level (less specific)
+            else if (std.mem.eql(u8, r.node_type, "module")) {
+                r.score *= 0.8;
+            }
+        }
+        // Re-sort by adjusted score (descending)
+        std.sort.block(SearchResult, results, {}, struct {
+            fn lessThan(_: void, a: SearchResult, b: SearchResult) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
     }
 
     fn readSearchResult(stmt: *c.sqlite3_stmt, allocator: std.mem.Allocator) !SearchResult {

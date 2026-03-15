@@ -1554,6 +1554,51 @@ fn buildLlmSummary(
 // Staged explain implementation  (M3/M5-M9)
 // =============================================================================
 
+/// Load semantic aliases from the guidance directory.
+fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?db_mod.SemanticAliases {
+    const alias_path = std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" }) catch return null;
+    defer allocator.free(alias_path);
+    return db_mod.loadSemanticAliases(allocator, alias_path) catch null;
+}
+
+/// Extract key technical terms from a long query using LLM.
+/// Returns owned slice of owned strings. Caller must free.
+fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) !?[][]const u8 {
+    const prompt = try std.fmt.allocPrint(allocator,
+        \\Extract 3-5 key technical terms from this query. Return only a comma-separated list, no other text.
+        \\Query: {s}
+        \\
+    , .{query});
+    defer allocator.free(prompt);
+
+    const response_opt = client.complete(prompt, 50, 0.0, null) catch return null;
+    const response = response_opt orelse return null;
+    defer allocator.free(response);
+
+    const stripped = llm.stripThinkBlock(response);
+    const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
+    if (trimmed.len == 0) return null;
+
+    var terms: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (terms.items) |t| allocator.free(t);
+        terms.deinit(allocator);
+    }
+
+    var it = std.mem.splitAny(u8, trimmed, ",\n");
+    var count: usize = 0;
+    while (it.next()) |term| {
+        if (count >= 5) break;
+        const t = std.mem.trim(u8, term, " \t\n\r\"");
+        if (t.len == 0) continue;
+        try terms.append(allocator, try allocator.dupe(u8, t));
+        count += 1;
+    }
+
+    if (terms.items.len == 0) return null;
+    return try terms.toOwnedSlice(allocator);
+}
+
 /// Full staged explain pipeline.  Called when `--staged` is active (default).
 ///
 /// Pipeline:
@@ -1573,12 +1618,53 @@ fn cmdExplainStaged(
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
     defer allocator.free(skills_dir);
 
-    // ── Stage collection ──────────────────────────────────────────────────────
-    const stages_raw = try staged_mod.executeStaged(
+    // Load semantic aliases for query expansion.
+    var aliases_opt: ?db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
+    defer if (aliases_opt) |*a| a.deinit();
+
+    // For long queries with LLM, extract key terms first.
+    var expanded_query: ?[]const u8 = null;
+    defer if (expanded_query) |q| allocator.free(q);
+
+    const use_llm = !ea.no_llm and switch (ea.filter) {
+        .skip => false,
+        .force => true,
+        .auto => !isShortQuery(query_text),
+    };
+
+    if (use_llm) {
+        var client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
+        defer if (client_opt) |*c| c.deinit();
+
+        if (client_opt) |*client| {
+            // Try to extract key terms for better search.
+            if (llmExtractKeyTerms(allocator, client, query_text) catch null) |terms| {
+                defer {
+                    for (terms) |t| allocator.free(t);
+                    allocator.free(terms);
+                }
+                // Build expanded query: original + extracted terms.
+                var buf: std.ArrayList(u8) = .{};
+                defer buf.deinit(allocator);
+                try buf.appendSlice(allocator, query_text);
+                for (terms) |t| {
+                    try buf.append(allocator, ' ');
+                    try buf.appendSlice(allocator, t);
+                }
+                expanded_query = try buf.toOwnedSlice(allocator);
+            }
+        }
+    }
+
+    const effective_query = expanded_query orelse query_text;
+
+    // ── Stage collection with alias expansion ──────────────────────────────────
+    const stages_raw = try staged_mod.executeStagedWithAliases(
         allocator,
         db,
-        query_text,
+        effective_query,
         workspace,
+        aliases_opt,
     );
     defer {
         types.freeStages(allocator, stages_raw);
@@ -1586,20 +1672,15 @@ fn cmdExplainStaged(
     }
 
     if (stages_raw.len == 0) {
-        const lower_q = try std.ascii.allocLowerString(allocator, query_text);
+        const lower_q = try std.ascii.allocLowerString(allocator, effective_query);
         defer allocator.free(lower_q);
-        std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, query_text });
+        std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, effective_query });
         std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
         std.debug.print("Run 'explain-gen gen' after finding the file to index it.\n", .{});
         return;
     }
 
-    // Determine whether to use LLM.
-    const use_llm = !ea.no_llm and switch (ea.filter) {
-        .skip => false,
-        .force => true,
-        .auto => !isShortQuery(query_text),
-    };
+    // Determine whether to use LLM (already computed above).
 
     var summary: ?[]const u8 = null;
     defer if (summary) |s| allocator.free(s);
@@ -1636,7 +1717,7 @@ fn cmdExplainStaged(
             // M7: Follow-up expansion.
             // Collect inputs: file_paths, sources, used_by from current working stages.
             // We re-search the db briefly to get used_by lists.
-            const expansion_results = db.search(allocator, query_text, 5) catch &.{};
+            const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
             defer {
                 for (expansion_results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
                 allocator.free(expansion_results);

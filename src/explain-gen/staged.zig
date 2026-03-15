@@ -26,8 +26,19 @@ pub fn executeStaged(
     query: []const u8,
     workspace: []const u8,
 ) ![]types.Stage {
-    // ── FTS5 search ───────────────────────────────────────────────────────────
-    const results = try db.search(allocator, query, 15);
+    return executeStagedWithAliases(allocator, db, query, workspace, null);
+}
+
+/// Collect stages with optional semantic alias expansion.
+pub fn executeStagedWithAliases(
+    allocator: std.mem.Allocator,
+    db: *db_mod.ExplainDb,
+    query: []const u8,
+    workspace: []const u8,
+    aliases: ?db_mod.SemanticAliases,
+) ![]types.Stage {
+    // ── FTS5 search with alias expansion ──────────────────────────────────────
+    const results = try db.searchWithAliases(allocator, query, 15, aliases);
     defer {
         for (results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
         allocator.free(results);
@@ -42,7 +53,11 @@ pub fn executeStaged(
     // ── Prose stages: module + member comments ────────────────────────────────
     // Track seen (source, name) pairs to avoid duplicate prose entries.
     var seen_prose: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_prose.deinit(allocator);
+    defer {
+        var it = seen_prose.keyIterator();
+        while (it.next()) |k| allocator.free(k.*);
+        seen_prose.deinit(allocator);
+    }
 
     for (results[0..@min(10, results.len)]) |r| {
         const comment = r.comment orelse continue;
@@ -107,6 +122,48 @@ pub fn executeStaged(
         try stages.append(allocator, meta_stage);
     }
 
+    // ── See-also traversal for sparse results ──────────────────────────────────
+    // If we have few results (< 3 code stages), follow used_by paths.
+    if (stages.items.len < 5 and results.len > 0) {
+        var seen_sources: std.StringHashMapUnmanaged(void) = .{};
+        defer {
+            var kit = seen_sources.keyIterator();
+            while (kit.next()) |k| allocator.free(k.*);
+            seen_sources.deinit(allocator);
+        }
+
+        for (stages.items) |s| {
+            if (s.kind == .code or s.kind == .prose) {
+                try seen_sources.put(allocator, try allocator.dupe(u8, s.source), {});
+            }
+        }
+
+        for (results[0..@min(3, results.len)]) |r| {
+            if (r.used_by.len == 0) continue;
+
+            for (r.used_by[0..@min(3, r.used_by.len)]) |ub_path| {
+                if (seen_sources.contains(ub_path)) continue;
+
+                const excerpt = extractSourceExcerpt(allocator, workspace, ub_path, 1) catch continue;
+                if (excerpt.len == 0) {
+                    allocator.free(excerpt);
+                    continue;
+                }
+
+                try seen_sources.put(allocator, try allocator.dupe(u8, ub_path), {});
+                try stages.append(allocator, .{
+                    .kind = .code,
+                    .content = excerpt,
+                    .source = try allocator.dupe(u8, ub_path),
+                    .line = 1,
+                });
+
+                if (stages.items.len >= 8) break;
+            }
+            if (stages.items.len >= 8) break;
+        }
+    }
+
     return stages.toOwnedSlice(allocator);
 }
 
@@ -168,7 +225,7 @@ pub fn expandFollowUps(
         }
     }
 
-    // ── Skill docs from guidance JSON skill refs ──────────────────────────────
+    // ── Skill docs from guidance JSON skill refs ────────────────────────────────
     var seen_skills: std.StringHashMapUnmanaged(void) = .{};
     defer {
         var kit = seen_skills.keyIterator();
@@ -278,11 +335,8 @@ pub fn formatStaged(
                 try w.print("```{s}\n// {s}\n", .{ lang, src });
             }
 
-            // Truncate at 30 lines.
-            const code = truncateLines(s.content, 30);
-            const was_truncated = std.mem.count(u8, s.content, "\n") + 1 > 30;
-            try w.print("{s}", .{code});
-            if (was_truncated) try w.writeAll("\n// ... (truncated)");
+            // Code is already extracted as complete units, no second truncation.
+            try w.print("{s}", .{s.content});
             try w.writeAll("\n```\n\n");
         }
     }
@@ -375,7 +429,7 @@ pub fn formatStaged(
 // ---------------------------------------------------------------------------
 
 /// Load source file and extract an excerpt starting at `start_line` (1-based).
-/// Stops at the next top-level declaration or after 30 lines.
+/// Extracts complete functions/structs by tracking brace depth.
 /// Returns an owned allocation; caller must free.
 pub fn extractSourceExcerpt(
     allocator: std.mem.Allocator,
@@ -392,11 +446,11 @@ pub fn extractSourceExcerpt(
     const src = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return allocator.dupe(u8, "");
     defer allocator.free(src);
 
-    return extractExcerptFromSource(allocator, src, start_line, 30);
+    return extractExcerptFromSource(allocator, src, start_line, 80);
 }
 
-/// Extract at most `max_lines` lines starting at `start_line` (1-based)
-/// from `src`, stopping early at the next top-level declaration.
+/// Extract a complete logical unit (function/struct/etc) starting at `start_line` (1-based).
+/// Uses brace counting to find the end of the scope.
 /// Returns an owned allocation.
 pub fn extractExcerptFromSource(
     allocator: std.mem.Allocator,
@@ -409,50 +463,78 @@ pub fn extractExcerptFromSource(
 
     var iter = std.mem.splitScalar(u8, src, '\n');
     var line_no: u32 = 0;
-    var saw_close_brace = false;
+    var brace_depth: isize = 0;
+    var started_scope: bool = false;
+    var scope_start_depth: isize = 0;
 
     while (iter.next()) |raw| {
         line_no += 1;
         if (line_no < start_line) continue;
-        if (lines.items.len >= max_lines) break;
 
         const trimmed = std.mem.trimRight(u8, raw, "\r");
         const is_first = line_no == start_line;
 
-        // Stop at next col-0 top-level declaration.
-        if (!is_first and trimmed.len > 0 and trimmed[0] != ' ' and trimmed[0] != '\t') {
+        // Count braces in this line
+        var line_brace_delta: isize = 0;
+        var first_open_brace: usize = 0;
+        var found_open = false;
+        for (trimmed, 0..) |ch, i| {
+            if (ch == '{') {
+                line_brace_delta += 1;
+                if (!found_open) {
+                    first_open_brace = i;
+                    found_open = true;
+                }
+            } else if (ch == '}') {
+                line_brace_delta -= 1;
+            }
+        }
+
+        // Start tracking when we first see an opening brace
+        if (!started_scope and line_brace_delta > 0) {
+            started_scope = true;
+            scope_start_depth = brace_depth + 1;
+        }
+
+        // Skip separator comments
+        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
+
+        try lines.append(allocator, trimmed);
+
+        // Update brace depth after adding the line
+        brace_depth += line_brace_delta;
+
+        // If we were in a scope and just closed back to where we started, we're done
+        if (started_scope and brace_depth < scope_start_depth) {
+            break;
+        }
+
+        // Stop at next top-level declaration (col 0) if we haven't started a scope yet
+        if (!started_scope and !is_first and trimmed.len > 0 and trimmed[0] != ' ' and trimmed[0] != '\t') {
             if (std.mem.startsWith(u8, trimmed, "pub ") or
                 std.mem.startsWith(u8, trimmed, "fn ") or
                 std.mem.startsWith(u8, trimmed, "const ") or
                 std.mem.startsWith(u8, trimmed, "var ") or
                 std.mem.startsWith(u8, trimmed, "test ") or
-                std.mem.startsWith(u8, trimmed, "// =") or
-                std.mem.startsWith(u8, trimmed, "// -") or
-                (saw_close_brace and std.mem.startsWith(u8, trimmed, "//")) or
-                (saw_close_brace and trimmed.len == 0))
+                std.mem.startsWith(u8, trimmed, "///"))
             {
+                _ = lines.pop();
                 break;
             }
         }
-        if (!is_first and std.mem.eql(u8, std.mem.trim(u8, trimmed, " \t"), "};")) {
-            saw_close_brace = true;
-        }
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
 
-        try lines.append(allocator, trimmed);
+        // Hard limit
+        if (lines.items.len >= max_lines) break;
     }
 
-    // Prune trailing blank + comment-only lines.
-    var changed = true;
-    while (changed) {
-        changed = false;
-        while (lines.items.len > 0 and std.mem.trim(u8, lines.items[lines.items.len - 1], " \t\r").len == 0) {
+    // Prune trailing blank/comment-only lines
+    while (lines.items.len > 0) {
+        const last = lines.items[lines.items.len - 1];
+        const trimmed_last = std.mem.trim(u8, last, " \t\r");
+        if (trimmed_last.len == 0 or std.mem.startsWith(u8, trimmed_last, "//")) {
             _ = lines.pop();
-            changed = true;
-        }
-        while (lines.items.len > 0 and std.mem.startsWith(u8, std.mem.trimLeft(u8, lines.items[lines.items.len - 1], " \t"), "//")) {
-            _ = lines.pop();
-            changed = true;
+        } else {
+            break;
         }
     }
 

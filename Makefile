@@ -71,9 +71,15 @@ help: ## Show this help
 
 ##@ Intelligence Layer
 
-.PHONY: gen
-gen: $(TARGET_BIN) ## Generate .explain-gen/ JSON and .explain.db   make gen
+# Database target: depends on guidance JSON files being present
+# Only rebuilds when source files change (via guidance markers)
+$(EXPLAIN_DB): $(GUIDANCE_MARKERS) | $(TARGET_BIN)
+	$(Q)echo "Syncing database: $@"
 	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(EXPLAIN_DIR) --db $(EXPLAIN_DB)
+	$(Q)touch $@
+
+.PHONY: gen
+gen: $(EXPLAIN_DB) ## Generate .explain-gen/ JSON and .explain.db
 
 .PHONY: gen-infill
 gen-infill: $(TARGET_BIN) ## Generate with LLM comment infill
@@ -235,10 +241,10 @@ $(LINT_MARKER_DIR) $(GUIDANCE_MARKER_DIR):
 	$(Q)mkdir -p $@
 
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
-# Rebuilt when guidance markers are complete.
+# Rebuilt when guidance markers are complete and database is synced.
 # Depends on $(TARGET_BIN) being available but not through marker chain.
 
-STRUCTURE.md: $(GUIDANCE_MARKERS) | $(TARGET_BIN)
+STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
 	$(Q)$(TARGET_BIN) structure --json-dir $(EXPLAIN_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
 	$(Q)touch STRUCTURE.md
 

@@ -383,6 +383,33 @@
     },
     {
       "type": "fn_private",
+      "name": "loadAliases",
+      "match_hash": "9268fdcee238eb629986d8c4998c2f17f53bab158f4e789d3aca3fa23a0a47aa",
+      "signature": "fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) -> ?db_mod.SemanticAliases",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "?db_mod.SemanticAliases",
+      "is_pub": false,
+      "line": 1558
+    },
+    {
+      "type": "fn_private",
+      "name": "llmExtractKeyTerms",
+      "match_hash": "5f5900ee28e26b0441f9377cf429031f7f778bf0dbfeb53511bfc27b8d0db82a",
+      "signature": "fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) -> ?[][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" }
+      ],
+      "returns": "?[][]const u8",
+      "is_pub": false,
+      "line": 1566
+    },
+    {
+      "type": "fn_private",
       "name": "cmdExplainStaged",
       "match_hash": "7d91d75a6a8f1a9ad6473610ecb48ca6c0bed9a2f3b2c8f1bfa928de74b707fd",
       "signature": "fn cmdExplainStaged(allocator: std.mem.Allocator, db: *db_mod.ExplainDb, query_text: []const u8, workspace: []const u8, guidance_dir: []const u8, llm_config: llm.LlmConfig, ea: ExplainArgs) -> void",
@@ -397,13 +424,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1564
+      "line": 1609
     },
     {
       "type": "test_decl",
       "name": "main compiles",
       "is_pub": false,
-      "line": 1731
+      "line": 1808
     }
   ]
 }
