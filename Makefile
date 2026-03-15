@@ -98,8 +98,8 @@ learn: ## (legacy) Drain inbox — kept for compatibility
 	@echo "learn: use explain-gen for this operation"
 
 .PHONY: commit
-commit: ## (legacy) AI commit message — kept for compatibility
-	@echo "commit: use explain-gen for this operation"
+commit: $(TARGET_BIN) ## Generate AI commit message from staged diff + guidance JSON context
+	$(Q)$(TARGET_BIN) commit $(if $(DRY_RUN),--dry-run) $(if $(DEBUG),--debug)
 
 ##@ Python Language Provider
 
