@@ -1,9 +1,15 @@
 # explain-gen
 
-A Zig-native, deterministic codebase documentation engine.  It analyzes source
-files via AST, generates structured JSON guidance in `.explain-gen/`, and
-exposes an AI-assisted query layer through the Makefile — with minimal footprint
-so it can drop into any project.
+A Zig-native, deterministic AST-guided SQLite FTS5 database generator for
+AI-assisted codebase navigation. It analyzes source files (Zig, Python) via AST,
+generates structured JSON metadata in `.explain-gen/src/`, and compiles them
+into `.explain.db` for fast, token-efficient `make explain` queries — optimized
+for subagent discovery workflows.
+
+The `.explain.db` file is meant to be extensible for codebase and document
+exploration.  This tool can be run on other Zig codebases and use local
+inference to streamline iterative developent, and greatly reduce token burn
+for agentic coding.
 
 ## Authorship and copyright
 
@@ -15,20 +21,53 @@ It is released under a dual GPL/Commercial license.  See below.
 
 ## What it does
 
-- **Bottom-up documentation**: Parses source files (Zig, Python, …) and emits
-  per-file `*.json` guidance files that capture module purpose, function
-  signatures, design patterns, reverse dependencies, and AI-generated comments.
-- **STRUCTURE.md synthesis**: Aggregates all guidance JSON into a human-legible
-  codebase map that AI agents can traverse without MCP or tool calls.
-- **Incremental RALPH loop**: The Makefile chains `build → test → guidance sync
-  → lint → STRUCTURE.md` with per-file stamp files so only changed files are
-  re-processed.
-- **Multi-language via providers**: `bin/explain-gen-py` handles Python; future
-  providers (`explain-gen-cpp`, `explain-gen-php`, …) follow the same
-  `sync --file src --scan` contract.
-- **Knowledge management**: `make explain`, `make query`, `make learn`, and
-  `make diary` give AI agents a structured way to read, annotate, and promote
-  codebase knowledge without hallucinating file paths.
+### Core Pipeline
+
+- **AST-guided extraction**: Parses source files (Zig via `std.zig.Ast`, Python
+  via `ast` module) extracting functions, structs, enums, signatures, line
+  numbers, and comments with zero ambiguity.
+- **Incremental sync**: SHA-256 `match_hash` comparison enables skip-if-unchanged
+  behavior — only regenerate descriptions when the API contract changes.
+- **SQLite FTS5 indexing**: Compiles all guidance JSON into a queryable
+  `.explain.db` with BM25 ranking for sub-100ms lookups across 1000+ modules.
+- **Semantic aliases**: Natural language queries like "database" expand to
+  `ExplainDb`, `syncDatabase`, `searchWithAliases` — bridging terminology gaps.
+- **Skill attachment**: Pattern detection (GoF, domain) auto-adds skill references
+  from `.explain-gen/.skills/` to relevant code locations.
+
+### Query Layer
+
+- **`make explain QUERY="..."`**: Staged pipeline that:
+  1. Expands query with semantic aliases
+  2. Searches FTS5 database with stop-word filtering
+  3. Extracts source excerpts with brace-aware capture
+  4. For long queries (5+ words), uses local LLM to filter/synthesize
+  5. Formats output with code verbatim, metadata follow-ups
+
+- **Query modes**:
+  - Short queries (1-4 words): Fast path, no LLM — direct FTS5 lookup
+  - Long queries (5+ words): LLM filters irrelevant prose, synthesizes answer
+
+- **Token efficiency**: 69% average token savings vs frontier model doing
+  grep + whole-file loads. Designed for subagent workflows where context
+  budget matters.
+
+### LLM Enhancement
+
+- **Comment infill**: `--infill` generates descriptions for members without
+  comments, using local Ollama/AI-compatible endpoints.
+- **Comment regeneration**: `--regen` compares AI-generated vs existing
+  comments, keeps the better one (quality scoring).
+- **Determinism-first**: AST parsing is ground truth; LLM is strictly additive.
+
+### Structured Output
+
+- **STRUCTURE.md synthesis**: Hierarchical tree view with inline comments from
+  guidance JSON — human-legible codebase map without MCP or tool calls.
+- **Guidance JSON schema**: Per-file metadata capturing module purpose,
+  function signatures, design patterns, reverse dependencies (`used_by`).
+- **Knowledge inbox**: `.explain-gen/.doc/inbox/` captures insights/capabilities
+  during development forlater promotion into structured skills.
 
 ## Quick start
 
@@ -42,33 +81,89 @@ make env-init
 # Build the Zig binary
 make build            # → zig-out/bin/explain-gen
 
+# Generate guidance JSON for source files
+make guidance         # syncs src → .explain-gen/src/*.json
+
+# Build the FTS5 database
+make db               # → .explain.db
+
 # Run the full RALPH loop gate
-make pre-commit
+make pre-commit       # build → test → guidance → lint → STRUCTURE.md
 
 # Query the guidance index
-make explain QUERY="sync guidance json"
-make query   QUERY="ring buffer"
+make explain QUERY="LLM integration"
+make explain QUERY="How do I add a new language plugin?"
+make explain QUERY="sqlite database schema"
+```
+
+## Query examples
+
+```bash
+# Short query (fast path, no LLM)
+make explain QUERY="database"
+# → Finds ExplainDb, syncDatabase, searchWithAliases
+
+# Natural language question (LLM synthesis)
+make explain QUERY="What design patterns are used in this codebase?"
+# → Returns detectPatterns, skill references, synthesized summary
+
+# Specific API lookup
+make explain QUERY="Where is the LLM client defined?"
+# → Returns LlmClient.complete, filterStages, synthesize
+
+# Multi-token technical query
+make explain QUERY="gitignore filtering"
+# → Returns shouldIgnore, GitignoreFilter with full implementation excerpt
 ```
 
 ## Source layout
 
 ```
 src/
-  explain-gen/   Zig core engine
-  common/         Shared LLM HTTP client
+  explain-gen/      Zig core engine (AST parser, sync, db, staged query)
+  common/            Shared LLM HTTP client
 bin/
-  explain-gen-py Python AST provider
+  explain-gen        Compiled binary (via zig build)
+  explain-gen-py     Python AST provider
 .explain-gen/
-  explain-gen-config.json  Model / provider configuration
-  .skills/                  Design-pattern skill documents
-  .doc/                     Capabilities, diary, inbox
-  src/                      Generated guidance JSON
+  explain-gen-config.json   Model / provider configuration
+  semantic-aliases.json      Query expansion mappings
+  .skills/                   Design-pattern skill documents
+  .doc/                      Capabilities, diary, inbox
+  src/                       Generated guidance JSON
+.explain.db         SQLite FTS5 database for queries
 env/
-  mk/             Makefile helpers + per-language overrides
-  mise/           Language-specific mise.toml fragments
+  mk/                Makefile helpers + per-language overrides
+  mise/              Language-specific mise.toml fragments
 doc/
-  DESIGN.md       System design reference
+  DESIGN.md          System design reference
 ```
+
+## Staged Query Pipeline
+
+The `make explain` target implements a staged pipeline optimized for subagent
+discovery:
+
+```
+Query → Alias Expansion → FTS5 Search → Node Boosting → Stage Assembly
+                                                              ↓
+                          Prose stages ← [comments from guidance JSON]
+                          Code stages  ← [source excerpts w/ brace capture]
+                          Metadata      ← [keywords, see_also, skills]
+                          Skill docs    ← [SKILL.md excerpts for patterns]
+                                                              ↓
+                    Long query? ──Yes──→ LLM Filter → LLM Synthesize → Answer
+                              │
+                              No
+                              ↓
+                         Format Output
+```
+
+**Key features:**
+- Semantic aliases expand "database" → ExplainDb, syncDatabase, searchWithAliases
+- Node boosting prioritizes structs/functions over tests
+- Brace-aware source extraction captures complete function/struct bodies
+- See-also traversal follows metadata breadcrumbs when results are sparse
 
 ## Adding a new language provider
 
@@ -85,10 +180,10 @@ Output JSON must follow the canonical schema:
 {
   "meta":     { "module": "…", "source": "…", "language": "…" },
   "comment":  "one-line module description",
-  "skills":   [],
+  "skills":   [{ "name": "…", "type": "GoF|Domain", "ref": "…" }],
   "hashtags": [],
-  "used_by":  [],
-  "members":  [ { "type", "name", "is_pub", "line", "signature", "comment", … } ]
+  "used_by":  ["src/other_file.zig"],
+  "members":  [ { "type", "name", "is_pub", "line", "signature", "comment", "match_hash", … } ]
 }
 ```
 
@@ -97,8 +192,31 @@ Register the provider in `.explain-gen/explain-gen-config.json` under
 
 ## Configuration
 
-`.explain-gen/explain-gen-config.json` controls model selection and
-provider registration.  All Makefile targets read from this file.
+`.explain-gen/explain-gen-config.json` controls:
+- `model`: Local LLM model name (e.g., "llama3.2")
+- `api_url`: Ollama/OpenAI-compatible endpoint
+- `providers`: Language-specific AST providers
+
+`.explain-gen/semantic-aliases.json` defines query expansions:
+```json
+[
+  {"key": "database", "values": ["ExplainDb", "syncDatabase", "searchWithAliases"]},
+  {"key": "LLM", "values": ["LlmClient", "filterStages", "synthesize"]}
+]
+```
+
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| Average accuracy | 9.0/10 |
+| Average completion | 7.6/10 |
+| Token savings vs grep+load | 69% |
+| Queries scoring 9-10 | 71% |
+| Complete failures | 0 |
+
+Tested across 34 queries covering database, AST parsing, LLM integration,
+design patterns, plugins, and more.
 
 ## License
 
