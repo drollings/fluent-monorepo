@@ -1125,34 +1125,41 @@ const QueryArgs = struct {
     json_mode: bool = false,
     db_path: ?[]const u8 = null,
     workspace: ?[]const u8 = null,
+
+    /// Parse query subcommand arguments. Returns error.MissingValue when a
+    /// flag-with-value is the last argument (consistent with GenArgs.parse).
+    fn parse(args: []const []const u8) error{MissingValue}!QueryArgs {
+        var qa: QueryArgs = .{};
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                qa.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
+            } else if (std.mem.eql(u8, arg, "--json")) {
+                qa.json_mode = true;
+            } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                qa.db_path = args[i];
+            } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                qa.workspace = args[i];
+            } else if (!std.mem.startsWith(u8, arg, "-")) {
+                qa.query_str = arg;
+            }
+        }
+        return qa;
+    }
 };
 
 fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var qa: QueryArgs = .{};
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --limit requires a number\n", .{});
-                return;
-            }
-            qa.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
-        } else if (std.mem.eql(u8, arg, "--json")) {
-            qa.json_mode = true;
-        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
-            i += 1;
-            if (i >= args.len) return;
-            qa.db_path = args[i];
-        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
-            i += 1;
-            if (i >= args.len) return;
-            qa.workspace = args[i];
-        } else if (!std.mem.startsWith(u8, arg, "-")) {
-            qa.query_str = arg;
-        }
-    }
+    const qa = QueryArgs.parse(args) catch |err| {
+        std.debug.print("error: query flag missing value ({s})\n", .{@errorName(err)});
+        return err;
+    };
 
     const query_text = qa.query_str orelse {
         std.debug.print("Error: query string required\n", .{});
@@ -1162,35 +1169,22 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const workspace = if (qa.workspace) |w|
-        if (std.fs.path.isAbsolute(w)) try allocator.dupe(u8, w) else try std.fs.path.join(allocator, &.{ cwd, w })
-    else
-        try allocator.dupe(u8, cwd);
+    const workspace = try resolveAbsOrJoin(allocator, cwd, qa.workspace orelse cwd);
     defer allocator.free(workspace);
 
-    const db_path = if (qa.db_path) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ workspace, dp })
-    else
-        try std.fs.path.join(allocator, &.{ workspace, config_mod.DEFAULT_DB_PATH });
+    const db_path = try resolveAbsOrJoin(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_DB_PATH);
     defer allocator.free(db_path);
 
-    // Check database exists
     std.fs.accessAbsolute(db_path, .{}) catch {
         std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
         std.debug.print("Run 'explain-gen gen' to generate it.\n", .{});
         return;
     };
 
-    var db = db_mod.ExplainDb.init(allocator, db_path) catch |err| {
-        std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
-        return;
-    };
+    var db = try db_mod.ExplainDb.init(allocator, db_path);
     defer db.deinit();
 
-    const results = db.search(allocator, query_text, qa.limit) catch |err| {
-        std.debug.print("Search failed: {s}\n", .{@errorName(err)});
-        return;
-    };
+    const results = try db.search(allocator, query_text, qa.limit);
     defer {
         for (results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
         allocator.free(results);
@@ -1202,14 +1196,13 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (qa.json_mode) {
-        try printQueryJson(allocator, query_text, results);
+        try printQueryJson(query_text, results);
     } else {
-        try printQueryText(allocator, query_text, results);
+        try printQueryText(query_text, results);
     }
 }
 
-fn printQueryText(allocator: std.mem.Allocator, query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
-    _ = allocator;
+fn printQueryText(query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
@@ -1235,32 +1228,59 @@ fn printQueryText(allocator: std.mem.Allocator, query_text: []const u8, results:
     try stdout.flush();
 }
 
-fn printQueryJson(allocator: std.mem.Allocator, query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
-    _ = allocator;
+/// Write a single JSON string value — the content between the surrounding
+/// quotes — with all special characters properly escaped. Call this instead
+/// of `{s}` format specifiers inside JSON literals to prevent malformed output
+/// when field values contain `"`, `\`, or control characters.
+fn writeJsonStr(writer: *std.Io.Writer, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(c),
+        }
+    }
+}
+
+fn printQueryJson(query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
-    try stdout.print("{{\"query\":\"{s}\",\"results\":[\n", .{query_text});
+    try stdout.writeAll("{\"query\":\"");
+    try writeJsonStr(stdout, query_text);
+    try stdout.writeAll("\",\"results\":[\n");
 
     for (results, 0..) |r, i| {
-        try stdout.print("  {{\"module\":\"{s}\",\"name\":\"{s}\",\"type\":\"{s}\"", .{ r.module, r.name, r.node_type });
+        try stdout.writeAll("  {\"module\":\"");
+        try writeJsonStr(stdout, r.module);
+        try stdout.writeAll("\",\"name\":\"");
+        try writeJsonStr(stdout, r.name);
+        try stdout.writeAll("\",\"type\":\"");
+        try writeJsonStr(stdout, r.node_type);
+        try stdout.writeByte('"');
         if (r.signature) |s| {
-            try stdout.print(",\"signature\":\"{s}\"", .{s});
+            try stdout.writeAll(",\"signature\":\"");
+            try writeJsonStr(stdout, s);
+            try stdout.writeByte('"');
         }
         if (r.comment) |c| {
             const nl = std.mem.indexOfScalar(u8, c, '\n') orelse c.len;
-            const snippet = c[0..@min(nl, 200)];
-            try stdout.print(",\"comment\":\"{s}\"", .{snippet});
+            try stdout.writeAll(",\"comment\":\"");
+            try writeJsonStr(stdout, c[0..@min(nl, 200)]);
+            try stdout.writeByte('"');
         }
-        if (r.line) |l| {
-            try stdout.print(",\"line\":{d}", .{l});
-        }
-        try stdout.print(",\"language\":\"{s}\",\"score\":{d:.4}}}", .{ r.language, r.score });
-        if (i < results.len - 1) try stdout.print(",\n", .{});
+        if (r.line) |l| try stdout.print(",\"line\":{d}", .{l});
+        try stdout.writeAll(",\"language\":\"");
+        try writeJsonStr(stdout, r.language);
+        try stdout.print("\",\"score\":{d:.4}}}", .{r.score});
+        if (i < results.len - 1) try stdout.writeAll(",\n");
     }
 
-    try stdout.print("]}}\n", .{});
+    try stdout.writeAll("]}\n");
     try stdout.flush();
 }
 
