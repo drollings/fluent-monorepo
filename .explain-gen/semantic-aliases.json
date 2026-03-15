@@ -24,6 +24,7 @@
     {"key": "gitignore", "values": ["GitignoreFilter", "globMatch", "shouldIgnore"]},
     {"key": "structure", "values": ["StructureGenerator", "FileEntry", "tree", "directory"]},
     {"key": "depend", "values": ["deps", "reverse deps", "findReverseDeps", "imports"]},
+    {"key": "dependencies", "values": ["deps", "reverse deps", "findReverseDeps", "imports"]},
     {"key": "import", "values": ["imports", "@import", "reverse deps", "findReverseDeps"]},
     {"key": "filter", "values": ["filterStages", "GitignoreFilter", "relevance", "LLM filter"]},
     {"key": "explain", "values": ["ExplainDb", "cmdExplain", "staged", "FTS5 search"]},
