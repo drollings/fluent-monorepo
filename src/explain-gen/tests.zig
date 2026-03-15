@@ -1700,6 +1700,7 @@ test "readInboxBullets skips heading lines" {
 // be silently dropped.
 
 test "chunkIsIgnored: .explain-gen/ prefix is filtered" {
+    const guidance_dir = ".explain-gen";
     const chunk =
         \\diff --git a/.explain-gen/src/foo.zig.json b/.explain-gen/src/foo.zig.json
         \\index 000..111 100644
@@ -1707,12 +1708,13 @@ test "chunkIsIgnored: .explain-gen/ prefix is filtered" {
         \\+++ b/.explain-gen/src/foo.zig.json
         \\@@ -1,3 +1,3 @@
     ;
-    try std.testing.expect(main.chunkIsIgnoredPub(chunk));
+    try std.testing.expect(main.chunkIsIgnoredPub(chunk, guidance_dir));
 }
 
 test "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)" {
     // Old code filtered "guidance/". That prefix no longer exists in the repo;
     // filtering it would silently drop any future file with that name.
+    const guidance_dir = ".explain-gen";
     const chunk =
         \\diff --git a/guidance/README.md b/guidance/README.md
         \\index 000..111 100644
@@ -1720,10 +1722,11 @@ test "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)" {
         \\+++ b/guidance/README.md
         \\@@ -1 +1 @@
     ;
-    try std.testing.expect(!main.chunkIsIgnoredPub(chunk));
+    try std.testing.expect(!main.chunkIsIgnoredPub(chunk, guidance_dir));
 }
 
 test "chunkIsIgnored: regular source files are not filtered" {
+    const guidance_dir = ".explain-gen";
     const src_chunk =
         \\diff --git a/src/main.zig b/src/main.zig
         \\index 000..111 100644
@@ -1731,7 +1734,7 @@ test "chunkIsIgnored: regular source files are not filtered" {
         \\+++ b/src/main.zig
         \\@@ -10,5 +10,6 @@ fn foo() void {
     ;
-    try std.testing.expect(!main.chunkIsIgnoredPub(src_chunk));
+    try std.testing.expect(!main.chunkIsIgnoredPub(src_chunk, guidance_dir));
 
     const bin_chunk =
         \\diff --git a/bin/explain-gen-py b/bin/explain-gen-py
@@ -1740,7 +1743,7 @@ test "chunkIsIgnored: regular source files are not filtered" {
         \\+++ b/bin/explain-gen-py
         \\@@ -1,2 +1,3 @@
     ;
-    try std.testing.expect(!main.chunkIsIgnoredPub(bin_chunk));
+    try std.testing.expect(!main.chunkIsIgnoredPub(bin_chunk, guidance_dir));
 }
 
 test "chunkFilePath: extracts path from diff --git header" {
@@ -1813,6 +1816,7 @@ test "splitDiffByFile: .explain-gen/ chunks split correctly and are identifiable
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    const guidance_dir = ".explain-gen";
 
     const diff =
         \\diff --git a/src/main.zig b/src/main.zig
@@ -1829,8 +1833,8 @@ test "splitDiffByFile: .explain-gen/ chunks split correctly and are identifiable
     try main.splitDiffByFilePub(diff, &chunks, allocator);
 
     try std.testing.expectEqual(@as(usize, 2), chunks.items.len);
-    try std.testing.expect(!main.chunkIsIgnoredPub(chunks.items[0])); // src/main.zig — keep
-    try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1])); // .explain-gen/ — ignore
+    try std.testing.expect(!main.chunkIsIgnoredPub(chunks.items[0], guidance_dir)); // src/main.zig — keep
+    try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1], guidance_dir)); // .explain-gen/ — ignore
 }
 
 // ---------------------------------------------------------------------------

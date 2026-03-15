@@ -32,6 +32,7 @@ const provider_mod = @import("provider_discovery.zig");
 pub const version = "0.1.0";
 
 const Command = enum {
+    init,
     gen,
     status,
     clean,
@@ -72,6 +73,7 @@ pub fn main() !void {
     };
 
     switch (subcmd) {
+        .init => try cmdInit(allocator, args[2..]),
         .gen => try cmdGen(allocator, args[2..]),
         .status => try cmdStatus(allocator, args[2..]),
         .clean => try cmdClean(allocator, args[2..]),
@@ -99,6 +101,7 @@ fn printHelp() !void {
         \\  explain-gen --help | --version
         \\
         \\Commands:
+        \\  init       Create default configuration (AGENTS.md integration)
         \\  gen        Generate .explain-gen/ JSON mirror and .explain.db
         \\  status     Show generation status (synced, stale, missing)
         \\  clean      Remove .explain-gen/src and .explain.db
@@ -106,12 +109,18 @@ fn printHelp() !void {
         \\  deps       Generate Makefile .depend file from Zig imports
         \\  query      Search .explain.db with BM25 (no LLM)
         \\  explain    Search with LLM-synthesized summary
+        \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
+        \\  commit     Generate AI commit message from staged diff + guidance
+        \\
+        \\Init options:
+        \\  -g, --guidance-dir DIR   Guidance directory (default: .explain-gen)
+        \\  -o, --db PATH            Database path (default: .explain.db)
         \\
         \\Gen options:
         \\  --file FILE           Process a single source file (incremental)
         \\  --scan DIR            Process all source files under DIR
         \\  -w, --workspace DIR   Source root directory (default: current directory)
-        \\  --json-dir DIR        JSON output directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance directory (default: .explain-gen)
         \\  -o, --db PATH         SQLite database path (default: .explain.db)
         \\  --no-db               Skip database compilation step
         \\  --infill              LLM-fill blank comment fields
@@ -127,7 +136,7 @@ fn printHelp() !void {
         \\  --json                Output JSON (query only)
         \\  -o, --db PATH         Database path (default: .explain.db)
         \\  -w, --workspace DIR   Workspace root (default: current directory)
-        \\  --guidance DIR        Guidance directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance directory (default: .explain-gen)
         \\  --no-llm              Skip LLM synthesis (explain only)
         \\  --staged=false        Use legacy output format (rollback safety)
         \\  --filter=auto|force|skip  LLM relevance filter mode (default: auto)
@@ -138,7 +147,7 @@ fn printHelp() !void {
         \\  -m, --model NAME      Model for synthesis
         \\
         \\Structure options:
-        \\  --json-dir DIR        Guidance JSON directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance JSON directory (default: .explain-gen)
         \\  --no-ai               Skip AI infill pre-pass
         \\  --api-url URL         LLM endpoint
         \\  -m, --model NAME      Model for AI infill
@@ -147,9 +156,11 @@ fn printHelp() !void {
         \\  --src DIR             Source directory to scan (default: src)
         \\
         \\Examples:
+        \\  explain-gen init
+        \\  explain-gen init --guidance-dir .guidance
         \\  explain-gen gen
         \\  explain-gen gen --file src/main.zig --infill
-        \\  explain-gen gen --file src/main.zig --json-dir .explain-gen --db .explain.db
+        \\  explain-gen gen --file src/main.zig --guidance-dir .explain-gen --db .explain.db
         \\  explain-gen gen --scan src --infill -m fast:latest
         \\  explain-gen gen -o /tmp/project.explain.db
         \\  explain-gen query "hash function"
@@ -160,9 +171,137 @@ fn printHelp() !void {
         \\  explain-gen deps --src src > zig.depend
         \\  explain-gen commit
         \\  explain-gen commit --dry-run
+        \\  explain-gen check
         \\
     );
     try stdout.flush();
+}
+
+// =============================================================================
+// init — create default configuration
+// =============================================================================
+
+const InitArgs = struct {
+    guidance_dir: ?[]const u8 = null,
+    db_path: ?[]const u8 = null,
+
+    fn parse(args: []const []const u8) error{MissingValue}!InitArgs {
+        var ia: InitArgs = .{};
+        var i: usize = 0;
+        while (i < args.len) : (i += 1) {
+            const arg = args[i];
+            if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ia.guidance_dir = args[i];
+            } else if (std.mem.eql(u8, arg, "--db") or std.mem.eql(u8, arg, "-o")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ia.db_path = args[i];
+            }
+        }
+        return ia;
+    }
+};
+
+fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const ia = InitArgs.parse(args) catch |err| {
+        std.debug.print("error: init flag missing value ({s})\n", .{@errorName(err)});
+        return err;
+    };
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const options: config_mod.InitOptions = .{
+        .guidance_dir = ia.guidance_dir,
+        .db_path = ia.db_path,
+    };
+
+    const created = try config_mod.initConfig(allocator, cwd, options);
+
+    // Handle AGENTS.md
+    const guidance_dir = ia.guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR;
+    const agents_path = try std.fs.path.join(allocator, &.{ cwd, "AGENTS.md" });
+    defer allocator.free(agents_path);
+
+    const agents_exists = blk: {
+        std.fs.accessAbsolute(agents_path, .{}) catch break :blk false;
+        break :blk true;
+    };
+
+    if (agents_exists) {
+        // Read existing content
+        const existing = blk: {
+            const file = std.fs.openFileAbsolute(agents_path, .{}) catch break :blk null;
+            defer file.close();
+            break :blk file.readToEndAlloc(allocator, 1024 * 1024) catch null;
+        };
+
+        // Check if already has explain-gen integration
+        if (existing) |e| {
+            if (std.mem.indexOf(u8, e, "explain-gen Integration") != null) {
+                std.debug.print("AGENTS.md already contains explain-gen integration.\n", .{});
+                allocator.free(e);
+            } else {
+                // Prepend insertion
+                const insertion = try std.fmt.allocPrint(allocator,
+                    \\---
+                    \\
+                    \\## explain-gen Integration
+                    \\
+                    \\This project uses explain-gen for AST-guided code navigation.
+                    \\
+                    \\```
+                    \\explain-gen init
+                    \\explain-gen check
+                    \\```
+                    \\
+                    \\Config: `{s}/explain-gen-config.json`
+                    \\
+                    \\
+                , .{guidance_dir});
+                defer allocator.free(insertion);
+
+                const new_content = try std.fmt.allocPrint(allocator, "{s}{s}", .{ insertion, e });
+                defer allocator.free(new_content);
+
+                // Write new file
+                const file = std.fs.createFileAbsolute(agents_path, .{}) catch |err| {
+                    std.debug.print("Warning: could not update AGENTS.md: {}\n", .{err});
+                    allocator.free(e);
+                    return;
+                };
+                defer file.close();
+                try file.writeAll(new_content);
+                allocator.free(e);
+
+                std.debug.print("AGENTS.md updated with explain-gen integration.\n", .{});
+
+                // Offer to open $EDITOR
+                if (std.process.getEnvVarOwned(allocator, "EDITOR")) |editor| {
+                    defer allocator.free(editor);
+                    std.debug.print("Review changes with: {s} AGENTS.md\n", .{editor});
+                } else |_| {}
+            }
+        }
+    } else {
+        // Create new AGENTS.md
+        const agents_content = try config_mod.generateAgentsMdContent(allocator, guidance_dir);
+        defer allocator.free(agents_content);
+
+        const file = std.fs.createFileAbsolute(agents_path, .{}) catch |err| {
+            std.debug.print("Warning: could not create AGENTS.md: {}\n", .{err});
+            return;
+        };
+        defer file.close();
+        try file.writeAll(agents_content);
+        std.debug.print("Created AGENTS.md\n", .{});
+    }
+
+    if (created) {
+        std.debug.print("\nConfiguration created at {s}/{s}/explain-gen-config.json\n", .{ cwd, guidance_dir });
+    }
 }
 
 // =============================================================================
@@ -212,11 +351,13 @@ fn chunkFilePath(chunk: []const u8) []const u8 {
     return after[0..sp];
 }
 
-/// Return true for auto-generated .explain-gen/ JSON files (not real code changes).
-fn chunkIsExplainGenJson(chunk: []const u8) bool {
+/// Return true for auto-generated guidance JSON files (not real code changes).
+/// Uses guidance_dir (e.g. ".explain-gen") to identify which paths to ignore.
+fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) bool {
     const path = chunkFilePath(chunk);
-    return std.mem.startsWith(u8, path, ".explain-gen/") and
-        std.mem.endsWith(u8, path, ".json");
+    const prefix = std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{guidance_dir}) catch return false;
+    defer std.heap.page_allocator.free(prefix);
+    return std.mem.startsWith(u8, path, prefix) and std.mem.endsWith(u8, path, ".json");
 }
 
 /// Parse `@@ -X,Y +A,B @@` hunk headers; returns owned [start, end) pairs in new-file coords.
@@ -380,15 +521,18 @@ fn generateCommitMessage(
     allocator: std.mem.Allocator,
     diff: []const u8,
     changed_files: []const []const u8,
+    guidance_dir: []const u8,
     guidance_root: []const u8,
     api_url: []const u8,
     model: []const u8,
     debug: bool,
 ) ![]u8 {
-    // Count how many .explain-gen/ JSON files changed (for the summary bullet).
+    // Count how many guidance JSON files changed (for the summary bullet).
+    const guidance_prefix = std.fmt.allocPrint(allocator, "{s}/", .{guidance_dir}) catch return error.OutOfMemory;
+    defer allocator.free(guidance_prefix);
     var guidance_json_count: usize = 0;
     for (changed_files) |f| {
-        if (std.mem.startsWith(u8, f, ".explain-gen/") and std.mem.endsWith(u8, f, ".json"))
+        if (std.mem.startsWith(u8, f, guidance_prefix) and std.mem.endsWith(u8, f, ".json"))
             guidance_json_count += 1;
     }
 
@@ -405,7 +549,7 @@ fn generateCommitMessage(
             var code_chunks: std.ArrayList([]const u8) = .{};
             defer code_chunks.deinit(allocator);
             for (all_chunks.items) |chunk| {
-                if (!chunkIsExplainGenJson(chunk)) try code_chunks.append(allocator, chunk);
+                if (!chunkIsExplainGenJson(chunk, guidance_dir)) try code_chunks.append(allocator, chunk);
             }
 
             if (debug) {
@@ -523,7 +667,7 @@ fn generateCommitMessage(
                         }
                         // Append guidance JSON summary bullet if any JSON files changed.
                         if (guidance_json_count > 0) {
-                            try out.writer(allocator).print("* guidance: updated {d} JSON file(s) in .explain-gen/src/\n", .{guidance_json_count});
+                            try out.writer(allocator).print("* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
                         }
                         if (out.items.len > 0 and out.items[out.items.len - 1] == '\n')
                             out.items.len -= 1;
@@ -541,14 +685,14 @@ fn generateCommitMessage(
     defer fallback.deinit(allocator);
     var any = false;
     for (changed_files) |f| {
-        if (chunkIsExplainGenJson(f)) continue;
+        if (std.mem.startsWith(u8, f, guidance_prefix) and std.mem.endsWith(u8, f, ".json")) continue;
         try fallback.appendSlice(allocator, "* Update ");
         try fallback.appendSlice(allocator, f);
         try fallback.append(allocator, '\n');
         any = true;
     }
     if (guidance_json_count > 0) {
-        try fallback.writer(allocator).print("* guidance: updated {d} JSON file(s) in .explain-gen/src/\n", .{guidance_json_count});
+        try fallback.writer(allocator).print("* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
         any = true;
     }
     if (any) {
@@ -595,14 +739,16 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    // Load config — override defaults from .explain-gen/explain-gen-config.json.
-    var guidance_root: []const u8 = try std.fs.path.join(allocator, &.{ cwd, ".explain-gen" });
+    // Load config — override defaults from config file.
+    var guidance_dir: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    var guidance_root: []const u8 = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
     defer allocator.free(guidance_root);
 
     // api_url and model are owned slices valid for this function's lifetime.
     var api_url_owned: []const u8 = try allocator.dupe(u8, api_url);
     defer allocator.free(api_url_owned);
     var model_owned: []const u8 = undefined;
+    var guidance_dir_owned: []const u8 = undefined;
     if (config_mod.loadConfig(allocator, cwd)) |cfg_val| {
         var cfg = cfg_val;
         defer cfg.deinit();
@@ -612,13 +758,16 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         // Prefer models.commit > models.default from raw config JSON.
         model_owned = loadCommitModelFromConfig(allocator, cwd) catch
             try allocator.dupe(u8, cfg.model);
-        // guidance_root: refresh from config.
+        // guidance_root and guidance_dir: refresh from config.
         allocator.free(guidance_root);
         guidance_root = try allocator.dupe(u8, cfg.guidance_root);
+        guidance_dir_owned = try allocator.dupe(u8, cfg.guidance_dir);
+        guidance_dir = guidance_dir_owned;
     } else |_| {
         model_owned = try allocator.dupe(u8, model);
     }
     defer allocator.free(model_owned);
+    if (guidance_dir_owned.len > 0) allocator.free(guidance_dir_owned);
     model = model_owned;
     api_url = api_url_owned;
 
@@ -648,7 +797,7 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const commit_msg = try generateCommitMessage(allocator, diff, changed_files.items, guidance_root, api_url, model, debug);
+    const commit_msg = try generateCommitMessage(allocator, diff, changed_files.items, guidance_dir, guidance_root, api_url, model, debug);
     defer allocator.free(commit_msg);
 
     if (debug or dry_run) {
@@ -732,7 +881,7 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Read `models.commit` or `models.default` from explain-gen-config.json.
 /// Returns an owned slice; caller must free. Returns error when absent.
 fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]const u8 {
-    const path = try std.fs.path.join(allocator, &.{ cwd, ".explain-gen", "explain-gen-config.json" });
+    const path = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, config_mod.CONFIG_FILENAME });
     defer allocator.free(path);
 
     const file = std.fs.openFileAbsolute(path, .{}) catch return error.FileNotFound;
@@ -2882,14 +3031,23 @@ fn runBuiltinLanguagePipeline(
     if (src_files.len == 0) return;
 
     // ── Test suite (once per language group, before any file is modified) ─
+    // Derive extension from language (e.g. "zig" -> ".zig")
+    var ext_buf: [32]u8 = undefined;
+    const ext = std.fmt.bufPrint(&ext_buf, ".{s}", .{language}) catch language;
+
     if (!ga.skip_tests) {
         if (ga.verbose) std.debug.print("test:     {s} ({d} file(s) changed)\n", .{ language, src_files.len });
-        const ok = try runCommand(allocator, cfg.test_command);
-        if (!ok) {
-            std.debug.print("error: test suite failed for language '{s}'\n", .{language});
-            return error.TestFailed;
+        const test_argv = cfg.testCommandForExt(ext);
+        if (test_argv) |argv| {
+            const ok = try runCommand(allocator, argv);
+            if (!ok) {
+                std.debug.print("error: test suite failed for language '{s}'\n", .{language});
+                return error.TestFailed;
+            }
+            if (ga.verbose) std.debug.print("test:     passed\n", .{});
+        } else {
+            if (ga.verbose) std.debug.print("test:     skipped (no test command for {s})\n", .{language});
         }
-        if (ga.verbose) std.debug.print("test:     passed\n", .{});
     }
 
     // ── Per-file phases ───────────────────────────────────────────────────
@@ -2939,9 +3097,12 @@ fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (run_structure) {
         const cwd = try std.process.getCwdAlloc(allocator);
         defer allocator.free(cwd);
-        const json_dir = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
-        defer allocator.free(json_dir);
-        var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
+
+        var cfg = config_mod.loadConfig(allocator, cwd) catch
+            try config_mod.loadConfig(allocator, cwd);
+        defer cfg.deinit();
+
+        var gen = structure_mod.StructureGenerator.init(allocator, cwd, cfg.guidance_root, false);
         defer gen.deinit();
         gen.generate() catch |err| {
             std.debug.print("warning: structure update failed: {s}\n", .{@errorName(err)});
@@ -2964,8 +3125,8 @@ pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []cons
     return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
 }
 
-pub fn chunkIsIgnoredPub(chunk: []const u8) bool {
-    return chunkIsExplainGenJson(chunk);
+pub fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) bool {
+    return chunkIsExplainGenJson(chunk, guidance_dir);
 }
 
 pub fn chunkFilePathPub(chunk: []const u8) []const u8 {

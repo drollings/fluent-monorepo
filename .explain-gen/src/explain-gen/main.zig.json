@@ -6,69 +6,75 @@
   },
   "comment": "[gof-patterns]",
   "skills": [
-    { "ref": ".explain-gen/.skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "2717de46e5f301b8f886fa80bc8df8c2b6d1db0e864e49aab7d7db0560263f6d",
+      "match_hash": "6647cf395c3b1ba289d1359f306d445a23a77fe5966693efdbeac945eaa40172",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
-          "name": "gen",
+          "name": "init",
           "is_pub": false,
           "line": 35
         }
     ,    {
           "type": "enum_field",
-          "name": "status",
+          "name": "gen",
           "is_pub": false,
           "line": 36
         }
     ,    {
           "type": "enum_field",
-          "name": "clean",
+          "name": "status",
           "is_pub": false,
           "line": 37
         }
     ,    {
           "type": "enum_field",
-          "name": "structure",
+          "name": "clean",
           "is_pub": false,
           "line": 38
         }
     ,    {
           "type": "enum_field",
-          "name": "deps",
+          "name": "structure",
           "is_pub": false,
           "line": 39
         }
     ,    {
           "type": "enum_field",
-          "name": "query",
+          "name": "deps",
           "is_pub": false,
           "line": 40
         }
     ,    {
           "type": "enum_field",
-          "name": "explain",
+          "name": "query",
           "is_pub": false,
           "line": 41
         }
     ,    {
           "type": "enum_field",
-          "name": "commit",
+          "name": "explain",
           "is_pub": false,
           "line": 42
         }
     ,    {
           "type": "enum_field",
-          "name": "check",
+          "name": "commit",
           "is_pub": false,
           "line": 43
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "check",
+          "is_pub": false,
+          "line": 44
         }
       ],
       "line": 34
@@ -80,7 +86,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 46
+      "line": 47
     },
     {
       "type": "fn_private",
@@ -89,7 +95,42 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 87
+      "line": 89
+    },
+    {
+      "type": "struct",
+      "name": "InitArgs",
+      "match_hash": "0160b4cb9c32cc9317f5c8846e6b92c22b2eb5a324a9ef40e26d0aaaefdfc55e",
+      "signature": "keyword_struct InitArgs { ... }",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_private",
+          "name": "parse",
+          "match_hash": "d74c512a43d9f684e6ded80a465ff8c3a015d5a6bf7e15cf0f1db14b1c6c0fa1",
+          "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!InitArgs",
+          "params": [
+            { "name": "args", "type": "[]const []const u8" }
+          ],
+          "returns": "error{MissingValue}!InitArgs",
+          "is_pub": false,
+          "line": 188
+        }
+      ],
+      "line": 184
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdInit",
+      "match_hash": "013ac002b98ecd63f213045bfa9cc7a8591ed9131e7ebbdb866d8727159aee16",
+      "signature": "fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 207
     },
     {
       "type": "fn_private",
@@ -103,7 +144,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 172
+      "line": 311
     },
     {
       "type": "fn_private",
@@ -117,7 +158,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 189
+      "line": 328
     },
     {
       "type": "fn_private",
@@ -129,19 +170,20 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 205
+      "line": 344
     },
     {
       "type": "fn_private",
       "name": "chunkIsExplainGenJson",
-      "match_hash": "4936598e547109585bc97b46259d0eb47158bd9fbf2ddc97a82e360ffe6beebb",
-      "signature": "fn chunkIsExplainGenJson(chunk: []const u8) -> bool",
+      "match_hash": "f9049a93bad7551de61ee3d048a514b7a3c303354c502c8359e8eb578797f68e",
+      "signature": "fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) -> bool",
       "params": [
-        { "name": "chunk", "type": "[]const u8" }
+        { "name": "chunk", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 216
+      "line": 356
     },
     {
       "type": "fn_private",
@@ -154,7 +196,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": false,
-      "line": 223
+      "line": 364
     },
     {
       "type": "struct",
@@ -174,10 +216,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 250
+          "line": 391
         }
       ],
-      "line": 244
+      "line": 385
     },
     {
       "type": "fn_private",
@@ -192,17 +234,18 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": false,
-      "line": 258
+      "line": 399
     },
     {
       "type": "fn_private",
       "name": "generateCommitMessage",
-      "match_hash": "0f96e9a8ad7cd994e7c69d03900c3f5314cf8382d0ab0a67cbaa31fbe7bf82e5",
-      "signature": "fn generateCommitMessage(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
+      "match_hash": "137d7180ccc4d09b6ad26f8197ff3b7c5206137bf23fde0ec44ba389b99881a3",
+      "signature": "fn generateCommitMessage(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_dir: []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "diff", "type": "[]const u8" },
         { "name": "changed_files", "type": "[]const []const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" },
         { "name": "guidance_root", "type": "[]const u8" },
         { "name": "api_url", "type": "[]const u8" },
         { "name": "model", "type": "[]const u8" },
@@ -210,7 +253,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 379
+      "line": 520
     },
     {
       "type": "fn_private",
@@ -223,7 +266,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 562
+      "line": 706
     },
     {
       "type": "fn_private",
@@ -236,7 +279,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 572
+      "line": 716
     },
     {
       "type": "fn_private",
@@ -249,7 +292,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 734
+      "line": 883
     },
     {
       "type": "struct",
@@ -268,10 +311,10 @@
           ],
           "returns": "error{MissingValue}!GenArgs",
           "is_pub": false,
-          "line": 790
+          "line": 939
         }
       ],
-      "line": 764
+      "line": 913
     },
     {
       "type": "struct",
@@ -291,10 +334,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 855
+          "line": 1004
         }
       ],
-      "line": 850
+      "line": 999
     },
     {
       "type": "fn_private",
@@ -308,7 +351,7 @@
       ],
       "returns": "ResolvedGenPaths",
       "is_pub": false,
-      "line": 864
+      "line": 1013
     },
     {
       "type": "fn_private",
@@ -322,7 +365,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 877
+      "line": 1026
     },
     {
       "type": "fn_private",
@@ -337,7 +380,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 895
+      "line": 1044
     },
     {
       "type": "fn_private",
@@ -350,7 +393,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 931
+      "line": 1080
     },
     {
       "type": "fn_private",
@@ -363,7 +406,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 948
+      "line": 1097
     },
     {
       "type": "fn_private",
@@ -376,7 +419,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1200
+      "line": 1349
     },
     {
       "type": "fn_private",
@@ -389,7 +432,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1264
+      "line": 1413
     },
     {
       "type": "fn_private",
@@ -402,7 +445,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1317
+      "line": 1466
     },
     {
       "type": "fn_private",
@@ -415,7 +458,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1352
+      "line": 1501
     },
     {
       "type": "struct",
@@ -434,10 +477,10 @@
           ],
           "returns": "error{MissingValue}!QueryArgs",
           "is_pub": false,
-          "line": 1384
+          "line": 1533
         }
       ],
-      "line": 1375
+      "line": 1524
     },
     {
       "type": "fn_private",
@@ -450,7 +493,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1411
+      "line": 1560
     },
     {
       "type": "fn_private",
@@ -463,7 +506,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1458
+      "line": 1607
     },
     {
       "type": "fn_private",
@@ -476,7 +519,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1488
+      "line": 1637
     },
     {
       "type": "fn_private",
@@ -489,7 +532,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1501
+      "line": 1650
     },
     {
       "type": "struct",
@@ -497,7 +540,7 @@
       "match_hash": "5dfacfdcd3c37ae2c97ab657ba39170612792e61a68e3af15ebf04c763eea4e4",
       "signature": "keyword_struct ExcerptEntry { ... }",
       "is_pub": false,
-      "line": 1545
+      "line": 1694
     },
     {
       "type": "struct",
@@ -505,7 +548,7 @@
       "match_hash": "23f4c35f666d8d1733d5bc6bd1a46ae8a310ee4ba0e02e7348956137e83daef3",
       "signature": "keyword_struct FileMatchItem { ... }",
       "is_pub": false,
-      "line": 1551
+      "line": 1700
     },
     {
       "type": "fn_private",
@@ -519,7 +562,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 1561
+      "line": 1710
     },
     {
       "type": "fn_private",
@@ -534,7 +577,7 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 1568
+      "line": 1717
     },
     {
       "type": "enum",
@@ -547,22 +590,22 @@
           "type": "enum_field",
           "name": "auto",
           "is_pub": false,
-          "line": 1579
+          "line": 1728
         }
     ,    {
           "type": "enum_field",
           "name": "force",
           "is_pub": false,
-          "line": 1581
+          "line": 1730
         }
     ,    {
           "type": "enum_field",
           "name": "skip",
           "is_pub": false,
-          "line": 1583
+          "line": 1732
         }
       ],
-      "line": 1577
+      "line": 1726
     },
     {
       "type": "struct",
@@ -570,7 +613,7 @@
       "match_hash": "d3681f77b57a6fa7eaa5b64d18ded251dc6ea83988c596902518a93d8f1406d6",
       "signature": "keyword_struct ExplainArgs { ... }",
       "is_pub": false,
-      "line": 1586
+      "line": 1735
     },
     {
       "type": "fn_private",
@@ -582,7 +625,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 1605
+      "line": 1754
     },
     {
       "type": "fn_private",
@@ -597,7 +640,7 @@
       ],
       "returns": "[]SkillExcerpt",
       "is_pub": false,
-      "line": 1621
+      "line": 1770
     },
     {
       "type": "fn_private",
@@ -612,7 +655,7 @@
       ],
       "returns": "[]ExcerptEntry",
       "is_pub": false,
-      "line": 1659
+      "line": 1808
     },
     {
       "type": "fn_private",
@@ -627,7 +670,7 @@
       ],
       "returns": "[]FileMatchItem",
       "is_pub": false,
-      "line": 1724
+      "line": 1873
     },
     {
       "type": "fn_private",
@@ -646,7 +689,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1764
+      "line": 1913
     },
     {
       "type": "fn_private",
@@ -659,7 +702,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1874
+      "line": 2023
     },
     {
       "type": "fn_private",
@@ -672,7 +715,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2062
+      "line": 2211
     },
     {
       "type": "fn_private",
@@ -685,7 +728,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2087
+      "line": 2236
     },
     {
       "type": "fn_private",
@@ -698,7 +741,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2100
+      "line": 2249
     },
     {
       "type": "fn_private",
@@ -711,7 +754,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2145
+      "line": 2294
     },
     {
       "type": "fn_private",
@@ -726,7 +769,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2187
+      "line": 2336
     },
     {
       "type": "fn_private",
@@ -741,7 +784,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 2245
+      "line": 2394
     },
     {
       "type": "fn_private",
@@ -756,7 +799,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 2370
+      "line": 2519
     },
     {
       "type": "fn_private",
@@ -773,7 +816,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 2404
+      "line": 2553
     },
     {
       "type": "fn_private",
@@ -786,7 +829,7 @@
       ],
       "returns": "?db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 2500
+      "line": 2649
     },
     {
       "type": "fn_private",
@@ -800,7 +843,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 2508
+      "line": 2657
     },
     {
       "type": "fn_private",
@@ -818,7 +861,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2551
+      "line": 2700
     },
     {
       "type": "fn_private",
@@ -834,7 +877,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2692
+      "line": 2841
     },
     {
       "type": "fn_decl",
@@ -849,7 +892,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2726
+      "line": 2875
     },
     {
       "type": "fn_private",
@@ -863,7 +906,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2743
+      "line": 2892
     },
     {
       "type": "fn_private",
@@ -876,7 +919,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2768
+      "line": 2917
     },
     {
       "type": "fn_private",
@@ -890,7 +933,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2782
+      "line": 2931
     },
     {
       "type": "fn_private",
@@ -906,7 +949,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2825
+      "line": 2974
     },
     {
       "type": "fn_private",
@@ -923,7 +966,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2874
+      "line": 3023
     },
     {
       "type": "fn_private",
@@ -936,7 +979,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2911
+      "line": 3069
     },
     {
       "type": "fn_decl",
@@ -949,7 +992,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 2959
+      "line": 3120
     },
     {
       "type": "fn_decl",
@@ -964,19 +1007,20 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 2963
+      "line": 3124
     },
     {
       "type": "fn_decl",
       "name": "chunkIsIgnoredPub",
-      "match_hash": "1489af9b1affca3512bd966b28435f94cfbbaa188dcb366535ccbc0e7849a6bd",
-      "signature": "fn chunkIsIgnoredPub(chunk: []const u8) -> bool",
+      "match_hash": "cab0bb84013ca986daef8929c18a462404c72c21956ed8064efe203b5ff28ad3",
+      "signature": "fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) -> bool",
       "params": [
-        { "name": "chunk", "type": "[]const u8" }
+        { "name": "chunk", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 2967
+      "line": 3128
     },
     {
       "type": "fn_decl",
@@ -988,7 +1032,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2971
+      "line": 3132
     },
     {
       "type": "fn_decl",
@@ -1002,7 +1046,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2975
+      "line": 3136
     },
     {
       "type": "fn_decl",
@@ -1015,7 +1059,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 2979
+      "line": 3140
     },
     {
       "type": "fn_decl",
@@ -1028,7 +1072,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 2983
+      "line": 3144
     },
     {
       "type": "fn_decl",
@@ -1041,7 +1085,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 2987
+      "line": 3148
     },
     {
       "type": "fn_decl",
@@ -1054,7 +1098,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 2991
+      "line": 3152
     },
     {
       "type": "fn_decl",
@@ -1069,7 +1113,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 2995
+      "line": 3156
     },
     {
       "type": "fn_decl",
@@ -1084,7 +1128,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2999
+      "line": 3160
     },
     {
       "type": "fn_decl",
@@ -1099,7 +1143,7 @@
       ],
       "returns": "[]usize",
       "is_pub": true,
-      "line": 3003
+      "line": 3164
     },
     {
       "type": "fn_decl",
@@ -1111,13 +1155,13 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3007
+      "line": 3168
     },
     {
       "type": "test_decl",
       "name": "main compiles",
       "is_pub": false,
-      "line": 3015
+      "line": 3176
     }
   ]
 }

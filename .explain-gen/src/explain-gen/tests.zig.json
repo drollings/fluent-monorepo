@@ -6,7 +6,7 @@
   },
   "comment": "[gof-patterns]",
   "skills": [
-    { "ref": ".explain-gen/.skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
     {
@@ -454,49 +454,49 @@
       "type": "test_decl",
       "name": "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)",
       "is_pub": false,
-      "line": 1713
+      "line": 1714
     },
     {
       "type": "test_decl",
       "name": "chunkIsIgnored: regular source files are not filtered",
       "is_pub": false,
-      "line": 1726
+      "line": 1728
     },
     {
       "type": "test_decl",
       "name": "chunkFilePath: extracts path from diff --git header",
       "is_pub": false,
-      "line": 1746
+      "line": 1749
     },
     {
       "type": "test_decl",
       "name": "chunkFilePath: returns empty string for malformed chunk",
       "is_pub": false,
-      "line": 1755
+      "line": 1758
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: single file diff produces one chunk",
       "is_pub": false,
-      "line": 1760
+      "line": 1763
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: multi-file diff splits into correct chunks",
       "is_pub": false,
-      "line": 1782
+      "line": 1785
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: .explain-gen/ chunks split correctly and are identifiable",
       "is_pub": false,
-      "line": 1810
+      "line": 1813
     },
     {
       "type": "test_decl",
       "name": "QueryEngine.execute finds guidance JSON matching query",
       "is_pub": false,
-      "line": 1840
+      "line": 1844
     }
   ]
 }

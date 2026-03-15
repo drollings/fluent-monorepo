@@ -1,48 +1,27 @@
 {
-  "_comment": "explain-gen model and provider configuration. All Makefile targets read from this file.",
   "version": "1",
+  "guidance_dir": ".explain-gen",
+  "db_path": ".explain.db",
+  "src_dirs": ["src"],
   "ollama": {
     "base_url": "http://localhost:11434",
-    "chat_endpoint": "/api/chat",
-    "tags_endpoint": "/api/tags",
-    "timeout_seconds": 30
+    "chat_endpoint": "/api/chat"
   },
   "models": {
     "default": "code:latest",
-    "fast": "fast:latest",
-    "document": "code:latest",
-    "infill": "code:latest",
-    "diary": "fast:latest"
+    "infill": "code:latest"
   },
-  "providers": {
-    "zig": "explain-gen",
-    "python": "explain-gen-py",
-    "cpp": "explain-gen-cpp",
-    "rust": "explain-gen-rust",
-    "go": "explain-gen-go"
+  "test_commands": {
+    ".zig": ["zig", "build", "test", "--summary", "all"],
+    ".py": ["python", "-m", "pytest", "-v"]
   },
-  "guidance_dir": ".explain-gen",
-  "src_dirs": ["src"],
-  "gen": {
-    "infill": true,
-    "regen": false,
-    "max_comment_chars": 200,
-    "max_module_comment_chars": 80
-  },
-
-  "_pipeline_comment": "Per-language test/lint/fmt commands for explain-gen check pipeline.",
-
-  "test_command": ["zig", "build", "test", "--summary", "all"],
-
   "lint_commands": {
     ".zig": ["zig", "fmt", "--check", "{file}"],
-    ".py":  ["ruff", "check", "{file}"]
+    ".py": ["ruff", "check", "{file}"]
   },
-
   "fmt_commands": {
     ".zig": ["zig", "fmt", "{file}"],
-    ".py":  ["ruff", "format", "{file}"]
+    ".py": ["ruff", "format", "{file}"]
   },
-
   "comment": "explain-gen: produces .explain.db SQLite FTS5 index and .explain-gen/ JSON mirror for NullClaw."
 }

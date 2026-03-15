@@ -6,7 +6,7 @@
   },
   "comment": "[gof-patterns]",
   "skills": [
-    { "ref": ".explain-gen/.skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "used_by": ["src/explain-gen/ast_parser.zig"],
   "members": [
