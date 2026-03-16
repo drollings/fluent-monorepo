@@ -127,7 +127,7 @@ fn printHelp() !void {
         \\  --regen               LLM-regenerate all comments
         \\  --dry-run             Show what would change without writing
         \\  --verbose             Print LLM prompts and raw responses
-        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/api/chat)
+        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
         \\  -m, --model NAME      Model name (default: code:latest)
         \\
         \\Query/Explain options:
@@ -2192,7 +2192,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (ai_summary) |s| allocator.free(s);
 
     if (!ea.no_llm) {
-        var client_opt = llm.LlmClient.init(allocator, makeLlmConfig(ea)) catch null;
+        var client_opt: ?llm.LlmClient = llm.LlmClient.init(allocator, makeLlmConfig(ea)) catch null;
         defer if (client_opt) |*c| c.deinit();
         if (client_opt) |*client| {
             ai_summary = buildLlmSummary(allocator, client, query_text, results, skill_excerpts, excerpts) catch null;
@@ -2600,7 +2600,10 @@ fn cmdExplainStaged(
     var aliases_opt: ?db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
     defer if (aliases_opt) |*a| a.deinit();
 
-    const use_llm = !ea.no_llm and switch (ea.filter) {
+    // use_llm: always on unless --no-llm is specified
+    // use_filter: depends on --filter mode (auto enables filter for long queries only)
+    const use_llm = !ea.no_llm;
+    const use_filter = !ea.no_llm and switch (ea.filter) {
         .skip => false,
         .force => true,
         .auto => !isShortQuery(query_text),
@@ -2614,7 +2617,7 @@ fn cmdExplainStaged(
     var expanded_query: ?[]const u8 = null;
     defer if (expanded_query) |q| allocator.free(q);
 
-    if (use_llm) {
+    if (use_filter) {
         if (client_opt) |*client| {
             if (llmExtractKeyTerms(allocator, client, query_text) catch null) |terms| {
                 defer {
@@ -2659,11 +2662,11 @@ fn cmdExplainStaged(
     // ── LLM path ─────────────────────────────────────────────────────────────
     const client = &client_opt.?;
 
-    // M6: LLM relevance filter.
-    const stages_filtered: ?[]types.Stage = llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
+    // M6: LLM relevance filter (only when filter mode enables it).
+    const stages_filtered: ?[]types.Stage = if (use_filter) llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
         if (ea.verbose) std.debug.print("llm_filter failed, using unfiltered stages\n", .{});
         break :blk null;
-    };
+    } else null;
     defer if (stages_filtered) |sf| {
         types.freeStages(allocator, sf);
         allocator.free(sf);

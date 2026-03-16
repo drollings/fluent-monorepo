@@ -15,6 +15,12 @@
 const std = @import("std");
 const llm = @import("common");
 
+/// Default max_tokens for non-thinking models.
+const DEFAULT_MAX_TOKENS: usize = 2000;
+
+/// Max_tokens for thinking models (generous for local models).
+const THINKING_MAX_TOKENS: usize = 8000;
+
 /// Result returned by each enhancement call.
 pub const EnrichmentResult = struct {
     /// The generated or preserved description text (≤240 chars enforced by prompt).
@@ -33,12 +39,14 @@ pub const EnrichmentResult = struct {
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
+    config: llm.LlmConfig,
     debug: bool,
 
     pub fn init(allocator: std.mem.Allocator, config: llm.LlmConfig) !Enhancer {
         return .{
             .allocator = allocator,
             .client = try llm.LlmClient.init(allocator, config),
+            .config = config,
             .debug = config.debug,
         };
     }
@@ -50,6 +58,15 @@ pub const Enhancer = struct {
     /// Check whether the LLM endpoint is reachable.
     pub fn available(self: *Enhancer) bool {
         return self.client.available();
+    }
+
+    /// Get appropriate max_tokens for this model.
+    /// Thinking models need more tokens for chain-of-thought.
+    fn maxTokens(self: Enhancer, base_tokens: usize) usize {
+        if (self.config.isThinkingModel()) {
+            return THINKING_MAX_TOKENS;
+        }
+        return base_tokens;
     }
 
     // -------------------------------------------------------------------------
@@ -102,7 +119,7 @@ pub const Enhancer = struct {
         if (self.debug) std.debug.print("[enhancer] generating file doc for {s}\n", .{rel_path});
         if (self.debug) std.debug.print("[enhancer] prompt (len={}):\n{s}\n", .{ prompt.len, prompt });
 
-        const raw = self.client.complete(prompt, 600, 0.2, null) catch |err| {
+        const raw = self.client.complete(prompt, self.maxTokens(600), 0.2, null) catch |err| {
             if (self.debug) std.debug.print("[enhancer] LLM error for file doc: {}\n", .{err});
             return if (existing_doc) |d| try self.allocator.dupe(u8, d) else null;
         };
@@ -172,7 +189,7 @@ pub const Enhancer = struct {
         if (self.debug) std.debug.print("[enhancer] enhancing {s}\n", .{name});
         if (self.debug) std.debug.print("[enhancer] prompt:\n{s}\n---\n", .{prompt});
 
-        const raw = self.client.complete(prompt, 800, 0.3, null) catch {
+        const raw = self.client.complete(prompt, self.maxTokens(DEFAULT_MAX_TOKENS), 0.3, null) catch {
             if (self.debug) std.debug.print("[enhancer] LLM unavailable for {s}\n", .{name});
             return self.fallback(existing_doc);
         };
@@ -430,7 +447,7 @@ test "extractTags parses hashtags" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/api/chat",
+        .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
     });
     defer e.deinit();
@@ -452,7 +469,7 @@ test "extractTags returns empty when no Tags line" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/api/chat",
+        .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
     });
     defer e.deinit();
@@ -470,7 +487,7 @@ test "stripTagsLine removes Tags line" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/api/chat",
+        .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
     });
     defer e.deinit();

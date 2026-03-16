@@ -19,7 +19,7 @@ pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
 pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
-pub const DEFAULT_CHAT_ENDPOINT = "/api/chat";
+pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const CONFIG_FILENAME = "explain-gen-config.json";
 
@@ -202,9 +202,9 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "guidance_dir": "{s}",
             \\  "db_path": "{s}",
             \\  "src_dirs": ["src"],
-            \\  "ollama": {{
+            \\  "openai": {{
             \\    "base_url": "http://localhost:11434",
-            \\    "chat_endpoint": "/api/chat"
+            \\    "chat_endpoint": "/v1/chat/completions"
             \\  }},
             \\  "models": {{
             \\    "default": "code:latest",
@@ -399,10 +399,10 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     };
 
     const api_url = blk: {
-        if (root.object.get("ollama")) |ollama| {
-            if (ollama == .object) {
-                const base = if (ollama.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
-                const ep = if (ollama.object.get("chat_endpoint")) |e| if (e == .string) e.string else "" else "";
+        if (root.object.get("openai")) |openai| {
+            if (openai == .object) {
+                const base = if (openai.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
+                const ep = if (openai.object.get("chat_endpoint")) |e| if (e == .string) e.string else "" else "";
                 if (base.len > 0 and ep.len > 0) {
                     break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep });
                 }

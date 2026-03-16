@@ -131,7 +131,7 @@ clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .ex
 
 .PHONY: _clean-guidance
 _clean-guidance: ## Remove stale JSON files from .explain-gen/src
-	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -exec rm -rf {} \;
+	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -exec rm -rf {} \; || true
 
 .PHONY: explain
 explain: $(EXPLAIN_DB) ## Explain a module, function, or concept  make explain QUERY="sma"
@@ -175,7 +175,7 @@ STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
 .PHONY: pre-commit
 pre-commit: $(TARGET_BIN) ## Run full RALPH loop via explain-gen check
 	$(Q)$(TARGET_BIN) check
-	$(Q)echo "All checks passed."
+	$(Q)echo "✓ All checks passed. Ready to commit."
 
 .PHONY: fmt
 fmt: ## Format all Zig source files

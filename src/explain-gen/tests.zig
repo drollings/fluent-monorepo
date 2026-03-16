@@ -1438,7 +1438,7 @@ test "loadConfig reads guidance_dir from project config JSON" {
     // Write a config JSON with a custom guidance_dir.
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"guidance_dir": "custom-guidance", "models": {}, "ollama": {}}
+        \\{"guidance_dir": "custom-guidance", "models": {}, "openai": {}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1528,7 +1528,7 @@ test "loadConfig falls back to models.default when infill absent" {
     try std.testing.expectEqualStrings("default-model:latest", cfg.model);
 }
 
-test "loadConfig constructs api_url from ollama base_url and chat_endpoint" {
+test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -1540,7 +1540,7 @@ test "loadConfig constructs api_url from ollama base_url and chat_endpoint" {
 
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"ollama": {"base_url": "http://myhost:9999", "chat_endpoint": "/api/chat"}}
+        \\{"openai": {"base_url": "http://myhost:9999", "chat_endpoint": "/v1/chat/completions"}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1549,7 +1549,7 @@ test "loadConfig constructs api_url from ollama base_url and chat_endpoint" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    try std.testing.expectEqualStrings("http://myhost:9999/api/chat", cfg.api_url);
+    try std.testing.expectEqualStrings("http://myhost:9999/v1/chat/completions", cfg.api_url);
 }
 
 test "loadConfig with invalid JSON falls back to defaults" {

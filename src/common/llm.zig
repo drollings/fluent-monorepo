@@ -32,8 +32,24 @@ pub const LlmError = error{
 pub const LlmConfig = struct {
     api_url: []const u8,
     model: []const u8,
-    timeout_ms: u32 = 30000,
+    timeout_ms: u32 = 5000,
     debug: bool = false,
+
+    /// Returns true if the model is a thinking/reasoning model that uses
+    /// chain-of-thought tokens before producing output.
+    pub fn isThinkingModel(self: LlmConfig) bool {
+        // Check for known thinking model name patterns
+        var lower_buf: [256]u8 = undefined;
+        const lower = std.ascii.lowerString(&lower_buf, self.model);
+        // Ollama thinking models, OpenAI reasoning models
+        return std.mem.indexOf(u8, lower, "code:") != null or
+            std.mem.indexOf(u8, lower, "deepseek-r") != null or
+            std.mem.indexOf(u8, lower, "deepscaler") != null or
+            std.mem.startsWith(u8, lower, "o1") or
+            std.mem.startsWith(u8, lower, "o3") or
+            std.mem.startsWith(u8, lower, "o4") or
+            std.mem.startsWith(u8, lower, "gpt-5");
+    }
 };
 
 fn writeEscapedString(writer: anytype, s: []const u8) !void {
@@ -232,38 +248,18 @@ pub fn extractCommentTag(text: []const u8) ?[]const u8 {
 pub const LlmClient = struct {
     allocator: std.mem.Allocator,
     config: LlmConfig,
-    is_openai_format: bool,
-    chat_url: []const u8,
     http_client: std.http.Client,
 
     pub fn init(allocator: std.mem.Allocator, config: LlmConfig) !LlmClient {
-        const is_openai = std.mem.indexOf(u8, config.api_url, "api.openai.com") != null;
-
-        var chat_url: []const u8 = undefined;
-        if (is_openai) {
-            chat_url = try allocator.dupe(u8, config.api_url);
-        } else {
-            const is_ollama_v1 = std.mem.indexOf(u8, config.api_url, "/v1/completions") != null;
-            if (is_ollama_v1) {
-                chat_url = try std.mem.replaceOwned(u8, allocator, config.api_url, "/v1/completions", "/api/chat");
-            } else {
-                chat_url = try allocator.dupe(u8, config.api_url);
-            }
-        }
-
         const http_client = std.http.Client{ .allocator = allocator };
-
         return .{
             .allocator = allocator,
             .config = config,
-            .is_openai_format = is_openai,
-            .chat_url = chat_url,
             .http_client = http_client,
         };
     }
 
     pub fn deinit(self: *LlmClient) void {
-        self.allocator.free(self.chat_url);
         self.http_client.deinit();
     }
 
@@ -272,35 +268,36 @@ pub const LlmClient = struct {
         defer body.deinit(self.allocator);
         const writer = body.writer(self.allocator);
 
-        if (self.is_openai_format) {
-            try writer.writeAll("{\"model\":\"");
-            try writer.writeAll(self.config.model);
-            try writer.writeAll("\",\"prompt\":\"");
-            try writeEscapedString(writer, prompt);
-            try writer.print("\",\"max_tokens\":{d},\"temperature\":{d},\"stream\":false}}", .{ max_tokens, temperature });
-        } else {
-            try writer.writeAll("{\"model\":\"");
-            try writer.writeAll(self.config.model);
-            try writer.writeAll("\",\"messages\":[");
-            if (system) |sys| {
-                try writer.writeAll("{\"role\":\"system\",\"content\":\"");
-                try writeEscapedString(writer, sys);
-                try writer.writeAll("\"},");
-            }
-            try writer.writeAll("{\"role\":\"user\",\"content\":\"");
-            try writeEscapedString(writer, prompt);
-            // "think":false disables chain-of-thought for models that support it
-            // (DeepSeek-R1, qwen3, etc.) so reasoning tokens don't consume the
-            // num_predict budget before the model can emit a useful response.
-            try writer.writeAll("\"}],\"stream\":false,\"think\":false,\"options\":{\"temperature\":");
-            try writer.print("{d:.2}", .{temperature});
-            try writer.writeAll(",\"num_predict\":");
-            try writer.print("{d}", .{@as(usize, @max(100, max_tokens))});
-            try writer.writeAll("}}");
+        try writer.writeAll("{\"model\":\"");
+        try writer.writeAll(self.config.model);
+        try writer.writeAll("\",\"messages\":[");
+        if (system) |sys| {
+            try writer.writeAll("{\"role\":\"system\",\"content\":\"");
+            try writeEscapedString(writer, sys);
+            try writer.writeAll("\"},");
         }
+        try writer.writeAll("{\"role\":\"user\",\"content\":\"");
+        try writeEscapedString(writer, prompt);
+        try writer.writeAll("\"}]");
 
-        const url = if (self.is_openai_format) self.config.api_url else self.chat_url;
-        return self.postJson(url, body.items);
+        // Thinking models: disable chain-of-thought (Qwen3 enable_thinking=false),
+        // use max_completion_tokens, and omit temperature.
+        // Non-thinking models: standard max_tokens + temperature.
+        if (self.config.isThinkingModel()) {
+            try writer.writeAll(",\"enable_thinking\":false");
+            try writer.writeAll(",\"max_completion_tokens\":");
+            try writer.print("{}", .{max_tokens});
+        } else {
+            try writer.writeAll(",\"max_tokens\":");
+            try writer.print("{}", .{max_tokens});
+            try writer.writeAll(",\"temperature\":");
+            var temp_buf: [32]u8 = undefined;
+            const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
+            try writer.writeAll(temp_str);
+        }
+        try writer.writeAll(",\"stream\":false}");
+
+        return self.postJson(self.config.api_url, body.items);
     }
 
     /// POST `json_body` to `url` and return the extracted response text.
@@ -351,8 +348,29 @@ pub const LlmClient = struct {
                     return self.allocator.dupe(u8, text.string) catch null;
                 }
                 if (choice.object.get("message")) |msg| {
+                    // Check content first; strip <think>...</think> blocks (thinking models
+                    // embed chain-of-thought there). If stripping leaves text, return it.
                     if (msg.object.get("content")) |content| {
-                        return self.allocator.dupe(u8, content.string) catch null;
+                        const s = switch (content) {
+                            .string => |sv| sv,
+                            else => "",
+                        };
+                        if (s.len > 0) {
+                            const stripped = stripThinkBlock(s);
+                            if (stripped.len > 0) return self.allocator.dupe(u8, stripped) catch null;
+                        }
+                    }
+                    // Thinking models may route output to reasoning_content, reasoning, or
+                    // thinking fields when content is empty. Return unconditionally; the
+                    // caller (enhancer) will validate via extractCommentTag.
+                    for ([_][]const u8{ "reasoning_content", "reasoning", "thinking" }) |field| {
+                        if (msg.object.get(field)) |val| {
+                            const s = switch (val) {
+                                .string => |sv| sv,
+                                else => "",
+                            };
+                            if (s.len > 0) return self.allocator.dupe(u8, s) catch null;
+                        }
                     }
                 }
             }
@@ -391,26 +409,19 @@ pub const LlmClient = struct {
     /// Check whether the LLM endpoint is reachable.
     /// Uses Zig's native HTTP client (GET request to the health-check endpoint).
     /// Returns true when the endpoint responds with HTTP 200.
-    ///   OpenAI  → <base>/v1/models
-    ///   Ollama  → <scheme>://<host:port>/api/tags
+    /// OpenAI-style: GET <base>/v1/models
     pub fn available(self: *LlmClient) bool {
-        const check_url = if (self.is_openai_format) blk: {
-            if (std.mem.indexOf(u8, self.config.api_url, "/v1/")) |pos| {
-                break :blk std.fmt.allocPrint(self.allocator, "{s}/v1/models", .{self.config.api_url[0..pos]}) catch return false;
-            }
-            break :blk self.allocator.dupe(u8, self.config.api_url) catch return false;
-        } else blk: {
+        const check_url = blk: {
             const url = self.config.api_url;
             const scheme_end = std.mem.indexOf(u8, url, "://") orelse 0;
             const host_start = if (scheme_end > 0) scheme_end + 3 else 0;
             const path_start = std.mem.indexOfScalarPos(u8, url, host_start, '/') orelse url.len;
-            break :blk std.fmt.allocPrint(self.allocator, "{s}/api/tags", .{url[0..path_start]}) catch return false;
+            break :blk std.fmt.allocPrint(self.allocator, "{s}/v1/models", .{url[0..path_start]}) catch return false;
         };
         defer self.allocator.free(check_url);
 
         if (self.config.debug) std.debug.print("DEBUG: availability check GET {s}\n", .{check_url});
 
-        // We only care about the status code — discard the body.
         const result = self.http_client.fetch(.{
             .method = .GET,
             .location = .{ .url = check_url },
@@ -424,10 +435,10 @@ pub const LlmClient = struct {
     }
 };
 
-test "LlmClient init with api/chat URL uses it directly" {
+test "LlmClient init with chat/completions URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "http://localhost:11434/api/chat",
+        .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "code",
         .debug = false,
     };
@@ -435,29 +446,13 @@ test "LlmClient init with api/chat URL uses it directly" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expect(!client.is_openai_format);
-    try std.testing.expectEqualStrings("http://localhost:11434/api/chat", client.chat_url);
+    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.config.api_url);
 }
 
-test "LlmClient init with v1/completions URL converts to api/chat" {
+test "LlmClient init with OpenAI API URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "http://localhost:11434/v1/completions",
-        .model = "code",
-        .debug = false,
-    };
-
-    var client = try LlmClient.init(allocator, config);
-    defer client.deinit();
-
-    try std.testing.expect(!client.is_openai_format);
-    try std.testing.expectEqualStrings("http://localhost:11434/api/chat", client.chat_url);
-}
-
-test "LlmClient OpenAI format" {
-    const allocator = std.testing.allocator;
-    const config = LlmConfig{
-        .api_url = "https://api.openai.com/v1/completions",
+        .api_url = "https://api.openai.com/v1/chat/completions",
         .model = "gpt-4",
         .debug = false,
     };
@@ -465,8 +460,7 @@ test "LlmClient OpenAI format" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expect(client.is_openai_format);
-    try std.testing.expectEqualStrings("https://api.openai.com/v1/completions", client.chat_url);
+    try std.testing.expectEqualStrings("https://api.openai.com/v1/chat/completions", client.config.api_url);
 }
 
 test "stripThinkBlock removes think tags" {

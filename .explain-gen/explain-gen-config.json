@@ -3,13 +3,13 @@
   "guidance_dir": ".explain-gen",
   "db_path": ".explain.db",
   "src_dirs": ["src"],
-  "ollama": {
+  "openai": {
     "base_url": "http://localhost:11434",
-    "chat_endpoint": "/api/chat"
+    "chat_endpoint": "/v1/chat/completions"
   },
   "models": {
-    "default": "code:latest",
-    "infill": "code:latest"
+    "default": "fast:latest",
+    "infill": "fast:latest"
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all"],
