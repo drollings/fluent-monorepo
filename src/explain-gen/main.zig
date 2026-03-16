@@ -740,18 +740,22 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(cwd);
 
     // Load config — override defaults from config file.
-    var guidance_dir: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
-    var guidance_root: []const u8 = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
-    defer allocator.free(guidance_root);
+    const default_guidance_dir: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    const default_guidance_root = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
+    defer allocator.free(default_guidance_root);
 
     // api_url and model are owned slices valid for this function's lifetime.
     var api_url_owned: []const u8 = try allocator.dupe(u8, api_url);
     defer allocator.free(api_url_owned);
     var model_owned: []const u8 = undefined;
     var guidance_dir_owned: []const u8 = undefined;
+    var guidance_root_owned: []const u8 = undefined;
+    var has_config = false;
+
     if (config_mod.loadConfig(allocator, cwd)) |cfg_val| {
         var cfg = cfg_val;
         defer cfg.deinit();
+        has_config = true;
         // Resolve API URL from providers based on model.
         // Fall back to default if model parsing or provider resolution fails.
         allocator.free(api_url_owned);
@@ -769,15 +773,21 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         model_owned = loadCommitModelFromConfig(allocator, cwd) catch
             try allocator.dupe(u8, cfg.model_default);
         // guidance_root and guidance_dir: refresh from config.
-        allocator.free(guidance_root);
-        guidance_root = try allocator.dupe(u8, cfg.guidance_root);
+        guidance_root_owned = try allocator.dupe(u8, cfg.guidance_root);
         guidance_dir_owned = try allocator.dupe(u8, cfg.guidance_dir);
-        guidance_dir = guidance_dir_owned;
     } else |_| {
         model_owned = try allocator.dupe(u8, model);
     }
     defer allocator.free(model_owned);
-    if (guidance_dir_owned.len > 0) allocator.free(guidance_dir_owned);
+
+    const guidance_dir: []const u8 = if (has_config) guidance_dir_owned else default_guidance_dir;
+    const guidance_root: []const u8 = if (has_config) guidance_root_owned else default_guidance_root;
+    defer {
+        if (has_config) {
+            allocator.free(guidance_dir_owned);
+            allocator.free(guidance_root_owned);
+        }
+    }
     model = model_owned;
     api_url = api_url_owned;
 
