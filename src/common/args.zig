@@ -6,7 +6,7 @@ pub const CommonArgs = struct {
     // Intelligence / LLM
     debug: bool = false,
     no_ai: bool = false,
-    api_url: []const u8 = "http://localhost:11434/v1/chat/completions",
+    api_url: []const u8 = "http://localhost:11434/api/chat",
     model: []const u8 = "fast:latest",
     /// True when --api-url was explicitly provided on the command line.
     api_url_set: bool = false,
@@ -121,12 +121,12 @@ test "parseCommonArgs: model and api-url with set flags" {
     var pos: std.ArrayListUnmanaged([]const u8) = .{};
     defer pos.deinit(testing.allocator);
 
-    const argv = [_][]const u8{ "-m", "llama3", "--api-url", "http://host:11434/v1/chat/completions" };
+    const argv = [_][]const u8{ "-m", "llama3", "--api-url", "http://host:11434/api/chat" };
     const args = try parseCommonArgs(&argv, &pos, testing.allocator);
 
     try testing.expectEqualStrings("llama3", args.model);
     try testing.expect(args.model_set);
-    try testing.expectEqualStrings("http://host:11434/v1/chat/completions", args.api_url);
+    try testing.expectEqualStrings("http://host:11434/api/chat", args.api_url);
     try testing.expect(args.api_url_set);
 }
 

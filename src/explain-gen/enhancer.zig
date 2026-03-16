@@ -447,7 +447,7 @@ test "extractTags parses hashtags" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/v1/chat/completions",
+        .api_url = "http://localhost:11434/api/chat",
         .model = "test",
     });
     defer e.deinit();
@@ -469,7 +469,7 @@ test "extractTags returns empty when no Tags line" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/v1/chat/completions",
+        .api_url = "http://localhost:11434/api/chat",
         .model = "test",
     });
     defer e.deinit();
@@ -487,7 +487,7 @@ test "stripTagsLine removes Tags line" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     var e = try Enhancer.init(gpa.allocator(), .{
-        .api_url = "http://localhost:11434/v1/chat/completions",
+        .api_url = "http://localhost:11434/api/chat",
         .model = "test",
     });
     defer e.deinit();

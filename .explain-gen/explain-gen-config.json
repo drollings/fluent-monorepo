@@ -5,11 +5,11 @@
   "src_dirs": ["src"],
   "openai": {
     "base_url": "http://localhost:11434",
-    "chat_endpoint": "/v1/chat/completions"
+    "chat_endpoint": "/api/chat"
   },
   "models": {
-    "default": "fast:latest",
-    "fast": "fast:latest",
+    "default": "code:latest",
+    "fast": "code:latest",
     "thinking": "code:latest"
   },
   "test_commands": {

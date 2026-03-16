@@ -127,7 +127,7 @@ fn printHelp() !void {
         \\  --regen               LLM-regenerate all comments
         \\  --dry-run             Show what would change without writing
         \\  --verbose             Print LLM prompts and raw responses
-        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
+        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/api/chat)
         \\  -m, --model NAME      Model name (default: code:latest)
         \\
         \\Query/Explain options:
@@ -1025,8 +1025,10 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
 }
 
 /// Wire up the LLM enhancer on processor when --infill or --regen is active.
-/// Model selection: fast slot (if set) > default slot. Thinking slot is never
-/// used for infill. is_thinking is always false here.
+/// Model selection: fast slot (if set) > default slot. The thinking slot is
+/// never selected for infill — but when the fast/default slot resolves to the
+/// same model name as the thinking slot, thinking is suppressed via think:false
+/// so a thinking-capable model behaves like a standard one for infill.
 /// Logs a warning and leaves processor.enhancer null if initialisation fails.
 fn setupEnhancer(
     allocator: std.mem.Allocator,
@@ -1040,10 +1042,17 @@ fn setupEnhancer(
         ga.model
     else
         cfg.infillModel();
+    // If the resolved infill model is the same as the thinking slot, suppress
+    // thinking explicitly so we get deterministic, non-thinking output.
+    const think: ?bool = if (cfg.model_thinking.len > 0 and
+        std.mem.eql(u8, model, cfg.model_thinking))
+        false
+    else
+        null;
     const llm_config: llm.LlmConfig = .{
         .api_url = ga.api_url,
         .model = model,
-        .is_thinking = false,
+        .think = think,
         .debug = ga.verbose,
     };
     processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {

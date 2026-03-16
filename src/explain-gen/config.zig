@@ -21,7 +21,7 @@ pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_FAST_MODEL = "";
 pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
-pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
+pub const DEFAULT_CHAT_ENDPOINT = "/api/chat";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const CONFIG_FILENAME = "explain-gen-config.json";
 
@@ -222,7 +222,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "src_dirs": ["src"],
             \\  "openai": {{
             \\    "base_url": "http://localhost:11434",
-            \\    "chat_endpoint": "/v1/chat/completions"
+            \\    "chat_endpoint": "/api/chat"
             \\  }},
             \\  "models": {{
             \\    "default": "fast:latest",

@@ -32,15 +32,20 @@ pub const LlmError = error{
 pub const LlmConfig = struct {
     api_url: []const u8,
     model: []const u8,
-    /// True when this config targets the "thinking" model slot.
-    /// Set by the caller based on which slot the model came from, not the model name.
-    is_thinking: bool = false,
-    timeout_ms: u32 = 5000,
+    /// Controls the Ollama `think` parameter:
+    ///   null  — don't send the `think` param at all (standard models).
+    ///   true  — send `"think":true`; thinking is explicitly enabled.
+    ///           Used when the caller explicitly selects the "thinking" model slot.
+    ///   false — send `"think":false`; suppress thinking on a thinking-capable
+    ///           model that was selected via the "default" or "fast" slot because
+    ///           that slot happens to point to the same model as "thinking".
+    think: ?bool = null,
+    timeout_ms: u32 = 10000,
     debug: bool = false,
 
-    /// Returns true when this config targets the thinking model slot.
+    /// Returns true when thinking is explicitly enabled for this config.
     pub fn isThinkingModel(self: LlmConfig) bool {
-        return self.is_thinking;
+        return self.think == true;
     }
 };
 
@@ -263,19 +268,9 @@ pub const LlmClient = struct {
         try writer.writeAll("{\"model\":\"");
         try writer.writeAll(self.config.model);
         try writer.writeAll("\",\"messages\":[");
-        // For Qwen3/Qwen3.5 thinking models, inject /no_think into the system
-        // prompt so the model skips its internal reasoning phase entirely.
-        if (self.config.isThinkingModel()) {
-            const sys_text = system orelse "";
-            try writer.writeAll("{\"role\":\"system\",\"content\":\"");
-            if (sys_text.len > 0) {
-                try writeEscapedString(writer, sys_text);
-                try writer.writeAll(" /no_think");
-            } else {
-                try writer.writeAll("/no_think");
-            }
-            try writer.writeAll("\"},");
-        } else if (system) |sys| {
+        // Write system message if provided (unconditionally — no /no_think injection;
+        // thinking suppression is handled via the `think` param below).
+        if (system) |sys| {
             try writer.writeAll("{\"role\":\"system\",\"content\":\"");
             try writeEscapedString(writer, sys);
             try writer.writeAll("\"},");
@@ -284,15 +279,24 @@ pub const LlmClient = struct {
         try writeEscapedString(writer, prompt);
         try writer.writeAll("\"}]");
 
-        // Thinking models: disable chain-of-thought via Ollama's `think` flag,
-        // use max_completion_tokens.  Temperature 0.2 is sent for all models.
-        // Non-thinking models: standard max_tokens.
+        // think / max_tokens logic:
+        //   think=true  → thinking explicitly enabled; send think:true and
+        //                  max_completion_tokens (covers thinking tokens too).
+        //   think=false → thinking-capable model used from a non-thinking slot;
+        //                  send think:false to suppress, use max_tokens.
+        //   think=null  → standard model; omit think param, use max_tokens.
         var temp_buf: [32]u8 = undefined;
         const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
-        if (self.config.isThinkingModel()) {
-            try writer.writeAll(",\"think\":false");
-            try writer.writeAll(",\"max_completion_tokens\":");
-            try writer.print("{}", .{max_tokens});
+        if (self.config.think) |think_val| {
+            if (think_val) {
+                try writer.writeAll(",\"think\":true");
+                try writer.writeAll(",\"max_completion_tokens\":");
+                try writer.print("{}", .{max_tokens});
+            } else {
+                try writer.writeAll(",\"think\":false");
+                try writer.writeAll(",\"max_tokens\":");
+                try writer.print("{}", .{max_tokens});
+            }
         } else {
             try writer.writeAll(",\"max_tokens\":");
             try writer.print("{}", .{max_tokens});
@@ -443,7 +447,7 @@ pub const LlmClient = struct {
 test "LlmClient init with chat/completions URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "http://localhost:11434/v1/chat/completions",
+        .api_url = "http://localhost:11434/api/chat",
         .model = "code",
         .debug = false,
     };
@@ -451,13 +455,13 @@ test "LlmClient init with chat/completions URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.config.api_url);
+    try std.testing.expectEqualStrings("http://localhost:11434/api/chat", client.config.api_url);
 }
 
 test "LlmClient init with OpenAI API URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "https://api.openai.com/v1/chat/completions",
+        .api_url = "https://api.openai.com/api/chat",
         .model = "gpt-4",
         .debug = false,
     };
@@ -465,7 +469,7 @@ test "LlmClient init with OpenAI API URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("https://api.openai.com/v1/chat/completions", client.config.api_url);
+    try std.testing.expectEqualStrings("https://api.openai.com/api/chat", client.config.api_url);
 }
 
 test "stripThinkBlock removes think tags" {

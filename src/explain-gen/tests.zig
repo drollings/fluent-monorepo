@@ -1540,7 +1540,7 @@ test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
 
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"openai": {"base_url": "http://myhost:9999", "chat_endpoint": "/v1/chat/completions"}}
+        \\{"openai": {"base_url": "http://myhost:9999", "chat_endpoint": "/api/chat"}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1549,7 +1549,7 @@ test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    try std.testing.expectEqualStrings("http://myhost:9999/v1/chat/completions", cfg.api_url);
+    try std.testing.expectEqualStrings("http://myhost:9999/api/chat", cfg.api_url);
 }
 
 test "loadConfig with invalid JSON falls back to defaults" {
