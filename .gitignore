@@ -20,6 +20,7 @@ doc/Legacy
 
 # explain-gen test_passed marker (auto-generated)
 .explain-gen/.marks/
+.explain-gen/src
 
 # =============================================================================
 # Python Virtual Environments & Package Management

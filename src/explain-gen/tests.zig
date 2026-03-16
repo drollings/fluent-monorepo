@@ -1402,10 +1402,13 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
     try std.testing.expectEqualStrings("src", cfg.src_dirs[0]);
 
     // Default model
-    try std.testing.expectEqualStrings(config_mod.DEFAULT_MODEL, cfg.model);
+    try std.testing.expectEqualStrings(config_mod.DEFAULT_MODEL, cfg.model_default);
 
-    // Default api_url
-    try std.testing.expectEqualStrings(config_mod.DEFAULT_API_URL, cfg.api_url);
+    // Default providers
+    try std.testing.expect(cfg.providers.len >= 1);
+    try std.testing.expectEqualStrings("local", cfg.providers[0].name);
+    try std.testing.expectEqualStrings(config_mod.DEFAULT_BASE_URL, cfg.providers[0].base_url);
+    try std.testing.expectEqualStrings(config_mod.DEFAULT_CHAT_ENDPOINT, cfg.providers[0].chat_endpoint);
 }
 
 test "loadConfig deinit releases all memory (no leaks)" {
@@ -1438,7 +1441,7 @@ test "loadConfig reads guidance_dir from project config JSON" {
     // Write a config JSON with a custom guidance_dir.
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"guidance_dir": "custom-guidance", "models": {}, "openai": {}}
+        \\{"guidance_dir": "custom-guidance", "models": {}, "providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1479,7 +1482,7 @@ test "loadConfig reads src_dirs array from JSON" {
     try std.testing.expectEqualStrings("tools", cfg.src_dirs[2]);
 }
 
-test "loadConfig reads models.infill as model" {
+test "loadConfig reads models.fast for model_fast" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -1491,7 +1494,7 @@ test "loadConfig reads models.infill as model" {
 
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"models": {"infill": "mymodel:v2", "default": "other:latest"}}
+        \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:other:latest", "fast": "local:mymodel:v2"}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1500,11 +1503,11 @@ test "loadConfig reads models.infill as model" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    // infill takes priority over default
-    try std.testing.expectEqualStrings("mymodel:v2", cfg.model);
+    try std.testing.expectEqualStrings("local:mymodel:v2", cfg.model_fast);
+    try std.testing.expectEqualStrings("local:other:latest", cfg.model_default);
 }
 
-test "loadConfig falls back to models.default when infill absent" {
+test "loadConfig falls back to models.default when fast absent" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -1516,7 +1519,7 @@ test "loadConfig falls back to models.default when infill absent" {
 
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"models": {"default": "default-model:latest"}}
+        \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:default-model:latest"}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1525,10 +1528,10 @@ test "loadConfig falls back to models.default when infill absent" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    try std.testing.expectEqualStrings("default-model:latest", cfg.model);
+    try std.testing.expectEqualStrings("local:default-model:latest", cfg.model_default);
 }
 
-test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
+test "loadConfig constructs providers with base_url and chat_endpoint" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -1540,7 +1543,7 @@ test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
 
     try tmp.dir.makePath(".explain-gen");
     const cfg_json =
-        \\{"openai": {"base_url": "http://myhost:9999", "chat_endpoint": "/api/chat"}}
+        \\{"providers": {"myprovider": {"base_url": "http://myhost:9999", "chat_endpoint": "/v1/chat/completions"}}}
     ;
     const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
     try cfg_file.writeAll(cfg_json);
@@ -1549,7 +1552,10 @@ test "loadConfig constructs api_url from openai base_url and chat_endpoint" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    try std.testing.expectEqualStrings("http://myhost:9999/api/chat", cfg.api_url);
+    try std.testing.expect(cfg.providers.len == 1);
+    try std.testing.expectEqualStrings("myprovider", cfg.providers[0].name);
+    try std.testing.expectEqualStrings("http://myhost:9999", cfg.providers[0].base_url);
+    try std.testing.expectEqualStrings("/v1/chat/completions", cfg.providers[0].chat_endpoint);
 }
 
 test "loadConfig with invalid JSON falls back to defaults" {
@@ -1571,7 +1577,7 @@ test "loadConfig with invalid JSON falls back to defaults" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    try std.testing.expectEqualStrings(config_mod.DEFAULT_MODEL, cfg.model);
+    try std.testing.expectEqualStrings(config_mod.DEFAULT_MODEL, cfg.model_default);
 }
 
 // ---------------------------------------------------------------------------

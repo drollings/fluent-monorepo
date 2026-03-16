@@ -6,8 +6,8 @@ pub const CommonArgs = struct {
     // Intelligence / LLM
     debug: bool = false,
     no_ai: bool = false,
-    api_url: []const u8 = "http://localhost:11434/api/chat",
-    model: []const u8 = "fast:latest",
+    api_url: []const u8 = "http://localhost:11434/v1/chat/completions",
+    model: []const u8 = "local:code:latest",
     /// True when --api-url was explicitly provided on the command line.
     api_url_set: bool = false,
     /// True when --model / -m was explicitly provided on the command line.
@@ -121,12 +121,12 @@ test "parseCommonArgs: model and api-url with set flags" {
     var pos: std.ArrayListUnmanaged([]const u8) = .{};
     defer pos.deinit(testing.allocator);
 
-    const argv = [_][]const u8{ "-m", "llama3", "--api-url", "http://host:11434/api/chat" };
+    const argv = [_][]const u8{ "-m", "llama3", "--api-url", "http://host:11434/v1/chat/completions" };
     const args = try parseCommonArgs(&argv, &pos, testing.allocator);
 
     try testing.expectEqualStrings("llama3", args.model);
     try testing.expect(args.model_set);
-    try testing.expectEqualStrings("http://host:11434/api/chat", args.api_url);
+    try testing.expectEqualStrings("http://host:11434/v1/chat/completions", args.api_url);
     try testing.expect(args.api_url_set);
 }
 
@@ -185,6 +185,6 @@ test "parseCommonArgs: defaults when no args given" {
     try testing.expect(!args.dry_run);
     try testing.expect(!args.show_help);
     try testing.expect(!args.api_url_set);
-    try testing.expectEqualStrings("fast:latest", args.model);
+    try testing.expectEqualStrings("local:code:latest", args.model);
     try testing.expectEqual(@as(usize, 0), args.positional.len);
 }

@@ -3,14 +3,20 @@
   "guidance_dir": ".explain-gen",
   "db_path": ".explain.db",
   "src_dirs": ["src"],
-  "openai": {
-    "base_url": "http://localhost:11434",
-    "chat_endpoint": "/api/chat"
+  "providers": {
+    "local": {
+      "base_url": "http://localhost:11434",
+      "chat_endpoint": "/v1/chat/completions"
+    },
+    "ollama": {
+      "base_url": "http://localhost:11434",
+      "chat_endpoint": "/api/chat"
+    }
   },
   "models": {
-    "default": "code:latest",
-    "fast": "code:latest",
-    "thinking": "code:latest"
+    "default": "local:code:latest",
+    "fast": "local:code:latest",
+    "thinking": "local:code:latest"
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all"],

@@ -17,13 +17,25 @@ const builtin = @import("builtin");
 pub const DEFAULT_GUIDANCE_DIR = ".explain-gen";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
-pub const DEFAULT_MODEL = "code:latest";
+pub const DEFAULT_MODEL = "local:code:latest";
 pub const DEFAULT_FAST_MODEL = "";
 pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
-pub const DEFAULT_CHAT_ENDPOINT = "/api/chat";
+pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const CONFIG_FILENAME = "explain-gen-config.json";
+
+pub const Provider = struct {
+    name: []const u8,
+    base_url: []const u8,
+    chat_endpoint: []const u8,
+
+    pub fn deinit(self: *Provider, allocator: std.mem.Allocator) void {
+        allocator.free(self.name);
+        allocator.free(self.base_url);
+        allocator.free(self.chat_endpoint);
+    }
+};
 
 /// Per-extension test command. `{file}` is substituted for the extension "*".
 pub const LintCommand = struct {
@@ -68,10 +80,10 @@ pub const ProjectConfig = struct {
     /// Source directories to search, relative to the project root.
     src_dirs: []const []const u8,
 
-    /// LLM API endpoint (from config or default).
-    api_url: []const u8,
+    /// Available providers (from config or defaults).
+    providers: []const Provider,
 
-    /// General-purpose model (models.default).
+    /// General-purpose model (models.default), format: "provider:modelname".
     model_default: []const u8,
 
     /// Fast model for comment infill (models.fast). Empty string means unset;
@@ -101,7 +113,11 @@ pub const ProjectConfig = struct {
         self.allocator.free(self.db_path);
         for (self.src_dirs) |d| self.allocator.free(d);
         self.allocator.free(self.src_dirs);
-        self.allocator.free(self.api_url);
+        for (self.providers) |p| {
+            var provider = p;
+            provider.deinit(self.allocator);
+        }
+        self.allocator.free(self.providers);
         self.allocator.free(self.model_default);
         self.allocator.free(self.model_fast);
         self.allocator.free(self.model_thinking);
@@ -117,6 +133,46 @@ pub const ProjectConfig = struct {
     pub fn infillModel(self: *const ProjectConfig) []const u8 {
         if (self.model_fast.len > 0) return self.model_fast;
         return self.model_default;
+    }
+
+    /// Find a provider by name. Returns null if not found.
+    pub fn getProvider(self: *const ProjectConfig, name: []const u8) ?Provider {
+        for (self.providers) |p| {
+            if (std.mem.eql(u8, p.name, name)) return p;
+        }
+        return null;
+    }
+
+    /// Parse a model reference like "local:code:latest" into (provider_name, model_name).
+    /// Returns null if the format is invalid.
+    pub fn parseModelRef(model_ref: []const u8) ?struct { provider: []const u8, model: []const u8 } {
+        const colon1 = std.mem.indexOfScalar(u8, model_ref, ':') orelse return null;
+        const provider = model_ref[0..colon1];
+        const rest = model_ref[colon1 + 1 ..];
+        if (provider.len == 0 or rest.len == 0) return null;
+        return .{ .provider = provider, .model = rest };
+    }
+
+    /// Resolve a model reference to its provider and full API URL.
+    /// Returns the resolved URL and whether this is a thinking model endpoint.
+    /// Caller owns the returned URL string.
+    pub fn resolveModelUrl(self: *const ProjectConfig, allocator: std.mem.Allocator, model_ref: []const u8) !?struct { url: []const u8, provider: Provider, is_thinking_endpoint: bool } {
+        const parsed = parseModelRef(model_ref) orelse return null;
+        const provider = self.getProvider(parsed.provider) orelse return null;
+
+        const url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint });
+
+        return .{
+            .url = url,
+            .provider = provider,
+            .is_thinking_endpoint = std.mem.eql(u8, provider.chat_endpoint, "/api/chat"),
+        };
+    }
+
+    /// Check if a model reference matches the thinking model slot.
+    pub fn isThinkingModelRef(self: *const ProjectConfig, model_ref: []const u8) bool {
+        if (self.model_thinking.len == 0) return false;
+        return std.mem.eql(u8, model_ref, self.model_thinking);
     }
 
     /// Return the test argv template for `ext`, or the fallback "*" command.
@@ -220,14 +276,20 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "guidance_dir": "{s}",
             \\  "db_path": "{s}",
             \\  "src_dirs": ["src"],
-            \\  "openai": {{
-            \\    "base_url": "http://localhost:11434",
-            \\    "chat_endpoint": "/api/chat"
+            \\  "providers": {{
+            \\    "local": {{
+            \\      "base_url": "http://localhost:11434",
+            \\      "chat_endpoint": "/v1/chat/completions"
+            \\    }},
+            \\    "ollama": {{
+            \\      "base_url": "http://localhost:11434",
+            \\      "chat_endpoint": "/api/chat"
+            \\    }}
             \\  }},
             \\  "models": {{
-            \\    "default": "fast:latest",
-            \\    "fast": "fast:latest",
-            \\    "thinking": "code:latest"
+            \\    "default": "local:code:latest",
+            \\    "fast": "local:code:latest",
+            \\    "thinking": "ollama:code:latest"
             \\  }},
             \\  "test_commands": {{
             \\    ".zig": ["zig", "build", "test", "--summary", "all"],
@@ -432,21 +494,57 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         break :blk DEFAULT_THINKING_MODEL;
     };
 
-    const api_url = blk: {
+    var providers: std.ArrayList(Provider) = .{};
+    errdefer {
+        for (providers.items) |*p| p.deinit(allocator);
+        providers.deinit(allocator);
+    }
+
+    if (root.object.get("providers")) |providers_val| {
+        if (providers_val == .object) {
+            var it = providers_val.object.iterator();
+            while (it.next()) |entry| {
+                const name = entry.key_ptr.*;
+                const val = entry.value_ptr.*;
+                if (val != .object) continue;
+
+                const base_url = if (val.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
+                const chat_endpoint = if (val.object.get("chat_endpoint")) |e| if (e == .string) e.string else "" else "";
+
+                if (base_url.len > 0 and chat_endpoint.len > 0) {
+                    try providers.append(allocator, Provider{
+                        .name = try allocator.dupe(u8, name),
+                        .base_url = try allocator.dupe(u8, base_url),
+                        .chat_endpoint = try allocator.dupe(u8, chat_endpoint),
+                    });
+                }
+            }
+        }
+    }
+
+    if (providers.items.len == 0) {
         if (root.object.get("openai")) |openai| {
             if (openai == .object) {
                 const base = if (openai.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
                 const ep = if (openai.object.get("chat_endpoint")) |e| if (e == .string) e.string else "" else "";
                 if (base.len > 0 and ep.len > 0) {
-                    break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep });
+                    try providers.append(allocator, Provider{
+                        .name = try allocator.dupe(u8, "local"),
+                        .base_url = try allocator.dupe(u8, base),
+                        .chat_endpoint = try allocator.dupe(u8, ep),
+                    });
                 }
             }
         }
-        break :blk try allocator.dupe(u8, DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT);
-    };
-    errdefer allocator.free(api_url);
+        if (providers.items.len == 0) {
+            try providers.append(allocator, Provider{
+                .name = try allocator.dupe(u8, "local"),
+                .base_url = try allocator.dupe(u8, DEFAULT_BASE_URL),
+                .chat_endpoint = try allocator.dupe(u8, DEFAULT_CHAT_ENDPOINT),
+            });
+        }
+    }
 
-    // test_commands (object: ext → [argv...], optional)
     var test_commands: []LintCommand = &.{};
     if (root.object.get("test_commands")) |tc_val| {
         if (tc_val == .object) {
@@ -458,7 +556,6 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         allocator.free(test_commands);
     }
 
-    // lint_commands (object: ext → [argv...], optional)
     var lint_commands: []LintCommand = &.{};
     if (root.object.get("lint_commands")) |lc_val| {
         if (lc_val == .object) {
@@ -470,7 +567,6 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         allocator.free(lint_commands);
     }
 
-    // fmt_commands (object: ext → [argv...], optional)
     var fmt_commands: []LintCommand = &.{};
     if (root.object.get("fmt_commands")) |fc_val| {
         if (fc_val == .object) {
@@ -484,8 +580,8 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         guidance_dir_rel,
         db_path_rel,
         try src_dirs.toOwnedSlice(allocator),
+        try providers.toOwnedSlice(allocator),
         try allocator.dupe(u8, model_default),
-        api_url,
         try allocator.dupe(u8, model_fast),
         try allocator.dupe(u8, model_thinking),
         test_commands,
@@ -498,7 +594,13 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     var src_dirs = try allocator.alloc([]const u8, 1);
     src_dirs[0] = try allocator.dupe(u8, DEFAULT_SRC_DIR);
 
-    // Build test_commands for .zig
+    var providers = try allocator.alloc(Provider, 1);
+    providers[0] = Provider{
+        .name = try allocator.dupe(u8, "local"),
+        .base_url = try allocator.dupe(u8, DEFAULT_BASE_URL),
+        .chat_endpoint = try allocator.dupe(u8, DEFAULT_CHAT_ENDPOINT),
+    };
+
     const zig_test_argv = [_][]const u8{ "zig", "build", "test", "--summary", "all" };
     var test_argv = try allocator.alloc([]const u8, zig_test_argv.len);
     for (zig_test_argv, 0..) |tok, i| {
@@ -516,8 +618,8 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
         src_dirs,
+        providers,
         try allocator.dupe(u8, DEFAULT_MODEL),
-        try allocator.dupe(u8, DEFAULT_API_URL),
         try allocator.dupe(u8, DEFAULT_FAST_MODEL),
         try allocator.dupe(u8, DEFAULT_THINKING_MODEL),
         test_commands,
@@ -532,8 +634,8 @@ fn buildFromParts(
     guidance_dir_rel: []const u8,
     db_path_rel: []const u8,
     src_dirs: []const []const u8,
+    providers: []const Provider,
     model_default: []const u8,
-    api_url: []const u8,
     model_fast: []const u8,
     model_thinking: []const u8,
     test_commands: []const LintCommand,
@@ -570,7 +672,7 @@ fn buildFromParts(
         .inbox_dir = inbox_dir,
         .db_path = db_path,
         .src_dirs = src_dirs,
-        .api_url = api_url,
+        .providers = providers,
         .model_default = model_default,
         .model_fast = model_fast,
         .model_thinking = model_thinking,

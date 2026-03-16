@@ -127,7 +127,7 @@ fn printHelp() !void {
         \\  --regen               LLM-regenerate all comments
         \\  --dry-run             Show what would change without writing
         \\  --verbose             Print LLM prompts and raw responses
-        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/api/chat)
+        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
         \\  -m, --model NAME      Model name (default: code:latest)
         \\
         \\Query/Explain options:
@@ -752,9 +752,19 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (config_mod.loadConfig(allocator, cwd)) |cfg_val| {
         var cfg = cfg_val;
         defer cfg.deinit();
-        // Dupe before cfg is freed.
+        // Resolve API URL from providers based on model.
+        // Fall back to default if model parsing or provider resolution fails.
         allocator.free(api_url_owned);
-        api_url_owned = try allocator.dupe(u8, cfg.api_url);
+        const parsed = config_mod.ProjectConfig.parseModelRef(cfg.model_default);
+        if (parsed) |p| {
+            if (cfg.getProvider(p.provider)) |provider| {
+                api_url_owned = try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint });
+            } else {
+                api_url_owned = try allocator.dupe(u8, api_url);
+            }
+        } else {
+            api_url_owned = try allocator.dupe(u8, api_url);
+        }
         // Prefer models.commit > models.default from raw config JSON.
         model_owned = loadCommitModelFromConfig(allocator, cwd) catch
             try allocator.dupe(u8, cfg.model_default);
@@ -919,6 +929,8 @@ const GenArgs = struct {
     dry_run: bool = false,
     verbose: bool = false,
     api_url: []const u8 = config_mod.DEFAULT_API_URL,
+    /// True when --api-url was explicitly passed on the CLI.
+    api_url_set: bool = false,
     model: []const u8 = config_mod.DEFAULT_MODEL,
     /// True when -m was explicitly passed on the CLI, overriding config slots.
     model_override: bool = false,
@@ -987,6 +999,7 @@ const GenArgs = struct {
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
                 ga.api_url = args[i];
+                ga.api_url_set = true;
             } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
@@ -1042,6 +1055,27 @@ fn setupEnhancer(
         ga.model
     else
         cfg.infillModel();
+
+    // Resolve API URL: prefer explicit --api-url, otherwise resolve from providers.
+    var api_url_owned: ?[]const u8 = null;
+    const api_url: []const u8 = if (ga.api_url_set)
+        ga.api_url
+    else blk: {
+        // Parse model reference (format: "provider:modelname")
+        const parsed = config_mod.ProjectConfig.parseModelRef(model) orelse {
+            std.debug.print("warning: invalid model reference format: {s}\n", .{model});
+            break :blk ga.api_url;
+        };
+        // Find provider
+        const provider = cfg.getProvider(parsed.provider) orelse {
+            std.debug.print("warning: provider not found: {s}\n", .{parsed.provider});
+            break :blk ga.api_url;
+        };
+        api_url_owned = std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint }) catch null;
+        break :blk api_url_owned orelse ga.api_url;
+    };
+    defer if (api_url_owned) |url| allocator.free(url);
+
     // If the resolved infill model is the same as the thinking slot, suppress
     // thinking explicitly so we get deterministic, non-thinking output.
     const think: ?bool = if (cfg.model_thinking.len > 0 and
@@ -1050,7 +1084,7 @@ fn setupEnhancer(
     else
         null;
     const llm_config: llm.LlmConfig = .{
-        .api_url = ga.api_url,
+        .api_url = api_url,
         .model = model,
         .think = think,
         .debug = ga.verbose,

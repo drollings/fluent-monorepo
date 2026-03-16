@@ -47,6 +47,20 @@ pub const LlmConfig = struct {
     pub fn isThinkingModel(self: LlmConfig) bool {
         return self.think == true;
     }
+
+    /// Extract the model name from a model reference like "provider:model:name".
+    /// Returns the part after the first colon, or the whole string if no colon.
+    pub fn extractModelName(model_ref: []const u8) []const u8 {
+        if (std.mem.indexOfScalar(u8, model_ref, ':')) |colon_pos| {
+            return model_ref[colon_pos + 1 ..];
+        }
+        return model_ref;
+    }
+
+    /// Check if an endpoint is an Ollama-native endpoint (uses /api/chat).
+    pub fn isOllamaEndpoint(api_url: []const u8) bool {
+        return std.mem.indexOf(u8, api_url, "/api/chat") != null;
+    }
 };
 
 fn writeEscapedString(writer: anytype, s: []const u8) !void {
@@ -265,8 +279,10 @@ pub const LlmClient = struct {
         defer body.deinit(self.allocator);
         const writer = body.writer(self.allocator);
 
+        // Extract model name from provider:model format (e.g., "local:code:latest" -> "code:latest")
+        const model_name = LlmConfig.extractModelName(self.config.model);
         try writer.writeAll("{\"model\":\"");
-        try writer.writeAll(self.config.model);
+        try writer.writeAll(model_name);
         try writer.writeAll("\",\"messages\":[");
         // Write system message if provided (unconditionally — no /no_think injection;
         // thinking suppression is handled via the `think` param below).
@@ -447,7 +463,7 @@ pub const LlmClient = struct {
 test "LlmClient init with chat/completions URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "http://localhost:11434/api/chat",
+        .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "code",
         .debug = false,
     };
@@ -455,13 +471,13 @@ test "LlmClient init with chat/completions URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("http://localhost:11434/api/chat", client.config.api_url);
+    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.config.api_url);
 }
 
 test "LlmClient init with OpenAI API URL" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
-        .api_url = "https://api.openai.com/api/chat",
+        .api_url = "https://api.openai.com/v1/chat/completions",
         .model = "gpt-4",
         .debug = false,
     };
@@ -469,7 +485,7 @@ test "LlmClient init with OpenAI API URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("https://api.openai.com/api/chat", client.config.api_url);
+    try std.testing.expectEqualStrings("https://api.openai.com/v1/chat/completions", client.config.api_url);
 }
 
 test "stripThinkBlock removes think tags" {
