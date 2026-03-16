@@ -757,7 +757,7 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         api_url_owned = try allocator.dupe(u8, cfg.api_url);
         // Prefer models.commit > models.default from raw config JSON.
         model_owned = loadCommitModelFromConfig(allocator, cwd) catch
-            try allocator.dupe(u8, cfg.model);
+            try allocator.dupe(u8, cfg.model_default);
         // guidance_root and guidance_dir: refresh from config.
         allocator.free(guidance_root);
         guidance_root = try allocator.dupe(u8, cfg.guidance_root);
@@ -920,6 +920,8 @@ const GenArgs = struct {
     verbose: bool = false,
     api_url: []const u8 = config_mod.DEFAULT_API_URL,
     model: []const u8 = config_mod.DEFAULT_MODEL,
+    /// True when -m was explicitly passed on the CLI, overriding config slots.
+    model_override: bool = false,
     infill_comments: bool = false,
     regen_comments: bool = false,
     compile_db: bool = true,
@@ -989,6 +991,7 @@ const GenArgs = struct {
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
                 ga.model = args[i];
+                ga.model_override = true;
             }
         }
         return ga;
@@ -1022,12 +1025,25 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
 }
 
 /// Wire up the LLM enhancer on processor when --infill or --regen is active.
+/// Model selection: fast slot (if set) > default slot. Thinking slot is never
+/// used for infill. is_thinking is always false here.
 /// Logs a warning and leaves processor.enhancer null if initialisation fails.
-fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, processor: *sync_mod.SyncProcessor) void {
+fn setupEnhancer(
+    allocator: std.mem.Allocator,
+    ga: GenArgs,
+    cfg: *const config_mod.ProjectConfig,
+    processor: *sync_mod.SyncProcessor,
+) void {
     if (!ga.infill_comments and !ga.regen_comments) return;
+    // CLI -m flag overrides config; otherwise resolve from fast/default slots.
+    const model = if (!std.mem.eql(u8, ga.model, config_mod.DEFAULT_MODEL) or ga.model_override)
+        ga.model
+    else
+        cfg.infillModel();
     const llm_config: llm.LlmConfig = .{
         .api_url = ga.api_url,
-        .model = ga.model,
+        .model = model,
+        .is_thinking = false,
         .debug = ga.verbose,
     };
     processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {
@@ -1120,7 +1136,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         ga.verbose,
     );
     defer processor.deinit();
-    setupEnhancer(allocator, ga, &processor);
+    setupEnhancer(allocator, ga, &cfg, &processor);
 
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {

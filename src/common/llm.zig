@@ -32,23 +32,15 @@ pub const LlmError = error{
 pub const LlmConfig = struct {
     api_url: []const u8,
     model: []const u8,
+    /// True when this config targets the "thinking" model slot.
+    /// Set by the caller based on which slot the model came from, not the model name.
+    is_thinking: bool = false,
     timeout_ms: u32 = 5000,
     debug: bool = false,
 
-    /// Returns true if the model is a thinking/reasoning model that uses
-    /// chain-of-thought tokens before producing output.
+    /// Returns true when this config targets the thinking model slot.
     pub fn isThinkingModel(self: LlmConfig) bool {
-        // Check for known thinking model name patterns
-        var lower_buf: [256]u8 = undefined;
-        const lower = std.ascii.lowerString(&lower_buf, self.model);
-        // Ollama thinking models, OpenAI reasoning models
-        return std.mem.indexOf(u8, lower, "code:") != null or
-            std.mem.indexOf(u8, lower, "deepseek-r") != null or
-            std.mem.indexOf(u8, lower, "deepscaler") != null or
-            std.mem.startsWith(u8, lower, "o1") or
-            std.mem.startsWith(u8, lower, "o3") or
-            std.mem.startsWith(u8, lower, "o4") or
-            std.mem.startsWith(u8, lower, "gpt-5");
+        return self.is_thinking;
     }
 };
 
@@ -271,7 +263,19 @@ pub const LlmClient = struct {
         try writer.writeAll("{\"model\":\"");
         try writer.writeAll(self.config.model);
         try writer.writeAll("\",\"messages\":[");
-        if (system) |sys| {
+        // For Qwen3/Qwen3.5 thinking models, inject /no_think into the system
+        // prompt so the model skips its internal reasoning phase entirely.
+        if (self.config.isThinkingModel()) {
+            const sys_text = system orelse "";
+            try writer.writeAll("{\"role\":\"system\",\"content\":\"");
+            if (sys_text.len > 0) {
+                try writeEscapedString(writer, sys_text);
+                try writer.writeAll(" /no_think");
+            } else {
+                try writer.writeAll("/no_think");
+            }
+            try writer.writeAll("\"},");
+        } else if (system) |sys| {
             try writer.writeAll("{\"role\":\"system\",\"content\":\"");
             try writeEscapedString(writer, sys);
             try writer.writeAll("\"},");
@@ -280,21 +284,21 @@ pub const LlmClient = struct {
         try writeEscapedString(writer, prompt);
         try writer.writeAll("\"}]");
 
-        // Thinking models: disable chain-of-thought (Qwen3 enable_thinking=false),
-        // use max_completion_tokens, and omit temperature.
-        // Non-thinking models: standard max_tokens + temperature.
+        // Thinking models: disable chain-of-thought via Ollama's `think` flag,
+        // use max_completion_tokens.  Temperature 0.2 is sent for all models.
+        // Non-thinking models: standard max_tokens.
+        var temp_buf: [32]u8 = undefined;
+        const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
         if (self.config.isThinkingModel()) {
-            try writer.writeAll(",\"enable_thinking\":false");
+            try writer.writeAll(",\"think\":false");
             try writer.writeAll(",\"max_completion_tokens\":");
             try writer.print("{}", .{max_tokens});
         } else {
             try writer.writeAll(",\"max_tokens\":");
             try writer.print("{}", .{max_tokens});
-            try writer.writeAll(",\"temperature\":");
-            var temp_buf: [32]u8 = undefined;
-            const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
-            try writer.writeAll(temp_str);
         }
+        try writer.writeAll(",\"temperature\":");
+        try writer.writeAll(temp_str);
         try writer.writeAll(",\"stream\":false}");
 
         return self.postJson(self.config.api_url, body.items);
@@ -316,6 +320,7 @@ pub const LlmClient = struct {
             },
             .payload = json_body,
             .response_writer = &aw.writer,
+            .keep_alive = false,
         }) catch |err| {
             if (self.config.debug) std.debug.print("DEBUG: HTTP POST failed: {}\n", .{err});
             return LlmError.RequestFailed;

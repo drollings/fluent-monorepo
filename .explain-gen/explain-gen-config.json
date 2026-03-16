@@ -9,7 +9,8 @@
   },
   "models": {
     "default": "fast:latest",
-    "infill": "fast:latest"
+    "fast": "fast:latest",
+    "thinking": "code:latest"
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all"],

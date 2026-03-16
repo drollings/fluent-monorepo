@@ -18,6 +18,8 @@ pub const DEFAULT_GUIDANCE_DIR = ".explain-gen";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
 pub const DEFAULT_MODEL = "code:latest";
+pub const DEFAULT_FAST_MODEL = "";
+pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
 pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
@@ -66,11 +68,19 @@ pub const ProjectConfig = struct {
     /// Source directories to search, relative to the project root.
     src_dirs: []const []const u8,
 
-    /// LLM API endpoint for infill/regen (from config or default).
+    /// LLM API endpoint (from config or default).
     api_url: []const u8,
 
-    /// Model name for infill/regen (from config or default).
-    model: []const u8,
+    /// General-purpose model (models.default).
+    model_default: []const u8,
+
+    /// Fast model for comment infill (models.fast). Empty string means unset;
+    /// callers fall back to model_default when this is empty.
+    model_fast: []const u8,
+
+    /// Thinking/reasoning model slot (models.thinking). Empty string means unset.
+    /// is_thinking=true should be set in LlmConfig when using this slot.
+    model_thinking: []const u8,
 
     /// Per-extension test commands. `{file}` is NOT substituted (whole-suite).
     /// Extension "*" is the fallback for languages without a specific command.
@@ -92,13 +102,21 @@ pub const ProjectConfig = struct {
         for (self.src_dirs) |d| self.allocator.free(d);
         self.allocator.free(self.src_dirs);
         self.allocator.free(self.api_url);
-        self.allocator.free(self.model);
+        self.allocator.free(self.model_default);
+        self.allocator.free(self.model_fast);
+        self.allocator.free(self.model_thinking);
         for (self.test_commands) |tc| tc.deinit(self.allocator);
         self.allocator.free(self.test_commands);
         for (self.lint_commands) |lc| lc.deinit(self.allocator);
         self.allocator.free(self.lint_commands);
         for (self.fmt_commands) |fc| fc.deinit(self.allocator);
         self.allocator.free(self.fmt_commands);
+    }
+
+    /// Return the model to use for comment infill: fast slot if set, else default.
+    pub fn infillModel(self: *const ProjectConfig) []const u8 {
+        if (self.model_fast.len > 0) return self.model_fast;
+        return self.model_default;
     }
 
     /// Return the test argv template for `ext`, or the fallback "*" command.
@@ -207,8 +225,9 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\    "chat_endpoint": "/v1/chat/completions"
             \\  }},
             \\  "models": {{
-            \\    "default": "code:latest",
-            \\    "infill": "code:latest"
+            \\    "default": "fast:latest",
+            \\    "fast": "fast:latest",
+            \\    "thinking": "code:latest"
             \\  }},
             \\  "test_commands": {{
             \\    ".zig": ["zig", "build", "test", "--summary", "all"],
@@ -388,14 +407,29 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         try src_dirs.append(allocator, try allocator.dupe(u8, DEFAULT_SRC_DIR));
     }
 
-    const model = blk: {
+    const model_default = blk: {
         if (root.object.get("models")) |models| {
             if (models == .object) {
-                if (models.object.get("infill")) |m| if (m == .string) break :blk m.string;
                 if (models.object.get("default")) |m| if (m == .string) break :blk m.string;
             }
         }
         break :blk DEFAULT_MODEL;
+    };
+    const model_fast = blk: {
+        if (root.object.get("models")) |models| {
+            if (models == .object) {
+                if (models.object.get("fast")) |m| if (m == .string) break :blk m.string;
+            }
+        }
+        break :blk DEFAULT_FAST_MODEL;
+    };
+    const model_thinking = blk: {
+        if (root.object.get("models")) |models| {
+            if (models == .object) {
+                if (models.object.get("thinking")) |m| if (m == .string) break :blk m.string;
+            }
+        }
+        break :blk DEFAULT_THINKING_MODEL;
     };
 
     const api_url = blk: {
@@ -450,8 +484,10 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         guidance_dir_rel,
         db_path_rel,
         try src_dirs.toOwnedSlice(allocator),
-        try allocator.dupe(u8, model),
+        try allocator.dupe(u8, model_default),
         api_url,
+        try allocator.dupe(u8, model_fast),
+        try allocator.dupe(u8, model_thinking),
         test_commands,
         lint_commands,
         fmt_commands,
@@ -482,6 +518,8 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         src_dirs,
         try allocator.dupe(u8, DEFAULT_MODEL),
         try allocator.dupe(u8, DEFAULT_API_URL),
+        try allocator.dupe(u8, DEFAULT_FAST_MODEL),
+        try allocator.dupe(u8, DEFAULT_THINKING_MODEL),
         test_commands,
         &.{},
         &.{},
@@ -494,8 +532,10 @@ fn buildFromParts(
     guidance_dir_rel: []const u8,
     db_path_rel: []const u8,
     src_dirs: []const []const u8,
-    model: []const u8,
+    model_default: []const u8,
     api_url: []const u8,
+    model_fast: []const u8,
+    model_thinking: []const u8,
     test_commands: []const LintCommand,
     lint_commands: []const LintCommand,
     fmt_commands: []const LintCommand,
@@ -531,7 +571,9 @@ fn buildFromParts(
         .db_path = db_path,
         .src_dirs = src_dirs,
         .api_url = api_url,
-        .model = model,
+        .model_default = model_default,
+        .model_fast = model_fast,
+        .model_thinking = model_thinking,
         .test_commands = test_commands,
         .lint_commands = lint_commands,
         .fmt_commands = fmt_commands,
