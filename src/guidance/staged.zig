@@ -286,6 +286,7 @@ pub fn expandFollowUps(
 
 /// Format a []Stage slice into clean markdown output.
 /// If `summary` is non-null it is prepended as the synthesized answer block.
+/// If `followup_keywords` is non-null, they are appended as suggested queries.
 /// Returns an owned allocation; caller must free.
 pub fn formatStaged(
     allocator: std.mem.Allocator,
@@ -293,6 +294,7 @@ pub fn formatStaged(
     stages: []const types.Stage,
     summary: ?[]const u8,
     workspace: []const u8,
+    followup_keywords: ?[]const []const u8,
 ) ![]u8 {
     _ = workspace;
     var out: std.ArrayList(u8) = .{};
@@ -311,56 +313,24 @@ pub fn formatStaged(
 
     try w.writeAll("---\n\n");
 
-    // ── Group stages by source ────────────────────────────────────────────────
-    // Determine unique source order (preserve insertion order).
-    var source_order: std.ArrayList([]const u8) = .{};
-    defer source_order.deinit(allocator);
-    var seen_srcs: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_srcs.deinit(allocator);
+    // ── Emit CODE stages only (prose/insight used for synthesis, not display) ──
+    var seen_code_srcs: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_code_srcs.deinit(allocator);
 
     for (stages) |s| {
-        if (s.kind == .insight or s.kind == .skill_doc) continue;
-        if (seen_srcs.contains(s.source)) continue;
-        try seen_srcs.put(allocator, s.source, {});
-        try source_order.append(allocator, s.source);
-    }
+        if (s.kind != .code) continue;
+        if (seen_code_srcs.contains(s.source)) continue;
+        try seen_code_srcs.put(allocator, s.source, {});
 
-    // Emit source sections.
-    for (source_order.items) |src| {
-        // Find the prose stages for this source.
-        var has_content = false;
-        for (stages) |s| {
-            if (!std.mem.eql(u8, s.source, src)) continue;
-            if (s.kind == .prose) {
-                if (!has_content) {
-                    try w.print("## Source: `{s}`\n\n", .{src});
-                    has_content = true;
-                }
-                try w.print("{s}\n\n", .{std.mem.trim(u8, s.content, " \t\n\r")});
-            }
+        const lang = langFromPath(s.source);
+        if (s.line) |ln| {
+            try w.print("## Source: `{s}:{d}`\n\n```{s}\n// {s}:{d}\n", .{ s.source, ln, lang, s.source, ln });
+        } else {
+            try w.print("## Source: `{s}`\n\n```{s}\n// {s}\n", .{ s.source, lang, s.source });
         }
 
-        // Emit code stages for this source.
-        for (stages) |s| {
-            if (!std.mem.eql(u8, s.source, src)) continue;
-            if (s.kind != .code) continue;
-
-            if (!has_content) {
-                try w.print("## Source: `{s}`\n\n", .{src});
-                has_content = true;
-            }
-
-            const lang = langFromPath(src);
-            if (s.line) |ln| {
-                try w.print("```{s}\n// {s}:{d}\n", .{ lang, src, ln });
-            } else {
-                try w.print("```{s}\n// {s}\n", .{ lang, src });
-            }
-
-            // Code is already extracted as complete units, no second truncation.
-            try w.print("{s}", .{s.content});
-            try w.writeAll("\n```\n\n");
-        }
+        try w.print("{s}", .{s.content});
+        try w.writeAll("\n```\n\n");
     }
 
     // ── Skill doc stages ──────────────────────────────────────────────────────
@@ -371,7 +341,7 @@ pub fn formatStaged(
             try w.writeAll("## Knowledge Base\n\n**READ BEFORE IMPLEMENTING**\n\n");
             skill_header_written = true;
         }
-        const excerpt = std.mem.trim(u8, s.content, " \t\n\r");
+        const excerpt = std.mem.trim(u8, s.content, "\t\n\r");
         const first_nl = std.mem.indexOfScalar(u8, excerpt, '\n') orelse excerpt.len;
         try w.print("- **{s}**: {s}\n", .{ s.source, excerpt[0..@min(first_nl, 200)] });
     }
@@ -457,6 +427,16 @@ pub fn formatStaged(
         if (all_see_also.items.len > 0) try w.print("- **Used in files**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
         if (all_capabilities.items.len > 0) try w.print("- **Capabilities**: {s}\n", .{all_capabilities.items});
+    }
+
+    // ── Suggested follow-up keywords (from LLM synthesis)──────────────────────
+    if (followup_keywords) |kw| {
+        if (kw.len > 0) {
+            try w.writeAll("\n## Suggested Queries\n\n");
+            for (kw) |k| {
+                try w.print("- `{s}`\n", .{k});
+            }
+        }
     }
 
     return out.toOwnedSlice(allocator);

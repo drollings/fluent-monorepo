@@ -2929,7 +2929,7 @@ fn cmdExplainStaged(
     // ── Fast path: no LLM ─────────────────────────────────────────────────────
     if (!use_llm or client_opt == null) {
         if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
-        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace);
+        return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace);
     }
 
     // ── LLM path ─────────────────────────────────────────────────────────────
@@ -2995,10 +2995,18 @@ fn cmdExplainStaged(
     if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
 
     // M8: LLM synthesis.
-    const summary = synthesize_mod.synthesize(allocator, client, query_text, combined.items) catch null;
-    defer if (summary) |s| allocator.free(s);
+    const synth_result = synthesize_mod.synthesize(allocator, client, query_text, combined.items) catch {
+        return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace);
+    };
+    defer {
+        if (synth_result.summary) |s| allocator.free(s);
+        if (synth_result.followup_keywords) |kw| {
+            for (kw) |k| allocator.free(k);
+            allocator.free(kw);
+        }
+    }
 
-    return emitStagedOutput(allocator, query_text, combined.items, summary, workspace);
+    return emitStagedOutput(allocator, query_text, combined.items, synth_result.summary, synth_result.followup_keywords, workspace);
 }
 
 /// Write formatted staged output to stdout and flush.
@@ -3007,9 +3015,10 @@ fn emitStagedOutput(
     query_text: []const u8,
     stages: []const types.Stage,
     summary: ?[]const u8,
+    followup_keywords: ?[]const []const u8,
     workspace: []const u8,
 ) !void {
-    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace);
+    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace, followup_keywords);
     defer allocator.free(output);
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -3422,6 +3431,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var guidance_dir: ?[]const u8 = null;
     var api_url: ?[]const u8 = null;
     var model: ?[]const u8 = null;
+    var single_query: ?[]const u8 = null;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -3463,6 +3473,9 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 return;
             }
             model = args[i];
+        } else if (!std.mem.startsWith(u8, arg, "-")) {
+            // First non-flag argument is the query
+            single_query = arg;
         }
     }
 
@@ -3510,8 +3523,12 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
     defer if (llm_client_opt) |*c| c.deinit();
 
-    // Load module-level comments to generate hypothetical queries
-    const queries = try generateTestQueries(allocator, gdir_abs);
+    // Load module-level comments to generate hypothetical queries, or use single query
+    const queries = if (single_query) |sq| blk: {
+        var single: std.ArrayList(TestQuery) = .{};
+        try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
+        break :blk try single.toOwnedSlice(allocator);
+    } else try generateTestQueries(allocator, gdir_abs);
     defer {
         for (queries) |q| {
             allocator.free(q.query);
@@ -3640,7 +3657,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 // Parse scores from response
                 var lines = std.mem.splitScalar(u8, stripped, '\n');
                 while (lines.next()) |line| {
-                    const trimmed = std.mem.trim(u8, line, " \t\r");
+                    const trimmed = std.mem.trim(u8, line, "\t\r");
 
                     // Check for score lines like "### Accuracy: 8/10" or "Accuracy: 8" or "- **Accuracy:** 8/10"
                     if (std.mem.indexOf(u8, trimmed, "Accuracy")) |_| {
