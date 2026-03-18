@@ -3420,6 +3420,8 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var db_path: ?[]const u8 = null;
     var workspace: ?[]const u8 = null;
     var guidance_dir: ?[]const u8 = null;
+    var api_url: ?[]const u8 = null;
+    var model: ?[]const u8 = null;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -3447,6 +3449,20 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 return;
             }
             guidance_dir = args[i];
+        } else if (std.mem.eql(u8, arg, "--api-url")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --api-url requires a value\n", .{});
+                return;
+            }
+            api_url = args[i];
+        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --model requires a value\n", .{});
+                return;
+            }
+            model = args[i];
         }
     }
 
@@ -3471,6 +3487,25 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const gdir_abs = try resolveAbsOrJoin(allocator, ws, gdir);
     defer allocator.free(gdir_abs);
 
+    // Initialize LLM client for evaluation (when not --no-llm)
+    var llm_client_opt: ?llm.LlmClient = null;
+    if (!no_llm) {
+        const resolved_url = if (api_url) |u| u else blk: {
+            const model_ref = model orelse cfg.model_default;
+            if (cfg.resolveModelUrl(allocator, model_ref) catch null) |resolved| {
+                defer allocator.free(resolved.url);
+                break :blk try allocator.dupe(u8, resolved.url);
+            }
+            break :blk config_mod.DEFAULT_API_URL;
+        };
+        const llm_config: llm.LlmConfig = .{
+            .api_url = resolved_url,
+            .model = model orelse cfg.model_default,
+        };
+        llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
+    }
+    defer if (llm_client_opt) |*c| c.deinit();
+
     // Load module-level comments to generate hypothetical queries
     const queries = try generateTestQueries(allocator, gdir_abs);
     defer {
@@ -3482,7 +3517,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     std.debug.print("# Explain Benchmark Results\n\n", .{});
-    std.debug.print("Testing {d} queries (LLM: {s})\n\n", .{ queries.len, if (no_llm) "disabled" else "enabled" });
+    std.debug.print("Testing {d} queries (LLM evaluation: {s})\n\n", .{ queries.len, if (llm_client_opt != null) "enabled" else "disabled" });
 
     var total_acc: u32 = 0;
     var total_rel: u32 = 0;
@@ -3539,10 +3574,97 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             allocator.free(results);
         }
 
-        // Score results
-        const acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
-        const rel: u8 = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
-        const cmpl: u8 = @min(10, @as(u8, @intCast(results.len)) * 2);
+        // Score results using LLM evaluation when available
+        var acc: u8 = undefined;
+        var rel: u8 = undefined;
+        var cmpl: u8 = undefined;
+        var obs_buf: [512]u8 = undefined;
+        var obs_len: usize = 0;
+
+        if (llm_client_opt) |*client| {
+            // Build results summary for LLM evaluation
+            var results_buf: std.ArrayList(u8) = .{};
+            defer results_buf.deinit(allocator);
+            const rw = results_buf.writer(allocator);
+            try rw.print("Query: \"{s}\"\n\nTop {d} results:\n", .{ query_text, @min(5, results.len) });
+            for (results[0..@min(5, results.len)]) |r| {
+                try rw.print("- {s} ({s}:{s}) score={d:.3}\n  module: {s}\n", .{ r.name, r.module, r.node_type, r.score, r.module });
+            }
+            if (results.len == 0) {
+                try rw.print("No results found.\n", .{});
+            }
+
+            const eval_prompt = try std.fmt.allocPrint(allocator,
+                \\You are a code search evaluation assistant. Evaluate the quality of search results for the given query.
+                \\
+                \\{s}
+                \\
+                \\Score each dimension from 0-10:
+                \\- Accuracy: Do the results match what the query is asking for?
+                \\- Relevance: Is the most important result ranked first?
+                \\- Completeness: Did the search find all relevant items?
+                \\
+                \\Respond with EXACTLY this format:
+                \\Accuracy: N
+                \\Relevance: N
+                \\Completeness: N
+                \\Observation: One short sentence about the results quality.
+            , .{results_buf.items});
+            defer allocator.free(eval_prompt);
+
+            const response_opt = client.complete(eval_prompt, 300, 0.1, null) catch null;
+            if (response_opt) |response| {
+                defer allocator.free(response);
+                const stripped = llm.stripThinkBlock(response);
+
+                // Parse scores from response
+                var lines = std.mem.splitScalar(u8, stripped, '\n');
+                var found_acc = false;
+                var found_rel = false;
+                var found_cmpl = false;
+                while (lines.next()) |line| {
+                    const trimmed = std.mem.trim(u8, line, " \t\r");
+                    if (std.mem.startsWith(u8, trimmed, "Accuracy:")) {
+                        const val_str = std.mem.trim(u8, trimmed["Accuracy:".len..], " ");
+                        acc = std.fmt.parseInt(u8, val_str, 10) catch 5;
+                        acc = @min(10, acc);
+                        found_acc = true;
+                    } else if (std.mem.startsWith(u8, trimmed, "Relevance:")) {
+                        const val_str = std.mem.trim(u8, trimmed["Relevance:".len..], " ");
+                        rel = std.fmt.parseInt(u8, val_str, 10) catch 5;
+                        rel = @min(10, rel);
+                        found_rel = true;
+                    } else if (std.mem.startsWith(u8, trimmed, "Completeness:")) {
+                        const val_str = std.mem.trim(u8, trimmed["Completeness:".len..], " ");
+                        cmpl = std.fmt.parseInt(u8, val_str, 10) catch 5;
+                        cmpl = @min(10, cmpl);
+                        found_cmpl = true;
+                    } else if (std.mem.startsWith(u8, trimmed, "Observation:")) {
+                        // Copy observation
+                        const obs_start = @min("Observation:".len, trimmed.len);
+                        const obs_text = std.mem.trim(u8, trimmed[obs_start..], " ");
+                        obs_len = @min(obs_text.len, obs_buf.len - 1);
+                        @memcpy(obs_buf[0..obs_len], obs_text[0..obs_len]);
+                        obs_buf[obs_len] = 0;
+                    }
+                }
+
+                // Fallback if parsing failed
+                if (!found_acc) acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
+                if (!found_rel) rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
+                if (!found_cmpl) cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
+            } else {
+                // LLM call failed, use fallback
+                acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
+                rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
+                cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
+            }
+        } else {
+            // Fallback scoring when no LLM
+            acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
+            rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
+            cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
+        }
 
         total_acc += acc;
         total_rel += rel;
@@ -3567,6 +3689,9 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("**Top Results:**\n", .{});
         for (results[0..@min(3, results.len)]) |r| {
             std.debug.print("- `{s}` ({s}:{s})\n", .{ r.name, r.module, r.node_type });
+        }
+        if (obs_len > 0) {
+            std.debug.print("\n**Observation:** {s}\n", .{obs_buf[0..obs_len]});
         }
         std.debug.print("\n---\n\n", .{});
     }
