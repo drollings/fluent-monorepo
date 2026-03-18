@@ -14,9 +14,9 @@
     }
   },
   "models": {
-    "default": "local:code:latest",
+    "default": "local:fast:latest",
     "fast": "local:fast:latest",
-    "thinking": "local:code:latest"
+    "thinking": "ollama:code:latest"
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all"],
