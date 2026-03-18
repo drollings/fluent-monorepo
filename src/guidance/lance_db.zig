@@ -172,12 +172,14 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
 /// `<guidance_dir>/src/`, embedding each node via `embedder`.
 /// If `capabilities_dir` is non-null, also indexes CAPABILITY.md files from
 /// that directory into the `capabilities` table.
+/// If `aliases` is non-null, pre-computes embeddings for alias keys.
 pub fn syncDatabase(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
     db_path: []const u8,
     embedder: vector.EmbeddingProvider,
     capabilities_dir: ?[]const u8,
+    aliases: ?SemanticAliases,
 ) !void {
     var db = try GuidanceDb.init(allocator, db_path, embedder);
     defer db.deinit();
@@ -190,6 +192,12 @@ pub fn syncDatabase(
     if (capabilities_dir) |cap_dir| {
         db.syncCapabilities(allocator, cap_dir) catch |err| {
             log.warn("capabilities sync failed: {s}", .{@errorName(err)});
+        };
+    }
+
+    if (aliases) |ali| {
+        db.syncAliasEmbeddings(allocator, ali) catch |err| {
+            log.warn("alias embeddings sync failed: {s}", .{@errorName(err)});
         };
     }
 }
@@ -339,6 +347,27 @@ pub const GuidanceDb = struct {
             if (cap_rc != c.SQLITE_OK) {
                 logSqliteErr("migrate", "CREATE TABLE capabilities", cap_rc, cap_err, self.db);
                 if (cap_err) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
+        }
+
+        // ── Step 2c: semantic_alias_embeddings table ──
+        // Stores pre-computed embeddings for semantic alias keys for lightweight
+        // query steering: natural language → matching alias keys → expanded tokens
+        {
+            const alias_emb_sql =
+                \\CREATE TABLE IF NOT EXISTS semantic_alias_embeddings (
+                \\  alias_key     TEXT PRIMARY KEY,
+                \\  embedding     BLOB    NOT NULL,
+                \\  embedding_model TEXT  NOT NULL,
+                \\  created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+            ;
+            var alias_err: [*c]u8 = null;
+            const alias_rc = c.sqlite3_exec(self.db, alias_emb_sql, null, null, &alias_err);
+            if (alias_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE semantic_alias_embeddings", alias_rc, alias_err, self.db);
+                if (alias_err) |msg| c.sqlite3_free(msg);
                 return error.MigrationFailed;
             }
         }
@@ -1012,6 +1041,10 @@ pub const GuidanceDb = struct {
     /// When the query has no embedding, falls back to keyword-only.
     /// Results are reranked by node_type (boosts structs/functions, penalizes tests).
     /// Search with optional semantic alias expansion (alias → expanded tokens).
+    ///
+    /// Two-phase alias matching:
+    /// 1. Embedding-based: Find alias keys similar to query embedding (cosine >= 0.75)
+    /// 2. Token-based: Expand any exact token matches from semantic-aliases.json
     pub fn searchWithAliases(
         self: *Self,
         allocator: std.mem.Allocator,
@@ -1019,29 +1052,108 @@ pub const GuidanceDb = struct {
         limit: usize,
         aliases: ?SemanticAliases,
     ) ![]SearchResult {
-        if (aliases) |ali| {
-            // Expand aliases: tokenise query, run alias expansion, rejoin.
-            var tokens: std.ArrayList([]const u8) = .empty;
-            defer tokens.deinit(allocator);
-            var it = std.mem.tokenizeAny(u8, query_text, " \t\n\r");
-            while (it.next()) |tok| try tokens.append(allocator, tok);
+        const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
+        if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
-            const expanded = try ali.expandTokens(allocator, tokens.items);
-            // Free each expanded token string, then the slice
+        // Phase 1: Embedding-based alias key matching (query steering)
+        var embedding_expansion: std.ArrayList([]const u8) = .{};
+        defer {
+            for (embedding_expansion.items) |t| allocator.free(t);
+            embedding_expansion.deinit(allocator);
+        }
+
+        const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
+        defer if (query_emb) |e| allocator.free(e);
+
+        if (query_emb) |emb| {
+            // Find similar alias keys using cosine similarity
+            const similar_keys = self.findSimilarAliasKeys(allocator, emb, 0.75, 3) catch &[_][]const u8{};
+            defer {
+                for (similar_keys) |k| allocator.free(k);
+                allocator.free(similar_keys);
+            }
+
+            // Get the values for each similar key from aliases (case-insensitive match)
+            if (aliases) |ali| {
+                for (similar_keys) |key| {
+                    for (ali.aliases) |alias| {
+                        // Keys are stored lowercase in DB, compare insensitively
+                        if (std.ascii.eqlIgnoreCase(key, alias.key)) {
+                            for (alias.values) |val| {
+                                try embedding_expansion.append(allocator, try allocator.dupe(u8, val));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Token-based alias expansion (existing logic)
+        var expanded_tokens: std.ArrayList([]const u8) = .empty;
+        defer expanded_tokens.deinit(allocator);
+
+        // Add original query tokens
+        var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
+        while (it.next()) |tok| {
+            try expanded_tokens.append(allocator, try allocator.dupe(u8, tok));
+        }
+
+        // Add embedding-based expansion tokens
+        for (embedding_expansion.items) |tok| {
+            try expanded_tokens.append(allocator, try allocator.dupe(u8, tok));
+        }
+
+        // Token-based alias expansion
+        if (aliases) |ali| {
+            const expanded = try ali.expandTokens(allocator, expanded_tokens.items);
             defer {
                 for (expanded) |tok| allocator.free(tok);
                 allocator.free(expanded);
             }
 
-            var expanded_query: std.ArrayList(u8) = .empty;
-            defer expanded_query.deinit(allocator);
-            for (expanded, 0..) |tok, idx| {
-                if (idx > 0) try expanded_query.append(allocator, ' ');
-                try expanded_query.appendSlice(allocator, tok);
+            // Build final query: original + embedding expansions + token expansions
+            var final_query: std.ArrayList(u8) = .empty;
+            defer final_query.deinit(allocator);
+
+            // Original terms
+            try final_query.appendSlice(allocator, trimmed);
+
+            // Token-based expansions (from semantic-aliases.json)
+            // Only add terms not already in the query
+            var seen: std.StringHashMapUnmanaged(void) = .{};
+            defer seen.deinit(allocator);
+            for (expanded_tokens.items) |t| {
+                try seen.put(allocator, t, {});
             }
-            return self.search(allocator, expanded_query.items, limit);
+            for (expanded) |tok| {
+                if (!seen.contains(tok)) {
+                    try final_query.append(allocator, ' ');
+                    try final_query.appendSlice(allocator, tok);
+                    try seen.put(allocator, tok, {});
+                }
+            }
+
+            // Free temporary tokens
+            for (expanded_tokens.items) |t| allocator.free(t);
+
+            return self.search(allocator, final_query.items, limit);
         }
-        return self.search(allocator, query_text, limit);
+
+        // No aliases - build query from original + embedding expansions
+        var final_query: std.ArrayList(u8) = .empty;
+        defer final_query.deinit(allocator);
+
+        try final_query.appendSlice(allocator, trimmed);
+        for (embedding_expansion.items) |tok| {
+            try final_query.append(allocator, ' ');
+            try final_query.appendSlice(allocator, tok);
+        }
+
+        // Free original tokens
+        for (expanded_tokens.items) |t| allocator.free(t);
+
+        return self.search(allocator, final_query.items, limit);
     }
 
     pub fn search(
@@ -1468,6 +1580,135 @@ pub const GuidanceDb = struct {
         const rc = c.sqlite3_exec(self.db, sql, null, null, &err_msg);
         if (err_msg) |msg| c.sqlite3_free(msg);
         _ = rc;
+    }
+
+    // ── Semantic Alias Embeddings ────────────────────────────────────
+
+    /// Store an embedding for a semantic alias key.
+    /// Used during `guidance gen` to pre-compute embeddings for alias expansion.
+    pub fn storeAliasEmbedding(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        alias_key: []const u8,
+        embedding: []const f32,
+    ) !void {
+        const model_name = self.embedder.getName();
+        const emb_bytes = try vector.vecToBytes(allocator, embedding);
+        defer allocator.free(emb_bytes);
+
+        const sql = "INSERT OR REPLACE INTO semantic_alias_embeddings(alias_key, embedding, embedding_model) VALUES(?1,?2,?3)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, alias_key.ptr, @intCast(alias_key.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_blob(stmt, 2, emb_bytes.ptr, @intCast(emb_bytes.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 3, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    /// Find semantic alias keys whose embeddings are similar to the query embedding.
+    /// Returns keys with cosine similarity >= threshold, sorted by similarity descending.
+    /// Caller owns the returned slice of strings.
+    pub fn findSimilarAliasKeys(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_embedding: []const f32,
+        threshold: f32,
+        limit: usize,
+    ) ![]const []const u8 {
+        const sql = "SELECT alias_key, embedding FROM semantic_alias_embeddings";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc([]const u8, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        const ScoredKey = struct {
+            key: []const u8,
+            score: f32,
+        };
+
+        var scored: std.ArrayList(ScoredKey) = .{};
+        errdefer {
+            for (scored.items) |sk| allocator.free(sk.key);
+            scored.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const key = try dupeCol(stmt.?, 0, allocator);
+            const emb_blob = c.sqlite3_column_blob(stmt.?, 1);
+            const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 1));
+            if (emb_blob == null or emb_len == 0) {
+                allocator.free(key);
+                continue;
+            }
+            const bytes: []const u8 = @as([*]const u8, @ptrCast(emb_blob))[0..emb_len];
+            const stored_emb = vector.bytesToVec(allocator, bytes) catch {
+                allocator.free(key);
+                continue;
+            };
+            defer allocator.free(stored_emb);
+
+            const sim = vector.cosineSimilarity(query_embedding, stored_emb);
+            if (sim >= threshold) {
+                try scored.append(allocator, .{ .key = key, .score = sim });
+            } else {
+                allocator.free(key);
+            }
+        }
+
+        // Sort by score descending
+        std.sort.block(ScoredKey, scored.items, {}, struct {
+            fn lessThan(_: void, a: ScoredKey, b: ScoredKey) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
+
+        // Return top N keys (ownership transferred to caller)
+        const count = @min(limit, scored.items.len);
+        var result = try allocator.alloc([]const u8, count);
+        for (0..count) |i| {
+            result[i] = scored.items[i].key;
+        }
+        // Free unused keys
+        for (count..scored.items.len) |i| {
+            allocator.free(scored.items[i].key);
+        }
+        scored.deinit(allocator);
+        return result;
+    }
+
+    /// Sync semantic alias embeddings from the aliases file.
+    /// Pre-computes embeddings for all alias keys for fast query steering.
+    /// Keys are lowercased for case-insensitive matching.
+    pub fn syncAliasEmbeddings(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        aliases: SemanticAliases,
+    ) !void {
+        var synced: usize = 0;
+        for (aliases.aliases) |alias| {
+            // Lowercase the key for case-insensitive embedding comparison
+            const key_lower = std.ascii.allocLowerString(allocator, alias.key) catch continue;
+            defer allocator.free(key_lower);
+
+            // Embed the lowercase alias key
+            const emb = self.embedder.embed(allocator, key_lower) catch |err| {
+                log.debug("failed to embed alias key '{s}': {s}", .{ alias.key, @errorName(err) });
+                continue;
+            };
+            defer allocator.free(emb);
+
+            // Store with lowercase key for consistent lookup
+            self.storeAliasEmbedding(allocator, key_lower, emb) catch |err| {
+                log.debug("failed to store alias embedding '{s}': {s}", .{ alias.key, @errorName(err) });
+                continue;
+            };
+            synced += 1;
+        }
+        if (synced > 0) log.info("semantic alias embeddings synced: {d}", .{synced});
     }
 };
 

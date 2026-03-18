@@ -30,7 +30,7 @@ Completeness Breakdown
 
 ⚠️ Partially Implemented:
 
-- make document (learn command): Python cmd_learn() exists but Zig cmdDocument() is stubbed (not yet implemented). The Ollama-based promotion logic is Python-only.
+- make learn (learn subcommand): Python cmd_learn() exists but Zig cmdDocument() is stubbed (not yet implemented). The Ollama-based promotion logic is Python-only.
 - TODO Triage System: cmd_triage() generates TRIAGE.md from TODO.md, intended to feed Aider. Workflow is present but integration requires manual handoff.
 - Commit Message Generation: cmd_commit() calls LLM with git diff + recent log, but doesn't auto-commit (requires $EDITOR invocation).
 

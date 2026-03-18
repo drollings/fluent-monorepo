@@ -81,6 +81,18 @@ pub const JsonStore = struct {
             }
         }
 
+        if (root.object.get("capabilities")) |cap_val| {
+            if (cap_val == .array) {
+                var caps: std.ArrayList([]const u8) = .{};
+                for (cap_val.array.items) |c_val| {
+                    if (c_val == .string) {
+                        try caps.append(self.allocator, try self.allocator.dupe(u8, c_val.string));
+                    }
+                }
+                doc.capabilities = try caps.toOwnedSlice(self.allocator);
+            }
+        }
+
         if (root.object.get("hashtags")) |tags_val| {
             if (tags_val == .array) {
                 var tags: std.ArrayList([]const u8) = .{};
@@ -409,6 +421,8 @@ pub const JsonStore = struct {
             if (s.context) |c| self.allocator.free(c);
         }
         self.allocator.free(doc.skills);
+        for (doc.capabilities) |c| self.allocator.free(c);
+        self.allocator.free(doc.capabilities);
         for (doc.hashtags) |h| self.allocator.free(h);
         self.allocator.free(doc.hashtags);
         for (doc.used_by) |u| self.allocator.free(u);

@@ -393,6 +393,11 @@ pub fn formatStaged(
     defer seen_see_also.deinit(allocator);
     var seen_skills_ref: std.StringHashMapUnmanaged(void) = .{};
     defer seen_skills_ref.deinit(allocator);
+    var seen_caps_ref: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_caps_ref.deinit(allocator);
+
+    var all_capabilities: std.ArrayList(u8) = .{};
+    defer all_capabilities.deinit(allocator);
 
     for (stages) |s| {
         if (s.kind != .metadata) continue;
@@ -429,18 +434,29 @@ pub fn formatStaged(
                     if (all_skills.items.len > 0) try all_skills.appendSlice(allocator, ", ");
                     try all_skills.appendSlice(allocator, p);
                 }
+            } else if (std.mem.startsWith(u8, line, "capabilities: ")) {
+                const v = line["capabilities: ".len..];
+                var parts = std.mem.splitSequence(u8, v, ", ");
+                while (parts.next()) |part| {
+                    const p = std.mem.trim(u8, part, " \t");
+                    if (p.len == 0 or seen_caps_ref.contains(p)) continue;
+                    try seen_caps_ref.put(allocator, p, {});
+                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, ", ");
+                    try all_capabilities.appendSlice(allocator, p);
+                }
             }
         }
     }
 
-    if (all_keywords.items.len > 0 or all_see_also.items.len > 0 or all_skills.items.len > 0) {
+    if (all_keywords.items.len > 0 or all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0) {
         if (!ref_header_written) {
             try w.writeAll("## References\n\n");
             ref_header_written = true;
         }
         if (all_keywords.items.len > 0) try w.print("- **Keywords**: {s}\n", .{all_keywords.items});
-        if (all_see_also.items.len > 0) try w.print("- **Used by**: {s}\n", .{all_see_also.items});
+        if (all_see_also.items.len > 0) try w.print("- **Used in files**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
+        if (all_capabilities.items.len > 0) try w.print("- **Capabilities**: {s}\n", .{all_capabilities.items});
     }
 
     return out.toOwnedSlice(allocator);
@@ -589,6 +605,23 @@ fn buildMetadataStage(
                 if (skill_name.len == 0) continue;
                 if (i > 0) try mw.writeAll(", ");
                 try mw.writeAll(skill_name);
+            }
+            try mw.writeByte('\n');
+        }
+    }
+
+    // capabilities: capability refs.
+    if (root.get("capabilities")) |cv| {
+        if (cv == .array and cv.array.items.len > 0) {
+            try mw.writeAll("capabilities: ");
+            for (cv.array.items[0..@min(4, cv.array.items.len)], 0..) |item, i| {
+                const cap_name: []const u8 = switch (item) {
+                    .string => |s| s,
+                    else => "",
+                };
+                if (cap_name.len == 0) continue;
+                if (i > 0) try mw.writeAll(", ");
+                try mw.writeAll(cap_name);
             }
             try mw.writeByte('\n');
         }

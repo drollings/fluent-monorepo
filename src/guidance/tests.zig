@@ -474,12 +474,24 @@ test "explainGrepFile finds matching lines" {
 test "isShortQuery returns true for short queries" {
     try std.testing.expect(main.isShortQueryPub("sync"));
     try std.testing.expect(main.isShortQueryPub("cmdExplain"));
-    try std.testing.expect(main.isShortQueryPub("get member by name"));
+    try std.testing.expect(main.isShortQueryPub("get member"));
 }
 
 test "isShortQuery returns false for long queries" {
+    try std.testing.expect(!main.isShortQueryPub("get member by name")); // 4 words
     try std.testing.expect(!main.isShortQueryPub("How do I find all the functions that implement a specific pattern in the codebase"));
     try std.testing.expect(!main.isShortQueryPub("What is the relationship between the sync module and the database module"));
+}
+
+test "isShortQuery returns false for question queries" {
+    try std.testing.expect(!main.isShortQueryPub("sync?")); // ends with ?
+    try std.testing.expect(!main.isShortQueryPub("How does sync work")); // starts with How
+    try std.testing.expect(!main.isShortQueryPub("Where is the config")); // starts with Where
+    try std.testing.expect(!main.isShortQueryPub("What is this")); // starts with What
+    try std.testing.expect(!main.isShortQueryPub("If I run gen")); // starts with If
+    try std.testing.expect(!main.isShortQueryPub("Why does it fail")); // starts with Why
+    try std.testing.expect(!main.isShortQueryPub("When should I")); // starts with When
+    try std.testing.expect(!main.isShortQueryPub("Does it support")); // starts with Does
 }
 
 // ---------------------------------------------------------------------------

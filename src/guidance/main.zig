@@ -1178,7 +1178,7 @@ fn syncGuidanceDb(
         var noop = allocator.create(vector_mod.NoopEmbedding) catch return;
         noop.* = .{ .allocator = allocator };
         const p = noop.provider();
-        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null) catch |se| {
+        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null, null) catch |se| {
             std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(se)});
         };
         p.deinit();
@@ -1204,7 +1204,17 @@ fn syncGuidanceDb(
     };
     defer if (cap_dir_abs) |p| allocator.free(p);
 
-    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs) catch |err| {
+    // Load semantic aliases for embedding-based query steering
+    const aliases_path = std.fs.path.join(allocator, &.{ json_dir, "semantic-aliases.json" }) catch null;
+    defer if (aliases_path) |p| allocator.free(p);
+
+    var aliases: ?lance_db_mod.SemanticAliases = if (aliases_path) |path|
+        lance_db_mod.loadSemanticAliases(allocator, path) catch null
+    else
+        null;
+    defer if (aliases) |*a| a.deinit();
+
+    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases) catch |err| {
         std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(err)});
         return;
     };
@@ -1904,14 +1914,35 @@ const ExplainArgs = struct {
     filter: FilterMode = .auto,
 };
 
-/// Return true when the query has 4 or fewer whitespace-separated words.
-/// Short queries use the fast path (no LLM calls).
+/// Return true when the query is "short" (fast path, no LLM filter).
+/// Short queries: 2 or fewer words, AND not ending with "?", AND not starting
+/// with question words (if, how, where, when, does, why, what).
 fn isShortQuery(query: []const u8) bool {
-    var tok = std.mem.tokenizeAny(u8, query, " \t\n\r");
+    const trimmed = std.mem.trim(u8, query, " \t\n\r");
+    if (trimmed.len == 0) return true;
+
+    // Question mark at end triggers LLM filter
+    if (trimmed[trimmed.len - 1] == '?') return false;
+
+    // Check for question word prefixes (case-insensitive, with trailing space)
+    const question_prefixes = [_][]const u8{ "if ", "how ", "where ", "when ", "does ", "why ", "what " };
+    for (question_prefixes) |prefix| {
+        if (trimmed.len >= prefix.len) {
+            const candidate = trimmed[0..prefix.len];
+            var i: usize = 0;
+            while (i < prefix.len) : (i += 1) {
+                if (std.ascii.toLower(candidate[i]) != std.ascii.toLower(prefix[i])) break;
+            }
+            if (i == prefix.len) return false;
+        }
+    }
+
+    // Word count: 2 or fewer = short (no LLM filter)
+    var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
     var count: usize = 0;
     while (tok.next()) |_| {
         count += 1;
-        if (count > 4) return false;
+        if (count > 2) return false;
     }
     return true;
 }

@@ -104,6 +104,7 @@ pub const GuidanceDoc = struct {
     meta: Meta,
     comment: ?[]const u8 = null,
     skills: []const Skill = &.{},
+    capabilities: []const []const u8 = &.{},
     hashtags: []const []const u8 = &.{},
     used_by: []const []const u8 = &.{},
     members: []const Member = &.{},
