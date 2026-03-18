@@ -3506,8 +3506,10 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (resolved_url_buf) |buf| allocator.free(buf);
 
     if (!no_llm) {
+        const model_ref = model orelse cfg.model_default;
+        const is_thinking = cfg.isThinkingModelRef(model_ref);
+
         const api_url_to_use = if (api_url) |u| u else blk: {
-            const model_ref = model orelse cfg.model_default;
             if (cfg.resolveModelUrl(allocator, model_ref) catch null) |resolved| {
                 defer allocator.free(resolved.url);
                 resolved_url_buf = try allocator.dupe(u8, resolved.url);
@@ -3517,7 +3519,8 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         };
         const llm_config: llm.LlmConfig = .{
             .api_url = api_url_to_use,
-            .model = model orelse cfg.model_default,
+            .model = model_ref,
+            .think = if (is_thinking) true else null,
         };
         llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
     }
