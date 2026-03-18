@@ -1,16 +1,16 @@
 ---
 name: explain-query
-description: Natural language codebase query engine that combines vector/FTS5 search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
+description: Natural language codebase query engine that uses LanceDB hybrid vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
 ---
 
 # Explain Query
 
-The `guidance explain` command answers natural-language questions about the codebase by searching the index, collecting skill and capability excerpts, and optionally synthesizing an LLM answer.
+The `guidance explain` command answers natural-language questions about the codebase by searching the vector index, collecting skill and capability excerpts, and optionally synthesizing an LLM answer.
 
 ## Pipeline (staged mode, default)
 
 ```
-1. Search .guidance.db or .explain.db for relevant AST nodes
+1. Search .guidance.db for relevant AST nodes (hybrid vector + keyword)
 2. Load skill excerpts from skills[] referenced in matching guidance JSON
 3. Load capability excerpts from capabilities[] in matching guidance JSON  
 4. Load source excerpts (30 lines around each match)
@@ -22,11 +22,8 @@ The `guidance explain` command answers natural-language questions about the code
 ## CLI
 
 ```bash
-# Default (FTS5 BM25 search + LLM synthesis)
+# Default (hybrid vector + keyword search + LLM synthesis)
 guidance explain "how does database sync work"
-
-# Vector/hybrid search via .guidance.db
-guidance explain --db-type=lance --db .guidance.db "how does database sync work"
 
 # Skip LLM (fast, structural output only)
 guidance explain --no-llm "frobnicate"
@@ -35,16 +32,20 @@ guidance explain --no-llm "frobnicate"
 make explain QUERY="how does incremental sync work"
 ```
 
-## Search backends
+## Search Backend
 
-| Backend | Flag | Database | Search type |
-|---------|------|----------|-------------|
-| FTS5 (legacy) | default | `.explain.db` | BM25 full-text |
-| LanceDB | `--db-type=lance` | `.guidance.db` | Hybrid vector+keyword |
+| Backend | Database | Search type |
+|---------|----------|-------------|
+| LanceDB (default) | `.guidance.db` | Hybrid vector + keyword |
+
+The hybrid search combines:
+- **Vector search**: Cosine similarity on embeddings stored as BLOBs in SQLite
+- **Keyword search**: SQL LIKE queries (fallback when no embedding provider)
+- **Weighted fusion**: 65% vector / 35% keyword scores
 
 ## Key files
 
 - `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`
 - `src/guidance/staged.zig` — Staged pipeline with LLM filter and synthesis
-- `src/guidance/db.zig` — `ExplainDb` (FTS5 backend, legacy)
-- `src/guidance/lance_db.zig` — `GuidanceDb` (vector search backend)
+- `src/guidance/lance_db.zig` — `GuidanceDb` (hybrid vector + keyword search)
+- `src/guidance/vector/` — Embedding providers and cosine similarity math

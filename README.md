@@ -1,15 +1,15 @@
 # guidance
 
-A Zig-native, deterministic AST-guided SQLite FTS5 database generator for
+A Zig-native, deterministic AST-guided LanceDB vector search database generator for
 AI-assisted codebase navigation. It analyzes source files (Zig, Python) via AST,
 generates structured JSON metadata in `.guidance/src/`, and compiles them
-into `.explain.db` for fast, token-efficient `make explain` queries — optimized
+into `.guidance.db` for fast, token-efficient `make explain` queries — optimized
 for subagent discovery workflows.
 
-The `.explain.db` file is meant to be extensible for codebase and document
-exploration.  This tool can be run on other Zig codebases and use local
-inference to streamline iterative developent, and greatly reduce token burn
-for agentic coding.
+The `.guidance.db` file uses vector embeddings (cosine similarity) combined with
+keyword search for semantic code navigation. This tool can be run on other Zig
+codebases and use local inference to streamline iterative development, greatly
+reducing token burn for agentic coding.
 
 ## Authorship and copyright
 
@@ -17,7 +17,7 @@ This code is authored by Daniel Rollings, February 2026, with a mixture of
 elements from previous hand-written projects in Python and C++, rendered
 into Zig with ease of extensibility into other languages.
 
-It is released under a dual GPL/Commercial license.  See below.
+It is released under a dual GPL/Commercial license. See below.
 
 ## What it does
 
@@ -28,10 +28,10 @@ It is released under a dual GPL/Commercial license.  See below.
   numbers, and comments with zero ambiguity.
 - **Incremental sync**: SHA-256 `match_hash` comparison enables skip-if-unchanged
   behavior — only regenerate descriptions when the API contract changes.
-- **SQLite FTS5 indexing**: Compiles all guidance JSON into a queryable
-  `.explain.db` with BM25 ranking for sub-100ms lookups across 1000+ modules.
+- **LanceDB vector search**: Compiles all guidance JSON into `.guidance.db` with
+  hybrid vector + keyword search for sub-100ms lookups across 1000+ modules.
 - **Semantic aliases**: Natural language queries like "database" expand to
-  `ExplainDb`, `syncDatabase`, `searchWithAliases` — bridging terminology gaps.
+  `GuidanceDb`, `syncDatabase`, `searchWithAliases` — bridging terminology gaps.
 - **Skill attachment**: Pattern detection (GoF, domain) auto-adds skill references
   from `.guidance/.skills/` to relevant code locations.
 
@@ -39,13 +39,13 @@ It is released under a dual GPL/Commercial license.  See below.
 
 - **`make explain QUERY="..."`**: Staged pipeline that:
   1. Expands query with semantic aliases
-  2. Searches FTS5 database with stop-word filtering
+  2. Searches vector database (hybrid: cosine similarity + LIKE)
   3. Extracts source excerpts with brace-aware capture
   4. For long queries (5+ words), uses local LLM to filter/synthesize
   5. Formats output with code verbatim, metadata follow-ups
 
 - **Query modes**:
-  - Short queries (1-4 words): Fast path, no LLM — direct FTS5 lookup
+  - Short queries (1-4 words): Fast path, no LLM — direct vector search
   - Long queries (5+ words): LLM filters irrelevant prose, synthesizes answer
 
 - **Token efficiency**: 69% average token savings vs frontier model doing
@@ -84,8 +84,8 @@ make build            # → zig-out/bin/guidance
 # Generate guidance JSON for source files
 make guidance         # syncs src → .guidance/src/*.json
 
-# Build the FTS5 database
-make db               # → .explain.db
+# Build the vector search database
+make db               # → .guidance.db
 
 # Run the full RALPH loop gate
 make pre-commit       # build → test → guidance → lint → STRUCTURE.md
@@ -101,7 +101,7 @@ make explain QUERY="sqlite database schema"
 ```bash
 # Short query (fast path, no LLM)
 make explain QUERY="database"
-# → Finds ExplainDb, syncDatabase, searchWithAliases
+# → Finds GuidanceDb, syncDatabase, searchWithAliases
 
 # Natural language question (LLM synthesis)
 make explain QUERY="What design patterns are used in this codebase?"
@@ -120,18 +120,18 @@ make explain QUERY="gitignore filtering"
 
 ```
 src/
-  guidance/      Zig core engine (AST parser, sync, db, staged query)
+  guidance/      Zig core engine (AST parser, sync, lance_db, staged query)
   common/            Shared LLM HTTP client
 bin/
   guidance        Compiled binary (via zig build)
   guidance-py     Python AST provider
 .guidance/
   guidance-config.json   Model / provider configuration
-  semantic-aliases.json      Query expansion mappings
-  .skills/                   Design-pattern skill documents
-  .doc/                      Capabilities, diary, inbox
-  src/                       Generated guidance JSON
-.explain.db         SQLite FTS5 database for queries
+  semantic-aliases.json  Query expansion mappings
+  .skills/               Design-pattern skill documents
+  .doc/                  Capabilities, diary, inbox
+  src/                   Generated guidance JSON
+.guidance.db         SQLite vector search database for queries
 env/
   mk/                Makefile helpers + per-language overrides
   mise/              Language-specific mise.toml fragments
@@ -145,12 +145,12 @@ The `make explain` target implements a staged pipeline optimized for subagent
 discovery:
 
 ```
-Query → Alias Expansion → FTS5 Search → Node Boosting → Stage Assembly
+Query → Alias Expansion → Hybrid Search → Node Boosting → Stage Assembly
                                                               ↓
                           Prose stages ← [comments from guidance JSON]
                           Code stages  ← [source excerpts w/ brace capture]
-                          Metadata      ← [keywords, see_also, skills]
-                          Skill docs    ← [SKILL.md excerpts for patterns]
+                          Metadata     ← [keywords, see_also, skills]
+                          Skill docs   ← [SKILL.md excerpts for patterns]
                                                               ↓
                     Long query? ──Yes──→ LLM Filter → LLM Synthesize → Answer
                               │
@@ -160,7 +160,7 @@ Query → Alias Expansion → FTS5 Search → Node Boosting → Stage Assembly
 ```
 
 **Key features:**
-- Semantic aliases expand "database" → ExplainDb, syncDatabase, searchWithAliases
+- Semantic aliases expand "database" → GuidanceDb, syncDatabase, searchWithAliases
 - Node boosting prioritizes structs/functions over tests
 - Brace-aware source extraction captures complete function/struct bodies
 - See-also traversal follows metadata breadcrumbs when results are sparse
@@ -196,11 +196,13 @@ Register the provider in `.guidance/guidance-config.json` under
 - `model`: Local LLM model name (e.g., "llama3.2")
 - `api_url`: Ollama/OpenAI-compatible endpoint
 - `providers`: Language-specific AST providers
+- `embedding_provider`: "ollama", "openai", or "none" (keyword-only)
+- `embedding_model`: Model for vector embeddings (e.g., "nomic-embed-text")
 
 `.guidance/semantic-aliases.json` defines query expansions:
 ```json
 [
-  {"key": "database", "values": ["ExplainDb", "syncDatabase", "searchWithAliases"]},
+  {"key": "database", "values": ["GuidanceDb", "syncDatabase", "searchWithAliases"]},
   {"key": "LLM", "values": ["LlmClient", "filterStages", "synthesize"]}
 ]
 ```
@@ -223,7 +225,7 @@ design patterns, plugins, and more.
 ### Licensing & Usage
 
 This software is dual-licensed, meaning you must choose the appropriate
-license for your use case.  This model ensures the software remains free and
+license for your use case. This model ensures the software remains free and
 open for the community, while ensuring sustainable development through
 commercial support from large organizations.
 
@@ -242,7 +244,7 @@ and no technical support.
 ### Option B: Commercial License
 
 If you are developing proprietary, closed-source software, you cannot legally
-use the GPLv3 license without open-sourcing your own codebase.  You must
+use the GPLv3 license without open-sourcing your own codebase. You must
 purchase a Commercial License if you meet any of the following criteria:
 
 * You wish to embed this software in a proprietary, closed-source product.

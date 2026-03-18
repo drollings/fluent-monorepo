@@ -47,8 +47,6 @@ Then you you must read
 │   │   │   └── CAPABILITY.md
 │   │   ├── explain-query
 │   │   │   └── CAPABILITY.md
-│   │   ├── fts5-search
-│   │   │   └── CAPABILITY.md
 │   │   ├── plugin-system
 │   │   │   └── CAPABILITY.md
 │   │   ├── sync-pipeline
@@ -90,7 +88,6 @@ Then you you must read
 │       │   └── root.zig
 │       ├── ast_parser.zig
 │       ├── config.zig
-│       ├── db.zig
 │       ├── deps.zig
 │       ├── enhancer.zig
 │       ├── gitignore.zig

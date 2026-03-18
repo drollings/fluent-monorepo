@@ -1,14 +1,13 @@
 //! staged.zig — Staged explain pipeline for `guidance explain`.
 //!
-//! Implements the hybrid FTS5 + guidance JSON pipeline described in
-//! ROADMAP_EXPLAIN_ENHANCE.md.  The key exported functions are:
+//! Implements the hybrid vector + keyword search pipeline for the explain
+//! subcommand. The key exported functions are:
 //!
-//!   executeStaged()   — FTS5 search → collect Stage slices
+//!   executeStaged()   — search → collect Stage slices
 //!   expandFollowUps() — follow see_also / skill refs → more stages
 //!   formatStaged()    — render []Stage to markdown output
 
 const std = @import("std");
-const db_mod = @import("db.zig"); // kept for SemanticAliases
 const lance_db_mod = @import("lance_db.zig");
 const types = @import("types.zig");
 const llm = @import("common");
@@ -38,8 +37,8 @@ fn isTestPath(rel_path: []const u8) bool {
 // Stage collection entry point
 // ---------------------------------------------------------------------------
 
-/// Collect all stages for a query by searching the FTS5 database and loading
-/// supporting data from guidance JSON files.
+/// Collect all stages for a query by searching the vector/keyword database
+/// and loading supporting data from guidance JSON files.
 ///
 /// Returned slice is owned by the caller; free with types.freeStages() then
 /// allocator.free(slice).
@@ -58,7 +57,7 @@ pub fn executeStagedWithAliases(
     db: *GuidanceDb,
     query: []const u8,
     workspace: []const u8,
-    aliases: ?db_mod.SemanticAliases,
+    aliases: ?lance_db_mod.SemanticAliases,
 ) ![]types.Stage {
     // ── Vector/hybrid search with alias expansion ─────────────────────────────
     const results = try db.searchWithAliases(allocator, query, 15, aliases);

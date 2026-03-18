@@ -1,9 +1,9 @@
 # Agent Bootloader — guidance
 
-**Context**: guidance is a Zig-native, deterministic AST-guided SQLite FTS5 database
-generator for NullClaw. It analyzes source files (Zig, Python, and future languages) via
+**Context**: guidance is a Zig-native, deterministic AST-guided LanceDB vector search
+database generator for NullClaw. It analyzes source files (Zig, Python, and future languages) via
 AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
-`.explain.db` for its `explain` functionality.
+`.guidance.db` for its `explain` functionality.
 
 ## Prime Directive
 
@@ -44,7 +44,7 @@ AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
 
 ```
 src/
-  guidance/      Zig core engine (AST parser, sync, db, structure, deps)
+  guidance/      Zig core engine (AST parser, sync, lance_db, structure, deps)
   common/           Zig shared LLM HTTP client and arg helpers
 bin/
   guidance       Compiled binary — zig-out/bin/guidance (via zig build)
@@ -54,7 +54,7 @@ bin/
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)
   .doc/             Capabilities, diary, inbox
   src/              Generated guidance JSON (mirrors src/ tree)
-.explain.db         SQLite FTS5 database consumed by NullClaw explain tool
+.guidance.db        SQLite vector search database consumed by NullClaw explain tool
 env/
   mk/               Shared Makefile helpers and per-language target overrides
   mise/             Language-specific mise.toml fragments

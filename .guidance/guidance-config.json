@@ -1,7 +1,7 @@
 {
   "version": "1",
   "guidance_dir": ".guidance",
-  "db_path": ".explain.db",
+  "db_path": ".guidance.db",
   "src_dirs": ["src"],
   "providers": {
     "local": {
@@ -37,5 +37,5 @@
   "embedding_model": "embed",
   "embedding_dims": 768,
 
-  "comment": "guidance: produces .explain.db SQLite FTS5 index and .guidance/ JSON mirror for NullClaw."
+  "comment": "guidance: produces .guidance.db SQLite vector search database and .guidance/ JSON mirror."
 }

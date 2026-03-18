@@ -1,20 +1,16 @@
 //! guidance LanceDB-style vector search database.
 //!
-//! Produces `.guidance.db` — a SQLite database that mirrors the `.explain.db`
-//! schema but adds a vector embedding column for semantic (cosine) search.
-//!
-//! This is a **parallel** implementation to db.zig (FTS5).  Both read the same
-//! JSON guidance files under `.guidance/src/`; NullClaw's explain tool can point
-//! to either database.  Once guidance.db search quality matches explain.db, it
-//! can fully replace it.
+//! Produces `.guidance.db` — a SQLite database with vector embeddings for
+//! semantic (cosine similarity) search, powering the `explain` subcommand.
 //!
 //! Public API:
 //!   pub fn syncDatabase(allocator, guidance_dir, db_path, embedder) !void
 //!   pub fn openDb(allocator, db_path, embedder) !GuidanceDb
+//!   pub fn loadSemanticAliases(allocator, path) !?SemanticAliases
 //!
 //! Schema (version 1):
 //!   schema_version   — single-row version table
-//!   ast_nodes        — relational table: same columns as explain.db + embedding BLOB
+//!   ast_nodes        — relational table with metadata + embedding BLOB
 //!   embedding_cache  — content-hash → embedding blob (avoids redundant API calls)
 //!
 //! Search modes:
@@ -34,6 +30,139 @@ pub const SQLITE_STATIC: c.sqlite3_destructor_type = null;
 const BUSY_TIMEOUT_MS: c_int = 5000;
 
 pub const SCHEMA_VERSION: u32 = 1;
+
+// ---------------------------------------------------------------------------
+// Semantic aliases for query expansion
+// ---------------------------------------------------------------------------
+
+/// A single alias entry mapping a key to expansion values.
+pub const SemanticAlias = struct {
+    key: []const u8,
+    values: []const []const u8,
+};
+
+/// Loaded semantic aliases (owned by caller).
+pub const SemanticAliases = struct {
+    aliases: []SemanticAlias,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *@This()) void {
+        for (self.aliases) |a| {
+            self.allocator.free(a.key);
+            for (a.values) |v| self.allocator.free(v);
+            self.allocator.free(a.values);
+        }
+        self.allocator.free(self.aliases);
+    }
+
+    /// Expand query tokens using aliases. Returns owned slice of owned strings.
+    /// Caller must free the returned slice and each string.
+    pub fn expandTokens(
+        self: @This(),
+        allocator: std.mem.Allocator,
+        tokens: []const []const u8,
+    ) ![]const []const u8 {
+        var expanded: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (expanded.items) |t| allocator.free(t);
+            expanded.deinit(allocator);
+        }
+
+        var seen_lowercase: std.StringHashMapUnmanaged(void) = .{};
+        defer {
+            var it = seen_lowercase.keyIterator();
+            while (it.next()) |k| allocator.free(k.*);
+            seen_lowercase.deinit(allocator);
+        }
+
+        for (tokens) |tok| {
+            const lower = try std.ascii.allocLowerString(allocator, tok);
+            const contains_lower = seen_lowercase.contains(lower);
+            if (!contains_lower) {
+                try seen_lowercase.put(allocator, lower, {});
+            }
+            if (contains_lower) {
+                allocator.free(lower);
+                continue;
+            }
+
+            try expanded.append(allocator, try allocator.dupe(u8, tok));
+
+            for (self.aliases) |alias| {
+                if (std.ascii.eqlIgnoreCase(tok, alias.key)) {
+                    for (alias.values) |val| {
+                        const val_lower = try std.ascii.allocLowerString(allocator, val);
+                        if (seen_lowercase.contains(val_lower)) {
+                            allocator.free(val_lower);
+                            continue;
+                        }
+                        try seen_lowercase.put(allocator, val_lower, {});
+                        try expanded.append(allocator, try allocator.dupe(u8, val));
+                    }
+                }
+            }
+        }
+
+        return try expanded.toOwnedSlice(allocator);
+    }
+};
+
+/// Load semantic aliases from a JSON file.
+/// Returns null if file doesn't exist.
+pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?SemanticAliases {
+    const file = std.fs.openFileAbsolute(path, .{}) catch return null;
+    defer file.close();
+
+    const content = file.readToEndAlloc(allocator, 64 * 1024) catch return null;
+    defer allocator.free(content);
+
+    const Value = std.json.Value;
+    var parsed = std.json.parseFromSlice(Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    defer parsed.deinit();
+
+    if (parsed.value != .object) return null;
+    const aliases_arr = parsed.value.object.get("aliases") orelse return null;
+    if (aliases_arr != .array) return null;
+
+    var out: std.ArrayList(SemanticAlias) = .{};
+    errdefer {
+        for (out.items) |a| {
+            allocator.free(a.key);
+            for (a.values) |v| allocator.free(v);
+            allocator.free(a.values);
+        }
+        out.deinit(allocator);
+    }
+
+    for (aliases_arr.array.items) |item| {
+        if (item != .object) continue;
+        const key_val = item.object.get("key") orelse continue;
+        const values_val = item.object.get("values") orelse continue;
+        if (key_val != .string or values_val != .array) continue;
+
+        var vals: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (vals.items) |v| allocator.free(v);
+            vals.deinit(allocator);
+        }
+
+        for (values_val.array.items) |v| {
+            if (v == .string) {
+                try vals.append(allocator, try allocator.dupe(u8, v.string));
+            }
+        }
+
+        try out.append(allocator, .{
+            .key = try allocator.dupe(u8, key_val.string),
+            .values = try vals.toOwnedSlice(allocator),
+        });
+    }
+
+    return .{
+        .aliases = try out.toOwnedSlice(allocator),
+        .allocator = allocator,
+    };
+}
 
 // ---------------------------------------------------------------------------
 // Public entry points
@@ -130,8 +259,7 @@ pub const GuidanceDb = struct {
         // ── Step 1: base tables and relational indexes (no embedding column yet) ──
         // We separate embedding-column creation into ALTER TABLE steps so this
         // migration is safe to run on a database that was previously created by
-        // the FTS5 explain.db backend (which shares the same ast_nodes schema but
-        // lacks embedding columns).  CREATE TABLE IF NOT EXISTS is idempotent;
+        // an older guidance.db version. CREATE TABLE IF NOT EXISTS is idempotent;
         // ALTER TABLE ADD COLUMN silently succeeds even if the column already exists
         // because we ignore the "duplicate column name" error code.
         const base_sql =
@@ -860,13 +988,12 @@ pub const GuidanceDb = struct {
     /// When the query has no embedding, falls back to keyword-only.
     /// Results are reranked by node_type (boosts structs/functions, penalizes tests).
     /// Search with optional semantic alias expansion (alias → expanded tokens).
-    /// SemanticAliases is imported from db.zig for compatibility with staged.zig.
     pub fn searchWithAliases(
         self: *Self,
         allocator: std.mem.Allocator,
         query_text: []const u8,
         limit: usize,
-        aliases: ?@import("db.zig").SemanticAliases,
+        aliases: ?SemanticAliases,
     ) ![]SearchResult {
         if (aliases) |ali| {
             // Expand aliases: tokenise query, run alias expansion, rejoin.
@@ -1317,7 +1444,7 @@ pub const GuidanceDb = struct {
 };
 
 // ---------------------------------------------------------------------------
-// JSON parsing — shared with db.zig structure
+// JSON parsing — internal structure
 // ---------------------------------------------------------------------------
 
 const ParsedMember = struct {
@@ -1722,7 +1849,7 @@ test "buildEmbeddingText prose format" {
         "fn_decl",
         "Synchronises the SQLite database.",
         "fn syncDatabase(allocator: std.mem.Allocator, guidance_dir: []const u8) !void",
-        "FTS5 indexer module.",
+        "guidance database module.",
     );
     defer allocator.free(text);
     // Should be prose, not dotted-path
@@ -1733,7 +1860,7 @@ test "buildEmbeddingText prose format" {
     // No raw type annotations in params section
     try std.testing.expect(std.mem.indexOf(u8, text, "std.mem.Allocator") == null);
     // Parent context injected
-    try std.testing.expect(std.mem.indexOf(u8, text, "FTS5 indexer") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "guidance database") != null);
 }
 
 test "buildEmbeddingText module row" {
@@ -1743,7 +1870,7 @@ test "buildEmbeddingText module row" {
         "src.guidance.db",
         "guidance db",
         "module",
-        "Produces .explain.db for NullClaw.",
+        "Produces .guidance.db for NullClaw.",
         null,
         null,
     );

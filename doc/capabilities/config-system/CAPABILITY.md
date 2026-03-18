@@ -19,9 +19,8 @@ Resolves all guidance configuration from a JSON file with a two-level fallback c
 {
   "version": "1",
   "guidance_dir": ".guidance",
-  "db_path": ".explain.db",
+  "db_path": ".guidance.db",
   "guidance_db_path": ".guidance.db",
-  "enable_guidance_db": false,
   "embedding_provider": "ollama",
   "embedding_model": "nomic-embed-text",
   "embedding_dims": 768,

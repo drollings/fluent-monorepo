@@ -2,9 +2,9 @@
   "aliases": [
     {"key": "config", "values": ["configuration", "ProjectConfig", "settings", "config_file"]},
     {"key": "configuration", "values": ["config", "ProjectConfig", "settings"]},
-    {"key": "schema", "values": ["database", "table", "ExplainDb", "ast_nodes", "fts_search"]},
-    {"key": "database", "values": ["ExplainDb", "sqlite", "FTS5", "ast_nodes", "schema"]},
-    {"key": "index", "values": ["syncDatabase", "insert", "upsert", "database sync", "fts_search"]},
+    {"key": "schema", "values": ["database", "table", "GuidanceDb", "ast_nodes", "embedding"]},
+    {"key": "database", "values": ["GuidanceDb", "sqlite", "vector search", "ast_nodes", "schema"]},
+    {"key": "index", "values": ["syncDatabase", "insert", "upsert", "database sync", "embedding"]},
     {"key": "llm", "values": ["LlmClient", "complete", "ollama", "openai", "enrich", "infill"]},
     {"key": "pattern", "values": ["detectPattern", "gof-patterns", "design pattern", "PatternType"]},
     {"key": "design pattern", "values": ["gof-patterns", "detectPattern", "Pattern", "PatternType"]},
@@ -13,7 +13,7 @@
     {"key": "sync", "values": ["SyncProcessor", "syncDatabase", "infillAllJson", "processFile"]},
     {"key": "ast", "values": ["AstParser", "parseFile", "extractContainer", "node_type"]},
     {"key": "parser", "values": ["AstParser", "parseFile", "PythonPlugin", "LanguagePlugin"]},
-    {"key": "query", "values": ["QueryEngine", "search", "execute", "fts_search"]},
+    {"key": "query", "values": ["QueryEngine", "search", "execute", "hybrid search"]},
     {"key": "query engine", "values": ["QueryEngine", "search", "execute", "guidance"]},
     {"key": "json", "values": ["JsonStore", "parseGuidance", "loadGuidance", "guidance JSON"]},
     {"key": "metadata", "values": ["keywords", "see_also", "used_by", "guidance JSON"]},
@@ -27,7 +27,7 @@
     {"key": "dependencies", "values": ["deps", "reverse deps", "findReverseDeps", "imports"]},
     {"key": "import", "values": ["imports", "@import", "reverse deps", "findReverseDeps"]},
     {"key": "filter", "values": ["filterStages", "GitignoreFilter", "relevance", "LLM filter"]},
-    {"key": "explain", "values": ["ExplainDb", "cmdExplain", "staged", "FTS5 search"]},
+    {"key": "explain", "values": ["GuidanceDb", "cmdExplain", "staged", "vector search"]},
     {"key": "staged", "values": ["executeStaged", "expandFollowUps", "formatStaged", "Stage"]},
     {"key": "module", "values": ["module", "source file", "guidance JSON", "member"]},
     {"key": "member", "values": ["fn_decl", "struct", "enum", "method", "member"]},
@@ -35,6 +35,8 @@
     {"key": "enrich", "values": ["Enricher", "EnrichmentResult", "infill", "LLM comment"]},
     {"key": "plugin", "values": ["LanguagePlugin", "PythonPlugin", "PluginRegistry", "register"]},
     {"key": "python", "values": ["PythonPlugin", "python", ".py", "plugin"]},
-    {"key": "workflow", "values": ["processFile", "sync", "infillAllJson", "lifecycle"]}
+    {"key": "workflow", "values": ["processFile", "sync", "infillAllJson", "lifecycle"]},
+    {"key": "vector", "values": ["embedding", "cosine similarity", "hybrid search", "GuidanceDb"]},
+    {"key": "embedding", "values": ["vector", "EmbeddingProvider", "nomic-embed-text", "cosine similarity"]}
   ]
 }

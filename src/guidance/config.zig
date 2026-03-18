@@ -16,7 +16,7 @@ const builtin = @import("builtin");
 
 pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
-pub const DEFAULT_DB_PATH = ".explain.db";
+pub const DEFAULT_DB_PATH = ".guidance.db";
 pub const DEFAULT_GUIDANCE_DB_PATH = ".guidance.db";
 pub const DEFAULT_CAPABILITIES_DIR = "doc/capabilities";
 pub const DEFAULT_MODEL = "local:code:latest";
@@ -79,10 +79,11 @@ pub const ProjectConfig = struct {
     /// Absolute path to the inbox directory ({guidance_root}/.doc/inbox).
     inbox_dir: []const u8,
 
-    /// Relative path to the FTS5 database file from workspace root.
+    /// Relative path to the guidance database file from workspace root.
+    /// (Legacy field, kept for config compatibility; guidance_db_path is preferred.)
     db_path: []const u8,
 
-    /// Relative path to the LanceDB-style vector database.
+    /// Relative path to the LanceDB vector search database.
     guidance_db_path: []const u8,
 
     /// Enable .guidance.db (LanceDB vector search). Always true; kept for

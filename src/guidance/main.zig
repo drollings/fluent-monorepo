@@ -1,13 +1,13 @@
-//! guidance — AST-guided SQLite FTS5 database generator for NullClaw.
+//! guidance — AST-guided LanceDB vector search database generator.
 //!
 //! Produces:
 //!   .guidance/src/**/*.json  — Per-file structured metadata mirror
-//!   .explain.db                 — SQLite FTS5 database consumed by NullClaw's explain tool
+//!   .guidance.db              — LanceDB database consumed by NullClaw's explain tool
 //!
 //! Usage:
-//!   guidance gen      [options]   Generate JSON + compile .explain.db
+//!   guidance gen      [options]   Generate JSON + compile .guidance.db
 //!   guidance status   [options]   Report generation status
-//!   guidance clean    [options]   Remove .guidance/ and .explain.db
+//!   guidance clean    [options]   Remove .guidance/ and .guidance.db
 //!   guidance structure [options]  Update STRUCTURE.md from guidance JSON
 //!   guidance deps     [options]   Generate Makefile .depend file
 
@@ -17,11 +17,10 @@ const ast_parser = @import("ast_parser.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const deps_mod = @import("deps.zig");
-const db_mod = @import("db.zig"); // kept for SemanticAliases/loadSemanticAliases
 const lance_db_mod = @import("lance_db.zig");
 const vector_mod = @import("vector/root.zig");
 
-/// Canonical search result type — LanceDB backend.
+/// Canonical search result type — LanceDB hybrid search (vector + keyword).
 const GuidanceDb = lance_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const freeSearchResult = GuidanceDb.freeSearchResult;
@@ -2730,10 +2729,10 @@ fn buildLlmSummary(
 // =============================================================================
 
 /// Load semantic aliases from the guidance directory.
-fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?db_mod.SemanticAliases {
+fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?lance_db_mod.SemanticAliases {
     const alias_path = std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" }) catch return null;
     defer allocator.free(alias_path);
-    return db_mod.loadSemanticAliases(allocator, alias_path) catch null;
+    return lance_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
 }
 
 /// Extract key technical terms from a long query using LLM.
@@ -2793,7 +2792,7 @@ fn cmdExplainStaged(
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
     defer allocator.free(skills_dir);
 
-    var aliases_opt: ?db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
+    var aliases_opt: ?lance_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
     defer if (aliases_opt) |*a| a.deinit();
 
     // use_llm: always on unless --no-llm is specified
