@@ -1085,10 +1085,8 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
 }
 
 /// Wire up the LLM enhancer for automatic comment generation.
-/// Model selection: fast slot (if set) > default slot. The thinking slot is
-/// never selected for infill — but when the fast/default slot resolves to the
-/// same model name as the thinking slot, thinking is suppressed via think:false
-/// so a thinking-capable model behaves like a standard one for infill.
+/// Model selection: fast slot (if set) > default slot.
+/// Uses resolveLlmConfigForThinking to ensure thinking models use /api/chat endpoint.
 /// Logs a warning and leaves processor.enhancer null if initialisation fails.
 fn setupEnhancer(
     allocator: std.mem.Allocator,
@@ -1102,52 +1100,51 @@ fn setupEnhancer(
     else
         cfg.infillModel();
 
-    // Resolve API URL: prefer explicit --api-url, otherwise resolve from providers.
-    var api_url_owned: ?[]const u8 = null;
-    const api_url: []const u8 = if (ga.api_url_set)
-        ga.api_url // Already an explicit CLI arg, static lifetime
-    else blk: {
-        // Parse model reference (format: "provider:modelname")
-        const parsed = config_mod.ProjectConfig.parseModelRef(model) orelse {
-            if (ga.verbose) std.debug.print("warning: invalid model reference format: {s}\n", .{model});
-            break :blk ga.api_url;
+    // Use centralized helper to resolve URL and thinking model settings
+    var resolved_url_to_free: ?[]const u8 = null;
+    const llm_config = resolveLlmConfigForThinking(
+        allocator,
+        cfg,
+        model,
+        if (ga.api_url_set) ga.api_url else null,
+    ) catch {
+        // Fallback to defaults
+        const fallback_config: llm.LlmConfig = .{
+            .api_url = ga.api_url,
+            .model = model,
+            .think = null,
+            .debug = ga.verbose,
         };
-        // Find provider
-        const provider = cfg.getProvider(parsed.provider) orelse {
-            if (ga.verbose) std.debug.print("warning: provider not found: {s}\n", .{parsed.provider});
-            break :blk ga.api_url;
+        processor.enhancer = enhancer_mod.Enhancer.init(allocator, fallback_config) catch |init_err| {
+            std.debug.print("warning: could not init LLM enhancer: {}\n", .{init_err});
+            return;
         };
-        api_url_owned = std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint }) catch null;
-        if (ga.verbose) {
-            if (api_url_owned) |url| {
-                std.debug.print("DEBUG: resolved API URL from provider '{s}': {s}\n", .{ parsed.provider, url });
-            }
-        }
-        break :blk api_url_owned orelse ga.api_url;
+        processor.regen_comments = ga.regen_comments;
+        return;
     };
-    // NOTE: api_url_owned will be freed after Enhancer.init makes its own copy.
+    resolved_url_to_free = llm_config.resolved_url;
 
-    // If the resolved infill model is the same as the thinking slot, suppress
-    // thinking explicitly so we get deterministic, non-thinking output.
-    const think: ?bool = if (cfg.model_thinking.len > 0 and
-        std.mem.eql(u8, model, cfg.model_thinking))
-        false
-    else
-        null;
-    const llm_config: llm.LlmConfig = .{
+    // The returned api_url points to either resolved_url_to_free (if allocated) or a static string
+    // Enhancer.init will dupe the api_url, so we can free resolved_url_to_free after init
+    const api_url: []const u8 = llm_config.api_url;
+
+    // Build final config with debug setting
+    const final_config: llm.LlmConfig = .{
         .api_url = api_url,
-        .model = model,
-        .think = think,
+        .model = llm_config.model,
+        .think = llm_config.think,
         .debug = ga.verbose,
     };
-    if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?}\n", .{ api_url, model, think });
-    processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {
+
+    if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?}\n", .{ api_url, final_config.model, final_config.think });
+    processor.enhancer = enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
         std.debug.print("warning: could not init LLM enhancer: {}\n", .{err});
-        if (api_url_owned) |url| allocator.free(url);
-        break :blk null;
+        if (resolved_url_to_free) |url| allocator.free(url);
+        processor.regen_comments = ga.regen_comments;
+        return;
     };
     // Enhancer.init makes its own copy of api_url, so we can free our temp copy now.
-    if (api_url_owned) |url| allocator.free(url);
+    if (resolved_url_to_free) |url| allocator.free(url);
     processor.regen_comments = ga.regen_comments;
 }
 
@@ -1944,10 +1941,97 @@ fn makeLlmConfig(ea: ExplainArgs) llm.LlmConfig {
     return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.verbose };
 }
 
-// =============================================================================
-// explain
-// =============================================================================
+/// Central control point for LLM configuration with thinking model support.
+///
+/// If model matches the thinking slot:
+///   - Force Ollama /api/chat endpoint (required for think parameter)
+///   - Set think = true
+///
+/// Returns owned memory in resolved_url (caller must free).
+fn resolveLlmConfigForThinking(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+    model_ref: []const u8,
+    explicit_api_url: ?[]const u8,
+) !struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 } {
+    const is_thinking_slot = cfg.isThinkingModelRef(model_ref);
 
+    // Use explicit API URL if provided
+    if (explicit_api_url) |url| {
+        return .{
+            .api_url = url,
+            .model = model_ref,
+            .think = if (is_thinking_slot) true else null,
+            .resolved_url = null,
+        };
+    }
+
+    // Thinking model: must use Ollama /api/chat endpoint
+    if (is_thinking_slot) {
+        // Get ollama provider (uses /api/chat)
+        if (cfg.getProvider("ollama")) |ollama| {
+            const url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ ollama.base_url, ollama.chat_endpoint });
+            return .{
+                .api_url = url,
+                .model = model_ref,
+                .think = true,
+                .resolved_url = url,
+            };
+        }
+        // No ollama provider: construct URL with /api/chat endpoint
+        const parsed = config_mod.ProjectConfig.parseModelRef(model_ref) orelse {
+            // Fallback to localhost
+            const url = try allocator.dupe(u8, "http://localhost:11434/api/chat");
+            return .{ .api_url = url, .model = model_ref, .think = true, .resolved_url = url };
+        };
+        if (cfg.getProvider(parsed.provider)) |provider| {
+            // Use provider's base_url with /api/chat
+            const scheme_end = std.mem.indexOf(u8, provider.base_url, "://") orelse 0;
+            const host_start: usize = if (scheme_end > 0) scheme_end + 3 else 0;
+            const path_start = std.mem.indexOfScalarPos(u8, provider.base_url, host_start, '/') orelse provider.base_url.len;
+            const base = provider.base_url[0..path_start];
+            const url = try std.fmt.allocPrint(allocator, "{s}/api/chat", .{base});
+            return .{
+                .api_url = url,
+                .model = model_ref,
+                .think = true,
+                .resolved_url = url,
+            };
+        }
+        // Final fallback
+        const url = try allocator.dupe(u8, "http://localhost:11434/api/chat");
+        return .{ .api_url = url, .model = model_ref, .think = true, .resolved_url = url };
+    }
+
+    // Non-thinking model: use configured provider
+    const parsed = config_mod.ProjectConfig.parseModelRef(model_ref) orelse {
+        return .{
+            .api_url = config_mod.DEFAULT_API_URL,
+            .model = model_ref,
+            .think = null,
+            .resolved_url = null,
+        };
+    };
+
+    const provider = cfg.getProvider(parsed.provider) orelse {
+        return .{
+            .api_url = config_mod.DEFAULT_API_URL,
+            .model = model_ref,
+            .think = null,
+            .resolved_url = null,
+        };
+    };
+
+    const url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint });
+    return .{
+        .api_url = url,
+        .model = model_ref,
+        .think = null,
+        .resolved_url = url,
+    };
+}
+
+/// Dispatch to single-file, explicit-scan, or full-workspace processing.
 /// Whether LLM relevance filtering should be applied on the staged path.
 const FilterMode = enum {
     /// Auto-detect: apply LLM filter only for long queries (5+ words).
@@ -2849,7 +2933,7 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
     var it = std.mem.splitAny(u8, trimmed, ",\n");
     var count: usize = 0;
     while (it.next()) |term| {
-        if (count >= 5) break;
+        if (count >= 4) break;
         const t = std.mem.trim(u8, term, " \t\n\r\"");
         if (t.len == 0) continue;
         try terms.append(allocator, try allocator.dupe(u8, t));
@@ -2863,9 +2947,9 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
 /// Full staged explain pipeline.  Called when `--staged` is active (default).
 ///
 /// Pipeline:
-///   Short query (≤4 words) or --no-llm or --filter=skip:
+///   Short query (≤3 words) or --no-llm or --filter=skip:
 ///     executeStaged() → formatStaged() → output
-///   Long query (5+ words) with LLM:
+///   Long query (4+ words) with LLM:
 ///     executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output
 fn cmdExplainStaged(
     allocator: std.mem.Allocator,
@@ -3511,25 +3595,33 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Initialize LLM client for evaluation (when not --no-llm)
     var llm_client_opt: ?llm.LlmClient = null;
-    var resolved_url_buf: ?[]u8 = null;
+    var resolved_url_buf: ?[]const u8 = null;
     defer if (resolved_url_buf) |buf| allocator.free(buf);
 
     if (!no_llm) {
         const model_ref = model orelse cfg.model_default;
-        const is_thinking = cfg.isThinkingModelRef(model_ref);
 
-        const api_url_to_use = if (api_url) |u| u else blk: {
-            if (cfg.resolveModelUrl(allocator, model_ref) catch null) |resolved| {
-                defer allocator.free(resolved.url);
-                resolved_url_buf = try allocator.dupe(u8, resolved.url);
-                break :blk resolved_url_buf.?;
-            }
-            break :blk config_mod.DEFAULT_API_URL;
+        // Use centralized helper for thinking model support
+        const resolved = resolveLlmConfigForThinking(
+            allocator,
+            &cfg,
+            model_ref,
+            api_url,
+        ) catch {
+            // Fallback to defaults
+            const fallback_config: llm.LlmConfig = .{
+                .api_url = api_url orelse config_mod.DEFAULT_API_URL,
+                .model = model_ref,
+                .think = null,
+            };
+            llm_client_opt = llm.LlmClient.init(allocator, fallback_config) catch null;
+            return;
         };
+        resolved_url_buf = resolved.resolved_url;
         const llm_config: llm.LlmConfig = .{
-            .api_url = api_url_to_use,
-            .model = model_ref,
-            .think = if (is_thinking) true else null,
+            .api_url = resolved.api_url,
+            .model = resolved.model,
+            .think = resolved.think,
         };
         llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
     }

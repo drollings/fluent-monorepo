@@ -115,7 +115,6 @@ Then you you must read
 │       ├── sqlite3.c
 │       ├── sqlite3.h
 │       └── sqlite3ext.h
-├── _
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
