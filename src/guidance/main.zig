@@ -2516,7 +2516,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 };
             };
 
-            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, llm_config, ea) catch |err| {
+            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, llm_config, cfg.infillModel(), ea) catch |err| {
                 if (ea.verbose) std.debug.print("staged explain failed ({s}), falling back to legacy\n", .{@errorName(err)});
                 break :staged_path;
             };
@@ -2990,6 +2990,7 @@ fn cmdExplainStaged(
     workspace: []const u8,
     guidance_dir: []const u8,
     llm_config: llm.LlmConfig,
+    fast_model_ref: []const u8,
     ea: ExplainArgs,
 ) !void {
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
@@ -3007,18 +3008,35 @@ fn cmdExplainStaged(
         .auto => !isShortQuery(query_text),
     };
 
-    // Create the LLM client once for the entire pipeline.
+    // Create the LLM client for filtering (default model)
     var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch |err| blk: {
         if (ea.verbose) std.debug.print("DEBUG: LLM client init failed: {}\n", .{err});
         break :blk null;
     } else null;
     defer if (client_opt) |*c| c.deinit();
 
+    // Create separate client for synthesis (fast model)
+    var fast_client_opt: ?llm.LlmClient = null;
+    defer if (fast_client_opt) |*c| c.deinit();
+
+    if (use_llm and fast_model_ref.len > 0) {
+        const fast_config = llm.LlmConfig{
+            .api_url = llm_config.api_url,
+            .model = fast_model_ref,
+            .think = null, // fast model never uses thinking
+            .debug = ea.verbose,
+        };
+        fast_client_opt = llm.LlmClient.init(allocator, fast_config) catch null;
+    }
+
     if (ea.verbose) {
         if (client_opt) |_| {
             std.debug.print("DEBUG: LLM client initialized - api_url: {s}, model: {s}, think: {?}\n", .{ llm_config.api_url, llm_config.model, llm_config.think });
         } else {
             std.debug.print("DEBUG: LLM client is null, synthesis will be skipped\n", .{});
+        }
+        if (fast_client_opt) |_| {
+            std.debug.print("DEBUG: Fast client initialized - model: {s}\n", .{fast_model_ref});
         }
     }
 
@@ -3130,8 +3148,9 @@ fn cmdExplainStaged(
     for (working_stages) |s| try combined.append(allocator, s);
     if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
 
-    // M8: LLM synthesis.
-    const synth_result = synthesize_mod.synthesize(allocator, client, query_text, combined.items) catch {
+    // M8: LLM synthesis (use fast model if available, else default).
+    const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
+    const synth_result = synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
         return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace);
     };
     defer {

@@ -74,10 +74,10 @@ Then you you must read
 │       └── target_language.mk
 ├── src
 │   ├── common
-│   │   ├── args.zig                              # Parses flat args slice into CommonArgs struct; returns sub-slice of args as positional arguments.
-│   │   ├── io.zig                                # [gof-patterns] Centralises buffered I/O helpers wrapping std.fs.File with stack-allocated storage to avoid dangling p...
-│   │   ├── llm.zig                               # Defines LLM API configuration (Ollama endpoints, model selection, think parameter control) and utility functions for ...
-│   │   └── source.zig                            # Extracts source code excerpts from files for LLM context, documentation, and error messages.
+│   │   ├── args.zig                              # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
+│   │   ├── io.zig                                # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/freader usage with fixed buffer and no dan...
+│   │   ├── llm.zig                               # Handles Zig AST parsing, manages writer/reader states, and processes LLM responses with thinking controls.
+│   │   └── source.zig                            # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
 │   └── guidance
 │       ├── plugins
 │       │   ├── markdown_plugin.zig               # MarkdownPlugin — extracts sections and metadata from Markdown files.
@@ -86,30 +86,30 @@ Then you you must read
 │       │   ├── embeddings.zig                    # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
 │       │   └── root.zig                          # guidance vector module — cosine search, embeddings, hybrid merge.
-│       ├── ast_parser.zig                          # Zig AST parser extracting public function, variable, and test declarations with signature hashing and pattern detection.
-│       ├── config.zig                              # Defines configuration loading paths for guidance systems using precomputed absolute routes and fallback locations.
-│       ├── deps.zig                                # Walks directory tree to extract .zig imports via string parsing, building dependency map of source files.
-│       ├── enhancer.zig                            # AI Docstring Enhancer for Zig guidance generation. Mirrors Python's AIDocstringEnhancer class in guidance.py. Generat...
-│       ├── gitignore.zig                           # Loads .gitignore files into memory, parsing patterns and negations to filter project paths against always-excluded di...
-│       ├── hash.zig                                # Generates deterministic SHA256 hashes from API function signatures, struct definitions, and type normalizations using...
-│       ├── json_store.zig                          # Loads JSON guidance docs, parses meta/skills/comments, sanitizes leaked LLM prompts via isLeakedPrompt check, stores ...
+│       ├── ast_parser.zig                          # Parses Zig AST, extracts member signatures, and manages memory for the parser.
+│       ├── config.zig                              # Defines configuration paths for guidance system using precomputed absolute routes and fallback locations.
+│       ├── deps.zig                                # Extracts dependency information from Zig source files, building a map of import paths and their relationships.
+│       ├── enhancer.zig                            # Zig enhancement enhancer for generating concise docstrings via LLM, supporting token limits and comment upgrades.
+│       ├── gitignore.zig                           # Manages Gitignore patterns, patterns, negations, and project root for file loading and exclusion.
+│       ├── hash.zig                                # Implements SHA-256 hashing and signature generation for Zig types, ensuring deterministic output and type normalization.
+│       ├── json_store.zig                          # Manages Zig guidance parsing, stores content, tracks leaked prompts, and supports AST reconstruction.
 │       ├── lance_db.zig                            # guidance LanceDB-style vector search database.
 │       ├── llm_filter.zig                          # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │       ├── main.zig                                # [gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
 │       ├── marker.zig                              # Mtime-based change detection for guidance's incremental RALPH loop.
-│       ├── pattern.zig                             # [gof-patterns] Detects design patterns from Zig AST nodes using text-based heuristics analogous to the Python Pattern...
+│       ├── pattern.zig                             # [gof-patterns] Analyzes Zig AST nodes to detect design patterns using text heuristics and node metadata.
 │       ├── plugin.zig                              # LanguagePlugin — interface for language-specific AST providers.
 │       ├── plugin_registry.zig                     # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │       ├── provider_discovery.zig                  # External language provider discovery for guidance.
-│       ├── query.zig                               # Manages query execution lifecycle, result memory allocation/deallocation via freeQueryResult, and engine state handling.
+│       ├── query.zig                               # Manages memory for Zig AST nodes, freeing resources after processing queries and analysis.
 │       ├── staged.zig                              # staged.zig — Staged explain pipeline for `guidance explain`.
-│       ├── structure.zig                           # Walks directory tree, annotates files with guidance JSON comments or preserved STRUCTURE.md entries, outputs Markdown...
-│       ├── sync.zig                                # Synchronous processor that parses Zig source files, extracts members via AST, strips comments, and prepares data for ...
+│       ├── structure.zig                           # Generates structured Markdown from Zig AST by merging guidance comments with existing file annotations.
+│       ├── sync.zig                                # Handles Zig file parsing, AST processing, and comment management for guidance generation.
 │       ├── synthesize.zig                          # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
-│       ├── tests.zig                               # [gof-patterns] Unit tests for src/guidance — json_store merge logic, query engine leaks.
-│       ├── triage.zig                              # Generates TRIAGE.md from TODO.md work items by detecting affected files via regex, assessing risk deterministically, ...
-│       ├── types.zig                               # Defines core data structures (Member, Skill, Meta) for parsing code elements and generating AI guidance documentation.
-│       └── utils.zig                               # Extracts source code excerpts around function declarations and performs case-insensitive file grepping with comment f...
+│       ├── tests.zig                               # [gof-patterns] Tests JSON Store merge logic and query engine behavior in Zig guidance.
+│       ├── triage.zig                              # Generates TRIAGE.md from a TODO.md by analyzing files, assessing risk, and outlining steps; tracks lifecycle stages a...
+│       ├── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
+│       └── utils.zig                               # Extracts and filters Zig source lines up to 80, identifying public declarations.
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c

@@ -60,6 +60,26 @@ pub const JsonStore = struct {
             }
         }
 
+        // Parse detail (comprehensive module documentation)
+        if (root.object.get("detail")) |d| {
+            if (d == .string and d.string.len > 0) {
+                doc.detail = try self.allocator.dupe(u8, d.string);
+            }
+        }
+
+        // Parse keywords (discovery terms for semantic search)
+        if (root.object.get("keywords")) |kw_val| {
+            if (kw_val == .array) {
+                var keywords: std.ArrayList([]const u8) = .{};
+                for (kw_val.array.items) |kw| {
+                    if (kw == .string and kw.string.len > 0) {
+                        try keywords.append(self.allocator, try self.allocator.dupe(u8, kw.string));
+                    }
+                }
+                doc.keywords = try keywords.toOwnedSlice(self.allocator);
+            }
+        }
+
         if (root.object.get("skills")) |skills_val| {
             if (skills_val == .array) {
                 var skills: std.ArrayList(types.Skill) = .{};
@@ -416,6 +436,9 @@ pub const JsonStore = struct {
         self.allocator.free(doc.meta.module);
         self.allocator.free(doc.meta.source);
         if (doc.comment) |d| self.allocator.free(d);
+        if (doc.detail) |d| self.allocator.free(d);
+        for (doc.keywords) |kw| self.allocator.free(kw);
+        self.allocator.free(doc.keywords);
         for (doc.skills) |s| {
             self.allocator.free(s.ref);
             if (s.context) |c| self.allocator.free(c);

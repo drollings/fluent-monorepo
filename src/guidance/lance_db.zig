@@ -29,7 +29,7 @@ pub const c = @cImport({
 pub const SQLITE_STATIC: c.sqlite3_destructor_type = null;
 const BUSY_TIMEOUT_MS: c_int = 5000;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Semantic aliases for query expansion
@@ -39,6 +39,18 @@ pub const SCHEMA_VERSION: u32 = 1;
 pub const SemanticAlias = struct {
     key: []const u8,
     values: []const []const u8,
+};
+
+/// A keyword match result from the keyword index search.
+pub const KeywordMatch = struct {
+    keyword: []const u8,
+    score: f32,
+};
+
+/// A module match result from keyword-to-module lookup.
+pub const ModuleMatch = struct {
+    module_id: i64,
+    relevance: f32,
 };
 
 /// Loaded semantic aliases (owned by caller).
@@ -370,6 +382,59 @@ pub const GuidanceDb = struct {
                 if (alias_err) |msg| c.sqlite3_free(msg);
                 return error.MigrationFailed;
             }
+        }
+
+        // ── Step 2d: keyword_index table (semantic index for module discovery) ──
+        // Keywords are embedded (not content) for lightweight vector search.
+        // Query → keyword match → module lookup → detail retrieval.
+        {
+            const kw_idx_sql =
+                \\CREATE TABLE IF NOT EXISTS keyword_index (
+                \\  keyword       TEXT PRIMARY KEY,
+                \\  embedding     BLOB    NOT NULL,
+                \\  embedding_model TEXT  NOT NULL,
+                \\  created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_kw_created ON keyword_index(created_at);
+            ;
+            var kw_idx_err: [*c]u8 = null;
+            const kw_idx_rc = c.sqlite3_exec(self.db, kw_idx_sql, null, null, &kw_idx_err);
+            if (kw_idx_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE keyword_index", kw_idx_rc, kw_idx_err, self.db);
+                if (kw_idx_err) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
+        }
+
+        // ── Step 2e: keyword_modules table (keyword → module mapping) ──
+        // Links keywords to modules for retrieval after keyword match.
+        {
+            const kw_mod_sql =
+                \\CREATE TABLE IF NOT EXISTS keyword_modules (
+                \\  keyword       TEXT    NOT NULL,
+                \\  module_id     INTEGER NOT NULL,
+                \\  relevance     REAL    DEFAULT 1.0,
+                \\  PRIMARY KEY (keyword, module_id),
+                \\  FOREIGN KEY (module_id) REFERENCES ast_nodes(id) ON DELETE CASCADE
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_km_keyword ON keyword_modules(keyword);
+                \\CREATE INDEX IF NOT EXISTS idx_km_module  ON keyword_modules(module_id);
+            ;
+            var kw_mod_err: [*c]u8 = null;
+            const kw_mod_rc = c.sqlite3_exec(self.db, kw_mod_sql, null, null, &kw_mod_err);
+            if (kw_mod_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE keyword_modules", kw_mod_rc, kw_mod_err, self.db);
+                if (kw_mod_err) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
+        }
+
+        // ── Step 2f: add detail column to ast_nodes ──
+        // Stores comprehensive module documentation (TEXT, not embedded).
+        {
+            var detail_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(self.db, "ALTER TABLE ast_nodes ADD COLUMN detail TEXT", null, null, &detail_err);
+            if (detail_err) |msg| c.sqlite3_free(msg);
         }
 
         // ── Step 3: conditional index on embedding (requires column to exist) ──
@@ -894,8 +959,8 @@ pub const GuidanceDb = struct {
             "INSERT INTO ast_nodes(" ++
             "  file_path, source, module, node_type, name, signature," ++
             "  comment, line, used_by, language, file_type, file_hash, last_modified," ++
-            "  embedding, embedding_model" ++
-            ") VALUES (?1,?2,?3,'module',?4,NULL,?5,NULL,?6,?7,'source',?8,?9,?10,?11)";
+            "  embedding, embedding_model, detail" ++
+            ") VALUES (?1,?2,?3,'module',?4,NULL,?5,NULL,?6,?7,'source',?8,?9,?10,?11,?12)";
 
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
@@ -930,7 +995,52 @@ pub const GuidanceDb = struct {
             _ = c.sqlite3_bind_null(stmt, 10);
         _ = c.sqlite3_bind_text(stmt, 11, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
 
+        if (doc.detail) |d|
+            _ = c.sqlite3_bind_text(stmt, 12, d.ptr, @intCast(d.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 12);
+
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+
+        // Get the row ID for keyword linking
+        const module_id = c.sqlite3_last_insert_rowid(self.db);
+
+        // Sync keywords to keyword_index and keyword_modules tables
+        if (doc.keywords.len > 0) {
+            try self.syncModuleKeywords(allocator, doc.keywords, module_id);
+        }
+    }
+
+    /// Sync keywords for a module: embed each keyword and link to module.
+    fn syncModuleKeywords(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        keywords: []const []const u8,
+        module_id: i64,
+    ) !void {
+        // Clear existing keyword links for this module
+        try self.clearKeywordLinksForModule(module_id);
+
+        for (keywords) |kw| {
+            // Embed the keyword
+            const emb = self.embedder.embed(allocator, kw) catch |err| {
+                log.debug("failed to embed keyword '{s}': {s}", .{ kw, @errorName(err) });
+                continue;
+            };
+            defer allocator.free(emb);
+
+            // Store keyword embedding (idempotent)
+            self.storeKeywordEmbedding(allocator, kw, emb) catch |err| {
+                log.debug("failed to store keyword '{s}': {s}", .{ kw, @errorName(err) });
+                continue;
+            };
+
+            // Link keyword to module
+            self.linkKeywordToModule(kw, module_id, 1.0) catch |err| {
+                log.debug("failed to link keyword '{s}': {s}", .{ kw, @errorName(err) });
+                continue;
+            };
+        }
     }
 
     fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
@@ -1169,6 +1279,16 @@ pub const GuidanceDb = struct {
         const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
         defer if (query_emb) |e| allocator.free(e);
 
+        // Try keyword index search first (lightweight reranker)
+        if (query_emb) |_| {
+            if (self.keywordIndexSearch(allocator, trimmed, limit)) |kw_results| {
+                if (kw_results.len > 0) return kw_results;
+            } else |_| {
+                // Keyword search failed, fall through to hybrid search
+            }
+        }
+
+        // Fall back to hybrid search
         const has_embeddings = query_emb != null and query_emb.?.len > 0;
 
         if (has_embeddings) {
@@ -1710,6 +1830,264 @@ pub const GuidanceDb = struct {
         }
         if (synced > 0) log.info("semantic alias embeddings synced: {d}", .{synced});
     }
+
+    // ── Keyword Index Methods ─────────────────────────────────────
+
+    /// Store a keyword with its embedding. Idempotent (INSERT OR REPLACE).
+    pub fn storeKeywordEmbedding(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        keyword: []const u8,
+        embedding: []const f32,
+    ) !void {
+        const emb_bytes = try vector.vecToBytes(allocator, embedding);
+        defer allocator.free(emb_bytes);
+
+        const model_name = self.embedder.getName();
+        const sql = "INSERT OR REPLACE INTO keyword_index(keyword, embedding, embedding_model) VALUES (?1, ?2, ?3)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, keyword.ptr, @intCast(keyword.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_blob(stmt, 2, emb_bytes.ptr, @intCast(emb_bytes.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 3, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    /// Link a keyword to a module. Idempotent (PRIMARY KEY).
+    pub fn linkKeywordToModule(
+        self: *Self,
+        keyword: []const u8,
+        module_id: i64,
+        relevance: f32,
+    ) !void {
+        const sql = "INSERT OR REPLACE INTO keyword_modules(keyword, module_id, relevance) VALUES (?1, ?2, ?3)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, keyword.ptr, @intCast(keyword.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, module_id);
+        _ = c.sqlite3_bind_double(stmt, 3, @floatCast(relevance));
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    /// Find keywords similar to query embedding (vector search on keyword_index).
+    /// Returns owned slice of owned keyword strings.
+    pub fn findSimilarKeywords(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_embedding: []const f32,
+        threshold: f32,
+        limit: usize,
+    ) ![]KeywordMatch {
+        const sql = "SELECT keyword, embedding FROM keyword_index";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var scored: std.ArrayList(KeywordMatch) = .{};
+        errdefer {
+            for (scored.items) |s| allocator.free(s.keyword);
+            scored.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const kw_ptr = c.sqlite3_column_text(stmt, 0);
+            const kw_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+            if (kw_ptr == null or kw_len == 0) continue;
+
+            const kw = try allocator.dupe(u8, kw_ptr[0..kw_len]);
+
+            const emb_blob = c.sqlite3_column_blob(stmt, 1);
+            const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+            if (emb_blob == null or emb_len == 0) {
+                allocator.free(kw);
+                continue;
+            }
+
+            const bytes: []const u8 = @as([*]const u8, @ptrCast(emb_blob))[0..emb_len];
+            const stored_emb = vector.bytesToVec(allocator, bytes) catch {
+                allocator.free(kw);
+                continue;
+            };
+            defer allocator.free(stored_emb);
+
+            const sim = vector.cosineSimilarity(query_embedding, stored_emb);
+            if (sim >= threshold) {
+                try scored.append(allocator, .{ .keyword = kw, .score = sim });
+            } else {
+                allocator.free(kw);
+            }
+        }
+
+        // Sort by score descending
+        std.sort.block(@TypeOf(scored.items[0]), scored.items, {}, struct {
+            fn lessThan(_: void, a: @TypeOf(scored.items[0]), b: @TypeOf(scored.items[0])) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
+
+        // Trim to limit
+        const count = @min(limit, scored.items.len);
+        for (count..scored.items.len) |i| {
+            allocator.free(scored.items[i].keyword);
+        }
+        scored.items.len = count;
+
+        return scored.toOwnedSlice(allocator);
+    }
+
+    /// Find module IDs for a set of keywords.
+    /// Returns owned slice of module IDs with relevance scores.
+    pub fn findModulesForKeywords(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        keywords: []const []const u8,
+    ) ![]ModuleMatch {
+        if (keywords.len == 0) return &[_]ModuleMatch{};
+
+        // Build IN clause
+        var in_clause: std.ArrayList(u8) = .{};
+        defer in_clause.deinit(allocator);
+        const w = in_clause.writer(allocator);
+        for (keywords, 0..) |_, i| {
+            if (i > 0) try w.writeAll(", ");
+            try w.print("?", .{});
+        }
+
+        const sql_base = "SELECT DISTINCT module_id, SUM(relevance) as total_rel FROM keyword_modules WHERE keyword IN (";
+        const sql_end = ") GROUP BY module_id ORDER BY total_rel DESC";
+        const sql = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ sql_base, in_clause.items, sql_end });
+        defer allocator.free(sql);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql.ptr, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        for (keywords, 1..) |kw, i| {
+            _ = c.sqlite3_bind_text(stmt, @intCast(i), kw.ptr, @intCast(kw.len), SQLITE_STATIC);
+        }
+
+        var results: std.ArrayList(ModuleMatch) = .{};
+        errdefer results.deinit(allocator);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const module_id = c.sqlite3_column_int64(stmt, 0);
+            const relevance: f32 = @floatCast(c.sqlite3_column_double(stmt, 1));
+            try results.append(allocator, .{ .module_id = module_id, .relevance = relevance });
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    /// Fetch module detail by ID.
+    /// Returns owned detail string or null.
+    pub fn fetchModuleDetail(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        module_id: i64,
+    ) !?[]const u8 {
+        const sql = "SELECT detail FROM ast_nodes WHERE id = ?1 AND node_type = 'module'";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_int64(stmt, 1, module_id);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return null;
+
+        const detail_ptr = c.sqlite3_column_text(stmt, 0);
+        const detail_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+        if (detail_ptr == null or detail_len == 0) return null;
+
+        return allocator.dupe(u8, detail_ptr[0..detail_len]);
+    }
+
+    /// Update module detail and comment by ID.
+    pub fn updateModuleDetail(
+        self: *Self,
+        module_id: i64,
+        detail: []const u8,
+        comment: []const u8,
+    ) !void {
+        const sql = "UPDATE ast_nodes SET detail = ?1, comment = ?2 WHERE id = ?3";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, detail.ptr, @intCast(detail.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 2, comment.ptr, @intCast(comment.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 3, module_id);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    /// Delete all keyword links for a module (before re-syncing).
+    pub fn clearKeywordLinksForModule(self: *Self, module_id: i64) !void {
+        const sql = "DELETE FROM keyword_modules WHERE module_id = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_int64(stmt, 1, module_id);
+        _ = c.sqlite3_step(stmt);
+    }
+
+    /// Keyword-based search: query → keyword match → module lookup.
+    /// Returns SearchResult slice with detail populated.
+    pub fn keywordIndexSearch(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        limit: usize,
+    ) ![]SearchResult {
+        // 1. Embed query
+        const query_emb = try self.getOrComputeEmbedding(allocator, query_text);
+        defer if (query_emb) |e| allocator.free(e);
+
+        if (query_emb == null) return allocator.alloc(SearchResult, 0);
+
+        // 2. Find matching keywords
+        const kw_matches = try self.findSimilarKeywords(allocator, query_emb.?, 0.70, 10);
+        defer {
+            for (kw_matches) |km| allocator.free(km.keyword);
+            allocator.free(kw_matches);
+        }
+
+        if (kw_matches.len == 0) return allocator.alloc(SearchResult, 0);
+
+        // 3. Extract keyword strings
+        var keywords: std.ArrayList([]const u8) = .{};
+        defer keywords.deinit(allocator);
+        for (kw_matches) |km| {
+            try keywords.append(allocator, km.keyword);
+        }
+
+        // 4. Find modules for keywords
+        const module_matches = try self.findModulesForKeywords(allocator, keywords.items);
+        defer allocator.free(module_matches);
+
+        if (module_matches.len == 0) return allocator.alloc(SearchResult, 0);
+
+        // 5. Fetch module details
+        var results: std.ArrayList(SearchResult) = .{};
+        errdefer {
+            for (results.items) |r| freeSearchResult(allocator, r);
+            results.deinit(allocator);
+        }
+
+        const actual_limit = @min(limit, module_matches.len);
+        for (module_matches[0..actual_limit]) |mm| {
+            const row = self.fetchById(allocator, mm.module_id) catch continue;
+            try results.append(allocator, row);
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -1729,6 +2107,8 @@ const ParsedDoc = struct {
     source: []const u8,
     language: []const u8,
     module_comment: ?[]const u8,
+    detail: ?[]const u8 = null,
+    keywords: []const []const u8 = &.{},
     used_by: []const []const u8,
     file_hash: ?[]const u8,
     members: []ParsedMember,
@@ -1767,6 +2147,21 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
         break :blk cv.string;
     };
 
+    const detail: ?[]const u8 = blk: {
+        const dv = root.object.get("detail") orelse break :blk null;
+        if (dv != .string) break :blk null;
+        break :blk dv.string;
+    };
+
+    var keywords_list: std.ArrayList([]const u8) = .{};
+    if (root.object.get("keywords")) |kwv| {
+        if (kwv == .array) {
+            for (kwv.array.items) |item| {
+                if (item == .string) try keywords_list.append(arena, item.string);
+            }
+        }
+    }
+
     var used_by_list: std.ArrayList([]const u8) = .{};
     if (root.object.get("used_by")) |ubv| {
         if (ubv == .array) {
@@ -1788,6 +2183,8 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
             .source = source,
             .language = language,
             .module_comment = module_comment,
+            .detail = detail,
+            .keywords = try keywords_list.toOwnedSlice(arena),
             .used_by = try used_by_list.toOwnedSlice(arena),
             .file_hash = file_hash,
             .members = &.{},
@@ -1799,6 +2196,8 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
             .source = source,
             .language = language,
             .module_comment = module_comment,
+            .detail = detail,
+            .keywords = try keywords_list.toOwnedSlice(arena),
             .used_by = try used_by_list.toOwnedSlice(arena),
             .file_hash = file_hash,
             .members = &.{},
@@ -1823,6 +2222,8 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
         .source = source,
         .language = language,
         .module_comment = module_comment,
+        .detail = detail,
+        .keywords = try keywords_list.toOwnedSlice(arena),
         .used_by = try used_by_list.toOwnedSlice(arena),
         .file_hash = file_hash,
         .members = try members_list.toOwnedSlice(arena),
@@ -1966,7 +2367,7 @@ test "GuidanceDb init and schema" {
     try std.testing.expectEqual(@as(c_int, c.SQLITE_OK), rc);
     defer _ = c.sqlite3_finalize(stmt);
     try std.testing.expectEqual(@as(c_int, c.SQLITE_ROW), c.sqlite3_step(stmt));
-    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_column_int(stmt, 0));
+    try std.testing.expectEqual(@as(c_int, 2), c.sqlite3_column_int(stmt, 0));
 }
 
 test "GuidanceDb index and keyword search round-trip" {

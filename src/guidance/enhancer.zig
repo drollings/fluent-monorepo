@@ -16,10 +16,10 @@ const std = @import("std");
 const llm = @import("common");
 
 /// Default max_tokens for non-thinking models.
-const DEFAULT_MAX_TOKENS: usize = 1200;
+const DEFAULT_MAX_TOKENS: usize = 2000;
 
 /// Max_tokens for thinking models (generous for local models).
-const THINKING_MAX_TOKENS: usize = 4800;
+const THINKING_MAX_TOKENS: usize = 6000;
 
 /// Result returned by each enhancement call.
 pub const EnrichmentResult = struct {
@@ -416,6 +416,191 @@ pub const Enhancer = struct {
         );
 
         return buf.toOwnedSlice(self.allocator);
+    }
+
+    // -------------------------------------------------------------------------
+    // Module detail generation (thinking model)
+    // -------------------------------------------------------------------------
+
+    /// Result of module detail generation.
+    pub const ModuleDetailResult = struct {
+        detail: []const u8,
+        keywords: []const []const u8,
+        comment: []const u8,
+
+        pub fn deinit(self: ModuleDetailResult, allocator: std.mem.Allocator) void {
+            allocator.free(self.detail);
+            for (self.keywords) |kw| allocator.free(kw);
+            allocator.free(self.keywords);
+            allocator.free(self.comment);
+        }
+    };
+
+    /// Generate comprehensive module documentation using the thinking model.
+    /// Input: source code, member signatures, capabilities, skills.
+    /// Output: detail (<800 words), keywords (5-10), comment (≤200 chars).
+    pub fn enhanceModuleDetail(
+        self: *Enhancer,
+        module_name: []const u8,
+        source_content: []const u8,
+        member_signatures: []const []const u8,
+        capabilities: []const u8,
+        skills: []const u8,
+        existing_comment: ?[]const u8,
+    ) !ModuleDetailResult {
+        // Build prompt for thinking model
+        const prompt = try self.buildModuleDetailPrompt(module_name, source_content, member_signatures, capabilities, skills, existing_comment);
+        defer self.allocator.free(prompt);
+
+        if (self.debug) std.debug.print("[enhancer] generating module detail for {s}\n", .{module_name});
+
+        // Use thinking model (higher max_tokens for chain-of-thought)
+        const raw = self.client.complete(prompt, self.maxTokens(2400), 0.3, null) catch {
+            return self.fallbackModuleDetail(existing_comment);
+        };
+        const response = raw orelse return self.fallbackModuleDetail(existing_comment);
+        defer self.allocator.free(response);
+
+        if (self.debug) std.debug.print("[enhancer] raw response for {s} (len={})\n", .{ module_name, response.len });
+
+        // Parse response: <detail>...</detail> <keywords>...</keywords> <comment>...</comment>
+        return self.parseModuleDetailResponse(response, existing_comment);
+    }
+
+    fn buildModuleDetailPrompt(
+        self: *Enhancer,
+        module_name: []const u8,
+        source_content: []const u8,
+        member_signatures: []const []const u8,
+        capabilities: []const u8,
+        skills: []const u8,
+        existing_comment: ?[]const u8,
+    ) ![]const u8 {
+        var buf: std.ArrayList(u8) = .{};
+        const w = buf.writer(self.allocator);
+
+        try w.print("You are documenting a Zig module for an AI coding assistant.\n\n", .{});
+        try w.print("MODULE: {s}\n\n", .{module_name});
+
+        // Source preview (first 4000 chars)
+        const src_preview = source_content[0..@min(4000, source_content.len)];
+        try w.print("SOURCE CODE:\n{s}\n\n", .{src_preview});
+
+        // Member signatures
+        if (member_signatures.len > 0) {
+            try w.writeAll("PUBLIC API:\n");
+            const limit = @min(member_signatures.len, 15);
+            for (member_signatures[0..limit]) |sig| {
+                try w.print("  {s}\n", .{sig});
+            }
+            try w.writeByte('\n');
+        }
+
+        // Capabilities
+        if (capabilities.len > 0) {
+            try w.print("RELATED CAPABILITIES:\n{s}\n\n", .{capabilities});
+        }
+
+        // Skills
+        if (skills.len > 0) {
+            try w.print("RELATED SKILLS:\n{s}\n\n", .{skills});
+        }
+
+        if (existing_comment) |c| {
+            if (c.len > 0) {
+                try w.print("EXISTING COMMENT: {s}\n\n", .{c});
+            }
+        }
+
+        try w.writeAll(
+            \\Generate comprehensive module documentation. Output three sections:
+            \\
+            \\1. <detail>...</detail> — A detailed description (under 800 words) covering:
+            \\   - Module purpose and architecture
+            \\   - Key abstractions and their relationships
+            \\   - Public API and usage patterns
+            \\   - Important implementation details
+            \\   - Design patterns used
+            \\
+            \\2. <keywords>...</keywords> — 5-10 discovery keywords (comma-separated) that would help find this module:
+            \\   - Unique API names (structs, functions)
+            \\   - Domain concepts
+            \\   - Design patterns
+            \\   - Technical terms
+            \\
+            \\3. <comment>...</comment> — A concise one-line description (≤200 chars) for the module.
+            \\
+        );
+
+        return buf.toOwnedSlice(self.allocator);
+    }
+
+    fn parseModuleDetailResponse(
+        self: *Enhancer,
+        response: []const u8,
+        existing_comment: ?[]const u8,
+    ) !ModuleDetailResult {
+        // Extract <detail> tag
+        const detail = blk: {
+            const start = std.mem.indexOf(u8, response, "<detail>") orelse break :blk null;
+            const end = std.mem.indexOf(u8, response[start..], "</detail>") orelse break :blk null;
+            const content = std.mem.trim(u8, response[start + 8 .. start + end], " \t\n\r");
+            break :blk try self.allocator.dupe(u8, content);
+        };
+
+        // Extract <keywords> tag
+        var keywords: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (keywords.items) |kw| self.allocator.free(kw);
+            keywords.deinit(self.allocator);
+        }
+
+        if (std.mem.indexOf(u8, response, "<keywords>")) |start| {
+            if (std.mem.indexOf(u8, response[start..], "</keywords>")) |end_offset| {
+                const end = start + end_offset;
+                const kw_text = std.mem.trim(u8, response[start + 10 .. end], " \t\n\r");
+                var it = std.mem.splitAny(u8, kw_text, ",\n");
+                var count: usize = 0;
+                while (it.next()) |kw| {
+                    if (count >= 10) break;
+                    const trimmed = std.mem.trim(u8, kw, " \t\r");
+                    if (trimmed.len > 0 and trimmed.len < 50) {
+                        try keywords.append(self.allocator, try self.allocator.dupe(u8, trimmed));
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        // Extract <comment> tag
+        const comment = blk: {
+            const start = std.mem.indexOf(u8, response, "<comment>") orelse break :blk null;
+            const end = std.mem.indexOf(u8, response[start..], "</comment>") orelse break :blk null;
+            const content = std.mem.trim(u8, response[start + 9 .. start + end], " \t\n\r");
+            // Cap at 200 chars
+            const capped = content[0..@min(200, content.len)];
+            break :blk try self.allocator.dupe(u8, capped);
+        };
+
+        // Fallbacks
+        const final_detail = detail orelse try self.allocator.dupe(u8, "");
+        const final_keywords = try keywords.toOwnedSlice(self.allocator);
+        const final_comment = comment orelse if (existing_comment) |c| try self.allocator.dupe(u8, c) else try self.allocator.dupe(u8, "");
+
+        return .{
+            .detail = final_detail,
+            .keywords = final_keywords,
+            .comment = final_comment,
+        };
+    }
+
+    fn fallbackModuleDetail(self: *Enhancer, existing_comment: ?[]const u8) !ModuleDetailResult {
+        const comment = if (existing_comment) |c| try self.allocator.dupe(u8, c) else try self.allocator.dupe(u8, "");
+        return .{
+            .detail = try self.allocator.dupe(u8, ""),
+            .keywords = try self.allocator.alloc([]const u8, 0),
+            .comment = comment,
+        };
     }
 };
 

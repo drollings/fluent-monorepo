@@ -166,6 +166,12 @@ pub const ProjectConfig = struct {
         return self.model_default;
     }
 
+    /// Return the model to use for thinking/reasoning tasks (module detail generation).
+    /// Returns empty string if not configured.
+    pub fn thinkingModel(self: *const ProjectConfig) []const u8 {
+        return self.model_thinking;
+    }
+
     /// Find a provider by name. Returns null if not found.
     pub fn getProvider(self: *const ProjectConfig, name: []const u8) ?Provider {
         for (self.providers) |p| {

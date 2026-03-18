@@ -15,11 +15,17 @@ pub const SyncProcessor = struct {
     /// Optional AI enhancer; when non-null and available, automatically infills
     /// missing comments for modules, structs, enums, and stand-alone functions.
     enhancer: ?enhancer_mod.Enhancer = null,
+    /// Optional thinking model enhancer for generating module detail documentation.
+    /// Uses the thinking model slot from config. When available, generates
+    /// comprehensive module documentation (<800 words) and discovery keywords.
+    thinking_enhancer: ?enhancer_mod.Enhancer = null,
     /// Regenerate all comment fields via LLM; ask the LLM to pick the better of old vs new.
     regen_comments: bool = false,
     /// For .zig files with no guidance JSON: create it with LLM-filled comments.
     /// Never replaces existing comments.
     regen_structure: bool = false,
+    /// Regenerate module detail documentation (thinking model output).
+    regen_detail: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor {
         return .{
@@ -34,6 +40,7 @@ pub const SyncProcessor = struct {
 
     pub fn deinit(self: *SyncProcessor) void {
         if (self.enhancer) |*e| e.deinit();
+        if (self.thinking_enhancer) |*e| e.deinit();
     }
 
     fn stripComments(self: *SyncProcessor, members: []types.Member) void {
@@ -248,6 +255,101 @@ pub const SyncProcessor = struct {
             module_comment = prefixed;
         }
 
+        // --- Module detail generation (thinking model) ---
+        // Generate comprehensive module documentation using the thinking model.
+        // Only when thinking_enhancer is available and detail is missing or --regen-detail.
+        var module_detail: ?[]const u8 = null;
+        var module_keywords: []const []const u8 = &.{};
+        errdefer {
+            if (module_detail) |d| self.allocator.free(d);
+            for (module_keywords) |kw| self.allocator.free(kw);
+            self.allocator.free(module_keywords);
+        }
+
+        // Preserve existing detail from JSON if not regenerating
+        if (existing_doc) |ed| {
+            if (ed.detail) |d| {
+                if (d.len > 0) {
+                    module_detail = try self.allocator.dupe(u8, d);
+                }
+            }
+            if (ed.keywords.len > 0) {
+                module_keywords = try self.store.dupeStrings(ed.keywords);
+            }
+        }
+
+        // Generate detail if thinking model is available and detail is missing or regen
+        if (self.thinking_enhancer) |*th| {
+            const do_detail_llm = blk: {
+                if (!th.available()) break :blk false;
+                // --regen-detail: always regenerate
+                if (self.regen_detail) break :blk true;
+                // Auto-generate: call LLM when detail is missing
+                const missing = module_detail == null or module_detail.?.len == 0;
+                break :blk missing;
+            };
+            if (do_detail_llm) {
+                // Build member signatures for context
+                var member_sigs: std.ArrayList([]const u8) = .{};
+                defer member_sigs.deinit(self.allocator);
+                for (merge_result.members) |m| {
+                    if (m.signature) |sig| {
+                        try member_sigs.append(self.allocator, try self.allocator.dupe(u8, sig));
+                    }
+                }
+
+                // Build capabilities string
+                var caps_buf: std.ArrayList(u8) = .{};
+                defer caps_buf.deinit(self.allocator);
+                for (skills) |s| {
+                    if (caps_buf.items.len > 0) try caps_buf.append(self.allocator, '\n');
+                    try caps_buf.appendSlice(self.allocator, s.ref);
+                }
+
+                // Build skills string
+                var skills_buf: std.ArrayList(u8) = .{};
+                defer skills_buf.deinit(self.allocator);
+                for (skills) |s| {
+                    if (skills_buf.items.len > 0) try skills_buf.append(self.allocator, '\n');
+                    try skills_buf.appendSlice(self.allocator, s.ref);
+                }
+
+                const detail_result = th.enhanceModuleDetail(
+                    rel_path,
+                    source,
+                    member_sigs.items,
+                    caps_buf.items,
+                    skills_buf.items,
+                    module_comment,
+                ) catch |err| blk: {
+                    if (self.debug) std.debug.print("detail generation failed: {}\n", .{err});
+                    break :blk null;
+                };
+
+                if (detail_result) |dr| {
+                    defer dr.deinit(self.allocator);
+
+                    // Free old values
+                    if (module_detail) |d| self.allocator.free(d);
+                    for (module_keywords) |kw| self.allocator.free(kw);
+                    self.allocator.free(module_keywords);
+
+                    // Store new values
+                    module_detail = try self.allocator.dupe(u8, dr.detail);
+                    module_keywords = try self.store.dupeStrings(dr.keywords);
+                    result.has_changes = true;
+
+                    if (self.debug) {
+                        std.debug.print("Generated detail for {s} ({} chars, {} keywords)\n", .{
+                            rel_path,
+                            module_detail.?.len,
+                            module_keywords.len,
+                        });
+                    }
+                }
+            }
+        }
+
         // --- Reverse dependencies (used_by) ---
         const used_by = try self.findReverseDeps(rel_path);
         // used_by owned here; transferred to doc below.
@@ -258,6 +360,8 @@ pub const SyncProcessor = struct {
                 .source = try self.allocator.dupe(u8, rel_path),
             },
             .comment = module_comment,
+            .detail = module_detail,
+            .keywords = module_keywords,
             .skills = skills,
             .used_by = used_by,
             .members = merge_result.members,
@@ -269,6 +373,15 @@ pub const SyncProcessor = struct {
                 doc.hashtags = try self.store.dupeStrings(existing.hashtags);
             }
         }
+
+        // Check if detail changed
+        const detail_changed = blk: {
+            const existing_detail = if (existing_doc) |ed| ed.detail else null;
+            const new_detail = doc.detail;
+            if (existing_detail == null and new_detail == null) break :blk false;
+            if (existing_detail == null or new_detail == null) break :blk true;
+            break :blk !std.mem.eql(u8, existing_detail.?, new_detail.?);
+        };
 
         // Also write when the file-level comment changed (e.g. previously missing).
         const comment_changed = blk: {

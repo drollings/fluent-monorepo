@@ -1,7 +1,7 @@
 //! synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 //!
-//! Combines prose stages into a concise 2-4 sentence summary
-//! directly answering the user's query, and suggests follow-up keywords.
+//! Combines prose stages and module detail into a concise summary
+//! directly answering the user's query. Uses fast model with cached detail context.
 
 const std = @import("std");
 const llm = @import("common");
@@ -13,7 +13,8 @@ pub const SynthesisResult = struct {
     followup_keywords: ?[][]const u8,
 };
 
-/// Synthesize a concise answer from prose stages and suggest follow-up keywords.
+/// Synthesize a concise answer from prose stages and module detail.
+/// Uses fast model with cached detail context for efficiency.
 ///
 /// Returns a SynthesisResult with owned strings; caller must free summary and followup_keywords.
 pub fn synthesize(
@@ -22,76 +23,90 @@ pub fn synthesize(
     query: []const u8,
     stages: []const types.Stage,
 ) !SynthesisResult {
-    // Collect prose content, capped to avoid token burn.
-    var combined: std.ArrayList(u8) = .{};
-    defer combined.deinit(allocator);
-    const cw = combined.writer(allocator);
+    // Collect detail content (from module documentation)
+    var detail_buf: std.ArrayList(u8) = .{};
+    defer detail_buf.deinit(allocator);
+    const dw = detail_buf.writer(allocator);
 
-    // Also collect available keywords from metadata stages for LLM context.
-    var keywords_buf: std.ArrayList(u8) = .{};
-    defer keywords_buf.deinit(allocator);
-    const kw_writer = keywords_buf.writer(allocator);
+    // Collect prose content (from comments)
+    var prose_buf: std.ArrayList(u8) = .{};
+    defer prose_buf.deinit(allocator);
+    const pw = prose_buf.writer(allocator);
 
-    var section_count: usize = 0;
+    // Collect code snippets
+    var code_buf: std.ArrayList(u8) = .{};
+    defer code_buf.deinit(allocator);
+    const cw = code_buf.writer(allocator);
+
+    var detail_count: usize = 0;
+    var prose_count: usize = 0;
+    var code_count: usize = 0;
+
     for (stages) |s| {
-        if (s.kind == .prose or s.kind == .insight) {
-            if (combined.items.len > 3000) break; // cap at ~600 tokens
-            if (section_count > 0) try cw.writeAll("\n\n---\n\n");
-            try cw.writeAll(std.mem.trim(u8, s.content, " \t\n\r"));
-            section_count += 1;
-        } else if (s.kind == .metadata) {
-            // Extract keywords from metadata for LLM context
-            var lines = std.mem.splitScalar(u8, s.content, '\n');
-            while (lines.next()) |line| {
-                if (std.mem.startsWith(u8, line, "keywords: ")) {
-                    if (keywords_buf.items.len > 0) try kw_writer.writeAll(", ");
-                    try kw_writer.writeAll(line["keywords: ".len..]);
-                }
+        if (s.kind == .prose) {
+            // Check if this looks like module detail (longer content)
+            if (s.content.len > 200 and detail_count < 2) {
+                if (detail_count > 0) try dw.writeAll("\n\n");
+                try dw.writeAll(s.content[0..@min(800, s.content.len)]);
+                detail_count += 1;
+            } else if (prose_count < 3) {
+                if (prose_count > 0) try pw.writeAll("\n\n");
+                try pw.writeAll(s.content);
+                prose_count += 1;
             }
+        } else if (s.kind == .code and code_count < 2) {
+            if (code_count > 0) try cw.writeAll("\n\n");
+            try cw.writeAll("```");
+            try cw.writeAll(s.content);
+            try cw.writeAll("```");
+            code_count += 1;
         }
     }
 
-    // Collect source file names for LLM context
-    var sources_buf: std.ArrayList(u8) = .{};
-    defer sources_buf.deinit(allocator);
-    const src_writer = sources_buf.writer(allocator);
-
-    var seen_sources: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_sources.deinit(allocator);
-
-    for (stages) |s| {
-        if (s.kind == .code or s.kind == .prose) {
-            if (seen_sources.contains(s.source)) continue;
-            try seen_sources.put(allocator, s.source, {});
-            if (sources_buf.items.len > 0) try src_writer.writeAll(", ");
-            try src_writer.writeAll(s.source);
-        }
+    if (detail_buf.items.len == 0 and prose_buf.items.len == 0) {
+        return .{ .summary = null, .followup_keywords = null };
     }
 
-    if (combined.items.len == 0) return .{ .summary = null, .followup_keywords = null };
-
-    // Build prompt for detailed synthesis (under 600 words)
+    // Build concise prompt for fast model
     const prompt = try std.fmt.allocPrint(
         allocator,
-        "You are a code navigation assistant providing comprehensive technical summaries.\n" ++
-            "Answer the query \"{s}\" using the explanations below.\n\n" ++
-            "Guidelines:\n" ++
-            "- Be thorough and technically precise\n" ++
-            "- Describe key abstractions, data structures, and their relationships\n" ++
-            "- Explain how components interact and flow\n" ++
-            "- Include concrete details: function names, types, patterns\n" ++
-            "- Use only facts from EXPLANATIONS\n" ++
-            "- Never mention absence or say 'no information found'\n\n" ++
-            "AVAILABLE KEYWORDS: {s}\n" ++
-            "SOURCE FILES: {s}\n\n" ++
-            "EXPLANATIONS:\n{s}\n\n" ++
-            "Write a detailed summary (under 600 words). After your summary, suggest 3-5 related keywords.\n" ++
-            "Format the last line as: KEYWORDS: keyword1, keyword2, keyword3",
-        .{ query, keywords_buf.items, sources_buf.items, combined.items },
+        \\You are a code navigation assistant. Answer the query concisely.
+        \\
+        \\Query: {s}
+        \\
+    ,
+        .{query},
     );
     defer allocator.free(prompt);
 
-    const raw_opt = client.complete(prompt, 1000, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
+    var full_prompt: std.ArrayList(u8) = .{};
+    defer full_prompt.deinit(allocator);
+    const fw = full_prompt.writer(allocator);
+
+    try fw.writeAll(prompt);
+
+    if (detail_buf.items.len > 0) {
+        try fw.print("\nModule Documentation:\n{s}\n", .{detail_buf.items});
+    }
+
+    if (prose_buf.items.len > 0) {
+        try fw.print("\nComments:\n{s}\n", .{prose_buf.items});
+    }
+
+    if (code_buf.items.len > 0) {
+        try fw.print("\nCode:\n{s}\n", .{code_buf.items});
+    }
+
+    try fw.writeAll(
+        \\
+        \\Write a concise answer (under 200 words). Be technically precise.
+        \\After your answer, suggest 2-3 related keywords.
+        \\Format: KEYWORDS: keyword1, keyword2, keyword3
+        \\
+    );
+
+    // Use fast model with lower max_tokens for concise output
+    const raw_opt = client.complete(full_prompt.items, 400, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
     const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
     defer allocator.free(raw);
 
@@ -121,7 +136,7 @@ pub fn synthesize(
         var it = std.mem.splitAny(u8, kw_trimmed, ",\n");
         var count: usize = 0;
         while (it.next()) |kw| {
-            if (count >= 4) break;
+            if (count >= 3) break;
             const k = std.mem.trim(u8, kw, " \t\r");
             if (k.len > 0 and k.len < 50) {
                 try kw_list.append(allocator, try allocator.dupe(u8, k));
