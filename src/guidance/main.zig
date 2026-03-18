@@ -1146,6 +1146,38 @@ fn setupEnhancer(
     // Enhancer.init makes its own copy of api_url, so we can free our temp copy now.
     if (resolved_url_to_free) |url| allocator.free(url);
     processor.regen_comments = ga.regen_comments;
+
+    // --- Set up thinking enhancer for module detail generation ---
+    const thinking_model = cfg.thinkingModel();
+    if (thinking_model.len > 0) {
+        const thinking_config = resolveLlmConfigForThinking(
+            allocator,
+            cfg,
+            thinking_model,
+            if (ga.api_url_set) ga.api_url else null,
+        ) catch {
+            if (ga.verbose) std.debug.print("warning: could not resolve thinking model config\n", .{});
+            return;
+        };
+
+        // Thinking model should use Ollama /api/chat endpoint with think=true
+        const thinking_llm_config: llm.LlmConfig = .{
+            .api_url = thinking_config.api_url,
+            .model = thinking_config.model,
+            .think = true, // Always enable thinking for detail generation
+            .debug = ga.verbose,
+        };
+
+        if (ga.verbose) std.debug.print("DEBUG: Thinking model config - api_url: {s}, model: {s}\n", .{ thinking_llm_config.api_url, thinking_llm_config.model });
+
+        processor.thinking_enhancer = enhancer_mod.Enhancer.init(allocator, thinking_llm_config) catch |err| {
+            if (ga.verbose) std.debug.print("warning: could not init thinking enhancer: {}\n", .{err});
+            return;
+        };
+
+        // Free resolved URL if allocated
+        if (thinking_config.resolved_url) |url| allocator.free(url);
+    }
 }
 
 /// Dispatch to single-file, explicit-scan, or full-workspace processing.

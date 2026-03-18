@@ -24,8 +24,6 @@ pub const SyncProcessor = struct {
     /// For .zig files with no guidance JSON: create it with LLM-filled comments.
     /// Never replaces existing comments.
     regen_structure: bool = false,
-    /// Regenerate module detail documentation (thinking model output).
-    regen_detail: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor {
         return .{
@@ -278,12 +276,10 @@ pub const SyncProcessor = struct {
             }
         }
 
-        // Generate detail if thinking model is available and detail is missing or regen
+        // Generate detail if thinking model is available and detail is missing
         if (self.thinking_enhancer) |*th| {
             const do_detail_llm = blk: {
                 if (!th.available()) break :blk false;
-                // --regen-detail: always regenerate
-                if (self.regen_detail) break :blk true;
                 // Auto-generate: call LLM when detail is missing
                 const missing = module_detail == null or module_detail.?.len == 0;
                 break :blk missing;
@@ -291,7 +287,10 @@ pub const SyncProcessor = struct {
             if (do_detail_llm) {
                 // Build member signatures for context
                 var member_sigs: std.ArrayList([]const u8) = .{};
-                defer member_sigs.deinit(self.allocator);
+                defer {
+                    for (member_sigs.items) |s| self.allocator.free(s);
+                    member_sigs.deinit(self.allocator);
+                }
                 for (merge_result.members) |m| {
                     if (m.signature) |sig| {
                         try member_sigs.append(self.allocator, try self.allocator.dupe(u8, sig));
@@ -395,15 +394,14 @@ pub const SyncProcessor = struct {
         // replacement (--regen without LLM, or LLM rejection).  The flag is set
         // by loadGuidance whenever isLeakedPrompt discards a stored comment.
         const leaked_on_disk = self.store.leaked_prompts_found;
-        const needs_write = merge_result.has_changes or comment_changed or leaked_on_disk;
+        const needs_write = merge_result.has_changes or comment_changed or detail_changed or leaked_on_disk;
         if (self.debug and needs_write) {
-            std.debug.print("[needs-write] has_changes={} comment_changed={} added={} updated={} removed={}\n", .{
-                merge_result.has_changes,     comment_changed,
-                merge_result.members_added,   merge_result.members_updated,
-                merge_result.members_removed,
+            std.debug.print("[needs-write] has_changes={} comment_changed={} detail_changed={} added={} updated={} removed={}\n", .{
+                merge_result.has_changes,   comment_changed,              detail_changed,
+                merge_result.members_added, merge_result.members_updated, merge_result.members_removed,
             });
         }
-        if (comment_changed) result.has_changes = true;
+        if (comment_changed or detail_changed) result.has_changes = true;
 
         if (self.dry_run) {
             if (needs_write) {

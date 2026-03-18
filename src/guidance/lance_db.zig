@@ -1007,7 +1007,13 @@ pub const GuidanceDb = struct {
 
         // Sync keywords to keyword_index and keyword_modules tables
         if (doc.keywords.len > 0) {
-            try self.syncModuleKeywords(allocator, doc.keywords, module_id);
+            // Extract member names for direct-match filtering
+            var member_names: std.ArrayList([]const u8) = .{};
+            defer member_names.deinit(allocator);
+            for (doc.members) |m| {
+                try member_names.append(allocator, m.name);
+            }
+            try self.syncModuleKeywords(allocator, doc.keywords, module_id, member_names.items);
         }
     }
 
@@ -1017,12 +1023,30 @@ pub const GuidanceDb = struct {
         allocator: std.mem.Allocator,
         keywords: []const []const u8,
         module_id: i64,
+        member_names: []const []const u8,
     ) !void {
         // Clear existing keyword links for this module
         try self.clearKeywordLinksForModule(module_id);
 
         for (keywords) |kw| {
-            // Embed the keyword
+            // Skip keywords that directly match AST names (deterministic search handles these)
+            var is_direct_match = false;
+            for (member_names) |name| {
+                const kw_lower = std.ascii.allocLowerString(allocator, kw) catch continue;
+                defer allocator.free(kw_lower);
+                const name_lower = std.ascii.allocLowerString(allocator, name) catch continue;
+                defer allocator.free(name_lower);
+                if (std.mem.eql(u8, kw_lower, name_lower)) {
+                    is_direct_match = true;
+                    break;
+                }
+            }
+            if (is_direct_match) {
+                log.debug("skipping keyword '{s}' - direct match for AST name", .{kw});
+                continue;
+            }
+
+            // Embed the keyword (only for semantic/non-direct matches)
             const emb = self.embedder.embed(allocator, kw) catch |err| {
                 log.debug("failed to embed keyword '{s}': {s}", .{ kw, @errorName(err) });
                 continue;
@@ -1275,20 +1299,50 @@ pub const GuidanceDb = struct {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
-        // Build query embedding
+        // ── Phase 1: Deterministic name match (LIKE search) ─────────────────────
+        // If query directly matches a name in the AST, return immediately.
+        // This handles exact matches like "GuidanceDoc", "cosineSimilarity", etc.
+        const name_results = self.keywordSearch(allocator, trimmed, limit) catch blk: {
+            break :blk try allocator.alloc(SearchResult, 0);
+        };
+        if (name_results.len > 0) {
+            // Check if any result has an exact or near-exact name match
+            for (name_results) |r| {
+                const name_lower = std.ascii.allocLowerString(allocator, r.name) catch continue;
+                defer allocator.free(name_lower);
+                const query_lower = std.ascii.allocLowerString(allocator, trimmed) catch continue;
+                defer allocator.free(query_lower);
+
+                // Exact match or query is substring of name
+                if (std.mem.eql(u8, name_lower, query_lower) or
+                    std.mem.indexOf(u8, name_lower, query_lower) != null)
+                {
+                    log.debug("deterministic name match for '{s}' → '{s}'", .{ trimmed, r.name });
+                    return name_results;
+                }
+            }
+        }
+        // Free name_results if we're continuing
+        for (name_results) |r| freeSearchResult(allocator, r);
+        allocator.free(name_results);
+
+        // ── Phase 2: Keyword vector search (semantic index) ─────────────────────
+        // Build query embedding for semantic search
         const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
         defer if (query_emb) |e| allocator.free(e);
 
-        // Try keyword index search first (lightweight reranker)
         if (query_emb) |_| {
             if (self.keywordIndexSearch(allocator, trimmed, limit)) |kw_results| {
-                if (kw_results.len > 0) return kw_results;
+                if (kw_results.len > 0) {
+                    log.debug("keyword vector search found {d} results for '{s}'", .{ kw_results.len, trimmed });
+                    return kw_results;
+                }
             } else |_| {
                 // Keyword search failed, fall through to hybrid search
             }
         }
 
-        // Fall back to hybrid search
+        // ── Phase 3: Hybrid search (vector + keyword LIKE) ─────────────────────
         const has_embeddings = query_emb != null and query_emb.?.len > 0;
 
         if (has_embeddings) {
@@ -1918,6 +1972,7 @@ pub const GuidanceDb = struct {
 
             const sim = vector.cosineSimilarity(query_embedding, stored_emb);
             if (sim >= threshold) {
+                log.debug("keyword '{s}' similarity {d:.3} >= threshold {d:.3}", .{ kw, sim, threshold });
                 try scored.append(allocator, .{ .keyword = kw, .score = sim });
             } else {
                 allocator.free(kw);
@@ -2052,7 +2107,7 @@ pub const GuidanceDb = struct {
         if (query_emb == null) return allocator.alloc(SearchResult, 0);
 
         // 2. Find matching keywords
-        const kw_matches = try self.findSimilarKeywords(allocator, query_emb.?, 0.70, 10);
+        const kw_matches = try self.findSimilarKeywords(allocator, query_emb.?, 0.50, 10);
         defer {
             for (kw_matches) |km| allocator.free(km.keyword);
             allocator.free(kw_matches);
@@ -2083,9 +2138,11 @@ pub const GuidanceDb = struct {
         const actual_limit = @min(limit, module_matches.len);
         for (module_matches[0..actual_limit]) |mm| {
             const row = self.fetchById(allocator, mm.module_id) catch continue;
+            log.debug("keywordIndexSearch fetched module id={d} module={s} name={s}", .{ mm.module_id, row.module, row.name });
             try results.append(allocator, row);
         }
 
+        log.debug("keywordIndexSearch returning {d} results", .{results.items.len});
         return results.toOwnedSlice(allocator);
     }
 };
