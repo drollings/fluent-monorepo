@@ -80,10 +80,6 @@ commit: $(TARGET_BIN) ## Generate AI commit message from staged diff + guidance 
 py-sync: $(VENV) ## Sync guidance JSON for Python source files
 	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(GUIDANCE_DIR)
 
-.PHONY: py-sync-infill
-py-sync-infill: $(VENV) ## Sync Python guidance with AI comment infill
-	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(GUIDANCE_DIR) --infill
-
 .PHONY: py-lint
 py-lint: $(VENV) ## Lint Python with ruff
 	$(Q)$(BIN)/ruff check src/ bin/

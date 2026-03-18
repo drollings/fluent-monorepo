@@ -1062,7 +1062,6 @@ test "infillJsonFile returns false when no enhancer configured" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
         // enhancer is null → must return false without crashing.
 
         const changed = try processor.infillJsonFile(json_path);
@@ -1071,7 +1070,7 @@ test "infillJsonFile returns false when no enhancer configured" {
     try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
-test "infillJsonFile returns false when no infill/regen flag set" {
+test "infillJsonFile returns false when no enhancer" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     {
@@ -1086,7 +1085,7 @@ test "infillJsonFile returns false when no infill/regen flag set" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        // Neither infill_comments nor regen_comments — must short-circuit.
+        // No enhancer — must short-circuit.
 
         const changed = try processor.infillJsonFile(json_path);
         try std.testing.expect(!changed);
@@ -1108,7 +1107,6 @@ test "infillJsonFile returns false for nonexistent path" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
         // No enhancer — safe to call; returns false without error.
 
         const changed = try processor.infillJsonFile(json_path);
@@ -1130,31 +1128,6 @@ test "infillAllJson returns 0 when no enhancer configured" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
-
-        var skip: std.StringHashMapUnmanaged(void) = .{};
-        defer skip.deinit(allocator);
-
-        const count = try processor.infillAllJson(tmp_path, &skip);
-        try std.testing.expectEqual(@as(usize, 0), count);
-    }
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
-test "infillAllJson returns 0 when cross-language flags not set" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    {
-        var tmp = std.testing.tmpDir(.{});
-        defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-        defer allocator.free(tmp_path);
-
-        try writeGuidanceJson(tmp.dir, "d.zig.json", null, true);
-
-        var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
-        defer processor.deinit();
-        // Neither infill_comments nor regen_comments set.
 
         var skip: std.StringHashMapUnmanaged(void) = .{};
         defer skip.deinit(allocator);
@@ -1180,7 +1153,6 @@ test "infillAllJson skips files in skip_paths" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
 
         var skip: std.StringHashMapUnmanaged(void) = .{};
         defer skip.deinit(allocator);
@@ -1209,7 +1181,6 @@ test "infillAllJson ignores non-json files" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
 
         var skip: std.StringHashMapUnmanaged(void) = .{};
         defer skip.deinit(allocator);
@@ -1235,7 +1206,6 @@ test "infillAllJson processes .py.json files alongside .zig.json files" {
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
-        processor.infill_comments = true;
         // No enhancer → returns 0, but both files are visited without error.
 
         var skip: std.StringHashMapUnmanaged(void) = .{};

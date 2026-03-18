@@ -12,10 +12,9 @@ pub const SyncProcessor = struct {
     dry_run: bool,
     debug: bool,
     store: json_store.JsonStore,
-    /// Optional AI enhancer; non-null when any LLM flag is set.
+    /// Optional AI enhancer; when non-null and available, automatically infills
+    /// missing comments for modules, structs, enums, and stand-alone functions.
     enhancer: ?enhancer_mod.Enhancer = null,
-    /// Fill missing comment fields via LLM. Never touches existing comments.
-    infill_comments: bool = false,
     /// Regenerate all comment fields via LLM; ask the LLM to pick the better of old vs new.
     regen_comments: bool = false,
     /// For .zig files with no guidance JSON: create it with LLM-filled comments.
@@ -109,7 +108,7 @@ pub const SyncProcessor = struct {
         // infill correctly sees non-null comments and skips them, and regen has the
         // old comment available for score comparison.  Stale members (hash changed)
         // are handled inside mergeMembers regardless of this flag.
-        const preserve_comments = self.regen_comments or self.infill_comments;
+        const preserve_comments = self.regen_comments;
         const merge_result = try self.store.mergeMembers(source_members, existing_members, preserve_comments);
 
         result.members_added = merge_result.members_added;
@@ -122,20 +121,22 @@ pub const SyncProcessor = struct {
         }
 
         // --- AI Enhancement: member-level comments ---
-        // Only infill comments for key locations: structs, enums, unions, and
-        // stand-alone functions. Skip methods (inherit context from parent struct).
+        // Automatically infill comments for key locations when LLM is available:
+        // structs, enums, unions, and stand-alone functions.
+        // Skip methods (inherit context from parent struct).
         if (self.enhancer) |*enh| {
-            if ((self.infill_comments or self.regen_comments) and enh.available()) {
+            if (enh.available()) {
                 for (merge_result.members) |*m| {
+                    // Skip if comment already present (unless --regen)
+                    if (!self.regen_comments) {
+                        if (m.comment) |c| if (c.len > 0) continue;
+                    }
+
                     const sig = m.signature orelse m.name;
 
                     switch (m.type) {
                         // Stand-alone functions only (not methods)
                         .fn_decl, .fn_private => {
-                            // infill_comments: skip if comment already present.
-                            if (self.infill_comments) {
-                                if (m.comment) |c| if (c.len > 0) continue;
-                            }
                             const er = enh.enhanceFunction(m.name, sig, m.comment, rel_path) catch continue;
                             defer er.deinit(self.allocator);
                             if (er.comment) |new_doc| {
@@ -156,9 +157,6 @@ pub const SyncProcessor = struct {
                             }
                         },
                         .@"struct", .@"enum", .@"union" => {
-                            if (self.infill_comments) {
-                                if (m.comment) |c| if (c.len > 0) continue;
-                            }
                             var method_sigs_list: std.ArrayList([]const u8) = .{};
                             defer method_sigs_list.deinit(self.allocator);
                             for (m.members) |mm| {
@@ -200,32 +198,29 @@ pub const SyncProcessor = struct {
             if (raw_module_doc) |d| {
                 break :blk try self.allocator.dupe(u8, d);
             }
-            // Preserve existing comment from JSON so --infill never overwrites it.
-            // --regen still calls the LLM (do_file_llm is unconditionally true for regen)
-            // and passes the existing comment as context for score comparison.
+            // Preserve existing comment from JSON.
+            // --regen still calls the LLM and passes the existing comment for comparison.
             if (existing_doc) |ed| {
                 if (ed.comment) |d| {
                     if (d.len > 0) break :blk try self.allocator.dupe(u8, d);
                 }
             }
-            break :blk null; // Leave null so AI infill can fill it in Phase 2
+            break :blk null; // Leave null so AI infill can fill it
         };
         // module_comment is owned here; transferred to doc below (freed by freeGuidanceDoc).
 
         // --- AI Enhancement: file-level comment ---
-        // --infill-comments: call LLM only when module_comment is null or empty.
-        // --regen-comments:  always call LLM; pass existing as context so it can compare.
+        // Automatically generate module comment when LLM is available and missing.
+        // --regen forces regeneration with score comparison.
         if (self.enhancer) |*enh| {
             const do_file_llm = blk: {
                 if (!enh.available()) break :blk false;
+                // --regen: always call LLM for comparison
                 if (self.regen_comments) break :blk true;
-                if (self.infill_comments or self.regen_structure) {
-                    // Only call LLM when comment is genuinely missing or empty.
-                    const missing = module_comment == null or
-                        (module_comment != null and module_comment.?.len == 0);
-                    break :blk missing;
-                }
-                break :blk false;
+                // Auto-infill: call LLM when comment is missing
+                const missing = module_comment == null or
+                    (module_comment != null and module_comment.?.len == 0);
+                break :blk missing;
             };
             if (do_file_llm) {
                 const src_preview = source[0..@min(source.len, 3000)];
@@ -606,18 +601,20 @@ pub const SyncProcessor = struct {
     /// writes the file back if anything changed.  Returns true when the file was
     /// updated, false when it was unchanged or the enhancer is unavailable.
     ///
-    /// Preconditions (callers must check before calling):
-    ///   - self.enhancer != null and self.enhancer.?.available()
-    ///   - self.infill_comments or self.regen_comments is true
+    /// Called automatically during processFile when LLM is available.
     fn infillOneFile(self: *SyncProcessor, json_path: []const u8) !bool {
+        if (self.enhancer == null) return false;
+        if (!self.enhancer.?.available()) return false;
+
         var doc = (try self.store.loadGuidance(json_path)) orelse return false;
         defer self.store.freeGuidanceDoc(doc);
 
         var file_changed = false;
 
         // --- Module-level comment ---
+        // Auto-infill when missing, or regenerate all when --regen
         const module_needs = self.regen_comments or
-            (self.infill_comments and (doc.comment == null or doc.comment.?.len == 0));
+            (doc.comment == null or doc.comment.?.len == 0);
         if (module_needs and doc.meta.source.len > 0) {
             const src_path = try std.fs.path.join(self.allocator, &.{ self.project_root, doc.meta.source });
             defer self.allocator.free(src_path);
@@ -663,9 +660,10 @@ pub const SyncProcessor = struct {
         // tests, fields, constants, etc.
         const mutable_members: []types.Member = @constCast(doc.members);
         for (mutable_members) |*m| {
-            const member_needs = self.regen_comments or
-                (self.infill_comments and (m.comment == null or m.comment.?.len == 0));
-            if (!member_needs) continue;
+            // Skip if comment already present (unless --regen)
+            if (!self.regen_comments) {
+                if (m.comment) |c| if (c.len > 0) continue;
+            }
 
             // Only generate comments for key locations
             const is_key_location = switch (m.type) {
@@ -732,12 +730,10 @@ pub const SyncProcessor = struct {
     /// Makefile per-file dependency targets (`make sync --file src/foo.zig`).
     /// Returns true when the file was updated.
     ///
-    /// No-op (returns false) when the enhancer is absent, unreachable, or
-    /// neither infill_comments nor regen_comments is set.
+    /// No-op (returns false) when the enhancer is absent or unreachable.
     pub fn infillJsonFile(self: *SyncProcessor, json_path: []const u8) !bool {
         if (self.enhancer == null) return false;
         if (!self.enhancer.?.available()) return false;
-        if (!self.infill_comments and !self.regen_comments) return false;
         return self.infillOneFile(json_path);
     }
 
@@ -745,8 +741,7 @@ pub const SyncProcessor = struct {
     /// and fill blank comment fields via the configured Enhancer.
     /// Returns the count of files that were changed.
     ///
-    /// No-op (returns 0) when the enhancer is absent, unreachable, or
-    /// neither infill_comments nor regen_comments is set.
+    /// No-op (returns 0) when the enhancer is absent or unreachable.
     pub fn infillAllJson(
         self: *SyncProcessor,
         guidance_dir: []const u8,
@@ -754,7 +749,6 @@ pub const SyncProcessor = struct {
     ) !usize {
         if (self.enhancer == null) return 0;
         if (!self.enhancer.?.available()) return 0;
-        if (!self.infill_comments and !self.regen_comments) return 0;
 
         var dir = std.fs.openDirAbsolute(guidance_dir, .{ .iterate = true }) catch return 0;
         defer dir.close();

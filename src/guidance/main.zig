@@ -129,7 +129,6 @@ fn printHelp() !void {
         \\  --guidance-dir DIR    Guidance directory (default: .guidance)
         \\  -o, --db PATH         LanceDB database path (default: .guidance.db)
         \\  --no-db               Skip database compilation step
-        \\  --infill              LLM-fill blank comment fields
         \\  --regen               LLM-regenerate all comments
         \\  --dry-run             Show what would change without writing
         \\  --verbose             Print LLM prompts and raw responses
@@ -164,8 +163,8 @@ fn printHelp() !void {
         \\Examples:
         \\  guidance init
         \\  guidance gen
-        \\  guidance gen --file src/main.zig --infill
-        \\  guidance gen --scan src --infill -m fast:latest
+        \\  guidance gen --file src/main.zig
+        \\  guidance gen --scan src
         \\  guidance gen -o /tmp/project.guidance.db
         \\  guidance query "hash function"
         \\  guidance explain "how does the sync processor work" --limit 5
@@ -949,7 +948,6 @@ const GenArgs = struct {
     model: []const u8 = config_mod.DEFAULT_MODEL,
     /// True when -m was explicitly passed on the CLI, overriding config slots.
     model_override: bool = false,
-    infill_comments: bool = false,
     regen_comments: bool = false,
     /// Set false via --no-db to skip database generation.
     compile_db: bool = true,
@@ -995,8 +993,6 @@ const GenArgs = struct {
                 ga.dry_run = true;
             } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
                 ga.verbose = true;
-            } else if (std.mem.eql(u8, arg, "--infill")) {
-                ga.infill_comments = true;
             } else if (std.mem.eql(u8, arg, "--regen")) {
                 ga.regen_comments = true;
             } else if (std.mem.eql(u8, arg, "--no-db")) {
@@ -1064,7 +1060,7 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
 }
 
-/// Wire up the LLM enhancer on processor when --infill or --regen is active.
+/// Wire up the LLM enhancer for automatic comment generation.
 /// Model selection: fast slot (if set) > default slot. The thinking slot is
 /// never selected for infill — but when the fast/default slot resolves to the
 /// same model name as the thinking slot, thinking is suppressed via think:false
@@ -1076,7 +1072,6 @@ fn setupEnhancer(
     cfg: *const config_mod.ProjectConfig,
     processor: *sync_mod.SyncProcessor,
 ) void {
-    if (!ga.infill_comments and !ga.regen_comments) return;
     // CLI -m flag overrides config; otherwise resolve from fast/default slots.
     const model = if (!std.mem.eql(u8, ga.model, config_mod.DEFAULT_MODEL) or ga.model_override)
         ga.model
@@ -1120,7 +1115,6 @@ fn setupEnhancer(
         std.debug.print("warning: could not init LLM enhancer: {}\n", .{err});
         break :blk null;
     };
-    processor.infill_comments = ga.infill_comments;
     processor.regen_comments = ga.regen_comments;
 }
 
