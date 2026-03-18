@@ -3489,17 +3489,21 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Initialize LLM client for evaluation (when not --no-llm)
     var llm_client_opt: ?llm.LlmClient = null;
+    var resolved_url_buf: ?[]u8 = null;
+    defer if (resolved_url_buf) |buf| allocator.free(buf);
+
     if (!no_llm) {
-        const resolved_url = if (api_url) |u| u else blk: {
+        const api_url_to_use = if (api_url) |u| u else blk: {
             const model_ref = model orelse cfg.model_default;
             if (cfg.resolveModelUrl(allocator, model_ref) catch null) |resolved| {
                 defer allocator.free(resolved.url);
-                break :blk try allocator.dupe(u8, resolved.url);
+                resolved_url_buf = try allocator.dupe(u8, resolved.url);
+                break :blk resolved_url_buf.?;
             }
             break :blk config_mod.DEFAULT_API_URL;
         };
         const llm_config: llm.LlmConfig = .{
-            .api_url = resolved_url,
+            .api_url = api_url_to_use,
             .model = model orelse cfg.model_default,
         };
         llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
@@ -3575,115 +3579,176 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
 
         // Score results using LLM evaluation when available
-        var acc: u8 = undefined;
-        var rel: u8 = undefined;
-        var cmpl: u8 = undefined;
+        var acc: ?u8 = null;
+        var rel: ?u8 = null;
+        var cmpl: ?u8 = null;
         var obs_buf: [512]u8 = undefined;
         var obs_len: usize = 0;
+        var llm_evaluated = false;
 
         if (llm_client_opt) |*client| {
             // Build results summary for LLM evaluation
             var results_buf: std.ArrayList(u8) = .{};
             defer results_buf.deinit(allocator);
             const rw = results_buf.writer(allocator);
-            try rw.print("Query: \"{s}\"\n\nTop {d} results:\n", .{ query_text, @min(5, results.len) });
-            for (results[0..@min(5, results.len)]) |r| {
-                try rw.print("- {s} ({s}:{s}) score={d:.3}\n  module: {s}\n", .{ r.name, r.module, r.node_type, r.score, r.module });
-            }
-            if (results.len == 0) {
+            try rw.print("Query: \"{s}\"\n\n", .{query_text});
+            if (results.len > 0) {
+                try rw.print("Found {d} results:\n\n", .{results.len});
+                for (results[0..@min(5, results.len)]) |r| {
+                    try rw.print("- {s} ({s})\n", .{ r.name, r.node_type });
+                    if (r.comment) |c| {
+                        const ctrimmed = std.mem.trim(u8, c, " \t\n\r");
+                        if (ctrimmed.len > 0) {
+                            const first_line = std.mem.indexOfScalar(u8, ctrimmed, '\n') orelse ctrimmed.len;
+                            try rw.print("  Description: {s}\n", .{ctrimmed[0..@min(first_line, 100)]});
+                        }
+                    }
+                }
+            } else {
                 try rw.print("No results found.\n", .{});
             }
 
             const eval_prompt = try std.fmt.allocPrint(allocator,
-                \\You are a code search evaluation assistant. Evaluate the quality of search results for the given query.
+                \\You are a code search evaluation assistant. Evaluate search results for a codebase query.
                 \\
                 \\{s}
                 \\
-                \\Score each dimension from 0-10:
-                \\- Accuracy: Do the results match what the query is asking for?
-                \\- Relevance: Is the most important result ranked first?
-                \\- Completeness: Did the search find all relevant items?
+                \\Evaluate on these dimensions (0-10):
+                \\- Accuracy: Do results match the query intent?
+                \\- Relevance: Is the best result ranked first?
+                \\- Completeness: Are key relevant items found?
                 \\
-                \\Respond with EXACTLY this format:
-                \\Accuracy: N
-                \\Relevance: N
-                \\Completeness: N
-                \\Observation: One short sentence about the results quality.
+                \\Be strict but fair. Good results should score 7-10. Poor matches should score 0-4.
+                \\For no results, score 0 for all dimensions unless the query is for non-existent code.
+                \\
+                \\Respond EXACTLY in this format (no other text):
+                \\Accuracy: <0-10>
+                \\Relevance: <0-10>
+                \\Completeness: <0-10>
+                \\Observation: <one sentence>
             , .{results_buf.items});
             defer allocator.free(eval_prompt);
 
-            const response_opt = client.complete(eval_prompt, 300, 0.1, null) catch null;
+            const response_opt = client.complete(eval_prompt, 400, 0.1, null) catch |err| blk: {
+                std.debug.print("Warning: LLM complete() failed: {s}\n", .{@errorName(err)});
+                break :blk null;
+            };
             if (response_opt) |response| {
                 defer allocator.free(response);
                 const stripped = llm.stripThinkBlock(response);
 
                 // Parse scores from response
                 var lines = std.mem.splitScalar(u8, stripped, '\n');
-                var found_acc = false;
-                var found_rel = false;
-                var found_cmpl = false;
                 while (lines.next()) |line| {
                     const trimmed = std.mem.trim(u8, line, " \t\r");
-                    if (std.mem.startsWith(u8, trimmed, "Accuracy:")) {
-                        const val_str = std.mem.trim(u8, trimmed["Accuracy:".len..], " ");
-                        acc = std.fmt.parseInt(u8, val_str, 10) catch 5;
-                        acc = @min(10, acc);
-                        found_acc = true;
-                    } else if (std.mem.startsWith(u8, trimmed, "Relevance:")) {
-                        const val_str = std.mem.trim(u8, trimmed["Relevance:".len..], " ");
-                        rel = std.fmt.parseInt(u8, val_str, 10) catch 5;
-                        rel = @min(10, rel);
-                        found_rel = true;
-                    } else if (std.mem.startsWith(u8, trimmed, "Completeness:")) {
-                        const val_str = std.mem.trim(u8, trimmed["Completeness:".len..], " ");
-                        cmpl = std.fmt.parseInt(u8, val_str, 10) catch 5;
-                        cmpl = @min(10, cmpl);
-                        found_cmpl = true;
-                    } else if (std.mem.startsWith(u8, trimmed, "Observation:")) {
-                        // Copy observation
-                        const obs_start = @min("Observation:".len, trimmed.len);
-                        const obs_text = std.mem.trim(u8, trimmed[obs_start..], " ");
-                        obs_len = @min(obs_text.len, obs_buf.len - 1);
-                        @memcpy(obs_buf[0..obs_len], obs_text[0..obs_len]);
-                        obs_buf[obs_len] = 0;
+
+                    // Check for score lines like "### Accuracy: 8/10" or "Accuracy: 8" or "- **Accuracy:** 8/10"
+                    if (std.mem.indexOf(u8, trimmed, "Accuracy")) |_| {
+                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
+                            var val_start = colon + 1;
+                            // Skip spaces and ** markdown
+                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
+                                val_start += 1;
+                            }
+                            // Find end of number (before / or space)
+                            var val_end = val_start;
+                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
+                                val_end += 1;
+                            }
+                            if (val_end > val_start) {
+                                const val_str = trimmed[val_start..val_end];
+                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
+                                    acc = @min(10, v);
+                                } else |_| {}
+                            }
+                        }
+                    } else if (std.mem.indexOf(u8, trimmed, "Relevance")) |_| {
+                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
+                            var val_start = colon + 1;
+                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
+                                val_start += 1;
+                            }
+                            var val_end = val_start;
+                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
+                                val_end += 1;
+                            }
+                            if (val_end > val_start) {
+                                const val_str = trimmed[val_start..val_end];
+                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
+                                    rel = @min(10, v);
+                                } else |_| {}
+                            }
+                        }
+                    } else if (std.mem.indexOf(u8, trimmed, "Completeness")) |_| {
+                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
+                            var val_start = colon + 1;
+                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
+                                val_start += 1;
+                            }
+                            var val_end = val_start;
+                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
+                                val_end += 1;
+                            }
+                            if (val_end > val_start) {
+                                const val_str = trimmed[val_start..val_end];
+                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
+                                    cmpl = @min(10, v);
+                                } else |_| {}
+                            }
+                        }
+                    } else if (std.mem.indexOf(u8, trimmed, "Observation")) |_| {
+                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
+                            var obs_start = colon + 1;
+                            while (obs_start < trimmed.len and (trimmed[obs_start] == ' ' or trimmed[obs_start] == '*')) {
+                                obs_start += 1;
+                            }
+                            const obs_text = trimmed[obs_start..];
+                            obs_len = @min(obs_text.len, obs_buf.len - 1);
+                            @memcpy(obs_buf[0..obs_len], obs_text[0..obs_len]);
+                            obs_buf[obs_len] = 0;
+                        }
                     }
                 }
-
-                // Fallback if parsing failed
-                if (!found_acc) acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
-                if (!found_rel) rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
-                if (!found_cmpl) cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
-            } else {
-                // LLM call failed, use fallback
-                acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
-                rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
-                cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
+                llm_evaluated = (acc != null and rel != null and cmpl != null);
             }
-        } else {
-            // Fallback scoring when no LLM
-            acc = if (results.len > 0) @min(10, 7 + @as(u8, @intCast(@min(results.len, 3)))) else 2;
-            rel = if (results.len > 0 and results[0].score > 0.5) 8 else if (results.len > 0) 5 else 1;
-            cmpl = @min(10, @as(u8, @intCast(results.len)) * 2);
         }
 
-        total_acc += acc;
-        total_rel += rel;
-        total_cmpl += cmpl;
+        // If LLM evaluation failed, use "-" for scores
+        const eval_status = if (llm_evaluated) "LLM" else "FALLBACK";
 
-        if (acc >= 9) {
-            excellent_count += 1;
-        } else if (acc >= 7) {
-            good_count += 1;
-        } else {
-            weak_count += 1;
+        // Get actual values for display (use "-" if not evaluated)
+        const acc_val = acc orelse 0;
+        const rel_val = rel orelse 0;
+        const cmpl_val = cmpl orelse 0;
+        const acc_display = if (acc) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(acc_display);
+        const rel_display = if (rel) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(rel_display);
+        const cmpl_display = if (cmpl) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(cmpl_display);
+
+        // Only count toward statistics if actually evaluated
+        if (llm_evaluated) {
+            total_acc += acc_val;
+            total_rel += rel_val;
+            total_cmpl += cmpl_val;
+
+            if (acc_val >= 9) {
+                excellent_count += 1;
+            } else if (acc_val >= 7) {
+                good_count += 1;
+            } else {
+                weak_count += 1;
+            }
         }
 
         std.debug.print("| Metric | Score |\n", .{});
         std.debug.print("|--------|-------|\n", .{});
-        std.debug.print("| Accuracy | {d}/10 |\n", .{acc});
-        std.debug.print("| Relevance | {d}/10 |\n", .{rel});
-        std.debug.print("| Completeness | {d}/10 |\n", .{cmpl});
-        std.debug.print("| Results | {d} |\n\n", .{results.len});
+        std.debug.print("| Accuracy | {s}/10 |\n", .{acc_display});
+        std.debug.print("| Relevance | {s}/10 |\n", .{rel_display});
+        std.debug.print("| Completeness | {s}/10 |\n", .{cmpl_display});
+        std.debug.print("| Results | {d} |\n", .{results.len});
+        std.debug.print("| Evaluation | {s} |\n\n", .{eval_status});
 
         // Show top 3 results
         std.debug.print("**Top Results:**\n", .{});
@@ -3698,17 +3763,25 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Summary
     const n = queries.len;
+    const evaluated_count = excellent_count + good_count + weak_count;
     if (n > 0) {
         std.debug.print("# Summary Statistics\n\n", .{});
         std.debug.print("| Metric | Value |\n", .{});
         std.debug.print("|--------|-------|\n", .{});
         std.debug.print("| **Total Queries** | {d} |\n", .{n});
-        std.debug.print("| **Average Accuracy** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_acc)) / @as(f32, @floatFromInt(n))});
-        std.debug.print("| **Average Relevance** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_rel)) / @as(f32, @floatFromInt(n))});
-        std.debug.print("| **Average Completeness** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_cmpl)) / @as(f32, @floatFromInt(n))});
-        std.debug.print("| **Excellent (9-10)** | {d}/{d} ({d}%) |\n", .{ excellent_count, n, @as(usize, @intFromFloat(@as(f32, @floatFromInt(excellent_count)) / @as(f32, @floatFromInt(n)) * 100)) });
-        std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, n });
-        std.debug.print("| **Weak (<7)** | {d}/{d} |\n", .{ weak_count, n });
+        std.debug.print("| **LLM Evaluated** | {d} |\n", .{evaluated_count});
+        if (evaluated_count > 0) {
+            std.debug.print("| **Average Accuracy** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_acc)) / @as(f32, @floatFromInt(evaluated_count))});
+            std.debug.print("| **Average Relevance** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_rel)) / @as(f32, @floatFromInt(evaluated_count))});
+            std.debug.print("| **Average Completeness** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_cmpl)) / @as(f32, @floatFromInt(evaluated_count))});
+        } else {
+            std.debug.print("| **Average Accuracy** | -/10 |\n", .{});
+            std.debug.print("| **Average Relevance** | -/10 |\n", .{});
+            std.debug.print("| **Average Completeness** | -/10 |\n", .{});
+        }
+        std.debug.print("| **Excellent (9-10)** | {d}/{d} ({d}%) |\n", .{ excellent_count, evaluated_count, if (evaluated_count > 0) @as(usize, @intFromFloat(@as(f32, @floatFromInt(excellent_count)) / @as(f32, @floatFromInt(evaluated_count)) * 100)) else 0 });
+        std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, evaluated_count });
+        std.debug.print("| **Weak (<7)** | {d}/{d} |\n", .{ weak_count, evaluated_count });
     }
 }
 
