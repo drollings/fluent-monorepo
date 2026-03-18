@@ -40,19 +40,32 @@ pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
     config: llm.LlmConfig,
+    /// Owns the api_url string if we allocated it; null if config.api_url is static.
+    owned_url: ?[]const u8,
     debug: bool,
 
     pub fn init(allocator: std.mem.Allocator, config: llm.LlmConfig) !Enhancer {
+        // Dupe the api_url so we own it and can free it in deinit.
+        // This is necessary because LlmConfig.api_url is a slice that might
+        // point to temporary memory (e.g., from std.fmt.allocPrint).
+        const owned_url = try allocator.dupe(u8, config.api_url);
+        var owned_config = config;
+        owned_config.api_url = owned_url;
+
         return .{
             .allocator = allocator,
-            .client = try llm.LlmClient.init(allocator, config),
-            .config = config,
+            .client = try llm.LlmClient.init(allocator, owned_config),
+            .config = owned_config,
+            .owned_url = owned_url,
             .debug = config.debug,
         };
     }
 
     pub fn deinit(self: *Enhancer) void {
         self.client.deinit();
+        if (self.owned_url) |url| {
+            self.allocator.free(url);
+        }
     }
 
     /// Check whether the LLM endpoint is reachable.

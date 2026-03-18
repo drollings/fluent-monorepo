@@ -1105,22 +1105,27 @@ fn setupEnhancer(
     // Resolve API URL: prefer explicit --api-url, otherwise resolve from providers.
     var api_url_owned: ?[]const u8 = null;
     const api_url: []const u8 = if (ga.api_url_set)
-        ga.api_url
+        ga.api_url // Already an explicit CLI arg, static lifetime
     else blk: {
         // Parse model reference (format: "provider:modelname")
         const parsed = config_mod.ProjectConfig.parseModelRef(model) orelse {
-            std.debug.print("warning: invalid model reference format: {s}\n", .{model});
+            if (ga.verbose) std.debug.print("warning: invalid model reference format: {s}\n", .{model});
             break :blk ga.api_url;
         };
         // Find provider
         const provider = cfg.getProvider(parsed.provider) orelse {
-            std.debug.print("warning: provider not found: {s}\n", .{parsed.provider});
+            if (ga.verbose) std.debug.print("warning: provider not found: {s}\n", .{parsed.provider});
             break :blk ga.api_url;
         };
         api_url_owned = std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint }) catch null;
+        if (ga.verbose) {
+            if (api_url_owned) |url| {
+                std.debug.print("DEBUG: resolved API URL from provider '{s}': {s}\n", .{ parsed.provider, url });
+            }
+        }
         break :blk api_url_owned orelse ga.api_url;
     };
-    defer if (api_url_owned) |url| allocator.free(url);
+    // NOTE: api_url_owned will be freed after Enhancer.init makes its own copy.
 
     // If the resolved infill model is the same as the thinking slot, suppress
     // thinking explicitly so we get deterministic, non-thinking output.
@@ -1135,10 +1140,14 @@ fn setupEnhancer(
         .think = think,
         .debug = ga.verbose,
     };
+    if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?}\n", .{ api_url, model, think });
     processor.enhancer = enhancer_mod.Enhancer.init(allocator, llm_config) catch |err| blk: {
         std.debug.print("warning: could not init LLM enhancer: {}\n", .{err});
+        if (api_url_owned) |url| allocator.free(url);
         break :blk null;
     };
+    // Enhancer.init makes its own copy of api_url, so we can free our temp copy now.
+    if (api_url_owned) |url| allocator.free(url);
     processor.regen_comments = ga.regen_comments;
 }
 
