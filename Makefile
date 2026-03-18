@@ -37,8 +37,8 @@ CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
 
 SRC_DIR      := ./src
-EXPLAIN_DIR  := .guidance
-EXPLAIN_DB   := .explain.db
+GUIDANCE_DIR  := .guidance
+GUIDANCE_DB   := .guidance.db
 ENV_DIR      := .env
 HASH_DIR     := $(ENV_DIR)/.make_hashes
 
@@ -65,9 +65,9 @@ help: ## Show this help
 
 # Database target: rebuilt by guidance check automatically.
 # This rule is kept for direct `make .explain.db` invocations.
-$(EXPLAIN_DB): | $(TARGET_BIN)
+$(GUIDANCE_DB): | $(TARGET_BIN)
 	$(Q)echo "Syncing database: $@"
-	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(EXPLAIN_DIR) --db $(EXPLAIN_DB)
+	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(GUIDANCE_DIR) --db $(GUIDANCE_DB)
 	$(Q)touch $@
 
 .PHONY: commit
@@ -78,11 +78,11 @@ commit: $(TARGET_BIN) ## Generate AI commit message from staged diff + guidance 
 
 .PHONY: py-sync
 py-sync: $(VENV) ## Sync guidance JSON for Python source files
-	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(EXPLAIN_DIR)
+	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(GUIDANCE_DIR)
 
 .PHONY: py-sync-infill
 py-sync-infill: $(VENV) ## Sync Python guidance with AI comment infill
-	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(EXPLAIN_DIR) --infill
+	$(Q)$(PYTHON_VENV) $(AST_PY) sync --scan src/ --output $(GUIDANCE_DIR) --infill
 
 .PHONY: py-lint
 py-lint: $(VENV) ## Lint Python with ruff
@@ -124,17 +124,17 @@ env-init: check-prereqs venv ## Initialize development environment
 
 .PHONY: clean
 clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .guidance config)
-	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(EXPLAIN_DB)
+	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(GUIDANCE_DB)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
 
 ##@ Guidance Management
 
 .PHONY: _clean-guidance
 _clean-guidance: ## Remove stale JSON files from .guidance/src
-	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -exec rm -rf {} \; || true
+	$(Q)find $(GUIDANCE_DIR)/src -name '*.json' -type f -exec rm -rf {} \; || true
 
 .PHONY: explain
-explain: $(EXPLAIN_DB) ## Explain a module, function, or concept  make explain QUERY="sma"
+explain: $(GUIDANCE_DB) ## Explain a module, function, or concept  make explain QUERY="sma"
 	@if [ -z "$(QUERY)" ]; then \
 		echo "❌ Usage: make explain QUERY=\"<module or function or concept>\""; \
 		echo "   Examples:"; \
@@ -143,7 +143,7 @@ explain: $(EXPLAIN_DB) ## Explain a module, function, or concept  make explain Q
 		echo "     make explain QUERY=\"ast_parser\""; \
 		exit 1; \
 	fi
-	$(Q)$(DOCUMENTOR) explain --guidance $(EXPLAIN_DIR) "$(QUERY)"
+	$(Q)$(DOCUMENTOR) explain --guidance $(GUIDANCE_DIR) "$(QUERY)"
 
 ##@ Zig Build & RALPH Loop
 
@@ -164,8 +164,8 @@ install: $(TARGET_BIN)
 # Delegated: guidance check always regenerates STRUCTURE.md after guidance.
 # The target below is kept for direct `make STRUCTURE.md` invocations.
 
-STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
-	$(Q)$(TARGET_BIN) structure --json-dir $(EXPLAIN_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
+STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
+	$(Q)$(TARGET_BIN) structure --json-dir $(GUIDANCE_DIR) 2>&1 | grep -E "STRUCTURE|Generated|✓" || true
 	$(Q)touch STRUCTURE.md
 
 ##@ Gate Targets
