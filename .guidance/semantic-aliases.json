@@ -1,42 +1,132 @@
 {
   "aliases": [
-    {"key": "config", "values": ["configuration", "ProjectConfig", "settings", "config_file"]},
-    {"key": "configuration", "values": ["config", "ProjectConfig", "settings"]},
-    {"key": "schema", "values": ["database", "table", "GuidanceDb", "ast_nodes", "embedding"]},
-    {"key": "database", "values": ["GuidanceDb", "sqlite", "vector search", "ast_nodes", "schema"]},
-    {"key": "index", "values": ["syncDatabase", "insert", "upsert", "database sync", "embedding"]},
-    {"key": "llm", "values": ["LlmClient", "complete", "ollama", "openai", "enrich", "infill"]},
-    {"key": "pattern", "values": ["detectPattern", "gof-patterns", "design pattern", "PatternType"]},
-    {"key": "design pattern", "values": ["gof-patterns", "detectPattern", "Pattern", "PatternType"]},
-    {"key": "skill", "values": ["skills", "SKILL.md", "gof-patterns", "zig-current"]},
-    {"key": "hash", "values": ["structHash", "sha256Hex", "apiHash", "match_hash"]},
-    {"key": "sync", "values": ["SyncProcessor", "syncDatabase", "infillAllJson", "processFile"]},
-    {"key": "ast", "values": ["AstParser", "parseFile", "extractContainer", "node_type"]},
-    {"key": "parser", "values": ["AstParser", "parseFile", "PythonPlugin", "LanguagePlugin"]},
-    {"key": "query", "values": ["QueryEngine", "search", "execute", "hybrid search"]},
-    {"key": "query engine", "values": ["QueryEngine", "search", "execute", "guidance"]},
-    {"key": "json", "values": ["JsonStore", "parseGuidance", "loadGuidance", "guidance JSON"]},
-    {"key": "metadata", "values": ["keywords", "see_also", "used_by", "guidance JSON"]},
-    {"key": "test", "values": ["test_decl", "std.testing", "unit test"]},
-    {"key": "type", "values": ["types", "FileType", "MemberType", "PatternType", "types.zig"]},
-    {"key": "types", "values": ["FileType", "MemberType", "Pattern", "Member", "types.zig"]},
-    {"key": "error", "values": ["error handling", "try", "catch", "error union", "LlmError"]},
-    {"key": "gitignore", "values": ["GitignoreFilter", "globMatch", "shouldIgnore"]},
-    {"key": "structure", "values": ["StructureGenerator", "FileEntry", "tree", "directory"]},
-    {"key": "depend", "values": ["deps", "reverse deps", "findReverseDeps", "imports"]},
-    {"key": "dependencies", "values": ["deps", "reverse deps", "findReverseDeps", "imports"]},
-    {"key": "import", "values": ["imports", "@import", "reverse deps", "findReverseDeps"]},
-    {"key": "filter", "values": ["filterStages", "GitignoreFilter", "relevance", "LLM filter"]},
-    {"key": "explain", "values": ["GuidanceDb", "cmdExplain", "staged", "vector search"]},
-    {"key": "staged", "values": ["executeStaged", "expandFollowUps", "formatStaged", "Stage"]},
-    {"key": "module", "values": ["module", "source file", "guidance JSON", "member"]},
-    {"key": "member", "values": ["fn_decl", "struct", "enum", "method", "member"]},
-    {"key": "comment", "values": ["infill", "regen", "enhance", "LLM comment", "docstring"]},
-    {"key": "enrich", "values": ["Enricher", "EnrichmentResult", "infill", "LLM comment"]},
-    {"key": "plugin", "values": ["LanguagePlugin", "PythonPlugin", "PluginRegistry", "register"]},
-    {"key": "python", "values": ["PythonPlugin", "python", ".py", "plugin"]},
-    {"key": "workflow", "values": ["processFile", "sync", "infillAllJson", "lifecycle"]},
-    {"key": "vector", "values": ["embedding", "cosine similarity", "hybrid search", "GuidanceDb"]},
-    {"key": "embedding", "values": ["vector", "EmbeddingProvider", "nomic-embed-text", "cosine similarity"]}
+    {"key": "config", "values": ["ProjectConfig", "loadConfig", "guidance-config.json", "settings"]},
+    {"key": "configuration", "values": ["ProjectConfig", "loadConfig", "guidance-config.json", "fallback chain"]},
+    {"key": "schema", "values": ["ast_nodes", "embedding_cache", "CREATE TABLE", "GuidanceDb", "sqlite"]},
+    {"key": "database", "values": ["GuidanceDb", "syncDatabase", "vectorSearch", "keywordSearch", "sqlite"]},
+    {"key": "db", "values": ["GuidanceDb", ".guidance.db", "sqlite", "ast_nodes"]},
+    {"key": "index", "values": ["syncDatabase", "embedding", "upsert", "GuidanceDb"]},
+    {"key": "search", "values": ["vectorSearch", "keywordSearch", "hybridSearch", "searchWithAliases", "cosineSimilarity"]},
+    {"key": "vector search", "values": ["vectorSearch", "cosineSimilarity", "embedding", "hybridMerge"]},
+    {"key": "keyword search", "values": ["keywordSearch", "LIKE", "match_score", "GuidanceDb"]},
+    {"key": "hybrid search", "values": ["hybridMerge", "searchWithAliases", "vectorSearch", "keywordSearch"]},
+
+    {"key": "llm", "values": ["LlmClient", "complete", "isOllamaEndpoint", "ollama", "openai"]},
+    {"key": "ai", "values": ["LlmClient", "EmbeddingProvider", "complete", "ollama", "openai"]},
+    {"key": "embedding", "values": ["EmbeddingProvider", "embed", "cosineSimilarity", "nomic-embed-text", "vector"]},
+    {"key": "embeddings", "values": ["EmbeddingProvider", "parseOpenAiResponse", "parseOllamaResponse", "vector"]},
+
+    {"key": "pattern", "values": ["detectPatterns", "gof-patterns", "Pattern", "PatternType"]},
+    {"key": "design pattern", "values": ["detectPatterns", "gof-patterns", "Factory", "Singleton", "Builder", "Adapter", "Strategy"]},
+    {"key": "gof", "values": ["detectPatterns", "gof-patterns", "Factory", "Singleton", "Builder", "Adapter", "Decorator", "Proxy", "Strategy", "Observer", "TemplateMethod"]},
+
+    {"key": "skill", "values": ["SKILL.md", "gof-patterns", "zig-current", "skills", ".skills"]},
+    {"key": "capability", "values": ["CAPABILITY.md", "doc/capabilities", "sync-pipeline", "explain-query", "vector-search"]},
+
+    {"key": "hash", "values": ["contentHashWithModel", "match_hash", "sha256Hex", "structHash"]},
+    {"key": "hashing", "values": ["contentHashWithModel", "Sha256", "match_hash", "signature hash"]},
+
+    {"key": "sync", "values": ["SyncProcessor", "syncDatabase", "processFile", "infillJson"]},
+    {"key": "synchronization", "values": ["SyncProcessor", "syncDatabase", "infillAllJson", "processFile"]},
+    {"key": "pipeline", "values": ["SyncProcessor", "staged", "executeStaged", "processFile"]},
+    {"key": "staged pipeline", "values": ["executeStaged", "expandFollowUps", "formatStaged", "Stage"]},
+
+    {"key": "ast", "values": ["AstParser", "parseFile", "extractImports", "node_type", "NodeType"]},
+    {"key": "parser", "values": ["AstParser", "LanguagePlugin", "parseFile", "extractContainer"]},
+    {"key": "parse", "values": ["AstParser", "parseFile", "LanguagePlugin", "ParsedFile"]},
+
+    {"key": "query", "values": ["QueryEngine", "executeStaged", "searchWithAliases", "GuidanceDb"]},
+    {"key": "explain", "values": ["cmdExplain", "executeStaged", "GuidanceDb", "staged"]},
+
+    {"key": "json", "values": ["JsonStore", "GuidanceDoc", "parseGuidance", "loadGuidance"]},
+    {"key": "metadata", "values": ["keywords", "used_by", "skills", "hashtags", "GuidanceDoc"]},
+
+    {"key": "test", "values": ["touchTestMarker", "test_decl", "std.testing", "readInboxBulletsTest"]},
+    {"key": "testing", "values": ["touchTestMarker", "test_decl", "std.testing"]},
+    {"key": "test infrastructure", "values": ["LintCommand", "touchTestMarker", "test_decl", "std.testing"]},
+
+    {"key": "type", "values": ["FileType", "MemberType", "PatternType", "Stage", "types.zig"]},
+    {"key": "types", "values": ["types.zig", "FileType", "MemberType", "Pattern", "Stage", "StageKind"]},
+
+    {"key": "error", "values": ["LlmError", "SqliteError", "error union", "try", "catch"]},
+    {"key": "errors", "values": ["LlmError", "SqliteError", "error union", "!void"]},
+    {"key": "error handling", "values": ["LlmError", "SqliteError", "isMalformedResponse", "error union", "try", "catch"]},
+
+    {"key": "memory", "values": ["Allocator", "GeneralPurposeAllocator", "ArenaAllocator", "gpa"]},
+    {"key": "allocator", "values": ["Allocator", "GeneralPurposeAllocator", "ArenaAllocator", "std.mem.Allocator"]},
+    {"key": "allocation", "values": ["Allocator", "alloc", "free", "deinit", "GeneralPurposeAllocator"]},
+
+    {"key": "gitignore", "values": ["GitignoreFilter", "shouldIgnore", "globMatch", "loadFromFile"]},
+    {"key": "ignore", "values": ["GitignoreFilter", "shouldIgnore", "globMatch"]},
+
+    {"key": "structure", "values": ["StructureGenerator", "generate", "STRUCTURE.md", "buildTree"]},
+    {"key": "tree", "values": ["StructureGenerator", "buildTree", "TreeEntry", "directory"]},
+
+    {"key": "dependency", "values": ["findReverseDeps", "@import", "imports", "used_by"]},
+    {"key": "dependencies", "values": ["findReverseDeps", "imports", "used_by", "extractImports"]},
+    {"key": "import", "values": ["extractImports", "@import", "imports", "used_by"]},
+    {"key": "imports", "values": ["extractImports", "@import", "findReverseDeps", "imports"]},
+    {"key": "reverse deps", "values": ["findReverseDeps", "used_by", "imports"]},
+
+    {"key": "filter", "values": ["filterStages", "GitignoreFilter", "FilterMode", "relevance"]},
+    {"key": "filtering", "values": ["filterStages", "GitignoreFilter", "shouldIgnore"]},
+
+    {"key": "module", "values": ["moduleToProse", "GuidanceDoc", "meta.module", "source file"]},
+    {"key": "member", "values": ["Member", "fn_decl", "struct", "enum", "method", "MemberType"]},
+
+    {"key": "comment", "values": ["enhanceFile", "infill", "LlmClient", "docstring", "isMalformedResponse"]},
+    {"key": "docstring", "values": ["enhanceFile", "comment", "module_comment", "infill"]},
+    {"key": "documentation", "values": ["enhanceFile", "enhanceStruct", "enhanceFunction", "infill", "SKILL.md"]},
+    {"key": "enhance", "values": ["enhanceFile", "enhanceStruct", "Enhancer", "infill"]},
+
+    {"key": "plugin", "values": ["LanguagePlugin", "PluginRegistry", "ZigPlugin", "MarkdownPlugin", "register"]},
+    {"key": "plugins", "values": ["LanguagePlugin", "PluginRegistry", "register", "registeredLanguages"]},
+    {"key": "language plugin", "values": ["LanguagePlugin", "parseFile", "extractImports", "extensions"]},
+    {"key": "zig plugin", "values": ["ZigPlugin", "LanguagePlugin", "ast_parser", ".zig"]},
+    {"key": "markdown plugin", "values": ["MarkdownPlugin", "LanguagePlugin", "parseMarkdown", ".md"]},
+    {"key": "python plugin", "values": ["PythonPlugin", "guidance-py", ".py", "bin/guidance-py"]},
+
+    {"key": "provider", "values": ["EmbeddingProvider", "Provider", "createEmbeddingProvider", "OllamaEmbedding"]},
+    {"key": "embedding provider", "values": ["EmbeddingProvider", "OllamaEmbedding", "OpenAiEmbedding", "NoopEmbedding"]},
+
+    {"key": "workflow", "values": ["processFile", "SyncProcessor", "infillAllJson", "staged"]},
+    {"key": "lifecycle", "values": ["getLifecycleState", "fileNeedsProcessing", "marker", "test_passed"]},
+
+    {"key": "marker", "values": ["fileNeedsProcessing", "fileMtime", "touchTestMarker", "marker.zig"]},
+    {"key": "mtime", "values": ["fileMtime", "fileNeedsProcessing", "last_modified", "marker"]},
+
+    {"key": "cosine", "values": ["cosineSimilarity", "hybridMerge", "vectorSearch", "embedding"]},
+    {"key": "similarity", "values": ["cosineSimilarity", "hybridMerge", "vectorSearch"]},
+
+    {"key": "alias", "values": ["SemanticAliases", "expandTokens", "loadSemanticAliases", "semantic-aliases.json"]},
+    {"key": "semantic alias", "values": ["SemanticAliases", "expandTokens", "loadSemanticAliases"]},
+
+    {"key": "triage", "values": ["assessRisk", "findAffectedFiles", "getLifecycleState", "triage.zig"]},
+    {"key": "risk", "values": ["assessRisk", "High", "Medium", "Low", "destructive"]},
+
+    {"key": "args", "values": ["CommonArgs", "parseCommonArgs", "command line", "positional"]},
+    {"key": "command line", "values": ["CommonArgs", "parseCommonArgs", "positional", "flags"]},
+    {"key": "cli", "values": ["CommonArgs", "parseCommonArgs", "Command", "subcommand"]},
+
+    {"key": "file type", "values": ["FileType", "fromExtension", "source", "markdown", "config"]},
+    {"key": "extension", "values": ["fromExtension", "FileType", "extensions", ".zig", ".py"]},
+
+    {"key": "node type", "values": ["NodeType", "fn_decl", "struct", "enum", "method"]},
+    {"key": "node", "values": ["NodeType", "fn_decl", "struct", "enum", "extractExcerpt"]},
+
+    {"key": "stage", "values": ["Stage", "StageKind", "executeStaged", "formatStaged"]},
+    {"key": "synthesize", "values": ["synthesize", "stripAbsenceSentences", "LlmClient", "staged"]},
+
+    {"key": "infill", "values": ["infillJsonFile", "infillAllJson", "Enhancer", "comment"]},
+    {"key": "regenerate", "values": ["processFile", "syncDatabase", "force", "--force"]},
+
+    {"key": "vector", "values": ["cosineSimilarity", "hybridMerge", "vecToBytes", "bytesToVec", "embedding"]},
+
+    {"key": "workspace", "values": ["project_root", "workspace", "guidanceJsonPath", "abs_path"]},
+    {"key": "project", "values": ["ProjectConfig", "project_root", "workspace", "guidance-config.json"]},
+
+    {"key": "make", "values": ["Makefile", "pre-commit", "gen-status", "explain", "targets"]},
+    {"key": "build", "values": ["zig build", "Makefile", "build.zig", "pre-commit"]},
+    {"key": "generate", "values": ["SyncProcessor", "processFile", "guidance gen", "syncDatabase"]}
   ]
 }

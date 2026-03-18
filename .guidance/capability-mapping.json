@@ -1,0 +1,38 @@
+{
+  "mapping": {
+    "src/guidance/ast_parser.zig": ["ast-indexing"],
+    "src/guidance/json_store.zig": ["ast-indexing"],
+    "src/guidance/types.zig": ["ast-indexing"],
+    "bin/guidance-py": ["ast-indexing", "plugin-system"],
+    "src/guidance/plugin.zig": ["plugin-system"],
+    "src/guidance/plugin_registry.zig": ["plugin-system"],
+    "src/guidance/plugins/zig_plugin.zig": ["plugin-system"],
+    "src/guidance/plugins/markdown_plugin.zig": ["plugin-system"],
+    "src/guidance/provider_discovery.zig": ["plugin-system"],
+    "src/guidance/config.zig": ["config-system"],
+    "src/guidance/lance_db.zig": ["vector-search", "explain-query"],
+    "src/guidance/vector/root.zig": ["vector-search"],
+    "src/guidance/vector/math.zig": ["vector-search"],
+    "src/guidance/vector/embeddings.zig": ["embedding-providers"],
+    "src/guidance/staged.zig": ["explain-query"],
+    "src/guidance/synthesize.zig": ["explain-query"],
+    "src/guidance/llm_filter.zig": ["explain-query"],
+    "src/guidance/sync.zig": ["sync-pipeline"],
+    "src/guidance/marker.zig": ["sync-pipeline"],
+    "src/guidance/enhancer.zig": ["sync-pipeline"],
+    "src/guidance/hash.zig": ["sync-pipeline"],
+    "src/guidance/structure.zig": ["sync-pipeline"],
+    "src/guidance/main.zig": ["sync-pipeline", "explain-query", "config-system"],
+    "src/common/llm.zig": ["embedding-providers"],
+    "src/common/args.zig": ["config-system"]
+  },
+  "capability_keywords": {
+    "ast-indexing": ["ast", "parser", "parse", "extractImports", "node_type", "member", "ParsedFile"],
+    "plugin-system": ["plugin", "LanguagePlugin", "PluginRegistry", "provider", "extensions", "register"],
+    "config-system": ["config", "ProjectConfig", "loadConfig", "settings", "model", "provider"],
+    "embedding-providers": ["embedding", "EmbeddingProvider", "ollama", "openai", "nomic-embed-text", "vector"],
+    "vector-search": ["vector", "cosineSimilarity", "hybridMerge", "keywordSearch", "vectorSearch", "GuidanceDb"],
+    "explain-query": ["explain", "executeStaged", "searchWithAliases", "synthesize", "filterStages", "Stage"],
+    "sync-pipeline": ["sync", "SyncProcessor", "processFile", "infill", "marker", "fileNeedsProcessing"]
+  }
+}

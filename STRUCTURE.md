@@ -118,7 +118,6 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
-├── EXPLAIN_BENCHMARK.md
 ├── GUIDANCE_LANCEDB.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
@@ -129,5 +128,6 @@ Then you you must read
 ├── README.md
 ├── REFACTOR.md
 ├── requirements.txt
-└── STRUCTURE.md
+├── STRUCTURE.md
+└── TEST_EXPLAIN_PROMPT.md
 ```
