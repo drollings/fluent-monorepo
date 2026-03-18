@@ -18,6 +18,8 @@ const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const deps_mod = @import("deps.zig");
 const db_mod = @import("db.zig");
+const lance_db_mod = @import("lance_db.zig");
+const vector_mod = @import("vector/root.zig");
 const llm = @import("common");
 const enhancer_mod = @import("enhancer.zig");
 const config_mod = @import("config.zig");
@@ -957,6 +959,10 @@ const GenArgs = struct {
     skip_lint: bool = false,
     /// Skip the format phase.
     skip_fmt: bool = false,
+    /// Generate .guidance.db (LanceDB-style) in addition to .explain.db.
+    db_type_lance: bool = false,
+    /// Override the guidance.db path.
+    guidance_db_path: ?[]const u8 = null,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -1015,6 +1021,16 @@ const GenArgs = struct {
                 if (i >= args.len) return error.MissingValue;
                 ga.model = args[i];
                 ga.model_override = true;
+            } else if (std.mem.eql(u8, arg, "--db-type=lance") or std.mem.eql(u8, arg, "--lance")) {
+                ga.db_type_lance = true;
+            } else if (std.mem.startsWith(u8, arg, "--db-type=")) {
+                // "ftexplain" or "both" etc. — handled by default
+                if (std.mem.eql(u8, arg["--db-type=".len..], "lance")) ga.db_type_lance = true;
+            } else if (std.mem.eql(u8, arg, "--guidance-db")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.guidance_db_path = args[i];
+                ga.db_type_lance = true;
             }
         }
         return ga;
@@ -1146,6 +1162,47 @@ fn processFiles(
     return total;
 }
 
+/// Sync .guidance.db (LanceDB-style vector database).
+/// Creates an embedding provider from config and calls lance_db.syncDatabase.
+/// Failures are logged as warnings but do not abort the gen pipeline.
+fn syncGuidanceDb(
+    allocator: std.mem.Allocator,
+    json_dir: []const u8,
+    guidance_db_path: []const u8,
+    cfg: *const config_mod.ProjectConfig,
+    verbose: bool,
+) void {
+    const embedder = vector_mod.createEmbeddingProvider(
+        allocator,
+        cfg.embedding_provider,
+        null, // api_key — from environment, not config
+        cfg.embedding_model,
+        cfg.embedding_dims,
+    ) catch |err| {
+        std.debug.print("guidance.db: embedding provider init failed ({s}), using keyword-only\n", .{@errorName(err)});
+        var noop = allocator.create(vector_mod.NoopEmbedding) catch return;
+        noop.* = .{ .allocator = allocator };
+        const p = noop.provider();
+        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p) catch |se| {
+            std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(se)});
+        };
+        p.deinit();
+        return;
+    };
+    defer embedder.deinit();
+
+    if (verbose) {
+        std.debug.print("gen: syncing guidance.db to {s} (embedder={s})\n", .{ guidance_db_path, embedder.getName() });
+    }
+
+    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder) catch |err| {
+        std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(err)});
+        return;
+    };
+
+    if (verbose) std.debug.print("gen: guidance.db written to {s}\n", .{guidance_db_path});
+}
+
 fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const ga = GenArgs.parse(args) catch |err| {
         std.debug.print("error: gen flag missing value ({s})\n", .{@errorName(err)});
@@ -1236,6 +1293,11 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
         if (ga.compile_db) {
             try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
+            if (ga.db_type_lance or cfg.enable_guidance_db) {
+                const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
+                defer allocator.free(gdb_path);
+                syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
+            }
         }
         return;
     }
@@ -1281,6 +1343,11 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         if (ga.compile_db) {
             try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
             if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
+            if (ga.db_type_lance or cfg.enable_guidance_db) {
+                const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
+                defer allocator.free(gdb_path);
+                syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
+            }
         }
         return;
     }
@@ -1415,6 +1482,11 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     if (ga.compile_db) {
         try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
         if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
+        if (ga.db_type_lance or cfg.enable_guidance_db) {
+            const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
+            defer allocator.free(gdb_path);
+            syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
+        }
     }
 }
 
@@ -1817,6 +1889,10 @@ const ExplainArgs = struct {
     staged: bool = true,
     /// LLM relevance filtering mode.
     filter: FilterMode = .auto,
+    /// Use LanceDB-style vector/hybrid search (.guidance.db).
+    db_type_lance: bool = false,
+    /// Override the guidance.db path for explain.
+    guidance_db_path: ?[]const u8 = null,
 };
 
 /// Return true when the query has 4 or fewer whitespace-separated words.
@@ -2145,6 +2221,18 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
             ea.staged = true;
         } else if (std.mem.startsWith(u8, arg, "--filter=")) {
             ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
+        } else if (std.mem.eql(u8, arg, "--db-type=lance") or std.mem.eql(u8, arg, "--lance")) {
+            ea.db_type_lance = true;
+        } else if (std.mem.startsWith(u8, arg, "--db-type=")) {
+            if (std.mem.eql(u8, arg["--db-type=".len..], "lance")) ea.db_type_lance = true;
+        } else if (std.mem.eql(u8, arg, "--guidance-db")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --guidance-db requires a value\n", .{});
+                return;
+            }
+            ea.guidance_db_path = args[i];
+            ea.db_type_lance = true;
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             ea.query_str = arg;
         }
@@ -2170,6 +2258,82 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const guidance_dir = try resolveAbsOrJoin(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(guidance_dir);
+
+    // ── LanceDB path (--db-type=lance) ───────────────────────────────────────
+    if (ea.db_type_lance) {
+        const cfg = config_mod.loadConfig(allocator, workspace) catch
+            try config_mod.loadConfig(allocator, cwd);
+        defer @constCast(&cfg).deinit();
+
+        const gdb_path = try resolveAbsOrJoin(
+            allocator,
+            workspace,
+            ea.guidance_db_path orelse cfg.guidance_db_path,
+        );
+        defer allocator.free(gdb_path);
+
+        std.fs.accessAbsolute(gdb_path, .{}) catch {
+            std.debug.print("Error: No .guidance.db found at {s}\n", .{gdb_path});
+            std.debug.print("Run 'guidance gen --db-type=lance' to generate it.\n", .{});
+            return;
+        };
+
+        const embedder = vector_mod.createEmbeddingProvider(
+            allocator,
+            cfg.embedding_provider,
+            null,
+            cfg.embedding_model,
+            cfg.embedding_dims,
+        ) catch blk: {
+            var noop = try allocator.create(vector_mod.NoopEmbedding);
+            noop.* = .{ .allocator = allocator };
+            break :blk noop.provider();
+        };
+        defer embedder.deinit();
+
+        var gdb = lance_db_mod.GuidanceDb.init(allocator, gdb_path, embedder) catch |err| {
+            std.debug.print("Error opening guidance.db: {s}\n", .{@errorName(err)});
+            return;
+        };
+        defer gdb.deinit();
+
+        const lance_results = gdb.search(allocator, query_text, ea.limit) catch |err| {
+            std.debug.print("guidance.db search failed: {s}\n", .{@errorName(err)});
+            return;
+        };
+        defer {
+            for (lance_results) |r| lance_db_mod.GuidanceDb.freeSearchResult(allocator, r);
+            allocator.free(lance_results);
+        }
+
+        // Convert to ExplainDb.SearchResult (identical layout) for shared printers
+        const fts_results = try allocator.alloc(db_mod.ExplainDb.SearchResult, lance_results.len);
+        defer allocator.free(fts_results);
+        for (lance_results, 0..) |r, idx| {
+            fts_results[idx] = .{
+                .file_path = r.file_path,
+                .source = r.source,
+                .module = r.module,
+                .node_type = r.node_type,
+                .name = r.name,
+                .signature = r.signature,
+                .comment = r.comment,
+                .line = r.line,
+                .used_by = r.used_by,
+                .language = r.language,
+                .score = r.score,
+            };
+        }
+        // Note: fts_results borrows fields from lance_results; do not double-free.
+
+        if (fts_results.len == 0) {
+            std.debug.print("# Explain: {s}\n\nNo results in guidance.db for '{s}'.\n", .{ query_text, query_text });
+            return;
+        }
+
+        try printQueryText(query_text, fts_results);
+        return;
+    }
 
     // ── Validate DB ───────────────────────────────────────────────────────────
     std.fs.accessAbsolute(db_path, .{}) catch {

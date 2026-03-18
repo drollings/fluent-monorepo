@@ -30,5 +30,12 @@
     ".zig": ["zig", "fmt", "{file}"],
     ".py": ["ruff", "format", "{file}"]
   },
+
+  "enable_guidance_db": true,
+  "guidance_db_path": ".guidance.db",
+  "embedding_provider": "ollama",
+  "embedding_model": "embed",
+  "embedding_dims": 768,
+
   "comment": "guidance: produces .explain.db SQLite FTS5 index and .guidance/ JSON mirror for NullClaw."
 }

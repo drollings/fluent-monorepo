@@ -17,7 +17,11 @@ const builtin = @import("builtin");
 pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
+pub const DEFAULT_GUIDANCE_DB_PATH = ".guidance.db";
 pub const DEFAULT_MODEL = "local:code:latest";
+pub const DEFAULT_EMBEDDING_PROVIDER = "ollama";
+pub const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
+pub const DEFAULT_EMBEDDING_DIMS: u32 = 768;
 pub const DEFAULT_FAST_MODEL = "";
 pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
@@ -74,8 +78,23 @@ pub const ProjectConfig = struct {
     /// Absolute path to the inbox directory ({guidance_root}/.doc/inbox).
     inbox_dir: []const u8,
 
-    /// Relative path to the database file from workspace root.
+    /// Relative path to the FTS5 database file from workspace root.
     db_path: []const u8,
+
+    /// Relative path to the LanceDB-style vector database.
+    guidance_db_path: []const u8,
+
+    /// Whether to generate .guidance.db in addition to .explain.db.
+    enable_guidance_db: bool,
+
+    /// Embedding provider name: "ollama", "openai", "none", "custom:<url>".
+    embedding_provider: []const u8,
+
+    /// Embedding model name (provider-specific).
+    embedding_model: []const u8,
+
+    /// Embedding vector dimensions (0 = use provider default).
+    embedding_dims: u32,
 
     /// Source directories to search, relative to the project root.
     src_dirs: []const []const u8,
@@ -111,6 +130,9 @@ pub const ProjectConfig = struct {
         self.allocator.free(self.skills_dir);
         self.allocator.free(self.inbox_dir);
         self.allocator.free(self.db_path);
+        self.allocator.free(self.guidance_db_path);
+        self.allocator.free(self.embedding_provider);
+        self.allocator.free(self.embedding_model);
         for (self.src_dirs) |d| self.allocator.free(d);
         self.allocator.free(self.src_dirs);
         for (self.providers) |p| {
@@ -574,11 +596,49 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         }
     }
 
+    // Embedding / guidance.db config
+    const guidance_db_path_rel: []const u8 = if (root.object.get("guidance_db_path")) |gp|
+        if (gp == .string) gp.string else DEFAULT_GUIDANCE_DB_PATH
+    else
+        DEFAULT_GUIDANCE_DB_PATH;
+
+    const enable_guidance_db: bool = if (root.object.get("enable_guidance_db")) |egp|
+        if (egp == .bool) egp.bool else false
+    else
+        false;
+
+    const embedding_provider: []const u8 = blk: {
+        if (root.object.get("embedding_provider")) |ep|
+            if (ep == .string) break :blk ep.string;
+        break :blk DEFAULT_EMBEDDING_PROVIDER;
+    };
+
+    const embedding_model: []const u8 = blk: {
+        if (root.object.get("embedding_model")) |em|
+            if (em == .string) break :blk em.string;
+        break :blk DEFAULT_EMBEDDING_MODEL;
+    };
+
+    const embedding_dims: u32 = blk: {
+        if (root.object.get("embedding_dims")) |ed| {
+            switch (ed) {
+                .integer => |n| break :blk if (n > 0) @intCast(n) else DEFAULT_EMBEDDING_DIMS,
+                else => {},
+            }
+        }
+        break :blk DEFAULT_EMBEDDING_DIMS;
+    };
+
     return buildFromParts(
         allocator,
         cwd,
         guidance_dir_rel,
         db_path_rel,
+        guidance_db_path_rel,
+        enable_guidance_db,
+        try allocator.dupe(u8, embedding_provider),
+        try allocator.dupe(u8, embedding_model),
+        embedding_dims,
         try src_dirs.toOwnedSlice(allocator),
         try providers.toOwnedSlice(allocator),
         try allocator.dupe(u8, model_default),
@@ -617,6 +677,11 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         cwd,
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
+        DEFAULT_GUIDANCE_DB_PATH,
+        false,
+        try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
+        try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
+        DEFAULT_EMBEDDING_DIMS,
         src_dirs,
         providers,
         try allocator.dupe(u8, DEFAULT_MODEL),
@@ -633,6 +698,11 @@ fn buildFromParts(
     cwd: []const u8,
     guidance_dir_rel: []const u8,
     db_path_rel: []const u8,
+    guidance_db_path_rel: []const u8,
+    enable_guidance_db: bool,
+    embedding_provider: []const u8,
+    embedding_model: []const u8,
+    embedding_dims: u32,
     src_dirs: []const []const u8,
     providers: []const Provider,
     model_default: []const u8,
@@ -663,6 +733,9 @@ fn buildFromParts(
     const db_path = try allocator.dupe(u8, db_path_rel);
     errdefer allocator.free(db_path);
 
+    const guidance_db_path = try allocator.dupe(u8, guidance_db_path_rel);
+    errdefer allocator.free(guidance_db_path);
+
     return .{
         .allocator = allocator,
         .guidance_dir = guidance_dir,
@@ -671,6 +744,11 @@ fn buildFromParts(
         .skills_dir = skills_dir,
         .inbox_dir = inbox_dir,
         .db_path = db_path,
+        .guidance_db_path = guidance_db_path,
+        .enable_guidance_db = enable_guidance_db,
+        .embedding_provider = embedding_provider,
+        .embedding_model = embedding_model,
+        .embedding_dims = embedding_dims,
         .src_dirs = src_dirs,
         .providers = providers,
         .model_default = model_default,

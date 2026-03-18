@@ -67,10 +67,42 @@ pub fn build(b: *std.Build) void {
     tests_module.linkLibC();
     tests_module.linkSystemLibrary("sqlite3");
 
+    const lance_db_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/lance_db.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    lance_db_tests.linkLibC();
+    lance_db_tests.linkSystemLibrary("sqlite3");
+
+    const vector_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/vector/embeddings.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const vector_math_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/vector/math.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     const run_main_tests = b.addRunArtifact(explain_tests);
     const run_tests_module = b.addRunArtifact(tests_module);
+    const run_lance_db_tests = b.addRunArtifact(lance_db_tests);
+    const run_vector_tests = b.addRunArtifact(vector_tests);
+    const run_vector_math_tests = b.addRunArtifact(vector_math_tests);
 
     const test_step = b.step("test", "Run guidance unit tests");
     test_step.dependOn(&run_main_tests.step);
     test_step.dependOn(&run_tests_module.step);
+    test_step.dependOn(&run_lance_db_tests.step);
+    test_step.dependOn(&run_vector_tests.step);
+    test_step.dependOn(&run_vector_math_tests.step);
 }

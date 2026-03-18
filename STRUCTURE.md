@@ -1,4 +1,4 @@
-# Guidance Project Structure
+# AST-Guidance Project Structure
 
 A fast, lightweight code navigation and orchestration framework friendly to
 human and human-in-the-loop LLM agentic software engineering.  It is based
@@ -67,6 +67,10 @@ Then you you must read
 │       ├── plugins
 │       │   ├── markdown_plugin.zig
 │       │   └── zig_plugin.zig
+│       ├── vector
+│       │   ├── embeddings.zig                    # [gof-patterns]
+│       │   ├── math.zig
+│       │   └── root.zig
 │       ├── ast_parser.zig
 │       ├── config.zig
 │       ├── db.zig
@@ -75,6 +79,7 @@ Then you you must read
 │       ├── gitignore.zig
 │       ├── hash.zig
 │       ├── json_store.zig
+│       ├── lance_db.zig
 │       ├── llm_filter.zig
 │       ├── main.zig                                # [gof-patterns]
 │       ├── marker.zig
@@ -99,6 +104,7 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
+├── GUIDANCE_LANCEDB.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
