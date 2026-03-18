@@ -15,7 +15,7 @@
   },
   "models": {
     "default": "local:code:latest",
-    "fast": "local:code:latest",
+    "fast": "local:fast:latest",
     "thinking": "local:code:latest"
   },
   "test_commands": {
