@@ -16,10 +16,10 @@ const std = @import("std");
 const llm = @import("common");
 
 /// Default max_tokens for non-thinking models.
-const DEFAULT_MAX_TOKENS: usize = 2000;
+const DEFAULT_MAX_TOKENS: usize = 1200;
 
 /// Max_tokens for thinking models (generous for local models).
-const THINKING_MAX_TOKENS: usize = 8000;
+const THINKING_MAX_TOKENS: usize = 4800;
 
 /// Result returned by each enhancement call.
 pub const EnrichmentResult = struct {

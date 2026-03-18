@@ -70,25 +70,28 @@ pub fn synthesize(
 
     if (combined.items.len == 0) return .{ .summary = null, .followup_keywords = null };
 
-    // Build prompt with keyword context for LLM to suggest follow-ups
+    // Build prompt for detailed synthesis (under 1000 words)
     const prompt = try std.fmt.allocPrint(
         allocator,
-        "You are a code navigation assistant. Be precise and concise.\n" ++
-            "Synthesize a clear answer to the query \"{s}\" from these explanations.\n" ++
-            "Focus only on information directly relevant to the query.\n" ++
-            "Omit unrelated details. Use only facts from EXPLANATIONS.\n" ++
-            "STRICT RULE: Never write sentences about absence.\n\n" ++
-            "AVAILABLE KEYWORDS in codebase: {s}\n" ++
+        "You are a code navigation assistant providing comprehensive technical summaries.\n" ++
+            "Answer the query \"{s}\" using the explanations below.\n\n" ++
+            "Guidelines:\n" ++
+            "- Be thorough and technically precise\n" ++
+            "- Describe key abstractions, data structures, and their relationships\n" ++
+            "- Explain how components interact and flow\n" ++
+            "- Include concrete details: function names, types, patterns\n" ++
+            "- Use only facts from EXPLANATIONS\n" ++
+            "- Never mention absence or say 'no information found'\n\n" ++
+            "AVAILABLE KEYWORDS: {s}\n" ++
             "SOURCE FILES: {s}\n\n" ++
             "EXPLANATIONS:\n{s}\n\n" ++
-            "Provide your answer in 2-4 sentences. Return only the answer.\n" ++
-            "After your answer, on a new line, suggest 2-4 RELATED KEYWORDS from AVAILABLE KEYWORDS that would help explore further.\n" ++
-            "Format: KEYWORDS: keyword1, keyword2, keyword3",
+            "Write a detailed summary (under 1000 words). After your summary, suggest 3-5 related keywords.\n" ++
+            "Format the last line as: KEYWORDS: keyword1, keyword2, keyword3",
         .{ query, keywords_buf.items, sources_buf.items, combined.items },
     );
     defer allocator.free(prompt);
 
-    const raw_opt = client.complete(prompt, 400, 0.1, null) catch return .{ .summary = null, .followup_keywords = null };
+    const raw_opt = client.complete(prompt, 1000, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
     const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
     defer allocator.free(raw);
 

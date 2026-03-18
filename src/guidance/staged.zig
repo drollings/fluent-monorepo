@@ -105,30 +105,81 @@ pub fn executeStagedWithAliases(
         });
     }
 
-    // ── Code stages: source excerpts for top 3 unique source files ────────────
-    var seen_code_files: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_code_files.deinit(allocator);
-
-    for (results) |r| {
-        if (seen_code_files.count() >= 3) break;
-        if (r.source.len == 0) continue;
-        if (seen_code_files.contains(r.source)) continue;
-        const line = r.line orelse continue;
-
-        try seen_code_files.put(allocator, r.source, {});
-
-        const excerpt = extractSourceExcerpt(allocator, workspace, r.source, line, r.node_type) catch continue;
-        if (excerpt.len == 0) {
-            allocator.free(excerpt);
-            continue;
+    // ── Check for exact name match (single-keyword query) ──────────────────────
+    // If query is a single keyword and matches a result name exactly,
+    // show only that code snippet (not multiple files).
+    const is_single_keyword = blk: {
+        var tok = std.mem.tokenizeAny(u8, query, " \t\n\r");
+        var count: usize = 0;
+        while (tok.next()) |_| {
+            count += 1;
+            if (count > 1) break :blk false;
         }
+        break :blk count == 1;
+    };
 
-        try stages.append(allocator, .{
-            .kind = .code,
-            .content = excerpt,
-            .source = try allocator.dupe(u8, r.source),
-            .line = line,
-        });
+    var exact_match_source: ?[]const u8 = null;
+    var exact_match_line: ?u32 = null;
+    var exact_match_node_type: ?[]const u8 = null;
+
+    if (is_single_keyword) {
+        const query_lower = std.ascii.allocLowerString(allocator, query) catch null;
+        defer if (query_lower) |ql| allocator.free(ql);
+
+        if (query_lower) |ql| {
+            for (results) |r| {
+                const name_lower = std.ascii.allocLowerString(allocator, r.name) catch continue;
+                defer allocator.free(name_lower);
+                if (std.mem.eql(u8, ql, name_lower)) {
+                    exact_match_source = r.source;
+                    exact_match_line = r.line;
+                    exact_match_node_type = r.node_type;
+                    break;
+                }
+            }
+        }
+    }
+
+    // ── Code stages: source excerpts ──────────────────────────────────────────
+    if (exact_match_source) |src| {
+        // Exact match: show only this code snippet
+        const line = exact_match_line orelse 1;
+        const node_type = exact_match_node_type orelse "fn_decl";
+        const excerpt = extractSourceExcerpt(allocator, workspace, src, line, node_type) catch &.{};
+        if (excerpt.len > 0) {
+            try stages.append(allocator, .{
+                .kind = .code,
+                .content = excerpt,
+                .source = try allocator.dupe(u8, src),
+                .line = line,
+            });
+        }
+    } else {
+        // No exact match: show top 3 unique source files
+        var seen_code_files: std.StringHashMapUnmanaged(void) = .{};
+        defer seen_code_files.deinit(allocator);
+
+        for (results) |r| {
+            if (seen_code_files.count() >= 3) break;
+            if (r.source.len == 0) continue;
+            if (seen_code_files.contains(r.source)) continue;
+            const line = r.line orelse continue;
+
+            try seen_code_files.put(allocator, r.source, {});
+
+            const excerpt = extractSourceExcerpt(allocator, workspace, r.source, line, r.node_type) catch continue;
+            if (excerpt.len == 0) {
+                allocator.free(excerpt);
+                continue;
+            }
+
+            try stages.append(allocator, .{
+                .kind = .code,
+                .content = excerpt,
+                .source = try allocator.dupe(u8, r.source),
+                .line = line,
+            });
+        }
     }
 
     // ── Metadata stages: guidance JSON keywords / see_also / skills ───────────
