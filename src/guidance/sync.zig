@@ -87,12 +87,10 @@ pub const SyncProcessor = struct {
             self.allocator.free(source_members);
         }
 
-        // Without --regen, strip AST comments from source so they don't get
-        // copied to JSON. This ensures comment presence/absence in JSON
-        // (with unchanged signature) determines whether infill is needed.
-        if (!self.regen_comments) {
-            self.stripComments(source_members);
-        }
+        // Note: We do NOT strip AST comments here. Source doc comments (///...)
+        // should be captured into JSON. mergeMembers handles comment preservation:
+        // - If signature hash unchanged: keep existing JSON comment (or use source)
+        // - If signature hash changed: use source comment if present, else mark stale
 
         const rel_path = if (std.mem.indexOf(u8, filepath, self.project_root)) |idx|
             filepath[idx + self.project_root.len + 1 ..]
@@ -124,15 +122,16 @@ pub const SyncProcessor = struct {
         }
 
         // --- AI Enhancement: member-level comments ---
-        // --infill-comments: generate only for members with no comment.
-        // --regen-comments:  generate for all members; score AI vs existing and keep the better one.
+        // Only infill comments for key locations: structs, enums, unions, and
+        // stand-alone functions. Skip methods (inherit context from parent struct).
         if (self.enhancer) |*enh| {
             if ((self.infill_comments or self.regen_comments) and enh.available()) {
                 for (merge_result.members) |*m| {
                     const sig = m.signature orelse m.name;
 
                     switch (m.type) {
-                        .fn_decl, .fn_private, .method, .method_private => {
+                        // Stand-alone functions only (not methods)
+                        .fn_decl, .fn_private => {
                             // infill_comments: skip if comment already present.
                             if (self.infill_comments) {
                                 if (m.comment) |c| if (c.len > 0) continue;
@@ -191,12 +190,13 @@ pub const SyncProcessor = struct {
         }
 
         // --- Module comment ---
-        // Without --regen, ignore AST module doc (//! comments) so they don't get
-        // copied to JSON. Comment presence/absence in JSON determines infill need.
-        const raw_module_doc = if (self.regen_comments) try parser.extractModuleDoc() else null;
+        // Extract module doc (//! comments) from source. These should be captured
+        // into JSON. If existing JSON has a comment, preserve it unless --regen.
+        const raw_module_doc = try parser.extractModuleDoc();
         defer if (raw_module_doc) |d| self.allocator.free(d);
 
         var module_comment: ?[]const u8 = blk: {
+            // Use source module doc if present
             if (raw_module_doc) |d| {
                 break :blk try self.allocator.dupe(u8, d);
             }
@@ -508,8 +508,10 @@ pub const SyncProcessor = struct {
 
     /// Prepend a `[skill1, skill2] ` prefix to the module comment using the
     /// deterministically-computed skills slice.  Any existing `[...]` prefix is
-    /// stripped first so re-runs remain idempotent.  Returns a newly allocated
-    /// string (or null when both inputs are absent).
+    /// stripped first so re-run s remain idempotent.
+    ///
+    /// Returns null when there's no actual comment content (skill tags alone
+    /// are NOT a valid comment - they should only annotate real descriptions).
     fn buildCommentWithSkills(
         self: *SyncProcessor,
         comment: ?[]const u8,
@@ -526,8 +528,12 @@ pub const SyncProcessor = struct {
             break :blk c;
         };
 
+        // No actual comment content - return null to signal infill is needed.
+        // Skill tags alone are NOT a valid comment; they annotate real descriptions.
+        if (bare.len == 0) return null;
+
+        // If no skills to prepend, return the bare comment as-is.
         if (skills.len == 0) {
-            if (bare.len == 0) return null;
             return try self.allocator.dupe(u8, bare);
         }
 
@@ -559,11 +565,8 @@ pub const SyncProcessor = struct {
             try w.writeAll(name);
         }
         try w.writeByte(']');
-
-        if (bare.len > 0) {
-            try w.writeByte(' ');
-            try w.writeAll(bare);
-        }
+        try w.writeByte(' ');
+        try w.writeAll(bare);
 
         return try buf.toOwnedSlice(self.allocator);
     }
@@ -655,16 +658,26 @@ pub const SyncProcessor = struct {
         }
 
         // --- Member-level comments ---
-        // loadGuidance returns []const Member; cast to mutable for comment updates.
+        // Only infill comments for key locations: structs, enums, unions, and
+        // stand-alone functions. Skip methods (inherit context from parent struct),
+        // tests, fields, constants, etc.
         const mutable_members: []types.Member = @constCast(doc.members);
         for (mutable_members) |*m| {
             const member_needs = self.regen_comments or
                 (self.infill_comments and (m.comment == null or m.comment.?.len == 0));
             if (!member_needs) continue;
 
+            // Only generate comments for key locations
+            const is_key_location = switch (m.type) {
+                .@"struct", .@"enum", .@"union" => true,
+                .fn_decl, .fn_private => true, // Stand-alone functions
+                else => false,
+            };
+            if (!is_key_location) continue;
+
             const sig = m.signature orelse m.name;
             switch (m.type) {
-                .fn_decl, .fn_private, .method, .method_private => {
+                .fn_decl, .fn_private => {
                     if (self.enhancer.?.enhanceFunction(m.name, sig, m.comment, doc.meta.source)) |er| {
                         defer er.deinit(self.allocator);
                         if (er.comment) |new_doc| {

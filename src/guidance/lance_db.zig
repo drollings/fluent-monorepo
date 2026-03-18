@@ -843,10 +843,17 @@ pub const GuidanceDb = struct {
     fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
         const name = doc.module_comment orelse doc.module;
 
+        // Build embedding text - modules are high-value search targets, always compute
         const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", doc.module_comment, null, null);
         defer allocator.free(emb_text);
 
-        const emb = try self.getOrComputeEmbedding(allocator, emb_text);
+        // Only generate embedding for modules with actual content (not just name)
+        // Module embeddings are valuable for "what does X do?" queries
+        const has_semantic_content = doc.module_comment != null and doc.module_comment.?.len > 0;
+        const emb: ?[]f32 = if (has_semantic_content)
+            try self.getOrComputeEmbedding(allocator, emb_text)
+        else
+            null;
         defer if (emb) |e| allocator.free(e);
 
         const emb_bytes: ?[]u8 = if (emb) |e| try vector.vecToBytes(allocator, e) else null;
@@ -898,10 +905,27 @@ pub const GuidanceDb = struct {
     }
 
     fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
-        const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, m.comment, m.signature, doc.module_comment);
-        defer allocator.free(emb_text);
+        // Skip embeddings for test declarations - they add noise without semantic value
+        const is_test = std.mem.eql(u8, m.node_type, "test_decl");
 
-        const emb = try self.getOrComputeEmbedding(allocator, emb_text);
+        // Only embed nodes with semantic content:
+        // - Has a comment (primary signal for "what does this do?")
+        // - Is a top-level struct/function (high-value navigation targets)
+        // Module comment provides context for members without their own comment
+        const has_comment = m.comment != null and m.comment.?.len > 0;
+        const has_module_context = doc.module_comment != null and doc.module_comment.?.len > 0;
+        const is_top_level = std.mem.eql(u8, m.node_type, "struct") or
+            std.mem.eql(u8, m.node_type, "enum") or
+            std.mem.eql(u8, m.node_type, "fn_decl");
+
+        // Skip embedding for: tests, members without comments, nested members without module context
+        const should_embed = !is_test and (has_comment or (is_top_level and has_module_context));
+
+        const emb: ?[]f32 = if (should_embed) blk: {
+            const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, m.comment, m.signature, doc.module_comment);
+            defer allocator.free(emb_text);
+            break :blk try self.getOrComputeEmbedding(allocator, emb_text);
+        } else null;
         defer if (emb) |e| allocator.free(e);
 
         const emb_bytes: ?[]u8 = if (emb) |e| try vector.vecToBytes(allocator, e) else null;
@@ -1003,7 +1027,11 @@ pub const GuidanceDb = struct {
             while (it.next()) |tok| try tokens.append(allocator, tok);
 
             const expanded = try ali.expandTokens(allocator, tokens.items);
-            defer allocator.free(expanded);
+            // Free each expanded token string, then the slice
+            defer {
+                for (expanded) |tok| allocator.free(tok);
+                allocator.free(expanded);
+            }
 
             var expanded_query: std.ArrayList(u8) = .empty;
             defer expanded_query.deinit(allocator);

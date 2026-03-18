@@ -75,16 +75,16 @@ Then you you must read
 ├── src
 │   ├── common
 │   │   ├── args.zig
-│   │   ├── io.zig                                # [gof-patterns]
+│   │   ├── io.zig
 │   │   ├── llm.zig
 │   │   └── source.zig
 │   └── guidance
 │       ├── plugins
-│       │   ├── markdown_plugin.zig
-│       │   └── zig_plugin.zig
+│       │   ├── markdown_plugin.zig               # MarkdownPlugin — extracts sections and metadata from Markdown files.
+│       │   └── zig_plugin.zig                    # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │       ├── vector
-│       │   ├── embeddings.zig                    # [gof-patterns]
-│       │   ├── math.zig
+│       │   ├── embeddings.zig                    # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
+│       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
 │       │   └── root.zig
 │       ├── ast_parser.zig
 │       ├── config.zig
@@ -93,20 +93,20 @@ Then you you must read
 │       ├── gitignore.zig
 │       ├── hash.zig
 │       ├── json_store.zig
-│       ├── lance_db.zig
-│       ├── llm_filter.zig
-│       ├── main.zig                                # [gof-patterns]
-│       ├── marker.zig
-│       ├── pattern.zig                             # [gof-patterns]
-│       ├── plugin.zig
-│       ├── plugin_registry.zig
-│       ├── provider_discovery.zig
+│       ├── lance_db.zig                            # guidance LanceDB-style vector search database.
+│       ├── llm_filter.zig                          # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
+│       ├── main.zig                                # [gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
+│       ├── marker.zig                              # Mtime-based change detection for guidance's incremental RALPH loop.
+│       ├── pattern.zig
+│       ├── plugin.zig                              # LanguagePlugin — interface for language-specific AST providers.
+│       ├── plugin_registry.zig                     # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
+│       ├── provider_discovery.zig                  # External language provider discovery for guidance.
 │       ├── query.zig
-│       ├── staged.zig
+│       ├── staged.zig                              # staged.zig — Staged explain pipeline for `guidance explain`.
 │       ├── structure.zig
 │       ├── sync.zig
-│       ├── synthesize.zig
-│       ├── tests.zig                               # [gof-patterns]
+│       ├── synthesize.zig                          # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
+│       ├── tests.zig
 │       ├── triage.zig
 │       ├── types.zig
 │       └── utils.zig
