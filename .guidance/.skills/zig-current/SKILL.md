@@ -1,3 +1,8 @@
+---
+name: zig-current
+description: Documentation of Zig 0.15.x APIs and coding patterns
+---
+
 # Zig 0.15.x Agent Skill
 
 ## ArrayList/HashMap (Unmanaged by Default)

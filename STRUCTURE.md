@@ -38,6 +38,23 @@ Then you you must read
 ├── bin
 │   └── guidance-py
 ├── doc
+│   ├── capabilities
+│   │   ├── ast-indexing
+│   │   │   └── CAPABILITY.md
+│   │   ├── config-system
+│   │   │   └── CAPABILITY.md
+│   │   ├── embedding-providers
+│   │   │   └── CAPABILITY.md
+│   │   ├── explain-query
+│   │   │   └── CAPABILITY.md
+│   │   ├── fts5-search
+│   │   │   └── CAPABILITY.md
+│   │   ├── plugin-system
+│   │   │   └── CAPABILITY.md
+│   │   ├── sync-pipeline
+│   │   │   └── CAPABILITY.md
+│   │   └── vector-search
+│   │       └── CAPABILITY.md
 │   └── DESIGN.md
 ├── env
 │   ├── mise
@@ -104,6 +121,7 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
+├── EXPLAIN_BENCHMARK.md
 ├── GUIDANCE_LANCEDB.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement

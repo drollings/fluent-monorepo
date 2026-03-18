@@ -16,7 +16,7 @@
 *.log
 
 doc/Legacy
-.explain.db
+.guidance.db
 
 # guidance test_passed marker (auto-generated)
 .guidance/.marks/

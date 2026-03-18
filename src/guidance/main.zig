@@ -1024,7 +1024,6 @@ const GenArgs = struct {
             } else if (std.mem.eql(u8, arg, "--db-type=lance") or std.mem.eql(u8, arg, "--lance")) {
                 ga.db_type_lance = true;
             } else if (std.mem.startsWith(u8, arg, "--db-type=")) {
-                // "ftexplain" or "both" etc. — handled by default
                 if (std.mem.eql(u8, arg["--db-type=".len..], "lance")) ga.db_type_lance = true;
             } else if (std.mem.eql(u8, arg, "--guidance-db")) {
                 i += 1;
@@ -1032,6 +1031,13 @@ const GenArgs = struct {
                 ga.guidance_db_path = args[i];
                 ga.db_type_lance = true;
             }
+        }
+        // When --db-type=lance and -o/--db was given without --guidance-db,
+        // treat -o as the guidance.db path (the natural user expectation) and
+        // reset db_path so the FTS5 explain.db uses its default location.
+        if (ga.db_type_lance and ga.db_path != null and ga.guidance_db_path == null) {
+            ga.guidance_db_path = ga.db_path;
+            ga.db_path = null;
         }
         return ga;
     }
@@ -1183,7 +1189,7 @@ fn syncGuidanceDb(
         var noop = allocator.create(vector_mod.NoopEmbedding) catch return;
         noop.* = .{ .allocator = allocator };
         const p = noop.provider();
-        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p) catch |se| {
+        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null) catch |se| {
             std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(se)});
         };
         p.deinit();
@@ -1195,7 +1201,21 @@ fn syncGuidanceDb(
         std.debug.print("gen: syncing guidance.db to {s} (embedder={s})\n", .{ guidance_db_path, embedder.getName() });
     }
 
-    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder) catch |err| {
+    // Resolve capabilities_dir relative to workspace (not json_dir)
+    // We derive workspace from json_dir by stripping /.guidance suffix.
+    const cap_dir_abs = blk: {
+        const workspace = std.fs.path.dirname(json_dir) orelse json_dir;
+        const abs = std.fs.path.join(allocator, &.{ workspace, cfg.capabilities_dir }) catch break :blk null;
+        // Check it exists before passing it through
+        std.fs.accessAbsolute(abs, .{}) catch {
+            allocator.free(abs);
+            break :blk null;
+        };
+        break :blk abs;
+    };
+    defer if (cap_dir_abs) |p| allocator.free(p);
+
+    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs) catch |err| {
         std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(err)});
         return;
     };

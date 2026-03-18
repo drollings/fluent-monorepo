@@ -18,6 +18,7 @@ pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
 pub const DEFAULT_GUIDANCE_DB_PATH = ".guidance.db";
+pub const DEFAULT_CAPABILITIES_DIR = "doc/capabilities";
 pub const DEFAULT_MODEL = "local:code:latest";
 pub const DEFAULT_EMBEDDING_PROVIDER = "ollama";
 pub const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
@@ -96,6 +97,11 @@ pub const ProjectConfig = struct {
     /// Embedding vector dimensions (0 = use provider default).
     embedding_dims: u32,
 
+    /// Path to the capabilities tree (e.g. "doc/capabilities").
+    /// Each subdirectory may contain a CAPABILITY.md file that is indexed
+    /// into the LanceDB capabilities table for semantic search.
+    capabilities_dir: []const u8,
+
     /// Source directories to search, relative to the project root.
     src_dirs: []const []const u8,
 
@@ -131,6 +137,7 @@ pub const ProjectConfig = struct {
         self.allocator.free(self.inbox_dir);
         self.allocator.free(self.db_path);
         self.allocator.free(self.guidance_db_path);
+        self.allocator.free(self.capabilities_dir);
         self.allocator.free(self.embedding_provider);
         self.allocator.free(self.embedding_model);
         for (self.src_dirs) |d| self.allocator.free(d);
@@ -596,6 +603,12 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         }
     }
 
+    // Capabilities dir
+    const capabilities_dir_rel: []const u8 = if (root.object.get("capabilities_dir")) |cd|
+        if (cd == .string) cd.string else DEFAULT_CAPABILITIES_DIR
+    else
+        DEFAULT_CAPABILITIES_DIR;
+
     // Embedding / guidance.db config
     const guidance_db_path_rel: []const u8 = if (root.object.get("guidance_db_path")) |gp|
         if (gp == .string) gp.string else DEFAULT_GUIDANCE_DB_PATH
@@ -636,6 +649,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         db_path_rel,
         guidance_db_path_rel,
         enable_guidance_db,
+        try allocator.dupe(u8, capabilities_dir_rel),
         try allocator.dupe(u8, embedding_provider),
         try allocator.dupe(u8, embedding_model),
         embedding_dims,
@@ -679,6 +693,7 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         DEFAULT_DB_PATH,
         DEFAULT_GUIDANCE_DB_PATH,
         false,
+        try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
         DEFAULT_EMBEDDING_DIMS,
@@ -700,6 +715,7 @@ fn buildFromParts(
     db_path_rel: []const u8,
     guidance_db_path_rel: []const u8,
     enable_guidance_db: bool,
+    capabilities_dir: []const u8,
     embedding_provider: []const u8,
     embedding_model: []const u8,
     embedding_dims: u32,
@@ -746,6 +762,7 @@ fn buildFromParts(
         .db_path = db_path,
         .guidance_db_path = guidance_db_path,
         .enable_guidance_db = enable_guidance_db,
+        .capabilities_dir = capabilities_dir,
         .embedding_provider = embedding_provider,
         .embedding_model = embedding_model,
         .embedding_dims = embedding_dims,

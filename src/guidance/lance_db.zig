@@ -41,11 +41,14 @@ pub const SCHEMA_VERSION: u32 = 1;
 
 /// Open (or create) `db_path`, synchronise it with every JSON file under
 /// `<guidance_dir>/src/`, embedding each node via `embedder`.
+/// If `capabilities_dir` is non-null, also indexes CAPABILITY.md files from
+/// that directory into the `capabilities` table.
 pub fn syncDatabase(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
     db_path: []const u8,
     embedder: vector.EmbeddingProvider,
+    capabilities_dir: ?[]const u8,
 ) !void {
     var db = try GuidanceDb.init(allocator, db_path, embedder);
     defer db.deinit();
@@ -54,6 +57,12 @@ pub fn syncDatabase(
     defer allocator.free(src_dir_path);
 
     try db.syncFromDir(allocator, src_dir_path);
+
+    if (capabilities_dir) |cap_dir| {
+        db.syncCapabilities(allocator, cap_dir) catch |err| {
+            log.warn("capabilities sync failed: {s}", .{@errorName(err)});
+        };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -118,14 +127,17 @@ pub const GuidanceDb = struct {
     }
 
     fn migrate(self: *Self) !void {
-        const sql =
-            \\-- Schema version table
+        // ── Step 1: base tables and relational indexes (no embedding column yet) ──
+        // We separate embedding-column creation into ALTER TABLE steps so this
+        // migration is safe to run on a database that was previously created by
+        // the FTS5 explain.db backend (which shares the same ast_nodes schema but
+        // lacks embedding columns).  CREATE TABLE IF NOT EXISTS is idempotent;
+        // ALTER TABLE ADD COLUMN silently succeeds even if the column already exists
+        // because we ignore the "duplicate column name" error code.
+        const base_sql =
             \\CREATE TABLE IF NOT EXISTS schema_version (
             \\  version INTEGER PRIMARY KEY
             \\);
-            \\
-            \\-- Main node table: one row per indexed node (module or member).
-            \\-- Mirrors explain.db ast_nodes schema + embedding BLOB for vector search.
             \\CREATE TABLE IF NOT EXISTS ast_nodes (
             \\  id            INTEGER PRIMARY KEY,
             \\  file_path     TEXT    NOT NULL,
@@ -140,19 +152,13 @@ pub const GuidanceDb = struct {
             \\  language      TEXT    NOT NULL DEFAULT 'zig',
             \\  file_type     TEXT    NOT NULL DEFAULT 'source',
             \\  file_hash     TEXT,
-            \\  last_modified INTEGER NOT NULL,
-            \\  embedding     BLOB,
-            \\  embedding_model TEXT
+            \\  last_modified INTEGER NOT NULL
             \\);
             \\CREATE INDEX IF NOT EXISTS idx_gdb_file      ON ast_nodes(file_path);
             \\CREATE INDEX IF NOT EXISTS idx_gdb_mtime     ON ast_nodes(file_path, last_modified);
             \\CREATE INDEX IF NOT EXISTS idx_gdb_lang      ON ast_nodes(language);
             \\CREATE INDEX IF NOT EXISTS idx_gdb_module    ON ast_nodes(module);
             \\CREATE INDEX IF NOT EXISTS idx_gdb_node_type ON ast_nodes(node_type);
-            \\CREATE INDEX IF NOT EXISTS idx_gdb_has_emb   ON ast_nodes(id) WHERE embedding IS NOT NULL;
-            \\
-            \\-- Embedding cache: content_hash → embedding blob.
-            \\-- Prevents redundant embedding API calls when nodes haven't changed.
             \\CREATE TABLE IF NOT EXISTS embedding_cache (
             \\  content_hash TEXT PRIMARY KEY,
             \\  embedding     BLOB NOT NULL,
@@ -160,15 +166,73 @@ pub const GuidanceDb = struct {
             \\  created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
             \\);
         ;
-        var err_msg: [*c]u8 = null;
-        const rc = c.sqlite3_exec(self.db, sql, null, null, &err_msg);
-        if (rc != c.SQLITE_OK) {
-            logSqliteErr("migrate", "CREATE TABLE/indexes", rc, err_msg, self.db);
-            if (err_msg) |msg| c.sqlite3_free(msg);
-            return error.MigrationFailed;
+        {
+            var err_msg: [*c]u8 = null;
+            const rc = c.sqlite3_exec(self.db, base_sql, null, null, &err_msg);
+            if (rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE/base-indexes", rc, err_msg, self.db);
+                if (err_msg) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
         }
 
-        // Upsert schema version row.
+        // ── Step 2: add embedding columns (idempotent ALTER TABLE) ──
+        // SQLite returns SQLITE_ERROR ("duplicate column name") if the column
+        // already exists — we intentionally ignore that specific error.
+        const alter_sqls = [_][:0]const u8{
+            "ALTER TABLE ast_nodes ADD COLUMN embedding BLOB",
+            "ALTER TABLE ast_nodes ADD COLUMN embedding_model TEXT",
+            "ALTER TABLE ast_nodes ADD COLUMN source TEXT",
+        };
+        for (alter_sqls) |alter_sql| {
+            var alter_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(self.db, alter_sql, null, null, &alter_err);
+            if (alter_err) |msg| c.sqlite3_free(msg);
+        }
+
+        // ── Step 2b: capabilities table ──
+        {
+            const cap_sql =
+                \\CREATE TABLE IF NOT EXISTS capabilities (
+                \\  id            INTEGER PRIMARY KEY,
+                \\  name          TEXT    NOT NULL,
+                \\  description   TEXT,
+                \\  content       TEXT,
+                \\  file_path     TEXT    NOT NULL,
+                \\  last_modified INTEGER NOT NULL,
+                \\  embedding     BLOB,
+                \\  embedding_model TEXT
+                \\);
+                \\CREATE UNIQUE INDEX IF NOT EXISTS idx_gdb_cap_name ON capabilities(name);
+                \\CREATE INDEX IF NOT EXISTS idx_gdb_cap_fp ON capabilities(file_path);
+            ;
+            var cap_err: [*c]u8 = null;
+            const cap_rc = c.sqlite3_exec(self.db, cap_sql, null, null, &cap_err);
+            if (cap_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE capabilities", cap_rc, cap_err, self.db);
+                if (cap_err) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
+        }
+
+        // ── Step 3: conditional index on embedding (requires column to exist) ──
+        {
+            var err_msg: [*c]u8 = null;
+            const rc = c.sqlite3_exec(
+                self.db,
+                "CREATE INDEX IF NOT EXISTS idx_gdb_has_emb ON ast_nodes(id) WHERE embedding IS NOT NULL",
+                null,
+                null,
+                &err_msg,
+            );
+            if (rc != c.SQLITE_OK) {
+                // Log but don't fail — partial index is a performance hint only.
+                logSqliteErr("migrate", "CREATE INDEX idx_gdb_has_emb", rc, err_msg, self.db);
+            }
+            if (err_msg) |msg| c.sqlite3_free(msg);
+        }
+
+        // ── Step 4: schema version ──
         const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(self.db, ver_sql, -1, &stmt, null) == c.SQLITE_OK) {
@@ -229,6 +293,130 @@ pub const GuidanceDb = struct {
         log.info("guidance.db sync complete: {d} updated, {d} skipped", .{ synced, skipped });
     }
 
+    /// Walk `cap_dir` for `CAPABILITY.md` files and upsert them into the
+    /// `capabilities` table.  Each capability is embedded as a single row
+    /// using the frontmatter name + description + first 500 chars of content.
+    pub fn syncCapabilities(self: *Self, allocator: std.mem.Allocator, cap_dir: []const u8) !void {
+        var dir = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
+            if (err == error.FileNotFound) {
+                log.info("capabilities dir not found: {s}", .{cap_dir});
+                return;
+            }
+            return err;
+        };
+        defer dir.close();
+
+        var walker = try dir.walk(allocator);
+        defer walker.deinit();
+
+        var synced: usize = 0;
+
+        while (try walker.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.path, "CAPABILITY.md")) continue;
+
+            const abs_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ cap_dir, entry.path });
+            defer allocator.free(abs_path);
+
+            const stat = std.fs.cwd().statFile(abs_path) catch continue;
+            const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime, std.time.ns_per_s));
+
+            // Check if already up-to-date
+            const up_to_date = blk: {
+                const chk_sql = "SELECT last_modified FROM capabilities WHERE file_path = ?1 LIMIT 1";
+                var chk_stmt: ?*c.sqlite3_stmt = null;
+                if (c.sqlite3_prepare_v2(self.db, chk_sql, -1, &chk_stmt, null) != c.SQLITE_OK) break :blk false;
+                defer _ = c.sqlite3_finalize(chk_stmt);
+                _ = c.sqlite3_bind_text(chk_stmt, 1, abs_path.ptr, @intCast(abs_path.len), SQLITE_STATIC);
+                if (c.sqlite3_step(chk_stmt) == c.SQLITE_ROW) {
+                    break :blk c.sqlite3_column_int64(chk_stmt, 0) == mtime_sec;
+                }
+                break :blk false;
+            };
+            if (up_to_date) continue;
+
+            var arena = std.heap.ArenaAllocator.init(allocator);
+            defer arena.deinit();
+            const fa = arena.allocator();
+
+            self.indexCapability(fa, abs_path, mtime_sec) catch |err| {
+                log.warn("indexCapability({s}): {s}", .{ abs_path, @errorName(err) });
+                continue;
+            };
+            synced += 1;
+        }
+
+        if (synced > 0) log.info("capabilities synced: {d}", .{synced});
+    }
+
+    /// Parse a CAPABILITY.md file and upsert it into the capabilities table.
+    fn indexCapability(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) !void {
+        const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 512 * 1024);
+        defer allocator.free(content);
+
+        // Parse YAML-ish frontmatter: ---\nname: ...\ndescription: ...\n---
+        var name: []const u8 = std.fs.path.stem(std.fs.path.dirname(file_path) orelse file_path);
+        var description: []const u8 = "";
+        var body: []const u8 = content;
+
+        if (std.mem.startsWith(u8, content, "---")) {
+            const end = std.mem.indexOf(u8, content[3..], "\n---") orelse 0;
+            if (end > 0) {
+                const fm = content[3 .. end + 3];
+                body = content[end + 7 ..]; // skip "---\n"
+                var fm_it = std.mem.splitScalar(u8, fm, '\n');
+                while (fm_it.next()) |line| {
+                    const trimmed = std.mem.trim(u8, line, " \r");
+                    if (std.mem.startsWith(u8, trimmed, "name:")) {
+                        name = std.mem.trim(u8, trimmed["name:".len..], " ");
+                    } else if (std.mem.startsWith(u8, trimmed, "description:")) {
+                        description = std.mem.trim(u8, trimmed["description:".len..], " ");
+                    }
+                }
+            }
+        }
+
+        // Build embedding text: description + first 500 chars of body
+        const body_excerpt = body[0..@min(500, body.len)];
+        const emb_text = try std.fmt.allocPrint(
+            allocator,
+            "capability {s}: {s}. {s}",
+            .{ name, description, body_excerpt },
+        );
+        defer allocator.free(emb_text);
+
+        const emb = try self.getOrComputeEmbedding(allocator, emb_text);
+        defer if (emb) |e| allocator.free(e);
+
+        const emb_bytes: ?[]u8 = if (emb) |e| try vector.vecToBytes(allocator, e) else null;
+        defer if (emb_bytes) |b| allocator.free(b);
+
+        const model_name = self.embedder.getName();
+
+        const sql =
+            "INSERT OR REPLACE INTO capabilities" ++
+            "(name, description, content, file_path, last_modified, embedding, embedding_model)" ++
+            " VALUES (?1,?2,?3,?4,?5,?6,?7)";
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 2, description.ptr, @intCast(description.len), SQLITE_STATIC);
+        const body_trunc = body[0..@min(4096, body.len)];
+        _ = c.sqlite3_bind_text(stmt, 3, body_trunc.ptr, @intCast(body_trunc.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 4, file_path.ptr, @intCast(file_path.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 5, mtime);
+        if (emb_bytes) |b|
+            _ = c.sqlite3_bind_blob(stmt, 6, b.ptr, @intCast(b.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 6);
+        _ = c.sqlite3_bind_text(stmt, 7, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
     // ── Per-file helpers ───────────────────────────────────────────
 
     fn fileIsUpToDate(self: *Self, file_path: []const u8, mtime: i64) !bool {
@@ -276,12 +464,103 @@ pub const GuidanceDb = struct {
 
     // ── Embedding text builder ─────────────────────────────────────
 
-    /// Build the text used for embedding a node.
-    /// Format: "module: name (node_type) — comment. signature"
+    /// Convert a dotted module path to human-readable prose.
+    /// "src.guidance.db" → "guidance database"
+    /// "src.guidance.vector.math" → "guidance vector math"
+    /// Only includes the last 3 path components to keep text concise.
+    fn moduleToProse(allocator: std.mem.Allocator, module: []const u8) ![]u8 {
+        // Collect path components, skipping "src" prefix
+        var parts: [8][]const u8 = undefined;
+        var n: usize = 0;
+        var it = std.mem.splitScalar(u8, module, '.');
+        while (it.next()) |part| {
+            if (part.len == 0) continue;
+            if (n == 0 and std.mem.eql(u8, part, "src")) continue;
+            if (n < parts.len) {
+                parts[n] = part;
+                n += 1;
+            }
+        }
+        if (n == 0) return allocator.dupe(u8, module);
+        // Take last 3 components for conciseness
+        const start: usize = if (n > 3) n - 3 else 0;
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        for (parts[start..n], 0..) |part, i| {
+            if (i > 0) try buf.append(allocator, ' ');
+            try buf.appendSlice(allocator, part);
+        }
+        return buf.toOwnedSlice(allocator);
+    }
+
+    /// Map node_type to a plain English noun for prose embedding.
+    fn nodeTypeToNoun(node_type: []const u8) []const u8 {
+        if (std.mem.eql(u8, node_type, "fn_decl")) return "function";
+        if (std.mem.eql(u8, node_type, "method")) return "method";
+        if (std.mem.eql(u8, node_type, "method_private")) return "private method";
+        if (std.mem.eql(u8, node_type, "struct")) return "struct";
+        if (std.mem.eql(u8, node_type, "enum")) return "enum";
+        if (std.mem.eql(u8, node_type, "const")) return "constant";
+        if (std.mem.eql(u8, node_type, "type")) return "type alias";
+        if (std.mem.eql(u8, node_type, "module")) return "module";
+        if (std.mem.eql(u8, node_type, "test_decl")) return "test";
+        return node_type;
+    }
+
+    /// Extract parameter names from a signature string, stripping types.
+    /// "fn foo(allocator: Allocator, x: u32) u32" → "allocator, x"
+    /// Returns null when no params or parsing is too complex.
+    fn extractParamNames(allocator: std.mem.Allocator, signature: []const u8) !?[]u8 {
+        // Find opening paren
+        const open = std.mem.indexOfScalar(u8, signature, '(') orelse return null;
+        const close = std.mem.lastIndexOfScalar(u8, signature, ')') orelse return null;
+        if (close <= open) return null;
+        const params_str = std.mem.trim(u8, signature[open + 1 .. close], " \t");
+        if (params_str.len == 0) return null;
+
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+
+        var first = true;
+        var param_it = std.mem.splitScalar(u8, params_str, ',');
+        while (param_it.next()) |param| {
+            const trimmed = std.mem.trim(u8, param, " \t");
+            if (trimmed.len == 0) continue;
+            // Take the part before ':' (the name), or the whole thing if no colon
+            const name_end = std.mem.indexOfScalar(u8, trimmed, ':') orelse trimmed.len;
+            const name = std.mem.trim(u8, trimmed[0..name_end], " \t*[]");
+            if (name.len == 0 or std.mem.eql(u8, name, "_")) continue;
+            // Skip "self" and "allocator" — they add no semantic value
+            if (std.mem.eql(u8, name, "self") or std.mem.eql(u8, name, "allocator")) continue;
+            if (!first) try buf.appendSlice(allocator, ", ");
+            try buf.appendSlice(allocator, name);
+            first = false;
+        }
+        if (buf.items.len == 0) {
+            buf.deinit(allocator);
+            return null;
+        }
+        const owned = try buf.toOwnedSlice(allocator);
+        return owned;
+    }
+
+    /// Build rich prose embedding text for an AST node.
     ///
-    /// The goal is to capture the semantic meaning of each node so that
-    /// natural-language queries ("find database sync logic") surface the
-    /// right code even without exact token matches.
+    /// Format (members):
+    ///   "<module prose> — <noun> <name>: <comment>. Parameters: <param names>."
+    ///   followed by parent module context when available.
+    ///
+    /// Format (modules):
+    ///   "<module prose> module: <module comment>."
+    ///
+    /// The prose format ("guidance database — function syncDatabase: syncs the
+    /// SQLite database") embeds far better than dotted-path tokens because
+    /// sentence transformers weight natural language more heavily than
+    /// identifier fragments.
+    ///
+    /// `parent_comment` is the top-level module doc comment — including it in
+    /// member embeddings means queries about the module's purpose also surface
+    /// individual functions, not just the module row.
     fn buildEmbeddingText(
         allocator: std.mem.Allocator,
         module: []const u8,
@@ -289,28 +568,63 @@ pub const GuidanceDb = struct {
         node_type: []const u8,
         comment: ?[]const u8,
         signature: ?[]const u8,
+        parent_comment: ?[]const u8,
     ) ![]const u8 {
+        const prose_module = try moduleToProse(allocator, module);
+        defer allocator.free(prose_module);
+
+        const noun = nodeTypeToNoun(node_type);
+
         var buf: std.ArrayList(u8) = .empty;
         errdefer buf.deinit(allocator);
 
-        try buf.appendSlice(allocator, module);
-        try buf.appendSlice(allocator, ": ");
-        try buf.appendSlice(allocator, name);
-        try buf.appendSlice(allocator, " (");
-        try buf.appendSlice(allocator, node_type);
-        try buf.append(allocator, ')');
-        if (comment) |cm| {
-            if (cm.len > 0) {
-                try buf.appendSlice(allocator, " — ");
-                try buf.appendSlice(allocator, cm);
+        if (std.mem.eql(u8, node_type, "module")) {
+            // Module row: "<prose> module: <comment>"
+            try buf.appendSlice(allocator, prose_module);
+            try buf.appendSlice(allocator, " module");
+            if (comment) |cm| {
+                if (cm.len > 0) {
+                    try buf.appendSlice(allocator, ": ");
+                    try buf.appendSlice(allocator, cm);
+                }
+            }
+        } else {
+            // Member row: "<prose> — <noun> <name>: <comment>. Parameters: <params>."
+            try buf.appendSlice(allocator, prose_module);
+            try buf.appendSlice(allocator, " — ");
+            try buf.appendSlice(allocator, noun);
+            try buf.append(allocator, ' ');
+            try buf.appendSlice(allocator, name);
+
+            if (comment) |cm| {
+                if (cm.len > 0) {
+                    try buf.appendSlice(allocator, ": ");
+                    try buf.appendSlice(allocator, cm);
+                }
+            }
+
+            // Parameter names (stripped of types) — semantic signal for callers
+            if (signature) |sig| {
+                if (try extractParamNames(allocator, sig)) |params| {
+                    defer allocator.free(params);
+                    if (params.len > 0) {
+                        try buf.appendSlice(allocator, ". Parameters: ");
+                        try buf.appendSlice(allocator, params);
+                        try buf.append(allocator, '.');
+                    }
+                }
+            }
+
+            // Inject parent module context — helps queries about module purpose
+            // find individual members even when they lack their own comment
+            if (parent_comment) |pc| {
+                if (pc.len > 0 and pc.len < 200) {
+                    try buf.appendSlice(allocator, " Context: ");
+                    try buf.appendSlice(allocator, pc);
+                }
             }
         }
-        if (signature) |sig| {
-            if (sig.len > 0) {
-                try buf.append(allocator, ' ');
-                try buf.appendSlice(allocator, sig);
-            }
-        }
+
         return buf.toOwnedSlice(allocator);
     }
 
@@ -401,7 +715,7 @@ pub const GuidanceDb = struct {
     fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
         const name = doc.module_comment orelse doc.module;
 
-        const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", doc.module_comment, null);
+        const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", doc.module_comment, null, null);
         defer allocator.free(emb_text);
 
         const emb = try self.getOrComputeEmbedding(allocator, emb_text);
@@ -456,7 +770,7 @@ pub const GuidanceDb = struct {
     }
 
     fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
-        const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, m.comment, m.signature);
+        const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, m.comment, m.signature, doc.module_comment);
         defer allocator.free(emb_text);
 
         const emb = try self.getOrComputeEmbedding(allocator, emb_text);
@@ -576,11 +890,14 @@ pub const GuidanceDb = struct {
         query_embedding: []const f32,
         limit: usize,
     ) ![]SearchResult {
+        // idx_gdb_has_emb covers `embedding IS NOT NULL`.
+        // Excluding test_decl saves ~10-15% of the scan and avoids polluting
+        // results with test implementation details.
         const sql =
             "SELECT id, file_path, source, module, node_type, name, signature," ++
             "       comment, line, used_by, language, embedding " ++
             "FROM ast_nodes " ++
-            "WHERE embedding IS NOT NULL " ++
+            "WHERE embedding IS NOT NULL AND node_type != 'test_decl' " ++
             "ORDER BY last_modified DESC " ++
             "LIMIT 2000";
 
@@ -644,33 +961,105 @@ pub const GuidanceDb = struct {
         return allocator.realloc(result_slice, actual) catch result_slice[0..actual];
     }
 
-    /// Keyword search: SQL LIKE on name, comment, module, signature.
+    /// Keyword search: multi-token LIKE over name, comment, module, signature.
+    ///
+    /// Splits the query on whitespace and applies each token as a separate LIKE
+    /// predicate with OR semantics across all columns, scoring each row by how
+    /// many tokens match.  This outperforms a single `LIKE '%multi word%'`
+    /// pattern which only hits exact phrase occurrences.
+    ///
+    /// Example: query "database sync" → finds rows matching "database" OR "sync"
+    /// then sorts by match count (rows matching both score higher via reranking).
     pub fn keywordSearch(
         self: *Self,
         allocator: std.mem.Allocator,
         query_text: []const u8,
         limit: usize,
     ) ![]SearchResult {
-        // Build %pattern%
-        const pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{query_text});
-        defer allocator.free(pattern);
+        // Collect non-trivial tokens
+        var tokens: std.ArrayList([]const u8) = .empty;
+        defer tokens.deinit(allocator);
+        var tok_it = std.mem.tokenizeAny(u8, query_text, " \t\n\r_-");
+        while (tok_it.next()) |tok| {
+            if (tok.len < 2) continue;
+            try tokens.append(allocator, tok);
+        }
+        if (tokens.items.len == 0) {
+            // Fallback: treat whole query as single token
+            try tokens.append(allocator, query_text);
+        }
 
-        const sql =
-            "SELECT file_path, source, module, node_type, name, signature," ++
-            "       comment, line, used_by, language " ++
-            "FROM ast_nodes " ++
-            "WHERE name LIKE ?1 OR comment LIKE ?1 OR module LIKE ?1 OR signature LIKE ?1 " ++
-            "ORDER BY last_modified DESC " ++
-            "LIMIT ?2";
+        // Build dynamic SQL: for each token, add a clause checking all text columns.
+        // WHERE (name LIKE ?1 OR comment LIKE ?1 OR module LIKE ?1 OR sig LIKE ?1)
+        //   AND (name LIKE ?2 OR comment LIKE ?2 OR module LIKE ?2 OR sig LIKE ?2) ...
+        // For more than 1 token we use OR (any match) so short queries still find results.
+        // We also compute a match_count expression for scoring.
+        const cols = "name LIKE ? OR comment LIKE ? OR module LIKE ? OR signature LIKE ?";
+        var where_buf: std.ArrayList(u8) = .empty;
+        defer where_buf.deinit(allocator);
+
+        // Score: sum of per-token hit counts
+        var score_buf: std.ArrayList(u8) = .empty;
+        defer score_buf.deinit(allocator);
+
+        for (tokens.items, 0..) |_, i| {
+            if (i > 0) {
+                try where_buf.appendSlice(allocator, " OR ");
+                try score_buf.appendSlice(allocator, " + ");
+            }
+            try where_buf.appendSlice(allocator, "(");
+            try where_buf.appendSlice(allocator, cols);
+            try where_buf.appendSlice(allocator, ")");
+            // Score contribution for this token
+            try score_buf.appendSlice(allocator, "(CASE WHEN name LIKE ? THEN 2 ELSE 0 END");
+            try score_buf.appendSlice(allocator, " + CASE WHEN comment LIKE ? THEN 1 ELSE 0 END");
+            try score_buf.appendSlice(allocator, " + CASE WHEN module LIKE ? THEN 1 ELSE 0 END)");
+        }
+        try where_buf.append(allocator, 0); // sentinel
+        try score_buf.append(allocator, 0);
+
+        var sql_buf: std.ArrayList(u8) = .empty;
+        defer sql_buf.deinit(allocator);
+        try sql_buf.appendSlice(allocator, "SELECT file_path, source, module, node_type, name, signature," ++
+            "       comment, line, used_by, language, (" ++
+            "");
+        try sql_buf.appendSlice(allocator, score_buf.items[0 .. score_buf.items.len - 1]);
+        try sql_buf.appendSlice(allocator, ") AS match_score " ++
+            "FROM ast_nodes WHERE (");
+        try sql_buf.appendSlice(allocator, where_buf.items[0 .. where_buf.items.len - 1]);
+        try sql_buf.appendSlice(allocator, ") AND node_type != 'test_decl' " ++
+            "ORDER BY match_score DESC, last_modified DESC LIMIT ?");
+        try sql_buf.append(allocator, 0); // sentinel
+
+        const sql_z: [:0]const u8 = sql_buf.items[0 .. sql_buf.items.len - 1 :0];
 
         var stmt: ?*c.sqlite3_stmt = null;
-        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+        if (c.sqlite3_prepare_v2(self.db, sql_z.ptr, -1, &stmt, null) != c.SQLITE_OK) {
             return allocator.alloc(SearchResult, 0);
         }
         defer _ = c.sqlite3_finalize(stmt);
 
-        _ = c.sqlite3_bind_text(stmt, 1, pattern.ptr, @intCast(pattern.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit * 2));
+        // Bind parameters: 4 per token in WHERE + 3 per token in score + 1 limit
+        var param_idx: c_int = 1;
+        for (tokens.items) |tok| {
+            const pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{tok});
+            defer allocator.free(pattern);
+            // 4 bindings for WHERE (name, comment, module, signature)
+            for (0..4) |_| {
+                _ = c.sqlite3_bind_text(stmt, param_idx, pattern.ptr, @intCast(pattern.len), c.SQLITE_TRANSIENT);
+                param_idx += 1;
+            }
+        }
+        for (tokens.items) |tok| {
+            const pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{tok});
+            defer allocator.free(pattern);
+            // 3 bindings for score (name×2, comment, module)
+            for (0..3) |_| {
+                _ = c.sqlite3_bind_text(stmt, param_idx, pattern.ptr, @intCast(pattern.len), c.SQLITE_TRANSIENT);
+                param_idx += 1;
+            }
+        }
+        _ = c.sqlite3_bind_int64(stmt, param_idx, @intCast(limit * 2));
 
         var results: std.ArrayList(SearchResult) = .empty;
         errdefer {
@@ -679,8 +1068,10 @@ pub const GuidanceDb = struct {
         }
 
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            // Column 10 is match_score
+            const raw_score: f64 = @floatFromInt(c.sqlite3_column_int(stmt, 10));
             var r = try readRowResult(stmt.?, allocator);
-            r.score = 1.0; // flat keyword score; reranking will differentiate
+            r.score = @max(1.0, raw_score);
             try results.append(allocator, r);
         }
 
@@ -809,6 +1200,14 @@ pub const GuidanceDb = struct {
 
     // ── Node-type reranking ────────────────────────────────────────
 
+    /// Adjust scores based on node_type and presence of documentation.
+    ///
+    /// Multipliers (applied in order):
+    ///   - Definitions (struct/fn/enum): ×1.5 — high information density
+    ///   - Methods: ×1.2 — useful but less discoverable than top-level fns
+    ///   - Modules: ×0.8 — coarse-grained; specific members are more useful
+    ///   - test_decl: ×0.3 — implementation detail; rarely the answer
+    ///   - Has comment: ×1.15 — documented nodes produce better answers
     fn rankByNodeType(results: []SearchResult) void {
         for (results) |*r| {
             if (std.mem.eql(u8, r.node_type, "struct") or
@@ -826,6 +1225,10 @@ pub const GuidanceDb = struct {
                 r.score *= 0.3;
             } else if (std.mem.eql(u8, r.node_type, "module")) {
                 r.score *= 0.8;
+            }
+            // Boost documented nodes: they carry more semantic signal
+            if (r.comment) |cm| {
+                if (cm.len > 0) r.score *= 1.15;
             }
         }
         std.sort.block(SearchResult, results, {}, struct {
@@ -1279,19 +1682,61 @@ test "GuidanceDb skips unchanged files" {
     }
 }
 
-test "buildEmbeddingText format" {
+test "buildEmbeddingText prose format" {
+    const allocator = std.testing.allocator;
+    // Member with comment, signature, and parent module context
+    const text = try GuidanceDb.buildEmbeddingText(
+        allocator,
+        "src.guidance.db",
+        "syncDatabase",
+        "fn_decl",
+        "Synchronises the SQLite database.",
+        "fn syncDatabase(allocator: std.mem.Allocator, guidance_dir: []const u8) !void",
+        "FTS5 indexer module.",
+    );
+    defer allocator.free(text);
+    // Should be prose, not dotted-path
+    try std.testing.expect(std.mem.indexOf(u8, text, "function syncDatabase") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "Synchronises the SQLite database") != null);
+    // Parameter names extracted (not full types)
+    try std.testing.expect(std.mem.indexOf(u8, text, "guidance_dir") != null);
+    // No raw type annotations in params section
+    try std.testing.expect(std.mem.indexOf(u8, text, "std.mem.Allocator") == null);
+    // Parent context injected
+    try std.testing.expect(std.mem.indexOf(u8, text, "FTS5 indexer") != null);
+}
+
+test "buildEmbeddingText module row" {
     const allocator = std.testing.allocator;
     const text = try GuidanceDb.buildEmbeddingText(
         allocator,
-        "src.foo",
-        "doThing",
-        "fn_decl",
-        "Does the thing.",
-        "fn doThing() void",
+        "src.guidance.db",
+        "guidance db",
+        "module",
+        "Produces .explain.db for NullClaw.",
+        null,
+        null,
     );
     defer allocator.free(text);
-    try std.testing.expectEqualStrings(
-        "src.foo: doThing (fn_decl) — Does the thing. fn doThing() void",
-        text,
-    );
+    try std.testing.expect(std.mem.indexOf(u8, text, "module") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "Produces") != null);
+}
+
+test "moduleToProse strips src prefix and limits depth" {
+    const allocator = std.testing.allocator;
+    const prose = try GuidanceDb.moduleToProse(allocator, "src.guidance.vector.math");
+    defer allocator.free(prose);
+    // "src" stripped, last 3 parts: guidance vector math
+    try std.testing.expectEqualStrings("guidance vector math", prose);
+}
+
+test "extractParamNames strips types" {
+    const allocator = std.testing.allocator;
+    const params = try GuidanceDb.extractParamNames(allocator, "fn foo(allocator: std.mem.Allocator, x: u32, y: []const u8) void");
+    try std.testing.expect(params != null);
+    defer allocator.free(params.?);
+    // allocator is skipped, x and y remain
+    try std.testing.expect(std.mem.indexOf(u8, params.?, "x") != null);
+    try std.testing.expect(std.mem.indexOf(u8, params.?, "y") != null);
+    try std.testing.expect(std.mem.indexOf(u8, params.?, "allocator") == null);
 }

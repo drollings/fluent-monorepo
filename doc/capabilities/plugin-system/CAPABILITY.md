@@ -1,0 +1,49 @@
+---
+name: plugin-system
+description: External AST provider protocol for non-Zig languages. Guidance discovers provider executables via PATH or config, invokes them per-file, and merges their JSON output into the guidance index.
+---
+
+# Plugin System
+
+Allows non-Zig source files (Python, TypeScript, etc.) to be indexed by guidance through external provider executables that speak the guidance JSON protocol.
+
+## Provider discovery
+
+Guidance looks for provider executables named `guidance-<ext>` (e.g. `guidance-py` for `.py` files) in:
+1. The project's `bin/` directory
+2. `PATH`
+
+## JSON protocol
+
+A provider receives a source file path via stdin or argv, and outputs a guidance JSON document to stdout:
+
+```json
+{
+  "meta": { "module": "src.foo.bar", "source": "src/foo/bar.py", "language": "python" },
+  "comment": "Module-level description.",
+  "members": [
+    { "type": "fn_decl", "name": "doThing", "signature": "def doThing(x)", "comment": "...", "line": 10 }
+  ]
+}
+```
+
+## Built-in providers
+
+| Extension | Provider | Location |
+|-----------|----------|----------|
+| `.zig` | Built-in `AstParser` | `src/guidance/ast_parser.zig` |
+| `.py` | `guidance-py` | `bin/guidance-py` |
+| `.md` | `MarkdownPlugin` | `src/guidance/plugins/` |
+
+## Key files
+
+- `src/guidance/provider_discovery.zig` — `discoverProvider`, `invokeProviderFile`
+- `src/guidance/plugin.zig` — `PluginProvider` interface
+- `src/guidance/plugin_registry.zig` — Built-in plugin registry
+- `bin/guidance-py` — Python AST provider implementation
+
+## CLI
+
+```bash
+guidance gen --all-languages    # discover and invoke external providers
+```
