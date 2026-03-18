@@ -8,9 +8,13 @@
 //!   formatStaged()    — render []Stage to markdown output
 
 const std = @import("std");
-const db_mod = @import("db.zig");
+const db_mod = @import("db.zig"); // kept for SemanticAliases
+const lance_db_mod = @import("lance_db.zig");
 const types = @import("types.zig");
 const llm = @import("common");
+
+const GuidanceDb = lance_db_mod.GuidanceDb;
+const SearchResult = GuidanceDb.SearchResult;
 
 /// Check if a file path matches common test file patterns (language-agnostic).
 /// Used to filter test files from "Used by" display.
@@ -41,7 +45,7 @@ fn isTestPath(rel_path: []const u8) bool {
 /// allocator.free(slice).
 pub fn executeStaged(
     allocator: std.mem.Allocator,
-    db: *db_mod.ExplainDb,
+    db: *GuidanceDb,
     query: []const u8,
     workspace: []const u8,
 ) ![]types.Stage {
@@ -51,15 +55,15 @@ pub fn executeStaged(
 /// Collect stages with optional semantic alias expansion.
 pub fn executeStagedWithAliases(
     allocator: std.mem.Allocator,
-    db: *db_mod.ExplainDb,
+    db: *GuidanceDb,
     query: []const u8,
     workspace: []const u8,
     aliases: ?db_mod.SemanticAliases,
 ) ![]types.Stage {
-    // ── FTS5 search with alias expansion ──────────────────────────────────────
+    // ── Vector/hybrid search with alias expansion ─────────────────────────────
     const results = try db.searchWithAliases(allocator, query, 15, aliases);
     defer {
-        for (results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
+        for (results) |r| GuidanceDb.freeSearchResult(allocator, r);
         allocator.free(results);
     }
 

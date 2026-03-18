@@ -85,7 +85,8 @@ pub const ProjectConfig = struct {
     /// Relative path to the LanceDB-style vector database.
     guidance_db_path: []const u8,
 
-    /// Whether to generate .guidance.db in addition to .explain.db.
+    /// Enable .guidance.db (LanceDB vector search). Always true; kept for
+    /// backward-compatible config parsing.
     enable_guidance_db: bool,
 
     /// Embedding provider name: "ollama", "openai", "none", "custom:<url>".
@@ -376,7 +377,7 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
     try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
     try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
     try w.writeAll(
-        \\- `.explain.db` — SQLite FTS5 database for fast searches
+        \\- `.guidance.db` — LanceDB vector search database
         \\- `STRUCTURE.md` — Project structure documentation (auto-generated)
         \\
         \\## RALPH Loop
@@ -692,7 +693,7 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
         DEFAULT_GUIDANCE_DB_PATH,
-        false,
+        true, // enable_guidance_db — always on by default
         try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),

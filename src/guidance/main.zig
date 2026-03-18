@@ -17,9 +17,14 @@ const ast_parser = @import("ast_parser.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const deps_mod = @import("deps.zig");
-const db_mod = @import("db.zig");
+const db_mod = @import("db.zig"); // kept for SemanticAliases/loadSemanticAliases
 const lance_db_mod = @import("lance_db.zig");
 const vector_mod = @import("vector/root.zig");
+
+/// Canonical search result type — LanceDB backend.
+const GuidanceDb = lance_db_mod.GuidanceDb;
+const SearchResult = GuidanceDb.SearchResult;
+const freeSearchResult = GuidanceDb.freeSearchResult;
 const llm = @import("common");
 const enhancer_mod = @import("enhancer.zig");
 const config_mod = @import("config.zig");
@@ -94,9 +99,9 @@ fn printHelp() !void {
     const stdout = ws.writer();
 
     try stdout.writeAll(
-        \\guidance v0.1.0 — AST-guided SQLite FTS5 database generator
+        \\guidance v0.1.0 — AST-guided LanceDB vector search database generator
         \\
-        \\Produces .guidance/src/**/*.json and .explain.db for NullClaw.
+        \\Produces .guidance/src/**/*.json and .guidance.db for NullClaw.
         \\
         \\Usage:
         \\  guidance <command> [options]
@@ -104,26 +109,26 @@ fn printHelp() !void {
         \\
         \\Commands:
         \\  init       Create default configuration (AGENTS.md integration)
-        \\  gen        Generate .guidance/ JSON mirror and .explain.db
+        \\  gen        Generate .guidance/ JSON mirror and .guidance.db
         \\  status     Show generation status (synced, stale, missing)
-        \\  clean      Remove .guidance/src and .explain.db
+        \\  clean      Remove .guidance/src and .guidance.db
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  deps       Generate Makefile .depend file from Zig imports
-        \\  query      Search .explain.db with BM25 (no LLM)
+        \\  query      Search .guidance.db with vector/keyword search (no LLM)
         \\  explain    Search with LLM-synthesized summary
         \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit     Generate AI commit message from staged diff + guidance
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
-        \\  -o, --db PATH            Database path (default: .explain.db)
+        \\  -o, --db PATH            Database path (default: .guidance.db)
         \\
         \\Gen options:
         \\  --file FILE           Process a single source file (incremental)
         \\  --scan DIR            Process all source files under DIR
         \\  -w, --workspace DIR   Source root directory (default: current directory)
         \\  --guidance-dir DIR    Guidance directory (default: .guidance)
-        \\  -o, --db PATH         SQLite database path (default: .explain.db)
+        \\  -o, --db PATH         LanceDB database path (default: .guidance.db)
         \\  --no-db               Skip database compilation step
         \\  --infill              LLM-fill blank comment fields
         \\  --regen               LLM-regenerate all comments
@@ -136,7 +141,7 @@ fn printHelp() !void {
         \\  <query>              Search query (required)
         \\  -l, --limit N         Max results (default: 10)
         \\  --json                Output JSON (query only)
-        \\  -o, --db PATH         Database path (default: .explain.db)
+        \\  -o, --db PATH         Database path (default: .guidance.db)
         \\  -w, --workspace DIR   Workspace root (default: current directory)
         \\  --guidance-dir DIR    Guidance directory (default: .guidance)
         \\  --no-llm              Skip LLM synthesis (explain only)
@@ -159,12 +164,10 @@ fn printHelp() !void {
         \\
         \\Examples:
         \\  guidance init
-        \\  guidance init --guidance-dir .guidance
         \\  guidance gen
         \\  guidance gen --file src/main.zig --infill
-        \\  guidance gen --file src/main.zig --guidance-dir .guidance --db .explain.db
         \\  guidance gen --scan src --infill -m fast:latest
-        \\  guidance gen -o /tmp/project.explain.db
+        \\  guidance gen -o /tmp/project.guidance.db
         \\  guidance query "hash function"
         \\  guidance explain "how does the sync processor work" --limit 5
         \\  guidance status
@@ -172,7 +175,6 @@ fn printHelp() !void {
         \\  guidance structure
         \\  guidance deps --src src > zig.depend
         \\  guidance commit
-        \\  guidance commit --dry-run
         \\  guidance check
         \\
     );
@@ -937,6 +939,8 @@ const GenArgs = struct {
     scan: ?[]const u8 = null, // directory scan mode (--scan)
     workspace: ?[]const u8 = null,
     json_dir: ?[]const u8 = null,
+    /// Output path for the .guidance.db vector database.
+    /// -o / --db sets this.  Defaults to config or DEFAULT_GUIDANCE_DB_PATH.
     db_path: ?[]const u8 = null,
     dry_run: bool = false,
     verbose: bool = false,
@@ -948,6 +952,7 @@ const GenArgs = struct {
     model_override: bool = false,
     infill_comments: bool = false,
     regen_comments: bool = false,
+    /// Set false via --no-db to skip database generation.
     compile_db: bool = true,
     /// Re-process all files even when guidance JSON is fresh.
     force: bool = false,
@@ -959,10 +964,6 @@ const GenArgs = struct {
     skip_lint: bool = false,
     /// Skip the format phase.
     skip_fmt: bool = false,
-    /// Generate .guidance.db (LanceDB-style) in addition to .explain.db.
-    db_type_lance: bool = false,
-    /// Override the guidance.db path.
-    guidance_db_path: ?[]const u8 = null,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -1021,23 +1022,17 @@ const GenArgs = struct {
                 if (i >= args.len) return error.MissingValue;
                 ga.model = args[i];
                 ga.model_override = true;
-            } else if (std.mem.eql(u8, arg, "--db-type=lance") or std.mem.eql(u8, arg, "--lance")) {
-                ga.db_type_lance = true;
-            } else if (std.mem.startsWith(u8, arg, "--db-type=")) {
-                if (std.mem.eql(u8, arg["--db-type=".len..], "lance")) ga.db_type_lance = true;
+            } else if (std.mem.eql(u8, arg, "--db-type=lance") or
+                std.mem.eql(u8, arg, "--lance") or
+                std.mem.startsWith(u8, arg, "--db-type="))
+            {
+                // Accepted but ignored — LanceDB is always used.
             } else if (std.mem.eql(u8, arg, "--guidance-db")) {
+                // Alias for -o when used with old scripts.
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
-                ga.guidance_db_path = args[i];
-                ga.db_type_lance = true;
+                ga.db_path = args[i];
             }
-        }
-        // When --db-type=lance and -o/--db was given without --guidance-db,
-        // treat -o as the guidance.db path (the natural user expectation) and
-        // reset db_path so the FTS5 explain.db uses its default location.
-        if (ga.db_type_lance and ga.db_path != null and ga.guidance_db_path == null) {
-            ga.guidance_db_path = ga.db_path;
-            ga.db_path = null;
         }
         return ga;
     }
@@ -1056,8 +1051,9 @@ const ResolvedGenPaths = struct {
     }
 };
 
-/// Resolve workspace, json_dir, and db_path to absolute paths using `cwd` as
-/// the base for any relative values. Reuses the resolveAbsOrJoin helper.
+/// Resolve workspace, json_dir, and db_path (→ .guidance.db) to absolute
+/// paths.  db_path is the LanceDB vector database; it defaults to the value
+/// in guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
     const workspace = try resolveAbsOrJoin(allocator, cwd, ga.workspace orelse cwd);
     errdefer allocator.free(workspace);
@@ -1065,7 +1061,7 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
     const json_dir = try resolveAbsOrJoin(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
     errdefer allocator.free(json_dir);
 
-    const db_path = try resolveAbsOrJoin(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_DB_PATH);
+    const db_path = try resolveAbsOrJoin(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
 }
 
@@ -1312,12 +1308,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             return;
         }
         if (ga.compile_db) {
-            try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
-            if (ga.db_type_lance or cfg.enable_guidance_db) {
-                const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
-                defer allocator.free(gdb_path);
-                syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
-            }
+            syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
         }
         return;
     }
@@ -1361,13 +1352,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             return;
         }
         if (ga.compile_db) {
-            try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
-            if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
-            if (ga.db_type_lance or cfg.enable_guidance_db) {
-                const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
-                defer allocator.free(gdb_path);
-                syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
-            }
+            syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
         }
         return;
     }
@@ -1500,13 +1485,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     }
 
     if (ga.compile_db) {
-        try db_mod.syncDatabase(allocator, paths.json_dir, paths.db_path);
-        if (ga.verbose) std.debug.print("gen: .explain.db written to {s}\n", .{paths.db_path});
-        if (ga.db_type_lance or cfg.enable_guidance_db) {
-            const gdb_path = try resolveAbsOrJoin(allocator, paths.workspace, ga.guidance_db_path orelse cfg.guidance_db_path);
-            defer allocator.free(gdb_path);
-            syncGuidanceDb(allocator, paths.json_dir, gdb_path, &cfg, ga.verbose);
-        }
+        syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
     }
 }
 
@@ -1543,7 +1522,7 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const db_path = if (db_path_arg) |dp|
         if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
     else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_DB_PATH });
+        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
     defer allocator.free(db_path);
 
     // Count JSON files in json_dir/src/.
@@ -1607,7 +1586,7 @@ fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const db_path = if (db_path_arg) |dp|
         if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
     else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_DB_PATH });
+        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
     defer allocator.free(db_path);
 
     // Remove the database.
@@ -1742,21 +1721,41 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const workspace = try resolveAbsOrJoin(allocator, cwd, qa.workspace orelse cwd);
     defer allocator.free(workspace);
 
-    const db_path = try resolveAbsOrJoin(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_DB_PATH);
+    const db_path = try resolveAbsOrJoin(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     std.fs.accessAbsolute(db_path, .{}) catch {
-        std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
+        std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
         std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
     };
 
-    var db = try db_mod.ExplainDb.init(allocator, db_path);
+    const cfg = config_mod.loadConfig(allocator, workspace) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const embedder = vector_mod.createEmbeddingProvider(
+        allocator,
+        cfg.embedding_provider,
+        null,
+        cfg.embedding_model,
+        cfg.embedding_dims,
+    ) catch blk: {
+        var noop = try allocator.create(vector_mod.NoopEmbedding);
+        noop.* = .{ .allocator = allocator };
+        break :blk noop.provider();
+    };
+    defer embedder.deinit();
+
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
+        std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
+        return;
+    };
     defer db.deinit();
 
     const results = try db.search(allocator, query_text, qa.limit);
     defer {
-        for (results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
+        for (results) |r| freeSearchResult(allocator, r);
         allocator.free(results);
     }
 
@@ -1772,7 +1771,7 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
-fn printQueryText(query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
+fn printQueryText(query_text: []const u8, results: []SearchResult) !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
@@ -1815,7 +1814,7 @@ fn writeJsonStr(writer: *std.Io.Writer, s: []const u8) !void {
     }
 }
 
-fn printQueryJson(query_text: []const u8, results: []db_mod.ExplainDb.SearchResult) !void {
+fn printQueryJson(query_text: []const u8, results: []SearchResult) !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
@@ -1897,6 +1896,7 @@ const FilterMode = enum {
 const ExplainArgs = struct {
     query_str: ?[]const u8 = null,
     limit: usize = 10,
+    /// Path to .guidance.db. Defaults to config guidance_db_path or DEFAULT_GUIDANCE_DB_PATH.
     db_path: ?[]const u8 = null,
     workspace: ?[]const u8 = null,
     guidance: ?[]const u8 = null,
@@ -1909,10 +1909,6 @@ const ExplainArgs = struct {
     staged: bool = true,
     /// LLM relevance filtering mode.
     filter: FilterMode = .auto,
-    /// Use LanceDB-style vector/hybrid search (.guidance.db).
-    db_type_lance: bool = false,
-    /// Override the guidance.db path for explain.
-    guidance_db_path: ?[]const u8 = null,
 };
 
 /// Return true when the query has 4 or fewer whitespace-separated words.
@@ -1973,7 +1969,7 @@ fn collectSkillExcerpts(
 /// Returns owned slice; caller must free each `.label` and `.code`, then free the slice.
 fn collectSourceExcerpts(
     allocator: std.mem.Allocator,
-    results: []const db_mod.ExplainDb.SearchResult,
+    results: []const SearchResult,
     search_terms: []const []const u8,
     workspace: []const u8,
 ) ![]ExcerptEntry {
@@ -1987,11 +1983,11 @@ fn collectSourceExcerpts(
     }
 
     // Re-sort: exact-name-match first, then non-test, then score.
-    var sorted: std.ArrayList(db_mod.ExplainDb.SearchResult) = .{};
+    var sorted: std.ArrayList(SearchResult) = .{};
     defer sorted.deinit(allocator);
     for (results) |r| try sorted.append(allocator, r);
-    std.sort.insertion(db_mod.ExplainDb.SearchResult, sorted.items, search_terms, struct {
-        fn lessThan(terms: []const []const u8, a: db_mod.ExplainDb.SearchResult, b: db_mod.ExplainDb.SearchResult) bool {
+    std.sort.insertion(SearchResult, sorted.items, search_terms, struct {
+        fn lessThan(terms: []const []const u8, a: SearchResult, b: SearchResult) bool {
             const a_exact = isExactNameMatch(a.name, terms);
             const b_exact = isExactNameMatch(b.name, terms);
             if (a_exact != b_exact) return a_exact;
@@ -2038,7 +2034,7 @@ fn collectSourceExcerpts(
 /// Returns owned slice; caller must free each `.lines`, then free the slice.
 fn grepTopFiles(
     allocator: std.mem.Allocator,
-    results: []const db_mod.ExplainDb.SearchResult,
+    results: []const SearchResult,
     search_terms: []const []const u8,
     workspace: []const u8,
 ) ![]FileMatchItem {
@@ -2079,7 +2075,7 @@ fn grepTopFiles(
 fn renderExplainOutput(
     allocator: std.mem.Allocator,
     query_text: []const u8,
-    results: []const db_mod.ExplainDb.SearchResult,
+    results: []const SearchResult,
     search_terms: []const []const u8,
     ai_summary: ?[]const u8,
     skill_excerpts: []const SkillExcerpt,
@@ -2241,18 +2237,19 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
             ea.staged = true;
         } else if (std.mem.startsWith(u8, arg, "--filter=")) {
             ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
-        } else if (std.mem.eql(u8, arg, "--db-type=lance") or std.mem.eql(u8, arg, "--lance")) {
-            ea.db_type_lance = true;
-        } else if (std.mem.startsWith(u8, arg, "--db-type=")) {
-            if (std.mem.eql(u8, arg["--db-type=".len..], "lance")) ea.db_type_lance = true;
         } else if (std.mem.eql(u8, arg, "--guidance-db")) {
+            // Alias for -o / --db for backward compatibility.
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --guidance-db requires a value\n", .{});
                 return;
             }
-            ea.guidance_db_path = args[i];
-            ea.db_type_lance = true;
+            ea.db_path = args[i];
+        } else if (std.mem.eql(u8, arg, "--db-type=lance") or
+            std.mem.eql(u8, arg, "--lance") or
+            std.mem.startsWith(u8, arg, "--db-type="))
+        {
+            // Accepted but ignored — LanceDB is always used.
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             ea.query_str = arg;
         }
@@ -2273,96 +2270,42 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try allocator.dupe(u8, cwd);
     defer allocator.free(workspace);
 
-    const db_path = try resolveAbsOrJoin(allocator, workspace, ea.db_path orelse config_mod.DEFAULT_DB_PATH);
+    // Load config for embedding provider and db path defaults.
+    const cfg = config_mod.loadConfig(allocator, workspace) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const db_path = try resolveAbsOrJoin(
+        allocator,
+        workspace,
+        ea.db_path orelse cfg.guidance_db_path,
+    );
     defer allocator.free(db_path);
 
     const guidance_dir = try resolveAbsOrJoin(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(guidance_dir);
 
-    // ── LanceDB path (--db-type=lance) ───────────────────────────────────────
-    if (ea.db_type_lance) {
-        const cfg = config_mod.loadConfig(allocator, workspace) catch
-            try config_mod.loadConfig(allocator, cwd);
-        defer @constCast(&cfg).deinit();
-
-        const gdb_path = try resolveAbsOrJoin(
-            allocator,
-            workspace,
-            ea.guidance_db_path orelse cfg.guidance_db_path,
-        );
-        defer allocator.free(gdb_path);
-
-        std.fs.accessAbsolute(gdb_path, .{}) catch {
-            std.debug.print("Error: No .guidance.db found at {s}\n", .{gdb_path});
-            std.debug.print("Run 'guidance gen --db-type=lance' to generate it.\n", .{});
-            return;
-        };
-
-        const embedder = vector_mod.createEmbeddingProvider(
-            allocator,
-            cfg.embedding_provider,
-            null,
-            cfg.embedding_model,
-            cfg.embedding_dims,
-        ) catch blk: {
-            var noop = try allocator.create(vector_mod.NoopEmbedding);
-            noop.* = .{ .allocator = allocator };
-            break :blk noop.provider();
-        };
-        defer embedder.deinit();
-
-        var gdb = lance_db_mod.GuidanceDb.init(allocator, gdb_path, embedder) catch |err| {
-            std.debug.print("Error opening guidance.db: {s}\n", .{@errorName(err)});
-            return;
-        };
-        defer gdb.deinit();
-
-        const lance_results = gdb.search(allocator, query_text, ea.limit) catch |err| {
-            std.debug.print("guidance.db search failed: {s}\n", .{@errorName(err)});
-            return;
-        };
-        defer {
-            for (lance_results) |r| lance_db_mod.GuidanceDb.freeSearchResult(allocator, r);
-            allocator.free(lance_results);
-        }
-
-        // Convert to ExplainDb.SearchResult (identical layout) for shared printers
-        const fts_results = try allocator.alloc(db_mod.ExplainDb.SearchResult, lance_results.len);
-        defer allocator.free(fts_results);
-        for (lance_results, 0..) |r, idx| {
-            fts_results[idx] = .{
-                .file_path = r.file_path,
-                .source = r.source,
-                .module = r.module,
-                .node_type = r.node_type,
-                .name = r.name,
-                .signature = r.signature,
-                .comment = r.comment,
-                .line = r.line,
-                .used_by = r.used_by,
-                .language = r.language,
-                .score = r.score,
-            };
-        }
-        // Note: fts_results borrows fields from lance_results; do not double-free.
-
-        if (fts_results.len == 0) {
-            std.debug.print("# Explain: {s}\n\nNo results in guidance.db for '{s}'.\n", .{ query_text, query_text });
-            return;
-        }
-
-        try printQueryText(query_text, fts_results);
-        return;
-    }
-
-    // ── Validate DB ───────────────────────────────────────────────────────────
+    // ── Open .guidance.db ─────────────────────────────────────────────────────
     std.fs.accessAbsolute(db_path, .{}) catch {
-        std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
+        std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
         std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
     };
 
-    var db = db_mod.ExplainDb.init(allocator, db_path) catch |err| {
+    const embedder = vector_mod.createEmbeddingProvider(
+        allocator,
+        cfg.embedding_provider,
+        null,
+        cfg.embedding_model,
+        cfg.embedding_dims,
+    ) catch blk: {
+        var noop = try allocator.create(vector_mod.NoopEmbedding);
+        noop.* = .{ .allocator = allocator };
+        break :blk noop.provider();
+    };
+    defer embedder.deinit();
+
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
         std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
         return;
     };
@@ -2385,7 +2328,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     };
     defer {
-        for (results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
+        for (results) |r| freeSearchResult(allocator, r);
         allocator.free(results);
     }
 
@@ -2695,7 +2638,7 @@ fn buildLlmSummary(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
     query_text: []const u8,
-    results: []const db_mod.ExplainDb.SearchResult,
+    results: []const SearchResult,
     skill_excerpts_in: []const SkillExcerpt,
     excerpts_in: []const ExcerptEntry,
 ) !?[]const u8 {
@@ -2840,7 +2783,7 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
 ///     executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output
 fn cmdExplainStaged(
     allocator: std.mem.Allocator,
-    db: *db_mod.ExplainDb,
+    db: *GuidanceDb,
     query_text: []const u8,
     workspace: []const u8,
     guidance_dir: []const u8,
@@ -2930,7 +2873,7 @@ fn cmdExplainStaged(
     // M7: Follow-up expansion — re-search to gather used_by for expansion inputs.
     const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
     defer {
-        for (expansion_results) |r| db_mod.ExplainDb.freeSearchResult(allocator, r);
+        for (expansion_results) |r| freeSearchResult(allocator, r);
         allocator.free(expansion_results);
     }
 
@@ -3340,7 +3283,7 @@ test "main compiles" {
     _ = types.GuidanceDoc;
     _ = types.FileType;
     _ = sync_mod.SyncProcessor;
-    _ = db_mod.ExplainDb;
+    _ = GuidanceDb;
     _ = plugin_mod.LanguagePlugin;
     _ = plugin_registry.PluginRegistry;
 }

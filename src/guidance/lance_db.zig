@@ -859,6 +859,36 @@ pub const GuidanceDb = struct {
     /// When the embedder is noop (no model configured), falls back to keyword-only.
     /// When the query has no embedding, falls back to keyword-only.
     /// Results are reranked by node_type (boosts structs/functions, penalizes tests).
+    /// Search with optional semantic alias expansion (alias → expanded tokens).
+    /// SemanticAliases is imported from db.zig for compatibility with staged.zig.
+    pub fn searchWithAliases(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        limit: usize,
+        aliases: ?@import("db.zig").SemanticAliases,
+    ) ![]SearchResult {
+        if (aliases) |ali| {
+            // Expand aliases: tokenise query, run alias expansion, rejoin.
+            var tokens: std.ArrayList([]const u8) = .empty;
+            defer tokens.deinit(allocator);
+            var it = std.mem.tokenizeAny(u8, query_text, " \t\n\r");
+            while (it.next()) |tok| try tokens.append(allocator, tok);
+
+            const expanded = try ali.expandTokens(allocator, tokens.items);
+            defer allocator.free(expanded);
+
+            var expanded_query: std.ArrayList(u8) = .empty;
+            defer expanded_query.deinit(allocator);
+            for (expanded, 0..) |tok, idx| {
+                if (idx > 0) try expanded_query.append(allocator, ' ');
+                try expanded_query.appendSlice(allocator, tok);
+            }
+            return self.search(allocator, expanded_query.items, limit);
+        }
+        return self.search(allocator, query_text, limit);
+    }
+
     pub fn search(
         self: *Self,
         allocator: std.mem.Allocator,
