@@ -85,7 +85,7 @@ Then you you must read
 │       ├── vector
 │       │   ├── embeddings.zig                    # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
-│       │   └── root.zig
+│       │   └── root.zig                          # guidance vector module — cosine search, embeddings, hybrid merge.
 │       ├── ast_parser.zig
 │       ├── config.zig
 │       ├── deps.zig

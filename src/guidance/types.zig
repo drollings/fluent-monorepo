@@ -357,7 +357,12 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     if (doc.comment) |d| {
         try writer.writeAll("  \"comment\": \"");
         try writeEscapedValue(writer, d);
-        try writer.writeAll("\",\n");
+        // Only write comma if there are more fields to follow
+        if (doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+            try writer.writeAll("\",\n");
+        } else {
+            try writer.writeAll("\"\n");
+        }
     }
 
     if (doc.skills.len > 0) {
@@ -375,7 +380,12 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             if (i < doc.skills.len - 1) try writer.writeAll(",");
             try writer.writeAll("\n");
         }
-        try writer.writeAll("  ],\n");
+        // Only write comma if there are more fields to follow
+        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+            try writer.writeAll("  ],\n");
+        } else {
+            try writer.writeAll("  ]\n");
+        }
     }
 
     if (doc.hashtags.len > 0) {
@@ -386,7 +396,12 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writeEscapedValue(writer, tag);
             try writer.writeAll("\"");
         }
-        try writer.writeAll("],\n");
+        // Only write comma if there are more fields to follow
+        if (doc.used_by.len > 0 or doc.members.len > 0) {
+            try writer.writeAll("],\n");
+        } else {
+            try writer.writeAll("]\n");
+        }
     }
 
     if (doc.used_by.len > 0) {
@@ -397,7 +412,12 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writeEscapedValue(writer, u);
             try writer.writeAll("\"");
         }
-        try writer.writeAll("],\n");
+        // Only write comma if there are more fields to follow
+        if (doc.members.len > 0) {
+            try writer.writeAll("],\n");
+        } else {
+            try writer.writeAll("]\n");
+        }
     }
 
     if (doc.members.len > 0) {
