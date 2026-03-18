@@ -2300,7 +2300,7 @@ fn renderExplainOutput(
                 kw_count += 1;
             }
         }
-        if (kw_count > 0) try stdout.print("**Keywords**: {s}\n\n", .{kw_buf.items});
+        if (kw_count > 0) try stdout.print("**See Also**: {s}\n\n", .{kw_buf.items});
     }
 
     // See also: used_by from top result + secondary file paths.
@@ -2484,7 +2484,39 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // ── Staged pipeline (default) ──────────────────────────────────────────────
     if (ea.staged) {
         staged_path: {
-            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, makeLlmConfig(ea), ea) catch |err| {
+            // Resolve LLM config with thinking model support
+            var resolved_url_to_free: ?[]const u8 = null;
+            defer if (resolved_url_to_free) |url| allocator.free(url);
+
+            const model = if (std.mem.eql(u8, ea.model, config_mod.DEFAULT_MODEL))
+                cfg.model_default
+            else
+                ea.model;
+
+            const llm_config = blk: {
+                const resolved = resolveLlmConfigForThinking(
+                    allocator,
+                    &cfg,
+                    model,
+                    if (std.mem.eql(u8, ea.api_url, config_mod.DEFAULT_API_URL)) null else ea.api_url,
+                ) catch {
+                    // Fallback to direct args
+                    break :blk llm.LlmConfig{
+                        .api_url = ea.api_url,
+                        .model = ea.model,
+                        .debug = ea.verbose,
+                    };
+                };
+                resolved_url_to_free = resolved.resolved_url;
+                break :blk llm.LlmConfig{
+                    .api_url = resolved.api_url,
+                    .model = resolved.model,
+                    .think = resolved.think,
+                    .debug = ea.verbose,
+                };
+            };
+
+            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, llm_config, ea) catch |err| {
                 if (ea.verbose) std.debug.print("staged explain failed ({s}), falling back to legacy\n", .{@errorName(err)});
                 break :staged_path;
             };
@@ -2976,8 +3008,19 @@ fn cmdExplainStaged(
     };
 
     // Create the LLM client once for the entire pipeline.
-    var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch null else null;
+    var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch |err| blk: {
+        if (ea.verbose) std.debug.print("DEBUG: LLM client init failed: {}\n", .{err});
+        break :blk null;
+    } else null;
     defer if (client_opt) |*c| c.deinit();
+
+    if (ea.verbose) {
+        if (client_opt) |_| {
+            std.debug.print("DEBUG: LLM client initialized - api_url: {s}, model: {s}, think: {?}\n", .{ llm_config.api_url, llm_config.model, llm_config.think });
+        } else {
+            std.debug.print("DEBUG: LLM client is null, synthesis will be skipped\n", .{});
+        }
+    }
 
     // For long queries, extract key terms to improve search recall.
     var expanded_query: ?[]const u8 = null;

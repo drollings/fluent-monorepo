@@ -423,7 +423,7 @@ pub fn formatStaged(
             try w.writeAll("## References\n\n");
             ref_header_written = true;
         }
-        if (all_keywords.items.len > 0) try w.print("- **Keywords**: {s}\n", .{all_keywords.items});
+        if (all_keywords.items.len > 0) try w.print("- **See Also**: {s}\n", .{all_keywords.items});
         if (all_see_also.items.len > 0) try w.print("- **Used in files**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
         if (all_capabilities.items.len > 0) try w.print("- **Capabilities**: {s}\n", .{all_capabilities.items});

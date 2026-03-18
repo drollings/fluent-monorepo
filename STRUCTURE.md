@@ -87,7 +87,7 @@ Then you you must read
 │       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
 │       │   └── root.zig                          # guidance vector module — cosine search, embeddings, hybrid merge.
 │       ├── ast_parser.zig                          # Zig AST parser extracting public function, variable, and test declarations with signature hashing and pattern detection.
-│       ├── config.zig                              # Loads guidance project configuration via two-level fallback chain (project-local ~/.config/guidance) with pre-compute...
+│       ├── config.zig                              # Defines configuration loading paths for guidance systems using precomputed absolute routes and fallback locations.
 │       ├── deps.zig                                # Walks directory tree to extract .zig imports via string parsing, building dependency map of source files.
 │       ├── enhancer.zig                            # AI Docstring Enhancer for Zig guidance generation. Mirrors Python's AIDocstringEnhancer class in guidance.py. Generat...
 │       ├── gitignore.zig                           # Loads .gitignore files into memory, parsing patterns and negations to filter project paths against always-excluded di...
@@ -128,7 +128,6 @@ Then you you must read
 ├── README.md
 ├── REFACTOR.md
 ├── requirements.txt
-├── root
 ├── STRUCTURE.md
 └── TEST_EXPLAIN_PROMPT.md
 ```
