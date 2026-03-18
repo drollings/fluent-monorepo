@@ -1,4 +1,4 @@
-# AST-Guidance Project Structure
+# Guidance Project Structure
 
 A fast, lightweight code navigation and orchestration framework friendly to
 human and human-in-the-loop LLM agentic software engineering.  It is based
@@ -36,7 +36,7 @@ Then you you must read
 ```
 .
 ├── bin
-│   └── explain-gen-py
+│   └── guidance-py
 ├── doc
 │   └── DESIGN.md
 ├── env
@@ -63,7 +63,7 @@ Then you you must read
 │   │   ├── io.zig                                # [gof-patterns]
 │   │   ├── llm.zig
 │   │   └── source.zig
-│   └── explain-gen
+│   └── guidance
 │       ├── plugins
 │       │   ├── markdown_plugin.zig
 │       │   └── zig_plugin.zig

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # ruff: noqa: F401, E501
 """
-guidance_ast_py: Python AST → JSON guidance files.
+guidance-py: Python AST → JSON guidance files.
 
 Handles ONLY Python source files (.py).  For Zig files use explain-gen.
 This tool is the definitive Python language provider for the guidance system.
 
 Usage:
-  guidance_ast_py sync --scan src/ --output guidance
-  guidance_ast_py sync --file src/foo.py --output guidance [--infill] [--regen]
-  guidance_ast_py scrub --scan guidance/
-  guidance_ast_py scrub --file .guidance/src/foo.py.json
+  guidance-py sync --scan src/ --output guidance
+  guidance-py sync --file src/foo.py --output guidance [--infill] [--regen]
+  guidance-py scrub --scan guidance/
+  guidance-py scrub --file .guidance/src/foo.py.json
 """
 
 import ast
@@ -1199,7 +1199,7 @@ def cmd_sync(
         if filepath.suffix == ".py":
             py_files = [filepath]
         else:
-            cprint(f"Unsupported file type for guidance_ast_py: {filepath.suffix}", Colors.YELLOW)
+            cprint(f"Unsupported file type for guidance-py: {filepath.suffix}", Colors.YELLOW)
             return
     elif scan:
         scan_dir = Path(scan) if Path(scan).is_absolute() else PROJECT_ROOT / scan
@@ -1371,7 +1371,7 @@ def _infill_members_json(members: List[Dict], llm_client: LLMClient, source: str
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="guidance_ast_py",
+        prog="guidance-py",
         description="Python AST → JSON guidance files (language provider for explain-gen orchestration)",
     )
     sub = parser.add_subparsers(dest="command")

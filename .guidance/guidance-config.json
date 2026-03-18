@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "guidance_dir": ".explain-gen",
+  "guidance_dir": ".guidance",
   "db_path": ".explain.db",
   "src_dirs": ["src"],
   "providers": {
@@ -30,5 +30,5 @@
     ".zig": ["zig", "fmt", "{file}"],
     ".py": ["ruff", "format", "{file}"]
   },
-  "comment": "explain-gen: produces .explain.db SQLite FTS5 index and .explain-gen/ JSON mirror for NullClaw."
+  "comment": "guidance: produces .explain.db SQLite FTS5 index and .guidance/ JSON mirror for NullClaw."
 }

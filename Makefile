@@ -1,11 +1,11 @@
-# explain-gen Makefile
+# guidance Makefile
 # Context: Zig-native AST-guided SQLite FTS5 database generator for NullClaw
 # Maintainer: AI & Human Co-Pilot
 #
-# RALPH LOOP (delegated to explain-gen check):
-#   build → explain-gen check
+# RALPH LOOP (delegated to guidance check):
+#   build → guidance check
 #     └─► test → lint → fmt → guidance (per stale file, all languages)
-#           └─► .explain-gen/src/**/*.json  (JSON mtime = universal marker)
+#           └─► .guidance/src/**/*.json  (JSON mtime = universal marker)
 #                 └─► .explain.db
 #                       └─► STRUCTURE.md
 #
@@ -27,17 +27,17 @@ BIN         := $(VENV)/bin
 PYTHON_VENV := $(BIN)/python
 UV          := uv
 
-DOCUMENTOR := $(if $(wildcard zig-out/bin/explain-gen), \
-	zig-out/bin/explain-gen, \
-	$(shell which explain-gen 2>/dev/null || echo "explain-gen not found" && exit 1))
+DOCUMENTOR := $(if $(wildcard zig-out/bin/guidance), \
+	zig-out/bin/guidance, \
+	$(shell which guidance 2>/dev/null || echo "guidance not found" && exit 1))
 
-TARGET_BIN  := zig-out/bin/explain-gen
-AST_PY      := bin/explain-gen-py
-CONFIG      := .explain-gen/explain-gen-config.json
+TARGET_BIN  := zig-out/bin/guidance
+AST_PY      := bin/guidance-py
+CONFIG      := .guidance/guidance-config.json
 INSTALLDIR  := $(HOME)/.local/bin
 
 SRC_DIR      := ./src
-EXPLAIN_DIR  := .explain-gen
+EXPLAIN_DIR  := .guidance
 EXPLAIN_DB   := .explain.db
 ENV_DIR      := .env
 HASH_DIR     := $(ENV_DIR)/.make_hashes
@@ -63,7 +63,7 @@ help: ## Show this help
 
 ##@ Intelligence Layer
 
-# Database target: rebuilt by explain-gen check automatically.
+# Database target: rebuilt by guidance check automatically.
 # This rule is kept for direct `make .explain.db` invocations.
 $(EXPLAIN_DB): | $(TARGET_BIN)
 	$(Q)echo "Syncing database: $@"
@@ -123,14 +123,14 @@ env-init: check-prereqs venv ## Initialize development environment
 	@echo "Environment ready."
 
 .PHONY: clean
-clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .explain-gen config)
+clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .guidance config)
 	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(EXPLAIN_DB)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
 
 ##@ Guidance Management
 
 .PHONY: _clean-guidance
-_clean-guidance: ## Remove stale JSON files from .explain-gen/src
+_clean-guidance: ## Remove stale JSON files from .guidance/src
 	$(Q)find $(EXPLAIN_DIR)/src -name '*.json' -type f -exec rm -rf {} \; || true
 
 .PHONY: explain
@@ -152,16 +152,16 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 # ── Binary ───────────────────────────────────────────────────────────────────
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
-	$(Q)echo "Building explain-gen..."
+	$(Q)echo "Building guidance..."
 	$(Q)zig build
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install
 install: $(TARGET_BIN)
-	cp $(TARGET_BIN) $(shell dirname $(shell which explain-gen 2>/dev/null || echo $(INSTALLDIR)/explain-gen))/explain-gen
+	cp $(TARGET_BIN) $(shell dirname $(shell which guidance 2>/dev/null || echo $(INSTALLDIR)/guidance))/guidance
 
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
-# Delegated: explain-gen check always regenerates STRUCTURE.md after guidance.
+# Delegated: guidance check always regenerates STRUCTURE.md after guidance.
 # The target below is kept for direct `make STRUCTURE.md` invocations.
 
 STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
@@ -170,10 +170,10 @@ STRUCTURE.md: $(EXPLAIN_DB) | $(TARGET_BIN)
 
 ##@ Gate Targets
 
-# Full RALPH loop: build → explain-gen check (test/lint/fmt/guidance/structure/db)
-# explain-gen check handles incremental detection via JSON mtime comparison.
+# Full RALPH loop: build → guidance check (test/lint/fmt/guidance/structure/db)
+# guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
-pre-commit: $(TARGET_BIN) ## Run full RALPH loop via explain-gen check
+pre-commit: $(TARGET_BIN) ## Run full RALPH loop via guidance check
 	$(Q)$(TARGET_BIN) check
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
@@ -182,7 +182,7 @@ fmt: ## Format all Zig source files
 	$(Q)zig fmt $(SRC_DIR)/
 
 .PHONY: build
-build: $(TARGET_BIN) ## Build explain-gen binary
+build: $(TARGET_BIN) ## Build guidance binary
 
 .PHONY: test
 test: ## Run all Zig unit tests

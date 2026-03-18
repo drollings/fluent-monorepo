@@ -1,12 +1,12 @@
 [project]
-name = "explain-gen-py"
+name = "guidance-py"
 version = "0.2.0"
-description = "Python AST → JSON guidance provider for the explain-gen codebase documentation system"
+description = "Python AST → JSON guidance provider for the guidance codebase documentation system"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache 2.0"}
 authors = [
-    {name = "explain-gen contributors"}
+    {name = "guidance contributors"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -27,10 +27,10 @@ dev = [
 ]
 
 [project.scripts]
-explain-gen-py = "bin.explain-gen-py:main"
+guidance-py = "bin.guidance-py:main"
 
 [project.urls]
-Homepage = "https://github.com/danielr/explain-gen"
+Homepage = "https://github.com/danielr/guidance"
 
 [build-system]
 requires = ["setuptools", "wheel"]

@@ -109,8 +109,8 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // Create .explain-gen/src directory structure (matching what loadChangedMembers expects)
-    try tmp.dir.makePath(".explain-gen/src");
+    // Create .guidance/src directory structure (matching what loadChangedMembers expects)
+    try tmp.dir.makePath(".guidance/src");
     const json_content =
         \\{
         \\  "meta": {"module": "foo", "source": "src/foo.zig", "language": "zig"},
@@ -125,12 +125,12 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile(".explain-gen/src/foo.zig.json", .{});
+    const f = try tmp.dir.createFile(".guidance/src/foo.zig.json", .{});
     try f.writeAll(json_content);
     f.close();
 
-    // guidance_root should be the .explain-gen directory
-    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".explain-gen" });
+    // guidance_root should be the .guidance directory
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
     defer allocator.free(guidance_root);
 
     // rel_path is just "foo.zig" (without src prefix), function adds src/
@@ -157,7 +157,7 @@ test "loadChangedMembers filters by hunk range with context window" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen/src");
+    try tmp.dir.makePath(".guidance/src");
     const json_content =
         \\{
         \\  "meta": {"module": "bar", "source": "src/bar.zig", "language": "zig"},
@@ -172,11 +172,11 @@ test "loadChangedMembers filters by hunk range with context window" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile(".explain-gen/src/bar.zig.json", .{});
+    const f = try tmp.dir.createFile(".guidance/src/bar.zig.json", .{});
     try f.writeAll(json_content);
     f.close();
 
-    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".explain-gen" });
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
     defer allocator.free(guidance_root);
 
     // Hunk touches new-file lines 25–35 → "near" (line 20) is within ±15 context, "far" (200) is not.
@@ -1379,8 +1379,8 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
 
-    // guidance_root = {tmp_path}/.explain-gen
-    const expected_root = try std.fs.path.join(allocator, &.{ tmp_path, ".explain-gen" });
+    // guidance_root = {tmp_path}/.guidance
+    const expected_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
     defer allocator.free(expected_root);
     try std.testing.expectEqualStrings(expected_root, cfg.guidance_root);
 
@@ -1439,11 +1439,11 @@ test "loadConfig reads guidance_dir from project config JSON" {
     defer allocator.free(tmp_path);
 
     // Write a config JSON with a custom guidance_dir.
-    try tmp.dir.makePath(".explain-gen");
+    try tmp.dir.makePath(".guidance");
     const cfg_json =
         \\{"guidance_dir": "custom-guidance", "models": {}, "providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}}
     ;
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll(cfg_json);
     cfg_file.close();
 
@@ -1465,11 +1465,11 @@ test "loadConfig reads src_dirs array from JSON" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen");
+    try tmp.dir.makePath(".guidance");
     const cfg_json =
         \\{"src_dirs": ["src", "lib", "tools"]}
     ;
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll(cfg_json);
     cfg_file.close();
 
@@ -1492,11 +1492,11 @@ test "loadConfig reads models.fast for model_fast" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen");
+    try tmp.dir.makePath(".guidance");
     const cfg_json =
         \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:other:latest", "fast": "local:mymodel:v2"}}
     ;
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll(cfg_json);
     cfg_file.close();
 
@@ -1517,11 +1517,11 @@ test "loadConfig falls back to models.default when fast absent" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen");
+    try tmp.dir.makePath(".guidance");
     const cfg_json =
         \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:default-model:latest"}}
     ;
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll(cfg_json);
     cfg_file.close();
 
@@ -1541,11 +1541,11 @@ test "loadConfig constructs providers with base_url and chat_endpoint" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen");
+    try tmp.dir.makePath(".guidance");
     const cfg_json =
         \\{"providers": {"myprovider": {"base_url": "http://myhost:9999", "chat_endpoint": "/v1/chat/completions"}}}
     ;
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll(cfg_json);
     cfg_file.close();
 
@@ -1568,8 +1568,8 @@ test "loadConfig with invalid JSON falls back to defaults" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".explain-gen");
-    const cfg_file = try tmp.dir.createFile(".explain-gen/explain-gen-config.json", .{});
+    try tmp.dir.makePath(".guidance");
+    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
     try cfg_file.writeAll("not valid json {{{{");
     cfg_file.close();
 
@@ -1701,17 +1701,17 @@ test "readInboxBullets skips heading lines" {
 // ---------------------------------------------------------------------------
 //
 // These tests guard against the class of bug where filter logic uses the
-// wrong prefix (e.g. "guidance/" instead of ".explain-gen/"), causing
+// wrong prefix (e.g. "guidance/" instead of ".guidance/"), causing
 // guidance JSON diffs to leak into the commit prompt or source diffs to
 // be silently dropped.
 
-test "chunkIsIgnored: .explain-gen/ prefix is filtered" {
-    const guidance_dir = ".explain-gen";
+test "chunkIsIgnored: .guidance/ prefix is filtered" {
+    const guidance_dir = ".guidance";
     const chunk =
-        \\diff --git a/.explain-gen/src/foo.zig.json b/.explain-gen/src/foo.zig.json
+        \\diff --git a/.guidance/src/foo.zig.json b/.guidance/src/foo.zig.json
         \\index 000..111 100644
-        \\--- a/.explain-gen/src/foo.zig.json
-        \\+++ b/.explain-gen/src/foo.zig.json
+        \\--- a/.guidance/src/foo.zig.json
+        \\+++ b/.guidance/src/foo.zig.json
         \\@@ -1,3 +1,3 @@
     ;
     try std.testing.expect(main.chunkIsIgnoredPub(chunk, guidance_dir));
@@ -1720,7 +1720,7 @@ test "chunkIsIgnored: .explain-gen/ prefix is filtered" {
 test "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)" {
     // Old code filtered "guidance/". That prefix no longer exists in the repo;
     // filtering it would silently drop any future file with that name.
-    const guidance_dir = ".explain-gen";
+    const guidance_dir = ".guidance";
     const chunk =
         \\diff --git a/guidance/README.md b/guidance/README.md
         \\index 000..111 100644
@@ -1732,7 +1732,7 @@ test "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)" {
 }
 
 test "chunkIsIgnored: regular source files are not filtered" {
-    const guidance_dir = ".explain-gen";
+    const guidance_dir = ".guidance";
     const src_chunk =
         \\diff --git a/src/main.zig b/src/main.zig
         \\index 000..111 100644
@@ -1743,10 +1743,10 @@ test "chunkIsIgnored: regular source files are not filtered" {
     try std.testing.expect(!main.chunkIsIgnoredPub(src_chunk, guidance_dir));
 
     const bin_chunk =
-        \\diff --git a/bin/explain-gen-py b/bin/explain-gen-py
+        \\diff --git a/bin/guidance-py b/bin/guidance-py
         \\index 000..111 100755
-        \\--- a/bin/explain-gen-py
-        \\+++ b/bin/explain-gen-py
+        \\--- a/bin/guidance-py
+        \\+++ b/bin/guidance-py
         \\@@ -1,2 +1,3 @@
     ;
     try std.testing.expect(!main.chunkIsIgnoredPub(bin_chunk, guidance_dir));
@@ -1754,11 +1754,11 @@ test "chunkIsIgnored: regular source files are not filtered" {
 
 test "chunkFilePath: extracts path from diff --git header" {
     const chunk =
-        \\diff --git a/src/explain-gen/sync.zig b/src/explain-gen/sync.zig
+        \\diff --git a/src/guidance/sync.zig b/src/guidance/sync.zig
         \\index abc..def 100644
     ;
     const path = main.chunkFilePathPub(chunk);
-    try std.testing.expectEqualStrings("src/explain-gen/sync.zig", path);
+    try std.testing.expectEqualStrings("src/guidance/sync.zig", path);
 }
 
 test "chunkFilePath: returns empty string for malformed chunk" {
@@ -1816,20 +1816,20 @@ test "splitDiffByFile: multi-file diff splits into correct chunks" {
     try std.testing.expectEqualStrings("src/bar.zig", main.chunkFilePathPub(chunks.items[1]));
 }
 
-test "splitDiffByFile: .explain-gen/ chunks split correctly and are identifiable" {
+test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
     // The filter (chunkIsIgnored) runs after splitting, so we verify that
     // guidance chunks split cleanly and are correctly tagged as ignored.
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    const guidance_dir = ".explain-gen";
+    const guidance_dir = ".guidance";
 
     const diff =
         \\diff --git a/src/main.zig b/src/main.zig
         \\index 000..111 100644
         \\@@ -1,2 +1,3 @@
         \\+fn new() void {}
-        \\diff --git a/.explain-gen/src/main.zig.json b/.explain-gen/src/main.zig.json
+        \\diff --git a/.guidance/src/main.zig.json b/.guidance/src/main.zig.json
         \\index 222..333 100644
         \\@@ -1,3 +1,4 @@
         \\+  "comment": "updated"
@@ -1840,7 +1840,7 @@ test "splitDiffByFile: .explain-gen/ chunks split correctly and are identifiable
 
     try std.testing.expectEqual(@as(usize, 2), chunks.items.len);
     try std.testing.expect(!main.chunkIsIgnoredPub(chunks.items[0], guidance_dir)); // src/main.zig — keep
-    try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1], guidance_dir)); // .explain-gen/ — ignore
+    try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1], guidance_dir)); // .guidance/ — ignore
 }
 
 // ---------------------------------------------------------------------------
@@ -1863,8 +1863,8 @@ test "QueryEngine.execute finds guidance JSON matching query" {
         src_file.close();
 
         // Write a guidance JSON at the path the engine will derive:
-        // json_base/{rel}.json = .explain-gen/src/syncer.zig.json
-        try tmp.dir.makePath(".explain-gen/src");
+        // json_base/{rel}.json = .guidance/src/syncer.zig.json
+        try tmp.dir.makePath(".guidance/src");
         const guidance_json =
             \\{
             \\  "meta": {"module": "syncer", "source": "src/syncer.zig", "language": "zig"},
@@ -1878,7 +1878,7 @@ test "QueryEngine.execute finds guidance JSON matching query" {
             \\  ]
             \\}
         ;
-        const gj = try tmp.dir.createFile(".explain-gen/src/syncer.zig.json", .{});
+        const gj = try tmp.dir.createFile(".guidance/src/syncer.zig.json", .{});
         try gj.writeAll(guidance_json);
         gj.close();
 

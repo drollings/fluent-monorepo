@@ -1,11 +1,11 @@
-//! Mtime-based change detection for explain-gen's incremental RALPH loop.
+//! Mtime-based change detection for guidance's incremental RALPH loop.
 //!
 //! ## Design
 //!
 //! The guidance JSON file's mtime IS the per-file marker.  When a provider
-//! (Zig built-in, explain-gen-py, or any future language tool) finishes its
+//! (Zig built-in, guidance-py, or any future language tool) finishes its
 //! full test→lint→fmt→guidance cycle for a source file, it writes the JSON,
-//! advancing its mtime.  explain-gen then uses a simple mtime comparison to
+//! advancing its mtime.  guidance then uses a simple mtime comparison to
 //! decide whether re-processing is needed:
 //!
 //!   source mtime > JSON mtime  →  stale, needs processing
@@ -13,7 +13,7 @@
 //!
 //! ## Test marker
 //!
-//! A separate marker file `.explain-gen/.marks/test_passed` records the last
+//! A separate marker file `.guidance/.marks/test_passed` records the last
 //! successful test run.  If no source file is newer than this marker, tests
 //! can be skipped.  This enables fast incremental runs of lint→fmt→guidance
 //! without re-running the full test suite.
@@ -27,8 +27,8 @@
 //!      in the JSON reflect the final formatted source).
 //!   4. Generate or update the guidance JSON.
 //!
-//! The Zig provider implements steps 1-4 inside explain-gen itself.
-//! External providers (e.g. explain-gen-py) honour the same contract in their
+//! The Zig provider implements steps 1-4 inside guidance itself.
+//! External providers (e.g. guidance-py) honour the same contract in their
 //! own implementation.
 
 const std = @import("std");

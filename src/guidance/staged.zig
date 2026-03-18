@@ -1,4 +1,4 @@
-//! staged.zig — Staged explain pipeline for `explain-gen explain`.
+//! staged.zig — Staged explain pipeline for `guidance explain`.
 //!
 //! Implements the hybrid FTS5 + guidance JSON pipeline described in
 //! ROADMAP_EXPLAIN_ENHANCE.md.  The key exported functions are:

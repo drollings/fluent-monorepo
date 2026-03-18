@@ -1,4 +1,4 @@
-# .explain-gen/.todo/ — Work Item Lifecycle
+# .guidance/.todo/ — Work Item Lifecycle
 
 Each subdirectory is a **work item** that moves through a dependency chain:
 
@@ -19,9 +19,9 @@ TODO.md → TRIAGE.md → WORK.md → COMPLETE.md → COMMITTED.md
 ## Creating a Work Item
 
 ```bash
-mkdir .explain-gen/.todo/my-feature
+mkdir .guidance/.todo/my-feature
 # Write the work description:
-cat > .explain-gen/.todo/my-feature/TODO.md << 'EOF'
+cat > .guidance/.todo/my-feature/TODO.md << 'EOF'
 # Add feature X
 
 ## Goal

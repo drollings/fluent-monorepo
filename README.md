@@ -1,8 +1,8 @@
-# explain-gen
+# guidance
 
 A Zig-native, deterministic AST-guided SQLite FTS5 database generator for
 AI-assisted codebase navigation. It analyzes source files (Zig, Python) via AST,
-generates structured JSON metadata in `.explain-gen/src/`, and compiles them
+generates structured JSON metadata in `.guidance/src/`, and compiles them
 into `.explain.db` for fast, token-efficient `make explain` queries — optimized
 for subagent discovery workflows.
 
@@ -33,7 +33,7 @@ It is released under a dual GPL/Commercial license.  See below.
 - **Semantic aliases**: Natural language queries like "database" expand to
   `ExplainDb`, `syncDatabase`, `searchWithAliases` — bridging terminology gaps.
 - **Skill attachment**: Pattern detection (GoF, domain) auto-adds skill references
-  from `.explain-gen/.skills/` to relevant code locations.
+  from `.guidance/.skills/` to relevant code locations.
 
 ### Query Layer
 
@@ -66,7 +66,7 @@ It is released under a dual GPL/Commercial license.  See below.
   guidance JSON — human-legible codebase map without MCP or tool calls.
 - **Guidance JSON schema**: Per-file metadata capturing module purpose,
   function signatures, design patterns, reverse dependencies (`used_by`).
-- **Knowledge inbox**: `.explain-gen/.doc/inbox/` captures insights/capabilities
+- **Knowledge inbox**: `.guidance/.doc/inbox/` captures insights/capabilities
   during development forlater promotion into structured skills.
 
 ## Quick start
@@ -79,10 +79,10 @@ mise install          # installs Zig + Python + uv from mise.toml
 make env-init
 
 # Build the Zig binary
-make build            # → zig-out/bin/explain-gen
+make build            # → zig-out/bin/guidance
 
 # Generate guidance JSON for source files
-make guidance         # syncs src → .explain-gen/src/*.json
+make guidance         # syncs src → .guidance/src/*.json
 
 # Build the FTS5 database
 make db               # → .explain.db
@@ -120,13 +120,13 @@ make explain QUERY="gitignore filtering"
 
 ```
 src/
-  explain-gen/      Zig core engine (AST parser, sync, db, staged query)
+  guidance/      Zig core engine (AST parser, sync, db, staged query)
   common/            Shared LLM HTTP client
 bin/
-  explain-gen        Compiled binary (via zig build)
-  explain-gen-py     Python AST provider
-.explain-gen/
-  explain-gen-config.json   Model / provider configuration
+  guidance        Compiled binary (via zig build)
+  guidance-py     Python AST provider
+.guidance/
+  guidance-config.json   Model / provider configuration
   semantic-aliases.json      Query expansion mappings
   .skills/                   Design-pattern skill documents
   .doc/                      Capabilities, diary, inbox
@@ -167,11 +167,11 @@ Query → Alias Expansion → FTS5 Search → Node Boosting → Stage Assembly
 
 ## Adding a new language provider
 
-Create `bin/explain-gen-<lang>` and ensure it accepts:
+Create `bin/guidance-<lang>` and ensure it accepts:
 
 ```
-explain-gen-<lang> sync --file <path> --output <guidance_dir> [--infill]
-explain-gen-<lang> sync --scan <dir>  --output <guidance_dir> [--infill]
+guidance-<lang> sync --file <path> --output <guidance_dir> [--infill]
+guidance-<lang> sync --scan <dir>  --output <guidance_dir> [--infill]
 ```
 
 Output JSON must follow the canonical schema:
@@ -187,17 +187,17 @@ Output JSON must follow the canonical schema:
 }
 ```
 
-Register the provider in `.explain-gen/explain-gen-config.json` under
+Register the provider in `.guidance/guidance-config.json` under
 `providers`.
 
 ## Configuration
 
-`.explain-gen/explain-gen-config.json` controls:
+`.guidance/guidance-config.json` controls:
 - `model`: Local LLM model name (e.g., "llama3.2")
 - `api_url`: Ollama/OpenAI-compatible endpoint
 - `providers`: Language-specific AST providers
 
-`.explain-gen/semantic-aliases.json` defines query expansions:
+`.guidance/semantic-aliases.json` defines query expansions:
 ```json
 [
   {"key": "database", "values": ["ExplainDb", "syncDatabase", "searchWithAliases"]},

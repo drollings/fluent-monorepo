@@ -1,8 +1,8 @@
-/// explain-gen project configuration loader.
+/// guidance project configuration loader.
 ///
-/// Resolves paths for the explain-gen system using a two-level fallback chain:
+/// Resolves paths for the guidance system using a two-level fallback chain:
 ///   1. {cwd}/{guidance_dir}/{config_filename}  (project-local)
-///   2. ~/.config/explain-gen/{config_filename}  (user global)
+///   2. ~/.config/guidance/{config_filename}  (user global)
 ///   3. Built-in defaults
 ///
 /// All path fields in ProjectConfig are pre-computed absolute paths so callers
@@ -14,7 +14,7 @@ const builtin = @import("builtin");
 // Defaults
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_GUIDANCE_DIR = ".explain-gen";
+pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".explain.db";
 pub const DEFAULT_MODEL = "local:code:latest";
@@ -23,7 +23,7 @@ pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
 pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
-pub const CONFIG_FILENAME = "explain-gen-config.json";
+pub const CONFIG_FILENAME = "guidance-config.json";
 
 pub const Provider = struct {
     name: []const u8,
@@ -53,15 +53,15 @@ pub const LintCommand = struct {
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Resolved, absolute paths for a single explain-gen project instance.
+/// Resolved, absolute paths for a single guidance project instance.
 /// All strings are owned by this struct; call deinit() to free them.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
-    /// Relative path to the explain-gen root (e.g. .explain-gen).
+    /// Relative path to the guidance root (e.g. .guidance).
     guidance_dir: []const u8,
 
-    /// Absolute path to the explain-gen root (e.g. /project/.explain-gen).
+    /// Absolute path to the guidance root (e.g. /project/.guidance).
     guidance_root: []const u8,
 
     /// Absolute path to the guidance JSON source tree
@@ -221,10 +221,10 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
         }
     }
 
-    // 2. User-global config (~/.config/explain-gen/explain-gen-config.json).
+    // 2. User-global config (~/.config/guidance/guidance-config.json).
     if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |home| {
         defer allocator.free(home);
-        const path = try std.fs.path.join(allocator, &.{ home, ".config", "explain-gen", CONFIG_FILENAME });
+        const path = try std.fs.path.join(allocator, &.{ home, ".config", "guidance", CONFIG_FILENAME });
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
             if (err != error.FileNotFound and !builtin.is_test) {
@@ -316,7 +316,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
     return false;
 }
 
-/// Generate AGENTS.md content for explain-gen integration.
+/// Generate AGENTS.md content for guidance integration.
 /// Returns an owned slice that the caller must free.
 pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .{};
@@ -324,27 +324,27 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
     const w = buf.writer(allocator);
 
     try w.writeAll(
-        \\# explain-gen Integration
+        \\# guidance Integration
         \\
-        \\This project uses explain-gen for AST-guided code navigation and documentation.
+        \\This project uses guidance for AST-guided code navigation and documentation.
         \\
         \\## Quick Start
         \\
         \\```
-        \\# Initialize explain-gen configuration
-        \\explain-gen init
+        \\# Initialize guidance configuration
+        \\guidance init
         \\
         \\# Run the full RALPH loop (build → test → lint → fmt → guidance)
-        \\explain-gen check
+        \\guidance check
         \\
         \\# Query the codebase
-        \\explain-gen explain "how does X work?"
+        \\guidance explain "how does X work?"
         \\```
         \\
         \\## Key Files
         \\
     );
-    try w.print("- `{s}/explain-gen-config.json` — Model and provider configuration\n", .{guidance_dir});
+    try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
     try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
     try w.writeAll(
         \\- `.explain.db` — SQLite FTS5 database for fast searches
@@ -354,11 +354,11 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
         \\
         \\The recommended workflow is:
         \\
-        \\1. **DISCOVER**: `explain-gen explain "query"` — Search codebase
+        \\1. **DISCOVER**: `guidance explain "query"` — Search codebase
         \\2. **UNDERSTAND**: Read source files identified by the query
         \\3. **DECIDE**: Apply relevant skills/patterns
         \\4. **IMPLEMENT**: Make changes
-        \\5. **VERIFY**: `explain-gen check` — Run tests, lint, format, guidance
+        \\5. **VERIFY**: `guidance check` — Run tests, lint, format, guidance
         \\
         \\## Skills
         \\
@@ -378,14 +378,14 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
 pub const AGENTS_INSERTION: []const u8 =
     \\---
     \\
-    \\## explain-gen Integration
+    \\## guidance Integration
     \\
-    \\This project uses explain-gen for AST-guided code navigation.
+    \\This project uses guidance for AST-guided code navigation.
     \\
     \\```
     \\# Initialize and run
-    \\explain-gen init
-    \\explain-gen check
+    \\guidance init
+    \\guidance check
     \\```
     \\
 ;

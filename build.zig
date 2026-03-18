@@ -5,7 +5,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // ---------------------------------------------------------------------------
-    // Common module — LLM helpers shared across explain-gen source
+    // Common module — LLM helpers shared across guidance source
     // ---------------------------------------------------------------------------
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/llm.zig"),
@@ -14,12 +14,12 @@ pub fn build(b: *std.Build) void {
     });
 
     // ---------------------------------------------------------------------------
-    // explain-gen executable
+    // guidance executable
     // ---------------------------------------------------------------------------
     const explain_exe = b.addExecutable(.{
-        .name = "explain-gen",
+        .name = "guidance",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/explain-gen/main.zig"),
+            .root_source_file = b.path("src/guidance/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -35,7 +35,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_explain.addArgs(args);
     }
-    const run_step = b.step("run", "Run explain-gen");
+    const run_step = b.step("run", "Run guidance");
     run_step.dependOn(&run_explain.step);
 
     // ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) void {
     // ---------------------------------------------------------------------------
     const explain_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/explain-gen/main.zig"),
+            .root_source_file = b.path("src/guidance/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) void {
 
     const tests_module = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/explain-gen/tests.zig"),
+            .root_source_file = b.path("src/guidance/tests.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
     const run_main_tests = b.addRunArtifact(explain_tests);
     const run_tests_module = b.addRunArtifact(tests_module);
 
-    const test_step = b.step("test", "Run explain-gen unit tests");
+    const test_step = b.step("test", "Run guidance unit tests");
     test_step.dependOn(&run_main_tests.step);
     test_step.dependOn(&run_tests_module.step);
 }

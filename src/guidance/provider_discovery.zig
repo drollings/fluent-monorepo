@@ -1,12 +1,12 @@
-//! External language provider discovery for explain-gen.
+//! External language provider discovery for guidance.
 //!
-//! Searches for provider binaries named `explain-gen-{ext_bare}` in:
-//!   1. `{workspace}/bin/explain-gen-{ext_bare}`   (workspace-local, highest priority)
-//!   2. PATH lookup for `explain-gen-{ext_bare}`   (system-wide)
+//! Searches for provider binaries named `guidance-{ext_bare}` in:
+//!   1. `{workspace}/bin/guidance-{ext_bare}`   (workspace-local, highest priority)
+//!   2. PATH lookup for `guidance-{ext_bare}`   (system-wide)
 //!
 //! Provider protocol — subprocess invocation:
-//!   explain-gen-py sync --file {src_abs} --output {json_dir}
-//!   explain-gen-py sync --scan {src_dir} --output {json_dir}
+//!   guidance-py sync --file {src_abs} --output {json_dir}
+//!   guidance-py sync --scan {src_dir} --output {json_dir}
 //!
 //! Providers must write guidance JSON files compatible with the existing format
 //! to `{json_dir}/src/{relative_path}{ext}.json`.
@@ -47,10 +47,10 @@ pub fn discoverProvider(
     if (ext.len < 2 or ext[0] != '.') return null;
     const bare = ext[1..]; // "py", "rs", etc.
 
-    const binary_name = try std.fmt.allocPrint(allocator, "explain-gen-{s}", .{bare});
+    const binary_name = try std.fmt.allocPrint(allocator, "guidance-{s}", .{bare});
     defer allocator.free(binary_name);
 
-    // 1. Workspace-local: {workspace}/bin/explain-gen-{bare}
+    // 1. Workspace-local: {workspace}/bin/guidance-{bare}
     {
         const candidate = try std.fs.path.join(allocator, &.{ workspace, "bin", binary_name });
         defer allocator.free(candidate);
@@ -203,11 +203,11 @@ test "discoverProvider: workspace-local bin takes priority" {
     const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
     defer std.testing.allocator.free(tmp_path);
 
-    // Create bin/explain-gen-tst as a regular file (not actually executable on
+    // Create bin/guidance-tst as a regular file (not actually executable on
     // all platforms, but isExecutable only checks existence + file kind in tests).
     try tmp.dir.makeDir("bin");
     {
-        const f = try tmp.dir.createFile("bin/explain-gen-tst", .{});
+        const f = try tmp.dir.createFile("bin/guidance-tst", .{});
         f.close();
     }
 
@@ -217,7 +217,7 @@ test "discoverProvider: workspace-local bin takes priority" {
         defer p.deinit(std.testing.allocator);
         try std.testing.expectEqualStrings("tst", p.name);
         try std.testing.expectEqualStrings(".tst", p.extension);
-        try std.testing.expect(std.mem.endsWith(u8, p.binary, "bin/explain-gen-tst"));
+        try std.testing.expect(std.mem.endsWith(u8, p.binary, "bin/guidance-tst"));
     } else {
         // On some systems access() may fail for non-executable files; skip.
     }

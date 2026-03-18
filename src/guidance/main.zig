@@ -1,15 +1,15 @@
-//! explain-gen — AST-guided SQLite FTS5 database generator for NullClaw.
+//! guidance — AST-guided SQLite FTS5 database generator for NullClaw.
 //!
 //! Produces:
-//!   .explain-gen/src/**/*.json  — Per-file structured metadata mirror
+//!   .guidance/src/**/*.json  — Per-file structured metadata mirror
 //!   .explain.db                 — SQLite FTS5 database consumed by NullClaw's explain tool
 //!
 //! Usage:
-//!   explain-gen gen      [options]   Generate JSON + compile .explain.db
-//!   explain-gen status   [options]   Report generation status
-//!   explain-gen clean    [options]   Remove .explain-gen/ and .explain.db
-//!   explain-gen structure [options]  Update STRUCTURE.md from guidance JSON
-//!   explain-gen deps     [options]   Generate Makefile .depend file
+//!   guidance gen      [options]   Generate JSON + compile .explain.db
+//!   guidance status   [options]   Report generation status
+//!   guidance clean    [options]   Remove .guidance/ and .explain.db
+//!   guidance structure [options]  Update STRUCTURE.md from guidance JSON
+//!   guidance deps     [options]   Generate Makefile .depend file
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -62,7 +62,7 @@ pub fn main() !void {
         return;
     }
     if (std.mem.eql(u8, args[1], "-v") or std.mem.eql(u8, args[1], "--version")) {
-        std.debug.print("explain-gen v{s}\n", .{version});
+        std.debug.print("guidance v{s}\n", .{version});
         return;
     }
 
@@ -92,19 +92,19 @@ fn printHelp() !void {
     const stdout = ws.writer();
 
     try stdout.writeAll(
-        \\explain-gen v0.1.0 — AST-guided SQLite FTS5 database generator
+        \\guidance v0.1.0 — AST-guided SQLite FTS5 database generator
         \\
-        \\Produces .explain-gen/src/**/*.json and .explain.db for NullClaw.
+        \\Produces .guidance/src/**/*.json and .explain.db for NullClaw.
         \\
         \\Usage:
-        \\  explain-gen <command> [options]
-        \\  explain-gen --help | --version
+        \\  guidance <command> [options]
+        \\  guidance --help | --version
         \\
         \\Commands:
         \\  init       Create default configuration (AGENTS.md integration)
-        \\  gen        Generate .explain-gen/ JSON mirror and .explain.db
+        \\  gen        Generate .guidance/ JSON mirror and .explain.db
         \\  status     Show generation status (synced, stale, missing)
-        \\  clean      Remove .explain-gen/src and .explain.db
+        \\  clean      Remove .guidance/src and .explain.db
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  deps       Generate Makefile .depend file from Zig imports
         \\  query      Search .explain.db with BM25 (no LLM)
@@ -113,14 +113,14 @@ fn printHelp() !void {
         \\  commit     Generate AI commit message from staged diff + guidance
         \\
         \\Init options:
-        \\  -g, --guidance-dir DIR   Guidance directory (default: .explain-gen)
+        \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
         \\  -o, --db PATH            Database path (default: .explain.db)
         \\
         \\Gen options:
         \\  --file FILE           Process a single source file (incremental)
         \\  --scan DIR            Process all source files under DIR
         \\  -w, --workspace DIR   Source root directory (default: current directory)
-        \\  --guidance-dir DIR    Guidance directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance directory (default: .guidance)
         \\  -o, --db PATH         SQLite database path (default: .explain.db)
         \\  --no-db               Skip database compilation step
         \\  --infill              LLM-fill blank comment fields
@@ -136,7 +136,7 @@ fn printHelp() !void {
         \\  --json                Output JSON (query only)
         \\  -o, --db PATH         Database path (default: .explain.db)
         \\  -w, --workspace DIR   Workspace root (default: current directory)
-        \\  --guidance-dir DIR    Guidance directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance directory (default: .guidance)
         \\  --no-llm              Skip LLM synthesis (explain only)
         \\  --staged=false        Use legacy output format (rollback safety)
         \\  --filter=auto|force|skip  LLM relevance filter mode (default: auto)
@@ -147,7 +147,7 @@ fn printHelp() !void {
         \\  -m, --model NAME      Model for synthesis
         \\
         \\Structure options:
-        \\  --guidance-dir DIR    Guidance JSON directory (default: .explain-gen)
+        \\  --guidance-dir DIR    Guidance JSON directory (default: .guidance)
         \\  --no-ai               Skip AI infill pre-pass
         \\  --api-url URL         LLM endpoint
         \\  -m, --model NAME      Model for AI infill
@@ -156,22 +156,22 @@ fn printHelp() !void {
         \\  --src DIR             Source directory to scan (default: src)
         \\
         \\Examples:
-        \\  explain-gen init
-        \\  explain-gen init --guidance-dir .guidance
-        \\  explain-gen gen
-        \\  explain-gen gen --file src/main.zig --infill
-        \\  explain-gen gen --file src/main.zig --guidance-dir .explain-gen --db .explain.db
-        \\  explain-gen gen --scan src --infill -m fast:latest
-        \\  explain-gen gen -o /tmp/project.explain.db
-        \\  explain-gen query "hash function"
-        \\  explain-gen explain "how does the sync processor work" --limit 5
-        \\  explain-gen status
-        \\  explain-gen clean
-        \\  explain-gen structure
-        \\  explain-gen deps --src src > zig.depend
-        \\  explain-gen commit
-        \\  explain-gen commit --dry-run
-        \\  explain-gen check
+        \\  guidance init
+        \\  guidance init --guidance-dir .guidance
+        \\  guidance gen
+        \\  guidance gen --file src/main.zig --infill
+        \\  guidance gen --file src/main.zig --guidance-dir .guidance --db .explain.db
+        \\  guidance gen --scan src --infill -m fast:latest
+        \\  guidance gen -o /tmp/project.explain.db
+        \\  guidance query "hash function"
+        \\  guidance explain "how does the sync processor work" --limit 5
+        \\  guidance status
+        \\  guidance clean
+        \\  guidance structure
+        \\  guidance deps --src src > zig.depend
+        \\  guidance commit
+        \\  guidance commit --dry-run
+        \\  guidance check
         \\
     );
     try stdout.flush();
@@ -238,26 +238,26 @@ fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
             break :blk file.readToEndAlloc(allocator, 1024 * 1024) catch null;
         };
 
-        // Check if already has explain-gen integration
+        // Check if already has guidance integration
         if (existing) |e| {
-            if (std.mem.indexOf(u8, e, "explain-gen Integration") != null) {
-                std.debug.print("AGENTS.md already contains explain-gen integration.\n", .{});
+            if (std.mem.indexOf(u8, e, "guidance Integration") != null) {
+                std.debug.print("AGENTS.md already contains guidance integration.\n", .{});
                 allocator.free(e);
             } else {
                 // Prepend insertion
                 const insertion = try std.fmt.allocPrint(allocator,
                     \\---
                     \\
-                    \\## explain-gen Integration
+                    \\## guidance Integration
                     \\
-                    \\This project uses explain-gen for AST-guided code navigation.
+                    \\This project uses guidance for AST-guided code navigation.
                     \\
                     \\```
-                    \\explain-gen init
-                    \\explain-gen check
+                    \\guidance init
+                    \\guidance check
                     \\```
                     \\
-                    \\Config: `{s}/explain-gen-config.json`
+                    \\Config: `{s}/guidance-config.json`
                     \\
                     \\
                 , .{guidance_dir});
@@ -276,7 +276,7 @@ fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 try file.writeAll(new_content);
                 allocator.free(e);
 
-                std.debug.print("AGENTS.md updated with explain-gen integration.\n", .{});
+                std.debug.print("AGENTS.md updated with guidance integration.\n", .{});
 
                 // Offer to open $EDITOR
                 if (std.process.getEnvVarOwned(allocator, "EDITOR")) |editor| {
@@ -300,7 +300,7 @@ fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (created) {
-        std.debug.print("\nConfiguration created at {s}/{s}/explain-gen-config.json\n", .{ cwd, guidance_dir });
+        std.debug.print("\nConfiguration created at {s}/{s}/guidance-config.json\n", .{ cwd, guidance_dir });
     }
 }
 
@@ -352,7 +352,7 @@ fn chunkFilePath(chunk: []const u8) []const u8 {
 }
 
 /// Return true for auto-generated guidance JSON files (not real code changes).
-/// Uses guidance_dir (e.g. ".explain-gen") to identify which paths to ignore.
+/// Uses guidance_dir (e.g. ".guidance") to identify which paths to ignore.
 fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) bool {
     const path = chunkFilePath(chunk);
     const prefix = std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{guidance_dir}) catch return false;
@@ -898,7 +898,7 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
-/// Read `models.commit` or `models.default` from explain-gen-config.json.
+/// Read `models.commit` or `models.default` from guidance-config.json.
 /// Returns an owned slice; caller must free. Returns error when absent.
 fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]const u8 {
     const path = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, config_mod.CONFIG_FILENAME });
@@ -1171,7 +1171,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     defer paths.deinit(allocator);
 
     if (ga.verbose) {
-        std.debug.print("explain-gen gen:\n  workspace: {s}\n  json_dir:  {s}\n  db_path:   {s}\n", .{
+        std.debug.print("guidance gen:\n  workspace: {s}\n  json_dir:  {s}\n  db_path:   {s}\n", .{
             paths.workspace, paths.json_dir, paths.db_path,
         });
     }
@@ -1333,7 +1333,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
     }
 
-    // External providers (e.g. explain-gen-py for .py files).
+    // External providers (e.g. guidance-py for .py files).
     if (ga.all_languages) {
         // Collect every distinct extension found in src_dirs that is NOT built-in.
         var foreign_exts: std.StringHashMapUnmanaged(void) = .{};
@@ -1475,7 +1475,7 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
         break :blk true;
     } else |_| false;
 
-    std.debug.print("explain-gen status:\n", .{});
+    std.debug.print("guidance status:\n", .{});
     std.debug.print("  json_dir:   {s}\n", .{json_dir});
     std.debug.print("  json files: {d}\n", .{json_count});
     std.debug.print("  db_path:    {s}\n", .{db_path});
@@ -1655,7 +1655,7 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     std.fs.accessAbsolute(db_path, .{}) catch {
         std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
-        std.debug.print("Run 'explain-gen gen' to generate it.\n", .{});
+        std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
     };
 
@@ -2174,7 +2174,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // ── Validate DB ───────────────────────────────────────────────────────────
     std.fs.accessAbsolute(db_path, .{}) catch {
         std.debug.print("Error: No .explain.db found at {s}\n", .{db_path});
-        std.debug.print("Run 'explain-gen gen' to generate it.\n", .{});
+        std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
     };
 
@@ -2210,7 +2210,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         defer allocator.free(lower_q);
         std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, query_text });
         std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
-        std.debug.print("Run 'explain-gen gen' after finding the file to index it.\n", .{});
+        std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
         return;
     }
 
@@ -2718,7 +2718,7 @@ fn cmdExplainStaged(
         defer allocator.free(lower_q);
         std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, effective_query });
         std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
-        std.debug.print("Run 'explain-gen gen' after finding the file to index it.\n", .{});
+        std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
         return;
     }
 
@@ -2826,9 +2826,9 @@ fn emitStagedOutput(
 ///
 /// Example:
 ///   workspace = "/project"
-///   json_dir  = "/project/.explain-gen"
+///   json_dir  = "/project/.guidance"
 ///   src_abs   = "/project/src/foo.zig"
-///   → "/project/.explain-gen/src/foo.zig.json"
+///   → "/project/.guidance/src/foo.zig.json"
 ///
 /// There is NO extra `/src/` injected here — the `src/` already present in
 /// `rel_path` (because source lives under `src/`) provides the single prefix.
@@ -2981,7 +2981,7 @@ fn runBuiltinFilePipeline(
 /// `language` is a short tag (e.g. "zig") used for the test marker path.
 /// `stale_files` are the files that need processing (source newer than JSON).
 /// `all_files` are ALL source files for this language (used for test marker check).
-/// `guidance_root` is the absolute path to the guidance directory (e.g. .explain-gen).
+/// `guidance_root` is the absolute path to the guidance directory (e.g. .guidance).
 fn runBuiltinLanguagePipeline(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,
@@ -3039,7 +3039,7 @@ fn runBuiltinLanguagePipeline(
 // check — orchestrate the full RALPH loop
 // =============================================================================
 
-/// `explain-gen check` runs the complete RALPH loop:
+/// `guidance check` runs the complete RALPH loop:
 ///   test → lint → fmt → guidance (all languages) → structure → db
 ///
 /// It is the recommended entry point for pre-commit hooks and CI.

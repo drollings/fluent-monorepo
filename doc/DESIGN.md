@@ -50,7 +50,7 @@ Division of Responsibilities
 
 The design is intentionally asymmetric, not incomplete:
 
-| Feature | Python (bin/guidance.py) | Zig (src/explain-gen/) | Rationale |
+| Feature | Python (bin/guidance.py) | Zig (src/guidance/) | Rationale |
 
 |---------|---------------------------|--------------------------------|-----------|
 | AST Parsing | ast.parse() → PythonProcessor | std.zig.Ast.parse() → AstParser | Each language parses its own (no polyglot AST) |
@@ -77,7 +77,7 @@ Zig (sync.zig:92-153):
 - Enhancer is opt-in via --infill or --regen flags
 - No scrubbing phase—relies on Python pre-processing
 
-Implication: You cannot run explain-gen sync --infill on a clean repo without garbage comments. The scrubbing logic must be ported to Zig or called as a pre-step.
+Implication: You cannot run guidance sync --infill on a clean repo without garbage comments. The scrubbing logic must be ported to Zig or called as a pre-step.
 
 2. Query Architecture
 
@@ -290,11 +290,11 @@ const fmt = b.addFmt(.{ .paths = &.{"src"} });
 
 const guidance_sync = b.addSystemCommand(&.{
 
-    "zig-out/bin/explain-gen", "sync", "--scan", "src", "--output", "guidance"
+    "zig-out/bin/guidance", "sync", "--scan", "src", "--output", "guidance"
 
 });
 
-guidance_sync.step.dependOn(&exe.step); // Run after building explain-gen
+guidance_sync.step.dependOn(&exe.step); // Run after building guidance
 
 What Cannot Be Replaced (Easily)
 
@@ -312,7 +312,7 @@ Makefiles excel at fine-grained dependencies:
 
 .guidance/src/%.zig.json: src/%.zig
 
-	explain-gen sync --file $< --output guidance
+	guidance sync --file $< --output guidance
 
 Zig's build system is artifact-centric, not file-centric. You can't easily express "regenerate JSON only for changed .zig files" without manually tracking mtimes.
 
@@ -320,7 +320,7 @@ Workaround: Use std.Build.Step.run() with a custom step that:
 
 1. Compares mtimes of src/**/*.zig vs .guidance/src/**/*.json.
 
-2. Invokes explain-gen sync --file <changed> per dirty file.
+2. Invokes guidance sync --file <changed> per dirty file.
 
 3. Zig's std.fs.Dir.walk() + std.fs.File.stat() provide primitives.
 
@@ -353,7 +353,7 @@ guidance:
 	zig build guidance-sync
 	bin/guidance.py sync --scan src --infill  # Python for scrubbing + LLM
 explain:
-	@zig-out/bin/explain-gen query "$(QUERY)" --format compact
+	@zig-out/bin/guidance query "$(QUERY)" --format compact
 pre-commit:
 	zig build pre-commit-checks
 
@@ -421,7 +421,7 @@ Benefit: Both Python and Zig validate against the same schema. Catches divergenc
 
 2. Port Scrubbing to Zig
 
-The 100-line _is_synthetic_comment() heuristic is too valuable to leave Python-only. Port to src/explain-gen/scrub.zig:
+The 100-line _is_synthetic_comment() heuristic is too valuable to leave Python-only. Port to src/guidance/scrub.zig:
 
 pub fn isSynthetic(comment: []const u8) bool {
 
@@ -431,7 +431,7 @@ pub fn isSynthetic(comment: []const u8) bool {
 
 }
 
-Then explain-gen sync can run standalone without Python pre-processing.
+Then guidance sync can run standalone without Python pre-processing.
 
 3. Unify Query Implementations
 
@@ -445,15 +445,15 @@ Currently:
 
 Proposal: Deprecate Python's explain. Make Zig the single implementation:
 
-make explain QUERY=foo   →   zig-out/bin/explain-gen explore "foo"
+make explain QUERY=foo   →   zig-out/bin/guidance explore "foo"
 
 Why? Zig's live AST parsing is more accurate, and the codebase is already C-speed.
 
 4. Implement Inverted Index
 
-Add explain-gen index subcommand:
+Add guidance index subcommand:
 
-explain-gen index --scan guidance --output guidance/.index
+guidance index --scan guidance --output guidance/.index
 
 Outputs:
 

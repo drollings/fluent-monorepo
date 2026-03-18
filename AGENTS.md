@@ -1,16 +1,16 @@
-# Agent Bootloader — explain-gen
+# Agent Bootloader — guidance
 
-**Context**: explain-gen is a Zig-native, deterministic AST-guided SQLite FTS5 database
+**Context**: guidance is a Zig-native, deterministic AST-guided SQLite FTS5 database
 generator for NullClaw. It analyzes source files (Zig, Python, and future languages) via
-AST, generates JSON metadata files in `.explain-gen/src/`, and compiles them into
+AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
 `.explain.db` for its `explain` functionality.
 
 ## Prime Directive
 
 1. **Current Zig knowledge**: Read `doc/skills/zig-current/SKILL.md` before writing any Zig
-2. **Project structure**: Run `make gen-status` or inspect `.explain-gen/src/` for guidance
-3. **Never guess**: use the JSON files in `.explain-gen/src/` to locate code
-4. **Config**: model names and provider registry live in `.explain-gen/explain-gen-config.json`
+2. **Project structure**: Run `make gen-status` or inspect `.guidance/src/` for guidance
+3. **Never guess**: use the JSON files in `.guidance/src/` to locate code
+4. **Config**: model names and provider registry live in `.guidance/guidance-config.json`
 
 ---
 
@@ -31,7 +31,7 @@ AST, generates JSON metadata files in `.explain-gen/src/`, and compiles them int
 3. DECIDE:           If skills match → read them
                      If not → proceed to implementation
 
-4. IMPLEMENT:        Write to src/explain-gen/ or bin/ (for Python or other languages apart from Zig, i.e. explain-gen-py)
+4. IMPLEMENT:        Write to src/guidance/ or bin/ (for Python or other languages apart from Zig, i.e. guidance-py)
                      Follow source patterns and applicable skills only
 
 5. VERIFY (make):    make pre-commit
@@ -44,13 +44,13 @@ AST, generates JSON metadata files in `.explain-gen/src/`, and compiles them int
 
 ```
 src/
-  explain-gen/      Zig core engine (AST parser, sync, db, structure, deps)
+  guidance/      Zig core engine (AST parser, sync, db, structure, deps)
   common/           Zig shared LLM HTTP client and arg helpers
 bin/
-  explain-gen       Compiled binary — zig-out/bin/explain-gen (via zig build)
-  explain-gen-py    Python AST provider (Python files → .explain-gen/ JSON)
-.explain-gen/
-  explain-gen-config.json   Model / provider configuration
+  guidance       Compiled binary — zig-out/bin/guidance (via zig build)
+  guidance-py    Python AST provider (Python files → .guidance/ JSON)
+.guidance/
+  guidance-config.json   Model / provider configuration
   .skills/          Structured skill documents (GoF, zig-current, domain-patterns)
   .doc/             Capabilities, diary, inbox
   src/              Generated guidance JSON (mirrors src/ tree)
@@ -77,8 +77,8 @@ doc/
 
 ## Capturing Knowledge
 
-### Insights  (`.explain-gen/.doc/inbox/INSIGHTS.md`)
+### Insights  (`.guidance/.doc/inbox/INSIGHTS.md`)
 Append major discoveries here as markdown bullets.
 
-### New Capabilities  (`.explain-gen/.doc/inbox/CAPABILITIES.md`)
-Append major new features here as markdown bullets.  Before implementing, consult `.explain-gen/.doc/capabilities/*.md` to enforce DRY.
+### New Capabilities  (`.guidance/.doc/inbox/CAPABILITIES.md`)
+Append major new features here as markdown bullets.  Before implementing, consult `.guidance/.doc/capabilities/*.md` to enforce DRY.

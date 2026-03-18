@@ -1,4 +1,4 @@
-//! explain-gen SQLite FTS5 indexer.
+//! guidance SQLite FTS5 indexer.
 //!
 //! Produces `.explain.db` — a BM25-searchable SQLite database consumed by
 //! NullClaw's `explain` tool.
@@ -360,7 +360,7 @@ pub const ExplainDb = struct {
 
     // ── Sync ───────────────────────────────────────────────────────
 
-    /// Walk `src_dir_path` (`.explain-gen/src`) and upsert stale JSON files.
+    /// Walk `src_dir_path` (`.guidance/src`) and upsert stale JSON files.
     pub fn syncFromDir(self: *Self, allocator: std.mem.Allocator, src_dir_path: []const u8) !void {
         var src_dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
