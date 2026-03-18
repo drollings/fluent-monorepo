@@ -70,7 +70,7 @@ pub fn synthesize(
 
     if (combined.items.len == 0) return .{ .summary = null, .followup_keywords = null };
 
-    // Build prompt for detailed synthesis (under 1000 words)
+    // Build prompt for detailed synthesis (under 600 words)
     const prompt = try std.fmt.allocPrint(
         allocator,
         "You are a code navigation assistant providing comprehensive technical summaries.\n" ++
@@ -85,7 +85,7 @@ pub fn synthesize(
             "AVAILABLE KEYWORDS: {s}\n" ++
             "SOURCE FILES: {s}\n\n" ++
             "EXPLANATIONS:\n{s}\n\n" ++
-            "Write a detailed summary (under 1000 words). After your summary, suggest 3-5 related keywords.\n" ++
+            "Write a detailed summary (under 600 words). After your summary, suggest 3-5 related keywords.\n" ++
             "Format the last line as: KEYWORDS: keyword1, keyword2, keyword3",
         .{ query, keywords_buf.items, sources_buf.items, combined.items },
     );
