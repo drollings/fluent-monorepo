@@ -187,6 +187,20 @@ pub fn readFileAllocErr(allocator: std.mem.Allocator, path: []const u8, max_size
     return try file.readToEndAlloc(allocator, max_size);
 }
 
+/// Strip `root` from the front of `abs`, returning the relative tail.
+///
+/// Returns a slice directly into `abs` — no allocation.
+/// The leading separator is also stripped, so the result never starts with `/`.
+/// When `abs` does not start with `root`, `abs` is returned unchanged.
+pub fn stripPathPrefix(abs: []const u8, root: []const u8) []const u8 {
+    if (std.mem.startsWith(u8, abs, root)) {
+        var rel = abs[root.len..];
+        if (rel.len > 0 and rel[0] == '/') rel = rel[1..];
+        return rel;
+    }
+    return abs;
+}
+
 /// Resolve a path: return as-is if absolute, otherwise join with base.
 /// Handles "." special case by returning base directly.
 /// Returns an owned allocation the caller must free.

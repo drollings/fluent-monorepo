@@ -13,6 +13,7 @@ pub const makePathAbsolute = io.makePathAbsolute;
 pub const readFileAlloc = io.readFileAlloc;
 pub const readFileAllocErr = io.readFileAllocErr;
 pub const resolvePath = io.resolvePath;
+pub const stripPathPrefix = io.stripPathPrefix;
 pub const DEFAULT_MAX_FILE_SIZE = io.DEFAULT_MAX_FILE_SIZE;
 
 pub const NodeType = source.NodeType;
@@ -38,6 +39,8 @@ pub const jsonAppendEscaped = json_mod.appendEscaped;
 
 // str.zig re-exports
 pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
+pub const isTestPath = str_mod.isTestPath;
+pub const skillNameFromRef = str_mod.skillNameFromRef;
 
 // url.zig re-exports
 pub const isLocalHost = url_mod.isLocalHost;

@@ -9,8 +9,9 @@
 /// Output format: a Markdown file whose tree lives inside a fenced block.
 /// Comments are right-aligned to a common column (≥60, or longest line + 2).
 const std = @import("std");
-const gitignore_mod = @import("gitignore.zig");
+const git_mod = @import("git.zig");
 const json_store = @import("json_store.zig");
+const llm = @import("common");
 
 /// A single entry in the directory tree.
 const TreeEntry = union(enum) {
@@ -36,7 +37,7 @@ pub const StructureGenerator = struct {
     project_root: []const u8,
     guidance_dir: []const u8,
     debug: bool,
-    gitignore: gitignore_mod.GitignoreFilter,
+    gitignore: git_mod.GitignoreFilter,
     store: json_store.JsonStore,
 
     pub fn init(
@@ -50,7 +51,7 @@ pub const StructureGenerator = struct {
             .project_root = project_root,
             .guidance_dir = guidance_dir,
             .debug = debug,
-            .gitignore = gitignore_mod.GitignoreFilter.init(allocator, project_root),
+            .gitignore = git_mod.GitignoreFilter.init(allocator, project_root),
             .store = json_store.JsonStore.init(allocator),
         };
     }
@@ -172,12 +173,7 @@ pub const StructureGenerator = struct {
     }
 
     fn relPath(self: *StructureGenerator, abs: []const u8) ![]const u8 {
-        if (std.mem.startsWith(u8, abs, self.project_root)) {
-            var rel = abs[self.project_root.len..];
-            if (rel.len > 0 and rel[0] == '/') rel = rel[1..];
-            return self.allocator.dupe(u8, rel);
-        }
-        return self.allocator.dupe(u8, abs);
+        return self.allocator.dupe(u8, llm.stripPathPrefix(abs, self.project_root));
     }
 
     // -------------------------------------------------------------------------

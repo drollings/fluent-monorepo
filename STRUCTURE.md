@@ -94,7 +94,7 @@ Then you you must read
 │       ├── config.zig                              # Defines configuration paths for guidance system using precomputed absolute routes across project and user levels.
 │       ├── deps.zig                                # Extracts dependency information from Zig source files, building a map of import paths and their metadata.
 │       ├── enhancer.zig                            # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
-│       ├── gitignore.zig                           # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
+│       ├── git.zig                                 # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
 │       ├── hash.zig                                # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
 │       ├── json_store.zig                          # Manages Zig guidance parsing, stores content, tracks leaked prompts, and supports AST reconstruction.
 │       ├── lance_db.zig                            # guidance LanceDB-style vector search database.
@@ -112,8 +112,7 @@ Then you you must read
 │       ├── synthesize.zig                          # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │       ├── tests.zig                               # [gof-patterns] Tests JSONStore merge logic and query engine behavior in Zig guidance.
 │       ├── triage.zig                              # Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.
-│       ├── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
-│       └── utils.zig                               # Extracts and filters Zig source lines up to 80, identifying public declarations and comments.
+│       └── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c

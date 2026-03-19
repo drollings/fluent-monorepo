@@ -149,27 +149,9 @@ fn printHelp() !void {
         \\  query      Search .guidance.db with vector/keyword search (no LLM)
         \\  explain    Search with LLM-synthesized summary
         \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
-        \\  commit    Generate AI commit message from staged diff + guidance
-        \\  show        Show vector embeddings from .guidance.db (Markdown)
-        \\  test       Benchmark explain queries against module-level comments
-        \\
-        \\Produces .guidance/src/**/*.json and .guidance.db for NullClaw.
-        \\
-        \\Usage:
-        \\  guidance <command> [options]
-        \\  guidance --help | --version
-        \\
-        \\Commands:
-        \\  init       Create default configuration (AGENTS.md integration)
-        \\  gen        Generate .guidance/ JSON mirror and .guidance.db
-        \\  status     Show generation status (synced, stale, missing)
-        \\  clean      Remove .guidance/src and .guidance.db
-        \\  structure  Regenerate STRUCTURE.md from guidance JSON
-        \\  deps       Generate Makefile .depend file from Zig imports
-        \\  query      Search .guidance.db with vector/keyword search (no LLM)
-        \\  explain    Search with LLM-synthesized summary
-        \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit     Generate AI commit message from staged diff + guidance
+        \\  show       Show vector embeddings from .guidance.db (Markdown)
+        \\  test       Benchmark explain queries against module-level comments
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
@@ -450,6 +432,54 @@ const CommitMemberInfo = struct {
     }
 };
 
+/// Extract a ?u32 line number from a JSON member object value (.line field).
+fn memberLineNum(obj: std.json.ObjectMap) ?u32 {
+    const lv = obj.get("line") orelse return null;
+    return switch (lv) {
+        .integer => |n| if (n >= 0) @as(u32, @intCast(n)) else null,
+        .float => |f| if (f >= 0) @as(u32, @intFromFloat(f)) else null,
+        else => null,
+    };
+}
+
+/// Return true when `line` falls within any hunk range expanded by `context`.
+fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) bool {
+    for (hunk_ranges) |range| {
+        const lo = if (range[0] > context) range[0] - context else 0;
+        const hi = range[1] + context;
+        if (line >= lo and line <= hi) return true;
+    }
+    return false;
+}
+
+/// Append a CommitMemberInfo to `out` when the JSON member object is valid and
+/// its line falls within `hunk_ranges` (or when hunk_ranges is empty).
+fn appendMemberIfInRange(
+    allocator: std.mem.Allocator,
+    member: std.json.Value,
+    hunk_ranges: []const [2]u32,
+    context: u32,
+    out: *std.ArrayList(CommitMemberInfo),
+) !void {
+    if (member != .object) return;
+    const name_val = member.object.get("name") orelse return;
+    if (name_val != .string or name_val.string.len == 0) return;
+
+    const line_num = memberLineNum(member.object);
+    const include = hunk_ranges.len == 0 or line_num == null or
+        lineInRanges(line_num.?, hunk_ranges, context);
+    if (!include) return;
+
+    const comment = if (member.object.get("comment")) |cv| if (cv == .string) cv.string else "" else "";
+    const sig = if (member.object.get("signature")) |sv| if (sv == .string) sv.string else "" else "";
+    try out.append(allocator, .{
+        .name = try allocator.dupe(u8, name_val.string),
+        .line = line_num,
+        .comment = try allocator.dupe(u8, comment),
+        .signature = try allocator.dupe(u8, sig),
+    });
+}
+
 /// Load guidance JSON for rel_path and return members whose lines overlap hunk_ranges.
 fn loadChangedMembers(
     allocator: std.mem.Allocator,
@@ -483,87 +513,12 @@ fn loadChangedMembers(
     const CONTEXT_LINES: u32 = 15;
 
     for (members_val.array.items) |member| {
-        if (member != .object) continue;
-        const name_val = member.object.get("name") orelse continue;
-        if (name_val != .string or name_val.string.len == 0) continue;
-
-        const line_num: ?u32 = blk: {
-            if (member.object.get("line")) |lv| {
-                break :blk switch (lv) {
-                    .integer => |n| if (n >= 0) @as(u32, @intCast(n)) else null,
-                    .float => |f| if (f >= 0) @as(u32, @intFromFloat(f)) else null,
-                    else => null,
-                };
-            }
-            break :blk null;
-        };
-
-        const include = if (hunk_ranges.len == 0 or line_num == null)
-            true
-        else blk: {
-            const ln = line_num.?;
-            for (hunk_ranges) |range| {
-                const lo = if (range[0] > CONTEXT_LINES) range[0] - CONTEXT_LINES else 0;
-                const hi = range[1] + CONTEXT_LINES;
-                if (ln >= lo and ln <= hi) break :blk true;
-            }
-            break :blk false;
-        };
-
-        if (!include) continue;
-
-        const comment = if (member.object.get("comment")) |cv|
-            if (cv == .string) cv.string else ""
-        else
-            "";
-        const sig = if (member.object.get("signature")) |sv|
-            if (sv == .string) sv.string else ""
-        else
-            "";
-
-        try result.append(allocator, .{
-            .name = try allocator.dupe(u8, name_val.string),
-            .line = line_num,
-            .comment = try allocator.dupe(u8, comment),
-            .signature = try allocator.dupe(u8, sig),
-        });
-
+        try appendMemberIfInRange(allocator, member, hunk_ranges, CONTEXT_LINES, &result);
         // Recurse one level into nested members (struct methods).
         if (member.object.get("members")) |nested_val| {
             if (nested_val == .array) {
                 for (nested_val.array.items) |nested| {
-                    if (nested != .object) continue;
-                    const nn = nested.object.get("name") orelse continue;
-                    if (nn != .string or nn.string.len == 0) continue;
-                    const nl_num: ?u32 = blk: {
-                        if (nested.object.get("line")) |lv| {
-                            break :blk switch (lv) {
-                                .integer => |n| if (n >= 0) @as(u32, @intCast(n)) else null,
-                                else => null,
-                            };
-                        }
-                        break :blk null;
-                    };
-                    const n_include = if (hunk_ranges.len == 0 or nl_num == null)
-                        true
-                    else blk: {
-                        const ln = nl_num.?;
-                        for (hunk_ranges) |range| {
-                            const lo = if (range[0] > CONTEXT_LINES) range[0] - CONTEXT_LINES else 0;
-                            const hi = range[1] + CONTEXT_LINES;
-                            if (ln >= lo and ln <= hi) break :blk true;
-                        }
-                        break :blk false;
-                    };
-                    if (!n_include) continue;
-                    const nc = if (nested.object.get("comment")) |cv| if (cv == .string) cv.string else "" else "";
-                    const ns = if (nested.object.get("signature")) |sv| if (sv == .string) sv.string else "" else "";
-                    try result.append(allocator, .{
-                        .name = try allocator.dupe(u8, nn.string),
-                        .line = nl_num,
-                        .comment = try allocator.dupe(u8, nc),
-                        .signature = try allocator.dupe(u8, ns),
-                    });
+                    try appendMemberIfInRange(allocator, nested, hunk_ranges, CONTEXT_LINES, &result);
                 }
             }
         }
@@ -1639,16 +1594,10 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = if (json_dir_arg) |jd|
-        if (std.fs.path.isAbsolute(jd)) try allocator.dupe(u8, jd) else try std.fs.path.join(allocator, &.{ cwd, jd })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
+    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = if (db_path_arg) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
+    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Count JSON files in json_dir/src/.
@@ -1723,16 +1672,10 @@ fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = if (json_dir_arg) |jd|
-        if (std.fs.path.isAbsolute(jd)) try allocator.dupe(u8, jd) else try std.fs.path.join(allocator, &.{ cwd, jd })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
+    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = if (db_path_arg) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
+    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Remove the database.
@@ -1776,10 +1719,7 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = if (json_dir_arg) |jd|
-        if (std.fs.path.isAbsolute(jd)) try allocator.dupe(u8, jd) else try std.fs.path.join(allocator, &.{ cwd, jd })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR });
+    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
     var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
@@ -1880,17 +1820,7 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try config_mod.loadConfig(allocator, cwd);
     defer @constCast(&cfg).deinit();
 
-    const embedder = vector_mod.createEmbeddingProvider(
-        allocator,
-        cfg.embedding_provider,
-        null,
-        cfg.embedding_model,
-        cfg.embedding_dims,
-    ) catch blk: {
-        var noop = try allocator.create(vector_mod.NoopEmbedding);
-        noop.* = .{ .allocator = allocator };
-        break :blk noop.provider();
-    };
+    const embedder = try createEmbedderWithFallback(allocator, &cfg);
     defer embedder.deinit();
 
     var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
@@ -1943,54 +1873,37 @@ fn printQueryText(query_text: []const u8, results: []SearchResult) !void {
     try stdout.flush();
 }
 
-/// Write a single JSON string value — the content between the surrounding
-/// quotes — with all special characters properly escaped. Call this instead
-/// of `{s}` format specifiers inside JSON literals to prevent malformed output
-/// when field values contain `"`, `\`, or control characters.
-fn writeJsonStr(writer: *std.Io.Writer, s: []const u8) !void {
-    for (s) |c| {
-        switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => try writer.writeByte(c),
-        }
-    }
-}
-
 fn printQueryJson(query_text: []const u8, results: []SearchResult) !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
     try stdout.writeAll("{\"query\":\"");
-    try writeJsonStr(stdout, query_text);
+    try llm.jsonWriteEscaped(stdout, query_text);
     try stdout.writeAll("\",\"results\":[\n");
 
     for (results, 0..) |r, i| {
         try stdout.writeAll("  {\"module\":\"");
-        try writeJsonStr(stdout, r.module);
+        try llm.jsonWriteEscaped(stdout, r.module);
         try stdout.writeAll("\",\"name\":\"");
-        try writeJsonStr(stdout, r.name);
+        try llm.jsonWriteEscaped(stdout, r.name);
         try stdout.writeAll("\",\"type\":\"");
-        try writeJsonStr(stdout, r.node_type);
+        try llm.jsonWriteEscaped(stdout, r.node_type);
         try stdout.writeByte('"');
         if (r.signature) |s| {
             try stdout.writeAll(",\"signature\":\"");
-            try writeJsonStr(stdout, s);
+            try llm.jsonWriteEscaped(stdout, s);
             try stdout.writeByte('"');
         }
         if (r.comment) |c| {
             const nl = std.mem.indexOfScalar(u8, c, '\n') orelse c.len;
             try stdout.writeAll(",\"comment\":\"");
-            try writeJsonStr(stdout, c[0..@min(nl, 200)]);
+            try llm.jsonWriteEscaped(stdout, c[0..@min(nl, 200)]);
             try stdout.writeByte('"');
         }
         if (r.line) |l| try stdout.print(",\"line\":{d}", .{l});
         try stdout.writeAll(",\"language\":\"");
-        try writeJsonStr(stdout, r.language);
+        try llm.jsonWriteEscaped(stdout, r.language);
         try stdout.print("\",\"score\":{d:.4}}}", .{r.score});
         if (i < results.len - 1) try stdout.writeAll(",\n");
     }
@@ -2018,6 +1931,26 @@ const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 
 fn resolveAbsOrJoin(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
     return llm.resolvePath(allocator, base, path);
+}
+
+/// Create an embedding provider, falling back to NoopEmbedding when the
+/// configured provider fails to initialise.  The caller must call
+/// `embedder.deinit()` when done.
+fn createEmbedderWithFallback(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+) !vector_mod.EmbeddingProvider {
+    return vector_mod.createEmbeddingProvider(
+        allocator,
+        cfg.embedding_provider,
+        null,
+        cfg.embedding_model,
+        cfg.embedding_dims,
+    ) catch {
+        var noop = try allocator.create(vector_mod.NoopEmbedding);
+        noop.* = .{ .allocator = allocator };
+        return noop.provider();
+    };
 }
 
 /// Construct an LlmConfig from the parsed ExplainArgs.
@@ -2546,17 +2479,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     };
 
-    const embedder = vector_mod.createEmbeddingProvider(
-        allocator,
-        cfg.embedding_provider,
-        null,
-        cfg.embedding_model,
-        cfg.embedding_dims,
-    ) catch blk: {
-        var noop = try allocator.create(vector_mod.NoopEmbedding);
-        noop.* = .{ .allocator = allocator };
-        break :blk noop.provider();
-    };
+    const embedder = try createEmbedderWithFallback(allocator, &cfg);
     defer embedder.deinit();
 
     var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
@@ -2756,11 +2679,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
         if (ref.len == 0) continue;
         // Derive skill name: last path component before SKILL.md.
         // e.g. ".skills/gof-patterns/SKILL.md" → "gof-patterns"
-        const base = std.fs.path.basename(ref);
-        const skill_name: []const u8 = if (std.mem.eql(u8, base, "SKILL.md")) blk: {
-            const dir = std.fs.path.dirname(ref) orelse break :blk base;
-            break :blk std.fs.path.basename(dir);
-        } else base;
+        const skill_name = llm.skillNameFromRef(ref);
         if (skill_name.len == 0) continue;
         out.appendSlice(allocator, skill_name) catch continue;
         out.append(allocator, '\n') catch continue;
@@ -3298,33 +3217,6 @@ pub fn guidanceJsonPath(
     return std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ json_dir, rel });
 }
 
-/// Substitute `{file}` tokens in `argv_template` with `file_path`, then run
-/// the resulting command as a child process with inherited stdout/stderr.
-///
-/// Returns true on exit code 0, false otherwise.
-fn runPhaseCommand(
-    allocator: std.mem.Allocator,
-    argv_template: []const []const u8,
-    file_path: []const u8,
-) !bool {
-    var argv: std.ArrayList([]const u8) = .{};
-    defer argv.deinit(allocator);
-    for (argv_template) |tok| {
-        if (std.mem.eql(u8, tok, "{file}")) {
-            try argv.append(allocator, file_path);
-        } else {
-            try argv.append(allocator, tok);
-        }
-    }
-    var child = std.process.Child.init(argv.items, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    try child.spawn();
-    const term = try child.wait();
-    return term == .Exited and term.Exited == 0;
-}
-
 /// Run an arbitrary command (full argv, no template substitution).
 /// Returns true on exit code 0.
 fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
@@ -3335,6 +3227,23 @@ fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
     try child.spawn();
     const term = try child.wait();
     return term == .Exited and term.Exited == 0;
+}
+
+/// Substitute `{file}` tokens in `argv_template` with `file_path`, then run
+/// the resulting command via `runCommand`.
+///
+/// Returns true on exit code 0, false otherwise.
+fn runPhaseCommand(
+    allocator: std.mem.Allocator,
+    argv_template: []const []const u8,
+    file_path: []const u8,
+) !bool {
+    var argv: std.ArrayList([]const u8) = .{};
+    defer argv.deinit(allocator);
+    for (argv_template) |tok| {
+        try argv.append(allocator, if (std.mem.eql(u8, tok, "{file}")) file_path else tok);
+    }
+    return runCommand(allocator, argv.items);
 }
 
 /// Walk `dir_abs` recursively and collect all files whose extension matches
@@ -3626,10 +3535,7 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const db_path = if (db_path_arg) |dp|
-        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
-    else
-        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
+    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     var ws: llm.WriterState = .{};
@@ -3875,17 +3781,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         // Capture results via internal search
         const results = results_blk: {
-            const embedder = vector_mod.createEmbeddingProvider(
-                allocator,
-                cfg.embedding_provider,
-                null,
-                cfg.embedding_model,
-                cfg.embedding_dims,
-            ) catch embedder_blk: {
-                var noop = try allocator.create(vector_mod.NoopEmbedding);
-                noop.* = .{ .allocator = allocator };
-                break :embedder_blk noop.provider();
-            };
+            const embedder = try createEmbedderWithFallback(allocator, &cfg);
             defer embedder.deinit();
 
             var gdb = GuidanceDb.init(allocator, db_abs, embedder) catch |err| {
@@ -3972,60 +3868,13 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 while (lines.next()) |line| {
                     const trimmed = std.mem.trim(u8, line, "\t\r");
 
-                    // Check for score lines like "### Accuracy: 8/10" or "Accuracy: 8" or "- **Accuracy:** 8/10"
-                    if (std.mem.indexOf(u8, trimmed, "Accuracy")) |_| {
-                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
-                            var val_start = colon + 1;
-                            // Skip spaces and ** markdown
-                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
-                                val_start += 1;
-                            }
-                            // Find end of number (before / or space)
-                            var val_end = val_start;
-                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
-                                val_end += 1;
-                            }
-                            if (val_end > val_start) {
-                                const val_str = trimmed[val_start..val_end];
-                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
-                                    acc = @min(10, v);
-                                } else |_| {}
-                            }
-                        }
-                    } else if (std.mem.indexOf(u8, trimmed, "Relevance")) |_| {
-                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
-                            var val_start = colon + 1;
-                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
-                                val_start += 1;
-                            }
-                            var val_end = val_start;
-                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
-                                val_end += 1;
-                            }
-                            if (val_end > val_start) {
-                                const val_str = trimmed[val_start..val_end];
-                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
-                                    rel = @min(10, v);
-                                } else |_| {}
-                            }
-                        }
-                    } else if (std.mem.indexOf(u8, trimmed, "Completeness")) |_| {
-                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
-                            var val_start = colon + 1;
-                            while (val_start < trimmed.len and (trimmed[val_start] == ' ' or trimmed[val_start] == '*' or trimmed[val_start] == '-')) {
-                                val_start += 1;
-                            }
-                            var val_end = val_start;
-                            while (val_end < trimmed.len and trimmed[val_end] >= '0' and trimmed[val_end] <= '9') {
-                                val_end += 1;
-                            }
-                            if (val_end > val_start) {
-                                const val_str = trimmed[val_start..val_end];
-                                if (std.fmt.parseInt(u8, val_str, 10)) |v| {
-                                    cmpl = @min(10, v);
-                                } else |_| {}
-                            }
-                        }
+                    // Check for score lines like "### Accuracy: 8/10", "Accuracy: 8", "- **Accuracy:** 8/10"
+                    if (std.mem.indexOf(u8, trimmed, "Accuracy") != null) {
+                        if (acc == null) acc = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Relevance") != null) {
+                        if (rel == null) rel = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Completeness") != null) {
+                        if (cmpl == null) cmpl = parseScoreFromLine(trimmed);
                     } else if (std.mem.indexOf(u8, trimmed, "Observation")) |_| {
                         if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
                             var obs_start = colon + 1;
@@ -4113,6 +3962,22 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, evaluated_count });
         std.debug.print("| **Weak (<7)** | {d}/{d} |\n", .{ weak_count, evaluated_count });
     }
+}
+
+/// Parse a 0-10 score from an LLM evaluation response line of the form:
+/// "Label: <digits>[/10]" — also handles markdown decorations like "**", "-".
+/// Returns null when no score digit can be extracted after the first colon.
+fn parseScoreFromLine(line: []const u8) ?u8 {
+    const colon = std.mem.indexOfScalar(u8, line, ':') orelse return null;
+    var i = colon + 1;
+    // Skip spaces and markdown decoration (* -)
+    while (i < line.len and (line[i] == ' ' or line[i] == '*' or line[i] == '-')) i += 1;
+    // Collect consecutive ASCII digits
+    const start = i;
+    while (i < line.len and line[i] >= '0' and line[i] <= '9') i += 1;
+    if (i == start) return null;
+    const v = std.fmt.parseInt(u8, line[start..i], 10) catch return null;
+    return @min(10, v);
 }
 
 /// Generate test queries from module-level comments in guidance JSON files.

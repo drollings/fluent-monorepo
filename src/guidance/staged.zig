@@ -15,24 +15,6 @@ const llm = @import("common");
 const GuidanceDb = lance_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 
-/// Check if a file path matches common test file patterns (language-agnostic).
-/// Used to filter test files from "Used by" display.
-fn isTestPath(rel_path: []const u8) bool {
-    const basename = std.fs.path.basename(rel_path);
-    const stem = blk: {
-        const ext = std.fs.path.extension(basename);
-        break :blk if (ext.len > 0) basename[0 .. basename.len - ext.len] else basename;
-    };
-    if (std.mem.endsWith(u8, stem, "_test")) return true;
-    if (std.mem.startsWith(u8, stem, "test_")) return true;
-    if (std.mem.eql(u8, stem, "tests")) return true;
-    if (std.mem.indexOf(u8, rel_path, "/test/") != null) return true;
-    if (std.mem.indexOf(u8, rel_path, "/tests/") != null) return true;
-    if (std.mem.indexOf(u8, rel_path, "\\test\\") != null) return true;
-    if (std.mem.indexOf(u8, rel_path, "\\tests\\") != null) return true;
-    return false;
-}
-
 // ---------------------------------------------------------------------------
 // Stage collection entry point
 // ---------------------------------------------------------------------------
@@ -630,7 +612,7 @@ fn buildMetadataStage(
             var count: usize = 0;
             for (ubv.array.items) |item| {
                 if (item != .string) continue;
-                if (isTestPath(item.string)) continue;
+                if (llm.isTestPath(item.string)) continue;
                 if (count == 0) {
                     try mw.writeAll("used_by: ");
                 } else {
@@ -660,11 +642,7 @@ fn buildMetadataStage(
                 };
                 if (ref.len == 0) continue;
                 // Extract skill name from path: ".skills/foo/SKILL.md" → "foo".
-                const base = std.fs.path.basename(ref);
-                const skill_name: []const u8 = if (std.mem.eql(u8, base, "SKILL.md")) blk: {
-                    const dir = std.fs.path.dirname(ref) orelse break :blk base;
-                    break :blk std.fs.path.basename(dir);
-                } else base;
+                const skill_name = llm.skillNameFromRef(ref);
                 if (skill_name.len == 0) continue;
                 if (i > 0) try mw.writeAll(", ");
                 try mw.writeAll(skill_name);
@@ -752,11 +730,7 @@ fn loadSkillNamesFromJson(
             else => "",
         };
         if (ref.len == 0) continue;
-        const base = std.fs.path.basename(ref);
-        const skill_name: []const u8 = if (std.mem.eql(u8, base, "SKILL.md")) blk: {
-            const dir = std.fs.path.dirname(ref) orelse break :blk base;
-            break :blk std.fs.path.basename(dir);
-        } else base;
+        const skill_name = llm.skillNameFromRef(ref);
         if (skill_name.len == 0) continue;
         try out.append(allocator, try allocator.dupe(u8, skill_name));
     }

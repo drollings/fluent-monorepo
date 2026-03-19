@@ -2,8 +2,9 @@ const std = @import("std");
 const types = @import("types.zig");
 const ast_parser = @import("ast_parser.zig");
 const json_store = @import("json_store.zig");
-const gitignore = @import("gitignore.zig");
+const git = @import("git.zig");
 const config_mod = @import("config.zig");
+const llm = @import("common");
 
 // ---------------------------------------------------------------------------
 // Free helpers for QueryResult and its nested types.
@@ -78,7 +79,7 @@ pub const QueryEngine = struct {
     guidance_files: std.ArrayList(types.GuidanceInfo),
     ast_analyses: std.ArrayList(types.ASTAnalysis),
     related_skills: std.ArrayList([]const u8),
-    gitignore_filter: gitignore.GitignoreFilter,
+    gitignore_filter: git.GitignoreFilter,
     store: json_store.JsonStore,
 
     /// Takes ownership of `cfg` — caller must NOT call cfg.deinit() after this.
@@ -94,7 +95,7 @@ pub const QueryEngine = struct {
             .guidance_files = .{},
             .ast_analyses = .{},
             .related_skills = .{},
-            .gitignore_filter = gitignore.GitignoreFilter.init(allocator, project_root),
+            .gitignore_filter = git.GitignoreFilter.init(allocator, project_root),
             .store = json_store.JsonStore.init(allocator),
         };
     }
@@ -333,12 +334,7 @@ pub const QueryEngine = struct {
     }
 
     fn relPath(self: *QueryEngine, filepath: []const u8) []const u8 {
-        if (std.mem.indexOf(u8, filepath, self.project_root)) |idx| {
-            const after = filepath[idx + self.project_root.len ..];
-            if (after.len > 0 and after[0] == '/') return after[1..];
-            return after;
-        }
-        return filepath;
+        return llm.stripPathPrefix(filepath, self.project_root);
     }
 
     fn loadGuidanceDoc(self: *QueryEngine, gpath: []const u8) !void {
@@ -687,10 +683,5 @@ pub fn formatCompact(result: *const types.QueryResult, allocator: std.mem.Alloca
 }
 
 fn relPathFrom(filepath: []const u8, project_root: []const u8) []const u8 {
-    if (std.mem.indexOf(u8, filepath, project_root)) |idx| {
-        const after = filepath[idx + project_root.len ..];
-        if (after.len > 0 and after[0] == '/') return after[1..];
-        return after;
-    }
-    return filepath;
+    return llm.stripPathPrefix(filepath, project_root);
 }

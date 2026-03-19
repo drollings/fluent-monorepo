@@ -31,6 +31,43 @@ pub fn looksLikeIdentifier(token: []const u8) bool {
     return false;
 }
 
+/// Return true when `rel_path` matches common test file naming conventions.
+///
+/// Checks both Unix (`/test/`, `/tests/`) and Windows (`\test\`, `\tests\`)
+/// directory separators.  Suitable for filtering test files out of `used_by`
+/// lists and reverse-dependency scans.
+pub fn isTestPath(rel_path: []const u8) bool {
+    const basename = std.fs.path.basename(rel_path);
+    // Strip extension to get the stem.
+    const ext = std.fs.path.extension(basename);
+    const stem = if (ext.len > 0) basename[0 .. basename.len - ext.len] else basename;
+    if (std.mem.endsWith(u8, stem, "_test")) return true;
+    if (std.mem.startsWith(u8, stem, "test_")) return true;
+    if (std.mem.eql(u8, stem, "tests")) return true;
+    if (std.mem.indexOf(u8, rel_path, "/test/") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "/tests/") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "\\test\\") != null) return true;
+    if (std.mem.indexOf(u8, rel_path, "\\tests\\") != null) return true;
+    return false;
+}
+
+/// Extract a short skill name from a JSON skill ref path.
+///
+/// Examples:
+///   ".skills/gof-patterns/SKILL.md"  → "gof-patterns"
+///   ".skills/zig-current/SKILL.md"   → "zig-current"
+///   "gof-patterns"                   → "gof-patterns"  (bare name, returned as-is)
+///
+/// Returns a slice into the original `ref` — no allocation.
+pub fn skillNameFromRef(ref: []const u8) []const u8 {
+    const base = std.fs.path.basename(ref);
+    if (std.mem.eql(u8, base, "SKILL.md")) {
+        const dir = std.fs.path.dirname(ref) orelse return base;
+        return std.fs.path.basename(dir);
+    }
+    return base;
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
