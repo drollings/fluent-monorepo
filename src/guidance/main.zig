@@ -491,17 +491,10 @@ fn loadChangedMembers(
     const json_path = try std.fmt.allocPrint(allocator, "{s}/src/{s}.json", .{ guidance_root, rel_path });
     defer allocator.free(json_path);
 
-    const file = std.fs.openFileAbsolute(json_path, .{}) catch return &.{};
-    defer file.close();
-    const content = file.readToEndAlloc(allocator, 256 * 1024) catch return &.{};
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{}) catch return &.{};
+    var parsed = llm.parseJsonFile(allocator, json_path, 256 * 1024) orelse return &.{};
     defer parsed.deinit();
 
-    const root = parsed.value;
-    if (root != .object) return &.{};
-    const members_val = root.object.get("members") orelse return &.{};
+    const members_val = parsed.value.object.get("members") orelse return &.{};
     if (members_val != .array) return &.{};
 
     var result: std.ArrayList(CommitMemberInfo) = .{};
@@ -914,18 +907,10 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
     const path = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, config_mod.CONFIG_FILENAME });
     defer allocator.free(path);
 
-    const file = std.fs.openFileAbsolute(path, .{}) catch return error.FileNotFound;
-    defer file.close();
-    const content = file.readToEndAlloc(allocator, 64 * 1024) catch return error.ReadError;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{}) catch return error.ParseError;
+    var parsed = llm.parseJsonFile(allocator, path, 64 * 1024) orelse return error.ParseError;
     defer parsed.deinit();
 
-    const root = parsed.value;
-    if (root != .object) return error.InvalidConfig;
-
-    if (root.object.get("models")) |models| {
+    if (parsed.value.object.get("models")) |models| {
         if (models == .object) {
             if (models.object.get("commit")) |m| if (m == .string and m.string.len > 0)
                 return allocator.dupe(u8, m.string);
@@ -2209,7 +2194,7 @@ fn collectSourceExcerpts(
             allocator.free(code);
             continue;
         }
-        const lang: []const u8 = if (std.mem.endsWith(u8, r.source, ".zig")) "zig" else if (std.mem.endsWith(u8, r.source, ".py")) "python" else "text";
+        const lang = llm.langFromPath(r.source);
         const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
         try out.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
         try seen_files.put(allocator, r.source, {});
@@ -2615,12 +2600,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Load `used_by` array from a guidance JSON file.
 /// Returns an owned slice of owned strings, or null on failure / empty.
 fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return null;
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return null;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const ub_val = parsed.value.object.get("used_by") orelse return null;
@@ -2653,12 +2633,7 @@ fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
 /// Load skills listed in a guidance JSON file as a newline-separated string.
 /// Returns an owned allocation or null if the file is absent or has no skills.
 fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return null;
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return null;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const skills_val = parsed.value.object.get("skills") orelse return null;
@@ -2694,12 +2669,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
 /// Load public non-test member names from a guidance JSON file.
 /// Returns an owned slice of owned strings, or null on failure.
 fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return null;
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return null;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const members_val = parsed.value.object.get("members") orelse return null;
@@ -2753,38 +2723,7 @@ fn loadSkillPara(
         defer sf.close();
         const content = sf.readToEndAlloc(allocator, 512 * 1024) catch continue;
         defer allocator.free(content);
-
-        if (std.mem.startsWith(u8, content, "---\n")) {
-            // YAML front matter — look for `description:`.
-            const fm_close = std.mem.indexOf(u8, content[4..], "\n---\n") orelse {
-                var lines = std.mem.splitScalar(u8, content[4..], '\n');
-                while (lines.next()) |line| {
-                    const t = std.mem.trim(u8, line, " \t\r");
-                    if (t.len > 0 and !std.mem.eql(u8, t, "---"))
-                        return allocator.dupe(u8, t[0..@min(t.len, 200)]) catch null;
-                }
-                return null;
-            };
-            const fm_body = content[4 .. 4 + fm_close];
-            var fm_lines = std.mem.splitScalar(u8, fm_body, '\n');
-            while (fm_lines.next()) |fl| {
-                if (std.mem.startsWith(u8, fl, "description:")) {
-                    const val = std.mem.trim(u8, fl["description:".len..], " \t\r");
-                    if (val.len > 0) return allocator.dupe(u8, val[0..@min(val.len, 200)]) catch null;
-                }
-            }
-            // No description: — return first non-empty body line.
-            const after_fm = content[4 + fm_close + 5 ..];
-            var body = std.mem.splitScalar(u8, after_fm, '\n');
-            while (body.next()) |bl| {
-                const t = std.mem.trim(u8, bl, " \t\r");
-                if (t.len > 0) return allocator.dupe(u8, t[0..@min(t.len, 200)]) catch null;
-            }
-            return null;
-        }
-        // No front matter — first paragraph (up to blank line), max 600 chars.
-        const para_end = std.mem.indexOf(u8, content, "\n\n") orelse content.len;
-        return allocator.dupe(u8, content[0..@min(para_end, 600)]) catch null;
+        if (staged_mod.parseSkillDocContent(allocator, content) catch null) |doc| return doc;
     }
     return null;
 }

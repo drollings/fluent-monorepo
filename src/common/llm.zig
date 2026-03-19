@@ -36,11 +36,14 @@ pub const contentHashWithModel = hash_mod.contentHashWithModel;
 pub const jsonStringifyAlloc = json_mod.jsonStringifyAlloc;
 pub const jsonWriteEscaped = json_mod.writeEscaped;
 pub const jsonAppendEscaped = json_mod.appendEscaped;
+pub const parseJsonFile = json_mod.parseJsonFile;
 
 // str.zig re-exports
 pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
 pub const isTestPath = str_mod.isTestPath;
 pub const skillNameFromRef = str_mod.skillNameFromRef;
+pub const containsIgnoreCase = str_mod.containsIgnoreCase;
+pub const langFromPath = str_mod.langFromPath;
 
 // url.zig re-exports
 pub const isLocalHost = url_mod.isLocalHost;
@@ -200,20 +203,20 @@ pub fn isMalformedResponse(text: []const u8) bool {
     if (llmIsGenericSelfRef(trimmed)) return true;
     if (llmIsOverlyGeneric(trimmed)) return true;
 
-    if (llmContainsIgnoreCase(trimmed, "here's a")) return true;
-    if (llmContainsIgnoreCase(trimmed, "here is a")) return true;
-    if (llmContainsIgnoreCase(trimmed, "i'll ")) return true;
-    if (llmContainsIgnoreCase(trimmed, "to summarize")) return true;
-    if (llmContainsIgnoreCase(trimmed, "okay,")) return true;
-    if (llmContainsIgnoreCase(trimmed, "ok,")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "here's a")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "here is a")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "i'll ")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "to summarize")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "okay,")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "ok,")) return true;
 
     // Reasoning-model chain-of-thought that survived stripPreamble (multi-line monologues).
-    if (llmContainsIgnoreCase(trimmed, "we need ")) return true;
-    if (llmContainsIgnoreCase(trimmed, "let's think")) return true;
-    if (llmContainsIgnoreCase(trimmed, "let's craft")) return true;
-    if (llmContainsIgnoreCase(trimmed, "let's count")) return true;
-    if (llmContainsIgnoreCase(trimmed, "let me think")) return true;
-    if (llmContainsIgnoreCase(trimmed, "i need to ")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "we need ")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "let's think")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "let's craft")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "let's count")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "let me think")) return true;
+    if (str_mod.containsIgnoreCase(trimmed, "i need to ")) return true;
 
     return false;
 }
@@ -253,16 +256,6 @@ fn llmIsOverlyGeneric(body: []const u8) bool {
     if (std.mem.indexOfScalar(u8, trimmed, ' ') != null) return false;
     for (generics) |g| {
         if (std.ascii.eqlIgnoreCase(trimmed, g)) return true;
-    }
-    return false;
-}
-
-fn llmContainsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
     }
     return false;
 }

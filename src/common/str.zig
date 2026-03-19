@@ -68,6 +68,37 @@ pub fn skillNameFromRef(ref: []const u8) []const u8 {
     return base;
 }
 
+/// Return true when `needle` appears anywhere in `haystack` (case-insensitive).
+///
+/// Uses a sliding-window comparison with `std.ascii.eqlIgnoreCase`.
+/// No allocation — suitable for hot paths and large haystacks.
+/// An empty needle always matches.
+pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > haystack.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
+    }
+    return false;
+}
+
+/// Map a file path to a fenced-code-block language identifier.
+///
+/// Used for Markdown output (e.g. ` ```zig `) when embedding source excerpts.
+/// Recognised extensions: .zig, .py, .rs, .ts, .tsx, .js.
+/// Falls back to "text" for unrecognised extensions.
+///
+/// Returns a `[]const u8` into a static string literal — no allocation.
+pub fn langFromPath(path: []const u8) []const u8 {
+    if (std.mem.endsWith(u8, path, ".zig")) return "zig";
+    if (std.mem.endsWith(u8, path, ".py")) return "python";
+    if (std.mem.endsWith(u8, path, ".rs")) return "rust";
+    if (std.mem.endsWith(u8, path, ".ts") or std.mem.endsWith(u8, path, ".tsx")) return "typescript";
+    if (std.mem.endsWith(u8, path, ".js")) return "javascript";
+    return "text";
+}
+
 // =============================================================================
 // Tests
 // =============================================================================
@@ -81,6 +112,21 @@ test "looksLikeIdentifier camelCase and PascalCase" {
     try std.testing.expect(looksLikeIdentifier("camelCase"));
     try std.testing.expect(looksLikeIdentifier("PascalCase"));
     try std.testing.expect(looksLikeIdentifier("myFunction"));
+}
+
+test "containsIgnoreCase finds substring" {
+    try std.testing.expect(containsIgnoreCase("Hello World", "hello"));
+    try std.testing.expect(containsIgnoreCase("UPPER", "upper"));
+    try std.testing.expect(!containsIgnoreCase("abc", "xyz"));
+    try std.testing.expect(containsIgnoreCase("abc", ""));
+}
+
+test "langFromPath maps extensions" {
+    try std.testing.expectEqualStrings("zig", langFromPath("src/foo.zig"));
+    try std.testing.expectEqualStrings("python", langFromPath("foo.py"));
+    try std.testing.expectEqualStrings("rust", langFromPath("lib.rs"));
+    try std.testing.expectEqualStrings("typescript", langFromPath("app.tsx"));
+    try std.testing.expectEqualStrings("text", langFromPath("README.md"));
 }
 
 test "looksLikeIdentifier rejects plain words" {

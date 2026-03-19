@@ -97,10 +97,7 @@ pub const SyncProcessor = struct {
         // - If signature hash unchanged: keep existing JSON comment (or use source)
         // - If signature hash changed: use source comment if present, else mark stale
 
-        const rel_path = if (std.mem.indexOf(u8, filepath, self.project_root)) |idx|
-            filepath[idx + self.project_root.len + 1 ..]
-        else
-            filepath;
+        const rel_path = relPath(filepath, self.project_root);
 
         const guidance_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.output_dir, rel_path });
         defer self.allocator.free(guidance_path);
@@ -298,15 +295,8 @@ pub const SyncProcessor = struct {
                     }
                 }
 
-                // Build capabilities string
-                var caps_buf: std.ArrayList(u8) = .{};
-                defer caps_buf.deinit(self.allocator);
-                for (skills) |s| {
-                    if (caps_buf.items.len > 0) try caps_buf.append(self.allocator, '\n');
-                    try caps_buf.appendSlice(self.allocator, s.ref);
-                }
-
-                // Build skills string
+                // Build newline-joined skill ref string (passed as both
+                // capabilities and skills context to the thinking model).
                 var skills_buf: std.ArrayList(u8) = .{};
                 defer skills_buf.deinit(self.allocator);
                 for (skills) |s| {
@@ -318,8 +308,8 @@ pub const SyncProcessor = struct {
                     rel_path,
                     source,
                     member_sigs.items,
-                    caps_buf.items,
-                    skills_buf.items,
+                    skills_buf.items, // capabilities context
+                    skills_buf.items, // skills context (same refs)
                     module_comment,
                 ) catch |err| blk: {
                     if (self.debug) std.debug.print("detail generation failed: {}\n", .{err});
@@ -648,23 +638,7 @@ pub const SyncProcessor = struct {
         try w.writeByte('[');
         for (skills, 0..) |skill, i| {
             if (i > 0) try w.writeAll(", ");
-            // Extract the directory name between "skills/" and "/SKILL.md".
-            const ref = skill.ref;
-            const name: []const u8 = name_blk: {
-                const prefix = "skills/";
-                const suffix = "/SKILL.md";
-                if (std.mem.indexOf(u8, ref, prefix)) |p| {
-                    const after = ref[p + prefix.len ..];
-                    if (std.mem.endsWith(u8, after, suffix)) {
-                        break :name_blk after[0 .. after.len - suffix.len];
-                    }
-                    // No trailing suffix — use everything after "skills/"
-                    break :name_blk after;
-                }
-                // Fallback: use the ref as-is (already a bare name).
-                break :name_blk ref;
-            };
-            try w.writeAll(name);
+            try w.writeAll(llm.skillNameFromRef(skill.ref));
         }
         try w.writeByte(']');
         try w.writeByte(' ');

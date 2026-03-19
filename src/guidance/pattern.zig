@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const llm = @import("common");
 
 /// Detect design patterns from a Zig AST node's source text.
 /// Uses text-based heuristics analogous to the Python PatternDetector.
@@ -134,14 +135,8 @@ pub fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast
 }
 
 /// Returns true if the pattern/text `needle` appears in `haystack` (case-insensitive).
-fn containsCI(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
-    }
-    return false;
-}
+/// Delegates to the shared implementation in common/str.zig.
+const containsCI = llm.containsIgnoreCase;
 
 /// Returns true if `needle` appears in `haystack` as a word boundary match (case-insensitive).
 /// A word boundary is any non-alphanumeric character or the start/end of string.

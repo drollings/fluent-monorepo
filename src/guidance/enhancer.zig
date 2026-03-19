@@ -608,15 +608,6 @@ pub const Enhancer = struct {
 // Pure utilities (no allocator needed)
 // ---------------------------------------------------------------------------
 
-fn containsCI(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
-    }
-    return false;
-}
-
 fn lastIndexOf(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len > haystack.len) return null;
     var i: usize = haystack.len - needle.len + 1;

@@ -66,6 +66,42 @@ pub fn appendEscaped(
 }
 
 // =============================================================================
+// JSON file loading
+// =============================================================================
+
+/// Open `path`, read up to `max_size` bytes, and parse as JSON.
+///
+/// Returns null on any error (file not found, read error, parse error, or
+/// a root value that is not a JSON object).
+///
+/// On success the caller **must** call `parsed.deinit()` to release memory.
+///
+/// This helper eliminates the recurring 7-line boilerplate pattern:
+///   open → read → parse → guard(.object)
+/// that appears throughout the guidance JSON loading functions.
+pub fn parseJsonFile(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    max_size: usize,
+) ?std.json.Parsed(std.json.Value) {
+    const f = std.fs.openFileAbsolute(path, .{}) catch return null;
+    defer f.close();
+    const content = f.readToEndAlloc(allocator, max_size) catch return null;
+    defer allocator.free(content);
+    var parsed = std.json.parseFromSlice(
+        std.json.Value,
+        allocator,
+        content,
+        .{ .ignore_unknown_fields = true },
+    ) catch return null;
+    if (parsed.value != .object) {
+        parsed.deinit();
+        return null;
+    }
+    return parsed;
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -82,6 +118,31 @@ test "writeEscaped handles special chars" {
     defer buf.deinit(std.testing.allocator);
     try writeEscaped(buf.writer(std.testing.allocator), "a\"b\\c\nd");
     try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd", buf.items);
+}
+
+test "parseJsonFile returns null for missing file" {
+    const result = parseJsonFile(std.testing.allocator, "/nonexistent/file.json", 1024);
+    try std.testing.expect(result == null);
+}
+
+test "parseJsonFile parses a valid object" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    const json_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.json" });
+    defer std.testing.allocator.free(json_path);
+
+    const f = try std.fs.createFileAbsolute(json_path, .{});
+    try f.writeAll("{\"key\":\"value\"}");
+    f.close();
+
+    var parsed = parseJsonFile(std.testing.allocator, json_path, 1024).?;
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value == .object);
+    try std.testing.expect(parsed.value.object.get("key") != null);
 }
 
 test "appendEscaped handles control chars" {

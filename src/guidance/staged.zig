@@ -387,7 +387,7 @@ pub fn formatStaged(
         if (seen_code_srcs.contains(s.source)) continue;
         try seen_code_srcs.put(allocator, s.source, {});
 
-        const lang = langFromPath(s.source);
+        const lang = llm.langFromPath(s.source);
         if (s.line) |ln| {
             try w.print("## Source: `{s}:{d}`\n\n```{s}\n// {s}:{d}\n", .{ s.source, ln, lang, s.source, ln });
         } else {
@@ -560,16 +560,8 @@ fn buildMetadataStage(
     json_path: []const u8,
     source: []const u8,
 ) !?types.Stage {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return null;
-    defer f.close();
-
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return null;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
-
-    if (parsed.value != .object) return null;
     const root = parsed.value.object;
 
     var meta_buf: std.ArrayList(u8) = .{};
@@ -680,15 +672,8 @@ fn buildMetadataStage(
 /// Load just the module-level comment from a guidance JSON file.
 /// Returns an owned string or null.
 fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return null;
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return null;
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
-
-    if (parsed.value != .object) return null;
     const cv = parsed.value.object.get("comment") orelse return null;
     if (cv != .string) return null;
     if (cv.string.len < 10) return null;
@@ -701,15 +686,9 @@ fn loadSkillNamesFromJson(
     allocator: std.mem.Allocator,
     json_path: []const u8,
 ) ![][]const u8 {
-    const f = std.fs.openFileAbsolute(json_path, .{}) catch return &.{};
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 8 * 1024 * 1024) catch return &.{};
-    defer allocator.free(content);
-
-    var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return &.{};
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return &.{};
     defer parsed.deinit();
 
-    if (parsed.value != .object) return &.{};
     const sv = parsed.value.object.get("skills") orelse return &.{};
     if (sv != .array) return &.{};
 
@@ -738,21 +717,15 @@ fn loadSkillNamesFromJson(
     return out.toOwnedSlice(allocator);
 }
 
-/// Load the first paragraph / description from a SKILL.md file.
-/// Returns an owned string or null.
-pub fn loadSkillExcerpt(
-    allocator: std.mem.Allocator,
-    skills_dir: []const u8,
-    skill_name: []const u8,
-) !?[]const u8 {
-    const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
-    defer allocator.free(path);
-
-    const sf = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer sf.close();
-    const content = sf.readToEndAlloc(allocator, 512 * 1024) catch return null;
-    defer allocator.free(content);
-
+/// Parse the first description / first paragraph from the content of a SKILL.md file.
+///
+/// Priority:
+///   1. `description:` value in YAML front matter (if present).
+///   2. First non-empty, non-heading body line after the front matter.
+///   3. First paragraph (up to blank line) when there is no front matter.
+///
+/// Returns an owned string; `content` is not modified.
+pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
     // YAML front matter — look for `description:`.
     if (std.mem.startsWith(u8, content, "---\n")) {
         const fm_close = std.mem.indexOf(u8, content[4..], "\n---\n");
@@ -781,31 +754,24 @@ pub fn loadSkillExcerpt(
     return try allocator.dupe(u8, content[0..@min(para_end, 600)]);
 }
 
+/// Load the first paragraph / description from a SKILL.md file.
+/// Returns an owned string or null.
+pub fn loadSkillExcerpt(
+    allocator: std.mem.Allocator,
+    skills_dir: []const u8,
+    skill_name: []const u8,
+) !?[]const u8 {
+    const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
+    defer allocator.free(path);
+
+    const sf = std.fs.openFileAbsolute(path, .{}) catch return null;
+    defer sf.close();
+    const content = sf.readToEndAlloc(allocator, 512 * 1024) catch return null;
+    defer allocator.free(content);
+
+    return parseSkillDocContent(allocator, content);
+}
+
 // ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
-
-/// Determine fenced code block language from a file extension.
-fn langFromPath(path: []const u8) []const u8 {
-    if (std.mem.endsWith(u8, path, ".zig")) return "zig";
-    if (std.mem.endsWith(u8, path, ".py")) return "python";
-    if (std.mem.endsWith(u8, path, ".rs")) return "rust";
-    if (std.mem.endsWith(u8, path, ".ts") or std.mem.endsWith(u8, path, ".tsx")) return "typescript";
-    if (std.mem.endsWith(u8, path, ".js")) return "javascript";
-    return "text";
-}
-
-/// Return a slice of `text` containing at most `max_lines` newline-separated lines.
-/// This is a view into the original slice — no allocation.
-fn truncateLines(text: []const u8, max_lines: usize) []const u8 {
-    var count: usize = 0;
-    var i: usize = 0;
-    while (i < text.len) {
-        if (text[i] == '\n') {
-            count += 1;
-            if (count >= max_lines) return text[0..i];
-        }
-        i += 1;
-    }
-    return text;
-}
