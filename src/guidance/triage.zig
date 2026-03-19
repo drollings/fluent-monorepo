@@ -7,6 +7,7 @@
 ///   - Recommended steps (LLM or fallback checklist)
 ///   - Lifecycle status
 const std = @import("std");
+const llm = @import("common");
 
 /// Lifecycle states in order.
 pub const LIFECYCLE = [_][]const u8{ "TODO", "TRIAGE", "WORK", "COMPLETE", "COMMITTED" };
@@ -34,30 +35,19 @@ pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]
 
 /// Assess risk level deterministically from content and file count.
 pub fn assessRisk(content: []const u8, affected_count: usize) []const u8 {
-    const lower = content; // We do case-insensitive checks below.
-
-    const has_high = containsIgnoreCase(lower, "delete") or
-        containsIgnoreCase(lower, " remove ") or
-        containsIgnoreCase(lower, "breaking");
+    const has_high = llm.containsIgnoreCase(content, "delete") or
+        llm.containsIgnoreCase(content, " remove ") or
+        llm.containsIgnoreCase(content, "breaking");
     if (has_high) return "**High** — Destructive operations detected";
 
-    const has_medium = containsIgnoreCase(lower, "refactor") or
-        containsIgnoreCase(lower, "rename") or
-        containsIgnoreCase(lower, "migration");
+    const has_medium = llm.containsIgnoreCase(content, "refactor") or
+        llm.containsIgnoreCase(content, "rename") or
+        llm.containsIgnoreCase(content, "migration");
     if (has_medium) return "**Medium** — Structural changes detected";
 
     if (affected_count > 5) return "**Medium** — Wide scope: many affected files";
 
     return "**Low** — Targeted change";
-}
-
-fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
-    }
-    return false;
 }
 
 /// Default 7-step checklist (mirrors Python's _default_steps).
@@ -122,7 +112,7 @@ pub fn findAffectedFiles(
                 end += 1;
             }
             const token = content[i..end];
-            if (token.len > prefix.len and hasExtension(token)) {
+            if (token.len > prefix.len and llm.hasExtension(token, &TRIAGE_EXTS)) {
                 _ = try addUnique(allocator, &found, token, project_root);
             }
             i = end;
@@ -140,20 +130,11 @@ pub fn findAffectedFiles(
     return found.toOwnedSlice(allocator);
 }
 
-fn isPathToken(s: []const u8) bool {
-    if (s.len < 3) return false;
-    return hasExtension(s) or std.mem.indexOf(u8, s, "/") != null;
-}
+/// Common source/doc extensions recognised by triage path detection.
+const TRIAGE_EXTS = [_][]const u8{ "zig", "py", "md", "json", "toml", "yaml", "yml", "sh", "txt" };
 
-fn hasExtension(s: []const u8) bool {
-    const dot = std.mem.lastIndexOfScalar(u8, s, '.') orelse return false;
-    const ext = s[dot + 1 ..];
-    // Only accept common source/doc extensions.
-    const known = [_][]const u8{ "zig", "py", "md", "json", "toml", "yaml", "yml", "sh", "txt" };
-    for (known) |k| {
-        if (std.mem.eql(u8, ext, k)) return true;
-    }
-    return false;
+fn isPathToken(s: []const u8) bool {
+    return llm.isPathToken(s, &TRIAGE_EXTS);
 }
 
 /// Add path to list if not a duplicate. Verifies existence in project_root.

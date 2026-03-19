@@ -18,12 +18,8 @@ pub const JsonStore = struct {
 
     pub fn loadGuidance(self: *JsonStore, path: []const u8) !?types.GuidanceDoc {
         self.leaked_prompts_found = false;
-        const file = std.fs.openFileAbsolute(path, .{}) catch return null;
-        defer file.close();
-
-        const content = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch return null;
+        const content = llm.readFileAlloc(self.allocator, path, 10 * 1024 * 1024) orelse return null;
         defer self.allocator.free(content);
-
         return self.parseGuidance(content);
     }
 
@@ -376,12 +372,10 @@ pub const JsonStore = struct {
         return result;
     }
 
+    /// Deep-copy a string slice.  Delegates to the generic helper in
+    /// src/common/str.zig so callers continue to work without change.
     pub fn dupeStrings(self: *JsonStore, strs: []const []const u8) ![][]const u8 {
-        const result = try self.allocator.alloc([]const u8, strs.len);
-        for (strs, 0..) |s, i| {
-            result[i] = try self.allocator.dupe(u8, s);
-        }
-        return result;
+        return llm.dupeStrings(self.allocator, strs);
     }
 
     fn dupePatterns(self: *JsonStore, patterns: []const types.Pattern) ![]types.Pattern {

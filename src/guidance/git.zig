@@ -1,4 +1,5 @@
 const std = @import("std");
+const llm = @import("common");
 
 pub const GitignoreFilter = struct {
     allocator: std.mem.Allocator,
@@ -25,10 +26,7 @@ pub const GitignoreFilter = struct {
     }
 
     pub fn loadFromFile(self: *GitignoreFilter, path: []const u8) !void {
-        const file = std.fs.openFileAbsolute(path, .{}) catch return;
-        defer file.close();
-
-        const content = file.readToEndAlloc(self.allocator, 512 * 1024) catch return;
+        const content = llm.readFileAlloc(self.allocator, path, 512 * 1024) orelse return;
         defer self.allocator.free(content);
 
         var patterns_list: std.ArrayList([]const u8) = .{};
@@ -63,14 +61,7 @@ pub const GitignoreFilter = struct {
     }
 
     pub fn shouldIgnore(self: *const GitignoreFilter, filepath: []const u8) bool {
-        var rel_path: []const u8 = filepath;
-
-        if (std.mem.startsWith(u8, filepath, self.project_root)) {
-            rel_path = filepath[self.project_root.len..];
-            if (rel_path.len > 0 and rel_path[0] == '/') {
-                rel_path = rel_path[1..];
-            }
-        }
+        const rel_path = llm.stripPathPrefix(filepath, self.project_root);
 
         for (self.always_exclude) |exclude| {
             if (std.mem.indexOf(u8, rel_path, exclude) != null) {

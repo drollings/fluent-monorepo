@@ -201,10 +201,34 @@ pub const ProjectConfig = struct {
         };
     }
 
-    /// Check if a model reference matches the thinking model slot.
+    /// Return true when `model_ref` requires the Ollama thinking API.
+    ///
+    /// Two cases are considered:
+    ///
+    ///   1. **Exact slot match** — `model_ref` is literally the value stored in
+    ///      `models.thinking` (e.g. `"ollama:deepseek-r1:7b"` == `"ollama:deepseek-r1:7b"`).
+    ///
+    ///   2. **Same model, different provider alias** — the model-name segment
+    ///      (everything after the first `:`) of `model_ref` equals the model-name
+    ///      segment of `model_thinking`, *and* both refs have a provider prefix.
+    ///      Example: `"local:deepseek-r1:7b"` matches `"ollama:deepseek-r1:7b"`
+    ///      because `deepseek-r1:7b == deepseek-r1:7b`.
+    ///
+    /// Either case must force the caller to use the Ollama `/api/chat` endpoint
+    /// and set `think = true`, because the thinking parameter is only supported
+    /// on that native endpoint.
     pub fn isThinkingModelRef(self: *const ProjectConfig, model_ref: []const u8) bool {
         if (self.model_thinking.len == 0) return false;
-        return std.mem.eql(u8, model_ref, self.model_thinking);
+
+        // Case 1: exact match.
+        if (std.mem.eql(u8, model_ref, self.model_thinking)) return true;
+
+        // Case 2: same model name under a different provider alias.
+        // parseModelRef splits on the first ':'; if either ref has no ':' it
+        // isn't in provider:model format and we skip the comparison.
+        const ref_parsed = parseModelRef(model_ref) orelse return false;
+        const thinking_parsed = parseModelRef(self.model_thinking) orelse return false;
+        return std.mem.eql(u8, ref_parsed.model, thinking_parsed.model);
     }
 
     /// Return the test argv template for `ext`, or the fallback "*" command.
@@ -827,4 +851,85 @@ fn buildFromParts(
         .fmt_commands = fmt_commands,
         .embedding_cache_limit = embedding_cache_limit,
     };
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+/// Build a minimal ProjectConfig for unit-testing `isThinkingModelRef`.
+/// All fields not under test are given trivial values.
+fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) !ProjectConfig {
+    return buildFromParts(
+        allocator,
+        "/tmp",
+        DEFAULT_GUIDANCE_DIR,
+        DEFAULT_DB_PATH,
+        try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
+        try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
+        try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
+        DEFAULT_EMBEDDING_DIMS,
+        blk: {
+            var sd = try allocator.alloc([]const u8, 1);
+            sd[0] = try allocator.dupe(u8, "src");
+            break :blk sd;
+        },
+        blk: {
+            var pv = try allocator.alloc(Provider, 1);
+            pv[0] = Provider{
+                .name = try allocator.dupe(u8, "local"),
+                .base_url = try allocator.dupe(u8, DEFAULT_BASE_URL),
+                .chat_endpoint = try allocator.dupe(u8, DEFAULT_CHAT_ENDPOINT),
+            };
+            break :blk pv;
+        },
+        try allocator.dupe(u8, DEFAULT_MODEL),
+        try allocator.dupe(u8, DEFAULT_FAST_MODEL),
+        try allocator.dupe(u8, model_thinking),
+        &.{},
+        &.{},
+        &.{},
+        DEFAULT_EMBEDDING_CACHE_LIMIT,
+    );
+}
+
+test "isThinkingModelRef: exact slot match" {
+    var cfg = try makeTestConfig(std.testing.allocator, "ollama:deepseek-r1:7b");
+    defer cfg.deinit();
+
+    try std.testing.expect(cfg.isThinkingModelRef("ollama:deepseek-r1:7b"));
+}
+
+test "isThinkingModelRef: same model, different provider alias" {
+    var cfg = try makeTestConfig(std.testing.allocator, "ollama:deepseek-r1:7b");
+    defer cfg.deinit();
+
+    // "local:deepseek-r1:7b" has the same model name — must be detected.
+    try std.testing.expect(cfg.isThinkingModelRef("local:deepseek-r1:7b"));
+}
+
+test "isThinkingModelRef: different model — not a thinking ref" {
+    var cfg = try makeTestConfig(std.testing.allocator, "ollama:deepseek-r1:7b");
+    defer cfg.deinit();
+
+    try std.testing.expect(!cfg.isThinkingModelRef("ollama:code:latest"));
+    try std.testing.expect(!cfg.isThinkingModelRef("local:code:latest"));
+}
+
+test "isThinkingModelRef: empty thinking slot — always false" {
+    var cfg = try makeTestConfig(std.testing.allocator, "");
+    defer cfg.deinit();
+
+    try std.testing.expect(!cfg.isThinkingModelRef("ollama:deepseek-r1:7b"));
+    try std.testing.expect(!cfg.isThinkingModelRef(""));
+}
+
+test "isThinkingModelRef: bare model ref (no provider prefix) — not treated as thinking" {
+    var cfg = try makeTestConfig(std.testing.allocator, "ollama:deepseek-r1:7b");
+    defer cfg.deinit();
+
+    // "deepseek-r1:7b" has no provider — parseModelRef would split on ':' and
+    // treat "deepseek-r1" as the provider, "7b" as the model.  That "7b" doesn't
+    // match "deepseek-r1:7b", so this correctly returns false.
+    try std.testing.expect(!cfg.isThinkingModelRef("deepseek-r1:7b"));
 }

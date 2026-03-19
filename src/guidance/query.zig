@@ -196,15 +196,6 @@ pub const QueryEngine = struct {
         return matched.toOwnedSlice(self.allocator);
     }
 
-    /// Case-insensitive substring check on a stack-allocated lowercase copy.
-    fn containsIgnoreCase(allocator: std.mem.Allocator, haystack: []const u8, needle: []const u8) bool {
-        const h = std.ascii.allocLowerString(allocator, haystack) catch return false;
-        defer allocator.free(h);
-        const n = std.ascii.allocLowerString(allocator, needle) catch return false;
-        defer allocator.free(n);
-        return std.mem.indexOf(u8, h, n) != null;
-    }
-
     fn grepStructure(self: *QueryEngine) !void {
         const struct_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "STRUCTURE.md" });
         defer self.allocator.free(struct_path);
@@ -217,7 +208,7 @@ pub const QueryEngine = struct {
 
         var lines = std.mem.splitScalar(u8, content, '\n');
         while (lines.next()) |line| {
-            if (!containsIgnoreCase(self.allocator, line, self.query)) continue;
+            if (!llm.containsIgnoreCase(line, self.query)) continue;
             if (try self.parseStructureLine(line)) |match| {
                 try self.file_matches.append(self.allocator, match);
             }
@@ -288,7 +279,7 @@ pub const QueryEngine = struct {
 
             while (try walker.next()) |entry| {
                 if (entry.kind != .file) continue;
-                if (!containsIgnoreCase(self.allocator, entry.basename, self.query)) continue;
+                if (!llm.containsIgnoreCase(entry.basename, self.query)) continue;
 
                 const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, entry.path });
 

@@ -31,6 +31,14 @@ const url_mod = @import("url.zig");
 // hash.zig re-exports
 pub const sha256Hex = hash_mod.sha256Hex;
 pub const contentHashWithModel = hash_mod.contentHashWithModel;
+pub const HashAlgorithm = hash_mod.HashAlgorithm;
+pub const hashFile = hash_mod.hashFile;
+pub const hashBatch = hash_mod.hashBatch;
+pub const hashString = hash_mod.hashString;
+pub const blake3Hash = hash_mod.blake3Hash;
+pub const blake3Hex = hash_mod.blake3Hex;
+pub const HashState = hash_mod.HashState;
+pub const BatchHashResult = hash_mod.BatchHashResult;
 
 // json.zig re-exports
 pub const jsonStringifyAlloc = json_mod.jsonStringifyAlloc;
@@ -43,7 +51,13 @@ pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
 pub const isTestPath = str_mod.isTestPath;
 pub const skillNameFromRef = str_mod.skillNameFromRef;
 pub const containsIgnoreCase = str_mod.containsIgnoreCase;
+pub const containsWord = str_mod.containsWord;
+pub const containsAny = str_mod.containsAny;
+pub const containsAnyWord = str_mod.containsAnyWord;
+pub const hasExtension = str_mod.hasExtension;
+pub const isPathToken = str_mod.isPathToken;
 pub const langFromPath = str_mod.langFromPath;
+pub const dupeStrings = str_mod.dupeStrings;
 
 // url.zig re-exports
 pub const isLocalHost = url_mod.isLocalHost;
@@ -278,18 +292,41 @@ pub fn extractCommentTag(text: []const u8) ?[]const u8 {
 pub const LlmClient = struct {
     allocator: std.mem.Allocator,
     config: LlmConfig,
+    /// True when the endpoint is OpenAI-style (api.openai.com or similar).
+    is_openai_format: bool,
+    /// The normalised chat completions URL (owned; freed in deinit).
+    /// For Ollama: corrects /v1/completions → /v1/chat/completions if needed.
+    chat_url: []const u8,
     http_client: std.http.Client,
 
     pub fn init(allocator: std.mem.Allocator, config: LlmConfig) !LlmClient {
+        const is_openai = std.mem.indexOf(u8, config.api_url, "api.openai.com") != null;
+
+        // Normalise legacy /v1/completions → /v1/chat/completions for Ollama endpoints.
+        var chat_url: []const u8 = undefined;
+        if (is_openai) {
+            chat_url = try allocator.dupe(u8, config.api_url);
+        } else {
+            const is_v1_completions = std.mem.indexOf(u8, config.api_url, "/v1/completions") != null;
+            if (is_v1_completions) {
+                chat_url = try std.mem.replaceOwned(u8, allocator, config.api_url, "/v1/completions", "/v1/chat/completions");
+            } else {
+                chat_url = try allocator.dupe(u8, config.api_url);
+            }
+        }
+
         const http_client = std.http.Client{ .allocator = allocator };
         return .{
             .allocator = allocator,
             .config = config,
+            .is_openai_format = is_openai,
+            .chat_url = chat_url,
             .http_client = http_client,
         };
     }
 
     pub fn deinit(self: *LlmClient) void {
+        self.allocator.free(self.chat_url);
         self.http_client.deinit();
     }
 
@@ -340,7 +377,8 @@ pub const LlmClient = struct {
         try writer.writeAll(temp_str);
         try writer.writeAll(",\"stream\":false}");
 
-        return self.postJson(self.config.api_url, body.items);
+        const url = if (self.is_openai_format) self.config.api_url else self.chat_url;
+        return self.postJson(url, body.items);
     }
 
     /// POST `json_body` to `url` and return the extracted response text.
@@ -451,16 +489,24 @@ pub const LlmClient = struct {
     }
 
     /// Check whether the LLM endpoint is reachable.
-    /// Uses Zig's native HTTP client (GET request to the health-check endpoint).
+    /// Uses Zig's native HTTP client (GET request to the appropriate health endpoint).
     /// Returns true when the endpoint responds with HTTP 200.
-    /// OpenAI-style: GET <base>/v1/models
+    ///   OpenAI  → GET <base>/v1/models
+    ///   Ollama  → GET <scheme>://<host:port>/api/tags  (native Ollama health endpoint)
     pub fn available(self: *LlmClient) bool {
-        const check_url = blk: {
+        const check_url = if (self.is_openai_format) blk: {
+            // For OpenAI: strip to the base and append /v1/models.
+            if (std.mem.indexOf(u8, self.config.api_url, "/v1/")) |pos| {
+                break :blk std.fmt.allocPrint(self.allocator, "{s}/v1/models", .{self.config.api_url[0..pos]}) catch return false;
+            }
+            break :blk self.allocator.dupe(u8, self.config.api_url) catch return false;
+        } else blk: {
+            // For Ollama: strip path entirely and use /api/tags.
             const url = self.config.api_url;
             const scheme_end = std.mem.indexOf(u8, url, "://") orelse 0;
             const host_start = if (scheme_end > 0) scheme_end + 3 else 0;
             const path_start = std.mem.indexOfScalarPos(u8, url, host_start, '/') orelse url.len;
-            break :blk std.fmt.allocPrint(self.allocator, "{s}/v1/models", .{url[0..path_start]}) catch return false;
+            break :blk std.fmt.allocPrint(self.allocator, "{s}/api/tags", .{url[0..path_start]}) catch return false;
         };
         defer self.allocator.free(check_url);
 
@@ -479,7 +525,7 @@ pub const LlmClient = struct {
     }
 };
 
-test "LlmClient init with chat/completions URL" {
+test "LlmClient init with v1/chat/completions URL uses it directly" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
         .api_url = "http://localhost:11434/v1/chat/completions",
@@ -490,10 +536,26 @@ test "LlmClient init with chat/completions URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.config.api_url);
+    try std.testing.expect(!client.is_openai_format);
+    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.chat_url);
 }
 
-test "LlmClient init with OpenAI API URL" {
+test "LlmClient init with v1/completions URL normalises to v1/chat/completions" {
+    const allocator = std.testing.allocator;
+    const config = LlmConfig{
+        .api_url = "http://localhost:11434/v1/completions",
+        .model = "code",
+        .debug = false,
+    };
+
+    var client = try LlmClient.init(allocator, config);
+    defer client.deinit();
+
+    try std.testing.expect(!client.is_openai_format);
+    try std.testing.expectEqualStrings("http://localhost:11434/v1/chat/completions", client.chat_url);
+}
+
+test "LlmClient init with OpenAI API URL sets is_openai_format" {
     const allocator = std.testing.allocator;
     const config = LlmConfig{
         .api_url = "https://api.openai.com/v1/chat/completions",
@@ -504,7 +566,8 @@ test "LlmClient init with OpenAI API URL" {
     var client = try LlmClient.init(allocator, config);
     defer client.deinit();
 
-    try std.testing.expectEqualStrings("https://api.openai.com/v1/chat/completions", client.config.api_url);
+    try std.testing.expect(client.is_openai_format);
+    try std.testing.expectEqualStrings("https://api.openai.com/v1/chat/completions", client.chat_url);
 }
 
 test "stripThinkBlock removes think tags" {

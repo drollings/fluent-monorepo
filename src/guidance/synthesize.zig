@@ -286,6 +286,7 @@ pub fn extractProseSources(
 /// Remove lines containing "absence" phrases from LLM output.
 /// Returns an owned copy with those lines stripped.
 pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
+    // All comparisons are case-insensitive via llm.containsAny.
     const absence_kws = [_][]const u8{
         "no other",       "not present",  "only has", "does not contain",
         "does not exist", "nothing else", "none are", "none were",
@@ -296,16 +297,7 @@ pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]
 
     var line_it = std.mem.splitScalar(u8, text, '\n');
     while (line_it.next()) |line| {
-        const lower = try std.ascii.allocLowerString(allocator, line);
-        defer allocator.free(lower);
-        var is_absence = false;
-        for (absence_kws) |kw| {
-            if (std.mem.indexOf(u8, lower, kw) != null) {
-                is_absence = true;
-                break;
-            }
-        }
-        if (!is_absence) {
+        if (!llm.containsAny(line, &absence_kws)) {
             try buf.appendSlice(allocator, line);
             try buf.append(allocator, '\n');
         }

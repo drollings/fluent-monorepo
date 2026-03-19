@@ -1043,13 +1043,13 @@ const ResolvedGenPaths = struct {
 /// paths.  db_path is the LanceDB vector database; it defaults to the value
 /// in guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
-    const workspace = try resolveAbsOrJoin(allocator, cwd, ga.workspace orelse cwd);
+    const workspace = try llm.resolvePath(allocator, cwd, ga.workspace orelse cwd);
     errdefer allocator.free(workspace);
 
-    const json_dir = try resolveAbsOrJoin(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try llm.resolvePath(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
     errdefer allocator.free(json_dir);
 
-    const db_path = try resolveAbsOrJoin(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try llm.resolvePath(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
 }
 
@@ -1159,7 +1159,7 @@ fn processFiles(
     paths: ResolvedGenPaths,
 ) !usize {
     if (ga.file) |file_arg| {
-        const full_path = try resolveAbsOrJoin(allocator, paths.workspace, file_arg);
+        const full_path = try llm.resolvePath(allocator, paths.workspace, file_arg);
         defer allocator.free(full_path);
         _ = try processor.processFile(full_path);
         if (ga.verbose) std.debug.print("gen: processed {s}\n", .{full_path});
@@ -1167,7 +1167,7 @@ fn processFiles(
     }
 
     if (ga.scan) |scan_arg| {
-        const scan_abs = try resolveAbsOrJoin(allocator, paths.workspace, scan_arg);
+        const scan_abs = try llm.resolvePath(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
         const count = try processor.processDirectory(scan_abs);
         std.debug.print("gen: {d} source files processed from {s}\n", .{ count, scan_abs });
@@ -1180,7 +1180,7 @@ fn processFiles(
 
     var total: usize = 0;
     for (cfg.src_dirs) |src_rel| {
-        const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+        const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
         defer allocator.free(src_abs);
         total += try processor.processDirectory(src_abs);
     }
@@ -1324,7 +1324,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {
-        const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, file_arg);
+        const src_abs = try llm.resolvePath(allocator, paths.workspace, file_arg);
         defer allocator.free(src_abs);
 
         const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
@@ -1373,7 +1373,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
     // ── Explicit scan-dir mode  (--scan) ─────────────────────────────────────
     if (ga.scan) |scan_arg| {
-        const scan_abs = try resolveAbsOrJoin(allocator, paths.workspace, scan_arg);
+        const scan_abs = try llm.resolvePath(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
 
         // Only collect .zig files for the built-in Zig AST pipeline.
@@ -1430,7 +1430,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             all_builtin.deinit(allocator);
         }
         for (cfg.src_dirs) |src_rel| {
-            const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+            const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
             defer allocator.free(src_abs);
             const files = try collectFilesWithExts(allocator, src_abs, &builtin_exts);
             defer allocator.free(files);
@@ -1470,7 +1470,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         defer foreign_exts.deinit(allocator);
 
         for (cfg.src_dirs) |src_rel| {
-            const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+            const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
             defer allocator.free(src_abs);
 
             var dir = std.fs.openDirAbsolute(src_abs, .{ .iterate = true }) catch continue;
@@ -1521,7 +1521,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
             // Invoke provider once per src_dir that contains stale files of this extension.
             for (cfg.src_dirs) |src_rel| {
-                const src_abs = try resolveAbsOrJoin(allocator, paths.workspace, src_rel);
+                const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
                 defer allocator.free(src_abs);
                 if (ga.verbose) std.debug.print("gen: invoking {s} provider for {s} in {s}\n", .{
                     prov.name, ext, src_abs,
@@ -1579,10 +1579,10 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Count JSON files in json_dir/src/.
@@ -1657,10 +1657,10 @@ fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Remove the database.
@@ -1704,7 +1704,7 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try resolveAbsOrJoin(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
     var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
@@ -1789,10 +1789,10 @@ fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const workspace = try resolveAbsOrJoin(allocator, cwd, qa.workspace orelse cwd);
+    const workspace = try llm.resolvePath(allocator, cwd, qa.workspace orelse cwd);
     defer allocator.free(workspace);
 
-    const db_path = try resolveAbsOrJoin(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try llm.resolvePath(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     std.fs.accessAbsolute(db_path, .{}) catch {
@@ -1913,10 +1913,6 @@ const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 // =============================================================================
 // explain — small path/config helpers
 // =============================================================================
-
-fn resolveAbsOrJoin(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
-    return llm.resolvePath(allocator, base, path);
-}
 
 /// Create an embedding provider, falling back to NoopEmbedding when the
 /// configured provider fails to initialise.  The caller must call
@@ -2437,7 +2433,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(cwd);
 
     const workspace = if (ea.workspace) |w|
-        try resolveAbsOrJoin(allocator, cwd, w)
+        try llm.resolvePath(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
     defer allocator.free(workspace);
@@ -2447,14 +2443,14 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try config_mod.loadConfig(allocator, cwd);
     defer @constCast(&cfg).deinit();
 
-    const db_path = try resolveAbsOrJoin(
+    const db_path = try llm.resolvePath(
         allocator,
         workspace,
         ea.db_path orelse cfg.db_path,
     );
     defer allocator.free(db_path);
 
-    const guidance_dir = try resolveAbsOrJoin(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(guidance_dir);
 
     // ── Open .guidance.db ─────────────────────────────────────────────────────
@@ -3474,7 +3470,7 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const db_path = try resolveAbsOrJoin(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     var ws: llm.WriterState = .{};
@@ -3630,7 +3626,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(cwd);
 
     const ws = if (workspace) |w|
-        try resolveAbsOrJoin(allocator, cwd, w)
+        try llm.resolvePath(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
     defer allocator.free(ws);
@@ -3640,11 +3636,11 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer @constCast(&cfg).deinit();
 
     const db = db_path orelse cfg.db_path;
-    const db_abs = try resolveAbsOrJoin(allocator, ws, db);
+    const db_abs = try llm.resolvePath(allocator, ws, db);
     defer allocator.free(db_abs);
 
     const gdir = guidance_dir orelse cfg.guidance_dir;
-    const gdir_abs = try resolveAbsOrJoin(allocator, ws, gdir);
+    const gdir_abs = try llm.resolvePath(allocator, ws, gdir);
     defer allocator.free(gdir_abs);
 
     // Initialize LLM client for evaluation (when not --no-llm)
