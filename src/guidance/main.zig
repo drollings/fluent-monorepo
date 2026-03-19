@@ -3097,7 +3097,8 @@ fn cmdExplainStaged(
 
     const effective_query = expanded_query orelse query_text;
 
-    const stages_raw = try staged_mod.executeStagedWithAliases(allocator, db, effective_query, workspace, aliases_opt);
+    // Pass original query for deterministic matching, effective query for vector search
+    const stages_raw = try staged_mod.executeStagedWithAliasesOriginal(allocator, db, effective_query, query_text, workspace, aliases_opt);
     defer {
         types.freeStages(allocator, stages_raw);
         allocator.free(stages_raw);

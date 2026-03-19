@@ -59,8 +59,20 @@ pub fn executeStagedWithAliases(
     workspace: []const u8,
     aliases: ?lance_db_mod.SemanticAliases,
 ) ![]types.Stage {
+    return executeStagedWithAliasesOriginal(allocator, db, query, query, workspace, aliases);
+}
+
+/// Collect stages with separate original query for deterministic matching.
+pub fn executeStagedWithAliasesOriginal(
+    allocator: std.mem.Allocator,
+    db: *GuidanceDb,
+    query: []const u8,
+    original_query: []const u8,
+    workspace: []const u8,
+    aliases: ?lance_db_mod.SemanticAliases,
+) ![]types.Stage {
     // ── Vector/hybrid search with alias expansion ─────────────────────────────
-    const results = try db.searchWithAliases(allocator, query, 15, aliases);
+    const results = try db.searchWithAliasesOriginal(allocator, query, original_query, 15, aliases);
     defer {
         for (results) |r| GuidanceDb.freeSearchResult(allocator, r);
         allocator.free(results);
@@ -374,7 +386,7 @@ pub fn formatStaged(
 
     try w.print("# Explain: {s}\n\n", .{query});
 
-    // ── Synthesized summary (long-query path only) ────────────────────────────
+    // ── Synthesized summary ────────────────────────────────────────────────────
     if (summary) |s| {
         const trimmed = std.mem.trim(u8, s, " \t\n\r");
         if (trimmed.len > 0) {

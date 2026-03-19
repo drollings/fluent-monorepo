@@ -1179,11 +1179,6 @@ pub const GuidanceDb = struct {
         allocator.free(r.language);
     }
 
-    /// Hybrid search: vector (cosine) + keyword (LIKE), fused by weighted score.
-    ///
-    /// When the embedder is noop (no model configured), falls back to keyword-only.
-    /// When the query has no embedding, falls back to keyword-only.
-    /// Results are reranked by node_type (boosts structs/functions, penalizes tests).
     /// Search with optional semantic alias expansion (alias → expanded tokens).
     ///
     /// Two-phase alias matching:
@@ -1193,6 +1188,18 @@ pub const GuidanceDb = struct {
         self: *Self,
         allocator: std.mem.Allocator,
         query_text: []const u8,
+        limit: usize,
+        aliases: ?SemanticAliases,
+    ) ![]SearchResult {
+        return self.searchWithAliasesOriginal(allocator, query_text, query_text, limit, aliases);
+    }
+
+    /// Search with separate original query for deterministic matching.
+    pub fn searchWithAliasesOriginal(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        original_query: []const u8,
         limit: usize,
         aliases: ?SemanticAliases,
     ) ![]SearchResult {
@@ -1281,7 +1288,8 @@ pub const GuidanceDb = struct {
             // Free temporary tokens
             for (expanded_tokens.items) |t| allocator.free(t);
 
-            return self.search(allocator, final_query.items, limit);
+            // Use searchWithOriginal to pass original query for deterministic matching
+            return self.searchWithOriginal(allocator, final_query.items, original_query, limit);
         }
 
         // No aliases - build query from original + embedding expansions
@@ -1297,7 +1305,8 @@ pub const GuidanceDb = struct {
         // Free original tokens
         for (expanded_tokens.items) |t| allocator.free(t);
 
-        return self.search(allocator, final_query.items, limit);
+        // Use searchWithOriginal to pass original query for deterministic matching
+        return self.searchWithOriginal(allocator, final_query.items, original_query, limit);
     }
 
     pub fn search(
@@ -1306,21 +1315,37 @@ pub const GuidanceDb = struct {
         query_text: []const u8,
         limit: usize,
     ) ![]SearchResult {
+        return self.searchWithOriginal(allocator, query_text, query_text, limit);
+    }
+
+    /// Search with separate original query for deterministic matching.
+    /// The original_query is used for Phase 1 (exact name match), while query_text
+    /// is used for Phase 2-3 (vector/keyword search). This prevents expanded queries
+    /// from accidentally matching AST names that were added by LLM expansion.
+    pub fn searchWithOriginal(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        original_query: []const u8,
+        limit: usize,
+    ) ![]SearchResult {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
         // ── Phase 1: Deterministic name match (case-sensitive AST lookup) ─────────────────────
-        // Tokenize query and check if any token matches an AST name exactly.
-        // This handles queries like "How does cosineSimilarity work?" → matches cosineSimilarity
+        // Use ORIGINAL query for exact name matching, not the expanded query.
+        // Only match tokens that look like identifiers (camelCase, PascalCase, snake_case)
+        // to avoid matching common words like "search" or "work".
+        const orig_trimmed = std.mem.trim(u8, original_query, " \t\n\r");
         var query_tokens: std.ArrayList([]const u8) = .{};
         defer {
             for (query_tokens.items) |t| allocator.free(t);
             query_tokens.deinit(allocator);
         }
         {
-            var tok_it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r_-");
+            var tok_it = std.mem.tokenizeAny(u8, orig_trimmed, " \t\n\r_-");
             while (tok_it.next()) |tok| {
-                if (tok.len >= 2) {
+                if (tok.len >= 2 and looksLikeIdentifier(tok)) {
                     try query_tokens.append(allocator, try allocator.dupe(u8, tok));
                 }
             }
@@ -1330,13 +1355,13 @@ pub const GuidanceDb = struct {
         for (query_tokens.items) |token| {
             const exact_match = self.findExactNameMatch(allocator, token, limit) catch continue;
             if (exact_match.len > 0) {
-                log.debug("deterministic name match for token '{s}' in query '{s}'", .{ token, trimmed });
+                log.debug("deterministic name match for token '{s}' in query '{s}'", .{ token, orig_trimmed });
                 return exact_match;
             }
         }
 
         // ── Phase 2: Keyword vector search (semantic index, case-insensitive) ─────────────────────
-        // Build query embedding for semantic search
+        // Build query embedding for semantic search (use full query_text, not original)
         const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
         defer if (query_emb) |e| allocator.free(e);
 
@@ -1359,6 +1384,27 @@ pub const GuidanceDb = struct {
         } else {
             return self.keywordSearch(allocator, trimmed, limit);
         }
+    }
+
+    /// Check if a token looks like an identifier (camelCase, PascalCase, snake_case).
+    /// Returns true if the token has uppercase letters (after first char) or underscores.
+    /// This filters out common words like "search", "work", "how" that might accidentally
+    /// match AST names.
+    fn looksLikeIdentifier(token: []const u8) bool {
+        if (token.len < 2) return false;
+
+        // Check for underscore (snake_case)
+        for (token) |ch| {
+            if (ch == '_') return true;
+        }
+
+        // Check for uppercase after first character (camelCase, PascalCase)
+        var i: usize = 1;
+        while (i < token.len) : (i += 1) {
+            if (std.ascii.isUpper(token[i])) return true;
+        }
+
+        return false;
     }
 
     /// Find exact case-sensitive name match in AST.
