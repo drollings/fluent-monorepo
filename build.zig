@@ -72,6 +72,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/guidance/lance_db.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
         }),
     });
     lance_db_tests.linkLibC();
@@ -82,6 +85,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/guidance/vector/embeddings.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
         }),
     });
 

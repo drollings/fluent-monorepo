@@ -2129,7 +2129,7 @@ const FilterMode = enum {
 const ExplainArgs = struct {
     query_str: ?[]const u8 = null,
     limit: usize = 10,
-    /// Path to .guidance.db. Defaults to config guidance_db_path or DEFAULT_GUIDANCE_DB_PATH.
+    /// Path to .guidance.db. Defaults to config db_path or DEFAULT_GUIDANCE_DB_PATH.
     db_path: ?[]const u8 = null,
     workspace: ?[]const u8 = null,
     guidance: ?[]const u8 = null,
@@ -2532,7 +2532,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const db_path = try resolveAbsOrJoin(
         allocator,
         workspace,
-        ea.db_path orelse cfg.guidance_db_path,
+        ea.db_path orelse cfg.db_path,
     );
     defer allocator.free(db_path);
 
@@ -3794,7 +3794,7 @@ fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try config_mod.loadConfig(allocator, cwd);
     defer @constCast(&cfg).deinit();
 
-    const db = db_path orelse cfg.guidance_db_path;
+    const db = db_path orelse cfg.db_path;
     const db_abs = try resolveAbsOrJoin(allocator, ws, db);
     defer allocator.free(db_abs);
 

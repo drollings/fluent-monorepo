@@ -14,9 +14,9 @@
     }
   },
   "models": {
-    "default": "local:fast:latest",
-    "fast": "local:fast:latest",
-    "thinking": "ollama:code:latest",
+    "default": "ollama:fast:latest",
+    "fast": "ollama:fast:latest",
+    "thinking": "ollama:fastcode:latest",
     "embed": "ollama:embed:latest"
   },
   "embed": {
@@ -35,8 +35,5 @@
     ".zig": ["zig", "fmt", "{file}"],
     ".py": ["ruff", "format", "{file}"]
   },
-  "enable_guidance_db": true,
-  "guidance_db_path": ".guidance.db",
-
   "comment": "guidance: produces .guidance.db SQLite vector search database and .guidance/ JSON mirror."
 }

@@ -8,52 +8,18 @@
 //!   - createEmbeddingProvider() factory
 
 const std = @import("std");
+const common = @import("common");
 
 // ── JSON helper ───────────────────────────────────────────────────
 
 /// Append `text` to `buf`, JSON-escaping characters that require it.
-fn appendJsonEscaped(buf: *std.ArrayListUnmanaged(u8), allocator: std.mem.Allocator, text: []const u8) !void {
-    for (text) |ch| {
-        switch (ch) {
-            '"' => try buf.appendSlice(allocator, "\\\""),
-            '\\' => try buf.appendSlice(allocator, "\\\\"),
-            '\n' => try buf.appendSlice(allocator, "\\n"),
-            '\r' => try buf.appendSlice(allocator, "\\r"),
-            '\t' => try buf.appendSlice(allocator, "\\t"),
-            0x00...0x08, 0x0b, 0x0c, 0x0e...0x1f => {
-                var tmp: [6]u8 = undefined;
-                const s = std.fmt.bufPrint(&tmp, "\\u{x:0>4}", .{ch}) catch unreachable;
-                try buf.appendSlice(allocator, s);
-            },
-            else => try buf.append(allocator, ch),
-        }
-    }
-}
+/// Delegates to src/common/json.zig.
+const appendJsonEscaped = common.jsonAppendEscaped;
 
 // ── URL validation ────────────────────────────────────────────────
 
-fn isLocalHost(host: []const u8) bool {
-    if (std.mem.eql(u8, host, "localhost")) return true;
-    if (std.mem.eql(u8, host, "127.0.0.1")) return true;
-    if (std.mem.eql(u8, host, "::1")) return true;
-    if (std.mem.startsWith(u8, host, "127.")) return true;
-    return false;
-}
-
-fn validateHttpsOrLocalHttp(url: []const u8) !void {
-    if (url.len == 0) return error.InvalidEmbeddingApiUrl;
-    const is_https = std.mem.startsWith(u8, url, "https://");
-    const is_http = std.mem.startsWith(u8, url, "http://");
-    if (!is_https and !is_http) return error.InvalidEmbeddingApiUrl;
-
-    if (is_http) {
-        // Extract host from http://host:port/path
-        const after = url["http://".len..];
-        const host_end = std.mem.indexOfAny(u8, after, ":/") orelse after.len;
-        const host = after[0..host_end];
-        if (!isLocalHost(host)) return error.InsecureEmbeddingApiUrl;
-    }
-}
+/// Delegates to src/common/url.zig.
+const validateHttpsOrLocalHttp = common.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
@@ -465,24 +431,8 @@ pub fn parseOpenAiResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
 
 // ── Content hash for embedding cache ─────────────────────────────
 
-/// SHA-256-based 16-hex-char content hash. Includes model name to prevent
-/// stale cache hits across model changes.
-pub fn contentHashWithModel(content: []const u8, model: []const u8) [16]u8 {
-    var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-    hasher.update(model);
-    hasher.update("\x00");
-    hasher.update(content);
-    var digest: [32]u8 = undefined;
-    hasher.final(&digest);
-
-    var result: [16]u8 = undefined;
-    const hex_chars = "0123456789abcdef";
-    for (0..8) |i| {
-        result[i * 2] = hex_chars[digest[i] >> 4];
-        result[i * 2 + 1] = hex_chars[digest[i] & 0x0f];
-    }
-    return result;
-}
+/// SHA-256-based 16-hex-char content+model hash.  Delegates to src/common/hash.zig.
+pub const contentHashWithModel = common.contentHashWithModel;
 
 // ── Factory ───────────────────────────────────────────────────────
 
@@ -574,7 +524,7 @@ test "OllamaEmbedding init and deinit" {
 
 test "OllamaEmbedding rejects insecure remote http" {
     const result = OllamaEmbedding.init(std.testing.allocator, null, "http://gpu-server:11434", null);
-    try std.testing.expectError(error.InsecureEmbeddingApiUrl, result);
+    try std.testing.expectError(error.InsecureApiUrl, result);
 }
 
 test "parseOllamaResponse valid" {

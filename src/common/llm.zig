@@ -20,6 +20,29 @@ pub const DEFAULT_MAX_LINES = source.DEFAULT_MAX_LINES;
 pub const extractExcerpt = source.extractExcerpt;
 pub const extractSimpleExcerpt = source.extractSimpleExcerpt;
 
+// New generic utility modules — part of the 'common' module.
+// Access these from src/guidance/* via @import("common").sha256Hex etc.
+const hash_mod = @import("hash.zig");
+const json_mod = @import("json.zig");
+const str_mod = @import("str.zig");
+const url_mod = @import("url.zig");
+
+// hash.zig re-exports
+pub const sha256Hex = hash_mod.sha256Hex;
+pub const contentHashWithModel = hash_mod.contentHashWithModel;
+
+// json.zig re-exports
+pub const jsonStringifyAlloc = json_mod.jsonStringifyAlloc;
+pub const jsonWriteEscaped = json_mod.writeEscaped;
+pub const jsonAppendEscaped = json_mod.appendEscaped;
+
+// str.zig re-exports
+pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
+
+// url.zig re-exports
+pub const isLocalHost = url_mod.isLocalHost;
+pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
+
 pub const LlmError = error{
     InvalidUrl,
     ConnectionFailed,

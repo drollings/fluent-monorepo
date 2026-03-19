@@ -81,15 +81,7 @@ pub const ProjectConfig = struct {
     inbox_dir: []const u8,
 
     /// Relative path to the guidance database file from workspace root.
-    /// (Legacy field, kept for config compatibility; guidance_db_path is preferred.)
     db_path: []const u8,
-
-    /// Relative path to the LanceDB vector search database.
-    guidance_db_path: []const u8,
-
-    /// Enable .guidance.db (LanceDB vector search). Always true; kept for
-    /// backward-compatible config parsing.
-    enable_guidance_db: bool,
 
     /// Embedding provider name: "ollama", "openai", "none", "custom:<url>".
     embedding_provider: []const u8,
@@ -142,7 +134,6 @@ pub const ProjectConfig = struct {
         self.allocator.free(self.skills_dir);
         self.allocator.free(self.inbox_dir);
         self.allocator.free(self.db_path);
-        self.allocator.free(self.guidance_db_path);
         self.allocator.free(self.capabilities_dir);
         self.allocator.free(self.embedding_provider);
         self.allocator.free(self.embedding_model);
@@ -328,7 +319,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\    }}
             \\  }},
             \\  "models": {{
-            \\    "default": "local:code:latest",
+            \\    "default": "ollama:code:latest",
             \\    "fast": "local:code:latest",
             \\    "thinking": "ollama:code:latest",
             \\    "embed": "{s}"
@@ -626,17 +617,6 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     else
         DEFAULT_CAPABILITIES_DIR;
 
-    // Embedding / guidance.db config
-    const guidance_db_path_rel: []const u8 = if (root.object.get("guidance_db_path")) |gp|
-        if (gp == .string) gp.string else DEFAULT_GUIDANCE_DB_PATH
-    else
-        DEFAULT_GUIDANCE_DB_PATH;
-
-    const enable_guidance_db: bool = if (root.object.get("enable_guidance_db")) |egp|
-        if (egp == .bool) egp.bool else false
-    else
-        false;
-
     // Parse embed object (dims, cache_limit) with fallback to flat fields (backward compat)
     const embed_obj = if (root.object.get("embed")) |eo| if (eo == .object) eo.object else null else null;
 
@@ -726,8 +706,6 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         cwd,
         guidance_dir_rel,
         db_path_rel,
-        guidance_db_path_rel,
-        enable_guidance_db,
         try allocator.dupe(u8, capabilities_dir_rel),
         try allocator.dupe(u8, embedding_provider),
         try allocator.dupe(u8, embedding_model),
@@ -771,8 +749,6 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         cwd,
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
-        DEFAULT_GUIDANCE_DB_PATH,
-        true, // enable_guidance_db — always on by default
         try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
@@ -794,8 +770,6 @@ fn buildFromParts(
     cwd: []const u8,
     guidance_dir_rel: []const u8,
     db_path_rel: []const u8,
-    guidance_db_path_rel: []const u8,
-    enable_guidance_db: bool,
     capabilities_dir: []const u8,
     embedding_provider: []const u8,
     embedding_model: []const u8,
@@ -831,9 +805,6 @@ fn buildFromParts(
     const db_path = try allocator.dupe(u8, db_path_rel);
     errdefer allocator.free(db_path);
 
-    const guidance_db_path = try allocator.dupe(u8, guidance_db_path_rel);
-    errdefer allocator.free(guidance_db_path);
-
     return .{
         .allocator = allocator,
         .guidance_dir = guidance_dir,
@@ -842,8 +813,6 @@ fn buildFromParts(
         .skills_dir = skills_dir,
         .inbox_dir = inbox_dir,
         .db_path = db_path,
-        .guidance_db_path = guidance_db_path,
-        .enable_guidance_db = enable_guidance_db,
         .capabilities_dir = capabilities_dir,
         .embedding_provider = embedding_provider,
         .embedding_model = embedding_model,

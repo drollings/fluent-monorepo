@@ -119,19 +119,18 @@ env-init: check-prereqs venv ## Initialize development environment
 	@echo "Environment ready."
 
 .PHONY: clean
-clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .guidance config)
-	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(GUIDANCE_DB)
-	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
-
-.PHONY: clean-db
-clean-db: ## Remove build artifacts and markers (keeps venv and .guidance config)
-	$(Q)rm -rf .zig-cache zig-out $(GUIDANCE_DB)
+clean: clean-db ## Remove build artifacts and markers (keeps venv and .guidance config)
+	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
 
 ##@ Guidance Management
 
-.PHONY: _clean-guidance
-_clean-guidance: ## Remove stale JSON files from .guidance/src
+.PHONY: clean-db
+clean-db: ## Remove build artifacts and markers (keeps venv and .guidance config)
+	$(Q)rm -rf .$(GUIDANCE_DB)
+
+.PHONY: clean-all
+clean-all: clean ## Remove stale JSON files from .guidance/src
 	$(Q)find $(GUIDANCE_DIR)/src -name '*.json' -type f -exec rm -rf {} \; || true
 
 .PHONY: explain

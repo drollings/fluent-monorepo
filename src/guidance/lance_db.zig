@@ -20,6 +20,7 @@
 
 const std = @import("std");
 const vector = @import("vector/root.zig");
+const common = @import("common");
 const log = std.log.scoped(.guidance_db);
 
 pub const c = @cImport({
@@ -1451,26 +1452,8 @@ pub const GuidanceDb = struct {
         }
     }
 
-    /// Check if a token looks like an identifier (camelCase, PascalCase, snake_case).
-    /// Returns true if the token has uppercase letters (after first char) or underscores.
-    /// This filters out common words like "search", "work", "how" that might accidentally
-    /// match AST names.
-    fn looksLikeIdentifier(token: []const u8) bool {
-        if (token.len < 2) return false;
-
-        // Check for underscore (snake_case)
-        for (token) |ch| {
-            if (ch == '_') return true;
-        }
-
-        // Check for uppercase after first character (camelCase, PascalCase)
-        var i: usize = 1;
-        while (i < token.len) : (i += 1) {
-            if (std.ascii.isUpper(token[i])) return true;
-        }
-
-        return false;
-    }
+    /// Delegates to src/common/str.looksLikeIdentifier.
+    const looksLikeIdentifier = common.looksLikeIdentifier;
 
     /// Find exact case-sensitive name match in AST.
     /// Returns results if the name exists in the database.

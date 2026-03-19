@@ -74,10 +74,14 @@ Then you you must read
 │       └── target_language.mk
 ├── src
 │   ├── common
-│   │   ├── args.zig                              # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
-│   │   ├── io.zig                                # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/reader initialization and preventing dangl...
-│   │   ├── llm.zig                               # Handles Zig AST parsing, LLM configuration, state management, and text processing for LLM responses.
-│   │   └── source.zig                            # Extracts relevant Zig code excerpts based on node type and line limits for documentation and LLM use.
+│   │   ├── args.zig                              # Parses command-line arguments into a structured CommonArgs object for configuration handling.
+│   │   ├── hash.zig                              # Provides SHA-256 hashing utilities and content+model hashing for cache keys, supporting allocator-free usage.
+│   │   ├── io.zig                                # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
+│   │   ├── json.zig                              # Provides allocator-safe JSON serialization and escaping utilities for Zig tools.
+│   │   ├── llm.zig                               # Contains utility modules and configurations for parsing, hashing, and validating Zig code snippets.
+│   │   ├── source.zig                            # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
+│   │   ├── str.zig                               # This file contains functions to detect Zig code identifiers, filtering out common English words and enforcing naming ...
+│   │   └── url.zig                               # Validates API URLs as HTTPS or localhost, ensuring safe API calls.
 │   └── guidance
 │       ├── plugins
 │       │   ├── markdown_plugin.zig               # MarkdownPlugin — extracts sections and metadata from Markdown files.
@@ -87,12 +91,12 @@ Then you you must read
 │       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
 │       │   └── root.zig                          # guidance vector module — cosine search, embeddings, hybrid merge.
 │       ├── ast_parser.zig                          # Parses Zig AST, extracts member signatures, and manages memory for the parser.
-│       ├── config.zig                              # Defines configuration paths for guidance system, handling multiple fallback locations and precomputed defaults.
+│       ├── config.zig                              # Defines configuration paths for guidance system using precomputed absolute routes across project and user levels.
 │       ├── deps.zig                                # Extracts dependency information from Zig source files, building a map of import paths and their metadata.
 │       ├── enhancer.zig                            # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
-│       ├── gitignore.zig                           # Manages Gitignore patterns, patterns, negations, and project paths for file loading and exclusion.
-│       ├── hash.zig                                # Implements SHA-256 hashing and signature generation for Zig types, ensuring deterministic output and type normalization.
-│       ├── json_store.zig                          # Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.
+│       ├── gitignore.zig                           # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
+│       ├── hash.zig                                # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
+│       ├── json_store.zig                          # Manages Zig guidance parsing, stores content, tracks leaked prompts, and supports AST reconstruction.
 │       ├── lance_db.zig                            # guidance LanceDB-style vector search database.
 │       ├── llm_filter.zig                          # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │       ├── main.zig                                # [gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
@@ -101,14 +105,14 @@ Then you you must read
 │       ├── plugin.zig                              # LanguagePlugin — interface for language-specific AST providers.
 │       ├── plugin_registry.zig                     # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │       ├── provider_discovery.zig                  # External language provider discovery for guidance.
-│       ├── query.zig                               # Manages memory cleanup for Zig AST nodes, freeing file paths, descriptions, comments, and related structures during q...
+│       ├── query.zig                               # Manages memory cleanup for Zig AST nodes, freeing files, descriptions, comments, and related structures during query ...
 │       ├── staged.zig                              # staged.zig — Staged explain pipeline for `guidance explain`.
-│       ├── structure.zig                           # Generates structured Markdown from Zig AST, merging new comments with existing ones in a tree format.
-│       ├── sync.zig                                # Handles Zig file parsing, AST processing, JSON storage, and supports comment enrichment and regeneration.
+│       ├── structure.zig                           # Generates structured Markdown from Zig AST, merging new comments with existing ones while preserving formatting.
+│       ├── sync.zig                                # Handles Zig file parsing, AST processing, and supports comment stripping and enhancement for documentation generation.
 │       ├── synthesize.zig                          # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │       ├── tests.zig                               # [gof-patterns] Tests JSONStore merge logic and query engine behavior in Zig guidance.
 │       ├── triage.zig                              # Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.
-│       ├── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined categories.
+│       ├── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
 │       └── utils.zig                               # Extracts and filters Zig source lines up to 80, identifying public declarations and comments.
 ├── vendor
 │   └── sqlite3
@@ -128,6 +132,7 @@ Then you you must read
 ├── README.md
 ├── REFACTOR.md
 ├── requirements.txt
+├── ROADMAP_OPTIMIZE_VECTOR_SEARCH.md
 ├── STRUCTURE.md
 └── TEST_EXPLAIN_PROMPT.md
 ```

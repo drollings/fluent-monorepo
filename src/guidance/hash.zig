@@ -1,14 +1,9 @@
 const std = @import("std");
 const types = @import("types.zig");
+const common = @import("common");
 
-pub fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
-    var hash_out: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(data, &hash_out, .{});
-    const hex = std.fmt.bytesToHex(hash_out, .lower);
-    const result = try allocator.alloc(u8, hex.len);
-    @memcpy(result, &hex);
-    return result;
-}
+/// SHA-256 hex digest — delegates to src/common/hash.zig.
+pub const sha256Hex = common.sha256Hex;
 
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};

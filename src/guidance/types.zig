@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("common");
 
 /// Classification of a source file's content type.
 /// Used in the `file_type` column of `ast_nodes` and by the plugin registry
@@ -201,14 +202,8 @@ pub const SyncResult = struct {
     has_changes: bool = false,
 };
 
-pub fn jsonStringifyAlloc(allocator: std.mem.Allocator, value: anytype) ![]u8 {
-    var out: std.io.Writer.Allocating = .init(allocator);
-    const writer = &out.writer;
-    defer out.deinit();
-
-    try std.json.Stringify.value(value, .{ .whitespace = .indent_2 }, writer);
-    return try allocator.dupe(u8, out.written());
-}
+/// Serialize `value` to pretty-printed JSON.  Delegates to src/common/json.zig.
+pub const jsonStringifyAlloc = common.jsonStringifyAlloc;
 
 pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
     var list: std.ArrayList(u8) = .{};
