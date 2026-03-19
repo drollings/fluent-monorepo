@@ -20,6 +20,27 @@ const deps_mod = @import("deps.zig");
 const lance_db_mod = @import("lance_db.zig");
 const vector_mod = @import("vector/root.zig");
 
+/// Global verbose flag - controls debug log output
+var verbose_mode: bool = false;
+
+/// Custom log implementation - filters debug messages based on verbose flag
+pub const std_options: std.Options = .{
+    .logFn = struct {
+        fn log(
+            comptime level: std.log.Level,
+            comptime scope: @Type(.enum_literal),
+            comptime format: []const u8,
+            args: anytype,
+        ) void {
+            // Filter debug messages unless verbose mode is enabled
+            if (level == .debug and !verbose_mode) return;
+
+            // Use default log implementation for other levels
+            std.log.defaultLog(level, scope, format, args);
+        }
+    }.log,
+};
+
 /// Canonical search result type — LanceDB hybrid search (vector + keyword).
 const GuidanceDb = lance_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -59,6 +80,14 @@ pub fn main() !void {
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
+
+    // Check for --verbose flag anywhere in args (global flag)
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+            verbose_mode = true;
+            break;
+        }
+    }
 
     if (args.len < 2) {
         try printHelp();
