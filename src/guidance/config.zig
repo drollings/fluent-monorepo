@@ -28,6 +28,7 @@ pub const DEFAULT_THINKING_MODEL = "";
 pub const DEFAULT_BASE_URL = "http://localhost:11434";
 pub const DEFAULT_CHAT_ENDPOINT = "/v1/chat/completions";
 pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
+pub const DEFAULT_EMBEDDING_CACHE_LIMIT: u32 = 400;
 pub const CONFIG_FILENAME = "guidance-config.json";
 
 pub const Provider = struct {
@@ -130,6 +131,9 @@ pub const ProjectConfig = struct {
 
     /// Per-extension format commands. Run after lint, before guidance.
     fmt_commands: []const LintCommand,
+
+    /// Maximum number of entries in the embedding cache. 0 means unlimited.
+    embedding_cache_limit: u32,
 
     pub fn deinit(self: *ProjectConfig) void {
         self.allocator.free(self.guidance_dir);
@@ -326,7 +330,12 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "models": {{
             \\    "default": "local:code:latest",
             \\    "fast": "local:code:latest",
-            \\    "thinking": "ollama:code:latest"
+            \\    "thinking": "ollama:code:latest",
+            \\    "embed": "{s}"
+            \\  }},
+            \\  "embed": {{
+            \\    "dims": {d},
+            \\    "cache_limit": {d}
             \\  }},
             \\  "test_commands": {{
             \\    ".zig": ["zig", "build", "test", "--summary", "all"],
@@ -342,7 +351,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  }}
             \\}}
             \\
-        , .{ guidance_dir, db_path });
+        , .{ guidance_dir, db_path, DEFAULT_EMBEDDING_PROVIDER ++ ":" ++ DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIMS, DEFAULT_EMBEDDING_CACHE_LIMIT });
 
         try file.writeAll(fbs.getWritten());
         std.debug.print("Created {s}\n", .{config_path});
@@ -628,19 +637,63 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     else
         false;
 
+    // Parse embed object (dims, cache_limit) with fallback to flat fields (backward compat)
+    const embed_obj = if (root.object.get("embed")) |eo| if (eo == .object) eo.object else null else null;
+
+    // Parse models object for embed model (new structure: models.embed)
+    const models_obj = if (root.object.get("models")) |mo| if (mo == .object) mo.object else null else null;
+
     const embedding_provider: []const u8 = blk: {
-        if (root.object.get("embedding_provider")) |ep|
-            if (ep == .string) break :blk ep.string;
+        // New structure: models.embed (e.g. "ollama:nomic-embed-text")
+        if (models_obj) |obj| {
+            if (obj.get("embed")) |em| {
+                if (em == .string) {
+                    const full = em.string;
+                    if (std.mem.indexOfScalar(u8, full, ':')) |colon| {
+                        break :blk full[0..colon];
+                    }
+                }
+            }
+        }
+        // Old structure: embed.provider
+        if (embed_obj) |obj| {
+            if (obj.get("provider")) |ep| if (ep == .string) break :blk ep.string;
+        }
+        // Old structure: flat embedding_provider
+        if (root.object.get("embedding_provider")) |ep| if (ep == .string) break :blk ep.string;
         break :blk DEFAULT_EMBEDDING_PROVIDER;
     };
 
     const embedding_model: []const u8 = blk: {
-        if (root.object.get("embedding_model")) |em|
-            if (em == .string) break :blk em.string;
+        // New structure: models.embed (e.g. "ollama:nomic-embed-text")
+        if (models_obj) |obj| {
+            if (obj.get("embed")) |em| {
+                if (em == .string) {
+                    const full = em.string;
+                    if (std.mem.indexOfScalar(u8, full, ':')) |colon| {
+                        break :blk full[colon + 1 ..];
+                    }
+                }
+            }
+        }
+        // Old structure: embed.model
+        if (embed_obj) |obj| {
+            if (obj.get("model")) |em| if (em == .string) break :blk em.string;
+        }
+        // Old structure: flat embedding_model
+        if (root.object.get("embedding_model")) |em| if (em == .string) break :blk em.string;
         break :blk DEFAULT_EMBEDDING_MODEL;
     };
 
     const embedding_dims: u32 = blk: {
+        if (embed_obj) |obj| {
+            if (obj.get("dims")) |ed| {
+                switch (ed) {
+                    .integer => |n| if (n > 0) break :blk @intCast(n),
+                    else => {},
+                }
+            }
+        }
         if (root.object.get("embedding_dims")) |ed| {
             switch (ed) {
                 .integer => |n| break :blk if (n > 0) @intCast(n) else DEFAULT_EMBEDDING_DIMS,
@@ -648,6 +701,24 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
             }
         }
         break :blk DEFAULT_EMBEDDING_DIMS;
+    };
+
+    const embedding_cache_limit: u32 = blk: {
+        if (embed_obj) |obj| {
+            if (obj.get("cache_limit")) |cl| {
+                switch (cl) {
+                    .integer => |n| if (n >= 0) break :blk @intCast(n),
+                    else => {},
+                }
+            }
+        }
+        if (root.object.get("embedding_cache_limit")) |cl| {
+            switch (cl) {
+                .integer => |n| break :blk if (n >= 0) @intCast(n) else DEFAULT_EMBEDDING_CACHE_LIMIT,
+                else => {},
+            }
+        }
+        break :blk DEFAULT_EMBEDDING_CACHE_LIMIT;
     };
 
     return buildFromParts(
@@ -669,6 +740,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         test_commands,
         lint_commands,
         fmt_commands,
+        embedding_cache_limit,
     );
 }
 
@@ -713,6 +785,7 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         test_commands,
         &.{},
         &.{},
+        DEFAULT_EMBEDDING_CACHE_LIMIT,
     );
 }
 
@@ -735,6 +808,7 @@ fn buildFromParts(
     test_commands: []const LintCommand,
     lint_commands: []const LintCommand,
     fmt_commands: []const LintCommand,
+    embedding_cache_limit: u32,
 ) !ProjectConfig {
     const guidance_dir = try allocator.dupe(u8, guidance_dir_rel);
     errdefer allocator.free(guidance_dir);
@@ -782,5 +856,6 @@ fn buildFromParts(
         .test_commands = test_commands,
         .lint_commands = lint_commands,
         .fmt_commands = fmt_commands,
+        .embedding_cache_limit = embedding_cache_limit,
     };
 }

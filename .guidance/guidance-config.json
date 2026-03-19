@@ -16,7 +16,12 @@
   "models": {
     "default": "local:fast:latest",
     "fast": "local:fast:latest",
-    "thinking": "ollama:code:latest"
+    "thinking": "ollama:code:latest",
+    "embed": "ollama:embed:latest"
+  },
+  "embed": {
+    "dims": 768,
+    "cache_limit": 400
   },
   "test_commands": {
     ".zig": ["zig", "build", "test", "--summary", "all"],
@@ -30,12 +35,8 @@
     ".zig": ["zig", "fmt", "{file}"],
     ".py": ["ruff", "format", "{file}"]
   },
-
   "enable_guidance_db": true,
   "guidance_db_path": ".guidance.db",
-  "embedding_provider": "ollama",
-  "embedding_model": "embed:latest",
-  "embedding_dims": 768,
 
   "comment": "guidance: produces .guidance.db SQLite vector search database and .guidance/ JSON mirror."
 }

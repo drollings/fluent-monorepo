@@ -1269,7 +1269,7 @@ fn syncGuidanceDb(
         var noop = allocator.create(vector_mod.NoopEmbedding) catch return;
         noop.* = .{ .allocator = allocator };
         const p = noop.provider();
-        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null, null) catch |se| {
+        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null, null, cfg.embedding_cache_limit) catch |se| {
             std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(se)});
         };
         p.deinit();
@@ -1305,7 +1305,7 @@ fn syncGuidanceDb(
         null;
     defer if (aliases) |*a| a.deinit();
 
-    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases) catch |err| {
+    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases, cfg.embedding_cache_limit) catch |err| {
         std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(err)});
         return;
     };
@@ -3645,7 +3645,6 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const do_alias = filter == null or std.mem.eql(u8, filter.?, "alias") or std.mem.eql(u8, filter.?, "all");
     const do_keywords = filter == null or std.mem.eql(u8, filter.?, "keywords") or std.mem.eql(u8, filter.?, "all");
-    const do_cache = filter == null or std.mem.eql(u8, filter.?, "cache") or std.mem.eql(u8, filter.?, "all");
     const do_ast = filter == null or std.mem.eql(u8, filter.?, "ast") or std.mem.eql(u8, filter.?, "all");
 
     try stdout.print("# Vector Embeddings in {s}\n\n", .{db_path});
@@ -3690,26 +3689,6 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try stdout.print("\n", .{});
     }
 
-    if (do_cache) {
-        const cache = db.getAllEmbeddingCacheEntries(allocator) catch |err| {
-            try stdout.print("Error reading embedding cache: {}\n", .{err});
-            return;
-        };
-        defer {
-            for (cache) |c| {
-                allocator.free(c.content_hash);
-                allocator.free(c.model);
-            }
-            allocator.free(cache);
-        }
-        try stdout.print("## Embedding Cache ({d})\n\n", .{cache.len});
-        try stdout.print("| Content Hash | Model |\n|--------------|-------|\n", .{});
-        for (cache) |c| {
-            try stdout.print("| `{s}` | {s} |\n", .{ c.content_hash, c.model });
-        }
-        try stdout.print("\n", .{});
-    }
-
     if (do_ast) {
         const ast = db.getAllAstNodeEmbeddings(allocator) catch |err| {
             try stdout.print("Error reading AST node embeddings: {}\n", .{err});
@@ -3731,7 +3710,7 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try stdout.print("\n", .{});
     }
 
-    try stdout.print("---\n*Use `--filter=alias|keywords|cache|ast|all` to show specific groups*\n", .{});
+    try stdout.print("---\n*Use `--filter=alias|keywords|ast|all` to show specific groups*\n", .{});
     try stdout.flush();
 }
 

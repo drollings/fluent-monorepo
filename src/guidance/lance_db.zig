@@ -185,6 +185,7 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
 /// If `capabilities_dir` is non-null, also indexes CAPABILITY.md files from
 /// that directory into the `capabilities` table.
 /// If `aliases` is non-null, pre-computes embeddings for alias keys.
+/// `cache_limit` sets the maximum number of entries in the embedding cache (0 = unlimited).
 pub fn syncDatabase(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -192,6 +193,7 @@ pub fn syncDatabase(
     embedder: vector.EmbeddingProvider,
     capabilities_dir: ?[]const u8,
     aliases: ?SemanticAliases,
+    cache_limit: u32,
 ) !void {
     var db = try GuidanceDb.init(allocator, db_path, embedder);
     defer db.deinit();
@@ -212,6 +214,9 @@ pub fn syncDatabase(
             log.warn("alias embeddings sync failed: {s}", .{@errorName(err)});
         };
     }
+
+    // Trim embedding cache to configured limit
+    db.trimCache(cache_limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +316,8 @@ pub const GuidanceDb = struct {
             \\  content_hash TEXT PRIMARY KEY,
             \\  embedding     BLOB NOT NULL,
             \\  model         TEXT NOT NULL,
-            \\  created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+            \\  created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+            \\  atime         INTEGER NOT NULL DEFAULT (strftime('%s','now'))
             \\);
         ;
         {
@@ -327,15 +333,28 @@ pub const GuidanceDb = struct {
         // ── Step 2: add embedding columns (idempotent ALTER TABLE) ──
         // SQLite returns SQLITE_ERROR ("duplicate column name") if the column
         // already exists — we intentionally ignore that specific error.
+        // Note: atime uses NULL default (not DEFAULT function) because SQLite
+        // doesn't allow ALTER TABLE with non-constant defaults. Existing rows
+        // are updated via a separate UPDATE statement below.
         const alter_sqls = [_][:0]const u8{
             "ALTER TABLE ast_nodes ADD COLUMN embedding BLOB",
             "ALTER TABLE ast_nodes ADD COLUMN embedding_model TEXT",
             "ALTER TABLE ast_nodes ADD COLUMN source TEXT",
+            "ALTER TABLE embedding_cache ADD COLUMN atime INTEGER",
         };
         for (alter_sqls) |alter_sql| {
             var alter_err: [*c]u8 = null;
             _ = c.sqlite3_exec(self.db, alter_sql, null, null, &alter_err);
             if (alter_err) |msg| c.sqlite3_free(msg);
+        }
+
+        // Update existing embedding_cache rows to set atime = created_at where atime is NULL
+        // This handles the migration from pre-atime databases
+        {
+            var update_err: [*c]u8 = null;
+            const update_sql = "UPDATE embedding_cache SET atime = created_at WHERE atime IS NULL";
+            _ = c.sqlite3_exec(self.db, update_sql, null, null, &update_err);
+            if (update_err) |msg| c.sqlite3_free(msg);
         }
 
         // ── Step 2b: capabilities table ──
@@ -870,6 +889,16 @@ pub const GuidanceDb = struct {
         if (raw == null or len == 0) return null;
 
         const bytes: []const u8 = @as([*]const u8, @ptrCast(raw))[0..len];
+
+        // Update atime on cache hit
+        const update_sql = "UPDATE embedding_cache SET atime = strftime('%s','now') WHERE content_hash = ?1";
+        var upd_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, update_sql, -1, &upd_stmt, null) == c.SQLITE_OK) {
+            defer _ = c.sqlite3_finalize(upd_stmt);
+            _ = c.sqlite3_bind_text(upd_stmt, 1, content_hash.ptr, @intCast(content_hash.len), SQLITE_STATIC);
+            _ = c.sqlite3_step(upd_stmt);
+        }
+
         return try vector.bytesToVec(allocator, bytes);
     }
 
@@ -882,7 +911,7 @@ pub const GuidanceDb = struct {
         const bytes = vector.vecToBytes(self.allocator, embedding) catch return;
         defer self.allocator.free(bytes);
 
-        const sql = "INSERT OR REPLACE INTO embedding_cache(content_hash, embedding, model) VALUES(?1,?2,?3)";
+        const sql = "INSERT OR REPLACE INTO embedding_cache(content_hash, embedding, model, created_at, atime) VALUES(?1,?2,?3,strftime('%s','now'),strftime('%s','now'))";
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
         defer _ = c.sqlite3_finalize(stmt);
@@ -891,6 +920,42 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_blob(stmt, 2, bytes.ptr, @intCast(bytes.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 3, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
         _ = c.sqlite3_step(stmt);
+    }
+
+    /// Trim embedding cache to keep at most `limit` entries.
+    /// Deletes oldest entries (lowest atime) first.
+    /// Does nothing if limit is 0 (unlimited).
+    fn trimCache(self: *Self, limit: u32) void {
+        if (limit == 0) {
+            log.debug("trimCache: limit is 0 (unlimited), skipping", .{});
+            return;
+        }
+
+        // Count entries
+        var count_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM embedding_cache", -1, &count_stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(count_stmt);
+
+        if (c.sqlite3_step(count_stmt) != c.SQLITE_ROW) return;
+        const count: u32 = @intCast(c.sqlite3_column_int(count_stmt, 0));
+
+        log.debug("trimCache: count={d}, limit={d}", .{ count, limit });
+
+        if (count <= limit) return;
+
+        // Delete oldest entries to bring count down to limit
+        const delete_count = count - limit;
+        const delete_sql = "DELETE FROM embedding_cache WHERE content_hash IN (SELECT content_hash FROM embedding_cache ORDER BY atime ASC LIMIT ?1)";
+        var delete_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, delete_sql, -1, &delete_stmt, null) != c.SQLITE_OK) {
+            log.debug("trimCache: prepare failed", .{});
+            return;
+        }
+        defer _ = c.sqlite3_finalize(delete_stmt);
+
+        _ = c.sqlite3_bind_int(delete_stmt, 1, @intCast(delete_count));
+        const rc = c.sqlite3_step(delete_stmt);
+        log.debug("trimCache: delete step rc={d}, deleted {d} entries", .{ rc, c.sqlite3_changes(self.db) });
     }
 
     /// Get embedding for text, using cache. Returns null-length slice for noop.
