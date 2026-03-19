@@ -2238,6 +2238,169 @@ pub const GuidanceDb = struct {
         log.debug("keywordIndexSearch returning {d} results", .{results.items.len});
         return results.toOwnedSlice(allocator);
     }
+
+    /// Embedding statistics for verbose status output.
+    pub const EmbeddingStats = struct {
+        ast_nodes_with_embeddings: usize,
+        alias_embeddings: usize,
+        keyword_embeddings: usize,
+        embedding_cache_entries: usize,
+    };
+
+    /// Get embedding statistics from the database.
+    /// Returns null if database is not open or query fails.
+    pub fn getEmbeddingStats(self: *Self) ?EmbeddingStats {
+        var stats: EmbeddingStats = .{ .ast_nodes_with_embeddings = 0, .alias_embeddings = 0, .keyword_embeddings = 0, .embedding_cache_entries = 0 };
+
+        var stmt: ?*c.sqlite3_stmt = null;
+
+        // Count ast_nodes with embeddings
+        stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM ast_nodes WHERE embedding IS NOT NULL", -1, &stmt, null) == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                stats.ast_nodes_with_embeddings = @intCast(c.sqlite3_column_int(stmt, 0));
+            }
+            _ = c.sqlite3_finalize(stmt);
+        }
+
+        // Count alias embeddings
+        stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM semantic_alias_embeddings", -1, &stmt, null) == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                stats.alias_embeddings = @intCast(c.sqlite3_column_int(stmt, 0));
+            }
+            _ = c.sqlite3_finalize(stmt);
+        }
+
+        // Count keyword embeddings
+        stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM keyword_index", -1, &stmt, null) == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                stats.keyword_embeddings = @intCast(c.sqlite3_column_int(stmt, 0));
+            }
+            _ = c.sqlite3_finalize(stmt);
+        }
+
+        // Count embedding cache entries
+        stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM embedding_cache", -1, &stmt, null) == c.SQLITE_OK) {
+            if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                stats.embedding_cache_entries = @intCast(c.sqlite3_column_int(stmt, 0));
+            }
+            _ = c.sqlite3_finalize(stmt);
+        }
+
+        return stats;
+    }
+
+    /// Entry types for show command
+    pub const AliasEmbeddingEntry = struct { key: []const u8, model: []const u8 };
+    pub const KeywordEmbeddingEntry = struct { keyword: []const u8, model: []const u8 };
+    pub const EmbeddingCacheEntry = struct { content_hash: []const u8, model: []const u8 };
+    pub const AstNodeEmbeddingEntry = struct { name: []const u8, node_type: []const u8, module: []const u8 };
+
+    pub fn getAllAliasEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]AliasEmbeddingEntry {
+        var results: std.ArrayList(AliasEmbeddingEntry) = .{};
+        errdefer results.deinit(allocator);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT alias_key, embedding_model FROM semantic_alias_embeddings ORDER BY alias_key", -1, &stmt, null) != c.SQLITE_OK) {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+            return error.PrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const key = c.sqlite3_column_text(stmt, 0);
+            const model = c.sqlite3_column_text(stmt, 1);
+            if (key != null and model != null) {
+                try results.append(allocator, .{
+                    .key = try allocator.dupe(u8, std.mem.span(key)),
+                    .model = try allocator.dupe(u8, std.mem.span(model)),
+                });
+            }
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    pub fn getAllKeywordEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]KeywordEmbeddingEntry {
+        var results: std.ArrayList(KeywordEmbeddingEntry) = .{};
+        errdefer results.deinit(allocator);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT keyword, embedding_model FROM keyword_index ORDER BY keyword", -1, &stmt, null) != c.SQLITE_OK) {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+            return error.PrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const keyword = c.sqlite3_column_text(stmt, 0);
+            const model = c.sqlite3_column_text(stmt, 1);
+            if (keyword != null and model != null) {
+                try results.append(allocator, .{
+                    .keyword = try allocator.dupe(u8, std.mem.span(keyword)),
+                    .model = try allocator.dupe(u8, std.mem.span(model)),
+                });
+            }
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    pub fn getAllEmbeddingCacheEntries(self: *Self, allocator: std.mem.Allocator) ![]EmbeddingCacheEntry {
+        var results: std.ArrayList(EmbeddingCacheEntry) = .{};
+        errdefer results.deinit(allocator);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, "SELECT content_hash, model FROM embedding_cache ORDER BY content_hash", -1, &stmt, null) != c.SQLITE_OK) {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+            return error.PrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const hash = c.sqlite3_column_text(stmt, 0);
+            const model = c.sqlite3_column_text(stmt, 1);
+            if (hash != null and model != null) {
+                try results.append(allocator, .{
+                    .content_hash = try allocator.dupe(u8, std.mem.span(hash)),
+                    .model = try allocator.dupe(u8, std.mem.span(model)),
+                });
+            }
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    pub fn getAllAstNodeEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]AstNodeEmbeddingEntry {
+        var results: std.ArrayList(AstNodeEmbeddingEntry) = .{};
+        errdefer results.deinit(allocator);
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        const sql = "SELECT name, node_type, module FROM ast_nodes WHERE embedding IS NOT NULL ORDER BY module, name";
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+            return error.PrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const name = c.sqlite3_column_text(stmt, 0);
+            const node_type = c.sqlite3_column_text(stmt, 1);
+            const module = c.sqlite3_column_text(stmt, 2);
+            if (name != null and node_type != null and module != null) {
+                try results.append(allocator, .{
+                    .name = try allocator.dupe(u8, std.mem.span(name)),
+                    .node_type = try allocator.dupe(u8, std.mem.span(node_type)),
+                    .module = try allocator.dupe(u8, std.mem.span(module)),
+                });
+            }
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
 };
 
 // ---------------------------------------------------------------------------

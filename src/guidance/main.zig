@@ -69,7 +69,7 @@ const Command = enum {
     explain,
     commit,
     check,
-    @"show-aliases",
+    show,
     @"test",
 };
 
@@ -120,7 +120,7 @@ pub fn main() !void {
         .explain => try cmdExplain(allocator, args[2..]),
         .commit => try cmdCommit(allocator, args[2..]),
         .check => try cmdCheck(allocator, args[2..]),
-        .@"show-aliases" => try cmdShowAliases(allocator, args[2..]),
+        .show => try cmdShow(allocator, args[2..]),
         .@"test" => try cmdTest(allocator, args[2..]),
     }
 }
@@ -150,7 +150,7 @@ fn printHelp() !void {
         \\  explain    Search with LLM-synthesized summary
         \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit    Generate AI commit message from staged diff + guidance
-        \\  show-aliases  Show semantic aliases from .guidance.db
+        \\  show        Show vector embeddings from .guidance.db (Markdown)
         \\  test       Benchmark explain queries against module-level comments
         \\
         \\Produces .guidance/src/**/*.json and .guidance.db for NullClaw.
@@ -221,7 +221,7 @@ fn printHelp() !void {
         \\  guidance gen -o /tmp/project.guidance.db
         \\  guidance query "hash function"
         \\  guidance explain "how does the sync processor work" --limit 5
-        \\  guidance status
+        \\  guidance show --filter=keywords
         \\  guidance clean
         \\  guidance structure
         \\  guidance deps --src src > zig.depend
@@ -1619,6 +1619,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var db_path_arg: ?[]const u8 = null;
+    var verbose = verbose_mode; // Use global verbose flag
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -1630,6 +1631,8 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
             i += 1;
             if (i >= args.len) return;
             db_path_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+            verbose = true;
         }
     }
 
@@ -1674,6 +1677,26 @@ fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     std.debug.print("  json files: {d}\n", .{json_count});
     std.debug.print("  db_path:    {s}\n", .{db_path});
     std.debug.print("  db_exists:  {}\n", .{db_exists});
+
+    // Show embedding statistics if database exists and --verbose is set
+    if (db_exists and verbose) {
+        var noop: vector_mod.NoopEmbedding = .{};
+        var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch |err| {
+            std.debug.print("  (could not open db: {})\n", .{err});
+            return;
+        };
+        defer db.deinit();
+
+        if (db.getEmbeddingStats()) |stats| {
+            std.debug.print("  embeddings:\n", .{});
+            std.debug.print("    ast_nodes:      {d}\n", .{stats.ast_nodes_with_embeddings});
+            std.debug.print("    alias:          {d}\n", .{stats.alias_embeddings});
+            std.debug.print("    keywords:       {d}\n", .{stats.keyword_embeddings});
+            std.debug.print("    embedding_cache: {d}\n", .{stats.embedding_cache_entries});
+        } else {
+            std.debug.print("  (could not read embedding stats)\n", .{});
+        }
+    }
 }
 
 // =============================================================================
@@ -3578,55 +3601,138 @@ pub fn isShortQueryPub(query: []const u8) bool {
 }
 
 // =============================================================================
-// show-aliases command
+// show command
 // =============================================================================
 
-fn cmdShowAliases(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    _ = args;
+fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var db_path_arg: ?[]const u8 = null;
+    var filter: ?[]const u8 = null;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+            i += 1;
+            if (i >= args.len) return;
+            db_path_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--filter")) {
+            i += 1;
+            if (i >= args.len) return;
+            filter = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
+            filter = arg["--filter=".len..];
+        }
+    }
+
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const cfg = config_mod.loadConfig(allocator, cwd) catch
-        try config_mod.loadConfig(allocator, cwd);
-    defer @constCast(&cfg).deinit();
+    const db_path = if (db_path_arg) |dp|
+        if (std.fs.path.isAbsolute(dp)) try allocator.dupe(u8, dp) else try std.fs.path.join(allocator, &.{ cwd, dp })
+    else
+        try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DB_PATH });
+    defer allocator.free(db_path);
 
-    const guidance_dir = try resolveAbsOrJoin(allocator, cwd, cfg.guidance_dir);
-    defer allocator.free(guidance_dir);
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
 
-    const aliases_path = try std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" });
-    defer allocator.free(aliases_path);
-
-    const aliases_opt = lance_db_mod.loadSemanticAliases(allocator, aliases_path) catch |err| {
-        std.debug.print("Error loading aliases from {s}: {s}\n", .{ aliases_path, @errorName(err) });
-        std.debug.print("Run 'guidance gen' to generate semantic-aliases.json\n", .{});
+    var noop: vector_mod.NoopEmbedding = .{};
+    var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch |err| {
+        try stdout.print("Error: could not open db {s}: {}\n", .{ db_path, err });
         return;
     };
-    var aliases = aliases_opt orelse {
-        std.debug.print("No semantic aliases found in {s}\n", .{aliases_path});
-        std.debug.print("Run 'guidance gen' to generate semantic-aliases.json\n", .{});
-        return;
-    };
-    defer aliases.deinit();
+    defer db.deinit();
 
-    std.debug.print("# Semantic Aliases ({d} entries)\n\n", .{aliases.aliases.len});
+    const do_alias = filter == null or std.mem.eql(u8, filter.?, "alias") or std.mem.eql(u8, filter.?, "all");
+    const do_keywords = filter == null or std.mem.eql(u8, filter.?, "keywords") or std.mem.eql(u8, filter.?, "all");
+    const do_cache = filter == null or std.mem.eql(u8, filter.?, "cache") or std.mem.eql(u8, filter.?, "all");
+    const do_ast = filter == null or std.mem.eql(u8, filter.?, "ast") or std.mem.eql(u8, filter.?, "all");
 
-    // Sort aliases alphabetically by key
-    var sorted: std.ArrayList(lance_db_mod.SemanticAlias) = .{};
-    defer sorted.deinit(allocator);
-    for (aliases.aliases) |a| try sorted.append(allocator, a);
-    std.sort.block(lance_db_mod.SemanticAlias, sorted.items, {}, struct {
-        fn lessThan(_: void, a: lance_db_mod.SemanticAlias, b: lance_db_mod.SemanticAlias) bool {
-            return std.mem.order(u8, a.key, b.key) == .lt;
+    try stdout.print("# Vector Embeddings in {s}\n\n", .{db_path});
+
+    if (do_alias) {
+        const aliases = db.getAllAliasEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading alias embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (aliases) |a| {
+                allocator.free(a.key);
+                allocator.free(a.model);
+            }
+            allocator.free(aliases);
         }
-    }.lessThan);
-
-    for (sorted.items) |alias| {
-        std.debug.print("- **{s}**:", .{alias.key});
-        for (alias.values) |val| {
-            std.debug.print(" `{s}`", .{val});
+        try stdout.print("## Alias Embeddings ({d})\n\n", .{aliases.len});
+        try stdout.print("| Key | Model |\n|-----|-------|\n", .{});
+        for (aliases) |a| {
+            try stdout.print("| `{s}` | {s} |\n", .{ a.key, a.model });
         }
-        std.debug.print("\n", .{});
+        try stdout.print("\n", .{});
     }
+
+    if (do_keywords) {
+        const keywords = db.getAllKeywordEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading keyword embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (keywords) |k| {
+                allocator.free(k.keyword);
+                allocator.free(k.model);
+            }
+            allocator.free(keywords);
+        }
+        try stdout.print("## Keyword Embeddings ({d})\n\n", .{keywords.len});
+        try stdout.print("| Keyword | Model |\n|---------|-------|\n", .{});
+        for (keywords) |k| {
+            try stdout.print("| `{s}` | {s} |\n", .{ k.keyword, k.model });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    if (do_cache) {
+        const cache = db.getAllEmbeddingCacheEntries(allocator) catch |err| {
+            try stdout.print("Error reading embedding cache: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (cache) |c| {
+                allocator.free(c.content_hash);
+                allocator.free(c.model);
+            }
+            allocator.free(cache);
+        }
+        try stdout.print("## Embedding Cache ({d})\n\n", .{cache.len});
+        try stdout.print("| Content Hash | Model |\n|--------------|-------|\n", .{});
+        for (cache) |c| {
+            try stdout.print("| `{s}` | {s} |\n", .{ c.content_hash, c.model });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    if (do_ast) {
+        const ast = db.getAllAstNodeEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading AST node embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (ast) |a| {
+                allocator.free(a.name);
+                allocator.free(a.node_type);
+                allocator.free(a.module);
+            }
+            allocator.free(ast);
+        }
+        try stdout.print("## AST Node Embeddings ({d})\n\n", .{ast.len});
+        try stdout.print("| Module | Name | Type |\n|--------|------|------|\n", .{});
+        for (ast) |a| {
+            try stdout.print("| {s} | `{s}` | {s} |\n", .{ a.module, a.name, a.node_type });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    try stdout.print("---\n*Use `--filter=alias|keywords|cache|ast|all` to show specific groups*\n", .{});
+    try stdout.flush();
 }
 
 // =============================================================================
