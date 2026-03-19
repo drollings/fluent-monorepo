@@ -1309,34 +1309,33 @@ pub const GuidanceDb = struct {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
-        // ── Phase 1: Deterministic name match (LIKE search) ─────────────────────
-        // If query directly matches a name in the AST, return immediately.
-        // This handles exact matches like "GuidanceDoc", "cosineSimilarity", etc.
-        const name_results = self.keywordSearch(allocator, trimmed, limit) catch blk: {
-            break :blk try allocator.alloc(SearchResult, 0);
-        };
-        if (name_results.len > 0) {
-            // Check if any result has an exact or near-exact name match
-            for (name_results) |r| {
-                const name_lower = std.ascii.allocLowerString(allocator, r.name) catch continue;
-                defer allocator.free(name_lower);
-                const query_lower = std.ascii.allocLowerString(allocator, trimmed) catch continue;
-                defer allocator.free(query_lower);
-
-                // Exact match or query is substring of name
-                if (std.mem.eql(u8, name_lower, query_lower) or
-                    std.mem.indexOf(u8, name_lower, query_lower) != null)
-                {
-                    log.debug("deterministic name match for '{s}' → '{s}'", .{ trimmed, r.name });
-                    return name_results;
+        // ── Phase 1: Deterministic name match (case-sensitive AST lookup) ─────────────────────
+        // Tokenize query and check if any token matches an AST name exactly.
+        // This handles queries like "How does cosineSimilarity work?" → matches cosineSimilarity
+        var query_tokens: std.ArrayList([]const u8) = .{};
+        defer {
+            for (query_tokens.items) |t| allocator.free(t);
+            query_tokens.deinit(allocator);
+        }
+        {
+            var tok_it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r_-");
+            while (tok_it.next()) |tok| {
+                if (tok.len >= 2) {
+                    try query_tokens.append(allocator, try allocator.dupe(u8, tok));
                 }
             }
         }
-        // Free name_results if we're continuing
-        for (name_results) |r| freeSearchResult(allocator, r);
-        allocator.free(name_results);
 
-        // ── Phase 2: Keyword vector search (semantic index) ─────────────────────
+        // Check each token for exact AST name match (case-sensitive)
+        for (query_tokens.items) |token| {
+            const exact_match = self.findExactNameMatch(allocator, token, limit) catch continue;
+            if (exact_match.len > 0) {
+                log.debug("deterministic name match for token '{s}' in query '{s}'", .{ token, trimmed });
+                return exact_match;
+            }
+        }
+
+        // ── Phase 2: Keyword vector search (semantic index, case-insensitive) ─────────────────────
         // Build query embedding for semantic search
         const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
         defer if (query_emb) |e| allocator.free(e);
@@ -1360,6 +1359,43 @@ pub const GuidanceDb = struct {
         } else {
             return self.keywordSearch(allocator, trimmed, limit);
         }
+    }
+
+    /// Find exact case-sensitive name match in AST.
+    /// Returns results if the name exists in the database.
+    fn findExactNameMatch(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        name: []const u8,
+        limit: usize,
+    ) ![]SearchResult {
+        const sql = "SELECT file_path, source, module, node_type, name, signature," ++
+            "       comment, line, used_by, language, detail " ++
+            "FROM ast_nodes WHERE name = ?1 AND node_type != 'test_decl' " ++
+            "ORDER BY last_modified DESC LIMIT ?2";
+
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(SearchResult, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
+
+        var results: std.ArrayList(SearchResult) = .{};
+        errdefer {
+            for (results.items) |r| freeSearchResult(allocator, r);
+            results.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            var r = try readRowResult(stmt.?, allocator);
+            r.score = 1.0; // Exact match gets highest score
+            try results.append(allocator, r);
+        }
+
+        return results.toOwnedSlice(allocator);
     }
 
     /// Vector-only cosine similarity search.
