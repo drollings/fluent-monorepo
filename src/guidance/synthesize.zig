@@ -1,6 +1,6 @@
 //! synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 //!
-//! Combines prose stages and module detail into a concise summary
+//! Combines prose stages and module detail into a comprehensive answer
 //! directly answering the user's query. Uses fast model with cached detail context.
 
 const std = @import("std");
@@ -13,7 +13,7 @@ pub const SynthesisResult = struct {
     followup_keywords: ?[][]const u8,
 };
 
-/// Synthesize a concise answer from prose stages and module detail.
+/// Synthesize a comprehensive answer from prose stages and module detail.
 /// Uses fast model with cached detail context for efficiency.
 ///
 /// Returns a SynthesisResult with owned strings; caller must free summary and followup_keywords.
@@ -45,20 +45,20 @@ pub fn synthesize(
     for (stages) |s| {
         if (s.kind == .prose) {
             // Check if this looks like module detail (longer content)
-            if (s.content.len > 200 and detail_count < 2) {
-                if (detail_count > 0) try dw.writeAll("\n\n");
-                try dw.writeAll(s.content[0..@min(800, s.content.len)]);
+            if (s.content.len > 200 and detail_count < 3) {
+                if (detail_count > 0) try dw.writeAll("\n\n---\n\n");
+                try dw.writeAll(s.content[0..@min(2000, s.content.len)]);
                 detail_count += 1;
-            } else if (prose_count < 3) {
+            } else if (prose_count < 5) {
                 if (prose_count > 0) try pw.writeAll("\n\n");
                 try pw.writeAll(s.content);
                 prose_count += 1;
             }
-        } else if (s.kind == .code and code_count < 2) {
+        } else if (s.kind == .code and code_count < 4) {
             if (code_count > 0) try cw.writeAll("\n\n");
-            try cw.writeAll("```");
+            try cw.writeAll("```\n");
             try cw.writeAll(s.content);
-            try cw.writeAll("```");
+            try cw.writeAll("\n```\n");
             code_count += 1;
         }
     }
@@ -67,10 +67,10 @@ pub fn synthesize(
         return .{ .summary = null, .followup_keywords = null };
     }
 
-    // Build concise prompt for fast model
+    // Build comprehensive prompt for fast model
     const prompt = try std.fmt.allocPrint(
         allocator,
-        \\You are a code navigation assistant. Answer the query concisely.
+        \\You are a code documentation assistant. Write a comprehensive technical answer.
         \\
         \\Query: {s}
         \\
@@ -86,27 +86,33 @@ pub fn synthesize(
     try fw.writeAll(prompt);
 
     if (detail_buf.items.len > 0) {
-        try fw.print("\nModule Documentation:\n{s}\n", .{detail_buf.items});
+        try fw.print("\n## Module Documentation\n\n{s}\n", .{detail_buf.items});
     }
 
     if (prose_buf.items.len > 0) {
-        try fw.print("\nComments:\n{s}\n", .{prose_buf.items});
+        try fw.print("\n## Code Comments\n\n{s}\n", .{prose_buf.items});
     }
 
     if (code_buf.items.len > 0) {
-        try fw.print("\nCode:\n{s}\n", .{code_buf.items});
+        try fw.print("\n## Source Code\n\n{s}\n", .{code_buf.items});
     }
 
     try fw.writeAll(
         \\
-        \\Write a concise answer (under 200 words). Be technically precise.
-        \\After your answer, suggest 2-3 related keywords.
+        \\Write a comprehensive answer with clear sections. Include:
+        \\- Overview of the architecture/approach
+        \\- Key components and their roles
+        \\- Implementation details from the code
+        \\- How the pieces fit together
+        \\
+        \\Be technically precise. Use markdown headers (##) for sections.
+        \\After your answer, suggest 2-3 related keywords for further exploration.
         \\Format: KEYWORDS: keyword1, keyword2, keyword3
         \\
     );
 
-    // Use fast model with lower max_tokens for concise output
-    const raw_opt = client.complete(full_prompt.items, 400, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
+    // Use fast model with higher max_tokens for comprehensive output
+    const raw_opt = client.complete(full_prompt.items, 2000, 0.3, null) catch return .{ .summary = null, .followup_keywords = null };
     const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
     defer allocator.free(raw);
 

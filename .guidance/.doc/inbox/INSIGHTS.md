@@ -16,4 +16,6 @@ Unprocessed items are surfaced automatically by `make explain QUERY=<term>` when
 - Keyword embedding architecture: 3-phase search flow: 1) Deterministic name match (LIKE) for exact AST names, 2) Keyword vector search for semantic queries, 3) Hybrid search fallback. Keywords matching AST member names are skipped during embedding since Phase 1 handles them.
 - Memory leak in member_sigs: The `member_sigs` ArrayList in sync.zig was not being cleaned up. Fixed by adding `for (member_sigs.items) |s| allocator.free(s); member_sigs.deinit(allocator);` in defer.
 - Const slice from catch: `catch &[_]T{}` creates a const slice, breaking functions expecting `[]T`. Use `catch blk: { break :blk try allocator.alloc(T, 0); }` for mutable empty slice.
+- Embedding strategy: Only embed SEARCH PHRASES (what users type), not comprehensive documentation. Module detail is for synthesis, not embedding. Keywords from detail are embedded separately. Always lowercase text before embedding for case-insensitive matching.
+- SearchResult.detail field: Added to carry comprehensive module documentation from thinking model. Used by synthesis, not for embedding. Staged pipeline now includes detail as prose stages.
 

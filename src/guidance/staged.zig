@@ -72,7 +72,7 @@ pub fn executeStagedWithAliases(
         stages.deinit(allocator);
     }
 
-    // ── Prose stages: module + member comments ────────────────────────────────
+    // ── Prose stages: module detail + member comments ────────────────────────────────
     // Track seen (source, name) pairs to avoid duplicate prose entries.
     var seen_prose: std.StringHashMapUnmanaged(void) = .{};
     defer {
@@ -81,9 +81,29 @@ pub fn executeStagedWithAliases(
         seen_prose.deinit(allocator);
     }
 
+    // First, add module detail stages (high-value comprehensive documentation)
+    for (results[0..@min(5, results.len)]) |r| {
+        if (!std.mem.eql(u8, r.node_type, "module")) continue;
+        const detail = r.detail orelse continue;
+        if (detail.len < 50) continue;
+
+        const key = try std.fmt.allocPrint(allocator, "{s}\x00detail", .{r.source});
+        defer allocator.free(key);
+        if (seen_prose.contains(key)) continue;
+        try seen_prose.put(allocator, try allocator.dupe(u8, key), {});
+
+        try stages.append(allocator, .{
+            .kind = .prose,
+            .content = try allocator.dupe(u8, detail),
+            .source = try allocator.dupe(u8, r.source),
+            .line = r.line,
+        });
+    }
+
+    // Then add member comments
     for (results[0..@min(10, results.len)]) |r| {
         const comment = r.comment orelse continue;
-        if (comment.len < 10) continue; // skip trivial stubs
+        if (comment.len < 10) continue;
 
         // Key: "source\x00name" to dedup per-member comments.
         const key = try std.fmt.allocPrint(allocator, "{s}\x00{s}", .{ r.source, r.name });

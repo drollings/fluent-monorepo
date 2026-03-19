@@ -907,7 +907,11 @@ pub const GuidanceDb = struct {
             return null;
         }
 
-        const hash = vector.contentHashWithModel(text, model_name);
+        // Normalize to lowercase for case-insensitive embedding matching
+        const text_lower = try std.ascii.allocLowerString(allocator, text);
+        defer allocator.free(text_lower);
+
+        const hash = vector.contentHashWithModel(text_lower, model_name);
         const hash_str: []const u8 = &hash;
 
         // Cache hit?
@@ -915,8 +919,8 @@ pub const GuidanceDb = struct {
             return cached;
         }
 
-        // Call embedding API
-        const emb = self.embedder.embed(allocator, text) catch |err| {
+        // Call embedding API with lowercase text
+        const emb = self.embedder.embed(allocator, text_lower) catch |err| {
             log.warn("embedding failed: {s}", .{@errorName(err)});
             return null;
         };
@@ -937,12 +941,14 @@ pub const GuidanceDb = struct {
     fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
         const name = doc.module_comment orelse doc.module;
 
-        // Build embedding text - modules are high-value search targets, always compute
+        // Build embedding text - use SHORT comment only (searchable phrase)
+        // Do NOT embed full detail - it's comprehensive docs, not a search phrase
+        // Keywords from detail are embedded separately in keyword_index table
         const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", doc.module_comment, null, null);
         defer allocator.free(emb_text);
 
-        // Only generate embedding for modules with actual content (not just name)
-        // Module embeddings are valuable for "what does X do?" queries
+        // Only generate embedding for modules with short searchable content
+        // Embedding should be for "what does X do?" style queries
         const has_semantic_content = doc.module_comment != null and doc.module_comment.?.len > 0;
         const emb: ?[]f32 = if (has_semantic_content)
             try self.getOrComputeEmbedding(allocator, emb_text)
@@ -1029,11 +1035,13 @@ pub const GuidanceDb = struct {
         try self.clearKeywordLinksForModule(module_id);
 
         for (keywords) |kw| {
+            // Normalize keyword to lowercase for case-insensitive matching
+            const kw_lower = std.ascii.allocLowerString(allocator, kw) catch continue;
+            defer allocator.free(kw_lower);
+
             // Skip keywords that directly match AST names (deterministic search handles these)
             var is_direct_match = false;
             for (member_names) |name| {
-                const kw_lower = std.ascii.allocLowerString(allocator, kw) catch continue;
-                defer allocator.free(kw_lower);
                 const name_lower = std.ascii.allocLowerString(allocator, name) catch continue;
                 defer allocator.free(name_lower);
                 if (std.mem.eql(u8, kw_lower, name_lower)) {
@@ -1046,21 +1054,21 @@ pub const GuidanceDb = struct {
                 continue;
             }
 
-            // Embed the keyword (only for semantic/non-direct matches)
-            const emb = self.embedder.embed(allocator, kw) catch |err| {
+            // Embed the keyword (lowercase for case-insensitive matching)
+            const emb = self.embedder.embed(allocator, kw_lower) catch |err| {
                 log.debug("failed to embed keyword '{s}': {s}", .{ kw, @errorName(err) });
                 continue;
             };
             defer allocator.free(emb);
 
-            // Store keyword embedding (idempotent)
-            self.storeKeywordEmbedding(allocator, kw, emb) catch |err| {
+            // Store keyword embedding (idempotent, use lowercase keyword)
+            self.storeKeywordEmbedding(allocator, kw_lower, emb) catch |err| {
                 log.debug("failed to store keyword '{s}': {s}", .{ kw, @errorName(err) });
                 continue;
             };
 
-            // Link keyword to module
-            self.linkKeywordToModule(kw, module_id, 1.0) catch |err| {
+            // Link keyword to module (use lowercase keyword)
+            self.linkKeywordToModule(kw_lower, module_id, 1.0) catch |err| {
                 log.debug("failed to link keyword '{s}': {s}", .{ kw, @errorName(err) });
                 continue;
             };
@@ -1150,6 +1158,7 @@ pub const GuidanceDb = struct {
         name: []const u8,
         signature: ?[]const u8,
         comment: ?[]const u8,
+        detail: ?[]const u8 = null,
         line: ?u32,
         used_by: [][]const u8,
         language: []const u8,
@@ -1164,6 +1173,7 @@ pub const GuidanceDb = struct {
         allocator.free(r.name);
         if (r.signature) |s| allocator.free(s);
         if (r.comment) |cm| allocator.free(cm);
+        if (r.detail) |d| allocator.free(d);
         for (r.used_by) |ub| allocator.free(ub);
         allocator.free(r.used_by);
         allocator.free(r.language);
@@ -1492,7 +1502,7 @@ pub const GuidanceDb = struct {
         var sql_buf: std.ArrayList(u8) = .empty;
         defer sql_buf.deinit(allocator);
         try sql_buf.appendSlice(allocator, "SELECT file_path, source, module, node_type, name, signature," ++
-            "       comment, line, used_by, language, (" ++
+            "       comment, line, used_by, language, detail, (" ++
             "");
         try sql_buf.appendSlice(allocator, score_buf.items[0 .. score_buf.items.len - 1]);
         try sql_buf.appendSlice(allocator, ") AS match_score " ++
@@ -1539,8 +1549,8 @@ pub const GuidanceDb = struct {
         }
 
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
-            // Column 10 is match_score
-            const raw_score: f64 = @floatFromInt(c.sqlite3_column_int(stmt, 10));
+            // Column 11 is match_score
+            const raw_score: f64 = @floatFromInt(c.sqlite3_column_int(stmt, 11));
             var r = try readRowResult(stmt.?, allocator);
             r.score = @max(1.0, raw_score);
             try results.append(allocator, r);
@@ -1656,7 +1666,7 @@ pub const GuidanceDb = struct {
     fn fetchById(self: *Self, allocator: std.mem.Allocator, id: i64) !SearchResult {
         const sql =
             "SELECT file_path, source, module, node_type, name, signature," ++
-            "       comment, line, used_by, language " ++
+            "       comment, line, used_by, language, detail " ++
             "FROM ast_nodes WHERE id = ?1";
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -1711,8 +1721,8 @@ pub const GuidanceDb = struct {
 
     // ── Row reading ────────────────────────────────────────────────
 
-    /// Read columns 0..9: file_path, source, module, node_type, name, signature,
-    /// comment, line, used_by, language.  Score is set to 0.0 (caller overrides).
+    /// Read columns 0..10: file_path, source, module, node_type, name, signature,
+    /// comment, line, used_by, language, detail.  Score is set to 0.0 (caller overrides).
     fn readRowResult(stmt: *c.sqlite3_stmt, allocator: std.mem.Allocator) !SearchResult {
         const line_type = c.sqlite3_column_type(stmt, 7);
         const line: ?u32 = if (line_type == c.SQLITE_NULL)
@@ -1733,6 +1743,7 @@ pub const GuidanceDb = struct {
             .line = line,
             .used_by = used_by,
             .language = try dupeCol(stmt, 9, allocator),
+            .detail = try dupeColNullable(stmt, 10, allocator),
             .score = 0.0,
         };
     }

@@ -123,6 +123,11 @@ clean: _clean-guidance ## Remove build artifacts and markers (keeps venv and .gu
 	$(Q)rm -rf .zig-cache zig-out $(HASH_DIR) $(GUIDANCE_DB)
 	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
 
+.PHONY: clean-db
+clean-db: ## Remove build artifacts and markers (keeps venv and .guidance config)
+	$(Q)rm -rf .zig-cache zig-out $(GUIDANCE_DB)
+	$(Q)find . -type d -name ".zig-cache" -exec rm -rf {} + 2>/dev/null || true
+
 ##@ Guidance Management
 
 .PHONY: _clean-guidance
