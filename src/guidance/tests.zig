@@ -1,10 +1,9 @@
-/// Unit tests for src/guidance — json_store merge logic, query engine leaks.
+/// Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
 ///
 /// Run with: zig build test-guidance
 const std = @import("std");
 const types = @import("types.zig");
 const json_store = @import("json_store.zig");
-const query = @import("query.zig");
 const main = @import("main.zig");
 const sync_mod = @import("sync.zig");
 const config_mod = @import("config.zig");
@@ -1008,32 +1007,6 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
     return path;
 }
 
-test "QueryEngine.execute no leaks with empty query results" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        // Use a temp dir that won't match any real files — query produces empty results.
-        var tmp = std.testing.tmpDir(.{});
-        defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-        defer allocator.free(tmp_path);
-
-        const cfg = try config_mod.loadConfig(allocator, tmp_path);
-        var engine = query.QueryEngine.init(allocator, "nonexistent_xyz_query", tmp_path, false, false, cfg);
-        defer engine.deinit();
-
-        const result = try engine.execute();
-        defer query.freeQueryResult(allocator, &engine.store, result);
-
-        try std.testing.expect(result.file_matches.len == 0);
-        try std.testing.expect(result.guidance_files.len == 0);
-    }
-
-    // All allocations must be freed before this check.
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
 // ---------------------------------------------------------------------------
 // M8: infillJsonFile / infillAllJson — cross-language infill sweep
 // ---------------------------------------------------------------------------
@@ -1226,120 +1199,6 @@ test "infillAllJson processes .py.json files alongside .zig.json files" {
         const count = try processor.infillAllJson(tmp_path, &skip);
         try std.testing.expectEqual(@as(usize, 0), count);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
-test "freeQueryResult handles all empty slices" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        var store = json_store.JsonStore.init(allocator);
-        const r = types.QueryResult{
-            .query = "test",
-            .file_matches = try allocator.alloc(types.FileMatch, 0),
-            .guidance_files = try allocator.alloc(types.GuidanceInfo, 0),
-            .ast_analysis = try allocator.alloc(types.ASTAnalysis, 0),
-            .related_skills = try allocator.alloc([]const u8, 0),
-            .suggested_actions = try allocator.alloc([]const u8, 0),
-            .insights = try allocator.alloc([]const u8, 0),
-            .recent_capabilities = try allocator.alloc([]const u8, 0),
-        };
-        query.freeQueryResult(allocator, &store, r);
-    }
-
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
-test "freeQueryResult frees FileMatch strings" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        var store = json_store.JsonStore.init(allocator);
-
-        const matches = try allocator.alloc(types.FileMatch, 2);
-        matches[0] = .{
-            .filename = try allocator.dupe(u8, "foo.zig"),
-            .filepath = try allocator.dupe(u8, "/tmp/foo.zig"),
-            .description = try allocator.dupe(u8, "source file"),
-            .line_context = try allocator.dupe(u8, "foo.zig  # main module"),
-        };
-        matches[1] = .{
-            .filename = try allocator.dupe(u8, "bar.zig"),
-            .filepath = try allocator.dupe(u8, "/tmp/bar.zig"),
-            .description = try allocator.dupe(u8, ""),
-            .line_context = try allocator.dupe(u8, ""),
-        };
-
-        const r = types.QueryResult{
-            .query = "foo",
-            .file_matches = matches,
-            .guidance_files = try allocator.alloc(types.GuidanceInfo, 0),
-            .ast_analysis = try allocator.alloc(types.ASTAnalysis, 0),
-            .related_skills = try allocator.alloc([]const u8, 0),
-            .suggested_actions = try allocator.alloc([]const u8, 0),
-            .insights = try allocator.alloc([]const u8, 0),
-            .recent_capabilities = try allocator.alloc([]const u8, 0),
-        };
-        query.freeQueryResult(allocator, &store, r);
-    }
-
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
-test "freeQueryResult frees GuidanceInfo strings and slices" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        var store = json_store.JsonStore.init(allocator);
-
-        const g_infos = try allocator.alloc(types.GuidanceInfo, 1);
-        const skill_slice = try allocator.alloc([]const u8, 1);
-        skill_slice[0] = try allocator.dupe(u8, "zig-current");
-        const tag_slice = try allocator.alloc([]const u8, 1);
-        tag_slice[0] = try allocator.dupe(u8, "#test");
-        g_infos[0] = .{
-            .path = try allocator.dupe(u8, "/tmp/.guidance/src/foo.zig.json"),
-            .comment = try allocator.dupe(u8, "Module comment."),
-            .functions = try allocator.alloc(types.Member, 0),
-            .classes = try allocator.alloc(types.Member, 0),
-            .skills = skill_slice,
-            .tags = tag_slice,
-        };
-
-        const r = types.QueryResult{
-            .query = "foo",
-            .file_matches = try allocator.alloc(types.FileMatch, 0),
-            .guidance_files = g_infos,
-            .ast_analysis = try allocator.alloc(types.ASTAnalysis, 0),
-            .related_skills = try allocator.alloc([]const u8, 0),
-            .suggested_actions = try allocator.alloc([]const u8, 0),
-            .insights = try allocator.alloc([]const u8, 0),
-            .recent_capabilities = try allocator.alloc([]const u8, 0),
-        };
-        query.freeQueryResult(allocator, &store, r);
-    }
-
-    try std.testing.expectEqual(.ok, gpa.deinit());
-}
-
-test "QueryEngine deinit with no execute is safe" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        var tmp = std.testing.tmpDir(.{});
-        defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-        defer allocator.free(tmp_path);
-
-        const cfg2 = try config_mod.loadConfig(allocator, tmp_path);
-        var engine = query.QueryEngine.init(allocator, "whatever", tmp_path, false, false, cfg2);
-        engine.deinit();
-    }
-
     try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
@@ -1563,122 +1422,6 @@ test "loadConfig with invalid JSON falls back to defaults" {
 }
 
 // ---------------------------------------------------------------------------
-// query.zig: readInboxBullets — bullet scoring
-// ---------------------------------------------------------------------------
-
-/// Helper: write an inbox markdown file and return the absolute path (owned).
-fn writeInboxFile(allocator: std.mem.Allocator, dir: std.fs.Dir, dir_path: []const u8, filename: []const u8, content: []const u8) ![]u8 {
-    const path = try std.fs.path.join(allocator, &.{ dir_path, filename });
-    errdefer allocator.free(path);
-    const f = try dir.createFile(filename, .{});
-    defer f.close();
-    try f.writeAll(content);
-    return path;
-}
-
-test "readInboxBullets returns empty slice for missing file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    const cfg = try config_mod.loadConfig(allocator, tmp_path);
-    var engine = query.QueryEngine.init(allocator, "sync", tmp_path, false, false, cfg);
-    defer engine.deinit();
-
-    const nonexistent = try std.fs.path.join(allocator, &.{ tmp_path, "no_such_file.md" });
-    defer allocator.free(nonexistent);
-
-    const bullets = try engine.readInboxBulletsTest(nonexistent);
-    defer {
-        for (bullets) |b| allocator.free(b);
-        allocator.free(bullets);
-    }
-
-    try std.testing.expect(bullets.len == 0);
-}
-
-test "readInboxBullets returns matching bullets and skips non-matching" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    const inbox_content =
-        \\# Insights
-        \\- sync guidance files on every build
-        \\- unrelated thing about database migrations
-        \\- sync writes JSON to the guidance directory
-        \\not a bullet
-        \\  - indented non-bullet
-    ;
-    const inbox_path = try writeInboxFile(allocator, tmp.dir, tmp_path, "INSIGHTS.md", inbox_content);
-    defer allocator.free(inbox_path);
-
-    const cfg = try config_mod.loadConfig(allocator, tmp_path);
-    var engine = query.QueryEngine.init(allocator, "sync", tmp_path, false, false, cfg);
-    defer engine.deinit();
-
-    const bullets = try engine.readInboxBulletsTest(inbox_path);
-    defer {
-        for (bullets) |b| allocator.free(b);
-        allocator.free(bullets);
-    }
-
-    // Two bullets contain "sync"; "database migrations" and non-bullets are excluded.
-    try std.testing.expect(bullets.len == 2);
-    // Each returned bullet is the text after "- "
-    for (bullets) |b| {
-        try std.testing.expect(std.mem.indexOf(u8, b, "sync") != null);
-    }
-}
-
-test "readInboxBullets skips heading lines" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    const inbox_content =
-        \\## sync section
-        \\# sync heading
-        \\- sync is important
-    ;
-    const inbox_path = try writeInboxFile(allocator, tmp.dir, tmp_path, "CAP.md", inbox_content);
-    defer allocator.free(inbox_path);
-
-    const cfg = try config_mod.loadConfig(allocator, tmp_path);
-    var engine = query.QueryEngine.init(allocator, "sync", tmp_path, false, false, cfg);
-    defer engine.deinit();
-
-    const bullets = try engine.readInboxBulletsTest(inbox_path);
-    defer {
-        for (bullets) |b| allocator.free(b);
-        allocator.free(bullets);
-    }
-
-    // Heading lines must not be returned, only the bullet.
-    try std.testing.expect(bullets.len == 1);
-    try std.testing.expectEqualStrings("sync is important", bullets[0]);
-}
-
-// ---------------------------------------------------------------------------
-// QueryEngine.execute: happy-path — guidance JSON found for a matching file
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // chunkIsIgnored / chunkFilePath / splitDiffByFile
 // ---------------------------------------------------------------------------
 //
@@ -1823,63 +1566,4 @@ test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
     try std.testing.expectEqual(@as(usize, 2), chunks.items.len);
     try std.testing.expect(!main.chunkIsIgnoredPub(chunks.items[0], guidance_dir)); // src/main.zig — keep
     try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1], guidance_dir)); // .guidance/ — ignore
-}
-
-// ---------------------------------------------------------------------------
-// QueryEngine.execute finds guidance JSON matching query
-// ---------------------------------------------------------------------------
-
-test "QueryEngine.execute finds guidance JSON matching query" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    {
-        var tmp = std.testing.tmpDir(.{});
-        defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-        defer allocator.free(tmp_path);
-
-        // Create src/ directory with a source file whose name matches the query.
-        try tmp.dir.makePath("src");
-        const src_file = try tmp.dir.createFile("src/syncer.zig", .{});
-        src_file.close();
-
-        // Write a guidance JSON at the path the engine will derive:
-        // json_base/{rel}.json = .guidance/src/syncer.zig.json
-        try tmp.dir.makePath(".guidance/src");
-        const guidance_json =
-            \\{
-            \\  "meta": {"module": "syncer", "source": "src/syncer.zig", "language": "zig"},
-            \\  "comment": "Sync engine.",
-            \\  "skills": [{"ref": "zig-current"}],
-            \\  "hashtags": ["#sync"],
-            \\  "members": [
-            \\    {"type": "fn_decl", "name": "runSync", "is_pub": true, "line": 5,
-            \\     "match_hash": "aabbcc", "signature": "fn runSync() void",
-            \\     "comment": "Run the sync loop.", "params": [], "tags": [], "patterns": [], "members": []}
-            \\  ]
-            \\}
-        ;
-        const gj = try tmp.dir.createFile(".guidance/src/syncer.zig.json", .{});
-        try gj.writeAll(guidance_json);
-        gj.close();
-
-        const cfg = try config_mod.loadConfig(allocator, tmp_path);
-        var engine = query.QueryEngine.init(allocator, "syncer", tmp_path, false, false, cfg);
-        defer engine.deinit();
-
-        const result = try engine.execute();
-        defer query.freeQueryResult(allocator, &engine.store, result);
-
-        // At minimum: syncer.zig is found as a file match.
-        try std.testing.expect(result.file_matches.len > 0);
-
-        // The guidance JSON must be loaded.
-        try std.testing.expect(result.guidance_files.len > 0);
-        try std.testing.expectEqualStrings("Sync engine.", result.guidance_files[0].comment);
-        try std.testing.expect(result.guidance_files[0].functions.len == 1);
-        try std.testing.expectEqualStrings("runSync", result.guidance_files[0].functions[0].name);
-    }
-
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }

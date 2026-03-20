@@ -65,7 +65,6 @@ const Command = enum {
     clean,
     structure,
     deps,
-    query,
     explain,
     commit,
     check,
@@ -116,7 +115,6 @@ pub fn main() !void {
         .clean => try cmdClean(allocator, args[2..]),
         .structure => try cmdStructure(allocator, args[2..]),
         .deps => try cmdDeps(allocator, args[2..]),
-        .query => try cmdQuery(allocator, args[2..]),
         .explain => try cmdExplain(allocator, args[2..]),
         .commit => try cmdCommit(allocator, args[2..]),
         .check => try cmdCheck(allocator, args[2..]),
@@ -146,8 +144,7 @@ fn printHelp() !void {
         \\  clean      Remove .guidance/src and .guidance.db
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  deps       Generate Makefile .depend file from Zig imports
-        \\  query      Search .guidance.db with vector/keyword search (no LLM)
-        \\  explain    Search with LLM-synthesized summary
+        \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
         \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit     Generate AI commit message from staged diff + guidance
         \\  show       Show vector embeddings from .guidance.db (Markdown)
@@ -1733,168 +1730,6 @@ fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var deps_gen = deps_mod.DepsGenerator.init(allocator, cwd);
     try deps_gen.generateDependencies(src_dir);
-}
-
-// =============================================================================
-// query
-// =============================================================================
-
-const QueryArgs = struct {
-    query_str: ?[]const u8 = null,
-    limit: usize = 10,
-    json_mode: bool = false,
-    db_path: ?[]const u8 = null,
-    workspace: ?[]const u8 = null,
-
-    /// Parse query subcommand arguments. Returns error.MissingValue when a
-    /// flag-with-value is the last argument (consistent with GenArgs.parse).
-    fn parse(args: []const []const u8) error{MissingValue}!QueryArgs {
-        var qa: QueryArgs = .{};
-        var i: usize = 0;
-        while (i < args.len) : (i += 1) {
-            const arg = args[i];
-            if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                qa.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
-            } else if (std.mem.eql(u8, arg, "--json")) {
-                qa.json_mode = true;
-            } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                qa.db_path = args[i];
-            } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
-                i += 1;
-                if (i >= args.len) return error.MissingValue;
-                qa.workspace = args[i];
-            } else if (!std.mem.startsWith(u8, arg, "-")) {
-                qa.query_str = arg;
-            }
-        }
-        return qa;
-    }
-};
-
-fn cmdQuery(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    const qa = QueryArgs.parse(args) catch |err| {
-        std.debug.print("error: query flag missing value ({s})\n", .{@errorName(err)});
-        return err;
-    };
-
-    const query_text = qa.query_str orelse {
-        std.debug.print("Error: query string required\n", .{});
-        return;
-    };
-
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-
-    const workspace = try llm.resolvePath(allocator, cwd, qa.workspace orelse cwd);
-    defer allocator.free(workspace);
-
-    const db_path = try llm.resolvePath(allocator, workspace, qa.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
-    defer allocator.free(db_path);
-
-    std.fs.accessAbsolute(db_path, .{}) catch {
-        std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
-        std.debug.print("Run 'guidance gen' to generate it.\n", .{});
-        return;
-    };
-
-    const cfg = config_mod.loadConfig(allocator, workspace) catch
-        try config_mod.loadConfig(allocator, cwd);
-    defer @constCast(&cfg).deinit();
-
-    const embedder = try createEmbedderWithFallback(allocator, &cfg);
-    defer embedder.deinit();
-
-    var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
-        std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
-        return;
-    };
-    defer db.deinit();
-
-    const results = try db.search(allocator, query_text, qa.limit);
-    defer {
-        for (results) |r| freeSearchResult(allocator, r);
-        allocator.free(results);
-    }
-
-    if (results.len == 0) {
-        std.debug.print("No results found for: {s}\n", .{query_text});
-        return;
-    }
-
-    if (qa.json_mode) {
-        try printQueryJson(query_text, results);
-    } else {
-        try printQueryText(query_text, results);
-    }
-}
-
-fn printQueryText(query_text: []const u8, results: []SearchResult) !void {
-    var ws: llm.WriterState = .{};
-    ws.initStdout();
-    const stdout = ws.writer();
-
-    try stdout.print("# Query: {s}\n\n", .{query_text});
-
-    for (results, 1..) |r, idx| {
-        try stdout.print("{d}. **{s}** ({s}) — {s}", .{ idx, r.name, r.node_type, r.module });
-        if (r.line) |l| try stdout.print(":{d}", .{l});
-        try stdout.print("\n", .{});
-
-        if (r.comment) |c| {
-            const nl = std.mem.indexOfScalar(u8, c, '\n') orelse c.len;
-            const snippet = c[0..@min(nl, 120)];
-            try stdout.print("   {s}\n", .{snippet});
-        }
-        if (r.signature) |s| {
-            try stdout.print("   `{s}`\n", .{s});
-        }
-        try stdout.print("\n", .{});
-    }
-
-    try stdout.flush();
-}
-
-fn printQueryJson(query_text: []const u8, results: []SearchResult) !void {
-    var ws: llm.WriterState = .{};
-    ws.initStdout();
-    const stdout = ws.writer();
-
-    try stdout.writeAll("{\"query\":\"");
-    try llm.jsonWriteEscaped(stdout, query_text);
-    try stdout.writeAll("\",\"results\":[\n");
-
-    for (results, 0..) |r, i| {
-        try stdout.writeAll("  {\"module\":\"");
-        try llm.jsonWriteEscaped(stdout, r.module);
-        try stdout.writeAll("\",\"name\":\"");
-        try llm.jsonWriteEscaped(stdout, r.name);
-        try stdout.writeAll("\",\"type\":\"");
-        try llm.jsonWriteEscaped(stdout, r.node_type);
-        try stdout.writeByte('"');
-        if (r.signature) |s| {
-            try stdout.writeAll(",\"signature\":\"");
-            try llm.jsonWriteEscaped(stdout, s);
-            try stdout.writeByte('"');
-        }
-        if (r.comment) |c| {
-            const nl = std.mem.indexOfScalar(u8, c, '\n') orelse c.len;
-            try stdout.writeAll(",\"comment\":\"");
-            try llm.jsonWriteEscaped(stdout, c[0..@min(nl, 200)]);
-            try stdout.writeByte('"');
-        }
-        if (r.line) |l| try stdout.print(",\"line\":{d}", .{l});
-        try stdout.writeAll(",\"language\":\"");
-        try llm.jsonWriteEscaped(stdout, r.language);
-        try stdout.print("\",\"score\":{d:.4}}}", .{r.score});
-        if (i < results.len - 1) try stdout.writeAll(",\n");
-    }
-
-    try stdout.writeAll("]}\n");
-    try stdout.flush();
 }
 
 // =============================================================================
