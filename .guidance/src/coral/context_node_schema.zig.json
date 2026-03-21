@@ -1,0 +1,279 @@
+{
+  "meta": {
+    "module": "src.coral.context_node_schema",
+    "source": "src/coral/context_node_schema.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns] Defines schema structures, payload types, and binary header validation for Coral DB context nodes.",
+  "detail": "This module defines the schema and operations for handling context nodes within the Coral Database system. It serves as a bridge between the Coral DB's internal data structures and the external Zig environment, ensuring data integrity and compatibility. The module is structured around binary schemas, payload types, and context node representations, providing a robust framework for serialization, validation, and retrieval of context data.\n\nKey abstractions include the `BinaryHeader` struct, which encapsulates essential metadata for binary data, and the `ContextNode` and `BinaryContextNode` structs, which represent the actual data structures used in the database. The module leverages Zig's reflection and memory management features to dynamically handle binary data and validate payloads against predefined schemas.\n\nThe public API exposes functions for initializing, validating, and reading context nodes, along with utility functions for managing LOD (Level of Detail) data. The design emphasizes modularity, allowing seamless integration with Coral DB's broader architecture while maintaining strict type and version control.\n\nImplementation details focus on efficient memory handling, ensuring that binary data is correctly aligned and validated. The module employs a clear separation of concerns, with distinct responsibilities for schema definition, data storage, and retrieval. This design supports scalability and maintainability, making it suitable for complex database operations.",
+  "keywords": ["Zig", "Coral DB", "BinaryHeader", "ContextNode", "Schema", "PayloadType"],
+  "skills": [
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "members": [
+    {
+      "type": "enum",
+      "name": "PayloadType",
+      "match_hash": "1cabcf77e8879039e1d2d3ecad4dc64cd59b3fb071a0bc8e828b4ae3db10ffb0",
+      "signature": "keyword_enum PayloadType { ... }",
+      "comment": "Defines a payload type with enum-based payload definitions, managed by owner; ensures fixed-size buffers and clear ownership model.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "context_node",
+          "is_pub": false,
+          "line": 11
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "execution_request",
+          "is_pub": false,
+          "line": 12
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "execution_result",
+          "is_pub": false,
+          "line": 13
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "error_response",
+          "is_pub": false,
+          "line": 14
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "host_function_call",
+          "is_pub": false,
+          "line": 15
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "host_function_result",
+          "is_pub": false,
+          "line": 16
+        }
+      ],
+      "line": 10
+    },
+    {
+      "type": "struct",
+      "name": "BinaryHeader",
+      "match_hash": "c69cbaf8a3179739f71fa0a4578bfdb816781daa6e9f5408c3b8f1bcc56c112f",
+      "signature": "keyword_struct BinaryHeader { ... }",
+      "comment": "Manages binary header structures with ownership and validation logic; not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "a71b0544cf50f8cdf909b86d4cf1cb62aaa24bdfecc201663c2544c9c7e2ab9c",
+          "signature": "fn init(payload_type: PayloadType, size: u32) -> BinaryHeader",
+          "params": [
+            { "name": "payload_type", "type": "PayloadType" },
+            { "name": "size", "type": "u32" }
+          ],
+          "returns": "BinaryHeader",
+          "is_pub": true,
+          "line": 26
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "validate",
+          "match_hash": "1b5250fd1e4856838a40e79ac8e62f73aaf498d2a3141a71adad2bcd3f99e7ef",
+          "signature": "fn validate(self: *const BinaryHeader) -> bool",
+          "params": [
+            { "name": "self", "type": "*const BinaryHeader" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 36
+        }
+      ],
+      "line": 19
+    },
+    {
+      "type": "struct",
+      "name": "BinaryContextNode",
+      "match_hash": "0f74a3f86e0fe3de76c1fe14cacaf33d10108fb131ec0065c5a9e31474fad4af",
+      "signature": "keyword_struct BinaryContextNode { ... }",
+      "comment": "Manages binary context nodes with ID, buffer operations, and allocator integration; owns buffers, not shared.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "getId",
+          "match_hash": "408b19a5f4ac32a4bb96d2e7b42bacb20a1333a9292bbb83dc349d1504884225",
+          "signature": "fn getId(self: *const BinaryContextNode) -> i64",
+          "params": [
+            { "name": "self", "type": "*const BinaryContextNode" }
+          ],
+          "returns": "i64",
+          "comment": "Convenience accessor for backward compatibility with wasm.zig tests",
+          "is_pub": true,
+          "line": 53
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "7778e8b22321d2adb8ad15b6c883501b0afa7726af33d8c1ff309a41eff21195",
+          "signature": "fn init(node: *const ContextNode, buffer: []u8) -> BinaryContextNode",
+          "params": [
+            { "name": "node", "type": "*const ContextNode" },
+            { "name": "buffer", "type": "[]u8" }
+          ],
+          "returns": "BinaryContextNode",
+          "is_pub": true,
+          "line": 57
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getLod",
+          "match_hash": "3ea5a02956d765ffb1172eb651b263d7d5cbed9c60da8539cc7ecd8ce04e7aac",
+          "signature": "fn getLod(self: *const BinaryContextNode, buffer: []const u8, level: u3) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const BinaryContextNode" },
+            { "name": "buffer", "type": "[]const u8" },
+            { "name": "level", "type": "u3" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 76
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "writeToBuffer",
+          "match_hash": "d134959d009bd7d055aaabab74b12c5eba8ed780861a721559413278b2bdbdd1",
+          "signature": "fn writeToBuffer(node: *const ContextNode, buffer: []u8) -> usize",
+          "params": [
+            { "name": "node", "type": "*const ContextNode" },
+            { "name": "buffer", "type": "[]u8" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 81
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "readFromBuffer",
+          "match_hash": "b46b001e00b26ff7e6d241a32083d73ae4d6c69736ed480c77f3f966bc649c4d",
+          "signature": "fn readFromBuffer(allocator: std.mem.Allocator, buffer: []const u8) -> ContextNode",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "buffer", "type": "[]const u8" }
+          ],
+          "returns": "ContextNode",
+          "is_pub": true,
+          "line": 88
+        }
+      ],
+      "line": 42
+    },
+    {
+      "type": "struct",
+      "name": "ContextNodeSchema",
+      "match_hash": "730d2d6cc43fd07d1cddc933feb78ef8c349ec4f81c042c710434d7b5a4ff58c",
+      "signature": "keyword_struct ContextNodeSchema { ... }",
+      "comment": "Defines a context node schema with ownership, dynamic editing, and size metadata; manages allocation/deallocation.",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "create",
+          "match_hash": "df5aaff844562240b819f5e6d9510c4ee4c0f401fe8a0003427bd47d3abe0ba6",
+          "signature": "fn create(allocator: std.mem.Allocator) -> *Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "*Self",
+          "patterns": [
+            { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+          ],
+          "is_pub": true,
+          "line": 162
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "destroy",
+          "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
+          "signature": "fn destroy(self: *Self, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 269
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "viewOf",
+          "match_hash": "9858cb9515735bee9fb8caac4ef7e199e9e8ac63dd2cb556d3b77ed311bb652d",
+          "signature": "fn viewOf(self: *const Self, allocator: std.mem.Allocator, node: *ContextNode) -> reflection.DynamicEditable",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "node", "type": "*ContextNode" }
+          ],
+          "returns": "reflection.DynamicEditable",
+          "is_pub": true,
+          "line": 273
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "binarySize",
+          "match_hash": "91193fa3cfbdcd4825e8a8081ff235c4b1bf70aa929bb4192fd459c057fd633f",
+          "signature": "fn binarySize(node: *const ContextNode) -> usize",
+          "params": [
+            { "name": "node", "type": "*const ContextNode" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 283
+        }
+      ],
+      "line": 117
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: create and destroy",
+      "is_pub": false,
+      "line": 298
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: viewOf set and get",
+      "is_pub": false,
+      "line": 308
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: viewOf lod field access",
+      "is_pub": false,
+      "line": 333
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: valid_to optional field",
+      "is_pub": false,
+      "line": 355
+    },
+    {
+      "type": "test_decl",
+      "name": "BinaryContextNode: round-trip serialization",
+      "is_pub": false,
+      "line": 381
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: access denied on protected field",
+      "is_pub": false,
+      "line": 409
+    }
+  ]
+}
