@@ -37,7 +37,7 @@ After all source files are processed:
 ## Key files
 
 - `src/guidance/sync.zig` — `SyncProcessor`, per-file pipeline
-- `src/guidance/lance_db.zig` — `syncDatabase` (LanceDB backend)
+- `src/vector/lance_db.zig` — `syncDatabase` (LanceDB-style SQLite backend)
 - `src/guidance/hash.zig` — `matchHash` computation
 - `src/guidance/marker.zig` — `fileNeedsProcessing` staleness check
 

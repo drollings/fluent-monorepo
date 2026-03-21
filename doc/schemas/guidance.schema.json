@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://coral-context/schemas/guidance.schema.json",
+  "title": "Guidance JSON",
+  "description": "Schema for .ast-guidance/src/**/*.json files emitted by ast-guidance Zig and Python providers.",
+  "type": "object",
+  "required": ["meta", "members"],
+  "additionalProperties": false,
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["module", "source", "language"],
+      "additionalProperties": false,
+      "properties": {
+        "module":   { "type": "string", "description": "Dot-separated module path, e.g. 'src.cozo'" },
+        "source":   { "type": "string", "description": "Relative path to the source file, e.g. 'src/cozo.zig'" },
+        "language": { "type": "string", "enum": ["zig", "python", "c", "cpp", "rust"], "description": "Source language" }
+      }
+    },
+    "comment": {
+      "type": "string",
+      "description": "Module-level doc comment or AI-generated summary."
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["ref"],
+            "properties": {
+              "ref":     { "type": "string", "description": "Path to the skill document." },
+              "context": { "type": "string", "description": "Why this skill was flagged." }
+            }
+          }
+        ]
+      },
+      "description": "Applicable skill document names or skill reference objects."
+    },
+    "hashtags": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^#[a-z_]+" },
+      "description": "Searchable hashtag labels, e.g. ['#allocator', '#graph']."
+    },
+    "used_by": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of source file paths that import this module."
+    },
+    "members": {
+      "type": "array",
+      "description": "Top-level declarations in the source file.",
+      "items": { "$ref": "#/$defs/Member" }
+    }
+  },
+  "$defs": {
+    "Member": {
+      "type": "object",
+      "required": ["type", "name"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "fn_decl", "fn_private", "struct", "enum", "union", "const_decl",
+            "var_decl", "enum_field", "test_decl", "comptime_decl"
+          ],
+          "description": "Declaration kind."
+        },
+        "name":       { "type": "string",  "description": "Identifier name." },
+        "is_pub":     { "type": "boolean", "description": "Whether the declaration is public." },
+        "line":       { "type": "integer", "description": "1-based line number in the source file." },
+        "comment":    { "type": "string",  "description": "Doc comment or AI summary for this member." },
+        "match_hash": { "type": "string",  "description": "SHA-256 hex digest of the normalised declaration body, used for change detection." },
+        "signature":  { "type": "string",  "description": "Human-readable declaration signature." },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          },
+          "description": "Function parameters (fn_decl only). 'type' may be absent for unnamed/inferred params."
+        },
+        "returns": {
+          "type": "string",
+          "description": "Return type string (fn_decl only)."
+        },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Member" },
+          "description": "Nested members (struct/enum body)."
+        }
+      }
+    }
+  }
+}

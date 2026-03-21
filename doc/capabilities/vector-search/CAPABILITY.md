@@ -39,9 +39,9 @@ Example: `"guidance database module — function syncDatabase: synchronises the 
 
 ## Key files
 
-- `src/guidance/lance_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
-- `src/guidance/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`
-- `src/guidance/vector/embeddings.zig` — `EmbeddingProvider` vtable
+- `src/vector/lance_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
+- `src/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`
+- `src/vector/embeddings.zig` — `EmbeddingProvider` vtable
 
 ## Performance notes
 

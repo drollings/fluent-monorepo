@@ -17,25 +17,25 @@ AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
 ## Quick Start: RALPH Loop (Discovery → Implementation)
 
 ```
-1. DISCOVER (make):  make explain QUERY="<keywords or a short question>"
-                     Prefer phrases: "sync guidance json" > "json"
-                     Scan: module purpose, pattern type, skill list
-                     Short queries (≤4 words): fast path, no LLM
-                     Long queries (5+ words): LLM filter + synthesis
-                     Flags: --no-llm, --filter=skip, --staged=false
+1. DISCOVER (guidance):  guidance explain "<keywords or a short question>"
+                         Prefer phrases: "sync guidance json" > "json"
+                         Scan: module purpose, pattern type, skill list
+                         Short queries (≤4 words): fast path, no LLM
+                         Long queries (5+ words): LLM filter + synthesis
+                         Flags: --no-llm, --filter=skip, --staged=false
 
-2. UNDERSTAND (MCP): Read the primary source file(s) from step 1
-                     Grep callers: who @import's this file?
-                     Ask: do the listed skills actually apply?
+2. UNDERSTAND (MCP):     Read the primary source file(s) from step 1
+                         Grep callers: who @import's this file?
+                         Ask: do the listed skills actually apply?
 
-3. DECIDE:           If skills match → read them
-                     If not → proceed to implementation
+3. DECIDE:               If skills match → read them
+                         If not → proceed to implementation
 
-4. IMPLEMENT:        Write to src/guidance/ or bin/ (for Python or other languages apart from Zig, i.e. guidance-py)
-                     Follow source patterns and applicable skills only
+4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or other languages apart from Zig, i.e. guidance-py)
+                         Follow source patterns and applicable skills only
 
-5. VERIFY (make):    make pre-commit
-                     build → test → guidance gen → lint → STRUCTURE.md
+5. VERIFY (make):        make pre-commit
+                         build → test → guidance gen → lint → STRUCTURE.md
 ```
 
 ---
@@ -65,9 +65,8 @@ doc/
 ---
 
 **DO:**
-- Read the results of `make explain` for any skills
+- Read the results of `guidance explain` for any skills
 - Ask: "What design pattern is used here?" before consulting skills
-- Read skills **only** if source analysis confirms they apply
 
 **DON'T:**
 - Assume skills apply without validating against source code

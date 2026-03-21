@@ -47,5 +47,5 @@ The hybrid search combines:
 
 - `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`
 - `src/guidance/staged.zig` — Staged pipeline with LLM filter and synthesis
-- `src/guidance/lance_db.zig` — `GuidanceDb` (hybrid vector + keyword search)
-- `src/guidance/vector/` — Embedding providers and cosine similarity math
+- `src/vector/lance_db.zig` — `GuidanceDb` (hybrid vector + keyword search)
+- `src/vector/` — Embedding providers and cosine similarity math
