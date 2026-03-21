@@ -131,6 +131,131 @@ pub fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator
     return abstracts.toOwnedSlice(allocator);
 }
 
+// ---------------------------------------------------------------------------
+// TargetBuilder — fluent DSL for registering targets
+// ---------------------------------------------------------------------------
+//
+// Usage:
+//   try registry.target("build", .file)
+//       .depends(&.{"compile", "link"})
+//       .provides(&.{"artifact"})
+//       .command("gcc -o artifact a.o b.o")
+//       .essential()
+//       .register();
+//
+// Errors from .depends()/.provides()/.command() are accumulated and surfaced
+// at .register().  If .register() is never called the heap-allocated Target
+// leaks — always terminate the chain with .register().
+//
+// Ownership: on successful .register() the Target is owned by the registry.
+// On error (surfaced at .register()) the Target is freed before returning.
+
+pub const TargetBuilder = struct {
+    allocator: std.mem.Allocator,
+    registry: *TargetRegistry,
+    interner: *StringInterner,
+    /// null when allocation failed in `TargetRegistry.target()`.
+    target: ?*Target,
+    /// First error encountered during chaining; surfaced by `register()`.
+    err: ?anyerror,
+
+    /// Set the dependency list (interned bit-set).
+    pub fn depends(self: *TargetBuilder, names: []const []const u8) *TargetBuilder {
+        if (self.err != null or self.target == null) return self;
+        self.target.?.setDepends(self.allocator, self.interner, names) catch |e| {
+            self.err = e;
+        };
+        return self;
+    }
+
+    /// Set the provides list (interned bit-set).
+    pub fn provides(self: *TargetBuilder, names: []const []const u8) *TargetBuilder {
+        if (self.err != null or self.target == null) return self;
+        self.target.?.setProvides(self.allocator, self.interner, names) catch |e| {
+            self.err = e;
+        };
+        return self;
+    }
+
+    /// Append a shell command string (allocator-owned copy).
+    pub fn command(self: *TargetBuilder, cmd: []const u8) *TargetBuilder {
+        if (self.err != null or self.target == null) return self;
+        const owned = self.allocator.dupe(u8, cmd) catch |e| {
+            self.err = e;
+            return self;
+        };
+        self.target.?.commands.append(self.allocator, owned) catch |e| {
+            self.allocator.free(owned);
+            self.err = e;
+        };
+        return self;
+    }
+
+    /// Mark this target as essential (must succeed for the build to pass).
+    pub fn essential(self: *TargetBuilder) *TargetBuilder {
+        if (self.target) |t| t.essential = true;
+        return self;
+    }
+
+    /// Set the `exists` path guard (target is skipped when the file exists).
+    pub fn exists(self: *TargetBuilder, path: []const u8) *TargetBuilder {
+        if (self.err != null or self.target == null) return self;
+        const owned = self.allocator.dupe(u8, path) catch |e| {
+            self.err = e;
+            return self;
+        };
+        if (self.target.?.exists) |old| self.allocator.free(old);
+        self.target.?.exists = owned;
+        return self;
+    }
+
+    /// Set the LanceDB/node id (optional; 0 if not set).
+    pub fn id(self: *TargetBuilder, node_id: i64) *TargetBuilder {
+        if (self.target) |t| t.id = node_id;
+        return self;
+    }
+
+    /// Commit the target to the registry.
+    ///
+    /// On success the registry owns the Target.
+    /// On any accumulated error the Target is freed and the error is returned.
+    pub fn register(self: *TargetBuilder) !void {
+        if (self.err) |e| {
+            if (self.target) |t| {
+                t.deinit(self.allocator);
+                self.allocator.destroy(t);
+                self.target = null;
+            }
+            return e;
+        }
+        if (self.target) |t| {
+            try self.registry.add(t);
+            self.target = null; // registry now owns it
+        }
+    }
+};
+
+/// Return a fluent TargetBuilder for adding a new target to this registry.
+///
+/// Errors during Target allocation are deferred to `register()` so the entire
+/// chain can be expressed as a single `try` expression:
+///
+///   try registry.target("build", .file)
+///       .depends(&.{"compile"})
+///       .register();
+pub fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) TargetBuilder {
+    const t = self.allocator.create(Target) catch |e| {
+        return .{ .allocator = self.allocator, .registry = self, .interner = self.interner, .target = null, .err = e };
+    };
+    t.* = Target.init(self.allocator, self.interner, name, target_type) catch |e| {
+        self.allocator.destroy(t);
+        return .{ .allocator = self.allocator, .registry = self, .interner = self.interner, .target = null, .err = e };
+    };
+    return .{ .allocator = self.allocator, .registry = self, .interner = self.interner, .target = t, .err = null };
+}
+
+// ---------------------------------------------------------------------------
+
 const testing = std.testing;
 
 test "TargetRegistry basic operations" {
@@ -336,4 +461,169 @@ test "TargetRegistry: get returns null for unknown name" {
     defer registry.deinit();
 
     try testing.expect(registry.get("nope") == null);
+}
+
+// ---------------------------------------------------------------------------
+// TargetBuilder — fluent API integration tests
+// ---------------------------------------------------------------------------
+
+test "TargetBuilder: basic fluent registration" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("build", .file)
+        .command("gcc -o app main.c")
+        .essential()
+        .register();
+
+    const t = registry.get("build");
+    try testing.expect(t != null);
+    try testing.expect(t.?.essential);
+    try testing.expectEqual(@as(usize, 1), t.?.commands.items.len);
+    try testing.expectEqualStrings("gcc -o app main.c", t.?.commands.items[0]);
+}
+
+test "TargetBuilder: depends and provides interned correctly" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("compile", .command)
+        .depends(&.{"source.c", "header.h"})
+        .provides(&.{"object.o"})
+        .register();
+
+    const t = registry.get("compile");
+    try testing.expect(t != null);
+    try testing.expect(t.?.depends.count() == 2);
+    try testing.expect(t.?.provides.count() == 1);
+}
+
+test "TargetBuilder: feature parity with imperative style" {
+    // Build the same DAG both ways and verify identical results.
+    var interner_a = StringInterner.init(testing.allocator);
+    defer interner_a.deinit();
+    var registry_a = TargetRegistry.init(testing.allocator, &interner_a);
+    defer registry_a.deinit();
+
+    // Imperative style (existing API)
+    const src_a = try testing.allocator.create(Target);
+    src_a.* = try Target.init(testing.allocator, &interner_a, "src", .file);
+    try registry_a.add(src_a);
+
+    const obj_a = try testing.allocator.create(Target);
+    obj_a.* = try Target.init(testing.allocator, &interner_a, "obj", .command);
+    try obj_a.setDepends(testing.allocator, &interner_a, &.{"src"});
+    try obj_a.setProvides(testing.allocator, &interner_a, &.{"obj.o"});
+    try obj_a.addCommand(testing.allocator, try testing.allocator.dupe(u8, "cc -c src.c"));
+    try registry_a.add(obj_a);
+
+    // Fluent style (new API)
+    var interner_b = StringInterner.init(testing.allocator);
+    defer interner_b.deinit();
+    var registry_b = TargetRegistry.init(testing.allocator, &interner_b);
+    defer registry_b.deinit();
+
+    try registry_b.target("src", .file).register();
+    try registry_b.target("obj", .command)
+        .depends(&.{"src"})
+        .provides(&.{"obj.o"})
+        .command("cc -c src.c")
+        .register();
+
+    // Same shape: 2 targets, "obj" has 1 dep, 1 provide, 1 command.
+    try testing.expectEqual(registry_a.count(), registry_b.count());
+
+    const obj_b = registry_b.get("obj").?;
+    try testing.expectEqual(obj_a.depends.count(), obj_b.depends.count());
+    try testing.expectEqual(obj_a.provides.count(), obj_b.provides.count());
+    try testing.expectEqual(obj_a.commands.items.len, obj_b.commands.items.len);
+    try testing.expectEqualStrings(obj_a.commands.items[0], obj_b.commands.items[0]);
+}
+
+test "TargetBuilder: multiple commands accumulate" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("multi", .command)
+        .command("step1")
+        .command("step2")
+        .command("step3")
+        .register();
+
+    const t = registry.get("multi").?;
+    try testing.expectEqual(@as(usize, 3), t.commands.items.len);
+    try testing.expectEqualStrings("step1", t.commands.items[0]);
+    try testing.expectEqualStrings("step3", t.commands.items[2]);
+}
+
+test "TargetBuilder: id field set via fluent" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("node", .abstract)
+        .id(42)
+        .register();
+
+    try testing.expectEqual(@as(i64, 42), registry.get("node").?.id);
+}
+
+test "TargetBuilder: GPA no leaks — happy path" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var interner = StringInterner.init(allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("a", .phony).register();
+    try registry.target("b", .command)
+        .depends(&.{"a"})
+        .command("echo b")
+        .register();
+    try registry.target("c", .file)
+        .depends(&.{"b"})
+        .provides(&.{"artifact"})
+        .essential()
+        .register();
+
+    try testing.expectEqual(@as(usize, 3), registry.count());
+}
+
+test "TargetBuilder: integrates with DependencyResolver end-to-end" {
+    // Register a diamond DAG with fluent API, then resolve it.
+    const resolver_mod = @import("resolver.zig");
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    try registry.target("base", .phony).register();
+    try registry.target("left", .phony).depends(&.{"base"}).register();
+    try registry.target("right", .phony).depends(&.{"base"}).register();
+    try registry.target("top", .phony).depends(&.{ "left", "right" }).register();
+
+    var resolver = resolver_mod.DependencyResolver.init(testing.allocator, &registry, &interner);
+    var resolved = try resolver.resolve(&.{"top"});
+    defer resolved.deinit();
+
+    try testing.expectEqual(@as(usize, 4), resolved.targets.len);
+
+    // base must appear before top
+    var base_pos: usize = 0;
+    var top_pos: usize = 0;
+    for (resolved.targets, 0..) |t, i| {
+        if (std.mem.eql(u8, t.name, "base")) base_pos = i;
+        if (std.mem.eql(u8, t.name, "top")) top_pos = i;
+    }
+    try testing.expect(base_pos < top_pos);
 }
