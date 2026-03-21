@@ -3,7 +3,7 @@ const BuildContext = @import("context.zig").BuildContext;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
 const StringInterner = @import("interner.zig").StringInterner;
 const json_parser = @import("json_parser.zig");
-const io = @import("common");
+const io = @import("io.zig");
 
 pub const Repl = @This();
 

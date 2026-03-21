@@ -8,15 +8,14 @@
 ///   L4: Semantic Search    — <500ms (KNN via embeddings)
 ///   L5: LLM Fallback       — >1s    (external HTTP MCP call)
 const std = @import("std");
-const db_mod = @import("db.zig");
-const wasm_mod = @import("wasm.zig");
-const schema = @import("schema.zig");
+const coral_db = @import("coral_db");
+const wasm_mod = @import("wasm");
 const hashutil = @import("common");
 
-const Library = db_mod.Library;
-const ContextNode = db_mod.ContextNode;
-const ContextPacker = db_mod.ContextPacker;
-const HydrationPipeline = db_mod.HydrationPipeline;
+const Library = coral_db.Library;
+const ContextNode = coral_db.ContextNode;
+const ContextPacker = coral_db.ContextPacker;
+const HydrationPipeline = coral_db.HydrationPipeline;
 
 pub const CacheTier = enum(u8) {
     l1_memory = 1,

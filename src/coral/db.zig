@@ -20,8 +20,8 @@
 ///   DynamicBitSetUnmanaged word arrays stored as BLOB (raw usize bytes,
 ///   native byte order).  total_bits records the logical width for round-trips.
 const std = @import("std");
-const schema = @import("schema.zig");
-const reflection = @import("reflection");
+pub const schema = @import("schema.zig");
+const reflection = @import("common").reflection;
 
 const c = @cImport({
     @cInclude("sqlite3.h");
@@ -485,6 +485,33 @@ pub const Library = struct {
     }
 
     // ------------------------------------------------------------------
+    // Graph traversal helpers
+    // ------------------------------------------------------------------
+
+    /// Fetch outgoing neighbor IDs from neighbor_of for `node_id`.
+    /// Returns a caller-owned slice; free with `allocator.free`.
+    pub fn getNeighborIds(self: *Self, allocator: std.mem.Allocator, node_id: i64) ![]i64 {
+        const sql = "SELECT to_id FROM neighbor_of WHERE from_id = ?1";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+
+        var ids: std.ArrayListUnmanaged(i64) = .{};
+        errdefer ids.deinit(allocator);
+        while (try step(stmt)) {
+            try ids.append(allocator, c.sqlite3_column_int64(stmt, 0));
+        }
+        return ids.toOwnedSlice(allocator);
+    }
+
+    /// Fetch all ContextNode IDs with a non-empty embedding (for KNN scan).
+    /// Returns a caller-owned slice of `{id, lod4_name}` suitable for pre-filtering.
+    pub fn knnSearch(self: *Self, allocator: std.mem.Allocator, query_vec: []const f32, k: usize) ![]KnnHit {
+        var pipeline = HydrationPipeline.init(allocator, self);
+        return pipeline.knnSearch(query_vec, k);
+    }
+
+    // ------------------------------------------------------------------
     // YAGO ingestion helpers
     // ------------------------------------------------------------------
 
@@ -939,7 +966,7 @@ test "Library: insert target and depends_on edge" {
     const lib = try testOpenLib(allocator);
     defer lib.deinit();
 
-    var interner = @import("interner").StringInterner.init(allocator);
+    var interner = @import("common").interner.StringInterner.init(allocator);
     defer interner.deinit();
     var dep_empty = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, 4);
     defer dep_empty.deinit(allocator);

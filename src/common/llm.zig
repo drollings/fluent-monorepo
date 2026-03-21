@@ -25,6 +25,26 @@ const str_mod = @import("str.zig");
 const url_mod = @import("url.zig");
 const embed_mod = @import("embeddings.zig");
 
+// ---------------------------------------------------------------------------
+// Sub-module namespace exports — structured access for Coral and future tools
+// ---------------------------------------------------------------------------
+/// Field-level reflection: ConstraintVTable, Accessor, Editable(T), DynamicEditable.
+pub const reflection = @import("reflection.zig");
+/// String interning with arena storage + bitset ConstraintVTable bridge.
+pub const interner = @import("interner.zig");
+/// Target DAG registry: TargetRegistry, TargetBuilder (fluent DSL).
+pub const registry = @import("registry.zig");
+/// Target/TargetType/ExecutorKind value types shared across build & coral.
+pub const target = @import("target.zig");
+/// Hash utilities: sha256Hex, contentHashWithModel, blake3Hash, hashString.
+pub const hash = @import("hash.zig");
+/// BuildContext for DAG execution.
+pub const context = @import("context.zig");
+/// Interactive REPL for coral.
+pub const repl = @import("repl.zig");
+/// JSON target-file parser.
+pub const json_parser = @import("json_parser.zig");
+
 // ── LLM inference (src/llm/) ─────────────────────────────────────
 const llm = @import("llm");
 

@@ -18,8 +18,8 @@ const std = @import("std");
 const parser_mod = @import("../rdf/parser.zig");
 const normalize_mod = @import("../rdf/normalize.zig");
 const yago = @import("yago.zig");
-const db_mod = @import("../db.zig");
-const schema_mod = @import("../schema.zig");
+const db_mod = @import("../coral/db.zig");
+const schema_mod = @import("../coral/schema.zig");
 
 const Triple = parser_mod.Triple;
 const Term = parser_mod.Term;

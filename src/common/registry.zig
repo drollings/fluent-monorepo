@@ -23,9 +23,9 @@ pub fn init(allocator: std.mem.Allocator, interner: *StringInterner) TargetRegis
 
 pub fn deinit(self: *TargetRegistry) void {
     var iter = self.targets.valueIterator();
-    while (iter.next()) |target| {
-        target.*.*.deinit(self.allocator);
-        self.allocator.destroy(target.*);
+    while (iter.next()) |t| {
+        t.*.*.deinit(self.allocator);
+        self.allocator.destroy(t.*);
     }
     self.targets.deinit(self.allocator);
     self.by_bit_index.deinit(self.allocator);
@@ -37,10 +37,10 @@ pub fn deinit(self: *TargetRegistry) void {
     self.provider_map.deinit(self.allocator);
 }
 
-pub fn add(self: *TargetRegistry, target: *Target) !void {
-    try self.targets.put(self.allocator, target.name, target);
-    try self.by_bit_index.put(self.allocator, target.bit_index, target);
-    self.updateProviderMap(target);
+pub fn add(self: *TargetRegistry, tgt: *Target) !void {
+    try self.targets.put(self.allocator, tgt.name, tgt);
+    try self.by_bit_index.put(self.allocator, tgt.bit_index, tgt);
+    self.updateProviderMap(tgt);
 }
 
 pub fn get(self: *const TargetRegistry, name: []const u8) ?*Target {
@@ -52,8 +52,8 @@ pub fn getByBitIndex(self: *const TargetRegistry, idx: usize) ?*Target {
 }
 
 pub fn remove(self: *TargetRegistry, name: []const u8) void {
-    if (self.targets.get(name)) |target| {
-        _ = self.by_bit_index.remove(target.bit_index);
+    if (self.targets.get(name)) |t| {
+        _ = self.by_bit_index.remove(t.bit_index);
         _ = self.targets.remove(name);
     }
 }
@@ -76,14 +76,14 @@ pub fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) ![][
     return names.toOwnedSlice(allocator);
 }
 
-fn updateProviderMap(self: *TargetRegistry, target: *Target) void {
-    var iter = target.provides.iterator(.{});
+fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
+    var iter = tgt.provides.iterator(.{});
     while (iter.next()) |provides_idx| {
         const gop = self.provider_map.getOrPut(self.allocator, provides_idx) catch return;
         if (!gop.found_existing) {
             gop.value_ptr.* = .{};
         }
-        gop.value_ptr.append(self.allocator, target) catch return;
+        gop.value_ptr.append(self.allocator, tgt) catch return;
     }
 }
 
@@ -108,9 +108,9 @@ pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocato
     errdefer essentials.deinit(allocator);
 
     var iter = self.targets.valueIterator();
-    while (iter.next()) |target| {
-        if (target.*.*.essential) {
-            try essentials.append(allocator, target.*);
+    while (iter.next()) |t| {
+        if (t.*.*.essential) {
+            try essentials.append(allocator, t.*);
         }
     }
 
@@ -122,9 +122,9 @@ pub fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator
     errdefer abstracts.deinit(allocator);
 
     var iter = self.targets.valueIterator();
-    while (iter.next()) |target| {
-        if (target.*.*.isAbstract()) {
-            try abstracts.append(allocator, target.*);
+    while (iter.next()) |t| {
+        if (t.*.*.isAbstract()) {
+            try abstracts.append(allocator, t.*);
         }
     }
 
@@ -473,10 +473,8 @@ test "TargetBuilder: basic fluent registration" {
     var registry = TargetRegistry.init(testing.allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("build", .file)
-        .command("gcc -o app main.c")
-        .essential()
-        .register();
+    var b1 = registry.target("build", .file);
+    try b1.command("gcc -o app main.c").essential().register();
 
     const t = registry.get("build");
     try testing.expect(t != null);
@@ -491,10 +489,8 @@ test "TargetBuilder: depends and provides interned correctly" {
     var registry = TargetRegistry.init(testing.allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("compile", .command)
-        .depends(&.{"source.c", "header.h"})
-        .provides(&.{"object.o"})
-        .register();
+    var b2 = registry.target("compile", .command);
+    try b2.depends(&.{"source.c", "header.h"}).provides(&.{"object.o"}).register();
 
     const t = registry.get("compile");
     try testing.expect(t != null);
@@ -527,12 +523,10 @@ test "TargetBuilder: feature parity with imperative style" {
     var registry_b = TargetRegistry.init(testing.allocator, &interner_b);
     defer registry_b.deinit();
 
-    try registry_b.target("src", .file).register();
-    try registry_b.target("obj", .command)
-        .depends(&.{"src"})
-        .provides(&.{"obj.o"})
-        .command("cc -c src.c")
-        .register();
+    var b_src = registry_b.target("src", .file);
+    try b_src.register();
+    var b_obj = registry_b.target("obj", .command);
+    try b_obj.depends(&.{"src"}).provides(&.{"obj.o"}).command("cc -c src.c").register();
 
     // Same shape: 2 targets, "obj" has 1 dep, 1 provide, 1 command.
     try testing.expectEqual(registry_a.count(), registry_b.count());
@@ -550,11 +544,8 @@ test "TargetBuilder: multiple commands accumulate" {
     var registry = TargetRegistry.init(testing.allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("multi", .command)
-        .command("step1")
-        .command("step2")
-        .command("step3")
-        .register();
+    var bm = registry.target("multi", .command);
+    try bm.command("step1").command("step2").command("step3").register();
 
     const t = registry.get("multi").?;
     try testing.expectEqual(@as(usize, 3), t.commands.items.len);
@@ -568,9 +559,8 @@ test "TargetBuilder: id field set via fluent" {
     var registry = TargetRegistry.init(testing.allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("node", .abstract)
-        .id(42)
-        .register();
+    var bn = registry.target("node", .abstract);
+    try bn.id(42).register();
 
     try testing.expectEqual(@as(i64, 42), registry.get("node").?.id);
 }
@@ -585,16 +575,12 @@ test "TargetBuilder: GPA no leaks — happy path" {
     var registry = TargetRegistry.init(allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("a", .phony).register();
-    try registry.target("b", .command)
-        .depends(&.{"a"})
-        .command("echo b")
-        .register();
-    try registry.target("c", .file)
-        .depends(&.{"b"})
-        .provides(&.{"artifact"})
-        .essential()
-        .register();
+    var ba = registry.target("a", .phony);
+    try ba.register();
+    var bb = registry.target("b", .command);
+    try bb.depends(&.{"a"}).command("echo b").register();
+    var bc = registry.target("c", .file);
+    try bc.depends(&.{"b"}).provides(&.{"artifact"}).essential().register();
 
     try testing.expectEqual(@as(usize, 3), registry.count());
 }
@@ -607,10 +593,14 @@ test "TargetBuilder: integrates with DependencyResolver end-to-end" {
     var registry = TargetRegistry.init(testing.allocator, &interner);
     defer registry.deinit();
 
-    try registry.target("base", .phony).register();
-    try registry.target("left", .phony).depends(&.{"base"}).register();
-    try registry.target("right", .phony).depends(&.{"base"}).register();
-    try registry.target("top", .phony).depends(&.{ "left", "right" }).register();
+    var r_base = registry.target("base", .phony);
+    try r_base.register();
+    var r_left = registry.target("left", .phony);
+    try r_left.depends(&.{"base"}).register();
+    var r_right = registry.target("right", .phony);
+    try r_right.depends(&.{"base"}).register();
+    var r_top = registry.target("top", .phony);
+    try r_top.depends(&.{ "left", "right" }).register();
 
     var resolver = resolver_mod.DependencyResolver.init(testing.allocator, &registry, &interner);
     var resolved = try resolver.resolve(&.{"top"});

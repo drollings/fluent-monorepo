@@ -1,10 +1,11 @@
 const std = @import("std");
-const StringInterner = @import("../common/interner.zig").StringInterner;
-const TargetRegistry = @import("../common/registry.zig").TargetRegistry;
-const BuildContext = @import("../common/context.zig").BuildContext;
-const Repl = @import("../common/repl.zig").Repl;
-const json_parser = @import("../common/json_parser.zig");
-const llm = @import("common");
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
+const TargetRegistry = common.registry.TargetRegistry;
+const BuildContext = common.context.BuildContext;
+const Repl = common.repl.Repl;
+const json_parser = common.json_parser;
+const llm = common;
 
 pub const version = "0.1.0";
 
@@ -184,53 +185,10 @@ fn printHelp(writer: anytype) !void {
     );
 }
 
-test "simple imports" {
-    _ = @import("../common/interner.zig");
-    _ = @import("../common/target.zig");
-    _ = @import("../common/registry.zig");
-    _ = @import("../common/resolver.zig");
-    _ = @import("../common/json_parser.zig");
-    _ = @import("../common/context.zig");
-    _ = @import("../common/repl.zig");
-    // CozoDB schema (CozoScript DDL)
+test "coral: core module imports compile" {
+    // Local coral files only — context_node_schema has its own test target
+    // (it uses named modules so cannot be imported relatively alongside db.zig)
     _ = @import("schema.zig");
-    // Unified CozoDB backend
-    _ = @import("cozo.zig");
     _ = @import("db.zig");
-    _ = @import("context_node_schema.zig");
-    // Milestone 4: WebAssembly Sandboxing (Extism)
-    _ = @import("wasm.zig");
-    // Comment quality filter for ast-guidance infill pipeline
     _ = @import("scrub.zig");
-
-    // Phase 1: RDF/Turtle Parser
-    _ = @import("rdf/lexer.zig");
-    _ = @import("rdf/parser.zig");
-    _ = @import("rdf/normalize.zig");
-    _ = @import("rdf/nquads.zig");
-
-    // Phase 2: Ontology Mapping Layer
-    _ = @import("ontology/yago.zig");
-    _ = @import("ontology/mapper.zig");
-    _ = @import("ontology/inference.zig");
-    _ = @import("ontology/migration.zig");
-
-    // Phase 3: Ingestion Pipeline
-    _ = @import("ingest/targets.zig");
-    _ = @import("ingest/batch.zig");
-    _ = @import("ingest/cli.zig");
-    _ = @import("ingest/verify.zig");
-
-    // Phase 4: ANN / HNSW Stubs
-    _ = @import("ann/index.zig");
-    _ = @import("ann/hnsw.zig");
-    _ = @import("ann/integration.zig");
-
-    // Phase 5: NLP Mapping Interfaces
-    _ = @import("nlp/resolver.zig");
-    _ = @import("nlp/tool_discovery.zig");
-    _ = @import("nlp/planner.zig");
-
-    // Phase 9: 5-Tier Cache Hierarchy
-    _ = @import("cache.zig");
 }

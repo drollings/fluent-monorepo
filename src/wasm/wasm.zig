@@ -13,16 +13,17 @@
 ///
 /// Dependencies:
 ///   - Extism runtime (libextism) - linked via build.zig
-///   - Library (CozoDB) from db.zig
+///   - Library from coral/db.zig (SQLite backend)
 const std = @import("std");
-const ContextNode = @import("db.zig").ContextNode;
-const Library = @import("db.zig").Library;
-const CozoDB = @import("cozo.zig").CozoDB;
-const reflection = @import("common/reflection.zig");
-const hashutil = @import("common/hash.zig");
-const Target = @import("common/target.zig");
-const ExecutorKind = Target.ExecutorKind;
-const context_node_schema = @import("context_node_schema.zig");
+const coral_db = @import("coral_db");
+const ContextNode = coral_db.ContextNode;
+const Library = coral_db.Library;
+const common = @import("common");
+const reflection = common.reflection;
+const hash_mod = common.hash;
+const target_mod = common.target;
+const ExecutorKind = target_mod.ExecutorKind;
+const context_node_schema = @import("coral_schema");
 
 // Re-export binary IPC types from context_node_schema for backward compatibility
 pub const BINARY_SCHEMA_VERSION = context_node_schema.BINARY_SCHEMA_VERSION;
@@ -365,38 +366,24 @@ pub fn hostGetNeighbors(
 
     const node_id: i64 = @bitCast(inputs[0].v);
 
-    // Query neighbor_of for outgoing neighbors from this node.
-    const script = std.fmt.allocPrintSentinel(ctx.allocator,
-        \\?[to] := *neighbor_of{{ from: {d}, to }}
-    , .{node_id}, 0) catch {
+    // Query neighbor_of via SQLite for outgoing neighbors.
+    const neighbor_ids = ctx.library.getNeighborIds(ctx.allocator, node_id) catch {
         outputs[0] = .{ .t = .ptr, .v = 0 };
         return;
     };
-    defer ctx.allocator.free(script);
-
-    var result = ctx.library.db.queryRead(script) catch {
-        outputs[0] = .{ .t = .ptr, .v = 0 };
-        return;
-    };
-    defer result.deinit();
-
-    const rows = CozoDB.getRows(&result);
+    defer ctx.allocator.free(neighbor_ids);
 
     // Serialise: [count: u32 LE][id0: i64 LE, ...]
-    const buf_size = @sizeOf(u32) + rows.len * @sizeOf(i64);
+    const buf_size = @sizeOf(u32) + neighbor_ids.len * @sizeOf(i64);
     const buf = ctx.allocator.alloc(u8, buf_size) catch {
         outputs[0] = .{ .t = .ptr, .v = 0 };
         return;
     };
     defer ctx.allocator.free(buf);
 
-    std.mem.writeInt(u32, buf[0..4], @intCast(rows.len), .little);
+    std.mem.writeInt(u32, buf[0..4], @intCast(neighbor_ids.len), .little);
     var off: usize = 4;
-    for (rows) |row| {
-        const rid: i64 = if (row == .array and row.array.items.len >= 1 and row.array.items[0] == .integer)
-            row.array.items[0].integer
-        else
-            0;
+    for (neighbor_ids) |rid| {
         std.mem.writeInt(i64, buf[off..][0..8], rid, .little);
         off += 8;
     }
@@ -496,7 +483,7 @@ pub const WasmExecutionResult = struct {
 /// The target's executor must be .wasm; asserts otherwise.
 pub fn runWasmTarget(
     allocator: std.mem.Allocator,
-    target: *Target.Target,
+    target: *target_mod.Target,
     node: *const ContextNode,
     host_registry: ?*HostFunctionRegistry,
 ) !WasmExecutionResult {
@@ -785,7 +772,7 @@ pub const WasmToolCache = struct {
 
     pub fn computeHash(self: *Self, wasm_bytes: []const u8) [32]u8 {
         _ = self;
-        return hashutil.blake3Hash(wasm_bytes);
+        return hash_mod.blake3Hash(wasm_bytes);
     }
 };
 
