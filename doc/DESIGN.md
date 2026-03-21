@@ -204,7 +204,7 @@ Current: Keyword-only. Query "validate input" won't match a function named sanit
 
 Solution:
 
-- Embed member comments via Ollama (e.g., nomic-embed-text) into a vector DB (could reuse CozoDB's kNN).
+- Embed member comments via Ollama (e.g., nomic-embed-text) into a vector DB (reusing LanceDB's cosine similarity).
 - make explain QUERY="validate input" --semantic → cosine similarity search.
 - Hybrid ranking: BM25 (keyword) + cosine (semantic) with tunable weights.
 

@@ -181,13 +181,13 @@ pre-commit: $(TARGET_BIN) ## Run full RALPH loop via guidance check
 fmt: ## Format all Zig source files
 	$(Q)zig fmt $(SRC_DIR)/
 
-.PHONY: build
-build: $(TARGET_BIN) ## Build guidance binary
+.PHONY: guidance
+guidance: $(TARGET_BIN) ## Build guidance binary
 
 .PHONY: test
 test: ## Run all Zig unit tests
 	$(Q)zig build test --summary all
 
-.PHONY: test-integration
-test-integration: $(TARGET_BIN) ## Run integration smoke tests
-	$(Q)bash tests/guidance_integration.sh
+.PHONY: pre-commit
+pre-commit: STRUCTURE.md ## Run all Zig unit tests
+

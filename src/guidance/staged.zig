@@ -8,7 +8,7 @@
 //!   formatStaged()    — render []Stage to markdown output
 
 const std = @import("std");
-const lance_db_mod = @import("lance_db.zig");
+const lance_db_mod = @import("vector");
 const types = @import("types.zig");
 const llm = @import("common");
 

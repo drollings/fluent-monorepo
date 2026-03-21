@@ -2,6 +2,13 @@
 
 pub const math = @import("math.zig");
 pub const embeddings = @import("embeddings.zig");
+pub const lance_db = @import("lance_db.zig");
+
+pub const GuidanceDb = lance_db.GuidanceDb;
+pub const SearchResult = lance_db.SearchResult;
+pub const SemanticAliases = lance_db.SemanticAliases;
+pub const syncDatabase = lance_db.syncDatabase;
+pub const loadSemanticAliases = lance_db.loadSemanticAliases;
 
 pub const EmbeddingProvider = embeddings.EmbeddingProvider;
 pub const NoopEmbedding = embeddings.NoopEmbedding;

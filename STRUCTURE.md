@@ -53,6 +53,86 @@ Then you you must read
 │   │   │   └── CAPABILITY.md
 │   │   └── vector-search
 │   │       └── CAPABILITY.md
+│   ├── coral
+│   │   ├── Legacy
+│   │   │   ├── CoralContext
+│   │   │   │   ├── CoralContext_Zig_BinaryBlock.md
+│   │   │   │   ├── CoralContext_Zig_ContextNode_Embedding.md
+│   │   │   │   ├── CoralContext_Zig_DatasetIngestion.md
+│   │   │   │   ├── CoralContext_Zig_LEANN.md
+│   │   │   │   ├── CoralContext_Zig_Legacy1.md
+│   │   │   │   ├── CoralContext_Zig_Milestone1.md
+│   │   │   │   ├── CoralContext_Zig_Milestone2.md
+│   │   │   │   ├── CoralContext_Zig_Milestone3.md
+│   │   │   │   ├── CoralContext_Zig_Milestone4.md
+│   │   │   │   ├── CoralContext_Zig_Milestone5.md
+│   │   │   │   ├── CoralContext_Zig_ToolCategories.md
+│   │   │   │   └── CoralContext_Zig_ToolDevelopment.md
+│   │   │   ├── coral-context-implementation-stages-python.md
+│   │   │   ├── coral-context-overview-2026.md
+│   │   │   ├── Gemini3-PriorSpecsAdapted.md
+│   │   │   ├── legacy-aliases.json
+│   │   │   ├── MAKEFILE_GUIDANCE.md
+│   │   │   ├── REPORT_WORLDCORE.md
+│   │   │   ├── ROADMAP_EXPLAIN_ENHANCE.md
+│   │   │   ├── ROADMAP_EXPLAIN_ENHANCE_CHECKLIST.md
+│   │   │   ├── ROADMAP_NEW_EXPLAIN.md
+│   │   │   ├── ROADMAP_NEW_EXPLAIN_CHECKLIST.md
+│   │   │   ├── TEST_EXPLAIN.md
+│   │   │   ├── TEST_EXPLAIN_RESULTS.md
+│   │   │   ├── TODO_COMMON.md
+│   │   │   ├── TODO_CONCISION.md
+│   │   │   ├── TODO_CONCISION_CHECKLIST.md
+│   │   │   ├── TODO_EXPLORE.md
+│   │   │   ├── TODO_EXPLORE_CHECKLIST.md
+│   │   │   ├── TODO_REFLECTION.md
+│   │   │   ├── TODO_YAGO.md
+│   │   │   ├── TODO_YAGO_CHECKLIST.md
+│   │   │   ├── unifiedprompt2.md
+│   │   │   ├── YAGO-to-property.md
+│   │   │   └── zig-reflection.md
+│   │   ├── CHANGELOG.md
+│   │   ├── DETAILS.md
+│   │   ├── OVERVIEW.md
+│   │   └── VISION.md
+│   ├── proposals
+│   │   ├── AIDER_USAGE.md
+│   │   ├── CORAL_CONTEXT_BITOPS.md
+│   │   ├── CORAL_CONTEXT_DECORATORS.md
+│   │   ├── CORAL_CONTEXT_DYAMAKE.md
+│   │   ├── CORAL_CONTEXT_FLUENT.md
+│   │   ├── CORAL_CONTEXT_REASONING.md
+│   │   ├── DESIGN-DECISIONS-RECOMMENDATIONS.md
+│   │   ├── DETAILED_SPECS.md
+│   │   ├── EXAMPLE_QUERY.md
+│   │   ├── EXPLAIN_BENCHMARK.md
+│   │   ├── GEMINI_DISCUSS_EMBEDDING.md
+│   │   ├── GUIDANCE_LANCEDB.md
+│   │   ├── MAKEFILE_GUIDANCE.md
+│   │   ├── NULLCLAW_EXPANSION.md
+│   │   ├── NULLCLAW_MCP_CORAL.md
+│   │   ├── NULLCLAW_OVERVIEW.md
+│   │   ├── NULLCLAW_WASM_CORAL.md
+│   │   ├── NULLCLAW_WASM_CORAL_IMPLEMENT.md
+│   │   ├── NULLCLAW_WASM_TOOLGROUPS.md
+│   │   ├── NULLCLAW_ZIG_ORIENTATION.md
+│   │   ├── PROMPT_CONSOLIDATION.md
+│   │   ├── REFACTOR.md
+│   │   ├── ROADMAP_OPTIMIZE_VECTOR_SEARCH.md
+│   │   ├── SECONDBRAIN.md
+│   │   ├── SKILLGRAPH.md
+│   │   ├── TINY_ZIG_AGENTS.md
+│   │   ├── TODO.md
+│   │   ├── TODO_AIDER.md
+│   │   ├── TODO_GUIDANCE.md
+│   │   ├── TODO_GUIDANCE2.md
+│   │   ├── TODO_ZIG_GUIDANCE.md
+│   │   ├── VISION.md
+│   │   ├── VOICE_NOTE_CORAL.md
+│   │   ├── ZIG_FLUENT_WVR.md
+│   │   └── ZIG_PROJECTS.md
+│   ├── schemas
+│   │   └── guidance.schema.json
 │   └── DESIGN.md
 ├── env
 │   ├── mise
@@ -74,57 +154,104 @@ Then you you must read
 │       └── target_language.mk
 ├── src
 │   ├── common
-│   │   ├── args.zig                              # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
-│   │   ├── cli.zig                               # Defines CLI command structure, registration, and error handling for a Zig-based tool.
-│   │   ├── context.zig                           # Manages Zig build context, resolves dependencies, tracks builds, and handles errors.
-│   │   ├── format.zig                            # Defines table structure with columns, rows, and formatting logic for JSON rendering.
-│   │   ├── hash.zig                              # Provides SHA-256 and content+model hashing utilities for Zig, supporting allocator-friendly outputs and secure key ge...
-│   │   ├── interner.zig                          # Manages stable string indices with arena-allocated storage, supporting interned strings and bitmask bitsets.
-│   │   ├── io.zig                                # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
-│   │   ├── json.zig                              # Provides JSON serialization, escaping, and file parsing utilities for Zig tools, supporting allocators and JSON text ...
-│   │   ├── json_parser.zig                       # Handles Zig JSON parsing, validates targets, and manages allocators for efficient memory usage.
-│   │   ├── llm.zig                               # Contains utility modules, state definitions, and configuration for Zig AST parsing and LLM integration.
-│   │   ├── log.zig                               # Defines logging levels, formatting, and configuration for a Zig application with color support.
-│   │   ├── reflection.zig                        # Provides field-level reflection, validation, and permission handling for data structures, ensuring safe access and ro...
-│   │   ├── registry.zig                          # Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.
-│   │   ├── repl.zig                              # Implements a Zig REPL interface handling commands, parsing input and managing stdout/stdin streams.
-│   │   ├── resolver.zig                          # [gof-patterns] Manages Zig dependency resolution with topological sorting, handling abstract and concrete targets via...
-│   │   ├── source.zig                            # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
-│   │   ├── str.zig                               # Provides utility functions to detect code identifiers, test paths, and extract skill names from Zig source files.
-│   │   ├── string.zig                            # Contains utility functions to check substring presence in Zig bytecode, supporting case-insensitive matching and keyw...
-│   │   ├── target.zig                            # [gof-patterns] Defines target execution types, manages WASM/executor lifecycle, and handles dynamic bit manipulation ...
-│   │   ├── terminal.zig                          # Handles terminal size, width, height, and user interaction in a Zig terminal context.
-│   │   └── url.zig                               # Validates URLs as HTTPS or localhost/127.0.0.1, ensuring safe API endpoint checks.
-│   └── guidance
-│       ├── plugins
-│       │   ├── markdown_plugin.zig               # MarkdownPlugin — extracts sections and metadata from Markdown files.
-│       │   └── zig_plugin.zig                    # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
-│       ├── vector
-│       │   ├── embeddings.zig                    # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
-│       │   ├── math.zig                          # Vector operations — cosine similarity, normalization, hybrid merge.
-│       │   └── root.zig                          # guidance vector module — cosine search, embeddings, hybrid merge.
-│       ├── ast_parser.zig                          # Parses Zig AST, extracts member signatures, and manages memory for the parser.
-│       ├── config.zig                              # [gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across project and u...
-│       ├── deps.zig                                # Extracts dependency information from Zig source files, building a map of module paths and their imports.
-│       ├── enhancer.zig                            # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
-│       ├── git.zig                                 # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
-│       ├── hash.zig                                # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
-│       ├── json_store.zig                          # Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.
-│       ├── lance_db.zig                            # guidance LanceDB-style vector search database.
-│       ├── llm_filter.zig                          # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
-│       ├── main.zig                                # [gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
-│       ├── marker.zig                              # Mtime-based change detection for guidance's incremental RALPH loop.
-│       ├── pattern.zig                             # [gof-patterns] Detects design patterns in Zig AST nodes using text heuristics and node metadata.
-│       ├── plugin.zig                              # LanguagePlugin — interface for language-specific AST providers.
-│       ├── plugin_registry.zig                     # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
-│       ├── provider_discovery.zig                  # External language provider discovery for guidance.
-│       ├── staged.zig                              # staged.zig — Staged explain pipeline for `guidance explain`.
-│       ├── structure.zig                           # Generates structured Markdown from Zig project directories, merging new comments with existing ones.
-│       ├── sync.zig                                # Handles Zig file parsing, AST processing, and supports comment stripping, storage, and optional LLM-enhanced document...
-│       ├── synthesize.zig                          # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
-│       ├── tests.zig                               # [gof-patterns] Tests JSON store merge, sync, config, and commit helpers in Zig guidance.
-│       ├── triage.zig                              # Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.
-│       └── types.zig                               # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
+│   │   ├── args.zig
+│   │   ├── cli.zig
+│   │   ├── context.zig
+│   │   ├── format.zig
+│   │   ├── hash.zig
+│   │   ├── interner.zig
+│   │   ├── io.zig
+│   │   ├── json.zig
+│   │   ├── json_parser.zig
+│   │   ├── llm.zig
+│   │   ├── log.zig
+│   │   ├── reflection.zig
+│   │   ├── registry.zig
+│   │   ├── repl.zig
+│   │   ├── resolver.zig
+│   │   ├── source.zig
+│   │   ├── str.zig
+│   │   ├── string.zig
+│   │   ├── target.zig
+│   │   ├── terminal.zig
+│   │   └── url.zig
+│   ├── context_node
+│   │   ├── context_node.zig
+│   │   └── context_node_schema.zig
+│   ├── coral
+│   │   ├── common
+│   │   │   ├── args.zig
+│   │   │   ├── cli.zig
+│   │   │   ├── context.zig
+│   │   │   ├── format.zig
+│   │   │   ├── hash.zig
+│   │   │   ├── interner.zig
+│   │   │   ├── io.zig
+│   │   │   ├── json_parser.zig
+│   │   │   ├── llm.zig
+│   │   │   ├── log.zig
+│   │   │   ├── reflection.zig
+│   │   │   ├── registry.zig
+│   │   │   ├── repl.zig
+│   │   │   ├── resolver.zig
+│   │   │   ├── source.zig
+│   │   │   ├── string.zig
+│   │   │   ├── target.zig
+│   │   │   └── terminal.zig
+│   │   ├── batch.zig
+│   │   ├── cache.zig
+│   │   ├── cli.zig
+│   │   ├── config.zig
+│   │   ├── db.zig
+│   │   ├── main.zig
+│   │   ├── pattern.zig
+│   │   ├── schema.zig
+│   │   ├── scrub.zig
+│   │   ├── targets.zig
+│   │   ├── triage.zig
+│   │   └── verify.zig
+│   ├── guidance
+│   │   ├── plugins
+│   │   │   ├── markdown_plugin.zig
+│   │   │   └── zig_plugin.zig
+│   │   ├── ast_parser.zig
+│   │   ├── config.zig
+│   │   ├── deps.zig
+│   │   ├── enhancer.zig
+│   │   ├── git.zig
+│   │   ├── hash.zig
+│   │   ├── json_store.zig
+│   │   ├── llm_filter.zig
+│   │   ├── main.zig
+│   │   ├── marker.zig
+│   │   ├── pattern.zig
+│   │   ├── plugin.zig
+│   │   ├── plugin_registry.zig
+│   │   ├── provider_discovery.zig
+│   │   ├── staged.zig
+│   │   ├── structure.zig
+│   │   ├── sync.zig
+│   │   ├── synthesize.zig
+│   │   ├── tests.zig
+│   │   ├── triage.zig
+│   │   └── types.zig
+│   ├── ontology
+│   │   ├── inference.zig
+│   │   ├── mapper.zig
+│   │   ├── migration.zig
+│   │   └── yago.zig
+│   ├── rdf
+│   │   ├── lexer.zig
+│   │   ├── normalize.zig
+│   │   ├── nquads.zig
+│   │   └── parser.zig
+│   ├── vector
+│   │   ├── embeddings.zig
+│   │   ├── lance_db.zig
+│   │   ├── math.zig
+│   │   └── root.zig
+│   └── wasm
+│       └── wasm.zig
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c
@@ -133,7 +260,6 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
-├── GUIDANCE_LANCEDB.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
@@ -141,9 +267,7 @@ Then you you must read
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
-├── REFACTOR.md
 ├── requirements.txt
-├── ROADMAP_OPTIMIZE_VECTOR_SEARCH.md
 ├── STRUCTURE.md
 └── TEST_EXPLAIN_PROMPT.md
 ```

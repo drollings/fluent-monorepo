@@ -19,7 +19,7 @@
 //!   search          — hybrid: vector + keyword, fused by weighted score
 
 const std = @import("std");
-const vector = @import("vector/root.zig");
+const vector = @import("root.zig");
 const common = @import("common");
 const log = std.log.scoped(.guidance_db);
 

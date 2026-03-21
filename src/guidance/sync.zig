@@ -60,7 +60,7 @@ pub const SyncProcessor = struct {
         }
     }
 
-    pub fn processFile(self: *SyncProcessor, filepath: []const u8) !types.SyncResult {
+    pub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult {
         var result: types.SyncResult = .{ .filepath = filepath };
 
         const file = std.fs.openFileAbsolute(filepath, .{}) catch {
@@ -405,10 +405,15 @@ pub const SyncProcessor = struct {
             std.debug.print("Generated: {s}\n", .{guidance_path});
         }
 
+        // Sleep for the specified timeout before processing the next file
+        if (timeout_seconds > 0) {
+            std.Thread.sleep(timeout_seconds * std.time.ns_per_s);
+        }
+
         return result;
     }
 
-    pub fn processDirectory(self: *SyncProcessor, dir_path: []const u8) !usize {
+    pub fn processDirectory(self: *SyncProcessor, dir_path: []const u8, timeout_seconds: u64) !usize {
         var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch {
             return error.DirectoryNotFound;
         };
@@ -435,7 +440,7 @@ pub const SyncProcessor = struct {
                     if (exists) continue; // guidance JSON already present — skip
                 }
 
-                _ = self.processFile(full_path) catch continue;
+                _ = self.processFile(full_path, timeout_seconds) catch continue;
                 count += 1;
             }
         }

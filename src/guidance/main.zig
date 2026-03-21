@@ -17,8 +17,8 @@ const ast_parser = @import("ast_parser.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const deps_mod = @import("deps.zig");
-const lance_db_mod = @import("lance_db.zig");
-const vector_mod = @import("vector/root.zig");
+const lance_db_mod = @import("vector");
+const vector_mod = @import("vector");
 
 /// Global verbose flag - controls debug log output
 var verbose_mode: bool = false;
@@ -162,6 +162,7 @@ fn printHelp() !void {
         \\  -o, --db PATH         LanceDB database path (default: .guidance.db)
         \\  --no-db               Skip database compilation step
         \\  --regen               LLM-regenerate all comments
+        \\  --timeout N           Sleep N seconds after each file (default: 20, set to 0 to disable)
         \\  --dry-run             Show what would change without writing
         \\  --verbose             Print LLM prompts and raw responses
         \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
@@ -951,6 +952,9 @@ const GenArgs = struct {
     skip_lint: bool = false,
     /// Skip the format phase.
     skip_fmt: bool = false,
+    /// Sleep duration (in seconds) after processing each file. Default: 20.
+    /// Set to 0 to disable.
+    timeout_seconds: u64 = 20,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -1017,6 +1021,13 @@ const GenArgs = struct {
                 i += 1;
                 if (i >= args.len) return error.MissingValue;
                 ga.db_path = args[i];
+            } else if (std.mem.eql(u8, arg, "--timeout")) {
+                i += 1;
+                if (i >= args.len) return error.MissingValue;
+                ga.timeout_seconds = std.fmt.parseInt(u64, args[i], 10) catch {
+                    std.debug.print("error: --timeout requires a valid u64 value\n", .{});
+                    return error.MissingValue;
+                };
             }
         }
         return ga;
@@ -1158,7 +1169,7 @@ fn processFiles(
     if (ga.file) |file_arg| {
         const full_path = try llm.resolvePath(allocator, paths.workspace, file_arg);
         defer allocator.free(full_path);
-        _ = try processor.processFile(full_path);
+        _ = try processor.processFile(full_path, ga.timeout_seconds);
         if (ga.verbose) std.debug.print("gen: processed {s}\n", .{full_path});
         return 1;
     }
@@ -1166,7 +1177,7 @@ fn processFiles(
     if (ga.scan) |scan_arg| {
         const scan_abs = try llm.resolvePath(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
-        const count = try processor.processDirectory(scan_abs);
+        const count = try processor.processDirectory(scan_abs, ga.timeout_seconds);
         std.debug.print("gen: {d} source files processed from {s}\n", .{ count, scan_abs });
         return count;
     }
@@ -1179,7 +1190,7 @@ fn processFiles(
     for (cfg.src_dirs) |src_rel| {
         const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
         defer allocator.free(src_abs);
-        total += try processor.processDirectory(src_abs);
+        total += try processor.processDirectory(src_abs, ga.timeout_seconds);
     }
     std.debug.print("gen: {d} source files processed\n", .{total});
     return total;
@@ -3096,7 +3107,7 @@ fn runBuiltinFilePipeline(
     // processFile writes the JSON unconditionally (merge + save), which
     // advances the file's mtime naturally — no separate touch needed.
     // Touching would truncate the file we just wrote.
-    _ = processor.processFile(src_abs) catch |err| {
+    _ = processor.processFile(src_abs, ga.timeout_seconds) catch |err| {
         std.debug.print("warning: guidance failed for {s}: {s}\n", .{ src_abs, @errorName(err) });
         // Leave JSON stale on failure so the next run retries this file.
         return true;
