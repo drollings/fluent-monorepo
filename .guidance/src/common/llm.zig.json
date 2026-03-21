@@ -4,74 +4,10 @@
     "source": "src/common/llm.zig",
     "language": "zig"
   },
-  "comment": "Contains utility modules, state definitions, and Zig-specific hashes/functions for LLM processing.",
+  "comment": " common — Shared utilities and LLM client for guidance, vector, and coral.\n\n This file is the module root for the `common` build module.\n It re-exports from sub-modules so consumers can write\n `@import(\"common\").LlmClient` etc. without knowing the source file.\n\n Sub-modules:\n   src/llm/root.zig       — LlmClient, LlmConfig, LlmError (pure HTTP, no str deps)\n   src/common/embeddings  — EmbeddingProvider, Ollama/OpenAI clients, factory\n   src/common/args        — CommonArgs, parseCommonArgs\n   src/common/io          — WriterState, ReaderState, path helpers\n   src/common/source      — NodeType, extractExcerpt, extractSimpleExcerpt\n   src/common/hash        — sha256Hex, contentHashWithModel, blake3, etc.\n   src/common/json        — jsonStringifyAlloc, jsonWriteEscaped, parseJsonFile\n   src/common/str         — containsIgnoreCase, looksLikeIdentifier, etc.\n   src/common/url         — isLocalHost, validateHttpsOrLocalHttp",
   "detail": "# src/common/llm.zig — AI Assistant Common Utilities Module\n\n## Module Purpose and Architecture\n\nThis module serves as a centralized utility hub for an AI coding assistant, aggregating functionality from multiple sub-modules while providing LLM-specific configuration and processing capabilities. The architecture follows a **module federation pattern**, where `llm.zig` acts as both a re-export gateway and a domain-specific extension point.\n\nThe module imports and re-exports utilities from four specialized modules:\n- `hash.zig`: Cryptographic hashing (SHA-256, BLAKE3) for content fingerprinting\n- `json.zig`: JSON serialization and parsing utilities\n- `str.zig`: String analysis and pattern matching functions\n- `url.zig`: URL validation and host detection\n\nAdditionally, it defines its own LLM-specific abstractions including configuration management and error handling tailored to AI model interactions.\n\n## Key Abstractions and Relationships\n\n**LlmConfig**: The central configuration struct for LLM API connections. It manages:\n- API endpoint URLs and model identifiers\n- The `think` parameter controlling reasoning behavior in Ollama-compatible models\n- Timeout settings and debug logging flags\n\nThe `isThinkingModel()` method provides a clean interface to check if thinking is explicitly enabled, while `extractModelName()` parses provider:model:name references into usable model names.\n\n**LlmError**: A domain-specific error set covering connection issues, parsing failures, and resource constraints (OutOfMemory), ensuring callers can handle LLM-specific failure modes appropriately.\n\n**Re-exported Types**: The module exposes common types from sub-modules including `WriterState`, `ReaderState`, and `NodeType` for cross-module compatibility.\n\n## Public API and Usage Patterns\n\n### Configuration Management\n```zig\nconst config = LlmConfig{\n    .api_url = \"http://localhost:11434\",\n    .model = \"qwen2.5-coder\",\n    .think = true,  // Enable reasoning for Ollama thinking models\n    .timeout_ms = 30000,\n};\n```\n\n### Error Handling Pattern\nThe `LlmError` error set enables specific handling:\n```zig\ndefer catch (try llmCall()) {\n    switch (error) {\n        LlmError.ConnectionFailed => retryWithBackoff(),\n        LlmError.OutOfMemory => suggestSmallerBatch(),\n        else => logAndExit(error),\n    }\n}\n```\n\n### Import Pattern\nThe module enables clean imports from the root:\n```zig\nconst common = @import(\"common.zig\");\nconst hash = common.sha256Hex;  // Re-exported utility\nconst config = common.LlmConfig{...};  // Domain type\n```\n\n## Important Implementation Details\n\n1. **Ollama Thinking Parameter**: The `think` field uses nullable bool (`?bool`) semantics:\n   - `null`: No thinking parameter sent (default behavior)\n   - `true`: Explicitly enables reasoning for thinking-capable models\n   - `false`: Suppresses thinking even if the model supports it\n\n2. **Model Reference Parsing**: The `extractModelName()` function handles both simple names and provider-qualified references like \"ollama:qwen2.5-coder\", returning only the model name portion.\n\n3. **Default Values**: Configurable defaults include 10-second timeout and debug mode disabled, allowing override without boilerplate.\n\n4. **Path Resolution Utilities**: Re-exported functions like `makePathAbsolute()`, `resolvePath()`, and `stripPathPrefix()` provide consistent path handling across the codebase.\n\n## Design Patterns Used\n\n- **Module Federation/Re-export Pattern**: Centralizes utility access from multiple sub-modules\n- **Configuration Object Pattern**: Encapsulates LLM connection settings with validation\n- **Error Set Pattern**: Domain-specific error types for better exception handling\n- **Utility Library Pattern**: Collections of small, reusable functions (string analysis, hash utilities)",
   "keywords": ["LlmConfig", "sha256Hex", "blake3Hash", "LlmError", "Ollama thinking model", "module re-export", "JSON serialization", "string pattern matching", "URL validation", "content fingerprinting"],
   "members": [
-    {
-      "type": "struct",
-      "name": "LlmConfig",
-      "match_hash": "bef90ed130978e5a3e09e1fa913f669d0b017de048c8d832961268075af54bad",
-      "signature": "keyword_struct LlmConfig { ... }",
-      "comment": "Defines LLM configuration with methods to check thinking status, extract model names, and verify Ollama endpoints, managing model-specific logic.",
-      "is_pub": true,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "isThinkingModel",
-          "match_hash": "5f4216c6e084ac4618e9225d8eec28135556235aad72f28c48062ee8d26a8226",
-          "signature": "fn isThinkingModel(self: LlmConfig) -> bool",
-          "params": [
-            { "name": "self", "type": "LlmConfig" }
-          ],
-          "returns": "bool",
-          "comment": "Returns true when thinking is explicitly enabled for this config.",
-          "is_pub": true,
-          "line": 90
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "extractModelName",
-          "match_hash": "d14499651af4525fa2299c9e9bfb88f20ed8ecbca8b513fd256436ce3724b4d2",
-          "signature": "fn extractModelName(model_ref: []const u8) -> []const u8",
-          "params": [
-            { "name": "model_ref", "type": "[]const u8" }
-          ],
-          "returns": "[]const u8",
-          "comment": "Extract the model name from a model reference like \"provider:model:name\".",
-          "is_pub": true,
-          "line": 96
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "isOllamaEndpoint",
-          "match_hash": "05374981ace68833b632fa55494f854c4ee96e542e38c1d2d0cda1e76e9db758",
-          "signature": "fn isOllamaEndpoint(api_url: []const u8) -> bool",
-          "params": [
-            { "name": "api_url", "type": "[]const u8" }
-          ],
-          "returns": "bool",
-          "comment": "Check if an endpoint is an Ollama-native endpoint (uses /api/chat).",
-          "is_pub": true,
-          "line": 104
-        }
-      ],
-      "line": 75
-    },
-    {
-      "type": "fn_private",
-      "name": "writeEscapedString",
-      "match_hash": "7ce3ff9363b961c8a9e373488b7bd47e3dce769cf0ffd7cf0377c927b3bdf7f8",
-      "signature": "fn writeEscapedString(writer, s: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "s", "type": "[]const u8" }
-      ],
-      "returns": "void",
-      "comment": "Writes a null-terminated string to a writer, handling escaped characters properly.",
-      "is_pub": false,
-      "line": 109
-    },
     {
       "type": "fn_decl",
       "name": "stripThinkBlock",
@@ -83,7 +19,7 @@
       "returns": "[]const u8",
       "comment": "Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.",
       "is_pub": true,
-      "line": 124
+      "line": 41
     },
     {
       "type": "fn_decl",
@@ -97,7 +33,7 @@
       "returns": "[]const u8",
       "comment": "Strip LLM reasoning preamble from the start of a response.",
       "is_pub": true,
-      "line": 165
+      "line": 74
     },
     {
       "type": "fn_decl",
@@ -110,7 +46,7 @@
       "returns": "bool",
       "comment": "Return true when an LLM response is malformed or unusable as a comment.",
       "is_pub": true,
-      "line": 208
+      "line": 103
     },
     {
       "type": "fn_private",
@@ -123,7 +59,7 @@
       "returns": "bool",
       "comment": "Checks if a Zig string ends with a null byte, returning true if so.",
       "is_pub": false,
-      "line": 238
+      "line": 131
     },
     {
       "type": "fn_private",
@@ -134,9 +70,9 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the provided body is a valid Zig array of unsigned bytes, returning true if it represents a self-ref type.",
+      "comment": "Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches.",
       "is_pub": false,
-      "line": 251
+      "line": 144
     },
     {
       "type": "fn_private",
@@ -149,7 +85,7 @@
       "returns": "bool",
       "comment": "Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.",
       "is_pub": false,
-      "line": 263
+      "line": 156
     },
     {
       "type": "fn_decl",
@@ -162,232 +98,103 @@
       "returns": "?[]const u8",
       "comment": "Extract the content of the first <comment>...</comment> tag in an LLM response.",
       "is_pub": true,
-      "line": 281
-    },
-    {
-      "type": "struct",
-      "name": "LlmClient",
-      "match_hash": "48372c90add81bd93c5a2ab36907c51afdfdef3bac759412dd55e7f95e3e03fa",
-      "signature": "keyword_struct LlmClient { ... }",
-      "comment": "Manages LLM interactions with buffers, handles initialization/deinit, and processes responses securely.",
-      "is_pub": true,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "init",
-          "match_hash": "86770a48dea19db1e756108f830de238c821ba3a49992b24a3bf93091a66ee58",
-          "signature": "fn init(allocator: std.mem.Allocator, config: LlmConfig) -> LlmClient",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "LlmConfig" }
-          ],
-          "returns": "LlmClient",
-          "is_pub": true,
-          "line": 302
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "deinit",
-          "match_hash": "3fff429679ebb90c3397aab7f9ac6b3d37f09f28334516de0df50900c164869f",
-          "signature": "fn deinit(self: *LlmClient) -> void",
-          "params": [
-            { "name": "self", "type": "*LlmClient" }
-          ],
-          "returns": "void",
-          "is_pub": true,
-          "line": 328
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "complete",
-          "match_hash": "1cf7f5e31460382df73465ae778017ca959945c0b5e1013ec38ce8d90adb4e7e",
-          "signature": "fn complete(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) -> LlmError!?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "prompt", "type": "[]const u8" },
-            { "name": "max_tokens", "type": "usize" },
-            { "name": "temperature", "type": "f32" },
-            { "name": "system", "type": "?[]const u8" }
-          ],
-          "returns": "LlmError!?[]const u8",
-          "is_pub": true,
-          "line": 333
-        }
-    ,    {
-          "type": "fn_private",
-          "name": "postJson",
-          "match_hash": "8002e0830a2abdf11bdbe8b89bf710d92c2a4fb209dc5485485cd712b16394ec",
-          "signature": "fn postJson(self: *LlmClient, url: []const u8, json_body: []const u8) -> LlmError!?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "url", "type": "[]const u8" },
-            { "name": "json_body", "type": "[]const u8" }
-          ],
-          "returns": "LlmError!?[]const u8",
-          "comment": "POST `json_body` to `url` and return the extracted response text.",
-          "is_pub": false,
-          "line": 386
-        }
-    ,    {
-          "type": "fn_private",
-          "name": "extractResponseText",
-          "match_hash": "977ffc3a0e9436f21393f6c9c0c4d36063d1ed03f3e8445772d5d48ac8dec389",
-          "signature": "fn extractResponseText(self: *LlmClient, resp: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "resp", "type": "[]const u8" }
-          ],
-          "returns": "?[]const u8",
-          "is_pub": false,
-          "line": 420
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "available",
-          "match_hash": "3d0c45d8023d0880c75881bce9cfc57df32f4800fce94b5de9ac0fc1744317c5",
-          "signature": "fn available(self: *LlmClient) -> bool",
-          "params": [
-            { "name": "self", "type": "*LlmClient" }
-          ],
-          "returns": "bool",
-          "comment": "Check whether the LLM endpoint is reachable.",
-          "is_pub": true,
-          "line": 496
-        }
-      ],
-      "line": 292
-    },
-    {
-      "type": "test_decl",
-      "name": "LlmClient init with v1/chat/completions URL uses it directly",
-      "is_pub": false,
-      "line": 528
-    },
-    {
-      "type": "test_decl",
-      "name": "LlmClient init with v1/completions URL normalises to v1/chat/completions",
-      "is_pub": false,
-      "line": 543
-    },
-    {
-      "type": "test_decl",
-      "name": "LlmClient init with OpenAI API URL sets is_openai_format",
-      "is_pub": false,
-      "line": 558
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 573
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 587
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 594
+      "line": 264
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 600
+      "line": 268
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 619
+      "line": 284
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 624
+      "line": 289
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 629
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 633
+      "line": 298
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 639
+      "line": 304
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 645
+      "line": 310
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 652
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 658
+      "line": 323
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 669
-    },
-    {
-      "type": "test_decl",
-      "name": "extractCommentTag: trims whitespace inside tag",
-      "is_pub": false,
-      "line": 676
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 683
+      "line": 337
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 689
+      "line": 342
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: chain-of-thought before tag is ignored",
       "is_pub": false,
-      "line": 693
-    },
-    {
-      "type": "test_decl",
-      "name": "writeEscapedString escapes properly",
-      "is_pub": false,
-      "line": 705
-    },
-    {
-      "type": "test_decl",
-      "name": "writeEscapedString does not escape braces",
-      "is_pub": false,
-      "line": 714
+      "line": 346
     }
   ]
 }

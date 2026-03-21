@@ -156,13 +156,14 @@ Then you you must read
 │   │   ├── args.zig                                               # Parses command-line arguments into a structured CommonArgs object for configuration handling.
 │   │   ├── cli.zig                                                # Defines CLI command structure, registration, and error handling for a Zig-based tool.
 │   │   ├── context.zig                                            # Manages Zig build context, resolves dependencies, tracks builds, and handles allocator cleanup.
+│   │   ├── embeddings.zig                                         # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── format.zig                                             # Defines table structure with columns, rows, and formatting logic for JSON rendering.
 │   │   ├── hash.zig                                               # Provides SHA-256 and content+model hashing utilities for Zig, supporting allocator-friendly outputs and secure key ge...
 │   │   ├── interner.zig                                           # Manages stable string indices with arena-allocated storage, supporting interned strings and bitmask bitsets.
 │   │   ├── io.zig                                                 # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
 │   │   ├── json.zig                                               # Provides JSON serialization, escaping, and file loading utilities with allocator safety and no external dependencies.
 │   │   ├── json_parser.zig                                        # Handles Zig JSON parsing, validates targets, and manages allocators for efficient memory handling.
-│   │   ├── llm.zig                                                # Contains utility modules, state definitions, and Zig-specific hashes/functions for LLM processing.
+│   │   ├── llm.zig                                                # common — Shared utilities and LLM client for guidance, vector, and coral.
 │   │   ├── log.zig                                                # Defines logging configuration, formatting, and file handling for a Zig application with color support.
 │   │   ├── reflection.zig                                         # Provides field-level reflection, validation, and permission handling for data structures, ensuring safe access and ro...
 │   │   ├── registry.zig                                           # Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.
@@ -178,12 +179,6 @@ Then you you must read
 │   │   ├── context_node.zig                                       # [gof-patterns] Defines context node structure for Zig, handling LOD levels, embeddings, and metadata extraction.
 │   │   └── context_node_schema.zig                                # [gof-patterns] Defines Zig binary schema structures, validation logic, and context node initialization for schema ver...
 │   ├── coral
-│   │   ├── common
-│   │   │   ├── args.zig                                         # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
-│   │   │   ├── hash.zig                                         # Implements hashing utilities for various algorithms, processes files, and returns hashes or errors.
-│   │   │   ├── interner.zig                                     # Manages string-to-index mapping, supports dynamic bit-set operations, and handles memory allocation for interned stri...
-│   │   │   ├── io.zig                                           # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
-│   │   │   └── llm.zig                                          # Handles Zig AST parsing, LLM configuration, and text processing for LLM responses.
 │   │   ├── batch.zig                                              # Streaming batch ingestion pipeline for Turtle files, processing triples in configurable batches to CozoDB with memory...
 │   │   ├── cache.zig                                              # Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.
 │   │   ├── cli.zig                                                # Manages ingestion CLI arguments, tracks progress, and stores checkpoints in CozoDB.
@@ -221,6 +216,8 @@ Then you you must read
 │   │   ├── tests.zig                                              # [gof-patterns] Tests JSON store merge, sync, config, and commit helpers in Zig guidance.
 │   │   ├── triage.zig                                             # Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.
 │   │   └── types.zig                                              # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
+│   ├── llm
+│   │   └── root.zig                                               # llm — General-purpose LLM inference client.
 │   ├── ontology
 │   │   ├── inference.zig                                          # Defines inference engine stub for RDFS/OWL, handling transitive rules and materialization stubs.
 │   │   ├── mapper.zig                                             # Transforms RDF triples into ContextNodes and edges for CozoDB, routing properties via YAGO schema and accumulating no...
@@ -232,7 +229,7 @@ Then you you must read
 │   │   ├── nquads.zig                                             # Parses Zig source code into structured quad structures, supporting terms, literals, and graphs.
 │   │   └── parser.zig                                             # Streaming parser for Zig RDF, efficiently producing triples without full AST storage.
 │   ├── vector
-│   │   ├── embeddings.zig                                         # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
+│   │   ├── embeddings.zig                                         # Re-export shim — embedding implementations live in src/common/embeddings.zig.
 │   │   ├── lance_db.zig                                           # guidance LanceDB-style vector search database.
 │   │   ├── math.zig                                               # Vector operations — cosine similarity, normalization, hybrid merge.
 │   │   └── root.zig                                               # guidance vector module — cosine search, embeddings, hybrid merge.

@@ -14,7 +14,7 @@
       "name": "CacheTier",
       "match_hash": "ac04b94acd5bc2a7e81de28600a2637dc2d6a095aa2ec87f48bc80150cee6021",
       "signature": "keyword_enum CacheTier { ... }",
-      "comment": "Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.",
+      "comment": "Manages cache tiers with fixed-size buffers; owned by the system; ensures consistent storage allocation.",
       "is_pub": true,
       "members": [
         {
