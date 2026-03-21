@@ -12,10 +12,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize, // [cite: 20]
     });
 
+    const llm_module = b.createModule(.{
+        .root_source_file = b.path("src/llm/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/llm.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "llm", .module = llm_module },
+        },
     });
 
     // ---------------------------------------------------------------------------
@@ -122,10 +131,9 @@ pub fn build(b: *std.Build) void {
 
     const vector_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/vector/embeddings.zig"), // [cite: 13]
-            .target = target, // [cite: 13]
-            .optimize = optimize, // [cite: 13]
-            .imports = &.{.{ .name = "common", .module = common_module }},
+            .root_source_file = b.path("src/common/embeddings.zig"),
+            .target = target,
+            .optimize = optimize,
         }),
     });
 

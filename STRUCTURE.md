@@ -180,23 +180,10 @@ Then you you must read
 │   ├── coral
 │   │   ├── common
 │   │   │   ├── args.zig                                         # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
-│   │   │   ├── cli.zig                                          # Defines CLI command structure, registration, and error handling for a Zig-based tool.
-│   │   │   ├── context.zig                                      # This file manages Zig build configuration, handles dependencies, resolves targets, and tracks build metrics.
-│   │   │   ├── format.zig                                       # Defines table structure with columns, rows, and formatting logic for JSON rendering.
 │   │   │   ├── hash.zig                                         # Implements hashing utilities for various algorithms, processes files, and returns hashes or errors.
 │   │   │   ├── interner.zig                                     # Manages string-to-index mapping, supports dynamic bit-set operations, and handles memory allocation for interned stri...
 │   │   │   ├── io.zig                                           # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
-│   │   │   ├── json_parser.zig                                  # Parses Zig JSON files, validates targets, and allocates memory for registry entries.
-│   │   │   ├── llm.zig                                          # Handles Zig AST parsing, LLM configuration, and text processing for LLM responses.
-│   │   │   ├── log.zig                                          # Defines logging configuration, formatting, and output formatting for a Zig application with color support.
-│   │   │   ├── reflection.zig                                   # Provides field-level reflection, validation, and permission handling for Coral data structures, ensuring safe access ...
-│   │   │   ├── registry.zig                                     # Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.
-│   │   │   ├── repl.zig                                         # Implements a Zig REPL interface handling commands, parsing input and managing stdout/stdin streams.
-│   │   │   ├── resolver.zig                                     # [gof-patterns] Manages Zig dependency resolution with topological sorting, handling abstract and concrete targets.
-│   │   │   ├── source.zig                                       # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
-│   │   │   ├── string.zig                                       # Implements string matching utilities with case-insensitive comparison and keyword support.
-│   │   │   ├── target.zig                                       # [gof-patterns] Defines executable target types, manages memory for WASM/OS code, and handles deinit for cleanup.
-│   │   │   └── terminal.zig                                     # Handles terminal size, width, height, and user interaction in a Zig terminal environment.
+│   │   │   └── llm.zig                                          # Handles Zig AST parsing, LLM configuration, and text processing for LLM responses.
 │   │   ├── batch.zig                                              # Streaming batch ingestion pipeline for Turtle files, processing triples in configurable batches to CozoDB with memory...
 │   │   ├── cache.zig                                              # Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.
 │   │   ├── cli.zig                                                # Manages ingestion CLI arguments, tracks progress, and stores checkpoints in CozoDB.

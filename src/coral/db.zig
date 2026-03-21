@@ -27,7 +27,7 @@ const std = @import("std");
 const schema = @import("schema.zig");
 const CozoDB = @import("cozo.zig").CozoDB;
 const StorageEngine = @import("cozo.zig").StorageEngine;
-const reflection = @import("common/reflection.zig");
+const reflection = @import("../common/reflection.zig");
 
 // ---------------------------------------------------------------------------
 // §3.5 NodeId — i64 matching CozoDB's native Int type
@@ -1090,7 +1090,7 @@ test "Library: insert target and depends_on edge" {
     defer lib.deinit();
 
     // Build trivial bitsets via the interner helpers.
-    var interner = @import("common/interner.zig").StringInterner.init(allocator);
+    var interner = @import("../common/interner.zig").StringInterner.init(allocator);
     defer interner.deinit();
     var dep_empty = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, 4);
     defer dep_empty.deinit(allocator);

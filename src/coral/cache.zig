@@ -11,7 +11,7 @@ const std = @import("std");
 const db_mod = @import("db.zig");
 const wasm_mod = @import("wasm.zig");
 const schema = @import("schema.zig");
-const hashutil = @import("common/hash.zig");
+const hashutil = @import("common");
 
 const Library = db_mod.Library;
 const ContextNode = db_mod.ContextNode;

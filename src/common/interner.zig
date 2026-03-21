@@ -3,10 +3,13 @@
 /// `StringInterner` assigns a stable integer index to each unique string.
 /// Strings are arena-allocated; the interner owns all copies.
 ///
-/// Ported from coral/src/common/interner.zig.
-/// The coral-specific `bitSetConstraint()` vtable method (which depended on
-/// coral's `reflection.zig`) has been omitted; only the portable core is kept.
+/// `bitSetConstraint()` returns a `reflection.ConstraintVTable` that bridges
+/// this interner to the reflection field-access layer (CozoDB row hydration,
+/// TUI editors, RPC handlers).  String path: comma-separated capability names.
+/// Binary path: u32 word-count + u64 words LE.  Convert path: cross-interner
+/// duck-typing by matching capability names.
 const std = @import("std");
+const reflection = @import("reflection.zig");
 
 pub const StringInterner = @This();
 
@@ -137,6 +140,143 @@ pub fn bitSetToString(
         first = false;
     }
     return buf.toOwnedSlice(allocator);
+}
+
+/// Returns a ConstraintVTable parameterised on `interner`.
+/// The returned vtable must outlive all Accessors that reference it.
+/// Typically stored as a field on TargetSchema.
+///
+/// String path  — via setCtxFn / getCtxFn (comma-separated capability names).
+/// Binary path  — via setBinaryFn / getBinaryFn (u32 word-count + u64 words LE).
+/// Convert path — via convertFn (cross-interner bitset duck-typing).
+/// Release      — via releaseFn (DynamicBitSetUnmanaged.deinit + zero).
+pub fn bitSetConstraint(self: *StringInterner) reflection.ConstraintVTable {
+    return .{
+        .context = @ptrCast(self),
+
+        // setFn / getFn are stubs; callers always go through setCtxFn / getCtxFn.
+        // They exist only to satisfy the non-optional vtable fields.
+        .setFn = struct {
+            fn set(_: std.mem.Allocator, _: *anyopaque, _: []const u8) anyerror!void {
+                return error.BitSetRequiresContext;
+            }
+        }.set,
+        .getFn = struct {
+            fn get(_: std.mem.Allocator, _: *const anyopaque) anyerror![]const u8 {
+                return error.BitSetRequiresContext;
+            }
+        }.get,
+
+        // setCtxFn: comma-separated capability names → bitset
+        .setCtxFn = struct {
+            fn setCtx(
+                vtable: *const reflection.ConstraintVTable,
+                allocator: std.mem.Allocator,
+                ptr: *anyopaque,
+                input: []const u8,
+            ) anyerror!void {
+                const interner: *StringInterner = @ptrCast(@alignCast(@constCast(vtable.context.?)));
+                const bs: *std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
+                try bitSetFromString(interner, allocator, bs, input);
+            }
+        }.setCtx,
+
+        // getCtxFn: bitset → comma-separated capability names
+        .getCtxFn = struct {
+            fn getCtx(
+                vtable: *const reflection.ConstraintVTable,
+                allocator: std.mem.Allocator,
+                ptr: *const anyopaque,
+            ) anyerror![]const u8 {
+                const interner: *const StringInterner = @ptrCast(@alignCast(vtable.context.?));
+                const bs: *const std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
+                return bitSetToString(interner, allocator, bs);
+            }
+        }.getCtx,
+
+        // setBinaryFn: bitset → [word_count: u32 LE][word0..N: u64 LE]
+        .setBinaryFn = struct {
+            fn setBin(
+                _: *const reflection.ConstraintVTable,
+                ptr: *const anyopaque,
+                out_buf: []u8,
+            ) anyerror!usize {
+                const bs: *const std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
+                const bits_per_word = @bitSizeOf(usize);
+                const word_count: u32 = @intCast(
+                    (bs.bit_length + bits_per_word - 1) / bits_per_word,
+                );
+                const needed = @sizeOf(u32) + @as(usize, word_count) * @sizeOf(u64);
+                if (out_buf.len < needed) return error.BufferTooSmall;
+                std.mem.writeInt(u32, out_buf[0..4], word_count, .little);
+                var off: usize = 4;
+                for (0..word_count) |i| {
+                    const w: u64 = bs.masks[i];
+                    std.mem.writeInt(u64, out_buf[off..][0..8], w, .little);
+                    off += 8;
+                }
+                return needed;
+            }
+        }.setBin,
+
+        // getBinaryFn: [word_count: u32 LE][word0..N: u64 LE] → bitset
+        .getBinaryFn = struct {
+            fn getBin(
+                _: *const reflection.ConstraintVTable,
+                allocator: std.mem.Allocator,
+                ptr: *anyopaque,
+                in_buf: []const u8,
+            ) anyerror!void {
+                if (in_buf.len < 4) return error.BufferTooSmall;
+                const word_count = std.mem.readInt(u32, in_buf[0..4], .little);
+                const needed = @sizeOf(u32) + @as(usize, word_count) * @sizeOf(u64);
+                if (in_buf.len < needed) return error.BufferTooSmall;
+                const bs: *std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
+                const bit_length = @as(usize, word_count) * @bitSizeOf(usize);
+                bs.deinit(allocator);
+                bs.* = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, bit_length);
+                for (0..word_count) |i| {
+                    const w = std.mem.readInt(u64, in_buf[4 + i * 8 ..][0..8], .little);
+                    bs.masks[i] = @intCast(w);
+                }
+            }
+        }.getBin,
+
+        // convertFn: translate src bitset (foreign interner) → dst bitset (self interner)
+        // by matching capability names across the two interners.
+        .convertFn = struct {
+            fn convert(
+                vtable: *const reflection.ConstraintVTable,
+                allocator: std.mem.Allocator,
+                dst_ptr: *anyopaque,
+                src_ptr: *const anyopaque,
+                src_context: *const anyopaque,
+            ) anyerror!void {
+                const dst_interner: *StringInterner = @ptrCast(@alignCast(@constCast(vtable.context.?)));
+                const src_interner: *const StringInterner = @ptrCast(@alignCast(src_context));
+                const src_bs: *const std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(src_ptr));
+                const dst_bs: *std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(dst_ptr));
+                var iter = src_bs.iterator(.{});
+                while (iter.next()) |bit_idx| {
+                    const name = src_interner.getString(bit_idx) orelse continue;
+                    const dst_idx = try dst_interner.intern(name);
+                    if (dst_idx >= dst_bs.bit_length) {
+                        try dst_bs.resize(allocator, dst_interner.count(), false);
+                    }
+                    dst_bs.set(dst_idx);
+                }
+            }
+        }.convert,
+
+        // releaseFn: deinit the bitset and zero the field so double-free is safe.
+        .releaseFn = struct {
+            fn rel(allocator: std.mem.Allocator, ptr: *anyopaque) void {
+                const bs: *std.bit_set.DynamicBitSetUnmanaged = @ptrCast(@alignCast(ptr));
+                bs.deinit(allocator);
+                bs.* = .{};
+            }
+        }.rel,
+    };
 }
 
 // =============================================================================

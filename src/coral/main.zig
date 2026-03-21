@@ -1,9 +1,9 @@
 const std = @import("std");
-const StringInterner = @import("common/interner.zig").StringInterner;
-const TargetRegistry = @import("common/registry.zig").TargetRegistry;
-const BuildContext = @import("common/context.zig").BuildContext;
-const Repl = @import("common/repl.zig").Repl;
-const json_parser = @import("common/json_parser.zig");
+const StringInterner = @import("../common/interner.zig").StringInterner;
+const TargetRegistry = @import("../common/registry.zig").TargetRegistry;
+const BuildContext = @import("../common/context.zig").BuildContext;
+const Repl = @import("../common/repl.zig").Repl;
+const json_parser = @import("../common/json_parser.zig");
 const llm = @import("common");
 
 pub const version = "0.1.0";
@@ -185,13 +185,13 @@ fn printHelp(writer: anytype) !void {
 }
 
 test "simple imports" {
-    _ = @import("common/interner.zig");
-    _ = @import("common/target.zig");
-    _ = @import("common/registry.zig");
-    _ = @import("common/resolver.zig");
-    _ = @import("common/json_parser.zig");
-    _ = @import("common/context.zig");
-    _ = @import("common/repl.zig");
+    _ = @import("../common/interner.zig");
+    _ = @import("../common/target.zig");
+    _ = @import("../common/registry.zig");
+    _ = @import("../common/resolver.zig");
+    _ = @import("../common/json_parser.zig");
+    _ = @import("../common/context.zig");
+    _ = @import("../common/repl.zig");
     // CozoDB schema (CozoScript DDL)
     _ = @import("schema.zig");
     // Unified CozoDB backend
