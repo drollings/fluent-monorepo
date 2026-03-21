@@ -8,7 +8,9 @@
 ///
 /// Memory model:
 ///   - Fixed batch_size: triples accumulated in TripleMapper, flushed at limit.
-///   - Arena allocator reused across batches for temporary strings.
+///   - ArenaAllocator scoped to ingestSource() backs all per-batch mapper
+///     allocations.  arena.reset(.retain_capacity) between batches replaces
+///     individual free/alloc cycles, avoiding per-node allocator overhead.
 const std = @import("std");
 const parser_mod = @import("../rdf/parser.zig");
 const mapper_mod = @import("../ontology/mapper.zig");
@@ -94,10 +96,11 @@ pub const BatchIngestor = struct {
         }
     }
 
-    /// Deinit and reinitialise `mapper` for the next batch window.
-    fn resetMapper(self: *BatchIngestor, mapper: *TripleMapper) !void {
-        mapper.deinit();
-        mapper.* = try TripleMapper.init(self.allocator, self.config.mapping);
+    /// Reset the batch arena and reinitialise `mapper` for the next batch window.
+    /// Replaces the previous deinit+alloc cycle with a single arena reset.
+    fn resetMapper(self: *BatchIngestor, mapper: *TripleMapper, batch_arena: *std.heap.ArenaAllocator) !void {
+        _ = batch_arena.reset(.retain_capacity);
+        mapper.* = try TripleMapper.init(batch_arena.allocator(), self.config.mapping);
     }
 
     // ── Public API ─────────────────────────────────────────────────
@@ -106,8 +109,15 @@ pub const BatchIngestor = struct {
     /// Reads all triples, maps to nodes/edges, flushes in batches.
     pub fn ingestSource(self: *BatchIngestor, source: []const u8, library: *Library) !IngestStats {
         var stats = IngestStats{};
-        var mapper = try TripleMapper.init(self.allocator, self.config.mapping);
-        defer mapper.deinit();
+
+        // batch_arena backs all TripleMapper allocations for the duration of
+        // this call.  It is reset (not freed) between batches, avoiding the
+        // per-node malloc/free overhead of the general-purpose allocator.
+        var batch_arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer batch_arena.deinit();
+
+        var mapper = try TripleMapper.init(batch_arena.allocator(), self.config.mapping);
+        // No defer mapper.deinit() — batch_arena.deinit() owns all mapper memory.
         var p = try Parser.init(self.allocator, source);
         defer p.deinit();
 
@@ -128,7 +138,7 @@ pub const BatchIngestor = struct {
 
             if (triples_in_batch >= self.config.batch_size) {
                 try self.flushBatch(&mapper, library, &stats);
-                try self.resetMapper(&mapper);
+                try self.resetMapper(&mapper, &batch_arena);
                 triples_in_batch = 0;
             }
         }
