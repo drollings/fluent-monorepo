@@ -145,9 +145,71 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const lance_db_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vector/lance_db.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    lance_db_tests.linkLibC();
+    lance_db_tests.linkSystemLibrary("sqlite3");
+
     // --- Wire up guidance test runs ---
     test_step.dependOn(&b.addRunArtifact(explain_tests).step); // [cite: 16, 17]
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step); // [cite: 16, 17]
     test_step.dependOn(&b.addRunArtifact(vector_tests).step); // [cite: 16, 17]
     test_step.dependOn(&b.addRunArtifact(vector_math_tests).step); // [cite: 16, 17]
+    test_step.dependOn(&b.addRunArtifact(lance_db_tests).step);
+
+    const coral_targets_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/targets.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(coral_targets_tests).step);
+
+    const coral_schema_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/schema.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(coral_schema_tests).step);
+
+    const reflection_module = b.createModule(.{
+        .root_source_file = b.path("src/common/reflection.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const interner_module = b.createModule(.{
+        .root_source_file = b.path("src/common/interner.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "reflection", .module = reflection_module },
+        },
+    });
+
+    const coral_db_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/db.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "reflection", .module = reflection_module },
+                .{ .name = "interner", .module = interner_module },
+            },
+        }),
+    });
+    coral_db_tests.linkLibC();
+    coral_db_tests.linkSystemLibrary("sqlite3");
+    test_step.dependOn(&b.addRunArtifact(coral_db_tests).step);
 }

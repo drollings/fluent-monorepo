@@ -9,7 +9,7 @@
 /// Binary path: u32 word-count + u64 words LE.  Convert path: cross-interner
 /// duck-typing by matching capability names.
 const std = @import("std");
-const reflection = @import("reflection.zig");
+const reflection = @import("reflection");
 
 pub const StringInterner = @This();
 

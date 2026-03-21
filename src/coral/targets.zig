@@ -133,21 +133,61 @@ pub fn validateDependencies() bool {
     return true;
 }
 
-/// Topological sort result
-pub const TopoOrder = struct {
-    names: []const []const u8,
-};
+/// Compute a valid topological execution order from INGEST_TARGET_DEFS.
+///
+/// Uses Kahn's algorithm on the dependency graph encoded in `depends` slices.
+/// Returns an owned slice of target name slices; caller must free the outer
+/// slice (the name pointers themselves are static string literals).
+///
+/// Returns `error.CyclicDependency` if the graph contains a cycle.
+pub fn topoSort(allocator: std.mem.Allocator) ![]const []const u8 {
+    const N = INGEST_TARGET_DEFS.len;
 
-/// Simple topological order for the known targets (hardcoded order).
-pub const TOPO_ORDER = [_][]const u8{
-    TARGET_DOWNLOAD,
-    TARGET_PARSE,
-    TARGET_MAP,
-    TARGET_EMBED,
-    TARGET_INDEX,
-    TARGET_VERIFY,
-    TARGET_INGEST,
-};
+    // Helper: name → slot index in INGEST_TARGET_DEFS.
+    const indexOf = struct {
+        fn call(name: []const u8) ?usize {
+            for (INGEST_TARGET_DEFS, 0..) |def, i| {
+                if (std.mem.eql(u8, def.name, name)) return i;
+            }
+            return null;
+        }
+    }.call;
+
+    // Build per-node lists of dependents and track in-degrees.
+    var in_degree = [_]usize{0} ** N;
+    var adj: [N]std.ArrayListUnmanaged(usize) = [_]std.ArrayListUnmanaged(usize){.{}} ** N;
+    defer for (&adj) |*list| list.deinit(allocator);
+
+    for (INGEST_TARGET_DEFS, 0..) |def, j| {
+        for (def.depends) |dep| {
+            const i = indexOf(dep) orelse continue;
+            try adj[i].append(allocator, j);
+            in_degree[j] += 1;
+        }
+    }
+
+    // Seed queue with zero-in-degree nodes.
+    var queue: std.ArrayListUnmanaged(usize) = .{};
+    defer queue.deinit(allocator);
+    for (in_degree, 0..) |deg, i| {
+        if (deg == 0) try queue.append(allocator, i);
+    }
+
+    var result: std.ArrayListUnmanaged([]const u8) = .{};
+    errdefer result.deinit(allocator);
+
+    while (queue.items.len > 0) {
+        const idx = queue.orderedRemove(0);
+        try result.append(allocator, INGEST_TARGET_DEFS[idx].name);
+        for (adj[idx].items) |next| {
+            in_degree[next] -= 1;
+            if (in_degree[next] == 0) try queue.append(allocator, next);
+        }
+    }
+
+    if (result.items.len != N) return error.CyclicDependency;
+    return result.toOwnedSlice(allocator);
+}
 
 // =============================================================================
 // Tests — Milestone 3.1
@@ -196,6 +236,43 @@ test "essential targets marked correctly" {
     try testing.expect(!embed.essential); // embed is optional
 }
 
-test "topological order has all targets" {
-    try testing.expectEqual(INGEST_TARGET_DEFS.len, TOPO_ORDER.len);
+test "topoSort returns all targets" {
+    const order = try topoSort(testing.allocator);
+    defer testing.allocator.free(order);
+    try testing.expectEqual(INGEST_TARGET_DEFS.len, order.len);
+}
+
+test "topoSort: each dependency appears before its dependent" {
+    const order = try topoSort(testing.allocator);
+    defer testing.allocator.free(order);
+
+    // Build position map: name → index in order.
+    var pos: [INGEST_TARGET_DEFS.len]usize = undefined;
+    for (order, 0..) |name, i| {
+        for (INGEST_TARGET_DEFS, 0..) |def, j| {
+            if (std.mem.eql(u8, def.name, name)) {
+                pos[j] = i;
+                break;
+            }
+        }
+    }
+
+    // For every edge dep → def, pos[dep] < pos[def].
+    for (INGEST_TARGET_DEFS, 0..) |def, j| {
+        for (def.depends) |dep_name| {
+            for (INGEST_TARGET_DEFS, 0..) |dep_def, i| {
+                if (std.mem.eql(u8, dep_def.name, dep_name)) {
+                    try testing.expect(pos[i] < pos[j]);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+test "topoSort: download is first, yago_ingest is last" {
+    const order = try topoSort(testing.allocator);
+    defer testing.allocator.free(order);
+    try testing.expectEqualStrings(TARGET_DOWNLOAD, order[0]);
+    try testing.expectEqualStrings(TARGET_INGEST, order[order.len - 1]);
 }

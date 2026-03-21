@@ -1,10 +1,10 @@
 /// batch.zig — Streaming Batch Ingestion Pipeline
 ///
-/// Streams a Turtle file through the parser and mapper, flushing to CozoDB
-/// in configurable batches to keep memory usage bounded.
+/// Streams a Turtle file through the parser and mapper, flushing to the
+/// Library (SQLite backend) in configurable batches to keep memory bounded.
 ///
 /// Pipeline:
-///   TTL file → Lexer → Parser → TripleMapper → BatchIngestor → CozoDB
+///   TTL file → Lexer → Parser → TripleMapper → BatchIngestor → Library
 ///
 /// Memory model:
 ///   - Fixed batch_size: triples accumulated in TripleMapper, flushed at limit.
@@ -13,7 +13,7 @@ const std = @import("std");
 const parser_mod = @import("../rdf/parser.zig");
 const mapper_mod = @import("../ontology/mapper.zig");
 const migration_mod = @import("../ontology/migration.zig");
-const db_mod = @import("../db.zig");
+const db_mod = @import("db.zig");
 
 const Parser = parser_mod.Parser;
 const TripleMapper = mapper_mod.TripleMapper;
@@ -64,24 +64,57 @@ pub const BatchIngestor = struct {
         return .{ .allocator = allocator, .config = config };
     }
 
+    /// Return a fluent IngestBuilder bound to `library`.
+    ///
+    ///   const stats = try BatchIngestor.from(allocator, library)
+    ///       .batchSize(10_000)
+    ///       .skipErrors(true)
+    ///       .onProgress(myCallback)
+    ///       .ingestSource(source);
+    pub fn from(allocator: std.mem.Allocator, library: *Library) IngestBuilder {
+        return .{ .allocator = allocator, .library = library, .config = .{} };
+    }
+
+    // ── Private helpers ────────────────────────────────────────────
+
+    /// Flush accumulated mapper output to `library`, update `stats`, fire
+    /// the progress callback if configured.
+    fn flushBatch(
+        self: *BatchIngestor,
+        mapper: *TripleMapper,
+        library: *Library,
+        stats: *IngestStats,
+    ) !void {
+        const flush_result = try mapper.flush(library);
+        stats.nodes_created += flush_result.nodes_created;
+        stats.edges_created += flush_result.edges_created;
+        stats.batches_flushed += 1;
+        if (self.config.on_progress) |cb| {
+            cb(stats.triples_processed, stats.nodes_created, stats.edges_created);
+        }
+    }
+
+    /// Deinit and reinitialise `mapper` for the next batch window.
+    fn resetMapper(self: *BatchIngestor, mapper: *TripleMapper) !void {
+        mapper.deinit();
+        mapper.* = try TripleMapper.init(self.allocator, self.config.mapping);
+    }
+
+    // ── Public API ─────────────────────────────────────────────────
+
     /// Ingest a Turtle source string into library.
     /// Reads all triples, maps to nodes/edges, flushes in batches.
     pub fn ingestSource(self: *BatchIngestor, source: []const u8, library: *Library) !IngestStats {
         var stats = IngestStats{};
         var mapper = try TripleMapper.init(self.allocator, self.config.mapping);
         defer mapper.deinit();
-
         var p = try Parser.init(self.allocator, source);
         defer p.deinit();
 
         var triples_in_batch: usize = 0;
-
         while (true) {
             const triple_opt = p.next() catch |err| {
-                if (self.config.skip_errors) {
-                    stats.errors_skipped += 1;
-                    continue;
-                }
+                if (self.config.skip_errors) { stats.errors_skipped += 1; continue; }
                 return err;
             };
             const triple = triple_opt orelse break;
@@ -91,39 +124,16 @@ pub const BatchIngestor = struct {
             stats.triples_processed += 1;
             triples_in_batch += 1;
 
-            if (self.config.max_triples > 0 and stats.triples_processed >= self.config.max_triples) {
-                break;
-            }
+            if (self.config.max_triples > 0 and stats.triples_processed >= self.config.max_triples) break;
 
             if (triples_in_batch >= self.config.batch_size) {
-                const flush_result = try mapper.flush(library);
-                stats.nodes_created += flush_result.nodes_created;
-                stats.edges_created += flush_result.edges_created;
-                stats.batches_flushed += 1;
+                try self.flushBatch(&mapper, library, &stats);
+                try self.resetMapper(&mapper);
                 triples_in_batch = 0;
-
-                if (self.config.on_progress) |cb| {
-                    cb(stats.triples_processed, stats.nodes_created, stats.edges_created);
-                }
-
-                // Reset mapper for next batch
-                mapper.deinit();
-                mapper = try TripleMapper.init(self.allocator, self.config.mapping);
             }
         }
 
-        // Flush remaining
-        if (triples_in_batch > 0) {
-            const flush_result = try mapper.flush(library);
-            stats.nodes_created += flush_result.nodes_created;
-            stats.edges_created += flush_result.edges_created;
-            stats.batches_flushed += 1;
-
-            if (self.config.on_progress) |cb| {
-                cb(stats.triples_processed, stats.nodes_created, stats.edges_created);
-            }
-        }
-
+        if (triples_in_batch > 0) try self.flushBatch(&mapper, library, &stats);
         return stats;
     }
 
@@ -131,9 +141,59 @@ pub const BatchIngestor = struct {
     pub fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) !IngestStats {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
-        const source = try file.readToEndAlloc(self.allocator, 512 * 1024 * 1024); // 512 MB limit
+        const source = try file.readToEndAlloc(self.allocator, 512 * 1024 * 1024);
         defer self.allocator.free(source);
         return self.ingestSource(source, library);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// IngestBuilder — fluent API over BatchIngestor
+// ---------------------------------------------------------------------------
+//
+// All config methods return *IngestBuilder for chaining.  No error
+// accumulation is needed here because every setter assigns a primitive
+// field — errors only arise at the terminal ingestSource / ingestFile call.
+
+pub const IngestBuilder = struct {
+    allocator: std.mem.Allocator,
+    library: *Library,
+    config: BatchConfig,
+
+    /// Triples accumulated before each flush (default: 10,000).
+    pub fn batchSize(self: *IngestBuilder, n: usize) *IngestBuilder {
+        self.config.batch_size = n;
+        return self;
+    }
+
+    /// When true, parse errors are logged and skipped rather than aborting.
+    pub fn skipErrors(self: *IngestBuilder, v: bool) *IngestBuilder {
+        self.config.skip_errors = v;
+        return self;
+    }
+
+    /// Stop after processing this many triples (0 = unlimited).
+    pub fn maxTriples(self: *IngestBuilder, n: usize) *IngestBuilder {
+        self.config.max_triples = n;
+        return self;
+    }
+
+    /// Callback invoked after every batch flush.
+    pub fn onProgress(self: *IngestBuilder, cb: ProgressCallback) *IngestBuilder {
+        self.config.on_progress = cb;
+        return self;
+    }
+
+    /// Ingest from a Turtle source string.  Terminates the builder chain.
+    pub fn ingestSource(self: *IngestBuilder, source: []const u8) !IngestStats {
+        var ingestor = BatchIngestor.init(self.allocator, self.config);
+        return ingestor.ingestSource(source, self.library);
+    }
+
+    /// Ingest from a Turtle file at `path`.  Terminates the builder chain.
+    pub fn ingestFile(self: *IngestBuilder, path: []const u8) !IngestStats {
+        var ingestor = BatchIngestor.init(self.allocator, self.config);
+        return ingestor.ingestFile(path, self.library);
     }
 };
 

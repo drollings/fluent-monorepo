@@ -1,105 +1,47 @@
-/// db.zig — Coral Context Unified Database Layer (CozoDB Backend)
+/// db.zig — Coral Context Database Layer (SQLite backend)
 ///
-/// Replaces the previous dual-engine architecture:
-///   BEFORE: PostgreSQL/pgvector (cold storage) + LadybugDB Cypher (session graph)
-///   AFTER:  CozoDB (unified: payloads + embeddings + graph edges + time travel)
+/// Replaces the previous CozoDB-based architecture with a lean SQLite backend
+/// that stores the same data model (LOD text pyramid + float embeddings + graph
+/// edges) using standard SQL and a recursive CTE for BFS graph traversal.
 ///
 /// Architecture:
 ///   §3.1 ContextNode — the universal semantic entity with LOD text pyramid
-///   §3.2 Library — CozoDB database handle + schema initialization
+///   §3.2 Library     — SQLite database handle + schema initialization
 ///   §3.3 HydrationPipeline — embed → KNN (Zig cosine) → persist neighbor edges
-///   §3.4 ContextPacker — LOD selection based on graph distance
-///   §3.5 NodeId — i64, matching CozoDB's native Int type
+///   §3.4 ContextPacker — LOD selection based on BFS graph distance
+///   §3.5 NodeId — i64, matching SQLite INTEGER PRIMARY KEY
 ///
-/// Embedding / KNN design:
-///   CozoDB stores float embeddings as List<Float>. There is no native HNSW index.
-///   KNN search works by: fetch all candidate embeddings from CozoDB → compute
-///   cosine similarity in Zig (SIMD-friendly dot product) → sort top-K.
-///   This is correct for edge scale (≤100K nodes on RAM-constrained devices).
-///   For server scale, plug in an external ANN service and use CozoDB only for
-///   graph topology and payload storage.
+/// Embedding storage:
+///   Float32 vectors are stored as raw BLOB (native byte order, 4 bytes/float).
+///   KNN search: fetch all candidate BLOBs → decode to []f32 → cosine similarity
+///   in Zig → sort top-K.  Correct for edge scale (≤100K nodes on-device).
 ///
-/// Time travel:
-///   CozoDB's built-in versioning provides time travel without timescaledb.
-///   The valid_from / valid_to Float columns (Unix timestamps) are used for
-///   explicit temporal validity ranges, matching the previous Postgres schema.
+/// Bitset storage (targets table):
+///   DynamicBitSetUnmanaged word arrays stored as BLOB (raw usize bytes,
+///   native byte order).  total_bits records the logical width for round-trips.
 const std = @import("std");
 const schema = @import("schema.zig");
-const CozoDB = @import("cozo.zig").CozoDB;
-const StorageEngine = @import("cozo.zig").StorageEngine;
-const reflection = @import("../common/reflection.zig");
+const reflection = @import("reflection");
+
+const c = @cImport({
+    @cInclude("sqlite3.h");
+});
+
+const SQLITE_STATIC: c.sqlite3_destructor_type = null;
+const BUSY_TIMEOUT_MS: c_int = 5000;
 
 // ---------------------------------------------------------------------------
-// §3.5 NodeId — i64 matching CozoDB's native Int type
+// §3.5 NodeId — i64 matching SQLite INTEGER PRIMARY KEY
 // ---------------------------------------------------------------------------
 
-/// NodeId is i64 — CozoDB's native Int type. Simple and direct.
 pub const NodeId = i64;
-
-// ---------------------------------------------------------------------------
-// CozoDB row extraction helpers
-// ---------------------------------------------------------------------------
-// These helpers convert a std.json.Value (a single cell returned by CozoDB)
-// to a native Zig type.  They are used by fetchNode / fetchWasmTool, and
-// eliminate repeated switch-on-tag boilerplate at every call site.
-// All take an optional value so callers can pass `CozoDB.colByHeader(…)`
-// directly without a separate null check.
-
-/// Dupe a string cell into the given allocator.  Returns "" for null/non-string.
-fn colStr(allocator: std.mem.Allocator, val: ?std.json.Value) ![]const u8 {
-    if (val) |v| if (v == .string) return allocator.dupe(u8, v.string);
-    return allocator.dupe(u8, "");
-}
-
-/// Extract an f64.  Returns `default` for null / non-numeric cells.
-fn colFloat(val: ?std.json.Value, default: f64) f64 {
-    const v = val orelse return default;
-    return switch (v) {
-        .float => v.float,
-        .integer => @floatFromInt(v.integer),
-        else => default,
-    };
-}
-
-/// Extract an optional f64.  Returns null for CozoDB null or absent column.
-fn colOptFloat(val: ?std.json.Value) ?f64 {
-    const v = val orelse return null;
-    return switch (v) {
-        .float => v.float,
-        .integer => @floatFromInt(v.integer),
-        .null => null,
-        else => null,
-    };
-}
-
-/// Extract a bool.  Accepts CozoDB Bool or integer (0/1).
-fn colBool(val: ?std.json.Value, default: bool) bool {
-    const v = val orelse return default;
-    return switch (v) {
-        .bool => v.bool,
-        .integer => v.integer != 0,
-        else => default,
-    };
-}
-
-/// Extract an i64.  Returns `default` for non-integer cells.
-fn colInt(val: ?std.json.Value, default: i64) i64 {
-    const v = val orelse return default;
-    return switch (v) {
-        .integer => v.integer,
-        .float => @intFromFloat(v.float),
-        else => default,
-    };
-}
 
 // ---------------------------------------------------------------------------
 // §3.1 ContextNode — universal semantic entity
 // ---------------------------------------------------------------------------
 
-/// ContextNode - the universal semantic data structure.
-/// Stores LOD text pyramid and float embedding vector.
-/// id: i64 — CozoDB native Int
-/// lod[0]: max detail (full description)
+/// ContextNode — the universal semantic data structure.
+/// lod[0]: full description (max detail)
 /// lod[1]: summary (condensed but comprehensive)
 /// lod[2]: brief (concise key points)
 /// lod[3]: tiny (single sentence or key phrase)
@@ -108,8 +50,7 @@ fn colInt(val: ?std.json.Value, default: i64) i64 {
 pub const ContextNode = struct {
     id: i64,
     lod: [schema.LOD_COUNT][]const u8,
-    /// Bitmask: bit i is set when lod[i] is allocator-owned and must be freed.
-    /// Prevents accidentally freeing string literals assigned directly to lod slots.
+    /// Bitmask: bit i is set when lod[i] is allocator-owned (must be freed).
     lod_owned: u8 = 0,
     embedding: []const f32,
     valid_from: f64,
@@ -117,9 +58,8 @@ pub const ContextNode = struct {
     confidence: i32,
     provenance_id: i32,
 
-    /// Initialise a ContextNode with allocator-owned copies of `full_text` (lod0)
-    /// and `name` (lod4).  All other LOD slots are set to empty string literals
-    /// (not allocated).  Call `free` with the same allocator when done.
+    /// Initialise with allocator-owned copies of `full_text` (lod0) and `name`
+    /// (lod4).  All other LOD slots are empty string literals (not allocated).
     pub fn init(id: i64, name: []const u8, full_text: []const u8, allocator: std.mem.Allocator) !ContextNode {
         var node = ContextNode{
             .id = id,
@@ -133,7 +73,7 @@ pub const ContextNode = struct {
         node.lod[0] = try allocator.dupe(u8, full_text);
         errdefer allocator.free(node.lod[0]);
         node.lod[4] = try allocator.dupe(u8, name);
-        node.lod_owned = (1 << 0) | (1 << 4); // lod0 and lod4 are owned
+        node.lod_owned = (1 << 0) | (1 << 4);
         return node;
     }
 
@@ -143,13 +83,10 @@ pub const ContextNode = struct {
     }
 
     pub fn setLod(self: *ContextNode, level: u3, value: []const u8) void {
-        if (level < schema.LOD_COUNT) {
-            self.lod[level] = value;
-        }
+        if (level < schema.LOD_COUNT) self.lod[level] = value;
     }
 
     /// Free allocator-owned LOD strings tracked by `lod_owned`.
-    /// Clears each freed slot to "" and its ownership bit, so double-free is safe.
     pub fn free(self: *ContextNode, allocator: std.mem.Allocator) void {
         for (&self.lod, 0..) |*slot, i| {
             if (self.lod_owned & (@as(u8, 1) << @intCast(i)) != 0) {
@@ -161,15 +98,14 @@ pub const ContextNode = struct {
     }
 };
 
-/// KnnHit - result from in-Zig cosine similarity search.
-/// Used to construct NEIGHBOR_OF edges in CozoDB.
+/// KnnHit — result from in-Zig cosine similarity search.
 pub const KnnHit = struct {
     id: i64,
     name: []const u8,
-    distance: f32, // cosine distance (0 = identical, 2 = opposite)
+    distance: f32, // cosine distance in [0, 2]; 0 = identical
 };
 
-/// EdgeType enum — maps to edge relation names in CozoDB.
+/// EdgeType — logical classification for neighbor_of edges.
 pub const EdgeType = enum(i16) {
     depends_on = 0,
     provides_capability = 1,
@@ -177,10 +113,7 @@ pub const EdgeType = enum(i16) {
     semantic_similarity = 3,
     temporal_sequence = 4,
 
-    /// Returns the CozoDB stored-relation name for this edge type.
-    /// NOTE: `semantic_similarity` and `temporal_sequence` are logical subtypes;
-    /// they are both stored in the `neighbor_of` relation and distinguished by
-    /// the `edge_type` column value (see `EdgeType.label()`).
+    /// SQL table name (depends_on uses its own table; others share neighbor_of).
     pub fn cozoRelation(self: EdgeType) []const u8 {
         return switch (self) {
             .depends_on => "depends_on",
@@ -189,7 +122,7 @@ pub const EdgeType = enum(i16) {
         };
     }
 
-    /// Returns the string label stored in the `edge_type` column.
+    /// String stored in the `edge_type` column of neighbor_of.
     pub fn label(self: EdgeType) []const u8 {
         return switch (self) {
             .depends_on => "depends_on",
@@ -201,25 +134,16 @@ pub const EdgeType = enum(i16) {
     }
 };
 
-/// GraphNode - a node with its shortest-path distance from semantic center.
-/// Used by ContextPacker for LOD routing.
+/// GraphNode — node + BFS hop distance from semantic center.
 pub const GraphNode = struct {
     id: i64,
     graph_distance: u32,
 };
 
-/// WasmTool — the Zig mirror of the `wasm_tools` CozoDB relation.
+/// WasmTool — mirror of the `wasm_tools` SQLite table.
 ///
-/// `id` and `target_id` are i64 values stored in CozoDB as Int
-/// columns (see NodeId).  All other fields map 1-to-1 to CozoDB columns.
-///
-/// The `editable` mixin gives this struct zero-overhead reflection support:
-///   - TUI / REPL field editing with role-based access control
-///   - Config-file-based hydration (string → field via Constraint)
-///   - DynamicEditable round-trips for CozoDB row import/export
-///
-/// Ownership: `wasm_b64` and `schema_hash` are allocator-owned when returned
-/// by `Library.fetchWasmTool()`; call `Library.freeWasmTool()` to release.
+/// `editable` gives zero-overhead reflection support for TUI/REPL field
+/// editing, config-file hydration, and DynamicEditable round-trips.
 pub const WasmTool = struct {
     id: i64 = 0,
     target_id: i64 = 0,
@@ -227,169 +151,180 @@ pub const WasmTool = struct {
     schema_hash: []const u8 = "",
     test_passed: bool = false,
     created_at: f64 = 0.0,
-    /// Zero-size reflection mixin.  Enables field-level set/get, permissions,
-    /// and string serialization via the Accessor/Constraint/Editable pattern.
+    /// Zero-size reflection mixin.
     editable: reflection.Editable(@This()) = .{},
 };
 
 // ---------------------------------------------------------------------------
-// §3.2 Library — CozoDB database handle
+// §3.2 Library — SQLite database handle
 // ---------------------------------------------------------------------------
 
-/// Library - the unified database interface backed by CozoDB.
-/// Manages the CozoDB instance, schema initialization, and provides
-/// the hydration pipeline and context packing algorithms.
-///
-/// Replaces both PgPool (cold storage) and the LadybugDB session graph.
-/// CozoDB handles both persistent storage and graph traversal via Datalog.
+/// StorageEngine — how to open the SQLite database.
+pub const StorageEngine = enum {
+    mem,    // in-memory (:memory:) — for testing/ephemeral use
+    sqlite, // persistent file
+};
+
+/// Library — unified database interface backed by SQLite.
 pub const Library = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    db: CozoDB,
+    db: ?*c.sqlite3,
     initialized: bool = false,
 
     // ------------------------------------------------------------------
     // Lifecycle
     // ------------------------------------------------------------------
 
-    /// Open the CozoDB database at the given path.
+    /// Open the SQLite database.
     /// engine: .sqlite (persistent) or .mem (testing/ephemeral)
-    /// path: file path for sqlite, "" for mem
+    /// path: file path for sqlite; ignored for mem
     pub fn init(
         allocator: std.mem.Allocator,
         engine: StorageEngine,
-        path: [:0]const u8,
+        path: []const u8,
     ) !*Self {
-        const db = try CozoDB.open(allocator, engine, path, "{}");
-        const self = try allocator.create(Self);
-        self.* = .{
-            .allocator = allocator,
-            .db = db,
+        const db_path: [:0]const u8 = switch (engine) {
+            .mem => ":memory:",
+            .sqlite => blk: {
+                const p = try allocator.dupeZ(u8, path);
+                break :blk p;
+            },
         };
+        defer if (engine == .sqlite) allocator.free(db_path);
+
+        var db: ?*c.sqlite3 = null;
+        const rc = c.sqlite3_open(db_path.ptr, &db);
+        if (rc != c.SQLITE_OK) {
+            if (db) |d| _ = c.sqlite3_close(d);
+            return error.SqliteOpenFailed;
+        }
+        _ = c.sqlite3_busy_timeout(db, BUSY_TIMEOUT_MS);
+
+        // Enable WAL mode for concurrent reads, and foreign keys.
+        _ = c.sqlite3_exec(db, "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;", null, null, null);
+
+        const self = try allocator.create(Self);
+        self.* = .{ .allocator = allocator, .db = db };
         return self;
     }
 
     pub fn deinit(self: *Self) void {
-        _ = self.db.close();
+        if (self.db) |db| {
+            _ = c.sqlite3_close(db);
+            self.db = null;
+        }
         self.allocator.destroy(self);
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+
+    /// Run a single SQL statement (no params, no result rows).
+    fn exec(self: *Self, sql: []const u8) !void {
+        const sql_z = try self.allocator.dupeZ(u8, sql);
+        defer self.allocator.free(sql_z);
+        const rc = c.sqlite3_exec(self.db, sql_z.ptr, null, null, null);
+        if (rc != c.SQLITE_OK) return error.SqliteExecFailed;
+    }
+
+    /// Prepare a statement; caller must finalize.
+    fn prepare(self: *Self, sql: []const u8) !*c.sqlite3_stmt {
+        var stmt: ?*c.sqlite3_stmt = null;
+        const rc = c.sqlite3_prepare_v2(self.db, sql.ptr, @intCast(sql.len), &stmt, null);
+        if (rc != c.SQLITE_OK or stmt == null) return error.SqlitePrepareFailed;
+        return stmt.?;
+    }
+
+    fn step(stmt: *c.sqlite3_stmt) !bool {
+        const rc = c.sqlite3_step(stmt);
+        return switch (rc) {
+            c.SQLITE_DONE => false,
+            c.SQLITE_ROW => true,
+            else => error.SqliteStepFailed,
+        };
     }
 
     // ------------------------------------------------------------------
     // Schema initialization
     // ------------------------------------------------------------------
 
-    /// Create all relations if they do not already exist.
-    /// CozoDB's :create is idempotent if the relation already exists —
-    /// it returns an error if the schema conflicts, so we wrap each statement.
+    /// Create all tables and indexes (idempotent — IF NOT EXISTS guards).
     pub fn initSchema(self: *Self) !void {
         for (schema.SCHEMA_DDL) |ddl| {
-            const ddl_z = try self.allocator.dupeZ(u8, ddl);
-            defer self.allocator.free(ddl_z);
-            self.db.exec(ddl_z) catch |err| {
-                // If the relation already exists, CozoDB returns an error.
-                // We treat that as a no-op (idempotent init).
-                if (err == @import("cozo.zig").CozoError.QueryFailed) {
-                    std.log.debug("Schema statement skipped (already exists?): {s}", .{ddl[0..@min(60, ddl.len)]});
-                } else {
-                    return err;
-                }
-            };
+            try self.exec(ddl);
         }
         self.initialized = true;
-        std.log.info("Library: CozoDB schema initialized", .{});
     }
 
     // ------------------------------------------------------------------
     // ContextNode persistence
     // ------------------------------------------------------------------
 
-    /// Insert or upsert a ContextNode into CozoDB.
-    /// String fields are passed via parameterized query to prevent injection.
+    /// Insert or replace a ContextNode (upsert by id).
     pub fn insertNode(self: *Self, node: ContextNode) !void {
-        // Build embedding JSON array: [0.1, 0.2, ...]
-        var emb_buf: std.ArrayListUnmanaged(u8) = .{};
-        defer emb_buf.deinit(self.allocator);
-        try emb_buf.appendSlice(self.allocator, "[");
-        for (node.embedding, 0..) |v, i| {
-            if (i > 0) try emb_buf.appendSlice(self.allocator, ",");
-            try std.fmt.format(emb_buf.writer(self.allocator), "{d}", .{v});
+        const sql =
+            \\INSERT OR REPLACE INTO context_nodes
+            \\    (id, lod0, lod1, lod2, lod3, lod4, lod5,
+            \\     embedding, valid_from, valid_to, confidence, provenance_id)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_int64(stmt, 1, node.id);
+        inline for (0..schema.LOD_COUNT) |i| {
+            _ = c.sqlite3_bind_text(stmt, @intCast(i + 2), node.lod[i].ptr, @intCast(node.lod[i].len), SQLITE_STATIC);
         }
-        try emb_buf.appendSlice(self.allocator, "]");
+        const emb_bytes = std.mem.sliceAsBytes(node.embedding);
+        _ = c.sqlite3_bind_blob(stmt, 8, emb_bytes.ptr, @intCast(emb_bytes.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 9, node.valid_from);
+        if (node.valid_to) |vt| {
+            _ = c.sqlite3_bind_double(stmt, 10, vt);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 10);
+        }
+        _ = c.sqlite3_bind_int64(stmt, 11, node.confidence);
+        _ = c.sqlite3_bind_int64(stmt, 12, node.provenance_id);
 
-        const valid_to_str = if (node.valid_to) |vt|
-            try std.fmt.allocPrint(self.allocator, "{d}", .{vt})
-        else
-            try self.allocator.dupe(u8, "null");
-        defer self.allocator.free(valid_to_str);
-
-        // Build params JSON — string fields use $name placeholders to prevent injection.
-        // Use std.json.Stringify.valueAlloc for correct escaping of arbitrary string content.
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .lod0 = node.lod[0],
-            .lod1 = node.lod[1],
-            .lod2 = node.lod[2],
-            .lod3 = node.lod[3],
-            .lod4 = node.lod[4],
-            .lod5 = node.lod[5],
-        }, .{});
-        defer self.allocator.free(params_str);
-        // null-terminate for C API
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-
-        const script = try std.fmt.allocPrintSentinel(self.allocator,
-            \\?[id, lod0, lod1, lod2, lod3, lod4, lod5, embedding, valid_from, valid_to, confidence, provenance_id] <-
-            \\    [[{d}, $lod0, $lod1, $lod2, $lod3, $lod4, $lod5, {s}, {d}, {s}, {d}, {d}]]
-            \\:put context_nodes {{ id => lod0, lod1, lod2, lod3, lod4, lod5, embedding, valid_from, valid_to, confidence, provenance_id }}
-        , .{ node.id, emb_buf.items, node.valid_from, valid_to_str, node.confidence, node.provenance_id }, 0);
-        defer self.allocator.free(script);
-
-        try self.db.execWithParams(script, params);
+        _ = try step(stmt);
     }
 
-    /// Fetch a ContextNode by i64 id.
-    /// Strings in the returned node are allocator-owned; free with node.free(allocator).
+    /// Fetch a ContextNode by id.  Strings in the returned node are
+    /// allocator-owned; free with node.free(allocator).
     pub fn fetchNode(self: *Self, id: i64) !?ContextNode {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"id": {d}}}
-        , .{id}, 0);
-        defer self.allocator.free(params);
-
-        const script =
-            \\?[lod0, lod1, lod2, lod3, lod4, lod5, valid_from, valid_to, confidence, provenance_id] :=
-            \\    *context_nodes{ id: $id, lod0, lod1, lod2, lod3, lod4, lod5, valid_from, valid_to, confidence, provenance_id }
+        const sql =
+            \\SELECT lod0, lod1, lod2, lod3, lod4, lod5,
+            \\       embedding, valid_from, valid_to, confidence, provenance_id
+            \\FROM context_nodes WHERE id = ?1
         ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
 
-        var result = try self.db.queryReadWithParams(script, params);
-        defer result.deinit();
-
-        const rows = CozoDB.getRows(&result);
-        if (rows.len == 0) return null;
-
-        // Use header-based column lookup so positional index changes in the
-        // SELECT list can never silently map the wrong value to the wrong field.
-        const headers = CozoDB.getHeaders(&result);
-        const row = rows[0];
+        _ = c.sqlite3_bind_int64(stmt, 1, id);
+        if (!try step(stmt)) return null;
 
         var node = ContextNode{
             .id = id,
             .lod = [_][]const u8{ "", "", "", "", "", "" },
             .embedding = &[_]f32{},
-            .valid_from = @floatCast(colFloat(CozoDB.colByHeader(headers, row, "valid_from"), 0.0)),
+            .valid_from = c.sqlite3_column_double(stmt, 7),
             .valid_to = blk: {
-                const v = colOptFloat(CozoDB.colByHeader(headers, row, "valid_to"));
-                break :blk if (v) |f| @as(f64, @floatCast(f)) else null;
+                if (c.sqlite3_column_type(stmt, 8) == c.SQLITE_NULL) break :blk null;
+                break :blk c.sqlite3_column_double(stmt, 8);
             },
-            .confidence = @intCast(colInt(CozoDB.colByHeader(headers, row, "confidence"), 0)),
-            .provenance_id = @intCast(colInt(CozoDB.colByHeader(headers, row, "provenance_id"), 0)),
+            .confidence = @intCast(c.sqlite3_column_int(stmt, 9)),
+            .provenance_id = @intCast(c.sqlite3_column_int(stmt, 10)),
         };
 
-        const lod_names = [_][]const u8{ "lod0", "lod1", "lod2", "lod3", "lod4", "lod5" };
-        inline for (lod_names, 0..) |lod_name, i| {
-            node.lod[i] = try colStr(self.allocator, CozoDB.colByHeader(headers, row, lod_name));
-            // colStr always dupes (returns "" dupe for empty), so all slots are owned.
-            node.lod_owned |= @as(u8, 1) << i;
+        inline for (0..schema.LOD_COUNT) |i| {
+            const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, @intCast(i));
+            const len: usize = @intCast(c.sqlite3_column_bytes(stmt, @intCast(i)));
+            const s = if (ptr != null) ptr[0..len] else "";
+            node.lod[i] = try self.allocator.dupe(u8, s);
+            node.lod_owned |= @as(u8, 1) << @intCast(i);
         }
 
         return node;
@@ -399,10 +334,7 @@ pub const Library = struct {
     // Target persistence
     // ------------------------------------------------------------------
 
-    /// Insert a target definition into CozoDB.
-    /// `depends` and `provides` are stored as raw bitset word arrays ([Int])
-    /// so capability sets larger than 63 bits round-trip correctly.
-    /// `name` is passed via parameterized query to prevent injection.
+    /// Insert or replace a target definition.
     pub fn insertTarget(
         self: *Self,
         id: i64,
@@ -412,107 +344,79 @@ pub const Library = struct {
         total_bits: usize,
         is_essential: bool,
     ) !void {
+        const sql =
+            \\INSERT OR REPLACE INTO targets
+            \\    (id, name, depends_words, provides_words, total_bits, is_essential)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
         const bits_per_word = @bitSizeOf(usize);
         const dep_words = (depends.bit_length + bits_per_word - 1) / bits_per_word;
         const prov_words = (provides.bit_length + bits_per_word - 1) / bits_per_word;
 
-        // Build JSON arrays of i64 words for CozoDB [Int] columns.
-        var dep_buf: std.ArrayListUnmanaged(u8) = .{};
-        defer dep_buf.deinit(self.allocator);
-        var prov_buf: std.ArrayListUnmanaged(u8) = .{};
-        defer prov_buf.deinit(self.allocator);
+        const dep_bytes = std.mem.sliceAsBytes(depends.masks[0..dep_words]);
+        const prov_bytes = std.mem.sliceAsBytes(provides.masks[0..prov_words]);
 
-        try dep_buf.append(self.allocator, '[');
-        for (0..dep_words) |i| {
-            if (i > 0) try dep_buf.append(self.allocator, ',');
-            const w: i64 = @bitCast(@as(u64, depends.masks[i]));
-            try std.fmt.format(dep_buf.writer(self.allocator), "{d}", .{w});
-        }
-        try dep_buf.append(self.allocator, ']');
+        _ = c.sqlite3_bind_int64(stmt, 1, id);
+        _ = c.sqlite3_bind_text(stmt, 2, name.ptr, @intCast(name.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_blob(stmt, 3, dep_bytes.ptr, @intCast(dep_bytes.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_blob(stmt, 4, prov_bytes.ptr, @intCast(prov_bytes.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 5, @intCast(total_bits));
+        _ = c.sqlite3_bind_int64(stmt, 6, if (is_essential) 1 else 0);
 
-        try prov_buf.append(self.allocator, '[');
-        for (0..prov_words) |i| {
-            if (i > 0) try prov_buf.append(self.allocator, ',');
-            const w: i64 = @bitCast(@as(u64, provides.masks[i]));
-            try std.fmt.format(prov_buf.writer(self.allocator), "{d}", .{w});
-        }
-        try prov_buf.append(self.allocator, ']');
-
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .id = id,
-            .name = name,
-            .total_bits = @as(i64, @intCast(total_bits)),
-            .essential = is_essential,
-        }, .{});
-        defer self.allocator.free(params_str);
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-
-        const script = try std.fmt.allocPrintSentinel(self.allocator,
-            \\?[id, name, depends_words, provides_words, total_bits, is_essential] <-
-            \\    [[$id, $name, {s}, {s}, $total_bits, $essential]]
-            \\:put targets {{ id => name, depends_words, provides_words, total_bits, is_essential }}
-        , .{ dep_buf.items, prov_buf.items }, 0);
-        defer self.allocator.free(script);
-
-        try self.db.execWithParams(script, params);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
     // WasmTool persistence
     // ------------------------------------------------------------------
 
-    /// Insert or upsert a WasmTool record into the wasm_tools relation.
+    /// Insert or replace a WasmTool record.
     pub fn insertWasmTool(self: *Self, tool: WasmTool) !void {
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .id = tool.id,
-            .target_id = tool.target_id,
-            .wasm_b64 = tool.wasm_b64,
-            .schema_hash = tool.schema_hash,
-            .test_passed = tool.test_passed,
-            .created_at = tool.created_at,
-        }, .{});
-        defer self.allocator.free(params_str);
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-
-        const script =
-            \\?[id, target_id, wasm_b64, schema_hash, test_passed, created_at] <-
-            \\    [[$id, $target_id, $wasm_b64, $schema_hash, $test_passed, $created_at]]
-            \\:put wasm_tools { id => target_id, wasm_b64, schema_hash, test_passed, created_at }
+        const sql =
+            \\INSERT OR REPLACE INTO wasm_tools
+            \\    (id, target_id, wasm_b64, schema_hash, test_passed, created_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_int64(stmt, 1, tool.id);
+        _ = c.sqlite3_bind_int64(stmt, 2, tool.target_id);
+        _ = c.sqlite3_bind_text(stmt, 3, tool.wasm_b64.ptr, @intCast(tool.wasm_b64.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 4, tool.schema_hash.ptr, @intCast(tool.schema_hash.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 5, if (tool.test_passed) 1 else 0);
+        _ = c.sqlite3_bind_double(stmt, 6, tool.created_at);
+
+        _ = try step(stmt);
     }
 
-    /// Fetch a WasmTool record by i64 id.
-    /// Strings in the returned tool are allocator-owned; free with freeWasmTool().
+    /// Fetch a WasmTool by id.  Strings are allocator-owned; free with freeWasmTool().
     pub fn fetchWasmTool(self: *Self, id: i64) !?WasmTool {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"id": {d}}}
-        , .{id}, 0);
-        defer self.allocator.free(params);
-
-        const script =
-            \\?[target_id, wasm_b64, schema_hash, test_passed, created_at] :=
-            \\    *wasm_tools{ id: $id, target_id, wasm_b64, schema_hash, test_passed, created_at }
+        const sql =
+            \\SELECT target_id, wasm_b64, schema_hash, test_passed, created_at
+            \\FROM wasm_tools WHERE id = ?1
         ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
 
-        var result = try self.db.queryReadWithParams(script, params);
-        defer result.deinit();
+        _ = c.sqlite3_bind_int64(stmt, 1, id);
+        if (!try step(stmt)) return null;
 
-        const rows = CozoDB.getRows(&result);
-        if (rows.len == 0) return null;
-
-        const headers = CozoDB.getHeaders(&result);
-        const row = rows[0];
+        const wasm_ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 1);
+        const wasm_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+        const hash_ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 2);
+        const hash_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 2));
 
         return WasmTool{
             .id = id,
-            .target_id = colInt(CozoDB.colByHeader(headers, row, "target_id"), 0),
-            .wasm_b64 = try colStr(self.allocator, CozoDB.colByHeader(headers, row, "wasm_b64")),
-            .schema_hash = try colStr(self.allocator, CozoDB.colByHeader(headers, row, "schema_hash")),
-            .test_passed = colBool(CozoDB.colByHeader(headers, row, "test_passed"), false),
-            .created_at = colFloat(CozoDB.colByHeader(headers, row, "created_at"), 0.0),
+            .target_id = c.sqlite3_column_int64(stmt, 0),
+            .wasm_b64 = try self.allocator.dupe(u8, if (wasm_ptr != null) wasm_ptr[0..wasm_len] else ""),
+            .schema_hash = try self.allocator.dupe(u8, if (hash_ptr != null) hash_ptr[0..hash_len] else ""),
+            .test_passed = c.sqlite3_column_int(stmt, 3) != 0,
+            .created_at = c.sqlite3_column_double(stmt, 4),
         };
     }
 
@@ -526,21 +430,17 @@ pub const Library = struct {
     // Edge insertion
     // ------------------------------------------------------------------
 
-    /// Insert a DEPENDS_ON edge between two target IDs.
+    /// Insert a DEPENDS_ON edge (upsert by primary key).
     pub fn insertDependsOn(self: *Self, from_id: i64, to_id: i64) !void {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"from": {d}, "to": {d}}}
-        , .{ from_id, to_id }, 0);
-        defer self.allocator.free(params);
-        const script =
-            \\?[from, to] <- [[$from, $to]]
-            \\:put depends_on { from, to }
-        ;
-        try self.db.execWithParams(script, params);
+        const sql = "INSERT OR IGNORE INTO depends_on (from_id, to_id) VALUES (?1, ?2)";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, from_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, to_id);
+        _ = try step(stmt);
     }
 
     /// Insert a NEIGHBOR_OF edge with cosine distance and edge type.
-    /// `edge_type` label is a known-safe enum string, passed via params for consistency.
     pub fn insertNeighborOf(
         self: *Self,
         from_id: i64,
@@ -548,16 +448,18 @@ pub const Library = struct {
         distance: f32,
         edge_type: EdgeType,
     ) !void {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"from": {d}, "to": {d}, "distance": {d:.6}, "edge_type": "{s}"}}
-        , .{ from_id, to_id, distance, edge_type.label() }, 0);
-        defer self.allocator.free(params);
-        const script =
-            \\?[from, to, distance, edge_type] <-
-            \\    [[$from, $to, $distance, $edge_type]]
-            \\:put neighbor_of { from, to => distance, edge_type }
+        const sql =
+            \\INSERT OR REPLACE INTO neighbor_of (from_id, to_id, distance, edge_type)
+            \\VALUES (?1, ?2, ?3, ?4)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        const et = edge_type.label();
+        _ = c.sqlite3_bind_int64(stmt, 1, from_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, to_id);
+        _ = c.sqlite3_bind_double(stmt, 3, distance);
+        _ = c.sqlite3_bind_text(stmt, 4, et.ptr, @intCast(et.len), SQLITE_STATIC);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
@@ -572,8 +474,8 @@ pub const Library = struct {
         return ContextPacker.init(self.allocator, self, max_tokens);
     }
 
-    /// Persist NEIGHBOR_OF edges from KNN hits into CozoDB.
-    /// Call after knnSearch to make the topology durable.
+    /// Persist NEIGHBOR_OF edges from KNN hits.
+    /// The center is knn_hits[0]; edges are written from center to all others.
     pub fn persistNeighborEdges(self: *Self, knn_hits: []const KnnHit) !void {
         if (knn_hits.len == 0) return;
         const center = knn_hits[0];
@@ -586,134 +488,111 @@ pub const Library = struct {
     // YAGO ingestion helpers
     // ------------------------------------------------------------------
 
-    /// Insert an entity_types row (entity IRI hashed to i64 → type IRI hashed to i64).
     pub fn insertEntityType(self: *Self, entity_id: i64, type_id: i64) !void {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"entity": {d}, "type": {d}}}
-        , .{ entity_id, type_id }, 0);
-        defer self.allocator.free(params);
-        const script =
-            \\?[entity, type] <-
-            \\    [[$entity, $type]]
-            \\:put entity_types { entity, type }
-        ;
-        try self.db.execWithParams(script, params);
+        const sql = "INSERT OR IGNORE INTO entity_types (entity_id, type_id) VALUES (?1, ?2)";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, type_id);
+        _ = try step(stmt);
     }
 
-    /// Insert a generic RDF edge (predicate IRI stored as edge label) using
-    /// the neighbor_of relation with edge_type "rdf_property".
     pub fn insertRdfEdge(self: *Self, from_id: i64, to_id: i64, predicate: []const u8) !void {
-        // Truncate predicate to 200 chars for storage safety
         const pred_short = if (predicate.len > 200) predicate[0..200] else predicate;
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"from": {d}, "to": {d}, "distance": 1.0, "edge_type": "{s}"}}
-        , .{ from_id, to_id, pred_short }, 0);
-        defer self.allocator.free(params);
-        const script =
-            \\?[from, to, distance, edge_type] <-
-            \\    [[$from, $to, $distance, $edge_type]]
-            \\:put neighbor_of { from, to => distance, edge_type }
+        const sql =
+            \\INSERT OR REPLACE INTO neighbor_of (from_id, to_id, distance, edge_type)
+            \\VALUES (?1, ?2, 1.0, ?3)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, from_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, to_id);
+        _ = c.sqlite3_bind_text(stmt, 3, pred_short.ptr, @intCast(pred_short.len), SQLITE_STATIC);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
-    // Provenance methods
+    // Provenance
     // ------------------------------------------------------------------
 
-    /// Insert a provenance record.
     pub fn insertProvenance(self: *Self, provenance_id: i32, source: []const u8, authority: []const u8) !void {
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .provenance_id = provenance_id,
-            .source = source,
-            .authority = authority,
-            .imported_at = @as(f64, @floatFromInt(std.time.timestamp())),
-        }, .{});
-        defer self.allocator.free(params_str);
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-        const script =
-            \\?[provenance_id, source, imported_at, authority] <-
-            \\    [[$provenance_id, $source, $imported_at, $authority]]
-            \\:put provenance_registry { provenance_id => source, imported_at, authority }
+        const sql =
+            \\INSERT OR REPLACE INTO provenance_registry
+            \\    (provenance_id, source, imported_at, authority)
+            \\VALUES (?1, ?2, ?3, ?4)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, provenance_id);
+        _ = c.sqlite3_bind_text(stmt, 2, source.ptr, @intCast(source.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 3, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_text(stmt, 4, authority.ptr, @intCast(authority.len), SQLITE_STATIC);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
-    // Approval workflow methods
+    // Approval workflow
     // ------------------------------------------------------------------
 
-    /// Insert an approval workflow record for a node.
     pub fn insertApproval(self: *Self, node_id: i64, confidence_before: i32) !void {
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"node": {d}, "status": "pending", "confidence_before": {d}, "confidence_after": 0}}
-        , .{ node_id, confidence_before }, 0);
-        defer self.allocator.free(params);
-        const script =
-            \\?[node, status, reviewed_by, reviewed_at, confidence_before, confidence_after] <-
-            \\    [[$node, $status, null, null, $confidence_before, $confidence_after]]
-            \\:put approval_workflow { node => status, reviewed_by, reviewed_at, confidence_before, confidence_after }
+        const sql =
+            \\INSERT OR REPLACE INTO approval_workflow
+            \\    (node_id, status, confidence_before, confidence_after)
+            \\VALUES (?1, 'pending', ?2, 0)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, confidence_before);
+        _ = try step(stmt);
     }
 
-    /// Update approval status after review.
     pub fn updateApproval(self: *Self, node_id: i64, status: []const u8, reviewed_by: []const u8, confidence_after: i32) !void {
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .node = node_id,
-            .status = status,
-            .reviewed_by = reviewed_by,
-            .reviewed_at = @as(f64, @floatFromInt(std.time.timestamp())),
-            .confidence_after = confidence_after,
-        }, .{});
-        defer self.allocator.free(params_str);
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-        const script =
-            \\?[node, status, reviewed_by, reviewed_at, confidence_before, confidence_after] <-
-            \\    [[$node, $status, $reviewed_by, $reviewed_at, 0, $confidence_after]]
-            \\:put approval_workflow { node => status, reviewed_by, reviewed_at, confidence_before, confidence_after }
+        const sql =
+            \\INSERT OR REPLACE INTO approval_workflow
+            \\    (node_id, status, reviewed_by, reviewed_at, confidence_before, confidence_after)
+            \\VALUES (?1, ?2, ?3, ?4, 0, ?5)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        _ = c.sqlite3_bind_text(stmt, 2, status.ptr, @intCast(status.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 3, reviewed_by.ptr, @intCast(reviewed_by.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_int64(stmt, 5, confidence_after);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
-    // Contradiction methods
+    // Contradictions
     // ------------------------------------------------------------------
 
-    /// Insert a contradiction record.
     pub fn insertContradiction(self: *Self, node_a: i64, node_b: i64, predicate: []const u8, value_a: []const u8, value_b: []const u8) !void {
-        const params_str = try std.json.Stringify.valueAlloc(self.allocator, .{
-            .node_a = node_a,
-            .node_b = node_b,
-            .predicate = predicate,
-            .value_a = value_a,
-            .value_b = value_b,
-            .detected_at = @as(f64, @floatFromInt(std.time.timestamp())),
-        }, .{});
-        defer self.allocator.free(params_str);
-        const params = try self.allocator.dupeZ(u8, params_str);
-        defer self.allocator.free(params);
-        const script =
-            \\?[node_a, node_b, predicate, value_a, value_b, detected_at] <-
-            \\    [[$node_a, $node_b, $predicate, $value_a, $value_b, $detected_at]]
-            \\:put contradictions { node_a, node_b => predicate, value_a, value_b, detected_at }
+        const sql =
+            \\INSERT OR REPLACE INTO contradictions
+            \\    (node_a, node_b, predicate, value_a, value_b, detected_at)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ;
-        try self.db.execWithParams(script, params);
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_a);
+        _ = c.sqlite3_bind_int64(stmt, 2, node_b);
+        _ = c.sqlite3_bind_text(stmt, 3, predicate.ptr, @intCast(predicate.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 4, value_a.ptr, @intCast(value_a.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 5, value_b.ptr, @intCast(value_b.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 6, @floatFromInt(std.time.timestamp()));
+        _ = try step(stmt);
     }
 };
 
 // ---------------------------------------------------------------------------
-// §3.3 HydrationPipeline — Cozo KNN → session Cypher
+// §3.3 HydrationPipeline — in-Zig KNN → persist neighbor edges
 // ---------------------------------------------------------------------------
 
 /// Implements the 3-step hydration pipeline:
 ///   1. Accept embedding vector (from edge LLM via HTTP)
-///   2. KNN: fetch all embeddings from CozoDB, compute cosine in Zig, take top-K
-///   3. Persist NEIGHBOR_OF edges into CozoDB for graph traversal
-///
-/// No external vector index required at edge scale.
+///   2. KNN: fetch all embeddings from SQLite, compute cosine in Zig, take top-K
+///   3. Persist NEIGHBOR_OF edges into SQLite for graph traversal
 pub const HydrationPipeline = struct {
     const Self = @This();
 
@@ -726,7 +605,7 @@ pub const HydrationPipeline = struct {
 
     /// Cosine distance between two equal-length float slices.
     /// Returns value in [0.0, 2.0] (0 = identical directions).
-    fn cosineDistance(a: []const f32, b: []const f32) f32 {
+    pub fn cosineDistance(a: []const f32, b: []const f32) f32 {
         if (a.len == 0 or b.len == 0 or a.len != b.len) return 2.0;
         var dot: f32 = 0;
         var norm_a: f32 = 0;
@@ -741,72 +620,62 @@ pub const HydrationPipeline = struct {
         return 1.0 - (dot / denom);
     }
 
-    /// Step 2: KNN search — fetch embeddings from CozoDB, compute distances in Zig.
-    /// Returns top-K hits sorted by cosine distance (ascending).
-    pub fn knnSearch(
-        self: *Self,
-        query_vec: []const f32,
-        k: usize,
-    ) ![]KnnHit {
-        // Fetch only nodes that have a non-empty embedding to avoid distance=2.0 sentinel hits.
-        var result = try self.library.db.queryRead(
-            "?[id, lod4, embedding] := *context_nodes{id, lod4, embedding}, length(embedding) > 0",
-        );
-        defer result.deinit();
+    /// KNN search — fetch all non-empty embeddings from SQLite, compute
+    /// cosine distances in Zig, return top-K hits sorted by distance.
+    pub fn knnSearch(self: *Self, query_vec: []const f32, k: usize) ![]KnnHit {
+        const sql = "SELECT id, lod4, embedding FROM context_nodes WHERE length(embedding) > 0";
+        const stmt = try self.library.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
 
-        const rows = CozoDB.getRows(&result);
-        var hits = try std.ArrayList(KnnHit).initCapacity(self.allocator, rows.len);
-        defer hits.deinit();
+        var hits: std.ArrayListUnmanaged(KnnHit) = .{};
+        defer hits.deinit(self.allocator);
 
-        for (rows) |row| {
-            if (row != .array or row.array.items.len < 3) continue;
-            const cols = row.array.items;
+        while (try Library.step(stmt)) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
 
-            const node_id: i64 = if (cols[0] == .integer) cols[0].integer else 0;
-            const name = if (cols[1] == .string) cols[1].string else "";
+            const name_ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 1);
+            const name_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+            const name = if (name_ptr != null) name_ptr[0..name_len] else "";
 
-            // Parse embedding list
-            var emb = std.ArrayList(f32).init(self.allocator);
-            defer emb.deinit();
-            if (cols[2] == .array) {
-                for (cols[2].array.items) |v| {
-                    const fv: f32 = switch (v) {
-                        .float => @floatCast(v.float),
-                        .integer => @floatFromInt(v.integer),
-                        else => 0,
-                    };
-                    try emb.append(fv);
+            const blob_ptr = c.sqlite3_column_blob(stmt, 2);
+            const blob_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 2));
+            var emb_buf: std.ArrayListUnmanaged(f32) = .{};
+            defer emb_buf.deinit(self.allocator);
+            if (blob_ptr != null and blob_len >= 4) {
+                const raw = @as([*]const u8, @ptrCast(blob_ptr))[0..blob_len];
+                const n = blob_len / @sizeOf(f32);
+                try emb_buf.resize(self.allocator, n);
+                for (0..n) |i| {
+                    var v: f32 = undefined;
+                    @memcpy(std.mem.asBytes(&v), raw[i * 4 .. i * 4 + 4]);
+                    emb_buf.items[i] = v;
                 }
             }
+            const emb: []const f32 = emb_buf.items;
 
-            const dist = cosineDistance(query_vec, emb.items);
-            try hits.append(.{
+            try hits.append(self.allocator, .{
                 .id = node_id,
                 .name = name,
-                .distance = dist,
+                .distance = cosineDistance(query_vec, emb),
             });
         }
 
-        // Sort ascending by distance
         std.mem.sort(KnnHit, hits.items, {}, struct {
-            fn lessThan(_: void, a: KnnHit, b: KnnHit) bool {
+            fn lt(_: void, a: KnnHit, b: KnnHit) bool {
                 return a.distance < b.distance;
             }
-        }.lessThan);
+        }.lt);
 
-        // Return top-K
         const actual_k = @min(k, hits.items.len);
         return try self.allocator.dupe(KnnHit, hits.items[0..actual_k]);
     }
 
-    /// Step 3: Persist NEIGHBOR_OF edges from KNN hits into CozoDB.
-    /// The center node (knn_hits[0]) gets edges to all other hits.
+    /// Persist NEIGHBOR_OF edges from KNN hits.
     pub fn persistEdges(self: *Self, knn_hits: []const KnnHit) !void {
         try self.library.persistNeighborEdges(knn_hits);
     }
 
-    /// Full hydration: KNN → persist neighbor edges into CozoDB.
-    /// Returns number of nodes found.
+    /// Full hydration: KNN → persist neighbor edges.  Returns number of nodes found.
     pub fn hydrate(self: *Self, query_vec: []const f32, k: usize) !usize {
         const knn_hits = try self.knnSearch(query_vec, k);
         defer self.allocator.free(knn_hits);
@@ -819,11 +688,11 @@ pub const HydrationPipeline = struct {
 // §3.4 ContextPacker — LOD selection algorithm
 // ---------------------------------------------------------------------------
 
-/// Assigns LOD levels to nodes based on graph distance from semantic center.
-/// distance 0 → lod0_full (complete text)
-/// distance 1 → lod1_summary (800 chars)
-/// distance 2 → lod2_brief (240 chars)
-/// distance 3+ → lod4_name (name only)
+/// Assigns LOD levels to nodes based on BFS hop distance from semantic center.
+/// distance 0 → lod0 (full text)
+/// distance 1 → lod1 (summary, falls back to lod0)
+/// distance 2 → lod2 (brief, falls back to lod4/name)
+/// distance 3+ → lod4 (name only)
 pub const ContextPacker = struct {
     const Self = @This();
 
@@ -833,11 +702,7 @@ pub const ContextPacker = struct {
     chars_per_token: usize = 4,
 
     pub fn init(allocator: std.mem.Allocator, library: *Library, max_tokens: usize) Self {
-        return .{
-            .allocator = allocator,
-            .library = library,
-            .max_tokens = max_tokens,
-        };
+        return .{ .allocator = allocator, .library = library, .max_tokens = max_tokens };
     }
 
     /// Select which LOD text to use for a node at a given graph distance.
@@ -851,44 +716,30 @@ pub const ContextPacker = struct {
         };
     }
 
-    /// Get nodes ordered by BFS distance from semantic center.
-    /// Uses CozoDB's Datalog recursive rule (schema.QUERY_NEIGHBOR_BFS).
-    /// The returned slice is owned by the caller and must be freed with `allocator.free`.
+    /// BFS from `semantic_center_id` using the neighbor_of table.
+    /// Returns owned slice of GraphNode (caller must free with allocator.free).
     pub fn getNodesByDistance(self: *Self, semantic_center_id: i64) ![]GraphNode {
-        // Build params JSON: {"center": <i64>}
-        const params = try std.fmt.allocPrintSentinel(self.allocator,
-            \\{{"center": {d}}}
-        , .{semantic_center_id}, 0);
-        defer self.allocator.free(params);
+        const stmt = try self.library.prepare(schema.QUERY_NEIGHBOR_BFS);
+        defer _ = c.sqlite3_finalize(stmt);
 
-        const query_z: [:0]const u8 = schema.QUERY_NEIGHBOR_BFS[0..schema.QUERY_NEIGHBOR_BFS.len :0];
-        var result = try self.library.db.queryWithParams(query_z, params);
-        defer result.deinit();
+        _ = c.sqlite3_bind_int64(stmt, 1, semantic_center_id);
 
-        const rows = CozoDB.getRows(&result);
-        var nodes = try std.ArrayList(GraphNode).initCapacity(self.allocator, rows.len);
-        errdefer nodes.deinit();
+        var nodes: std.ArrayListUnmanaged(GraphNode) = .{};
+        errdefer nodes.deinit(self.allocator);
 
-        for (rows) |row| {
-            if (row != .array or row.array.items.len < 3) continue;
-            const cols = row.array.items;
-
-            const node_id: i64 = if (cols[0] == .integer) cols[0].integer else 0;
-            const dist: u32 = if (cols[1] == .integer) @intCast(cols[1].integer) else 0;
-
-            try nodes.append(.{
-                .id = node_id,
-                .graph_distance = dist,
-            });
+        while (try Library.step(stmt)) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const dist: u32 = @intCast(c.sqlite3_column_int(stmt, 1));
+            try nodes.append(self.allocator, .{ .id = node_id, .graph_distance = dist });
         }
 
-        // Already sorted by dist from the CozoScript `:order dist` clause.
-        return nodes.toOwnedSlice();
+        return nodes.toOwnedSlice(self.allocator);
     }
 
     /// Pack context window text for LLM injection, respecting token budget.
     pub fn pack(self: *Self, semantic_center_id: i64) ![]const u8 {
-        var context_buffer = std.ArrayList(u8).init(self.allocator);
+        var context_buffer: std.ArrayListUnmanaged(u8) = .{};
+        defer context_buffer.deinit(self.allocator);
         var token_budget = self.max_tokens;
 
         const graph_nodes = try self.getNodesByDistance(semantic_center_id);
@@ -906,21 +757,20 @@ pub const ContextPacker = struct {
             const estimated_tokens = selected_text.len / self.chars_per_token;
 
             if (estimated_tokens <= token_budget) {
-                try context_buffer.appendSlice(selected_text);
-                try context_buffer.appendSlice("\n---\n");
+                try context_buffer.appendSlice(self.allocator, selected_text);
+                try context_buffer.appendSlice(self.allocator, "\n---\n");
                 token_budget -= estimated_tokens;
             } else {
-                // Downgrade to LOD4 if selected LOD exceeds budget
                 const name_tokens = node.lod[4].len / self.chars_per_token;
                 if (name_tokens <= token_budget) {
-                    try context_buffer.appendSlice(node.lod[4]);
-                    try context_buffer.appendSlice("\n");
+                    try context_buffer.appendSlice(self.allocator, node.lod[4]);
+                    try context_buffer.appendSlice(self.allocator, "\n");
                     token_budget -= name_tokens;
                 }
             }
         }
 
-        return context_buffer.toOwnedSlice();
+        return context_buffer.toOwnedSlice(self.allocator);
     }
 };
 
@@ -930,8 +780,7 @@ pub const ContextPacker = struct {
 
 const testing = std.testing;
 
-/// Open an in-memory Library and initialise the schema.
-/// Caller owns the returned pointer and must call lib.deinit().
+/// Open an in-memory Library and initialise its schema.
 fn testOpenLib(allocator: std.mem.Allocator) !*Library {
     const lib = try Library.init(allocator, .mem, "");
     try lib.initSchema();
@@ -975,7 +824,6 @@ test "ContextNode getLod/setLod" {
     try testing.expectEqualStrings("Full.", node.getLod(0));
     try testing.expectEqualStrings("test", node.getLod(4));
     try testing.expectEqualStrings("", node.getLod(5));
-    // Out of bounds (u3 max is 7) returns empty string
     try testing.expectEqualStrings("", node.getLod(7));
 }
 
@@ -987,33 +835,38 @@ test "EdgeType cozoRelation and label" {
 }
 
 test "HydrationPipeline: cosine distance" {
-    // Test internal cosine distance via the public KNN path is too heavy for unit test.
-    // Validate the math directly.
     const a = [_]f32{ 1, 0, 0 };
     const b = [_]f32{ 0, 1, 0 };
-    const c = [_]f32{ 1, 0, 0 };
-
-    // Orthogonal vectors: cosine distance = 1.0
+    const c2 = [_]f32{ 1, 0, 0 };
     const dist_ab = HydrationPipeline.cosineDistance(&a, &b);
     try testing.expect(@abs(dist_ab - 1.0) < 0.001);
-
-    // Identical vectors: cosine distance = 0.0
-    const dist_ac = HydrationPipeline.cosineDistance(&a, &c);
+    const dist_ac = HydrationPipeline.cosineDistance(&a, &c2);
     try testing.expect(@abs(dist_ac - 0.0) < 0.001);
 }
 
 test "HydrationPipeline: empty vectors return max distance" {
     const a = [_]f32{};
     const b = [_]f32{};
-    const dist = HydrationPipeline.cosineDistance(&a, &b);
-    try testing.expectEqual(@as(f32, 2.0), dist);
+    try testing.expectEqual(@as(f32, 2.0), HydrationPipeline.cosineDistance(&a, &b));
 }
 
 test "HydrationPipeline: mismatched lengths return max distance" {
     const a = [_]f32{ 1, 2 };
     const b = [_]f32{1};
+    try testing.expectEqual(@as(f32, 2.0), HydrationPipeline.cosineDistance(&a, &b));
+}
+
+test "HydrationPipeline: cosine distance — anti-parallel vectors" {
+    const a = [_]f32{ 1, 0 };
+    const b = [_]f32{ -1, 0 };
     const dist = HydrationPipeline.cosineDistance(&a, &b);
-    try testing.expectEqual(@as(f32, 2.0), dist);
+    try testing.expect(@abs(dist - 2.0) < 0.001);
+}
+
+test "HydrationPipeline: cosine distance — equal unit vectors" {
+    const a = [_]f32{ 0.6, 0.8 };
+    const b = [_]f32{ 0.6, 0.8 };
+    try testing.expect(@abs(HydrationPipeline.cosineDistance(&a, &b) - 0.0) < 0.001);
 }
 
 test "ContextPacker: LOD selection" {
@@ -1049,10 +902,7 @@ test "ContextPacker: empty LOD fallbacks" {
     var node = try ContextNode.init(1, "minimal", "Full text only.", testing.allocator);
     defer node.free(testing.allocator);
 
-    // Distance 1: fallback to full text when summary is empty
     try testing.expectEqualStrings("Full text only.", packer.selectLod(node, 1));
-
-    // Distance 2: fallback to name when brief is empty
     try testing.expectEqualStrings("minimal", packer.selectLod(node, 2));
 }
 
@@ -1089,8 +939,7 @@ test "Library: insert target and depends_on edge" {
     const lib = try testOpenLib(allocator);
     defer lib.deinit();
 
-    // Build trivial bitsets via the interner helpers.
-    var interner = @import("../common/interner.zig").StringInterner.init(allocator);
+    var interner = @import("interner").StringInterner.init(allocator);
     defer interner.deinit();
     var dep_empty = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, 4);
     defer dep_empty.deinit(allocator);
@@ -1146,7 +995,6 @@ test "Library: upsert overwrites existing node" {
     defer node.free(lib.allocator);
     try lib.insertNode(node);
 
-    // Overwrite with updated content at the same id.
     var updated = try ContextNode.init(0x42, "updated", "Second content.", lib.allocator);
     defer updated.free(lib.allocator);
     updated.lod[1] = "Short summary.";
@@ -1159,13 +1007,12 @@ test "Library: upsert overwrites existing node" {
 }
 
 test "Library: initSchema is idempotent" {
-    // Calling initSchema twice must not error.
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
     defer lib.deinit();
-    try lib.initSchema(); // second call — should silently succeed
+    try lib.initSchema();
     try testing.expect(lib.initialized);
 }
 
@@ -1251,13 +1098,10 @@ test "Library: persistNeighborEdges with empty slice is a no-op" {
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
     defer lib.deinit();
-
-    // Must not error when passed an empty slice.
     try lib.persistNeighborEdges(&[_]KnnHit{});
 }
 
 test "Library: persistNeighborEdges single-element slice is also a no-op" {
-    // With only one hit (the center itself), there are no edges to write.
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
@@ -1296,21 +1140,6 @@ test "Library: all EdgeType variants can be inserted" {
     }
 }
 
-test "HydrationPipeline: cosine distance — anti-parallel vectors" {
-    const a = [_]f32{ 1, 0 };
-    const b = [_]f32{ -1, 0 };
-    // cosine distance = 1 - (-1) = 2.0
-    const dist = HydrationPipeline.cosineDistance(&a, &b);
-    try testing.expect(@abs(dist - 2.0) < 0.001);
-}
-
-test "HydrationPipeline: cosine distance — equal unit vectors" {
-    const a = [_]f32{ 0.6, 0.8 }; // already a unit vector
-    const b = [_]f32{ 0.6, 0.8 };
-    const dist = HydrationPipeline.cosineDistance(&a, &b);
-    try testing.expect(@abs(dist - 0.0) < 0.001);
-}
-
 test "ContextPacker: selectLod distance 3 always returns name" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
@@ -1323,7 +1152,73 @@ test "ContextPacker: selectLod distance 3 always returns name" {
     defer node.free(testing.allocator);
     node.lod[3] = "Tiny";
 
-    // Distances ≥ 3 must always resolve to lod[4] (name).
     try testing.expectEqualStrings("n", packer.selectLod(node, 3));
     try testing.expectEqualStrings("n", packer.selectLod(node, 50));
+}
+
+test "Library: KNN search returns top-K hits sorted by distance" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    // Insert 3 nodes with float32 embeddings stored as BLOB
+    const emb_a = [_]f32{ 1, 0, 0 };
+    const emb_b = [_]f32{ 0.9, 0.1, 0 };
+    const emb_c = [_]f32{ 0, 1, 0 };
+
+    inline for (.{
+        .{ .id = 0xA1, .name = "a", .text = "Node A", .emb = &emb_a },
+        .{ .id = 0xA2, .name = "b", .text = "Node B", .emb = &emb_b },
+        .{ .id = 0xA3, .name = "c", .text = "Node C", .emb = &emb_c },
+    }) |entry| {
+        var node = try ContextNode.init(entry.id, entry.name, entry.text, lib.allocator);
+        defer node.free(lib.allocator);
+        node.embedding = entry.emb;
+        try lib.insertNode(node);
+    }
+
+    var pipeline = lib.createHydrationPipeline();
+    const query = [_]f32{ 1, 0, 0 };
+    const hits = try pipeline.knnSearch(&query, 3);
+    defer allocator.free(hits);
+
+    try testing.expectEqual(@as(usize, 3), hits.len);
+    // Node A is closest to [1,0,0], C is furthest
+    try testing.expectEqual(@as(i64, 0xA1), hits[0].id);
+    try testing.expect(hits[0].distance < hits[1].distance);
+    try testing.expect(hits[1].distance < hits[2].distance);
+}
+
+test "Library: BFS distance via ContextPacker.getNodesByDistance" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    // Build a small graph: center → hop1 → hop2
+    var center = try ContextNode.init(0x100, "center", "Center.", lib.allocator);
+    defer center.free(lib.allocator);
+    try lib.insertNode(center);
+    var hop1 = try ContextNode.init(0x101, "hop1", "Hop1.", lib.allocator);
+    defer hop1.free(lib.allocator);
+    try lib.insertNode(hop1);
+    var hop2 = try ContextNode.init(0x102, "hop2", "Hop2.", lib.allocator);
+    defer hop2.free(lib.allocator);
+    try lib.insertNode(hop2);
+
+    try lib.insertNeighborOf(0x100, 0x101, 0.1, .neighbor_of);
+    try lib.insertNeighborOf(0x101, 0x102, 0.2, .neighbor_of);
+
+    var packer = lib.createContextPacker(10_000);
+    const nodes = try packer.getNodesByDistance(0x100);
+    defer allocator.free(nodes);
+
+    // center (dist 0), hop1 (dist 1), hop2 (dist 2)
+    try testing.expectEqual(@as(usize, 3), nodes.len);
+    try testing.expectEqual(@as(u32, 0), nodes[0].graph_distance);
+    try testing.expectEqual(@as(u32, 1), nodes[1].graph_distance);
+    try testing.expectEqual(@as(u32, 2), nodes[2].graph_distance);
 }

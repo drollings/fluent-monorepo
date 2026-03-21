@@ -36,37 +36,29 @@ pub const LlmClient = llm.LlmClient;
 // These validators operate on LLM output text and use string utilities
 // that are part of this module — keeping them here avoids circular deps.
 
+/// Strip a matched open/close tag pair from `text`.
+/// - If the close tag is found: returns the content after it, trimming leading whitespace.
+/// - If the close tag is absent (truncated): returns the content before the open tag.
+/// - If the open tag is absent: returns `text` unchanged.
+fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) []const u8 {
+    const tag_start = std.mem.indexOf(u8, text, open) orelse return text;
+    if (std.mem.indexOfPos(u8, text, tag_start + open.len, close)) |close_start| {
+        const after = close_start + close.len;
+        if (after >= text.len) return "";
+        var s = after;
+        while (s < text.len and (text[s] == ' ' or text[s] == '\n')) s += 1;
+        return text[s..];
+    }
+    return std.mem.trim(u8, text[0..tag_start], " \t\r\n");
+}
+
 /// Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.
 /// For unclosed tags, strips everything from the open tag to end-of-string.
 pub fn stripThinkBlock(text: []const u8) []const u8 {
-    if (std.mem.indexOf(u8, text, "<think>")) |think_start| {
-        const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "</think>");
-        if (think_end) |te| {
-            const after_think = te + 8;
-            if (after_think >= text.len) return "";
-            var start = after_think;
-            while (start < text.len and (text[start] == ' ' or text[start] == '\n')) {
-                start += 1;
-            }
-            return text[start..];
-        } else {
-            return std.mem.trim(u8, text[0..think_start], " \t\r\n");
-        }
-    }
-    if (std.mem.indexOf(u8, text, "[THINK]")) |think_start| {
-        const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "[/THINK]");
-        if (think_end) |te| {
-            const after_think = te + 8;
-            if (after_think >= text.len) return "";
-            var start = after_think;
-            while (start < text.len and (text[start] == ' ' or text[start] == '\n')) {
-                start += 1;
-            }
-            return text[start..];
-        } else {
-            return std.mem.trim(u8, text[0..think_start], " \t\r\n");
-        }
-    }
+    if (std.mem.indexOf(u8, text, "<think>") != null)
+        return stripTagBlock(text, "<think>", "</think>");
+    if (std.mem.indexOf(u8, text, "[THINK]") != null)
+        return stripTagBlock(text, "[THINK]", "[/THINK]");
     return text;
 }
 
@@ -98,12 +90,20 @@ pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8
     return allocator.dupe(u8, trimmed);
 }
 
+/// Patterns that, when found anywhere in an LLM response, indicate it is a
+/// preamble / meta-commentary rather than a usable doc comment.
+/// Adding a new pattern is a single-line change here; no if-chain to edit.
+const llm_preamble_patterns = [_][]const u8{
+    "here's a",    "here is a",    "i'll ",       "to summarize",
+    "okay,",       "ok,",          "we need ",    "let's think",
+    "let's craft", "let's count",  "let me think", "i need to ",
+};
+
 /// Return true when an LLM response is malformed or unusable as a comment.
 /// Call this after stripThinkBlock / stripPreamble.  No allocations.
 pub fn isMalformedResponse(text: []const u8) bool {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return true;
-
     if (llmHasDanglingEnd(trimmed)) return true;
 
     const rtrimmed = std.mem.trimRight(u8, trimmed, " \t");
@@ -112,19 +112,9 @@ pub fn isMalformedResponse(text: []const u8) bool {
     if (llmIsGenericSelfRef(trimmed)) return true;
     if (llmIsOverlyGeneric(trimmed)) return true;
 
-    if (str_mod.containsIgnoreCase(trimmed, "here's a")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "here is a")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "i'll ")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "to summarize")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "okay,")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "ok,")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "we need ")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "let's think")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "let's craft")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "let's count")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "let me think")) return true;
-    if (str_mod.containsIgnoreCase(trimmed, "i need to ")) return true;
-
+    inline for (llm_preamble_patterns) |pattern| {
+        if (str_mod.containsIgnoreCase(trimmed, pattern)) return true;
+    }
     return false;
 }
 

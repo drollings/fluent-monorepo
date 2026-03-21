@@ -1,232 +1,199 @@
-/// schema.zig — CozoDB Schema (CozoScript DDL)
+/// schema.zig — Coral Context SQLite Schema (DDL + Queries)
 ///
-/// Defines the unified schema for Coral Context using CozoDB as the single
-/// backend, replacing the previous dual-engine (pgvector + LadybugDB/Cypher).
+/// Defines all CREATE TABLE / CREATE INDEX statements and canned SQL queries
+/// for the Coral Context database, backed by SQLite.
 ///
-/// Architecture change:
-///   BEFORE: PostgreSQL (payloads + embeddings) + LadybugDB Cypher (edges)
-///   AFTER:  CozoDB (payloads + embeddings + edges + time-travel)
-///
-/// CozoDB data model:
-///   - Stored relations (:create) hold persistent data
-///   - Relations can have compound keys and arbitrary value columns
-///   - Graph traversal is expressed in Datalog (recursive rules)
-///   - Time travel is built-in via the `@` operator (no timescaledb needed)
-///   - Embeddings stored as List<Float> columns; KNN computed in Zig
-///
-/// §2.2 — ContextNode Relation
-///   Stores the LOD text pyramid and embedding for each semantic entity.
-///   i64 as primary key — simple and efficient.
-///
-/// §2.3 — Target Relation
-///   DAG target definitions with bitmask-encoded trait sets.
-///   depends_mask / provides_mask are [Int] lists of bit positions.
-///
-/// §2.4 — Edge Relations
-///   DEPENDS_ON, PROVIDES_CAPABILITY, NEIGHBOR_OF stored as relations.
-///   Graph traversal via Datalog recursive rules (replaces Cypher MATCH).
-///
-/// §2.5 — WASM Tool Cache
-///   Stores compiled .wasm binaries for verified LLM-generated tools.
-///
-/// §2.6 — Time Travel
-///   CozoDB's built-in versioning is used for temporal queries.
-///   Query state at time T: ?[...] := *relation @ T [...]
+/// §2.2 — context_nodes: LOD text pyramid + float embedding BLOB
+/// §2.3 — targets: DAG target definitions with bitset dependency words
+/// §2.4 — edge tables: depends_on, provides_capability, neighbor_of
+/// §2.5 — wasm_tools: compiled WASM binaries with schema hash
+/// §2.7 — provenance_registry: source + authority for imported nodes
+/// §2.8 — approval_workflow: human-in-the-loop review state
+/// §2.9 — contradictions: conflicting statements about a subject
+/// §2.10 — entity_types: rdf:type assertions from YAGO ingestion
+
 pub const LOD_COUNT: usize = 6;
 
 // ---------------------------------------------------------------------------
-// §2.2 ContextNode Relation
+// §2.2 ContextNode Table
 // ---------------------------------------------------------------------------
 
-/// Core semantic entity. i64 id column.
-/// LOD levels: 0=max detail, 1=summary, 2=brief, 3=tiny, 4=name, 5=minimal/alias
+/// Core semantic entity.  embedding is a raw BLOB of little-endian IEEE 754
+/// float32 values (4 bytes each).  valid_to is nullable.
 pub const DDL_CONTEXT_NODES: []const u8 =
-    \\:create context_nodes {
-    \\    id: Int
-    \\    =>
-    \\    lod0: String default "",
-    \\    lod1: String default "",
-    \\    lod2: String default "",
-    \\    lod3: String default "",
-    \\    lod4: String default "",
-    \\    lod5: String default "",
-    \\    embedding: [Float] default [],
-    \\    valid_from: Float default 0.0,
-    \\    valid_to: Float? default null,
-    \\    confidence: Int default 0,
-    \\    provenance_id: Int default 0
-    \\}
+    \\CREATE TABLE IF NOT EXISTS context_nodes (
+    \\    id INTEGER PRIMARY KEY,
+    \\    lod0 TEXT NOT NULL DEFAULT '',
+    \\    lod1 TEXT NOT NULL DEFAULT '',
+    \\    lod2 TEXT NOT NULL DEFAULT '',
+    \\    lod3 TEXT NOT NULL DEFAULT '',
+    \\    lod4 TEXT NOT NULL DEFAULT '',
+    \\    lod5 TEXT NOT NULL DEFAULT '',
+    \\    embedding BLOB NOT NULL DEFAULT x'',
+    \\    valid_from REAL NOT NULL DEFAULT 0.0,
+    \\    valid_to REAL,
+    \\    confidence INTEGER NOT NULL DEFAULT 0,
+    \\    provenance_id INTEGER NOT NULL DEFAULT 0
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
-// §2.3 Target Relation
+// §2.3 Target Table
 // ---------------------------------------------------------------------------
 
-/// DAG execution target.
-/// depends_words / provides_words store the raw bitset word arrays as [Int],
-/// allowing capability sets larger than 63 bits.  total_bits records the
-/// logical bit-length so round-trips preserve trailing zero words.
+/// DAG execution target.  depends_words / provides_words are BLOBs encoding
+/// the raw usize word array for a DynamicBitSetUnmanaged (native byte order).
 pub const DDL_TARGETS: []const u8 =
-    \\:create targets {
-    \\    id: Int
-    \\    =>
-    \\    name: String,
-    \\    depends_words: [Int] default [],
-    \\    provides_words: [Int] default [],
-    \\    total_bits: Int default 0,
-    \\    is_essential: Bool default false
-    \\}
+    \\CREATE TABLE IF NOT EXISTS targets (
+    \\    id INTEGER PRIMARY KEY,
+    \\    name TEXT NOT NULL,
+    \\    depends_words BLOB NOT NULL DEFAULT x'',
+    \\    provides_words BLOB NOT NULL DEFAULT x'',
+    \\    total_bits INTEGER NOT NULL DEFAULT 0,
+    \\    is_essential INTEGER NOT NULL DEFAULT 0
+    \\)
 ;
 
-/// Name index for O(1) lookup by target name.
+/// Index for O(1) lookup by target name.
 pub const DDL_TARGETS_NAME_INDEX: []const u8 =
-    \\::index create targets:by_name { name }
+    \\CREATE INDEX IF NOT EXISTS targets_by_name ON targets(name)
 ;
 
 // ---------------------------------------------------------------------------
-// §2.4 Edge Relations
+// §2.4 Edge Tables
 // ---------------------------------------------------------------------------
 
-/// DEPENDS_ON edge: from → to.
 pub const DDL_DEPENDS_ON: []const u8 =
-    \\:create depends_on {
-    \\    from: Int,
-    \\    to: Int
-    \\}
+    \\CREATE TABLE IF NOT EXISTS depends_on (
+    \\    from_id INTEGER NOT NULL,
+    \\    to_id INTEGER NOT NULL,
+    \\    PRIMARY KEY (from_id, to_id)
+    \\)
 ;
 
-/// PROVIDES_CAPABILITY edge.
 pub const DDL_PROVIDES_CAPABILITY: []const u8 =
-    \\:create provides_capability {
-    \\    from: Int,
-    \\    to: Int
-    \\}
+    \\CREATE TABLE IF NOT EXISTS provides_capability (
+    \\    from_id INTEGER NOT NULL,
+    \\    to_id INTEGER NOT NULL,
+    \\    PRIMARY KEY (from_id, to_id)
+    \\)
 ;
 
-/// NEIGHBOR_OF edge (semantic similarity / KNN-derived).
-/// distance: cosine distance from vector search (lower = more similar).
-/// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence"
+/// NEIGHBOR_OF: semantic similarity / KNN-derived edge.
+/// distance: cosine distance [0.0, 2.0].
+/// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence" | "rdf_property"
 pub const DDL_NEIGHBOR_OF: []const u8 =
-    \\:create neighbor_of {
-    \\    from: Int,
-    \\    to: Int
-    \\    =>
-    \\    distance: Float default 0.0,
-    \\    edge_type: String default "neighbor_of"
-    \\}
+    \\CREATE TABLE IF NOT EXISTS neighbor_of (
+    \\    from_id INTEGER NOT NULL,
+    \\    to_id INTEGER NOT NULL,
+    \\    distance REAL NOT NULL DEFAULT 0.0,
+    \\    edge_type TEXT NOT NULL DEFAULT 'neighbor_of',
+    \\    PRIMARY KEY (from_id, to_id)
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
 // §2.5 WASM Tool Cache
 // ---------------------------------------------------------------------------
 
-/// Stores compiled .wasm binaries for LLM-generated tools that passed testing.
-/// wasm_bytes stored as String (base64-encoded) since CozoDB has no BYTEA.
 pub const DDL_WASM_TOOLS: []const u8 =
-    \\:create wasm_tools {
-    \\    id: Int
-    \\    =>
-    \\    target_id: Int default 0,
-    \\    wasm_b64: String default "",
-    \\    schema_hash: String default "",
-    \\    test_passed: Bool default false,
-    \\    created_at: Float default 0.0
-    \\}
+    \\CREATE TABLE IF NOT EXISTS wasm_tools (
+    \\    id INTEGER PRIMARY KEY,
+    \\    target_id INTEGER NOT NULL DEFAULT 0,
+    \\    wasm_b64 TEXT NOT NULL DEFAULT '',
+    \\    schema_hash TEXT NOT NULL DEFAULT '',
+    \\    test_passed INTEGER NOT NULL DEFAULT 0,
+    \\    created_at REAL NOT NULL DEFAULT 0.0
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
 // §2.7 Provenance Registry
 // ---------------------------------------------------------------------------
 
-/// Tracks the source of each node (YAGO, LLM, User, etc.)
 pub const DDL_PROVENANCE_REGISTRY: []const u8 =
-    \\:create provenance_registry {
-    \\    provenance_id: Int
-    \\    =>
-    \\    source: String default "",
-    \\    imported_at: Float default 0.0,
-    \\    authority: String default ""
-    \\}
+    \\CREATE TABLE IF NOT EXISTS provenance_registry (
+    \\    provenance_id INTEGER PRIMARY KEY,
+    \\    source TEXT NOT NULL DEFAULT '',
+    \\    imported_at REAL NOT NULL DEFAULT 0.0,
+    \\    authority TEXT NOT NULL DEFAULT ''
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
 // §2.8 Approval Workflow
 // ---------------------------------------------------------------------------
 
-/// Human-in-the-loop approval state for LLM-generated or low-confidence nodes.
 pub const DDL_APPROVAL_WORKFLOW: []const u8 =
-    \\:create approval_workflow {
-    \\    node: Int
-    \\    =>
-    \\    status: String default "pending",
-    \\    reviewed_by: String? default null,
-    \\    reviewed_at: Float? default null,
-    \\    confidence_before: Int default 0,
-    \\    confidence_after: Int default 0
-    \\}
-;
-
-// ---------------------------------------------------------------------------
-// §2.10 Entity Types
-// ---------------------------------------------------------------------------
-
-/// Stores rdf:type assertions: entity → type class.
-/// Used for YAGO ingestion to record class membership.
-pub const DDL_ENTITY_TYPES: []const u8 =
-    \\:create entity_types {
-    \\    entity: Int,
-    \\    type: Int
-    \\}
+    \\CREATE TABLE IF NOT EXISTS approval_workflow (
+    \\    node_id INTEGER PRIMARY KEY,
+    \\    status TEXT NOT NULL DEFAULT 'pending',
+    \\    reviewed_by TEXT,
+    \\    reviewed_at REAL,
+    \\    confidence_before INTEGER NOT NULL DEFAULT 0,
+    \\    confidence_after INTEGER NOT NULL DEFAULT 0
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
 // §2.9 Contradictions
 // ---------------------------------------------------------------------------
 
-/// Tracks conflicting statements about the same subject+predicate.
 pub const DDL_CONTRADICTIONS: []const u8 =
-    \\:create contradictions {
-    \\    node_a: Int,
-    \\    node_b: Int
-    \\    =>
-    \\    predicate: String default "",
-    \\    value_a: String default "",
-    \\    value_b: String default "",
-    \\    detected_at: Float default 0.0
-    \\}
+    \\CREATE TABLE IF NOT EXISTS contradictions (
+    \\    node_a INTEGER NOT NULL,
+    \\    node_b INTEGER NOT NULL,
+    \\    predicate TEXT NOT NULL DEFAULT '',
+    \\    value_a TEXT NOT NULL DEFAULT '',
+    \\    value_b TEXT NOT NULL DEFAULT '',
+    \\    detected_at REAL NOT NULL DEFAULT 0.0,
+    \\    PRIMARY KEY (node_a, node_b)
+    \\)
 ;
 
 // ---------------------------------------------------------------------------
-// §2.6 Datalog Graph Traversal Queries (replaces Cypher MATCH)
+// §2.10 Entity Types
 // ---------------------------------------------------------------------------
+
+pub const DDL_ENTITY_TYPES: []const u8 =
+    \\CREATE TABLE IF NOT EXISTS entity_types (
+    \\    entity_id INTEGER NOT NULL,
+    \\    type_id INTEGER NOT NULL,
+    \\    PRIMARY KEY (entity_id, type_id)
+    \\)
+;
+
+// ---------------------------------------------------------------------------
+// Canned SQL queries
+// ---------------------------------------------------------------------------
+
+/// BFS hop-distance from a semantic center node, capped at depth 10.
+/// Bind parameter 1: center node id (i64).
+/// Returns (id, dist, lod4), ordered by dist ascending.
+pub const QUERY_NEIGHBOR_BFS: []const u8 =
+    \\WITH RECURSIVE bfs(id, dist) AS (
+    \\    SELECT ?1, 0
+    \\    UNION
+    \\    SELECT n.to_id, b.dist + 1
+    \\    FROM bfs b JOIN neighbor_of n ON n.from_id = b.id
+    \\    WHERE b.dist < 10
+    \\)
+    \\SELECT b.id, b.dist, cn.lod4
+    \\FROM bfs b JOIN context_nodes cn ON cn.id = b.id
+    \\ORDER BY b.dist
+;
 
 /// Transitive DEPENDS_ON traversal from a root target.
-/// Usage: substitute $root, then run as a read query.
+/// Bind parameter 1: root target id (i64).
+/// Returns (id, name, depends_words, provides_words, total_bits).
 pub const QUERY_TRANSITIVE_DEPS: []const u8 =
-    \\# Find all transitive dependencies of a target
-    \\transitive[to] :=
-    \\    *depends_on{ from: $root, to }
-    \\transitive[to] :=
-    \\    transitive[from],
-    \\    *depends_on{ from, to }
-    \\?[to, name, depends_words, provides_words, total_bits] :=
-    \\    transitive[to],
-    \\    *targets{ id: to, name, depends_words, provides_words, total_bits }
-;
-
-/// BFS neighbor traversal for LOD routing.
-/// Returns (node_id, hop_count) from semantic center.
-pub const QUERY_NEIGHBOR_BFS: []const u8 =
-    \\# Compute hop distance from semantic center for LOD selection
-    \\bfs[to, dist] :=
-    \\    to = $center, dist = 0
-    \\bfs[to, dist + 1] :=
-    \\    bfs[from, dist],
-    \\    *neighbor_of{ from, to }
-    \\?[id, dist, lod4] :=
-    \\    bfs[id, dist],
-    \\    *context_nodes{ id, lod4 }
-    \\    :order dist
+    \\WITH RECURSIVE tr(id) AS (
+    \\    SELECT to_id FROM depends_on WHERE from_id = ?1
+    \\    UNION
+    \\    SELECT d.to_id FROM depends_on d JOIN tr ON tr.id = d.from_id
+    \\)
+    \\SELECT t.id, t.name, t.depends_words, t.provides_words, t.total_bits
+    \\FROM tr JOIN targets t ON t.id = tr.id
 ;
 
 // ---------------------------------------------------------------------------
@@ -234,7 +201,7 @@ pub const QUERY_NEIGHBOR_BFS: []const u8 =
 // ---------------------------------------------------------------------------
 
 /// All DDL statements to initialize a fresh Coral Context database.
-/// Execute in order — indexes depend on the base relations.
+/// Each is idempotent via IF NOT EXISTS / IF NOT EXISTS guards.
 pub const SCHEMA_DDL = [_][]const u8{
     DDL_CONTEXT_NODES,
     DDL_TARGETS,
@@ -269,7 +236,7 @@ test "LOD_COUNT is 6" {
     try testing.expectEqual(@as(usize, 6), LOD_COUNT);
 }
 
-test "schema DDL contains expected keywords" {
+test "schema DDL contains expected column names" {
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "lod0") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "lod4") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "lod5") != null);
@@ -284,7 +251,7 @@ test "schema DDL contains expected keywords" {
     try testing.expect(std.mem.indexOf(u8, DDL_TARGETS, "total_bits") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_TARGETS, "is_essential") != null);
 
-    try testing.expect(std.mem.indexOf(u8, DDL_DEPENDS_ON, "from") != null);
+    try testing.expect(std.mem.indexOf(u8, DDL_DEPENDS_ON, "from_id") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_NEIGHBOR_OF, "distance") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_NEIGHBOR_OF, "edge_type") != null);
 
@@ -296,17 +263,13 @@ test "schema DDL contains expected keywords" {
     try testing.expect(std.mem.indexOf(u8, DDL_CONTRADICTIONS, "predicate") != null);
 }
 
-test "schema uses CozoDB syntax not PostgreSQL" {
-    try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, ":create") != null);
-    try testing.expect(std.mem.indexOf(u8, DDL_TARGETS, ":create") != null);
-
-    try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "CREATE TABLE") == null);
+test "schema uses SQLite syntax" {
+    try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "CREATE TABLE") != null);
+    try testing.expect(std.mem.indexOf(u8, DDL_TARGETS, "CREATE TABLE") != null);
+    // No CozoDB Datalog syntax
+    try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, ":create") == null);
+    // No PostgreSQL-specific types
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "VECTOR(1536)") == null);
-}
-
-test "schema uses CozoDB syntax not Cypher" {
-    try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "CREATE NODE TABLE") == null);
-    try testing.expect(std.mem.indexOf(u8, DDL_DEPENDS_ON, "CREATE REL TABLE") == null);
 }
 
 test "SCHEMA_DDL has 11 statements" {
@@ -318,13 +281,14 @@ test "entity_types DDL is non-empty" {
     try testing.expect(std.mem.indexOf(u8, DDL_ENTITY_TYPES, "entity_types") != null);
 }
 
-test "query templates contain Datalog syntax" {
-    try testing.expect(std.mem.indexOf(u8, QUERY_TRANSITIVE_DEPS, ":=") != null);
-    try testing.expect(std.mem.indexOf(u8, QUERY_NEIGHBOR_BFS, ":=") != null);
-
+test "query templates are SQL" {
+    try testing.expect(std.mem.indexOf(u8, QUERY_TRANSITIVE_DEPS, "SELECT") != null);
+    try testing.expect(std.mem.indexOf(u8, QUERY_NEIGHBOR_BFS, "SELECT") != null);
     try testing.expect(std.mem.indexOf(u8, QUERY_NEIGHBOR_BFS, "neighbor_of") != null);
-
     try testing.expect(std.mem.indexOf(u8, QUERY_TRANSITIVE_DEPS, "depends_on") != null);
+    // Recursive CTEs
+    try testing.expect(std.mem.indexOf(u8, QUERY_NEIGHBOR_BFS, "WITH RECURSIVE") != null);
+    try testing.expect(std.mem.indexOf(u8, QUERY_TRANSITIVE_DEPS, "WITH RECURSIVE") != null);
 }
 
 test "new DDL constants are non-empty" {

@@ -221,6 +221,76 @@ pub fn syncDatabase(
 }
 
 // ---------------------------------------------------------------------------
+// DbSyncBuilder — fluent wrapper around syncDatabase
+// ---------------------------------------------------------------------------
+//
+// Usage:
+//   try lance_db.DbSyncBuilder.init(allocator, guidance_dir, db_path, embedder)
+//       .withCapabilities(cap_dir)   // optional
+//       .withAliases(aliases)         // optional
+//       .cacheLimit(500)              // optional (default: 0 = unlimited)
+//       .sync();
+
+pub const DbSyncBuilder = struct {
+    allocator: std.mem.Allocator,
+    guidance_dir: []const u8,
+    db_path: []const u8,
+    embedder: vector.EmbeddingProvider,
+    capabilities_dir: ?[]const u8 = null,
+    aliases: ?SemanticAliases = null,
+    cache_limit: u32 = 0,
+
+    /// Create a builder bound to the required arguments.
+    pub fn init(
+        allocator: std.mem.Allocator,
+        guidance_dir: []const u8,
+        db_path: []const u8,
+        embedder: vector.EmbeddingProvider,
+    ) DbSyncBuilder {
+        return .{
+            .allocator = allocator,
+            .guidance_dir = guidance_dir,
+            .db_path = db_path,
+            .embedder = embedder,
+        };
+    }
+
+    /// Set the directory to scan for CAPABILITY.md files.
+    pub fn withCapabilities(self: DbSyncBuilder, dir: []const u8) DbSyncBuilder {
+        var b = self;
+        b.capabilities_dir = dir;
+        return b;
+    }
+
+    /// Attach pre-loaded semantic aliases for embedding-based query steering.
+    pub fn withAliases(self: DbSyncBuilder, aliases: SemanticAliases) DbSyncBuilder {
+        var b = self;
+        b.aliases = aliases;
+        return b;
+    }
+
+    /// Maximum entries in the embedding cache (0 = unlimited).
+    pub fn cacheLimit(self: DbSyncBuilder, limit: u32) DbSyncBuilder {
+        var b = self;
+        b.cache_limit = limit;
+        return b;
+    }
+
+    /// Execute the sync.  Terminal method — equivalent to calling syncDatabase directly.
+    pub fn sync(self: DbSyncBuilder) !void {
+        return syncDatabase(
+            self.allocator,
+            self.guidance_dir,
+            self.db_path,
+            self.embedder,
+            self.capabilities_dir,
+            self.aliases,
+            self.cache_limit,
+        );
+    }
+};
+
+// ---------------------------------------------------------------------------
 // GuidanceDb — the database handle
 // ---------------------------------------------------------------------------
 
@@ -2927,4 +2997,63 @@ test "extractParamNames strips types" {
     try std.testing.expect(std.mem.indexOf(u8, params.?, "x") != null);
     try std.testing.expect(std.mem.indexOf(u8, params.?, "y") != null);
     try std.testing.expect(std.mem.indexOf(u8, params.?, "allocator") == null);
+}
+
+// =============================================================================
+// DbSyncBuilder tests
+// =============================================================================
+
+test "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases" {
+    var noop: vector.NoopEmbedding = .{};
+    const embedder = noop.provider();
+
+    const builder = DbSyncBuilder.init(
+        std.testing.allocator,
+        ".guidance",
+        ".guidance.db",
+        embedder,
+    );
+
+    try std.testing.expectEqual(@as(u32, 0), builder.cache_limit);
+    try std.testing.expect(builder.capabilities_dir == null);
+    try std.testing.expect(builder.aliases == null);
+    try std.testing.expectEqualStrings(".guidance", builder.guidance_dir);
+    try std.testing.expectEqualStrings(".guidance.db", builder.db_path);
+}
+
+test "DbSyncBuilder fluent setters return updated values" {
+    var noop: vector.NoopEmbedding = .{};
+    const embedder = noop.provider();
+
+    const builder = DbSyncBuilder.init(
+        std.testing.allocator,
+        ".guidance",
+        ".guidance.db",
+        embedder,
+    )
+        .withCapabilities(".guidance/.doc/capabilities")
+        .cacheLimit(500);
+
+    try std.testing.expectEqual(@as(u32, 500), builder.cache_limit);
+    try std.testing.expect(builder.capabilities_dir != null);
+    try std.testing.expectEqualStrings(".guidance/.doc/capabilities", builder.capabilities_dir.?);
+    // aliases still unset
+    try std.testing.expect(builder.aliases == null);
+}
+
+test "DbSyncBuilder: each setter produces an independent copy (immutable chain)" {
+    var noop: vector.NoopEmbedding = .{};
+    const embedder = noop.provider();
+
+    const base = DbSyncBuilder.init(std.testing.allocator, "g", "db", embedder);
+    const with_cap = base.withCapabilities("cap");
+    const with_limit = base.cacheLimit(99);
+
+    // base is unmodified
+    try std.testing.expect(base.capabilities_dir == null);
+    try std.testing.expectEqual(@as(u32, 0), base.cache_limit);
+
+    // derived builders have their own values
+    try std.testing.expectEqualStrings("cap", with_cap.capabilities_dir.?);
+    try std.testing.expectEqual(@as(u32, 99), with_limit.cache_limit);
 }
