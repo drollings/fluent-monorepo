@@ -1,0 +1,336 @@
+{
+  "meta": {
+    "module": "src.common.terminal",
+    "source": "src/common/terminal.zig",
+    "language": "zig"
+  },
+  "comment": "Handles terminal size, width, height, and user interaction in a Zig terminal environment.",
+  "detail": "# Terminal Module Documentation\n\n## Module Purpose and Architecture\n\nThis module provides a comprehensive terminal interaction layer for Zig applications, abstracting low-level POSIX terminal operations into ergonomic public APIs. It serves as a bridge between user input/output and application logic, handling everything from terminal detection to interactive prompts.\n\nThe architecture follows a layered approach:\n- **Detection Layer**: `isTerminal()` determines if running in a TTY environment\n- **Measurement Layer**: `getWinsize()` retrieves window dimensions via POSIX ioctl\n- **Interaction Layer**: Input/output functions (`confirm`, `ask`, `askInt`) for user engagement\n- **Visualization Layer**: `ProgressBar` struct for visual feedback during operations\n\n## Key Abstractions and Relationships\n\n**TerminalError**: Central error type encompassing three scenarios:\n- `NotATerminal`: Operations attempted outside terminal environment\n- `IoError`: Low-level I/O failures\n- `OutOfMemory`: Memory allocation failures in interactive functions\n\n**ProgressBar**: A stateful struct tracking progress with fields for description, current position, total units, and calculated display width. It maintains its own width calculation from terminal dimensions but doesn't render itself—rendering is delegated to the caller.\n\n## Public API and Usage Patterns\n\n### Dimension Queries\n```zig\nconst width = getTerminalWidth();  // Returns 80 if not a terminal\nconst height = getTerminalHeight(); // Returns 24 if not a terminal\n```\n\n### Terminal Detection\n```zig\nif (isTerminal()) {\n    // Proceed with terminal-dependent operations\n}\n```\n\n### User Interaction\nThe `confirm()` function returns a boolean with intelligent defaults:\n- Defaults to \"Y/n\" when true, \"y/N\" when false\n- Trims whitespace and handles case-insensitive matching\n- Returns default on empty input or invalid response\n\nThe `ask()` and `askInt()` functions require an allocator for string operations. They validate integer input via `std.fmt.parseInt` and handle defaults gracefully.\n\n### Progress Tracking\n```zig\nvar pb = ProgressBar.init(\"Installing...\", 100);\npb.advance(25); // Increment by amount\npb.set(75);     // Jump to specific value\n```\n\n## Important Implementation Details\n\n**Fallback Behavior**: All terminal dimension queries default to 80×24 when not running in a terminal, ensuring graceful degradation for testing and non-interactive environments.\n\n**Input Sanitization**: The `trim()` function removes whitespace characters (space, tab, carriage return, newline) before processing input, preventing edge cases from affecting user responses.\n\n**Memory Safety**: String-returning functions (`ask`, `askInt`) require an allocator and use `dupe()` to allocate new memory for returned strings, preventing buffer overflows.\n\n**POSIX Integration**: Uses `std.posix.isatty()` and `ioctl` with `TCGETS` (IOCGWINSZ) for reliable terminal detection and measurement across Unix-like systems.\n\n## Design Patterns Used\n\n1. **Option Pattern**: Returns `?std.posix.winsize` to gracefully handle non-terminal environments without error propagation.\n\n2. **Default Value Pattern**: Functions return sensible defaults when operations fail or aren't applicable, reducing caller burden.\n\n3. **Input Validation**: Integer parsing catches invalid input and returns a specific error rather than crashing.\n\n4. **Stateful Progress Tracking**: The `ProgressBar` struct maintains state across multiple calls, allowing incremental updates without reinitialization.",
+  "keywords": ["TerminalError", "getWinsize", "getTerminalWidth", "ProgressBar", "isTerminal", "confirm", "askInt", "interactive prompts", "POSIX ioctl", "terminal detection"],
+  "members": [
+    {
+      "type": "fn_private",
+      "name": "getWinsize",
+      "match_hash": "1ed424902364e690941072c6156ddc04a4951c1cfefeb67493115cc7c2f0d474",
+      "signature": "fn getWinsize() -> ?std.posix.winsize",
+      "returns": "?std.posix.winsize",
+      "comment": "Retrieves the system's window size in Zig using the standard library.",
+      "is_pub": false,
+      "line": 10
+    },
+    {
+      "type": "fn_decl",
+      "name": "getTerminalWidth",
+      "match_hash": "6c5ad37f2ac0c5a6e0ff25be3f928c420c00348840b24ba116f3fb89af371977",
+      "signature": "fn getTerminalWidth() -> usize",
+      "returns": "usize",
+      "comment": "Returns the terminal width in bytes for the current screen size.",
+      "is_pub": true,
+      "line": 19
+    },
+    {
+      "type": "fn_decl",
+      "name": "getTerminalHeight",
+      "match_hash": "93b9650729632a318c2aff501fc84f8e20927f0e23ed0329fac0e875b74a5c66",
+      "signature": "fn getTerminalHeight() -> usize",
+      "returns": "usize",
+      "comment": "Returns the terminal height in bytes for the current Zig source file.",
+      "is_pub": true,
+      "line": 24
+    },
+    {
+      "type": "fn_decl",
+      "name": "isTerminal",
+      "match_hash": "612dd0302de5cec5e599347ee95241db8c60672f3ebd7bf582cf8276dff2428e",
+      "signature": "fn isTerminal() -> bool",
+      "returns": "bool",
+      "comment": "Checks if the provided string is a valid terminal string, returning true or false.",
+      "is_pub": true,
+      "line": 29
+    },
+    {
+      "type": "fn_decl",
+      "name": "confirm",
+      "match_hash": "7530f403d5322eb0be8ff6ca41c8588cb2062d609c88dec616b59be26662f10a",
+      "signature": "fn confirm(question: []const u8, default: bool) -> bool",
+      "params": [
+        { "name": "question", "type": "[]const u8" },
+        { "name": "default", "type": "bool" }
+      ],
+      "returns": "bool",
+      "comment": "Validates a boolean question input, returning true or false based on the provided value.",
+      "is_pub": true,
+      "line": 34
+    },
+    {
+      "type": "fn_decl",
+      "name": "ask",
+      "match_hash": "4bbfe7963f7193c6aef54558a8781270ad73958cb0dc6ea58d12e3dd00d9ef38",
+      "signature": "fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "question", "type": "[]const u8" },
+        { "name": "default", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Retrieves a response from an allocator using a Zig array and question parameters.",
+      "is_pub": true,
+      "line": 59
+    },
+    {
+      "type": "fn_decl",
+      "name": "askInt",
+      "match_hash": "bf4f873c75a0d147542c69320d4a26d6edc042e42682e390371c86014bc49f69",
+      "signature": "fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64) -> i64",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "question", "type": "[]const u8" },
+        { "name": "default", "type": "?i64" }
+      ],
+      "returns": "i64",
+      "comment": "Retrieves an integer from an allocator using a Zig array, returning the value or an error.",
+      "is_pub": true,
+      "line": 84
+    },
+    {
+      "type": "struct",
+      "name": "ProgressBar",
+      "match_hash": "bc9366429efd7db6cc360b916353769ade38898d6a7e1485145d53a11649b680",
+      "signature": "keyword_struct ProgressBar { ... }",
+      "comment": "Manages progress bar state with mutable methods; owns its data; requires caller to manage lifetime.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "4d08c8c36dad427221cb8dc0bde04f1d0a07d8afb1114006bc3dc6e85e2a1713",
+          "signature": "fn init(description: []const u8, total: usize) -> ProgressBar",
+          "params": [
+            { "name": "description", "type": "[]const u8" },
+            { "name": "total", "type": "usize" }
+          ],
+          "returns": "ProgressBar",
+          "is_pub": true,
+          "line": 118
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "advance",
+          "match_hash": "c9f12c3710ffa947ab621eb9e28fb587432484dc33305751d256f31c2235bc9e",
+          "signature": "fn advance(self: *ProgressBar, amount: usize) -> void",
+          "params": [
+            { "name": "self", "type": "*ProgressBar" },
+            { "name": "amount", "type": "usize" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 127
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "set",
+          "match_hash": "3a0b356d186a3b0a10c845e18b93c66427e83ee88e0f31fa7dd264860062dc87",
+          "signature": "fn set(self: *ProgressBar, value: usize) -> void",
+          "params": [
+            { "name": "self", "type": "*ProgressBar" },
+            { "name": "value", "type": "usize" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 134
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "render",
+          "match_hash": "976ba0096a4cc2eb2c483824f123e9b0d5441219bc3c7278d60888a5c166a7e8",
+          "signature": "fn render(self: *const ProgressBar, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const ProgressBar" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 138
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "complete",
+          "match_hash": "8713f9dc58a47ebc742757f15abd13926782707a9473379b42968cecf92ff151",
+          "signature": "fn complete(self: *const ProgressBar, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const ProgressBar" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 158
+        }
+      ],
+      "line": 112
+    },
+    {
+      "type": "enum",
+      "name": "Color",
+      "match_hash": "9fb21703b4ee0fb04f7309bbb232e8a34189614a877c02ef9c69f8bd8840c24b",
+      "signature": "keyword_enum Color { ... }",
+      "comment": "Represents a color value with fixed-size encoding; owned by the caller; immutable once assigned.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "reset",
+          "is_pub": false,
+          "line": 165
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "black",
+          "is_pub": false,
+          "line": 166
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "red",
+          "is_pub": false,
+          "line": 167
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "green",
+          "is_pub": false,
+          "line": 168
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "yellow",
+          "is_pub": false,
+          "line": 169
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "blue",
+          "is_pub": false,
+          "line": 170
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "magenta",
+          "is_pub": false,
+          "line": 171
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "cyan",
+          "is_pub": false,
+          "line": 172
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "white",
+          "is_pub": false,
+          "line": 173
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_black",
+          "is_pub": false,
+          "line": 174
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_red",
+          "is_pub": false,
+          "line": 175
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_green",
+          "is_pub": false,
+          "line": 176
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_yellow",
+          "is_pub": false,
+          "line": 177
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_blue",
+          "is_pub": false,
+          "line": 178
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_magenta",
+          "is_pub": false,
+          "line": 179
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_cyan",
+          "is_pub": false,
+          "line": 180
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bright_white",
+          "is_pub": false,
+          "line": 181
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "code",
+          "match_hash": "57c0d1c8b6e1392a0046b19dfe08348daf6309f39daedf355be079029e69f58a",
+          "signature": "fn code(self: Color) -> []const u8",
+          "params": [
+            { "name": "self", "type": "Color" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 183
+        }
+      ],
+      "line": 164
+    },
+    {
+      "type": "fn_decl",
+      "name": "colorPrint",
+      "match_hash": "412db495c624a2a083e7cb1c50b1e156f5b66532e2c56de52e0ebd2629b040d5",
+      "signature": "fn colorPrint(writer, color: Color, text: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "color", "type": "Color" },
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Prints a colored string using the provided writer, color, and text data.",
+      "is_pub": true,
+      "line": 206
+    },
+    {
+      "type": "test_decl",
+      "name": "getTerminalWidth returns at least 80",
+      "is_pub": false,
+      "line": 214
+    },
+    {
+      "type": "test_decl",
+      "name": "getTerminalHeight returns at least 24",
+      "is_pub": false,
+      "line": 219
+    },
+    {
+      "type": "test_decl",
+      "name": "Color codes are valid ANSI sequences",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "test_decl",
+      "name": "ProgressBar init and advance",
+      "is_pub": false,
+      "line": 230
+    }
+  ]
+}

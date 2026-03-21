@@ -1,0 +1,167 @@
+{
+  "meta": {
+    "module": "src.coral.common.json_parser",
+    "source": "src/coral/common/json_parser.zig",
+    "language": "zig"
+  },
+  "comment": "Parses Zig JSON files, validates targets, and allocates memory for registry entries.",
+  "detail": "# Module: src/coral/common/json_parser.zig\n\n## Purpose and Architecture\n\nThis module implements a specialized JSON parser for building configuration files that define software targets. It serves as the bridge between human-readable JSON configuration and internal data structures used by a build or package management system. The architecture follows a layered approach with three main entry points: file-level parsing, text-level parsing, and individual target extraction.\n\n## Key Abstractions and Relationships\n\n**ParseError**: An error union defining all possible failure modes including invalid JSON syntax, missing required fields, type mismatches, I/O failures, and memory exhaustion.\n\n**TargetRegistry Integration**: The parser doesn't create Targets directly but populates a TargetRegistry with parsed entries. This separation of concerns allows the registry to manage lifecycle and relationships between targets independently from the parsing logic.\n\n**StringInterner**: Uses an interner pattern for efficient string storage, ensuring identical strings share memory while maintaining fast lookups by reference.\n\n## Public API and Usage Patterns\n\n### parseFile\n```zig\ntry json_parser.parseFile(allocator, \"config.json\", registry, interner);\n```\nPrimary entry point for loading configuration from disk. Handles file I/O, content reading, and recursive parsing in one operation. Returns `ParseError.IoError` on any file system failure.\n\n### parseJson\n```zig\nconst text = std.fs.cwd().readFileAlloc(allocator, \"config.json\", 1024*1024) catch @panic(\"Read failed\");\ntry json_parser.parseJson(allocator, text, registry, interner);\nallocator.free(text);\n```\nParses raw JSON text without file I/O. Useful for parsing from network sources or memory buffers.\n\n### parseTarget (Internal)\nExtracts a single target entry from the JSON object map. Handles nested property extraction for dependencies, provided symbols, and command definitions.\n\n## Important Implementation Details\n\n**JSON Structure Validation**: The parser enforces strict structure requirements:\n- Root must be an object with string keys\n- Each value must be an object containing target metadata\n- Optional properties: \"depends\", \"provides\", \"commands\" (all arrays of strings)\n\n**Memory Allocation Contract**: All allocations for Target instances, their names, command strings, and existence flags use the provided allocator. This ensures `registry.deinit()` can properly free all resources using the same allocator instance.\n\n**Error Handling Strategy**: Uses Zig's error union system with `!void` return types for propagating failures up the call stack. I/O errors are converted to ParseError.IoError for consistency.\n\n**Iterator Pattern**: Leverages Zig's built-in JSON iterator to traverse object entries efficiently without manual index management.\n\n## Design Patterns\n\n1. **Builder Pattern**: Target.init() constructs complete Target objects with proper initialization of all fields.\n\n2. **Chain of Responsibility**: parseFile → parseJson → parseTarget creates a clear processing pipeline where each stage handles specific concerns.\n\n3. **Guard Clauses**: Early returns for invalid input (non-object roots, non-object target values) prevent cascading errors.\n\n4. **Resource Management**: Extensive use of `defer` and `errdefer` ensures cleanup even on error paths.",
+  "keywords": ["parseFile", "parseJson", "parseTarget", "TargetRegistry", "StringInterner", "ParseError", "JSON parsing", "target configuration", "dependency management", "Zig build system"],
+  "used_by": ["src/common/repl.zig", "src/coral/common/repl.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "parseFile",
+      "match_hash": "c4c27b7d46a82c578c65f1fd8247ab3d16413b0577c559446048f55c88070252",
+      "signature": "fn parseFile(allocator: std.mem.Allocator, path: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" },
+        { "name": "registry", "type": "*TargetRegistry" },
+        { "name": "interner", "type": "*StringInterner" }
+      ],
+      "returns": "void",
+      "comment": "Reads a file path and parses its contents into a Zig-safe slice using the provided allocator and registry.",
+      "is_pub": true,
+      "line": 15
+    },
+    {
+      "type": "fn_decl",
+      "name": "parseJson",
+      "match_hash": "ef96f72591b032408aa1139188daf45f2acd40af4232560328f19c77499d8fd0",
+      "signature": "fn parseJson(allocator: std.mem.Allocator, json_text: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "json_text", "type": "[]const u8" },
+        { "name": "registry", "type": "*TargetRegistry" },
+        { "name": "interner", "type": "*StringInterner" }
+      ],
+      "returns": "void",
+      "comment": "Converts a C-style JSON array into a Zig array, handling allocations and string interners.",
+      "is_pub": true,
+      "line": 35
+    },
+    {
+      "type": "fn_private",
+      "name": "parseTarget",
+      "match_hash": "e5bd1c97717c17c4e24ffe0321962a6265e70e912b12cd9ef33180bec33d1b5a",
+      "signature": "fn parseTarget(allocator: std.mem.Allocator, name: []const u8, value: std.json.Value, registry: *TargetRegistry, interner: *StringInterner) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "value", "type": "std.json.Value" },
+        { "name": "registry", "type": "*TargetRegistry" },
+        { "name": "interner", "type": "*StringInterner" }
+      ],
+      "returns": "void",
+      "comment": "Parse a single target entry from the JSON object map.",
+      "is_pub": false,
+      "line": 75
+    },
+    {
+      "type": "fn_private",
+      "name": "determineTargetType",
+      "match_hash": "774771ff117549f5c5413b33ccfb6ef41b95f9182dd39eeeadc81b9b7bb18bc8",
+      "signature": "fn determineTargetType(obj: std.json.ObjectMap) -> TargetType",
+      "params": [
+        { "name": "obj", "type": "std.json.ObjectMap" }
+      ],
+      "returns": "TargetType",
+      "comment": "Determines the target type from a JSON object map, returning a TargetType value.",
+      "is_pub": false,
+      "line": 158
+    },
+    {
+      "type": "fn_decl",
+      "name": "writeExample",
+      "match_hash": "38788f3fd95504e6d9d60edae1a92a15eb97619dae2e7e7438d8732357799886",
+      "signature": "fn writeExample(allocator: std.mem.Allocator, path: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a Zig example string to memory using the provided allocator.",
+      "is_pub": true,
+      "line": 180
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing",
+      "is_pub": false,
+      "line": 231
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing GPA no leaks",
+      "is_pub": false,
+      "line": 258
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: invalid JSON returns error",
+      "is_pub": false,
+      "line": 298
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: non-object root returns error",
+      "is_pub": false,
+      "line": 308
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: empty object produces zero targets",
+      "is_pub": false,
+      "line": 318
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: target type detection — phony",
+      "is_pub": false,
+      "line": 328
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: target type detection — file (exists key)",
+      "is_pub": false,
+      "line": 344
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: target type detection — command (commands key)",
+      "is_pub": false,
+      "line": 361
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: target type detection — abstract (no distinguishing key)",
+      "is_pub": false,
+      "line": 379
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: essential and check_mtime fields",
+      "is_pub": false,
+      "line": 395
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: depends and provides are recorded",
+      "is_pub": false,
+      "line": 418
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: multiple commands are all stored",
+      "is_pub": false,
+      "line": 443
+    },
+    {
+      "type": "test_decl",
+      "name": "JSON parsing: parseFile returns IoError for missing file",
+      "is_pub": false,
+      "line": 461
+    }
+  ]
+}

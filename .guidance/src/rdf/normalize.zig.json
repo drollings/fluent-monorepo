@@ -1,0 +1,251 @@
+{
+  "meta": {
+    "module": "src.rdf.normalize",
+    "source": "src/rdf/normalize.zig",
+    "language": "zig"
+  },
+  "comment": "Normalizes RDF IRI strings to deterministic hashes for CozoDB storage using Blake3, supports scope and blank node hashing.",
+  "detail": "# RDF Term Normalization Module\n\n## Purpose and Architecture\n\nThis module provides deterministic normalization of RDF terms into canonical forms suitable for CozoDB storage. It bridges the gap between parsed RDF data structures and database-optimized identifiers, ensuring consistent representation across different RDF graphs.\n\n### Core Components\n\n**Hashing Layer**\nThe module implements two primary hashing functions:\n- `hashIRI()`: Converts IRIs to 64-bit integers using Blake3 with length-prefixing for collision resistance\n- `hashBlankNode()`: Creates scope-qualified hashes for blank nodes, preventing collisions between identically-named nodes in different contexts\n\n**Type System Layer**\nThe module defines a type hierarchy for XSD datatypes:\n- `XsdType` enum classifies literal types (string, integer, decimal, double, boolean, date_time, other)\n- `TypedValue` union represents parsed typed values with appropriate storage for each category\n\n### Architecture Flow\n\n```\nRDF Term → [Hashing] → NodeId (i64)\n           ↓\n[Type Detection] → XsdType\n           ↓\n[Literal Parsing] → TypedValue\n```\n\n## Key Abstractions and Relationships\n\n**XsdType**: Enum that categorizes RDF literal datatypes based on IRI patterns. It serves as a discriminator for the `TypedValue` union, enabling efficient pattern matching during parsing operations.\n\n**TypedValue**: A discriminated union representing parsed RDF literals. Each variant holds the appropriate type-specific data (i64 for integers, f64 for decimals/doubles, bool for booleans, etc.). The union structure ensures compile-time type safety when accessing parsed values.\n\n**BlankNodeScope**: Although not explicitly defined in the source, this concept is central to `hashBlankNode()`. It represents the context or graph identifier that qualifies a blank node's identity, ensuring uniqueness across distributed RDF datasets.\n\n## Public API and Usage Patterns\n\n### Hashing Functions\n```zig\n// IRI hashing - deterministic for same input\nconst nodeId = hashIRI(\"http://example.org/resource\");\n\n// Blank node with scope qualification\nconst bnodeId = hashBlankNode(\"graph1\", \"_:b1\");\nconst bnodeId2 = hashBlankNode(\"graph2\", \"_:b1\"); // Different result!\n```\n\n### Type Detection and Normalization\n```zig\n// Detect XSD type from datatype IRI\nconst xsdType = detectXsdType(\"http://www.w3.org/2001/XMLSchema#integer\");\n\n// Parse literal with optional language and datatype\nconst typedValue = normalizeLiteral(\"42\", null, \"http://www.w3.org/2001/XMLSchema#integer\");\n```\n\n## Implementation Details\n\n**Collision Prevention**: The `hashBlankNode()` function uses length-prefixing before hashing scope and ID components. This prevents the \"prefix collision\" problem where concatenating strings of different lengths could produce identical hashes (e.g., \"a\"+\"bc\" vs \"ab\"+\"c\").\n\n**Blake3 Selection**: Blake3 is chosen for its speed, security, and deterministic output. The 64-bit truncation balances uniqueness with memory efficiency for database storage.\n\n**XSD Recognition**: The module recognizes common XSD datatype IRIs through string comparison, mapping them to appropriate `XsdType` enum values. This enables proper type coercion during RDF-to-relational conversion.\n\n## Design Patterns\n\n1. **Length-Prefixing Pattern**: Applied in hashing functions to ensure consistent hash output regardless of input string lengths\n2. **Discriminated Union**: The `TypedValue` union provides type-safe access to heterogeneous parsed data\n3. **Guard Clauses**: Early returns for null/empty cases reduce code complexity\n4. **Composition Over Inheritance**: Building complex behavior from simple, reusable hashing primitives",
+  "keywords": ["hashIRI", "hashBlankNode", "XsdType", "TypedValue", "normalizeLiteral", "detectXsdType", "Blake3", "RDF normalization", "CozoDB", "IRI hashing"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "hashIRI",
+      "match_hash": "3bd11917f4a916c532d18e551371516cf47532f50d137a6ed5d0119c2886bf87",
+      "signature": "fn hashIRI(iri: []const u8) -> i64",
+      "params": [
+        { "name": "iri", "type": "[]const u8" }
+      ],
+      "returns": "i64",
+      "comment": "Deterministic i64 hash of an IRI string using Blake3 (64-bit truncation).",
+      "is_pub": true,
+      "line": 20
+    },
+    {
+      "type": "fn_decl",
+      "name": "hashBlankNode",
+      "match_hash": "d2b95131a34ddee8b3e71dde6abfca0e467972c76911003821b38c428c77c19b",
+      "signature": "fn hashBlankNode(scope: []const u8, id: []const u8) -> i64",
+      "params": [
+        { "name": "scope", "type": "[]const u8" },
+        { "name": "id", "type": "[]const u8" }
+      ],
+      "returns": "i64",
+      "comment": "Scope-qualified i64 hash for a blank node.",
+      "is_pub": true,
+      "line": 29
+    },
+    {
+      "type": "enum",
+      "name": "XsdType",
+      "match_hash": "21e517846b4415a4c89daf5488af865704043018403378f8257e3baefa60f499",
+      "signature": "keyword_enum XsdType { ... }",
+      "comment": "Defines a schema for RDF keywords with XSD validation; manages ownership and invariants.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "string",
+          "is_pub": false,
+          "line": 49
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "lang_string",
+          "is_pub": false,
+          "line": 50
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "integer",
+          "is_pub": false,
+          "line": 51
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "decimal",
+          "is_pub": false,
+          "line": 52
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "double",
+          "is_pub": false,
+          "line": 53
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "boolean",
+          "is_pub": false,
+          "line": 54
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "date_time",
+          "is_pub": false,
+          "line": 55
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "other",
+          "is_pub": false,
+          "line": 56
+        }
+      ],
+      "line": 48
+    },
+    {
+      "type": "union",
+      "name": "TypedValue",
+      "match_hash": "6c95d3c7f1dcc9b61545366d0e211921c5e0cbd1b82b890d2fa99ec59712105b",
+      "signature": "keyword_union TypedValue { ... }",
+      "comment": "Represents a typed union of RDF keywords; managed by owner; ensures consistent key invariants.",
+      "is_pub": true,
+      "line": 59
+    },
+    {
+      "type": "fn_decl",
+      "name": "detectXsdType",
+      "match_hash": "c1e63cb442ec667365d71614b8ebd76fead6a1c619752762660ab2e6114db3f4",
+      "signature": "fn detectXsdType(datatype: ?[]const u8) -> XsdType",
+      "params": [
+        { "name": "datatype", "type": "?[]const u8" }
+      ],
+      "returns": "XsdType",
+      "comment": "Detect the XSD type from a datatype IRI.",
+      "is_pub": true,
+      "line": 73
+    },
+    {
+      "type": "fn_decl",
+      "name": "normalizeLiteral",
+      "match_hash": "805837019a562f646269d42aa7ff7ce573afc0d02aed02c1ee34baf7c0b9f1fa",
+      "signature": "fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const u8) -> TypedValue",
+      "params": [
+        { "name": "value", "type": "[]const u8" },
+        { "name": "lang", "type": "?[]const u8" },
+        { "name": "datatype", "type": "?[]const u8" }
+      ],
+      "returns": "TypedValue",
+      "comment": "Parse a literal's value string into a TypedValue.",
+      "is_pub": true,
+      "line": 91
+    },
+    {
+      "type": "struct",
+      "name": "BlankNodeScope",
+      "match_hash": "b836f3e8991464e66cfab710b9dda8f386f5e9b73cdda68db1be23758cdfc223",
+      "signature": "keyword_struct BlankNodeScope { ... }",
+      "comment": "BlankNodeScope — tracks blank node ID → NodeId mapping within one file/scope.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "5f263b9f4b18157fbf3ec32f8ad84c629e08b6f5a37d4d2a4d47afc08ba38cc5",
+          "signature": "fn init(allocator: std.mem.Allocator, scope_id: []const u8) -> BlankNodeScope",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "scope_id", "type": "[]const u8" }
+          ],
+          "returns": "BlankNodeScope",
+          "is_pub": true,
+          "line": 127
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "6d0dfb8993d5dcb20def820da0e2f7c04bb228c1bdf2a37d249693e303e837ca",
+          "signature": "fn deinit(self: *BlankNodeScope) -> void",
+          "params": [
+            { "name": "self", "type": "*BlankNodeScope" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 135
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "resolve",
+          "match_hash": "4ad607e6f6c3fc1d475d7e525729976df4340e2861d3e41e42270207eb7627cb",
+          "signature": "fn resolve(self: *BlankNodeScope, id: []const u8) -> i64",
+          "params": [
+            { "name": "self", "type": "*BlankNodeScope" },
+            { "name": "id", "type": "[]const u8" }
+          ],
+          "returns": "i64",
+          "comment": "Return stable i64 for blank node id.  Allocates on first encounter.",
+          "is_pub": true,
+          "line": 142
+        }
+      ],
+      "line": 122
+    },
+    {
+      "type": "test_decl",
+      "name": "IRI hash is deterministic",
+      "is_pub": false,
+      "line": 157
+    },
+    {
+      "type": "test_decl",
+      "name": "different IRIs produce different hashes",
+      "is_pub": false,
+      "line": 164
+    },
+    {
+      "type": "test_decl",
+      "name": "blank node scoping",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "test_decl",
+      "name": "blank node different scopes produce different IDs",
+      "is_pub": false,
+      "line": 181
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize integer literal",
+      "is_pub": false,
+      "line": 187
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize decimal literal",
+      "is_pub": false,
+      "line": 193
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize boolean literal true",
+      "is_pub": false,
+      "line": 198
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize boolean literal false",
+      "is_pub": false,
+      "line": 204
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize lang string",
+      "is_pub": false,
+      "line": 209
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize plain string",
+      "is_pub": false,
+      "line": 214
+    },
+    {
+      "type": "test_decl",
+      "name": "normalize dateTime stub",
+      "is_pub": false,
+      "line": 219
+    }
+  ]
+}

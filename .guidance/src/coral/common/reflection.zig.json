@@ -1,0 +1,724 @@
+{
+  "meta": {
+    "module": "src.coral.common.reflection",
+    "source": "src/coral/common/reflection.zig",
+    "language": "zig"
+  },
+  "comment": "Provides field-level reflection, validation, and permission handling for Coral data structures, ensuring safe access patterns and role checks.",
+  "detail": "# Coral Reflection Module Documentation\n\n## Module Purpose and Architecture\n\nThe `reflection.zig` module serves as the authoritative layer for data input, validation, serialization, and database round-trips in the Coral system. It implements a role-based permission model with field-level reflection capabilities, ensuring that all data access follows strict security patterns while providing efficient paths for trusted code.\n\n**Core Design Principle**: The module separates \"fast inner-loop\" operations (direct field access via `setFast`/`getFast`) from \"safe reflective\" operations (`Editable.set()`), allowing performance-critical paths to bypass validation when appropriate, while maintaining comprehensive security guarantees elsewhere.\n\n## Key Abstractions and Relationships\n\n**Role System**: Six hierarchical roles (coder → creator → staff → world → script → player) form the foundation of access control. Each role has three operation types: read, write, and derive (metadata extraction).\n\n**Permission Packed Structure**: The `RolePermissions` struct efficiently stores 18 permission bits in a compact packed format, enabling O(1) permission checks via bitwise operations rather than branching logic.\n\n**Accessor Pattern**: The `Accessor` type encapsulates field metadata including name, type tag, constraints, and ownership semantics, serving as the bridge between raw data structures and their reflective interfaces.\n\n**Editable Context**: The `Editable(Host)` generic wrapper provides typed access to fields with built-in role validation, allocator management, and constraint checking—all while maintaining zero-cost paths for trusted operations.\n\n## Public API and Usage Patterns\n\n### Type System\n- **Role**: Enum defining six access levels from highest (coder) to lowest (player) privilege\n- **RolePermissions**: Packed permission word supporting read/write/derive operations per role\n- **ConstraintVTable**: Polymorphic validation hooks for type-specific constraint checking\n- **Accessor**: Field metadata descriptor with ownership and constraint information\n\n### Generic Functions\n- `constraintSet(T, allocator, typed_ptr, input)`: Validates and sets a field with type-appropriate parsing\n- `constraintGet(T, allocator, typed_ptr)`: Extracts string representation of a field value\n- `typeName(T)`: Returns the name of any type for introspection\n\n### Introspection Utilities\n- `describeSchemaFromAccessors()`: Generates complete schema descriptions from accessor lists\n- `describeFieldToJson()`: Converts individual field metadata to JSON format\n- `typeTagToJsonSchema()`: Produces JSON Schema representations for type tags\n\n## Important Implementation Details\n\n**Ownership Semantics**: The module uses explicit ownership tracking—`get()` operations return allocator-owned slices requiring manual deallocation. String field setters allocate copies that the struct owns, necessitating a `deinit()` method on hosting structures.\n\n**Error Model**: Three distinct error categories:\n1. Permission errors (`FieldNotFound`, `AccessDenied`) from this module\n2. Constraint errors propagated from parsers (parsing failures, invalid enums)\n3. Allocation errors from the supplied allocator\n\n**Performance Considerations**: The 18-bit permission word enables single bitwise AND operations for permission checking. The `setFast()` path provides zero-cost field access for trusted code paths, avoiding reflection overhead entirely.\n\n## Design Patterns Employed\n\n1. **Role-Based Access Control (RBAC)**: Hierarchical permissions with six roles and three operation types\n2. **Type Erasure via V-Tables**: Polymorphic constraint validation through `ConstraintVTable` interfaces\n3. **Context-Bound Operations**: The `Editable` wrapper binds operations to a specific host context with role information\n4. **Fast/Slow Path Separation**: Zero-cost direct access paths alongside validated reflective operations\n5. **Schema Introspection**: Automatic schema generation from type metadata and accessor collections\n\nThe module exemplifies Zig's philosophy of explicit control—requiring manual allocator management while providing sophisticated abstractions for complex permission and validation scenarios.",
+  "keywords": ["Editable", "RolePermissions", "Accessor", "ConstraintVTable", "constraintSet", "describeSchemaFromAccessors", "role-based access control", "field-level reflection", "polymorphic validation", "CozoDB hydration"],
+  "used_by": ["src/common/target.zig", "src/coral/common/interner.zig", "src/coral/common/target.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "Role",
+      "match_hash": "636ad8ae77ed4bbd2baecf67711260be55d2deabedbdf763cb1954eb5e1e17bd",
+      "signature": "keyword_enum Role { ... }",
+      "comment": "The six access roles mirroring the original worldcore C++ permission model.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "coder",
+          "is_pub": false,
+          "line": 43
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "creator",
+          "is_pub": false,
+          "line": 44
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "staff",
+          "is_pub": false,
+          "line": 45
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "world",
+          "is_pub": false,
+          "line": 46
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "script",
+          "is_pub": false,
+          "line": 47
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "player",
+          "is_pub": false,
+          "line": 48
+        }
+      ],
+      "line": 42
+    },
+    {
+      "type": "struct",
+      "name": "RolePermissions",
+      "match_hash": "3bad71ad1cc494287bd5fed2502c327d93b4b98b2fec67cfc3d1b4d716f7beec",
+      "signature": "keyword_struct RolePermissions { ... }",
+      "comment": "18-bit packed permission word: 6 roles × 3 operations.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "canRead",
+          "match_hash": "490652e9f6431d13b07c69d3f0044e4e5a80d7318d737415b259c3135f6b2dda",
+          "signature": "fn canRead(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 75
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "canWrite",
+          "match_hash": "1241dc71e09080b867e8dbd49205c8fabe5cacb35f557d5b3d50ff19df6be353",
+          "signature": "fn canWrite(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 86
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "canDerive",
+          "match_hash": "47daf732b0a5e2601dda9634481234ca76b86b43ed6ec3c578e91f19ac34eeae",
+          "signature": "fn canDerive(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 97
+        }
+      ],
+      "line": 53
+    },
+    {
+      "type": "enum",
+      "name": "TypeTag",
+      "match_hash": "3f4b280ac94968209d4d6ab18f0d3278d45a8c2cc830c5014528d96c806c21d8",
+      "signature": "keyword_enum TypeTag { ... }",
+      "comment": "Broad type category attached to each Accessor.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "int",
+          "is_pub": false,
+          "line": 174
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "float",
+          "is_pub": false,
+          "line": 175
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bool",
+          "is_pub": false,
+          "line": 176
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "string_owned",
+          "is_pub": false,
+          "line": 177
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "string_borrowed",
+          "is_pub": false,
+          "line": 178
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "string_rc",
+          "is_pub": false,
+          "line": 179
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"enum\"",
+          "is_pub": false,
+          "line": 180
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "optional",
+          "is_pub": false,
+          "line": 181
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "array",
+          "is_pub": false,
+          "line": 182
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "vector",
+          "is_pub": false,
+          "line": 183
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "bitset",
+          "is_pub": false,
+          "line": 184
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "collection",
+          "is_pub": false,
+          "line": 185
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "unknown",
+          "is_pub": false,
+          "line": 186
+        }
+      ],
+      "line": 173
+    },
+    {
+      "type": "enum",
+      "name": "OwnershipMode",
+      "match_hash": "9c1dd43ff500e556c097174fc81bd7c65bab68954b50b9eec602726235c69746",
+      "signature": "keyword_enum OwnershipMode { ... }",
+      "comment": "Who owns the memory behind a field value.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "value",
+          "comment": "The struct field holds a plain value; no heap allocation involved.",
+          "is_pub": false,
+          "line": 192
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "owned",
+          "comment": "The field is an allocator-owned heap allocation; the reflection layer",
+          "is_pub": false,
+          "line": 195
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "borrowed",
+          "comment": "The field is a borrowed pointer; the reflection layer never frees it.",
+          "is_pub": false,
+          "line": 197
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "rc",
+          "comment": "The field is reference-counted; the reflection layer calls `releaseFn`",
+          "is_pub": false,
+          "line": 200
+        }
+      ],
+      "line": 190
+    },
+    {
+      "type": "struct",
+      "name": "ConstraintVTable",
+      "match_hash": "5e4fd855fd21d5eae2f8804363a409d58d600c291b95dd5e469b31883b89ed13",
+      "signature": "keyword_struct ConstraintVTable { ... }",
+      "comment": "Type-erased vtable for parsing a string into a field value and serialising",
+      "is_pub": true,
+      "line": 214
+    },
+    {
+      "type": "fn_decl",
+      "name": "Constraint",
+      "match_hash": "bd6bd77f9257ffe9957dae3cb57cc21455cdae3762192fccc6dff55cba306c5b",
+      "signature": "fn Constraint(T: type) -> ConstraintVTable",
+      "params": [
+        { "name": "T", "type": "type" }
+      ],
+      "returns": "ConstraintVTable",
+      "comment": "Build a static ConstraintVTable for type T.",
+      "is_pub": true,
+      "line": 289
+    },
+    {
+      "type": "fn_private",
+      "name": "constraintSet",
+      "match_hash": "305f3b61cc9d0a58fa60c036922e58fe93c753d4936e89db91071576ac3f7b6d",
+      "signature": "fn constraintSet(T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) -> anyerror!void",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "typed_ptr", "type": "*T" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "anyerror!void",
+      "comment": "Validates and sets constraints for a Zig type using allocator and pointer input.",
+      "is_pub": false,
+      "line": 336
+    },
+    {
+      "type": "fn_private",
+      "name": "constraintGet",
+      "match_hash": "f6fa78a4c4c214eb4dcfcd52f7b93e52d177831b05677478b6190867095069fc",
+      "signature": "fn constraintGet(T: type, allocator: std.mem.Allocator, typed_ptr: *const T) -> anyerror![]const u8",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "typed_ptr", "type": "*const T" }
+      ],
+      "returns": "anyerror![]const u8",
+      "comment": "Retrieves a value from a typed pointer using reflection, returning any error if failed.",
+      "is_pub": false,
+      "line": 398
+    },
+    {
+      "type": "struct",
+      "name": "FieldMeta",
+      "match_hash": "74d8e0c0578e83b38f915f7fe11acdfa73f8eaee2bef4959f2da359179f5e99e",
+      "signature": "keyword_struct FieldMeta { ... }",
+      "comment": "Field metadata for AI agent understanding and schema documentation.",
+      "is_pub": true,
+      "line": 460
+    },
+    {
+      "type": "struct",
+      "name": "Accessor",
+      "match_hash": "3f8ffbd5771a3dc887231b26b81b1697e0cdb998d90856eb6f4856dc2b536f8c",
+      "signature": "keyword_struct Accessor { ... }",
+      "comment": "A single field descriptor used by both static (Editable) and dynamic",
+      "is_pub": true,
+      "line": 547
+    },
+    {
+      "type": "fn_decl",
+      "name": "Editable",
+      "match_hash": "05b17cb454d4881e95ba4a472ded9dd68d4fa1f9bb3019c9a0a909f8aff5c266",
+      "signature": "fn Editable(Host: type) -> type",
+      "params": [
+        { "name": "Host", "type": "type" }
+      ],
+      "returns": "type",
+      "comment": "Zero-size mixin that adds reflective set/get to any struct.",
+      "is_pub": true,
+      "line": 573
+    },
+    {
+      "type": "fn_private",
+      "name": "typeName",
+      "match_hash": "a4108a7d81fa6b09a897dd2ee8826e3d2273ba18aa4edbce65363924647be5df",
+      "signature": "fn typeName(T: type) -> []const u8",
+      "params": [
+        { "name": "T", "type": "type" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Type name for JSON schema output (comptime known).",
+      "is_pub": false,
+      "line": 803
+    },
+    {
+      "type": "fn_private",
+      "name": "describeSchemaFromAccessors",
+      "match_hash": "84bf637500d1e205b5815874f9f9da16d7d559ba7c6cbe63a74da5a3706a28bf",
+      "signature": "fn describeSchemaFromAccessors(allocator: std.mem.Allocator, type_name: []const u8, accessors_slice: []const Accessor) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "type_name", "type": "[]const u8" },
+        { "name": "accessors_slice", "type": "[]const Accessor" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Generate JSON Schema from an accessor slice.",
+      "is_pub": false,
+      "line": 809
+    },
+    {
+      "type": "fn_private",
+      "name": "describeFieldToJson",
+      "match_hash": "05f043eb9625bdf99421a56d2c44cfc59c13eee7d195b8afd09883e1517ec822",
+      "signature": "fn describeFieldToJson(writer, accessor: Accessor, indent: usize) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "accessor", "type": "Accessor" },
+        { "name": "indent", "type": "usize" }
+      ],
+      "returns": "void",
+      "comment": "Write a single field's JSON Schema property.",
+      "is_pub": false,
+      "line": 873
+    },
+    {
+      "type": "fn_private",
+      "name": "typeTagToJsonSchema",
+      "match_hash": "87015b364c8feae0bc0f637a7d1a609f510ff537c4243c9914e429cbf49d2bdf",
+      "signature": "fn typeTagToJsonSchema(tag: TypeTag) -> []const u8",
+      "params": [
+        { "name": "tag", "type": "TypeTag" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Convert TypeTag to JSON Schema type string.",
+      "is_pub": false,
+      "line": 1055
+    },
+    {
+      "type": "fn_private",
+      "name": "describeRoleSet",
+      "match_hash": "0b80af0cd4add009e7fd1b3ac436dbc06d9f6ec8a87444ddb1304f6fc88e438c",
+      "signature": "fn describeRoleSet(writer, perms: RolePermissions, operation: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "perms", "type": "RolePermissions" },
+        { "name": "operation", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Write role permission set as comma-separated role names.",
+      "is_pub": false,
+      "line": 1075
+    },
+    {
+      "type": "fn_private",
+      "name": "writeEscapedJsonString",
+      "match_hash": "f5606b0ed6fc1642e7992b5b438afa99c202ab1267122b284b04815ce87e08a6",
+      "signature": "fn writeEscapedJsonString(writer, s: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Write escaped JSON string.",
+      "is_pub": false,
+      "line": 1095
+    },
+    {
+      "type": "struct",
+      "name": "DynamicEditable",
+      "match_hash": "bd90575620092c8ca1848915298f4a611e62e270c3bd5c4a09d5232115ce5339",
+      "signature": "keyword_struct DynamicEditable { ... }",
+      "comment": "Runtime field editor backed by a raw byte buffer and a slice of Accessors.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "d3ca03aeaa32e9b1ae0655cb2c874de4e28e8d918bb493caec18875d2f3e33fe",
+          "signature": "fn init(allocator: std.mem.Allocator, buffer: []u8, accessors: []const Accessor) -> DynamicEditable",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "buffer", "type": "[]u8" },
+            { "name": "accessors", "type": "[]const Accessor" }
+          ],
+          "returns": "DynamicEditable",
+          "is_pub": true,
+          "line": 1128
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "7e769d44cb8e82658b3388befeff470033ae86ca7f6a733531cdeec46df9da01",
+          "signature": "fn deinit(self: *DynamicEditable) -> void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 1146
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "releaseAll",
+          "match_hash": "7e913a64647eb61804335d133274c5f027f4c563e6320869c8903c135428af04",
+          "signature": "fn releaseAll(self: *DynamicEditable) -> void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" }
+          ],
+          "returns": "void",
+          "comment": "Release heap memory owned by every field that has a releaseFn.",
+          "is_pub": true,
+          "line": 1154
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "set",
+          "match_hash": "c227b6629f1bd4c77acaca903164c2c2df6d0981a0485f3509e762d592ca27c8",
+          "signature": "fn set(self: *DynamicEditable, key: []const u8, value: []const u8, role: Role) -> anyerror!void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" },
+            { "name": "key", "type": "[]const u8" },
+            { "name": "value", "type": "[]const u8" },
+            { "name": "role", "type": "Role" }
+          ],
+          "returns": "anyerror!void",
+          "comment": "Set a field by name via string input, role-checked.",
+          "is_pub": true,
+          "line": 1166
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "6dcb2ee44137747884f5a739d0867c2fd8dc3ba519d3756d239c8729674b7c8f",
+          "signature": "fn get(self: *const DynamicEditable, key: []const u8, role: Role) -> anyerror![]const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "key", "type": "[]const u8" },
+            { "name": "role", "type": "Role" }
+          ],
+          "returns": "anyerror![]const u8",
+          "comment": "Get a field by name as a caller-owned string, role-checked.",
+          "is_pub": true,
+          "line": 1179
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "describeSchema",
+          "match_hash": "efde8665034dff047a317ae01e54078d633297a3fb0933bb3370942e5d60cf45",
+          "signature": "fn describeSchema(self: *const DynamicEditable, allocator: std.mem.Allocator, type_name: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "type_name", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Generate a JSON Schema describing all fields, types, constraints, and metadata.",
+          "is_pub": true,
+          "line": 1194
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "fieldNames",
+          "match_hash": "caec772724e22998e5ce0c2652ae9e405c0bca2423a80ba15152f69781626ca2",
+          "signature": "fn fieldNames(self: *const DynamicEditable, allocator: std.mem.Allocator) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Generate a list of field names for iteration.",
+          "is_pub": true,
+          "line": 1199
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getFieldMeta",
+          "match_hash": "1a2cd8b19edc37dcc1ed8ee6aa5092403c9b003975f7d49cdb11fff9c85f80ca",
+          "signature": "fn getFieldMeta(self: *const DynamicEditable, key: []const u8) -> ?FieldMeta",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "key", "type": "[]const u8" }
+          ],
+          "returns": "?FieldMeta",
+          "comment": "Get metadata for a specific field by name.",
+          "is_pub": true,
+          "line": 1209
+        }
+      ],
+      "line": 1120
+    },
+    {
+      "type": "struct",
+      "name": "TestConfig",
+      "match_hash": "2bdee22dcce48dbc7f389cfbdc91fad1e2b259a68ac8fefa94889f44ea293a44",
+      "signature": "keyword_struct TestConfig { ... }",
+      "comment": "Manages configuration settings with a fixed-size buffer; encapsulates initialization logic; not thread-safe.",
+      "is_pub": false,
+      "line": 1223
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get integer",
+      "is_pub": false,
+      "line": 1230
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get float",
+      "is_pub": false,
+      "line": 1239
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get bool",
+      "is_pub": false,
+      "line": 1248
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: field not found",
+      "is_pub": false,
+      "line": 1257
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: zero-size mixin",
+      "is_pub": false,
+      "line": 1263
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: setFast and getFast",
+      "is_pub": false,
+      "line": 1267
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: string field set and get",
+      "is_pub": false,
+      "line": 1282
+    },
+    {
+      "type": "enum",
+      "name": "Status",
+      "match_hash": "5e17af7d2b56b085692e0c26090e7c90fc9a441428abdee948cfda088bb47bbf",
+      "signature": "keyword_enum Status { ... }",
+      "comment": "Defines a status enum with compile-time checks; owned by the module; ensures invariant validity at compile time.",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "pending",
+          "is_pub": false,
+          "line": 1298
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "active",
+          "is_pub": false,
+          "line": 1298
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "done",
+          "is_pub": false,
+          "line": 1298
+        }
+      ],
+      "line": 1298
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: enum field set and get",
+      "is_pub": false,
+      "line": 1305
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: enum invalid value propagates error",
+      "is_pub": false,
+      "line": 1314
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: optional null",
+      "is_pub": false,
+      "line": 1327
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: optional value",
+      "is_pub": false,
+      "line": 1333
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: array set and get",
+      "is_pub": false,
+      "line": 1347
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: vector set and get",
+      "is_pub": false,
+      "line": 1365
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: basic set and get",
+      "is_pub": false,
+      "line": 1377
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: role-based permission",
+      "is_pub": false,
+      "line": 1403
+    },
+    {
+      "type": "test_decl",
+      "name": "RolePermissions: packed struct size",
+      "is_pub": false,
+      "line": 1419
+    },
+    {
+      "type": "test_decl",
+      "name": "RolePermissions: canRead and canWrite methods",
+      "is_pub": false,
+      "line": 1423
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: access denied on read",
+      "is_pub": false,
+      "line": 1431
+    },
+    {
+      "type": "struct",
+      "name": "TestSchema",
+      "match_hash": "cb9e97a8a8c42ec45990b5c1797d1c4e9b35b5d9a4afb39eec667244a10e6b9a",
+      "signature": "keyword_struct TestSchema { ... }",
+      "comment": "Defines a schema for field description with fixed metadata; owned by the module, immutable once initialized.",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "describeField",
+          "match_hash": "cbc9e8d816917833ee7e1100796852365ab59a72ab048b3e073d17f7ce1aba65",
+          "signature": "fn describeField(name: []const u8) -> FieldMeta",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "FieldMeta",
+          "is_pub": true,
+          "line": 1454
+        }
+      ],
+      "line": 1447
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: describeSchema generates JSON",
+      "is_pub": false,
+      "line": 1480
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: fieldNames returns all fields",
+      "is_pub": false,
+      "line": 1493
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: getFieldMeta returns metadata",
+      "is_pub": false,
+      "line": 1499
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: describeSchema generates JSON",
+      "is_pub": false,
+      "line": 1507
+    }
+  ]
+}

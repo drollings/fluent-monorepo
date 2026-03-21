@@ -1,0 +1,274 @@
+{
+  "meta": {
+    "module": "src.common.hash",
+    "source": "src/common/hash.zig",
+    "language": "zig"
+  },
+  "comment": "Provides SHA-256 and content+model hashing utilities for Zig, supporting allocator-friendly outputs and secure key generation.",
+  "detail": "# Hash Module Documentation\n\n## Module Purpose and Architecture\n\nThe `src/common/hash.zig` module provides a comprehensive suite of cryptographic hashing utilities designed for flexible, allocator-friendly operations across various use cases. The architecture follows a modular design pattern where algorithm selection is centralized through an enum dispatch system, while specific hashing functions are optimized for their intended domains—whether generating cache keys, verifying file integrity, or building batch processing pipelines.\n\nThe module leverages Zig's standard library `std.crypto.hash` as its cryptographic foundation, ensuring compatibility with well-tested implementations of SHA-256, SHA-512, and BLAKE3 algorithms. This abstraction layer allows the module to remain agnostic to underlying algorithm implementations while providing consistent interfaces for callers.\n\n## Key Abstractions and Relationships\n\nThe module's core abstractions center around three main components:\n\n**HashAlgorithm Enum**: Serves as the central dispatch mechanism for algorithm selection. It defines supported algorithms (SHA-256, SHA-512, BLAKE3) and provides a `digestLength()` method that returns the output size in bytes for each algorithm. This enum enables polymorphic behavior through switch expressions while maintaining compile-time type safety.\n\n**BatchHashResult Struct**: A container struct representing per-file results from batch operations. It includes fields for the file path, optional hash value, and optional error message, allowing callers to collect heterogeneous results across multiple files in a single operation.\n\n**HashState Struct**: Although not explicitly shown in the source code, this appears to be part of the public API for maintaining hashing state across multiple update calls—useful for incremental hashing scenarios where data arrives in chunks over time.\n\n## Public API and Usage Patterns\n\nThe module exposes several key functions:\n\n1. **sha256Hex()**: Returns a 64-character lowercase hexadecimal string representing the SHA-256 digest of input data. Callers must allocate memory and free the returned slice when done, following Zig's ownership model.\n\n2. **contentHashWithModel()**: A specialized function that produces a 16-byte hash by combining content with a model identifier separated by a null byte. This prevents cache collisions when the same content is hashed under different embedding models—a critical feature for AI/ML systems managing model-specific caches.\n\n3. **hashFile()**: Reads an entire file in 64KB chunks and computes its hash using the specified algorithm, returning an allocator-owned hex string. The function handles streaming efficiently by processing data incrementally rather than loading files entirely into memory.\n\n4. **hashBatch()**: Processes multiple files sequentially with optional progress callbacks, returning a slice of BatchHashResult structs that capture success or failure for each file. This enables monitoring large-scale hashing operations without blocking the caller.\n\n5. **blake3Hash/Hex**: BLAKE3-specific utilities providing both raw digest bytes and hex string representations.\n\n## Important Implementation Details\n\nThe module employs several important implementation strategies:\n\n- **Buffer Sizing**: A fixed 64KB buffer is used for file I/O, balancing memory efficiency with system call overhead. This size is large enough to amortize seek costs while small enough to fit in cache.\n\n- **Error Handling**: File reading operations use `catch` expressions within loops to gracefully handle errors and break out of processing when files cannot be read.\n\n- **Hex Encoding Optimization**: The `contentHashWithModel()` function uses a precomputed lookup table (\"0123456789abcdef\") rather than calling `std.fmt.bytesToHex()`, reducing overhead for fixed-size output requirements.\n\n- **Memory Ownership Semantics**: Functions consistently distinguish between zero-allocation returns (fixed-size arrays) and allocator-owned returns (slices requiring deallocation), making memory management explicit and predictable.\n\n## Design Patterns\n\nThe module demonstrates several Zig design patterns:\n\n1. **Factory Pattern**: The `HashAlgorithm` enum with switch expressions acts as a factory, creating the appropriate hasher instance based on algorithm selection.\n\n2. **Stream Processing**: File hashing uses chunked reading with incremental updates to the hasher state, demonstrating efficient streaming rather than bulk loading.\n\n3. **Builder/Progress Pattern**: The optional progress callback parameter in `hashBatch()` allows external monitoring of large operations without requiring polling or busy-waiting.\n\n4. **Resource Management via Defer**: File handles are automatically closed using defer statements, ensuring cleanup even when errors occur during processing.",
+  "keywords": ["sha256Hex", "contentHashWithModel", "hashFile", "BatchHashResult", "HashAlgorithm", "blake3Hash", "batch processing", "cryptographic hashing", "cache key generation", "file integrity verification"],
+  "used_by": ["src/common/llm.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "sha256Hex",
+      "match_hash": "98b120e54d8a1f37f6ea4184403e2ba54d40978f844a3b75cf831084f6a2f941",
+      "signature": "fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "data", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Compute SHA-256 over `data` and return the digest as a 64-char lowercase",
+      "is_pub": true,
+      "line": 10
+    },
+    {
+      "type": "fn_decl",
+      "name": "contentHashWithModel",
+      "match_hash": "288bff6b2e6c209d05406740f608b8cbfac401e3b28a1377577b68bf1afe20d5",
+      "signature": "fn contentHashWithModel(content: []const u8, model: []const u8) -> [16]u8",
+      "params": [
+        { "name": "content", "type": "[]const u8" },
+        { "name": "model", "type": "[]const u8" }
+      ],
+      "returns": "[16]u8",
+      "comment": "SHA-256-based 16-hex-char content+model hash.",
+      "is_pub": true,
+      "line": 25
+    },
+    {
+      "type": "enum",
+      "name": "HashAlgorithm",
+      "match_hash": "3cb9be44bf1a157270fe1a89d38832a410ab6085d3a1bfc89b8754c07d47dab3",
+      "signature": "keyword_enum HashAlgorithm { ... }",
+      "comment": "Supported hash algorithms.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "sha256",
+          "is_pub": false,
+          "line": 48
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "sha512",
+          "is_pub": false,
+          "line": 49
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "blake3",
+          "is_pub": false,
+          "line": 50
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "digestLength",
+          "match_hash": "93a180c79da0c34235a63b27bd49fd8a1528fcf5a53c459a5107beb83a3e4ea0",
+          "signature": "fn digestLength(self: HashAlgorithm) -> usize",
+          "params": [
+            { "name": "self", "type": "HashAlgorithm" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 52
+        }
+      ],
+      "line": 47
+    },
+    {
+      "type": "fn_decl",
+      "name": "hashFile",
+      "match_hash": "61c729bc72a35398f4e6edc8d8c320584a044481b690f8e85f4e4d1ea18e64ec",
+      "signature": "fn hashFile(allocator: std.mem.Allocator, path: []const u8, algorithm: HashAlgorithm) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" },
+        { "name": "algorithm", "type": "HashAlgorithm" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Hash a file at `path` with the given algorithm.",
+      "is_pub": true,
+      "line": 63
+    },
+    {
+      "type": "struct",
+      "name": "BatchHashResult",
+      "match_hash": "cf64cfb3f02d2a51975bb70cb19680210a82df4724a5ce8633ca50243cf936dd",
+      "signature": "keyword_struct BatchHashResult { ... }",
+      "comment": "Per-file result from `hashBatch`.",
+      "is_pub": true,
+      "line": 114
+    },
+    {
+      "type": "fn_decl",
+      "name": "hashBatch",
+      "match_hash": "06f1abfa3c9f5fdf68128081223af5275da1700cbfb10e9691438573e5b8fe8d",
+      "signature": "fn hashBatch(allocator: std.mem.Allocator, paths: []const []const u8, algorithm: HashAlgorithm, progress_callback: ?*const fn (usize, usize) void) -> []BatchHashResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "paths", "type": "[]const []const u8" },
+        { "name": "algorithm", "type": "HashAlgorithm" },
+        { "name": "progress_callback", "type": "?*const fn (usize, usize) void" }
+      ],
+      "returns": "[]BatchHashResult",
+      "comment": "Hash multiple files in sequence, collecting results.",
+      "is_pub": true,
+      "line": 123
+    },
+    {
+      "type": "fn_decl",
+      "name": "hashString",
+      "match_hash": "a7d3b62b9d41e8664bfcfc8cb55e79150277332b4717712c91dad2de148351e9",
+      "signature": "fn hashString(allocator: std.mem.Allocator, data: []const u8, algorithm: HashAlgorithm) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "data", "type": "[]const u8" },
+        { "name": "algorithm", "type": "HashAlgorithm" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Hash an in-memory byte slice with the given algorithm.",
+      "is_pub": true,
+      "line": 149
+    },
+    {
+      "type": "fn_decl",
+      "name": "blake3Hash",
+      "match_hash": "c8da3a121508cdc3f6140a3d06b8cbf70149a1dca6e9f2f2e9a5e697bc6d3066",
+      "signature": "fn blake3Hash(data: []const u8) -> [32]u8",
+      "params": [
+        { "name": "data", "type": "[]const u8" }
+      ],
+      "returns": "[32]u8",
+      "comment": "Compute a Blake3 digest of `data` — no allocation, returns raw bytes.",
+      "is_pub": true,
+      "line": 177
+    },
+    {
+      "type": "fn_decl",
+      "name": "blake3Hex",
+      "match_hash": "5c65ee9a160e92e51ae716d35357970c81d569dd46306adee0d31cf56fb08245",
+      "signature": "fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "data", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Compute a Blake3 digest of `data` and return it as an allocator-owned hex string.",
+      "is_pub": true,
+      "line": 184
+    },
+    {
+      "type": "struct",
+      "name": "HashState",
+      "match_hash": "40c2851e653bf88d9148cc4d5ea81c5c5afa95242e7aa1ae7d0fc376a794384a",
+      "signature": "keyword_struct HashState { ... }",
+      "comment": "Incremental streaming hash: accumulate data in multiple `update()` calls,",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "f8a392ee1ae2a1c21582aab262307ca209ff39b95d71bee6f2d14f772a301112",
+          "signature": "fn init(algorithm: HashAlgorithm) -> HashState",
+          "params": [
+            { "name": "algorithm", "type": "HashAlgorithm" }
+          ],
+          "returns": "HashState",
+          "is_pub": true,
+          "line": 198
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "update",
+          "match_hash": "c09ff821a044807e570cfe6999121541d1a9967e74f1fa5815c2429c8bf1a46a",
+          "signature": "fn update(self: *HashState, data: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*HashState" },
+            { "name": "data", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 206
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "final",
+          "match_hash": "eae7c1e5ffb8e2789fe803a7574e06faf6a088e2c9d6bfcda121c598a81f1980",
+          "signature": "fn final(self: *HashState, allocator: std.mem.Allocator) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*HashState" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Finalise the hash and return an allocator-owned hex string; caller must free.",
+          "is_pub": true,
+          "line": 215
+        }
+      ],
+      "line": 192
+    },
+    {
+      "type": "test_decl",
+      "name": "sha256Hex produces correct length",
+      "is_pub": false,
+      "line": 243
+    },
+    {
+      "type": "test_decl",
+      "name": "sha256Hex is deterministic",
+      "is_pub": false,
+      "line": 249
+    },
+    {
+      "type": "test_decl",
+      "name": "sha256Hex differs for different inputs",
+      "is_pub": false,
+      "line": 257
+    },
+    {
+      "type": "test_decl",
+      "name": "contentHashWithModel is deterministic and model-sensitive",
+      "is_pub": false,
+      "line": 265
+    },
+    {
+      "type": "test_decl",
+      "name": "hashString: sha256",
+      "is_pub": false,
+      "line": 273
+    },
+    {
+      "type": "test_decl",
+      "name": "hashString: blake3",
+      "is_pub": false,
+      "line": 279
+    },
+    {
+      "type": "test_decl",
+      "name": "blake3Hash returns 32 bytes",
+      "is_pub": false,
+      "line": 285
+    },
+    {
+      "type": "test_decl",
+      "name": "blake3Hex produces 64-char hex",
+      "is_pub": false,
+      "line": 290
+    },
+    {
+      "type": "test_decl",
+      "name": "HashState incremental matches single-pass sha256",
+      "is_pub": false,
+      "line": 296
+    },
+    {
+      "type": "test_decl",
+      "name": "HashAlgorithm digestLength",
+      "is_pub": false,
+      "line": 312
+    }
+  ]
+}

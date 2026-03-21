@@ -1,0 +1,409 @@
+{
+  "meta": {
+    "module": "src.rdf.parser",
+    "source": "src/rdf/parser.zig",
+    "language": "zig"
+  },
+  "comment": "Streaming parser for Zig RDF, efficiently producing triples without full AST storage.",
+  "detail": "# RDF Parser Module Documentation\n\n## Module Purpose and Architecture\n\nThis module implements a streaming recursive-descent Turtle parser for the Resource Description Framework (RDF). Designed specifically for memory efficiency, it produces RDF triples one at a time through an iterator interface without materializing a complete AST. This architecture is ideal for processing large RDF files where loading everything into memory would be impractical.\n\nThe parser leverages a separate lexer module (`lexer.zig`) that tokenizes the input stream, then recursively descends through the Turtle grammar to reconstruct semantic meaning from tokens.\n\n## Key Abstractions and Relationships\n\n**Term (union)**: The fundamental unit representing RDF entities. It unifies three types:\n- **IRI**: Internationalized Resource Identifiers as `[]const u8`\n- **Blank node**: Named blank nodes (`_:id`) or bracketed blank nodes (`[<p> <o>]`) as `[]const u8`\n- **Literal**: Typed string literals with optional language tags and datatypes\n\n**Triple (struct)**: The core RDF building block containing subject, predicate, and object terms. Each term must be explicitly freed via the `deinit()` method to prevent memory leaks.\n\n**Parser (struct)**: The orchestrator managing the entire parsing lifecycle. It maintains state including prefix mappings for namespace expansion, base URI resolution, blank node counters, and an internal queue that buffers triples produced during predicate-object list processing.\n\n## Public API and Usage Patterns\n\nThe API follows a clear lifecycle pattern:\n\n```zig\nconst parser = try Parser.init(allocator, source);\ndefer parser.deinit();  // Ensures cleanup of all allocated memory\n\nwhile (try parser.next()) |triple| {\n    // Process triple here\n    triple.deinit(allocator);  // Free triple's terms\n}\n```\n\nThe iterator pattern allows processing triples sequentially without storing them. Each `Triple` must be explicitly freed because the underlying terms allocate memory for IRIs and literals.\n\n## Important Implementation Details\n\n- **Memory Management**: All dynamic allocations are tracked through explicit `deinit()` methods on `Literal`, `Term`, `Triple`, and `Parser`. The prefix map stores both keys and values as allocated strings.\n\n- **Prefix Resolution**: The parser maintains a `StringHashMap` for prefix-to-IRI mappings established via `@prefix` directives, enabling namespace expansion during IRI resolution.\n\n- **Base URI Handling**: The `@base` directive sets a base URL that gets prepended to relative IRIs encountered during parsing.\n\n- **Blank Node Generation**: Two forms are supported: named blank nodes (`_:identifier`) and bracketed blank nodes (`[<predicate> <object>]`), with an internal counter for generating unique identifiers.\n\n- **Special Shorthand**: The `a` keyword is recognized as shorthand for the RDF type predicate (`http://www.w3.org/1999/02/22-rdf-syntax-ns#type`).\n\n- **Error Handling**: A comprehensive error set covers parsing failures including unexpected tokens, unterminated IRIs/literals/comments, invalid prefixes, and out-of-memory conditions.\n\n## Design Patterns\n\nThe module employs several key patterns:\n- **Streaming/Producer-Consumer**: Produces triples on-demand rather than buffering them all\n- **Token Lookahead**: Uses peek/consume methods to enable recursive descent parsing\n- **RAII via deinit()**: Explicit cleanup functions ensure memory is properly freed even on error paths\n- **Iterator Pattern**: The `next()` method enables sequential triple consumption",
+  "keywords": ["RDF", "Turtle parser", "streaming parser", "Term union", "Triple struct", "Parser iterator", "blank nodes", "IRIs", "recursive descent", "prefix mapping"],
+  "used_by": ["src/rdf/normalize.zig", "src/rdf/nquads.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "TermType",
+      "match_hash": "1afe79cc831cd7d2959023f446b97f0f6588cbf7fc0415fce1090514686636da",
+      "signature": "keyword_enum TermType { ... }",
+      "comment": "Represents a term type with enum definitions; managed via ownership model; key invariant is term structure integrity.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "iri",
+          "is_pub": false,
+          "line": 26
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "blank_node",
+          "is_pub": false,
+          "line": 26
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "literal",
+          "is_pub": false,
+          "line": 26
+        }
+      ],
+      "line": 26
+    },
+    {
+      "type": "struct",
+      "name": "Literal",
+      "match_hash": "2e8f7aa23f744bb8b9764baadfb5b2cad9b43b6fd608aed4036ce23665643517",
+      "signature": "keyword_struct Literal { ... }",
+      "comment": "Manages RDF parsing state with ownership; ensures proper cleanup via deinit; tracks structure literals.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "52e501af82ee7bfdbf54eaea64eec8c7dd970e732acae3e16333e02a28c30bb3",
+          "signature": "fn deinit(self: Literal, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Literal" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 33
+        }
+      ],
+      "line": 28
+    },
+    {
+      "type": "union",
+      "name": "Term",
+      "match_hash": "6d09424d77f58b7d9b2f40467c0b0e0bdcc3da821a24b9afec603696af62bb37",
+      "signature": "keyword_union Term { ... }",
+      "comment": "Manages term-based keyword unions with automatic cleanup; owns memory, not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "6e8f46f40448598140a60ac663f39245880fefcd16e73cd6df1f8405315b1cf5",
+          "signature": "fn deinit(self: Term, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Term" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 45
+        }
+      ],
+      "line": 40
+    },
+    {
+      "type": "struct",
+      "name": "Triple",
+      "match_hash": "98d26bc96f040c3b63ff6eadbf683968eb9fdd8b633f28a5e5fb7a4ccc50c9dd",
+      "signature": "keyword_struct Triple { ... }",
+      "comment": "Represents a triple structure with ownership of memory; managed via deinit for cleanup.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "1a68b0484f849dce6e27c14713e7ef77b6a12ffed49580df43bb0f8d172622a2",
+          "signature": "fn deinit(self: Triple, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Triple" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 59
+        }
+      ],
+      "line": 54
+    },
+    {
+      "type": "struct",
+      "name": "Parser",
+      "match_hash": "c48bf2e5175eebf461bfe0ff45b4fc941bec7944ab26514448735abbaca54058",
+      "signature": "keyword_struct Parser { ... }",
+      "comment": "Manages RDF parsing state with allocator and token handling; owns parser instance, not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "b7c2537749e5384a14a5183564846f186a84af5eadcbe422cab428a416e9d9a0",
+          "signature": "fn init(allocator: std.mem.Allocator, source: []const u8) -> Parser",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "Parser",
+          "is_pub": true,
+          "line": 89
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "bb82753be8d9bff5a117ecd3f8ad2cc2c2a8641798efe6956d1d624e8ecebe67",
+          "signature": "fn deinit(self: *Parser) -> void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 101
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "peekTok",
+          "match_hash": "19cc30f38726d9bd912cc3f9baf18bc9a398ef5cc946ef875e7a6a48f72f6189",
+          "signature": "fn peekTok(self: *Parser) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!Token",
+          "is_pub": false,
+          "line": 117
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "consumeTok",
+          "match_hash": "f3a62265654258afc00c3b4f4e7601a976be9ef2305073003fad0180a0af9cf3",
+          "signature": "fn consumeTok(self: *Parser) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!Token",
+          "is_pub": false,
+          "line": 122
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "expectTok",
+          "match_hash": "f946360c6ed080f51155eb40513b3b2bde44b2a85508fba965698ab8c02cf204",
+          "signature": "fn expectTok(self: *Parser, tt: TokenType) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "tt", "type": "TokenType" }
+          ],
+          "returns": "ParseError!Token",
+          "is_pub": false,
+          "line": 130
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "next",
+          "match_hash": "c3376c2e5fd149bbffc1d2cf70f3df930dacb2f6b06860d3c7d601dcf40e3701",
+          "signature": "fn next(self: *Parser) -> ParseError!?Triple",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!?Triple",
+          "is_pub": true,
+          "line": 140
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parsePrefix",
+          "match_hash": "d58fea3cd5f63446c6a3f277a68d548a72ca59c4259d6c8797a1fbb8df5a36d5",
+          "signature": "fn parsePrefix(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!void",
+          "is_pub": false,
+          "line": 175
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseBase",
+          "match_hash": "2894b53e3c2c9b4aa89b6ad088af9f1785d3689c8bf61a2f5c32ff0a5976670c",
+          "signature": "fn parseBase(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!void",
+          "is_pub": false,
+          "line": 199
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseStatement",
+          "match_hash": "72532149f672aa7dba9344b531206ca3d486c8c6a7f2ea917a906aac3a77495d",
+          "signature": "fn parseStatement(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!void",
+          "is_pub": false,
+          "line": 211
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "collectPredicateObjectList",
+          "match_hash": "31128bdd8d5c3aab73bf406c3de8e8f924fdbde3579164f8371b4c5fb7f897e7",
+          "signature": "fn collectPredicateObjectList(self: *Parser, subj: Term) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "subj", "type": "Term" }
+          ],
+          "returns": "ParseError!void",
+          "comment": "Fill self.queue with all triples from one predicate-object list.",
+          "is_pub": false,
+          "line": 223
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseVerb",
+          "match_hash": "07649ad5e66cfe38d6bac98f3e4d2b8a7caa08ddfde4b45390f75fc3a9a9a82b",
+          "signature": "fn parseVerb(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!?Term",
+          "is_pub": false,
+          "line": 259
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseTerm",
+          "match_hash": "2763d92db6c5ad0af0d8f1b611b6c379f248d955717b98a60822bacfbfa8a317",
+          "signature": "fn parseTerm(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!?Term",
+          "is_pub": false,
+          "line": 269
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseLiteralTerm",
+          "match_hash": "763e981e969e3c6ef90e84b21a445984111c22dfbcce6fa09d34085b76caece1",
+          "signature": "fn parseLiteralTerm(self: *Parser, lit_tok: Token) -> ParseError!Term",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "lit_tok", "type": "Token" }
+          ],
+          "returns": "ParseError!Term",
+          "is_pub": false,
+          "line": 307
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseInlineBlankNode",
+          "match_hash": "ca3b5febc2a9a0959ef9d9183eb21b6f494426542b24d38330a4d551c9828cda",
+          "signature": "fn parseInlineBlankNode(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
+          "returns": "ParseError!?Term",
+          "is_pub": false,
+          "line": 349
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractIRI",
+          "match_hash": "3ed99984dd88c05da661607361d90233bf23c591f494f3c4dd68f6e5084d286b",
+          "signature": "fn extractIRI(self: *Parser, raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "raw", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 372
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "expandPrefixedName",
+          "match_hash": "5ffff5c0efa83b00f1fbdf6d9dc7da34274fd7213d072769451d478a3a0f187e",
+          "signature": "fn expandPrefixedName(self: *Parser, raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "raw", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 379
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "cloneTerm",
+          "match_hash": "007e6c100eac32358f9ddcb3dc1f30c4dc5dcf773667c600f01e6799c5483d4a",
+          "signature": "fn cloneTerm(self: *Parser, t: Term) -> Term",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "t", "type": "Term" }
+          ],
+          "returns": "Term",
+          "is_pub": false,
+          "line": 392
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractLiteralContent",
+          "match_hash": "b5e8be2ff15c5690b926a9b01109e637e4da05e8ccd093ad7050b9c70661ab03",
+          "signature": "fn extractLiteralContent(raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "raw", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 404
+        }
+      ],
+      "line": 78
+    },
+    {
+      "type": "test_decl",
+      "name": "parse simple triple",
+      "is_pub": false,
+      "line": 424
+    },
+    {
+      "type": "test_decl",
+      "name": "parse predicate-object list",
+      "is_pub": false,
+      "line": 436
+    },
+    {
+      "type": "test_decl",
+      "name": "parse object list",
+      "is_pub": false,
+      "line": 449
+    },
+    {
+      "type": "test_decl",
+      "name": "parse a shorthand",
+      "is_pub": false,
+      "line": 461
+    },
+    {
+      "type": "test_decl",
+      "name": "parse prefix expansion",
+      "is_pub": false,
+      "line": 470
+    },
+    {
+      "type": "test_decl",
+      "name": "parse blank node subject",
+      "is_pub": false,
+      "line": 483
+    },
+    {
+      "type": "test_decl",
+      "name": "parse literal object",
+      "is_pub": false,
+      "line": 492
+    },
+    {
+      "type": "test_decl",
+      "name": "parse inline blank node",
+      "is_pub": false,
+      "line": 501
+    },
+    {
+      "type": "test_decl",
+      "name": "parse multiple subjects",
+      "is_pub": false,
+      "line": 514
+    },
+    {
+      "type": "test_decl",
+      "name": "YAGO 4.5 tiny: first 100 triples parse without errors",
+      "is_pub": false,
+      "line": 538
+    }
+  ]
+}

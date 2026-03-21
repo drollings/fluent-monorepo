@@ -1,0 +1,70 @@
+{
+  "meta": {
+    "module": "src.guidance.plugin",
+    "source": "src/guidance/plugin.zig",
+    "language": "zig"
+  },
+  "comment": " LanguagePlugin — interface for language-specific AST providers.\n\n Each plugin handles a set of file extensions and knows how to:\n   - parse source into structured members\n   - extract imports/dependencies\n   - extract module-level documentation\n\n The Zig native parser is implemented as a plugin wrapping ast_parser.zig.\n External language providers (Python, Rust, …) can be wired in via the\n ExternalPlugin wrapper which forks a subprocess.",
+  "detail": "# LanguagePlugin Module Documentation\n\n## Module Purpose and Architecture\n\nThis module implements a **plugin architecture** for language-specific Abstract Syntax Tree (AST) parsing in an AI coding assistant. The design decouples the core assistant from individual language parsers, allowing new languages to be added with minimal changes to the main codebase.\n\n### Architectural Overview\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                   AI Coding Assistant                        │\n│  ┌──────────────────────────────────────────────────────┐   │\n│  │              Plugin Registry/Manager                  │   │\n│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │   │\n│  │  │  Zig Plugin │  │ Python Plg  │  │ Rust Plugin │   │   │\n│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘   │   │\n│  │         │                │                │           │   │\n│  │  ┌─────────────────────────────────────────────────┐ │   │\n│  │  │            LanguagePlugin Interface             │ │   │\n│  │  │  • parseFn: source → ParsedFile                 │ │   │\n│  │  │  • extractImportsFn: source → imports[]          │ │   │\n│  │  └─────────────────────────────────────────────────┘ │   │\n│  └──────────────────────────────────────────────────────┘   │\n└─────────────────────────────────────────────────────────────┘\n```\n\n## Key Abstractions and Relationships\n\n### `ParsedFile` Struct\nRepresents the complete metadata extracted from a single source file:\n\n| Field | Type | Description |\n|-------|------|-------------|\n| `module` | `[]const u8` | Derived module name (e.g., \"src.foo.bar\") |\n| `source` | `[]const u8` | Source-relative path (e.g., \"src/foo/bar.zig\") |\n| `language` | `[]const u8` | Language identifier tag |\n| `module_comment` | `?[]const u8` | File-level documentation comment |\n| `members` | `[]const types.Member` | Top-level AST members |\n\n### `LanguagePlugin` Struct\nThe central interface contract that all language parsers must implement:\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                    LanguagePlugin                            │\n├─────────────────────────────────────────────────────────────┤\n│  • name:           Human-readable identifier                 │\n│  • extensions:     Set of file extensions (.zig, .py, etc.) │\n│  • parseFn:        Pointer to parsing function               │\n│  • extractImportsFn: Pointer to import extraction            │\n├─────────────────────────────────────────────────────────────┤\n│                    Convenience Methods                        │\n│  • parse()         Wrapper calling parseFn                   │\n│  • extractImports() Wrapper calling extractImportsFn        │\n└─────────────────────────────────────────────────────────────┘\n```\n\n### Plugin Relationship Flow\n1. **Registry** discovers available plugins by name/extension\n2. **Parser** invokes plugin's `parseFn` with source code\n3. **AST Builder** consumes `ParsedFile.members` for analysis\n4. **Importer** uses `extractImportsFn` to resolve dependencies\n\n## Public API and Usage Patterns\n\n### Creating a New Plugin\n\n```zig\nconst MyPlugin = struct {\n    name: \"mylang\",\n    extensions: &.{\".mylang\"},\n    parseFn: my_parse_fn,\n    extractImportsFn: my_extract_imports_fn,\n};\n\nfn my_parse_fn(arena, source, file_path) !ParsedFile {\n    // Parse logic specific to my language\n    _ = arena;  // Use allocator for returned strings\n    return ParsedFile{ ... };\n}\n```\n\n### Plugin Registration Pattern\n```zig\nconst plugins = [_]LanguagePlugin{\n    .{ .name = \"zig\", .extensions = &.{\".zig\"}, .parseFn = zig_parser, },\n    .{ .name = \"python\", .extensions = &.{\".py\"}, .parseFn = python_subprocess, },\n};\n\nfor (plugins) |plugin| {\n    const result = try plugin.parse(allocator, source, path);\n    // Process parsed file\n}\n```\n\n### Memory Safety Guarantees\n- All function pointers accept an **arena allocator**\n- Caller must guarantee arena lifetime ≥ returned data lifetime\n- This enables efficient string allocation without frequent heap calls\n\n## Important Implementation Details\n\n### Arena Allocator Pattern\nThe design passes `std.mem.Allocator` through all parsing functions. This allows:\n- Efficient batch allocation for multiple strings\n- Deterministic memory cleanup when arena is dropped\n- Avoidance of scattered heap allocations during parsing\n\n### Function Pointer Semantics\n```zig\nparseFn: *const fn (arena, source, file_path) anyerror!ParsedFile\n```\nThe function pointer captures the **signature** but not the implementation. This enables:\n- Runtime plugin swapping\n- Lazy loading of parsers\n- Testing with mock implementations\n\n### Error Propagation\nAll parsing functions return `anyerror!T`, allowing:\n- Language-specific error types to be unified\n- Graceful fallback when one parser fails\n- Rich error context for debugging\n\n## Design Patterns Used\n\n| Pattern | Application |\n|---------|-------------|\n| **Plugin/Extension** | Core assistant remains agnostic of specific languages |\n| **Interface Segregation** | Minimal interface (only 2 functions required) |\n| **Dependency Injection** | Parsers receive allocator, not owned by them |\n| **Factory Method** | Plugins are instantiated/configured separately |\n| **Strategy Pattern** | Different parsing strategies per language |\n\n### Extensibility Benefits\n- Adding a new language requires only implementing the interface\n- No modifications to core AST processing logic\n- Can be tested independently of the main system",
+  "keywords": ["LanguagePlugin", "ParsedFile", "plugin architecture", "AST parser", "zig ast_parser", "external plugin", "subprocess forking", "arena allocator", "module metadata", "import extraction"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/plugin_registry.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ParsedFile",
+      "match_hash": "2cfd9b5dd016a6125a891b7abfa45b51f0766d52d7822c8a92856035c247870b",
+      "signature": "keyword_struct ParsedFile { ... }",
+      "comment": "Metadata extracted from a single source file.",
+      "is_pub": true,
+      "line": 16
+    },
+    {
+      "type": "struct",
+      "name": "LanguagePlugin",
+      "match_hash": "c78111d5e007e7098ad75d1efce81a7addf20bca210e0bd2f1b209cfd857d927",
+      "signature": "keyword_struct LanguagePlugin { ... }",
+      "comment": "A language plugin provides file-level parsing for a set of extensions.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "parse",
+          "match_hash": "f3d2853baae5b8241c343459db8bbf9d93f6169387492216a5e65544ea96c041",
+          "signature": "fn parse(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> ParsedFile",
+          "params": [
+            { "name": "self", "type": "*const LanguagePlugin" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[:0]const u8" },
+            { "name": "file_path", "type": "[]const u8" }
+          ],
+          "returns": "ParsedFile",
+          "comment": "Convenience wrapper: call parseFn.",
+          "is_pub": true,
+          "line": 55
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "extractImports",
+          "match_hash": "741dad85c3649a641dfbc59de68543e5e240ea0182740adaff5f41d89c0967f5",
+          "signature": "fn extractImports(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const LanguagePlugin" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[:0]const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Convenience wrapper: call extractImportsFn.",
+          "is_pub": true,
+          "line": 65
+        }
+      ],
+      "line": 33
+    },
+    {
+      "type": "test_decl",
+      "name": "LanguagePlugin interface is callable",
+      "is_pub": false,
+      "line": 78
+    }
+  ]
+}

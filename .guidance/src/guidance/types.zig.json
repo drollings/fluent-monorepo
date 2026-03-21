@@ -1,0 +1,408 @@
+{
+  "meta": {
+    "module": "src.guidance.types",
+    "source": "src/guidance/types.zig",
+    "language": "zig"
+  },
+  "comment": "Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for processing.",
+  "detail": "This module implements a type classification and metadata system for an AI coding assistant's guidance engine, enabling semantic understanding of codebases through structured file and member analysis.\n\n## Module Purpose and Architecture\n\nThe `src/guidance/types.zig` module serves as the foundational schema layer for the guidance documentation engine. It provides standardized type definitions that classify source files by content type, categorize AST nodes by member type, and structure comprehensive documentation metadata including skills, capabilities, and usage patterns. The architecture follows a clean separation between classification logic (FileType) and rich metadata containers (Member, GuidanceDoc).\n\n## Key Abstractions and Relationships\n\n**FileType**: Enum with built-in extension detection (`fromExtension`) mapping file extensions to categories like source, markdown, config, pdf, and audio. This enables routing non-code files to appropriate handlers in the plugin registry.\n\n**MemberType**: Classifies code elements including function declarations, private functions, structs, enums, unions, test declarations, comptime blocks, and methods—both public and private variants.\n\n**PatternType**: Supports two pattern recognition categories: Domain-specific patterns and GoF (Gang of Four) design patterns.\n\n**Member**: A comprehensive struct capturing detailed metadata for code elements including name, type, hash matching, signature, parameter lists with defaults, return types, documentation comments, tags, detected patterns, visibility flags, nested members, and line numbers.\n\n**GuidanceDoc**: The central documentation container linking modules to skills, capabilities, usage information, hashtags, discovery keywords, and member-level details. This enables semantic search and AI-driven code understanding.\n\n**ASTAnalysis**: Captures file-level analysis results including detected functions, classes, imports, and identified patterns—essential for building a searchable knowledge base.\n\n## Public API and Usage Patterns\n\nThe module exports multiple enums (`FileType`, `MemberType`, `PatternType`), structs (`Pattern`, `Param`, `Member`, `Meta`, `GuidanceDoc`, `FileMatch`, `GuidanceInfo`, `ASTAnalysis`), and utility functions for type conversion. The `FileType.fromExtension()` function implements a factory pattern, checking against known source, markdown, and config extensions using case-insensitive comparison before returning `.unknown`. The `toStr()` method provides canonical string representations for database storage.\n\n## Important Implementation Details\n\nThe module uses Zig's compile-time enums for type safety and zero-cost abstractions. Extension matching relies on `std.ascii.eqlIgnoreCase` for robust file detection. All structs use default values (`&.{}`) for empty arrays, enabling safe initialization. The `MemberType` enum includes quoted identifiers (`@\"struct\"`) to handle special naming conventions in Zig's AST parsing.\n\n## Design Patterns Used\n\n1. **Factory Pattern**: `FileType.fromExtension()` centralizes extension-to-type mapping logic\n2. **Struct as Data Container**: Rich metadata structures encapsulate related fields with sensible defaults\n3. **Enum-to-String Conversion**: Bidirectional type representation for database interoperability\n4. **Hierarchical Organization**: Member contains nested members, creating a tree structure for code element relationships",
+  "keywords": ["FileType", "GuidanceDoc", "MemberType", "ASTAnalysis", "PatternType", "semantic search", "code documentation", "file classification", "design patterns", "Zig AST"],
+  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/hash.zig", "src/guidance/json_store.zig", "src/guidance/llm_filter.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/synthesize.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "FileType",
+      "match_hash": "94aaa3d6a33d442c59ee7de81aa077705f380834991b7b2a0f5709ce5c7794e3",
+      "signature": "keyword_enum FileType { ... }",
+      "comment": "Classification of a source file's content type.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "source",
+          "is_pub": false,
+          "line": 8
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "markdown",
+          "is_pub": false,
+          "line": 9
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "config",
+          "is_pub": false,
+          "line": 10
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "data",
+          "is_pub": false,
+          "line": 11
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "pdf",
+          "is_pub": false,
+          "line": 12
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "audio",
+          "is_pub": false,
+          "line": 13
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "unknown",
+          "is_pub": false,
+          "line": 14
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "fromExtension",
+          "match_hash": "6f447af6c3fa7a291b29f33742dfd4c6450fe9893bc11a7f92c5b8d6d2eb651b",
+          "signature": "fn fromExtension(ext: []const u8) -> FileType",
+          "params": [
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "FileType",
+          "comment": "Infer FileType from a file extension.",
+          "is_pub": true,
+          "line": 17
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "toStr",
+          "match_hash": "c096e2640d86a44aa2ad5650646b8de6b6c1e751e03ad85871504e2dc7db80ee",
+          "signature": "fn toStr(self: FileType) -> []const u8",
+          "params": [
+            { "name": "self", "type": "FileType" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Return the canonical string stored in the `file_type` DB column.",
+          "is_pub": true,
+          "line": 35
+        }
+      ],
+      "line": 7
+    },
+    {
+      "type": "enum",
+      "name": "MemberType",
+      "match_hash": "77bb0644cedcf58c7ee95907830fc847661f03cbb56f6e4134e8b952c3eabd9a",
+      "signature": "keyword_enum MemberType { ... }",
+      "comment": "Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "fn_decl",
+          "is_pub": false,
+          "line": 49
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "fn_private",
+          "is_pub": false,
+          "line": 50
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"struct\"",
+          "is_pub": false,
+          "line": 51
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"enum\"",
+          "is_pub": false,
+          "line": 52
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"union\"",
+          "is_pub": false,
+          "line": 53
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "enum_field",
+          "is_pub": false,
+          "line": 54
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "test_decl",
+          "is_pub": false,
+          "line": 55
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "comptime_block",
+          "is_pub": false,
+          "line": 56
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "method",
+          "is_pub": false,
+          "line": 57
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "method_private",
+          "is_pub": false,
+          "line": 58
+        }
+      ],
+      "line": 48
+    },
+    {
+      "type": "struct",
+      "name": "Pattern",
+      "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
+      "signature": "keyword_struct Pattern { ... }",
+      "comment": "Defines a pattern for structured data handling, manages ownership, and ensures invariants in Zig code.",
+      "is_pub": true,
+      "line": 66
+    },
+    {
+      "type": "struct",
+      "name": "Param",
+      "match_hash": "af50a6fe6cc9eacc97156983a19c76c443ed71068d0fb557cdae55743c108a68",
+      "signature": "keyword_struct Param { ... }",
+      "comment": "Defines a parameter struct for configuration; managed by owner; immutable once initialized.",
+      "is_pub": true,
+      "line": 72
+    },
+    {
+      "type": "struct",
+      "name": "Member",
+      "match_hash": "3cd3a046821857b4b9b70fd37e1d23cb81c96026381554c53031be630e36c608",
+      "signature": "keyword_struct Member { ... }",
+      "comment": "Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
+      "is_pub": true,
+      "line": 78
+    },
+    {
+      "type": "struct",
+      "name": "Meta",
+      "match_hash": "5b80824a2c945733e3ae8e331b59b4c63a0b607c78bb4c0c43132ca9fc79bafc",
+      "signature": "keyword_struct Meta { ... }",
+      "comment": "Defines a metadata structure for configuration; owned by the project; ensures consistent initialization and invariants.",
+      "is_pub": true,
+      "line": 98
+    },
+    {
+      "type": "struct",
+      "name": "GuidanceDoc",
+      "match_hash": "e08ea291147c1f9ac3a24536eff32c907cd838a94f190ec06f2ea0bdf5e472c0",
+      "signature": "keyword_struct GuidanceDoc { ... }",
+      "comment": "Defines guidance documents with structured metadata; managed centrally, immutable once created.",
+      "is_pub": true,
+      "line": 104
+    },
+    {
+      "type": "struct",
+      "name": "FileMatch",
+      "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
+      "signature": "keyword_struct FileMatch { ... }",
+      "comment": "Tracks file matches with ownership model; managed via init/deinit; not thread-safe.",
+      "is_pub": true,
+      "line": 118
+    },
+    {
+      "type": "struct",
+      "name": "GuidanceInfo",
+      "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
+      "signature": "keyword_struct GuidanceInfo { ... }",
+      "comment": "Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.",
+      "is_pub": true,
+      "line": 125
+    },
+    {
+      "type": "struct",
+      "name": "ASTAnalysis",
+      "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
+      "signature": "keyword_struct ASTAnalysis { ... }",
+      "comment": "Tracks AST nodes with ownership model; ensures invariants on structure and state.",
+      "is_pub": true,
+      "line": 134
+    },
+    {
+      "type": "struct",
+      "name": "QueryResult",
+      "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
+      "signature": "keyword_struct QueryResult { ... }",
+      "comment": "Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.",
+      "is_pub": true,
+      "line": 144
+    },
+    {
+      "type": "enum",
+      "name": "StageKind",
+      "match_hash": "877fc93b121e96d8efb225fa545cf9533c15f6ee83802c865e90899efee9a417",
+      "signature": "keyword_enum StageKind { ... }",
+      "comment": "Classifies the kind of content in a Stage.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "prose",
+          "comment": "Human-readable explanation from module or member comment.",
+          "is_pub": false,
+          "line": 163
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "code",
+          "comment": "Verbatim source code excerpt.  Never altered by LLM.",
+          "is_pub": false,
+          "line": 165
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "metadata",
+          "comment": "Structured metadata: keywords, see_also, skills from guidance JSON.",
+          "is_pub": false,
+          "line": 167
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "insight",
+          "comment": "Matching bullet from INSIGHTS.md or CAPABILITIES.md.",
+          "is_pub": false,
+          "line": 169
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "skill_doc",
+          "comment": "Excerpt from a SKILL.md document.",
+          "is_pub": false,
+          "line": 171
+        }
+      ],
+      "line": 161
+    },
+    {
+      "type": "struct",
+      "name": "Stage",
+      "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
+      "signature": "keyword_struct Stage { ... }",
+      "comment": "A single unit of information collected by the staged explain pipeline.",
+      "is_pub": true,
+      "line": 176
+    },
+    {
+      "type": "fn_decl",
+      "name": "freeStage",
+      "match_hash": "9f2aee87a48630684efef7ee99c3c969ce8d889340e1d03519eaec3031f08a41",
+      "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "Stage" }
+      ],
+      "returns": "void",
+      "comment": "Free all allocations owned by a single Stage.",
+      "is_pub": true,
+      "line": 187
+    },
+    {
+      "type": "fn_decl",
+      "name": "freeStages",
+      "match_hash": "6b08128aa825462aa313132148b4892e55db1ae9e5834757b4a6625b607d58d4",
+      "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "stages", "type": "[]const Stage" }
+      ],
+      "returns": "void",
+      "comment": "Free a slice of Stages and all allocations they own.",
+      "is_pub": true,
+      "line": 193
+    },
+    {
+      "type": "struct",
+      "name": "SyncResult",
+      "match_hash": "311599e172acc49d264122c1e2903728f4389a6c683d932c25c1f4d43ccb5d6a",
+      "signature": "keyword_struct SyncResult { ... }",
+      "comment": "Manages synchronization outcomes with fixed buffers; owned by the caller; ensures consistent state across operations.",
+      "is_pub": true,
+      "line": 197
+    },
+    {
+      "type": "fn_decl",
+      "name": "jsonifyMember",
+      "match_hash": "f1469b8124657f84e29d9630843f52aec23573cb892c1fa9468da5595a34cb91",
+      "signature": "fn jsonifyMember(allocator: std.mem.Allocator, member: Member) -> ?[]u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "member", "type": "Member" }
+      ],
+      "returns": "?[]u8",
+      "comment": "Converts a Zig member to a JSON-serializable slice, handling allocator and type safety.",
+      "is_pub": true,
+      "line": 208
+    },
+    {
+      "type": "fn_private",
+      "name": "writeFieldOrComma",
+      "match_hash": "83ed3f3b6ba7e075c765a36b341948ac9baa86636f6a64adcbf5b503e42fc409",
+      "signature": "fn writeFieldOrComma(writer, key: []const u8, value: ?[]const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "key", "type": "[]const u8" },
+        { "name": "value", "type": "?[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a field or comma to the writer, handling null-terminated strings.",
+      "is_pub": false,
+      "line": 312
+    },
+    {
+      "type": "fn_private",
+      "name": "writeEscapedValue",
+      "match_hash": "d2d72ecbe63536e0b701a6b21fa972d63b855299baedb396df1c52ef5e83ef2f",
+      "signature": "fn writeEscapedValue(writer, value: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "value", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a Zig array of bytes to a writer, handling escaped characters properly.",
+      "is_pub": false,
+      "line": 320
+    },
+    {
+      "type": "fn_private",
+      "name": "writeEscapedString",
+      "match_hash": "6223b0721dadb199f1e583f91d5d512c57c56fb85300b90e6ed8a739f67756ad",
+      "signature": "fn writeEscapedString(writer, key: []const u8, value: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "key", "type": "[]const u8" },
+        { "name": "value", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a formatted string with escaped characters to the writer, handling null-terminated input.",
+      "is_pub": false,
+      "line": 333
+    },
+    {
+      "type": "fn_decl",
+      "name": "jsonifyGuidanceDoc",
+      "match_hash": "9cf9a76ff20d5b50c1c594024891ec6e4f6e6baa7781a8eeb1cba40deadce2a5",
+      "signature": "fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "doc", "type": "GuidanceDoc" }
+      ],
+      "returns": "[]u8",
+      "comment": "Converts a GuidanceDoc into a JSON array of bytes for storage.",
+      "is_pub": true,
+      "line": 339
+    }
+  ]
+}

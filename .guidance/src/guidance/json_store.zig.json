@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "module": "src.guidance.json_store",
+    "source": "src/guidance/json_store.zig",
+    "language": "zig"
+  },
+  "comment": "Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.",
+  "detail": "# JsonStore Module Documentation\n\n## Module Purpose and Architecture\n\nThe `JsonStore` module serves as a central JSON parser and storage manager for AI-generated guidance documentation in Zig projects. It bridges the gap between LLM-generated guidance files (stored as JSON) and the type system used by the rest of the codebase.\n\n**Architecture Overview:**\n- **Entry Point**: `loadGuidance(path)` - High-level API that reads a file, parses JSON, and returns a structured `GuidanceDoc`\n- **Parsing Core**: `parseGuidance(content)` - Extracts metadata, comments, details, keywords, and skills from raw JSON\n- **State Tracking**: `leaked_prompts_found` flag tracks when LLM-generated prompts accidentally appear in source files (security/quality issue)\n\nThe module follows a clean separation of concerns:\n1. File I/O is delegated to the `llm` module\n2. JSON parsing uses Zig's standard library with custom error handling\n3. Memory management uses explicit allocator patterns for ownership clarity\n4. Type conversion handles schema validation at parse time\n\n## Key Abstractions and Relationships\n\n| Abstraction | Purpose | Relationship |\n|-------------|---------|--------------|\n| `JsonStore` | Main parsing/storage entity | Orchestrates all operations |\n| `GuidanceDoc` | Output container (imported) | Holds parsed results; owned by caller |\n| `Skill` | Structured capability metadata | Part of `GuidanceDoc`; has ref + optional context |\n| `keywords` | Discovery/search terms | Array within `GuidanceDoc` for semantic search |\n\n**Data Flow:**\n```\nJSON File → readFileAlloc() → parseGuidance() → GuidanceDoc{meta, comment, detail, keywords, skills}\n                     ↓\n              leaked_prompts_found flag set if needed\n```\n\n## Public API and Usage Patterns\n\n### Primary Methods\n\n1. **`init(allocator: std.mem.Allocator) JsonStore`**\n   - Factory method requiring an allocator for memory operations\n   - No internal state initialization beyond the allocator reference\n\n2. **`loadGuidance(self: *JsonStore, path: []const u8) !?types.GuidanceDoc`**\n   - Reads up to 10MB of content\n   - Returns `null` on parse errors or missing fields\n   - Caller owns returned `GuidanceDoc` memory\n\n### Usage Pattern\n```zig\nconst store = JsonStore.init(std.heap.page_allocator);\ndefer store.allocator.free(...); // cleanup if needed\n\nconst doc = try store.loadGuidance(\"guidance.json\");\nif (doc) |d| {\n    std.debug.print(\"{s}\\n\", .{d.meta.module});\n} else {\n    // handle null/parse error\n}\n```\n\n## Important Implementation Details\n\n**Leaked Prompt Detection:**\n- The `isLeakedPrompt()` function checks if text appears to be LLM-generated prompts\n- When detected, the flag is set but content is rejected (not stored)\n- Callers can use this flag to force write-back operations that clear leaked text from disk\n\n**Schema Validation:**\n- Required fields: `meta.module`, `meta.source`\n- Optional fields: `comment`, `detail`, `keywords`, `skills`\n- Returns `null` on missing required fields or invalid JSON structure\n\n**Memory Safety:**\n- All string duplication uses the provided allocator\n- Defer blocks ensure proper cleanup of parsed JSON values\n- Early returns with null propagate errors without requiring explicit error handling\n\n## Design Patterns Used\n\n1. **Single Responsibility**: Each method has one clear purpose\n2. **State Flag Pattern**: `leaked_prompts_found` tracks cross-cutting concerns\n3. **Guard Clause Pattern**: Early returns on validation failures\n4. **Resource Acquisition Is Initialization**: Allocator passed at init time\n5. **Defer Cleanup**: Ensures deterministic resource release",
+  "keywords": ["JsonStore", "GuidanceDoc", "leaked prompts", "semantic search", "Zig documentation", "JSON parsing", "metadata extraction", "AI guidance", "skill tracking", "module discovery"],
+  "used_by": ["src/guidance/structure.zig", "src/guidance/sync.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "JsonStore",
+      "match_hash": "3f34465f5f4a2dcc3dcf8c2ed5ed82d029ab59c7ef7240583dfb5e1d78378df6",
+      "signature": "keyword_struct JsonStore { ... }",
+      "comment": "Manages JSON guidance storage with allocation, parsing, and leak detection; owns data structures; mutable access controlled.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "2df233505173c66a830c27296537efcc1a2eec8baffa0e3d3463be44a89a6844",
+          "signature": "fn init(allocator: std.mem.Allocator) -> JsonStore",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "JsonStore",
+          "is_pub": true,
+          "line": 15
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "loadGuidance",
+          "match_hash": "b658acbae05043874a126a856eb66ddc2ae05480e7c685f57eec4642c162e80a",
+          "signature": "fn loadGuidance(self: *JsonStore, path: []const u8) -> ?types.GuidanceDoc",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "?types.GuidanceDoc",
+          "is_pub": true,
+          "line": 19
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseGuidance",
+          "match_hash": "1f966537edfc012df6cbba5d3dcea807b5c0deabdb80471f58fa2dd5ba2dc2dd",
+          "signature": "fn parseGuidance(self: *JsonStore, content: []const u8) -> ?types.GuidanceDoc",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "content", "type": "[]const u8" }
+          ],
+          "returns": "?types.GuidanceDoc",
+          "is_pub": false,
+          "line": 26
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseMembers",
+          "match_hash": "3807e15cc3a65d185e8462df709ff6b29deff586cc62e419e59e5214f078bfd4",
+          "signature": "fn parseMembers(self: *JsonStore, members_val: std.json.Value) -> std.mem.Allocator.Error![]types.Member",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "members_val", "type": "std.json.Value" }
+          ],
+          "returns": "std.mem.Allocator.Error![]types.Member",
+          "is_pub": false,
+          "line": 143
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "isLeakedPrompt",
+          "match_hash": "4c43215dda3bcbd0be1757d6e7306cd3ea5865bde52adcc5d29c33e6e3bd0698",
+          "signature": "fn isLeakedPrompt(text: []const u8) -> bool",
+          "params": [
+            { "name": "text", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "comment": "Returns true when a stored comment is a leaked LLM reasoning preamble rather",
+          "is_pub": false,
+          "line": 160
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseMember",
+          "match_hash": "16966830b70f71cda1891d69ff6fe1b916d709703816c851d40280319256146b",
+          "signature": "fn parseMember(self: *JsonStore, member_val: std.json.Value) -> std.mem.Allocator.Error!?types.Member",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "member_val", "type": "std.json.Value" }
+          ],
+          "returns": "std.mem.Allocator.Error!?types.Member",
+          "is_pub": false,
+          "line": 180
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "saveGuidance",
+          "match_hash": "cbedb2d62890b0c22297018f94c83560d96c9e0c1531e547657a1703af124a63",
+          "signature": "fn saveGuidance(self: *JsonStore, path: []const u8, doc: types.GuidanceDoc) -> void",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "path", "type": "[]const u8" },
+            { "name": "doc", "type": "types.GuidanceDoc" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 314
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "dupeMember",
+          "match_hash": "0628a121f18f38476249d3595f81ae1cbbbde12f1ab552e0289b1331592664b4",
+          "signature": "fn dupeMember(self: *JsonStore, m: types.Member) -> types.Member",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "m", "type": "types.Member" }
+          ],
+          "returns": "types.Member",
+          "comment": "Deep-copy a single Member; every string field is independently owned.",
+          "is_pub": true,
+          "line": 328
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "dupeParams",
+          "match_hash": "578a1dd22fd9d15ca7c74f55e2a22772ee508bd2cf5ee6368a0ce2a8708502aa",
+          "signature": "fn dupeParams(self: *JsonStore, params: []const types.Param) -> []types.Param",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "params", "type": "[]const types.Param" }
+          ],
+          "returns": "[]types.Param",
+          "is_pub": false,
+          "line": 363
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "dupeStrings",
+          "match_hash": "79074c461f7fa1ca91eef01fe81c6a6d10164bae6d0e51baa83b38c394140418",
+          "signature": "fn dupeStrings(self: *JsonStore, strs: []const []const u8) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "strs", "type": "[]const []const u8" }
+          ],
+          "returns": "[][]const u8",
+          "comment": "Deep-copy a string slice.  Delegates to the generic helper in",
+          "is_pub": true,
+          "line": 377
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "dupePatterns",
+          "match_hash": "45fdfe4be4d01c343aa0ab1aa9a34aece1dec160b6af8f1936c2a59e26b6e801",
+          "signature": "fn dupePatterns(self: *JsonStore, patterns: []const types.Pattern) -> []types.Pattern",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "patterns", "type": "[]const types.Pattern" }
+          ],
+          "returns": "[]types.Pattern",
+          "is_pub": false,
+          "line": 381
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "dupeSkills",
+          "match_hash": "d2584c22fbf9d2e6053682489ad512d864b3b38e23aab86610dc8e770c687da5",
+          "signature": "fn dupeSkills(self: *JsonStore, skills: []const types.Skill) -> []types.Skill",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "skills", "type": "[]const types.Skill" }
+          ],
+          "returns": "[]types.Skill",
+          "comment": "Deep-copy a slice of Skills.",
+          "is_pub": true,
+          "line": 394
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "freeMember",
+          "match_hash": "a16c7755b4bd89c94ee11794dfb34c1dc7702ca7ee2cc4ebbabb927552513525",
+          "signature": "fn freeMember(self: *JsonStore, member: types.Member) -> void",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "member", "type": "types.Member" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 405
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "freeGuidanceDoc",
+          "match_hash": "6ab0fa3d82a1cd2c13556d35106f489602333fd36cfec9b245c46ff475d6a4e4",
+          "signature": "fn freeGuidanceDoc(self: *JsonStore, doc: types.GuidanceDoc) -> void",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "doc", "type": "types.GuidanceDoc" }
+          ],
+          "returns": "void",
+          "comment": "Free all heap memory owned by a GuidanceDoc.",
+          "is_pub": true,
+          "line": 429
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "mergeMembers",
+          "match_hash": "81a9507eaa712cea22259a0dedcd676df517299971e8ed6a11fd50e7b00422ee",
+          "signature": "fn mergeMembers(self: *JsonStore, source: []const types.Member, existing: []const types.Member, preserve_existing_comments: bool) -> std.mem.Allocator.Error!MergeResult",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "source", "type": "[]const types.Member" },
+            { "name": "existing", "type": "[]const types.Member" },
+            { "name": "preserve_existing_comments", "type": "bool" }
+          ],
+          "returns": "std.mem.Allocator.Error!MergeResult",
+          "is_pub": true,
+          "line": 451
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "mergeMember",
+          "match_hash": "a64be8594a3f2965e6b0ec21d053412395729b00ddf618701950752d088dfce5",
+          "signature": "fn mergeMember(self: *JsonStore, source: types.Member, existing: types.Member, result: *MergeResult, preserve_existing_comments: bool) -> types.Member",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "source", "type": "types.Member" },
+            { "name": "existing", "type": "types.Member" },
+            { "name": "result", "type": "*MergeResult" },
+            { "name": "preserve_existing_comments", "type": "bool" }
+          ],
+          "returns": "types.Member",
+          "is_pub": false,
+          "line": 494
+        }
+      ],
+      "line": 6
+    },
+    {
+      "type": "struct",
+      "name": "MergeResult",
+      "match_hash": "38f8f71ba2c1e2f8c98146d1167ea9cf28f43fe1857bc46ff5cc713273923b72",
+      "signature": "keyword_struct MergeResult { ... }",
+      "comment": "Represents a merged result with ownership model and invariants; managed by the caller.",
+      "is_pub": true,
+      "line": 587
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "module": "src.coral.batch",
+    "source": "src/coral/batch.zig",
+    "language": "zig"
+  },
+  "comment": "Streaming batch ingestion pipeline for Turtle files, processing triples in configurable batches to CozoDB with memory control.",
+  "detail": "# Module: src/coral/batch.zig — Streaming Batch Ingestion Pipeline\n\n## Module Purpose and Architecture\n\nThis module implements a memory-efficient, streaming batch ingestion pipeline for RDF/Turtle files. It processes Turtle data through a well-defined pipeline architecture while maintaining bounded memory usage by flushing accumulated triples to CozoDB in configurable batches.\n\n### Pipeline Architecture\n```\nTurtle Source → Lexer → Parser → TripleMapper → BatchIngestor → CozoDB\n                    ↓           ↓           ↓          ↓\n               Parse        Map         Accumulate  Flush (batch)\n```\n\nThe pipeline follows a producer-consumer model where `BatchIngestor` orchestrates the flow of data through parser and mapper stages, accumulating triples in memory until reaching `batch_size` before flushing to the database.\n\n## Key Abstractions and Relationships\n\n| Component | Role | Dependencies |\n|-----------|------|--------------|\n| `BatchIngestor` | Main orchestrator; manages pipeline lifecycle | Parser, TripleMapper, Library |\n| `TripleMapper` | Maps parsed triples to nodes/edges | BatchConfig.mapping |\n| `Parser` | Parses Turtle format into Triples | Source string |\n| `BatchConfig` | Runtime configuration for ingestion behavior | MappingConfig |\n| `IngestStats` | Accumulated statistics during ingestion | None |\n\n### Data Flow\n1. **Input**: Turtle source string is parsed by `Parser`\n2. **Mapping**: Each triple is processed by `TripleMapper`, which accumulates nodes/edges in memory\n3. **Batching**: When `triples_in_batch >= batch_size`, mapper.flush() is called to write to CozoDB\n4. **Output**: Final statistics and database state\n\n## Public API and Usage Patterns\n\n### Initialization\n```zig\nconst config = BatchConfig{\n    .batch_size = 10_000,\n    .skip_errors = true,\n    .max_triples = 500_000,\n};\nconst ingestor = try BatchIngestor.init(allocator, config);\n```\n\n### Ingestion Pattern\n```zig\nconst stats = try ingestor.ingestSource(turtle_source, library);\n// Returns: triples_processed, nodes_created, edges_created, errors_skipped, batches_flushed\n```\n\n### Configuration Options\n- **batch_size**: Memory-bound batch threshold (default: 10,000)\n- **skip_errors**: Graceful error handling vs. aborting\n- **max_triples**: Optional termination condition for large files\n- **on_progress**: Callback for real-time monitoring\n\n## Important Implementation Details\n\n### Memory Model\n- **Bounded Accumulation**: Triples are accumulated only up to `batch_size` before flushing, preventing unbounded memory growth from large files\n- **Arena Allocator**: Reused across batches for temporary string allocations, reducing allocator churn\n- **Deferred Deinit**: Parsed triples and mappers use `defer` for automatic cleanup\n\n### Error Handling Strategy\n```zig\nif (self.config.skip_errors) {\n    stats.errors_skipped += 1;\n    continue;  // Gracefully skip problematic triples\n} else {\n    return err;  // Abort on first fatal error\n}\n```\n\n### Progress Reporting\nThe `ProgressCallback` enables external monitoring:\n```zig\npub const ProgressCallback = *const fn (triples_processed: usize, \n                                        nodes_created: usize, \n                                        edges_created: usize) void;\n```\n\n## Design Patterns Used\n\n1. **Pipeline Pattern**: Sequential data transformation stages with clear responsibilities\n2. **Batching Pattern**: Accumulate then flush for memory efficiency and I/O optimization\n3. **Callback Pattern**: `ProgressCallback` allows extensibility without tight coupling\n4. **Builder/Config Pattern**: `BatchConfig` centralizes all operational parameters\n5. **Producer-Consumer Model**: Parser produces triples, BatchIngestor consumes and batches\n\n## Performance Characteristics\n\n| Metric | Value |\n|--------|-------|\n| Memory Bound | Yes (batch_size × triple_size) |\n| Streaming | Yes (processes source incrementally) |\n| I/O Efficiency | Batches reduce CozoDB flush frequency |\n| Error Resilience | Configurable skip vs. abort |\n\nThe design prioritizes memory safety for large-scale RDF ingestion while providing flexibility through configurable parameters and callback hooks.",
+  "keywords": ["BatchIngestor", "TripleMapper", "Turtle", "RDF", "streaming ingestion", "batch processing", "CozoDB", "memory-bounded", "ProgressCallback", "IngestStats"],
+  "used_by": ["src/coral/cli.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "IngestStats",
+      "match_hash": "aeb5acaf8d1942fe774487b5d506fa61e98199544077fd24506563aa30edf840",
+      "signature": "keyword_struct IngestStats { ... }",
+      "comment": "Tracks ingestion statistics with a fixed-size buffer pool; managed centrally; not thread-safe.",
+      "is_pub": true,
+      "line": 33
+    },
+    {
+      "type": "struct",
+      "name": "BatchConfig",
+      "match_hash": "53d9c0f49eabee8ae7db81dd895f2f3a94bbc66ee3df4a28311d1b66d7477719",
+      "signature": "keyword_struct BatchConfig { ... }",
+      "comment": "Manages batch configuration settings with a fixed-size buffer pool; owned by the batch engine; ensures consistent state across runs.",
+      "is_pub": true,
+      "line": 45
+    },
+    {
+      "type": "struct",
+      "name": "BatchIngestor",
+      "match_hash": "cda66af527c27665cf5ee5c7256ea1391e4ab7876337e2c5af22f9d1ad51c7ad",
+      "signature": "keyword_struct BatchIngestor { ... }",
+      "comment": "Manages batch data ingestion with allocator and config; owns ingestion stats; not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "f3233a1a4b5a4f82e609e737474663c4c5c4db97fb223180b42e254df7fd454d",
+          "signature": "fn init(allocator: std.mem.Allocator, config: BatchConfig) -> BatchIngestor",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "BatchConfig" }
+          ],
+          "returns": "BatchIngestor",
+          "is_pub": true,
+          "line": 63
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "ingestSource",
+          "match_hash": "5c16e84f547f61a026e975446e7d8e7a5fa658712a2f6972b59841fa5fa5561e",
+          "signature": "fn ingestSource(self: *BatchIngestor, source: []const u8, library: *Library) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*BatchIngestor" },
+            { "name": "source", "type": "[]const u8" },
+            { "name": "library", "type": "*Library" }
+          ],
+          "returns": "IngestStats",
+          "comment": "Ingest a Turtle source string into library.",
+          "is_pub": true,
+          "line": 69
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "ingestFile",
+          "match_hash": "4ef4a5e8ba552c8cb6786ce8ef9f9910af2518679e2f6a3b4060acf14fd797db",
+          "signature": "fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*BatchIngestor" },
+            { "name": "path", "type": "[]const u8" },
+            { "name": "library", "type": "*Library" }
+          ],
+          "returns": "IngestStats",
+          "comment": "Ingest a Turtle file at the given path.",
+          "is_pub": true,
+          "line": 131
+        }
+      ],
+      "line": 59
+    },
+    {
+      "type": "test_decl",
+      "name": "batch ingestor accumulates triples without flush",
+      "is_pub": false,
+      "line": 146
+    },
+    {
+      "type": "test_decl",
+      "name": "batch boundary: small batch_size flushes multiple times",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "test_decl",
+      "name": "progress callback invoked",
+      "is_pub": false,
+      "line": 190
+    },
+    {
+      "type": "test_decl",
+      "name": "batch config defaults",
+      "is_pub": false,
+      "line": 206
+    },
+    {
+      "type": "test_decl",
+      "name": "max_triples: stops after limit",
+      "is_pub": false,
+      "line": 214
+    },
+    {
+      "type": "test_decl",
+      "name": "ingest stats zero on init",
+      "is_pub": false,
+      "line": 242
+    },
+    {
+      "type": "test_decl",
+      "name": "end-to-end: ingestSource on YAGO sample returns nodes and edges",
+      "is_pub": false,
+      "line": 259
+    },
+    {
+      "type": "test_decl",
+      "name": "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)",
+      "is_pub": false,
+      "line": 291
+    }
+  ]
+}

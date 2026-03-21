@@ -1,0 +1,410 @@
+{
+  "meta": {
+    "module": "src.common.target",
+    "source": "src/common/target.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns] Defines target execution types, manages WASM/executor lifecycle, and handles dynamic bit manipulation for Zig targets.",
+  "detail": "# Module: src/common/target.zig\n\n## Overview\nThis module defines the core `Target` abstraction for an AI coding assistant's build and execution system. It represents executable units that can be either abstract definitions, concrete files, commands, or phony targets, with support for both native OS process execution and WASM sandboxing via Extism runtime.\n\n## Architecture & Key Abstractions\n\n### Target Type Hierarchy\n- **`TargetType`**: Enum defining target categories (abstract, file, command, phony)\n- **`ExecutorKind`**: Discriminated union selecting execution strategy:\n  - `.native`: Standard OS process execution via shell commands\n  - `.wasm`: WASM sandbox execution through Extism runtime\n\n### The Target Struct\nA comprehensive build target with:\n- **Identity**: Unique ID, bit index (from string interner), owned name\n- **Metadata**: Type classification, essential flag, existence path\n- **Execution**: Executor kind, command list via ArrayList\n- **Dependency Graph**: Bit sets for both dependencies and provides relationships\n- **Configuration**: Mtime checking flag\n\n## Design Patterns\n\n### 1. Hybrid Execution Model\nThe `ExecutorKind` union elegantly decouples execution strategy from target definition. Registry and resolver code need only understand `Target`, not the underlying executor implementation—this follows the Strategy pattern while maintaining type safety through Zig's unions.\n\n### 2. Resource Ownership with RAII-like Semantics\n- **Owned Name**: Always duplicated during initialization to ensure safe cleanup\n- **WasmExecutor**: Explicit `deinit()` method for WASM resources (binary and entry point strings)\n- **Bit Sets**: Properly initialized and cleaned up in lifecycle methods\n\n### 3. String Interning Integration\nLeverages the interner module for:\n- Name deduplication via bit indices\n- Dependency/provides tracking through `internAndGetBitSet()`\n- Efficient memory usage through shared string representations\n\n### 4. Builder Pattern via init()\nThe constructor function handles complex initialization with proper error handling:\n- Interns name and retrieves bit index\n- Allocates owned copy of name with errdefer cleanup\n- Initializes empty bit sets sized to interner count\n- Sets default values for optional fields\n\n## Public API Summary\n\n| Function | Purpose |\n|----------|---------|\n| `init()` | Constructor with allocator, name, and type |\n| `deinit()` | Complete resource cleanup including executor |\n| `setDepends()` / `setProvides()` | Configure dependency graph edges |\n| `addCommand()` | Append execution commands to target |\n| `isAbstract()` | Quick check for abstract targets (no commands, no exists) |\n| `dependsSatisfiedBy()` | Verify all dependencies met by available targets |\n| `missingDepends()` | Compute unsatisfied dependencies as bit set |\n| `distanceFrom()` | Calculate resolution distance from available targets |\n\n## Usage Patterns\n\n```zig\n// Create a native file target\nconst target = try Target.init(allocator, interner, \"main\", .file);\ntarget.addCommand(allocator, \"build.sh\");\n\n// Create WASM target with sandboxed execution\nconst wasm_exec = WasmExecutor{\n    .wasm_bytes = allocator.dupe(u8, wasm_binary),\n    .entry_point = \"main\",\n};\nconst wasm_target = try Target.init(allocator, interner, \"sandbox\", .command);\nwasm_target.executor = .wasm;\n\n// Configure dependencies\ntry target.setDepends(allocator, interner, &.{ \"lib:core\", \"lib:utils\" });\n```\n\n## Implementation Details\n\n- **Memory Safety**: All allocations tracked with proper errdefer in `init()`\n- **Bit Set Sizing**: Pre-sized to interner count for efficient lookups\n- **Null Handling**: Optional exists field uses null sentinel rather than empty slice\n- **Format Support**: Built-in fmt support for debugging and logging\n\n## Related Capabilities\nThis module connects to the string interner system for identity management and the reflection module for potential schema introspection capabilities.",
+  "keywords": ["Target", "TargetType", "ExecutorKind", "WASMExecutor", "build system", "dependency resolution", "string interning", "Extism sandboxing", "dynamic bit sets", "RAII pattern"],
+  "skills": [
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/registry.zig", "src/common/resolver.zig", "src/coral/common/context.zig", "src/coral/common/json_parser.zig", "src/coral/common/registry.zig", "src/coral/common/resolver.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "TargetType",
+      "match_hash": "e496c382d60e78e274abae607f6a4f488f9f623a583f67668026a13cdcdfdf91",
+      "signature": "keyword_enum TargetType { ... }",
+      "comment": "Defines a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "abstract",
+          "is_pub": false,
+          "line": 7
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "file",
+          "is_pub": false,
+          "line": 8
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "command",
+          "is_pub": false,
+          "line": 9
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "phony",
+          "is_pub": false,
+          "line": 10
+        }
+      ],
+      "line": 6
+    },
+    {
+      "type": "struct",
+      "name": "WasmExecutor",
+      "match_hash": "770f4da119ef265fd79b6f0e4d0683964faef85d05578e4e2e04232175cb154c",
+      "signature": "keyword_struct WasmExecutor { ... }",
+      "comment": "Configuration for a WASM-backed executor.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "1b93937cf6e2087dce0c0e4eaac1b175e112e67defb316aa49b51a09bdc1e7f9",
+          "signature": "fn deinit(self: *WasmExecutor, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*WasmExecutor" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 36
+        }
+      ],
+      "line": 30
+    },
+    {
+      "type": "fn_decl",
+      "name": "init",
+      "match_hash": "7ba7ab82f25f1d8ef3d168e73a5680a86b0193383275cb365475b7dfa201d2e2",
+      "signature": "fn init(allocator: std.mem.Allocator, interner: *StringInterner, name: []const u8, target_type: TargetType) -> Target",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "interner", "type": "*StringInterner" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "target_type", "type": "TargetType" }
+      ],
+      "returns": "Target",
+      "comment": "Initializes a target Zig slice using an allocator and interners, returning the configured target.",
+      "is_pub": true,
+      "line": 58
+    },
+    {
+      "type": "fn_decl",
+      "name": "deinit",
+      "match_hash": "5a328d2ff7b921955a02a274d43c60c31d0f03624df77d8e04813dfe3c90c8ac",
+      "signature": "fn deinit(self: *Target, allocator: std.mem.Allocator) -> void",
+      "params": [
+        { "name": "self", "type": "*Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "void",
+      "comment": "Releases allocated memory by deallocating the Zig object.",
+      "is_pub": true,
+      "line": 80
+    },
+    {
+      "type": "fn_decl",
+      "name": "setDepends",
+      "match_hash": "e72ff639b018ad2deadd3db7941d78368c2fba6625b33b0efccb0c44c7fc08f9",
+      "signature": "fn setDepends(self: *Target, allocator: std.mem.Allocator, interner: *StringInterner, depends: []const []const u8) -> void",
+      "params": [
+        { "name": "self", "type": "*Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "interner", "type": "*StringInterner" },
+        { "name": "depends", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Updates dependencies with allocator and interners, ensuring proper memory management.",
+      "is_pub": true,
+      "line": 97
+    },
+    {
+      "type": "fn_decl",
+      "name": "setProvides",
+      "match_hash": "b8219d749cbfa1aba55a2dfb9c1744ead8c4fac759e40b9c71e15e07cb5ad9a2",
+      "signature": "fn setProvides(self: *Target, allocator: std.mem.Allocator, interner: *StringInterner, provides: []const []const u8) -> void",
+      "params": [
+        { "name": "self", "type": "*Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "interner", "type": "*StringInterner" },
+        { "name": "provides", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Initializes a Zig array with provided allocator and string interners.",
+      "is_pub": true,
+      "line": 107
+    },
+    {
+      "type": "fn_decl",
+      "name": "addCommand",
+      "match_hash": "94b870aac7f7422a78b7d46de122f528c33c6e21fe37c77fb818284c8cceee5f",
+      "signature": "fn addCommand(self: *Target, allocator: std.mem.Allocator, cmd: []const u8) -> void",
+      "params": [
+        { "name": "self", "type": "*Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cmd", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Adds a command slice to the target with specified allocator and parameters.",
+      "is_pub": true,
+      "line": 117
+    },
+    {
+      "type": "fn_decl",
+      "name": "isAbstract",
+      "match_hash": "6277b71442caeba6eb32e0d990fddf8a17b7ab358433dbd76bcff75e53e7ad61",
+      "signature": "fn isAbstract(self: *const Target) -> bool",
+      "params": [
+        { "name": "self", "type": "*const Target" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a target is abstract by verifying its structure and return a boolean result.",
+      "is_pub": true,
+      "line": 121
+    },
+    {
+      "type": "fn_decl",
+      "name": "dependsSatisfiedBy",
+      "match_hash": "5eeb1692874812ee98a6e00109d0ee78e1e469e9c0fb123d1a2d7256adbb9a76",
+      "signature": "fn dependsSatisfiedBy(self: *const Target, allocator: std.mem.Allocator, available: *const std.bit_set.DynamicBitSetUnmanaged) -> bool",
+      "params": [
+        { "name": "self", "type": "*const Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a dependency condition is met using allocator and bit set data.",
+      "is_pub": true,
+      "line": 127
+    },
+    {
+      "type": "fn_decl",
+      "name": "missingDepends",
+      "match_hash": "bb7d38c877868d2dd5a1f802d3126b0662868b59692cf4d0cc1bf02a04821d65",
+      "signature": "fn missingDepends(self: *const Target, allocator: std.mem.Allocator, available: *const std.bit_set.DynamicBitSetUnmanaged) -> std.bit_set.DynamicBitSetUnmanaged",
+      "params": [
+        { "name": "self", "type": "*const Target" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "std.bit_set.DynamicBitSetUnmanaged",
+      "comment": "Validates dependencies for missing data structures; returns a bit set unmanaged object.",
+      "is_pub": true,
+      "line": 138
+    },
+    {
+      "type": "fn_decl",
+      "name": "distanceFrom",
+      "match_hash": "9ba284c268ec6ee9024eb35c4193fb0e812968ec3b7e83829f9d4aa36b314454",
+      "signature": "fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBitSetUnmanaged) -> usize",
+      "params": [
+        { "name": "self", "type": "*const Target" },
+        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "usize",
+      "comment": "Calculates the distance between two bit sets in a target structure.",
+      "is_pub": true,
+      "line": 155
+    },
+    {
+      "type": "fn_decl",
+      "name": "format",
+      "match_hash": "e628fc77ce99f6a1dabd8ca16258514b549f8570b7c831a63b7dc6cc9bc13a6b",
+      "signature": "fn format(self: *const Target, fmt: []const u8, options: std.fmt.FormatOptions, writer) -> void",
+      "params": [
+        { "name": "self", "type": "*const Target" },
+        { "name": "fmt", "type": "[]const u8" },
+        { "name": "options", "type": "std.fmt.FormatOptions" },
+        { "name": "writer" }
+      ],
+      "returns": "void",
+      "comment": "Formats a target string using the provided format options and writer.",
+      "is_pub": true,
+      "line": 166
+    },
+    {
+      "type": "struct",
+      "name": "TargetSchema",
+      "match_hash": "f3b8fe75657788eb4bef44df49b68e5d39a2fce26d83133ecb1651fe4eb0651c",
+      "signature": "keyword_struct TargetSchema { ... }",
+      "comment": "TargetSchema — reflection schema for Target, parameterised on a StringInterner.",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "create",
+          "match_hash": "59d1ce27e6842f88b9cec9369c194070f8c45f4dbf19e5966c15192579f421a2",
+          "signature": "fn create(allocator: std.mem.Allocator, interner: *StringInterner) -> *Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "interner", "type": "*StringInterner" }
+          ],
+          "returns": "*Self",
+          "comment": "Allocate and initialise a TargetSchema for the given interner.",
+          "patterns": [
+            { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+          ],
+          "is_pub": true,
+          "line": 225
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "destroy",
+          "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
+          "signature": "fn destroy(self: *Self, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 279
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "viewOf",
+          "match_hash": "94f5fb83a93c6607ed56fbf404b8bb4df2c936f9f36545ebe97a70fcbd917814",
+          "signature": "fn viewOf(self: *const Self, allocator: std.mem.Allocator, target: *Target) -> reflection.DynamicEditable",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "target", "type": "*Target" }
+          ],
+          "returns": "reflection.DynamicEditable",
+          "comment": "Return a DynamicEditable view over `target`.",
+          "is_pub": true,
+          "line": 286
+        }
+      ],
+      "line": 206
+    },
+    {
+      "type": "test_decl",
+      "name": "Target creation and basic operations",
+      "is_pub": false,
+      "line": 299
+    },
+    {
+      "type": "test_decl",
+      "name": "Target depends and provides",
+      "is_pub": false,
+      "line": 311
+    },
+    {
+      "type": "test_decl",
+      "name": "Target GPA no leaks",
+      "is_pub": false,
+      "line": 326
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: dependsSatisfiedBy — no deps always satisfied",
+      "is_pub": false,
+      "line": 352
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: dependsSatisfiedBy — satisfied when all deps available",
+      "is_pub": false,
+      "line": 365
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: dependsSatisfiedBy — not satisfied when dep missing",
+      "is_pub": false,
+      "line": 384
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: missingDepends — empty when all satisfied",
+      "is_pub": false,
+      "line": 407
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: missingDepends — returns unsatisfied bits",
+      "is_pub": false,
+      "line": 427
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: distanceFrom — zero when no deps",
+      "is_pub": false,
+      "line": 452
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: distanceFrom — counts missing deps",
+      "is_pub": false,
+      "line": 465
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: distanceFrom — zero when all deps satisfied",
+      "is_pub": false,
+      "line": 485
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: abstract type with commands is NOT abstract",
+      "is_pub": false,
+      "line": 508
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: abstract type with exists is NOT abstract",
+      "is_pub": false,
+      "line": 519
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: phony type is never abstract regardless",
+      "is_pub": false,
+      "line": 530
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: format includes name and type tag",
+      "is_pub": false,
+      "line": 544
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: format includes [essential] for essential targets",
+      "is_pub": false,
+      "line": 560
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: executor defaults to native",
+      "is_pub": false,
+      "line": 580
+    },
+    {
+      "type": "test_decl",
+      "name": "Target: id is i64",
+      "is_pub": false,
+      "line": 590
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetSchema: viewOf set/get essential via reflection",
+      "is_pub": false,
+      "line": 604
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetSchema: viewOf set/get depends via BitSetConstraint",
+      "is_pub": false,
+      "line": 628
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetSchema: GPA no leaks",
+      "is_pub": false,
+      "line": 667
+    }
+  ]
+}

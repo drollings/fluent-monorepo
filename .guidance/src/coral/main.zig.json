@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "module": "src.coral.main",
+    "source": "src/coral/main.zig",
+    "language": "zig"
+  },
+  "comment": "Handles Zig build configuration, loads JSON config, initializes LLM and registry, and processes user queries.",
+  "detail": "# Coral Build System Module Documentation\n\n## Module Purpose and Architecture\n\nThis module serves as the **entry point** for Coral, an AI-enhanced build system that combines traditional dependency management with Large Language Model integration. It orchestrates multiple subsystems: LLM querying, JSON configuration parsing, target registration, and interactive REPL functionality.\n\nThe architecture follows a **command-dispatcher pattern** where `main()` routes to different modes based on command-line flags:\n- **LLM Query Mode**: One-off AI assistance\n- **Build Configuration Mode**: Parse targets from JSON files\n- **Interactive REPL**: Continuous session for exploration\n- **Discovery Modes**: List targets, show dependency graphs\n\n## Key Abstractions and Relationships\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│                        main()                                │\n└───────────────────────┬─────────────────────────────────────┘\n                        │\n        ┌───────────────┼───────────────┬─────────────────────┐\n        ▼               ▼               ▼                     ▼\n   LLM Query     Config Parsing    REPL Mode           Discovery\n   (llm.Client)   (Registry)       (Repl)              (BuildContext)\n        │               │               │                     │\n        └───────────────┴───────────────┴─────────────────────┘\n                        ▲\n                        │\n                BuildContext (orchestrates all)\n```\n\n**Core Components:**\n- **StringInterner**: Deduplicates strings efficiently for memory optimization\n- **TargetRegistry**: Stores and manages build targets with their dependencies\n- **BuildContext**: Central state holder coordinating registry, interner, and flags\n- **Repl**: Interactive shell for ongoing sessions\n- **LlmClient**: External LLM API wrapper (imported from `common`)\n\n## Public API and Usage Patterns\n\n### Entry Point\n```zig\npub fn main() !void {\n    // Parses args, routes to appropriate mode based on flags\n}\n```\n\n**Usage Modes:**\n```bash\n# Query LLM for assistance\ncoral \"How do I optimize Zig build times?\"\n\n# List available targets\ncoral --show-list\n\n# Interactive REPL\ncoral --enter-repl\n\n# Load from specific config\ncoral --config coral.json\n```\n\n### Helper Functions\n- **`printHelp(writer)`**: Outputs usage information to the provided writer\n\n## Important Implementation Details\n\n1. **Config File Priority**: Checks in order: explicit `--config` → `coral.json` → `build.json` → `targets.json`\n\n2. **Fallback Behavior**: If no config exists and `--show-list` is set, creates an example `coral.json` automatically\n\n3. **Error Handling**: Graceful degradation with detailed error messages for failed operations\n\n4. **Memory Management**: Uses general-purpose allocator with proper defer cleanup for all resources\n\n5. **LLM Integration**: Supports configurable API URL, model selection, and debug verbosity\n\n## Design Patterns Used\n\n| Pattern | Application |\n|---------|-------------|\n| **Command Dispatcher** | Routes to different modes via if-else chain |\n| **Registry Pattern** | TargetRegistry stores named build targets |\n| **Builder/Context** | BuildContext holds mutable state for operations |\n| **Interner** | StringInterner deduplicates string references |\n| **Singleton-like** | Repl maintains session state across iterations |\n| **Adapter** | LlmClient adapts external API to internal interface |",
+  "keywords": ["main", "printHelp", "BuildContext", "TargetRegistry", "StringInterner", "Repl", "LlmClient", "JSON config parsing", "CLI argument parsing", "dependency graph"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "main",
+      "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
+      "signature": "fn main() -> void",
+      "returns": "void",
+      "comment": "Starts the Zig program execution by defining the entry point.",
+      "is_pub": true,
+      "line": 11
+    },
+    {
+      "type": "fn_private",
+      "name": "printHelp",
+      "match_hash": "7d8bab1e5fad33bd27b72b476652eb393c442c974629deac5917eb9fff389c2b",
+      "signature": "fn printHelp(writer) -> void",
+      "params": [
+        { "name": "writer" }
+      ],
+      "returns": "void",
+      "comment": "Prints help information using the provided writer object.",
+      "is_pub": false,
+      "line": 154
+    },
+    {
+      "type": "test_decl",
+      "name": "simple imports",
+      "is_pub": false,
+      "line": 187
+    }
+  ]
+}

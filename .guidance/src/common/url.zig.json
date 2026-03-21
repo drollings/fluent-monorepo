@@ -1,0 +1,75 @@
+{
+  "meta": {
+    "module": "src.common.url",
+    "source": "src/common/url.zig",
+    "language": "zig"
+  },
+  "comment": "Validates API URLs as HTTPS or localhost, ensuring safe API calls.",
+  "detail": "# Module: src/common/url.zig\n\n## Purpose and Architecture\n\nThis module provides lightweight, allocation-free URL validation utilities designed specifically for API endpoint security in CLI tools. It enforces a strict security policy: all API calls must use HTTPS unless targeting localhost or loopback interfaces (127.x.x.x, ::1). This prevents accidental exposure of sensitive data to remote servers while allowing convenient local development workflows.\n\nThe architecture is deliberately minimal—two public functions with no exported types beyond error codes. Both operations are zero-allocation, relying solely on `std.mem` for efficient string comparison and prefix matching.\n\n## Key Abstractions and Relationships\n\n**isLocalHost(host: []const u8) -> bool**\nA predicate function that identifies loopback addresses by exact match or pattern. Handles the complete 127.0.0.0/8 range via `startsWith(\"127.\")` rather than enumerating every address, balancing completeness with performance.\n\n**validateHttpsOrLocalHttp(url: []const u8) -> void!**\nThe primary security gatekeeper that chains validation: first checks protocol prefix, then conditionally validates the host based on protocol choice. HTTP URLs require localhost verification; HTTPS accepts any host.\n\n## Public API and Usage Patterns\n\n```zig\n// Basic validation with error handling\ndefer catch (validateHttpsOrLocalHttp(url)) {\n    // Handle InvalidApiUrl or InsecureApiUrl\n}\n\n// Combining checks for complex scenarios\nif (isLocalHost(host) or isSecureProtocol(url)) {\n    proceed_with_request();\n}\n```\n\n**Error Handling**: The `!void` return type signals callers to use `catch` blocks for proper error propagation. Two error codes exist: `InvalidApiUrl` for malformed input and `InsecureApiUrl` for policy violations.\n\n## Implementation Details\n\n**String Parsing Strategy**: HTTP URLs are parsed using a two-step approach—first locate the host portion by finding the first occurrence of `:` or `/`, then extract the substring. This avoids full URL parsing libraries while correctly handling port numbers like `http://localhost:11434/api`.\n\n**Performance Characteristics**: All operations use `std.mem` primitives (`startsWith`, `eql`, `indexOfAny`) which operate on immutable slices without heap allocation. The `isLocalHost` function performs at most four comparisons in the worst case, making it O(n) where n is the host string length.\n\n**Edge Cases Covered**: Empty strings, bare hostnames without protocol, IPv6 loopback (::1), and partial 127.x ranges are all handled appropriately through early returns or conditional logic.\n\n## Design Patterns\n\n- **Guard Clause Pattern**: Early returns for invalid inputs reduce nesting depth\n- **Fail-Fast Security Model**: Invalid URLs fail immediately rather than continuing with undefined behavior\n- **Policy Enforcement via Composition**: Combines protocol checking with host validation rather than monolithic parsing\n- **Minimal Public Surface**: Only essential functions exported, reducing cognitive load and API bloat\n\nThe module exemplifies Zig's philosophy of explicit control: developers know exactly what checks occur, when they fail, and why—no hidden complexity.",
+  "keywords": ["isLocalHost", "validateHttpsOrLocalHttp", "URL validation", "HTTPS enforcement", "loopback detection", "allocation-free", "API security", "std.mem", "protocol parsing", "error handling"],
+  "used_by": ["src/common/llm.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "isLocalHost",
+      "match_hash": "d12c391f50883063f3382e61372876a778c2bcb977bbc1ac582f84a592b22200",
+      "signature": "fn isLocalHost(host: []const u8) -> bool",
+      "params": [
+        { "name": "host", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Return true when `host` resolves to the loopback interface.",
+      "is_pub": true,
+      "line": 11
+    },
+    {
+      "type": "fn_decl",
+      "name": "validateHttpsOrLocalHttp",
+      "match_hash": "8f87f3aa049f96389f4164f1ee8fa3de02b56b28388f89a6747045969953b792",
+      "signature": "fn validateHttpsOrLocalHttp(url: []const u8) -> void",
+      "params": [
+        { "name": "url", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Validate that `url` is either:",
+      "is_pub": true,
+      "line": 25
+    },
+    {
+      "type": "test_decl",
+      "name": "isLocalHost recognises loopback aliases",
+      "is_pub": false,
+      "line": 44
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp accepts https",
+      "is_pub": false,
+      "line": 53
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp accepts local http",
+      "is_pub": false,
+      "line": 57
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp rejects empty",
+      "is_pub": false,
+      "line": 62
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp rejects bare hostname",
+      "is_pub": false,
+      "line": 66
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp rejects remote http",
+      "is_pub": false,
+      "line": 70
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "module": "src.common.string",
+    "source": "src/common/string.zig",
+    "language": "zig"
+  },
+  "comment": "Implements string search utilities with case-insensitive matching and keyword checks for a Zig source file.",
+  "detail": "# String Search Utilities Module\n\n## Module Purpose and Architecture\n\nThis module provides string search utilities specifically designed for an AI coding assistant's code analysis pipeline. It implements multiple matching strategies including case-insensitive substring search, word-boundary-aware matching, keyword collection checking, file extension validation, and path token identification.\n\nThe architecture is intentionally lightweight with no internal types or complex abstractions—simply a collection of six utility functions that leverage Zig's standard library extensively. This design prioritizes performance for processing large codebases while maintaining clarity and testability.\n\n## Key Abstractions and Relationships\n\n| Function | Purpose | Dependencies |\n|----------|---------|--------------|\n| `containsIgnoreCase` | Substring search ignoring case | `std.ascii.eqlIgnoreCase` |\n| `containsWord` | Word-boundary-aware search | `containsIgnoreCase`, `std.ascii.isAlphanumeric` |\n| `containsAny` | Multi-keyword substring search | `containsIgnoreCase` |\n| `containsAnyWord` | Multi-keyword word search | `containsWord` |\n| `hasExtension` | File extension validation | `std.mem.lastIndexOfScalar`, `std.mem.eql` |\n| `isPathToken` | Path token identification | `hasExtension`, `std.mem.indexOf` |\n\n## Public API and Usage Patterns\n\n### String Matching Functions\n\n**`containsIgnoreCase(haystack, needle)`** → bool\n- Case-insensitive substring search with O(n) complexity\n- Returns true for empty needle (matches everything)\n- Uses Zig's built-in case-insensitive comparison\n\n**`containsWord(haystack, needle)`** → bool  \n- Matches word boundaries: starts at beginning OR preceded by non-alphanumeric\n- Ends at end of string OR followed by non-alphanumeric\n- Ideal for token-level keyword search in code analysis\n\n### Collection-Based Functions\n\n**`containsAny(source, keywords)`** → bool\n- Iterates through keyword list using case-insensitive substring matching\n- Returns immediately on first match (short-circuit evaluation)\n\n**`containsAnyWord(source, keywords)`** → bool\n- Same pattern but uses word-boundary matching for stricter token matching\n\n### File System Utilities\n\n**`hasExtension(s, extensions)`** → bool\n- Case-sensitive extension matching after the final dot\n- Returns false if no dot found or empty extension\n\n**`isPathToken(s, extensions)`** → bool\n- Identifies strings representing path tokens by checking:\n  - Has known file extension OR\n  - Contains \"/\" character (indicating path structure)\n- Minimum length requirement of 3 characters prevents false positives\n\n## Important Implementation Details\n\n1. **Word Boundary Definition**: The module defines word boundaries as non-alphanumeric characters using `std.ascii.isAlphanumeric`. This treats underscores, hyphens, and spaces as delimiters.\n\n2. **Performance Considerations**: All functions use early returns (guard clauses) to minimize unnecessary computation when conditions are clearly met.\n\n3. **Empty String Handling**: \n   - Empty needle in `containsIgnoreCase` returns true\n   - Empty haystack with non-empty needle returns false\n   - Extension matching fails gracefully on missing dots\n\n4. **Case Sensitivity Variations**: Substring matching is case-insensitive, while extension matching remains case-sensitive (typical for file systems).\n\n## Design Patterns Used\n\n- **Strategy Pattern**: Different matching strategies (substring vs. word-boundary) encapsulated in separate functions\n- **Guard Clause Pattern**: Early returns reduce conditional nesting and improve readability\n- **Composition Pattern**: Functions build upon each other (`containsAnyWord` → `containsWord`)\n- **Iterator Pattern**: Uses Zig's range-based iteration for keyword lists",
+  "keywords": ["containsIgnoreCase", "containsWord", "containsAny", "containsAnyWord", "hasExtension", "isPathToken", "substring search", "word boundary matching", "code analysis utilities", "file extension validation"],
+  "used_by": ["src/coral/common/llm.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "containsIgnoreCase",
+      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
+      "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a needle substring exists within the haystack, ignoring case sensitivity.",
+      "is_pub": true,
+      "line": 3
+    },
+    {
+      "type": "fn_decl",
+      "name": "containsWord",
+      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
+      "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a needle substring exists within the haystack array of bytes.",
+      "is_pub": true,
+      "line": 13
+    },
+    {
+      "type": "fn_decl",
+      "name": "containsAny",
+      "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
+      "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if any keywords exist within the source string slice.",
+      "is_pub": true,
+      "line": 26
+    },
+    {
+      "type": "fn_decl",
+      "name": "containsAnyWord",
+      "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
+      "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if any word from keywords appears in the given source string.",
+      "is_pub": true,
+      "line": 33
+    },
+    {
+      "type": "fn_decl",
+      "name": "hasExtension",
+      "match_hash": "67214f2a30390f2260026fc7455d417021f59f586a66b3e97c73fcdfae83a070",
+      "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" },
+        { "name": "extensions", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if the input string contains any of the specified extensions.",
+      "is_pub": true,
+      "line": 40
+    },
+    {
+      "type": "fn_decl",
+      "name": "isPathToken",
+      "match_hash": "29ca08119803dc0c18bd9aa975ab9cd548267e288131e7a59aea55bac07ee33e",
+      "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" },
+        { "name": "extensions", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given slice of bytes matches a specified extension pattern.",
+      "is_pub": true,
+      "line": 49
+    },
+    {
+      "type": "test_decl",
+      "name": "containsIgnoreCase",
+      "is_pub": false,
+      "line": 54
+    },
+    {
+      "type": "test_decl",
+      "name": "containsWord",
+      "is_pub": false,
+      "line": 63
+    },
+    {
+      "type": "test_decl",
+      "name": "containsAny",
+      "is_pub": false,
+      "line": 71
+    },
+    {
+      "type": "test_decl",
+      "name": "containsAnyWord",
+      "is_pub": false,
+      "line": 78
+    },
+    {
+      "type": "test_decl",
+      "name": "hasExtension",
+      "is_pub": false,
+      "line": 84
+    },
+    {
+      "type": "test_decl",
+      "name": "isPathToken",
+      "is_pub": false,
+      "line": 92
+    }
+  ]
+}

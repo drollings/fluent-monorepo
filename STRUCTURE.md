@@ -129,7 +129,6 @@ Then you you must read
 │   │   ├── TODO_ZIG_GUIDANCE.md
 │   │   ├── VISION.md
 │   │   ├── VOICE_NOTE_CORAL.md
-│   │   ├── ZIG_FLUENT_WVR.md
 │   │   └── ZIG_PROJECTS.md
 │   ├── schemas
 │   │   └── guidance.schema.json
@@ -154,104 +153,104 @@ Then you you must read
 │       └── target_language.mk
 ├── src
 │   ├── common
-│   │   ├── args.zig
-│   │   ├── cli.zig
-│   │   ├── context.zig
-│   │   ├── format.zig
-│   │   ├── hash.zig
-│   │   ├── interner.zig
-│   │   ├── io.zig
-│   │   ├── json.zig
-│   │   ├── json_parser.zig
-│   │   ├── llm.zig
-│   │   ├── log.zig
-│   │   ├── reflection.zig
-│   │   ├── registry.zig
-│   │   ├── repl.zig
-│   │   ├── resolver.zig
-│   │   ├── source.zig
-│   │   ├── str.zig
-│   │   ├── string.zig
-│   │   ├── target.zig
-│   │   ├── terminal.zig
-│   │   └── url.zig
+│   │   ├── args.zig                                               # Parses command-line arguments into a structured CommonArgs object for configuration handling.
+│   │   ├── cli.zig                                                # Defines CLI command structure, registration, and error handling for a Zig-based tool.
+│   │   ├── context.zig                                            # Manages Zig build context, resolves dependencies, tracks builds, and handles allocator cleanup.
+│   │   ├── format.zig                                             # Defines table structure with columns, rows, and formatting logic for JSON rendering.
+│   │   ├── hash.zig                                               # Provides SHA-256 and content+model hashing utilities for Zig, supporting allocator-friendly outputs and secure key ge...
+│   │   ├── interner.zig                                           # Manages stable string indices with arena-allocated storage, supporting interned strings and bitmask bitsets.
+│   │   ├── io.zig                                                 # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
+│   │   ├── json.zig                                               # Provides JSON serialization, escaping, and file loading utilities with allocator safety and no external dependencies.
+│   │   ├── json_parser.zig                                        # Handles Zig JSON parsing, validates targets, and manages allocators for efficient memory handling.
+│   │   ├── llm.zig                                                # Contains utility modules, state definitions, and Zig-specific hashes/functions for LLM processing.
+│   │   ├── log.zig                                                # Defines logging configuration, formatting, and file handling for a Zig application with color support.
+│   │   ├── reflection.zig                                         # Provides field-level reflection, validation, and permission handling for data structures, ensuring safe access and ro...
+│   │   ├── registry.zig                                           # Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.
+│   │   ├── repl.zig                                               # Implements a Zig REPL interface handling commands, parsing input and managing stdout/stdin streams.
+│   │   ├── resolver.zig                                           # [gof-patterns] Manages Zig dependency resolution with topological sorting, handling abstract and concrete targets via...
+│   │   ├── source.zig                                             # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
+│   │   ├── str.zig                                                # Provides utility functions to detect code identifiers, test paths, and extract skill names from Zig AST paths.
+│   │   ├── string.zig                                             # Implements string search utilities with case-insensitive matching and keyword checks for a Zig source file.
+│   │   ├── target.zig                                             # [gof-patterns] Defines target execution types, manages WASM/executor lifecycle, and handles dynamic bit manipulation ...
+│   │   ├── terminal.zig                                           # Handles terminal size, width, height, and user interaction in a Zig terminal environment.
+│   │   └── url.zig                                                # Validates API URLs as HTTPS or localhost, ensuring safe API calls.
 │   ├── context_node
-│   │   ├── context_node.zig
-│   │   └── context_node_schema.zig
+│   │   ├── context_node.zig                                       # [gof-patterns] Defines context node structure for Zig, handling LOD levels, embeddings, and metadata extraction.
+│   │   └── context_node_schema.zig                                # [gof-patterns] Defines Zig binary schema structures, validation logic, and context node initialization for schema ver...
 │   ├── coral
 │   │   ├── common
-│   │   │   ├── args.zig
-│   │   │   ├── cli.zig
-│   │   │   ├── context.zig
-│   │   │   ├── format.zig
-│   │   │   ├── hash.zig
-│   │   │   ├── interner.zig
-│   │   │   ├── io.zig
-│   │   │   ├── json_parser.zig
-│   │   │   ├── llm.zig
-│   │   │   ├── log.zig
-│   │   │   ├── reflection.zig
-│   │   │   ├── registry.zig
-│   │   │   ├── repl.zig
-│   │   │   ├── resolver.zig
-│   │   │   ├── source.zig
-│   │   │   ├── string.zig
-│   │   │   ├── target.zig
-│   │   │   └── terminal.zig
-│   │   ├── batch.zig
-│   │   ├── cache.zig
-│   │   ├── cli.zig
-│   │   ├── config.zig
-│   │   ├── db.zig
-│   │   ├── main.zig
-│   │   ├── pattern.zig
-│   │   ├── schema.zig
-│   │   ├── scrub.zig
-│   │   ├── targets.zig
-│   │   ├── triage.zig
-│   │   └── verify.zig
+│   │   │   ├── args.zig                                         # Parses command-line arguments into a structured CommonArgs object for configuration and processing.
+│   │   │   ├── cli.zig                                          # Defines CLI command structure, registration, and error handling for a Zig-based tool.
+│   │   │   ├── context.zig                                      # This file manages Zig build configuration, handles dependencies, resolves targets, and tracks build metrics.
+│   │   │   ├── format.zig                                       # Defines table structure with columns, rows, and formatting logic for JSON rendering.
+│   │   │   ├── hash.zig                                         # Implements hashing utilities for various algorithms, processes files, and returns hashes or errors.
+│   │   │   ├── interner.zig                                     # Manages string-to-index mapping, supports dynamic bit-set operations, and handles memory allocation for interned stri...
+│   │   │   ├── io.zig                                           # [gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangli...
+│   │   │   ├── json_parser.zig                                  # Parses Zig JSON files, validates targets, and allocates memory for registry entries.
+│   │   │   ├── llm.zig                                          # Handles Zig AST parsing, LLM configuration, and text processing for LLM responses.
+│   │   │   ├── log.zig                                          # Defines logging configuration, formatting, and output formatting for a Zig application with color support.
+│   │   │   ├── reflection.zig                                   # Provides field-level reflection, validation, and permission handling for Coral data structures, ensuring safe access ...
+│   │   │   ├── registry.zig                                     # Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.
+│   │   │   ├── repl.zig                                         # Implements a Zig REPL interface handling commands, parsing input and managing stdout/stdin streams.
+│   │   │   ├── resolver.zig                                     # [gof-patterns] Manages Zig dependency resolution with topological sorting, handling abstract and concrete targets.
+│   │   │   ├── source.zig                                       # Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.
+│   │   │   ├── string.zig                                       # Implements string matching utilities with case-insensitive comparison and keyword support.
+│   │   │   ├── target.zig                                       # [gof-patterns] Defines executable target types, manages memory for WASM/OS code, and handles deinit for cleanup.
+│   │   │   └── terminal.zig                                     # Handles terminal size, width, height, and user interaction in a Zig terminal environment.
+│   │   ├── batch.zig                                              # Streaming batch ingestion pipeline for Turtle files, processing triples in configurable batches to CozoDB with memory...
+│   │   ├── cache.zig                                              # Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.
+│   │   ├── cli.zig                                                # Manages ingestion CLI arguments, tracks progress, and stores checkpoints in CozoDB.
+│   │   ├── config.zig                                             # Defines Coral project config with multi-level path resolution for guidance system, supporting project, user, and defa...
+│   │   ├── db.zig                                                 # [gof-patterns] Defines CozoDB integration for Coral, handling embeddings, graph hydration, LOD selection, and time tr...
+│   │   ├── main.zig                                               # Handles Zig build configuration, loads JSON config, initializes LLM and registry, and processes user queries.
+│   │   ├── pattern.zig                                            # [gof-patterns] Detects design patterns in Zig AST nodes using text heuristics, supporting domain and GoF patterns.
+│   │   ├── schema.zig                                             # Defines Coral Context schema using CozoDB, integrating payloads, embeddings, and time-travel features with Datalog tr...
+│   │   ├── scrub.zig                                              # Detects synthetic or LLM-generated comments in Zig code for re-infilling.
+│   │   ├── targets.zig                                            # Defines the YAGO ingestion pipeline with structured target nodes and dependencies for data processing.
+│   │   ├── triage.zig                                             # Generates TRIAGE.md from a TODO.md file by analyzing affected paths, assessing risk, and suggesting steps.
+│   │   └── verify.zig                                             # This file defines verification logic for Zig data ingestion, tracking errors, warnings, and report metrics using a cu...
 │   ├── guidance
 │   │   ├── plugins
-│   │   │   ├── markdown_plugin.zig
-│   │   │   └── zig_plugin.zig
-│   │   ├── ast_parser.zig
-│   │   ├── config.zig
-│   │   ├── deps.zig
-│   │   ├── enhancer.zig
-│   │   ├── git.zig
-│   │   ├── hash.zig
-│   │   ├── json_store.zig
-│   │   ├── llm_filter.zig
-│   │   ├── main.zig
-│   │   ├── marker.zig
-│   │   ├── pattern.zig
-│   │   ├── plugin.zig
-│   │   ├── plugin_registry.zig
-│   │   ├── provider_discovery.zig
-│   │   ├── staged.zig
-│   │   ├── structure.zig
-│   │   ├── sync.zig
-│   │   ├── synthesize.zig
-│   │   ├── tests.zig
-│   │   ├── triage.zig
-│   │   └── types.zig
+│   │   │   ├── markdown_plugin.zig                              # MarkdownPlugin — extracts sections and metadata from Markdown files.
+│   │   │   └── zig_plugin.zig                                   # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
+│   │   ├── ast_parser.zig                                         # Parses Zig AST, extracts member signatures, and manages memory for the parser.
+│   │   ├── config.zig                                             # [gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across project and u...
+│   │   ├── deps.zig                                               # Extracts dependency information from Zig source files, building a map of module paths and their imports.
+│   │   ├── enhancer.zig                                           # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
+│   │   ├── git.zig                                                # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
+│   │   ├── hash.zig                                               # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
+│   │   ├── json_store.zig                                         # Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.
+│   │   ├── llm_filter.zig                                         # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
+│   │   ├── main.zig                                               # [gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
+│   │   ├── marker.zig                                             # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   ├── pattern.zig                                            # [gof-patterns] Detects design patterns in Zig AST nodes using text heuristics and node metadata.
+│   │   ├── plugin.zig                                             # LanguagePlugin — interface for language-specific AST providers.
+│   │   ├── plugin_registry.zig                                    # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
+│   │   ├── provider_discovery.zig                                 # External language provider discovery for guidance.
+│   │   ├── staged.zig                                             # staged.zig — Staged explain pipeline for `guidance explain`.
+│   │   ├── structure.zig                                          # Generates structured Markdown from Zig project directories, merging new comments with existing ones.
+│   │   ├── sync.zig                                               # Handles Zig file parsing, AST processing, and supports comment stripping and enhancement for documentation generation.
+│   │   ├── synthesize.zig                                         # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
+│   │   ├── tests.zig                                              # [gof-patterns] Tests JSON store merge, sync, config, and commit helpers in Zig guidance.
+│   │   ├── triage.zig                                             # Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.
+│   │   └── types.zig                                              # Defines file type classification for Zig source files, mapping extensions and patterns to predefined types for proces...
 │   ├── ontology
-│   │   ├── inference.zig
-│   │   ├── mapper.zig
-│   │   ├── migration.zig
-│   │   └── yago.zig
+│   │   ├── inference.zig                                          # Defines inference engine stub for RDFS/OWL, handling transitive rules and materialization stubs.
+│   │   ├── mapper.zig                                             # Transforms RDF triples into ContextNodes and edges for CozoDB, routing properties via YAGO schema and accumulating no...
+│   │   ├── migration.zig                                          # Tracks ontology versions and provides stub migration functions for YAGO schema changes.
+│   │   └── yago.zig                                               # Defines YAGO 4.5 ontology schema with classes, properties, and registry for structured knowledge representation.
 │   ├── rdf
-│   │   ├── lexer.zig
-│   │   ├── normalize.zig
-│   │   ├── nquads.zig
-│   │   └── parser.zig
+│   │   ├── lexer.zig                                              # This file defines a streaming lexer for Terse RDF Triple Language, handling tokens, line/column tracking, and returni...
+│   │   ├── normalize.zig                                          # Normalizes RDF IRI strings to deterministic hashes for CozoDB storage using Blake3, supports scope and blank node has...
+│   │   ├── nquads.zig                                             # Parses Zig source code into structured quad structures, supporting terms, literals, and graphs.
+│   │   └── parser.zig                                             # Streaming parser for Zig RDF, efficiently producing triples without full AST storage.
 │   ├── vector
-│   │   ├── embeddings.zig
-│   │   ├── lance_db.zig
-│   │   ├── math.zig
-│   │   └── root.zig
+│   │   ├── embeddings.zig                                         # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
+│   │   ├── lance_db.zig                                           # guidance LanceDB-style vector search database.
+│   │   ├── math.zig                                               # Vector operations — cosine similarity, normalization, hybrid merge.
+│   │   └── root.zig                                               # guidance vector module — cosine search, embeddings, hybrid merge.
 │   └── wasm
-│       └── wasm.zig
+│       └── wasm.zig                                                 # [gof-patterns] Implements secure sandboxed WebAssembly execution using dynamic loading, zero-copy IPC, and host integ...
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c
@@ -260,6 +259,8 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
+├── CLAUDE.md
+├── FLUENT_WVR.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement

@@ -1,0 +1,217 @@
+{
+  "meta": {
+    "module": "src.common.io",
+    "source": "src/common/io.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns] Manages buffered I/O for stdout/stdin, ensuring safe writer/filer initialization and preventing dangling pointers.",
+  "detail": "# Module: src/common/io.zig — Shared Buffered I/O Helpers\n\n## Module Purpose and Architecture\n\nThis module centralizes a recurring buffered I/O pattern that appeared identically in multiple project files (main.zig and repl.zig). It provides reusable abstractions for managing stdout/stdin buffering while preventing common pitfalls like dangling pointers from stack allocation issues.\n\nThe architecture follows a **stateful wrapper** design:\n- Two primary structs (`WriterState`, `ReaderState`) encapsulate buffered I/O state\n- Each maintains an internal buffer and file handle writer/reader\n- Initialization methods establish the connection to standard streams\n- Interface accessors provide clean, type-safe access to underlying I/O operations\n\n## Key Abstractions and Relationships\n\n### WriterState\nA buffered writer wrapper that:\n- Contains a 4096-byte internal buffer (`[BUFFER_SIZE]u8`)\n- Holds a `std.fs.File.Writer` for stdout connection\n- Provides lifecycle methods: `initStdout()` (setup) → `writer()` (access)\n\n### ReaderState\nA buffered reader wrapper that:\n- Contains a 4096-byte internal buffer (`[BUFFER_SIZE]u8`)\n- Holds a `std.fs.File.Reader` for stdin connection\n- Provides lifecycle methods: `initStdin()` (setup) → `reader()` (access)\n\n### Public Functions\n| Function | Purpose |\n|----------|---------|\n| `makePathAbsolute` | Idempotent directory tree creation from absolute path |\n| `readFileAlloc` | Read file with allocator, returns optional result |\n| `readFileAllocErr` | Read file with allocator, panic on error |\n| `stripPathPrefix` | Remove root prefix from path string |\n| `resolvePath` | Join base directory with relative path |\n\n## Public API and Usage Patterns\n\n### WriterState Pattern\n```zig\n// 1. Declare stack-allocated state\nvar ws: WriterState = .{};\n\n// 2. Initialize stdout connection (MUST be done before writer())\nws.initStdout();\n\n// 3. Get the writer interface for use\nconst w = ws.writer();\n\n// 4. Use the writer\ntry w.writeAll(\"hello\");\n```\n\n### Critical Usage Constraints\n- **Never copy** `WriterState`/`ReaderState` after initialization — internal pointers would dangle\n- Must call `initStdout()`/`initStdin()` on stack-allocated state before accessing writers/readers\n- The internal buffer pointer must remain valid for the lifetime of the state\n\n## Important Implementation Details\n\n1. **Buffer Size**: Fixed at 4096 bytes via `BUFFER_SIZE` constant\n2. **Pointer Safety**: Tests verify that `fw.interface.buffer.ptr` correctly references the struct's own buffer, not a stale copy\n3. **Garbage Prevention**: Tests confirm no leading garbage bytes are emitted when writing to pipes\n4. **Idempotency**: `makePathAbsolute` safely handles existing directories\n\n## Design Patterns Used\n\n| Pattern | Application |\n|---------|-------------|\n| **Wrapper/Facade** | Wraps raw file operations with buffered abstraction |\n| **Stateful Resource Management** | Encapsulates lifecycle (init → use) in structs |\n| **Centralized Utility** | Single source of truth for I/O patterns across codebase |\n| **Type-Safe Accessor** | `writer()`/`reader()` methods provide clean API surface |\n\nThe module exemplifies Zig's preference for explicit resource management with clear lifecycle boundaries, preventing memory safety issues common in buffered I/O scenarios.",
+  "keywords": ["WriterState", "ReaderState", "initStdout", "initStdin", "makePathAbsolute", "buffered I/O", "std.fs.File.Writer", "dangling pointers", "utility module", "path resolution"],
+  "skills": [
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/common/log.zig", "src/common/terminal.zig", "src/coral/common/cli.zig", "src/coral/common/llm.zig", "src/coral/common/log.zig", "src/coral/common/terminal.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "WriterState",
+      "match_hash": "575a81f7eb81fe5c26806e5f1b09ef78aa87ad321a5245ce0e70e6fc1b858bcd",
+      "signature": "keyword_struct WriterState { ... }",
+      "comment": "A buffered writer wrapping a `std.fs.File`.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "initStdout",
+          "match_hash": "78c1947ebdb5fbabbf9a84cdb34776914b76454f94f7ab3127d2dc24c02f31cc",
+          "signature": "fn initStdout(self: *WriterState) -> void",
+          "params": [
+            { "name": "self", "type": "*WriterState" }
+          ],
+          "returns": "void",
+          "comment": "Wire up the buffered writer to stdout.  Call this exactly once on a",
+          "is_pub": true,
+          "line": 23
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "writer",
+          "match_hash": "599ebfc96f211231f21891fb0ddc1e622eac9ed02ef430e9f74687002b988b2f",
+          "signature": "fn writer(self: *WriterState) -> *std.Io.Writer",
+          "params": [
+            { "name": "self", "type": "*WriterState" }
+          ],
+          "returns": "*std.Io.Writer",
+          "is_pub": true,
+          "line": 27
+        }
+      ],
+      "line": 17
+    },
+    {
+      "type": "struct",
+      "name": "ReaderState",
+      "match_hash": "158a20440d85242b915d906c8b5a9bcef272064d6763da38e6edf207c8a54d84",
+      "signature": "keyword_struct ReaderState { ... }",
+      "comment": "A buffered reader wrapping a `std.fs.File`.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "initStdin",
+          "match_hash": "ce1c030fbe342ebd3ec38d52222f19c0a5539c443db7dfb61c594ca374866c2b",
+          "signature": "fn initStdin(self: *ReaderState) -> void",
+          "params": [
+            { "name": "self", "type": "*ReaderState" }
+          ],
+          "returns": "void",
+          "comment": "Wire up the buffered reader to stdin.  Call this exactly once on a",
+          "is_pub": true,
+          "line": 39
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "reader",
+          "match_hash": "86e6356dfbcf330df4383498f5737e794aade4ac48375e0a7a2d68c92019f2fc",
+          "signature": "fn reader(self: *ReaderState) -> *std.Io.Reader",
+          "params": [
+            { "name": "self", "type": "*ReaderState" }
+          ],
+          "returns": "*std.Io.Reader",
+          "is_pub": true,
+          "line": 43
+        }
+      ],
+      "line": 33
+    },
+    {
+      "type": "test_decl",
+      "name": "WriterState writes to a pipe without emitting garbage",
+      "is_pub": false,
+      "line": 52
+    },
+    {
+      "type": "test_decl",
+      "name": "WriterState buf pointer stays valid after initStdout (no dangling)",
+      "is_pub": false,
+      "line": 75
+    },
+    {
+      "type": "fn_decl",
+      "name": "makePathAbsolute",
+      "match_hash": "aaddfb3b47f0efdd1b9e1222c94403b27d22064d648165654fb5d6fe7720f203",
+      "signature": "fn makePathAbsolute(abs_path: []const u8) -> void",
+      "params": [
+        { "name": "abs_path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Create a directory tree from an absolute path (idempotent).",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "line": 97
+    },
+    {
+      "type": "test_decl",
+      "name": "makePathAbsolute creates nested directories",
+      "is_pub": false,
+      "line": 126
+    },
+    {
+      "type": "test_decl",
+      "name": "makePathAbsolute is idempotent for existing paths",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "fn_decl",
+      "name": "readFileAlloc",
+      "match_hash": "c6a87f5ac89862c4f39bf2a9f06db44a21dd6f37ae6b8064a590e295689a0d7c",
+      "signature": "fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, max_size: usize) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" },
+        { "name": "max_size", "type": "usize" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Read entire file content into an allocated buffer.",
+      "is_pub": true,
+      "line": 175
+    },
+    {
+      "type": "fn_decl",
+      "name": "readFileAllocErr",
+      "match_hash": "de88127b2d9c19b98f1587ee5d439b5f94f73326a6a188212a4695109f8f0588",
+      "signature": "fn readFileAllocErr(allocator: std.mem.Allocator, path: []const u8, max_size: usize) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" },
+        { "name": "max_size", "type": "usize" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Read entire file content into an allocated buffer.",
+      "is_pub": true,
+      "line": 184
+    },
+    {
+      "type": "fn_decl",
+      "name": "stripPathPrefix",
+      "match_hash": "d78a45885cd9b877a3776cf49e956790b567a7dcd1ce17aec361825627782928",
+      "signature": "fn stripPathPrefix(abs: []const u8, root: []const u8) -> []const u8",
+      "params": [
+        { "name": "abs", "type": "[]const u8" },
+        { "name": "root", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Strip `root` from the front of `abs`, returning the relative tail.",
+      "is_pub": true,
+      "line": 195
+    },
+    {
+      "type": "fn_decl",
+      "name": "resolvePath",
+      "match_hash": "d0671de98aa35413ec9b723fdb469ab7aa19c9bccc332c6c0ec13c08423fbcfb",
+      "signature": "fn resolvePath(allocator: std.mem.Allocator, base: []const u8, path: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "base", "type": "[]const u8" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Resolve a path: return as-is if absolute, otherwise join with base.",
+      "is_pub": true,
+      "line": 207
+    },
+    {
+      "type": "test_decl",
+      "name": "readFileAlloc returns null for non-existent file",
+      "is_pub": false,
+      "line": 213
+    },
+    {
+      "type": "test_decl",
+      "name": "readFileAlloc reads file content",
+      "is_pub": false,
+      "line": 218
+    },
+    {
+      "type": "test_decl",
+      "name": "resolvePath returns absolute path unchanged",
+      "is_pub": false,
+      "line": 237
+    },
+    {
+      "type": "test_decl",
+      "name": "resolvePath joins relative path with base",
+      "is_pub": false,
+      "line": 243
+    },
+    {
+      "type": "test_decl",
+      "name": "resolvePath handles dot by returning base",
+      "is_pub": false,
+      "line": 249
+    }
+  ]
+}

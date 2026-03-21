@@ -1,0 +1,266 @@
+{
+  "meta": {
+    "module": "src.guidance.pattern",
+    "source": "src/guidance/pattern.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns] Detects design patterns in Zig AST nodes using text heuristics and node metadata.",
+  "detail": "# Design Pattern Detection Module - Documentation\n\n## Purpose and Architecture\n\nThe `pattern.zig` module implements a design pattern detection system for Zig code analysis, serving as the core engine for identifying architectural patterns in source code. It operates on two complementary fronts: **AST-based structural analysis** and **text-based heuristic matching**.\n\n### Core Design Philosophy\nThe architecture follows a hybrid approach inspired by Python's PatternDetector, combining:\n- **Tree traversal**: Leverages Zig's `std.zig.Ast` to understand code structure\n- **Source text extraction**: Uses `tree.getNodeSource()` to obtain node content for pattern matching\n- **Heuristic detection**: Applies keyword and structural patterns to identify design patterns\n\n### Module Dependencies\n```\npattern.zig\n├── std (standard library)\n├── types.zig (data structures for Pattern, etc.)\n└── common.zig (LLM integration utilities)\n```\n\n## Key Abstractions\n\n### The `Pattern` Structure\nEach detected pattern contains:\n- **name**: Human-readable pattern identifier\n- **type**: Classification (.Domain or .GoF)\n- **ref**: Documentation reference path to skill guides\n\n### Detection Functions by Category\n\n**Domain Patterns:**\n- `detectRingBuffer()` - Identifies circular buffer implementations\n- `detectStatePersistence()` - Finds state management patterns\n\n**GoF Creational:**\n- `detectFactory()`, `detectSingleton()`, `detectBuilder()` - Object creation patterns requiring tree access for constructor analysis\n\n**GoF Structural:**\n- `detectAdapter()`, `detectDecorator()`, `detectProxy()` - Object composition patterns using text heuristics\n\n**GoF Behavioral:**\n- `detectStrategy()`, `detectObserver()`, `detectTemplateMethod()` - Interaction and algorithm patterns\n\n## Public API Usage Patterns\n\n### Primary Entry Point\n```zig\nconst patterns = try detectPatterns(allocator, tree, node_index);\n// Returns: []types.Pattern containing all detected patterns\n```\n\n### Utility Functions\n- **`containsWord()`** / **`containsAny()`** - String matching utilities for keyword detection\n- **`detectPatternNames()`** - Extracts just pattern names without full metadata\n\n### Memory Management\nThe module uses `errdefer` with explicit cleanup to free allocated strings, ensuring no memory leaks when errors occur during pattern detection.\n\n## Implementation Details\n\n### Text-Based Heuristic Approach\nUnlike pure AST analysis, this module extracts source text and applies keyword matching:\n```zig\nconst node_source = tree.getNodeSource(node);\nif (detectFactory(tree, node, node_source)) { ... }\n```\n\nThis hybrid approach handles cases where:\n- Pattern intent isn't immediately obvious from structure alone\n- Comments or documentation provide crucial context\n- Multiple patterns overlap in the same code region\n\n### Error Handling Strategy\nThe `errdefer` block ensures proper cleanup of all allocated memory (`p.name`, `p.ref`) regardless of which detection function fails, following Zig's RAII-inspired error handling conventions.\n\n## Design Patterns Used (in Implementation)\n\n1. **Strategy Pattern** - Each detector function is a standalone strategy for pattern identification\n2. **Command Pattern** - `detectPatterns()` orchestrates multiple detection commands\n3. **Template Method** - Follows consistent structure: extract source → check conditions → append result\n\n## Related Documentation\n- GoF Patterns: `.skills/gof-patterns/SKILL.md`\n- Domain Patterns: `.skills/domain_patterns/SKILL.md`",
+  "keywords": ["detectPatterns", "design pattern detection", "Zig AST analysis", "GoF patterns", "Ring Buffer", "State Persistence", "Factory Singleton Builder", "Adapter Decorator Proxy", "Strategy Observer Template Method", "text-based heuristics"],
+  "skills": [
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/guidance/ast_parser.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "detectPatterns",
+      "match_hash": "473d0bc25b9f263131ff787378b43f73b034dd8c8c8931e22e7600e70b2c8c37",
+      "signature": "fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) -> []types.Pattern",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" }
+      ],
+      "returns": "[]types.Pattern",
+      "comment": "Detect design patterns from a Zig AST node's source text.",
+      "is_pub": true,
+      "line": 8
+    },
+    {
+      "type": "fn_decl",
+      "name": "detectPatternNames",
+      "match_hash": "dcb58c686f9a213c04aed1ce8282f40345e930edab703ac130a6570148226ba2",
+      "signature": "fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" }
+      ],
+      "returns": "[][]const u8",
+      "comment": "Detects pattern names in a Zig AST node using an allocator and returns their slice.",
+      "is_pub": true,
+      "line": 120
+    },
+    {
+      "type": "fn_private",
+      "name": "containsWord",
+      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
+      "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Returns true if `needle` appears in `haystack` as a word boundary match (case-insensitive).",
+      "is_pub": false,
+      "line": 143
+    },
+    {
+      "type": "fn_private",
+      "name": "containsAny",
+      "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
+      "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Returns true if the source text contains any of the given keywords (substring match).",
+      "is_pub": false,
+      "line": 159
+    },
+    {
+      "type": "fn_private",
+      "name": "containsAnyWord",
+      "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
+      "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Returns true if the source text contains any of the given keywords as word-boundary matches.",
+      "is_pub": false,
+      "line": 167
+    },
+    {
+      "type": "fn_private",
+      "name": "detectRingBuffer",
+      "match_hash": "9477893f25e6435db22494632f8e4d5e31223d08eeabed1de270669c13b81a64",
+      "signature": "fn detectRingBuffer(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if the input slice represents a valid ring buffer structure.",
+      "is_pub": false,
+      "line": 178
+    },
+    {
+      "type": "fn_private",
+      "name": "detectStatePersistence",
+      "match_hash": "3ddd4263130a7eecf359f3aef26624298d0036a707b7716918ff06fa3f190399",
+      "signature": "fn detectStatePersistence(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a sequence maintains consistent state across slices, returning true if stable.",
+      "is_pub": false,
+      "line": 185
+    },
+    {
+      "type": "fn_private",
+      "name": "detectFactory",
+      "match_hash": "953abe697aff33457e4b0474b4609130a51e70554833a5bb20d0aab2f20a8aa0",
+      "signature": "fn detectFactory(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a Zig AST node matches a factory definition, returning true or false.",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": false,
+      "line": 195
+    },
+    {
+      "type": "fn_private",
+      "name": "detectSingleton",
+      "match_hash": "91fe859cef29e2d1fbc3dfdb6cee98044e6d80715900276b8f601149dab22a82",
+      "signature": "fn detectSingleton(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a Zig AST node is a singleton by analyzing its structure and return a boolean.",
+      "is_pub": false,
+      "line": 203
+    },
+    {
+      "type": "fn_private",
+      "name": "detectBuilder",
+      "match_hash": "be0c50bc7a48fca0c860cdd449a7de44968c0b9ddf9f28ccc388bc5596ecec18",
+      "signature": "fn detectBuilder(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a Zig AST node can be built using a given source slice, returning true or false.",
+      "is_pub": false,
+      "line": 212
+    },
+    {
+      "type": "fn_private",
+      "name": "detectAdapter",
+      "match_hash": "3fb09b90f18ac56601cd330d784f6fca85369ef48afc5e801587e50af8ca6ab2",
+      "signature": "fn detectAdapter(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given node matches an adapter pattern in the Zig AST tree, returning true or false.",
+      "is_pub": false,
+      "line": 238
+    },
+    {
+      "type": "fn_private",
+      "name": "detectDecorator",
+      "match_hash": "bb3fe13b849d84955e3c2ab093ac3ffaf2e09febf6a217e3b72598b7213e2acb",
+      "signature": "fn detectDecorator(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given source slice contains valid Zig syntax and returns a boolean result.",
+      "is_pub": false,
+      "line": 246
+    },
+    {
+      "type": "fn_private",
+      "name": "detectProxy",
+      "match_hash": "a248fe5edd106caada4abfbef82197c53479b4151b5e65d3f53e45dce3386a32",
+      "signature": "fn detectProxy(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given source slice matches a proxy pattern, returning true or false.",
+      "is_pub": false,
+      "line": 255
+    },
+    {
+      "type": "fn_private",
+      "name": "detectStrategy",
+      "match_hash": "fdabf1ceed287d4d843a446646d49627576ebdfced7be5154834e8f047789a4d",
+      "signature": "fn detectStrategy(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a Zig AST node matches a specified strategy pattern, returning true or false.",
+      "is_pub": false,
+      "line": 267
+    },
+    {
+      "type": "fn_private",
+      "name": "detectObserver",
+      "match_hash": "91bb14bfd4f037559062b7d658c57ea1821046b359296e7f5b627ff7428a9c6c",
+      "signature": "fn detectObserver(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given node matches an observer pattern definition in the tree structure.",
+      "is_pub": false,
+      "line": 276
+    },
+    {
+      "type": "fn_private",
+      "name": "detectTemplateMethod",
+      "match_hash": "a160acc806e431bce34fa0a7cc5dd6bb4b83602a771a926d8e6a4db10d0ac755",
+      "signature": "fn detectTemplateMethod(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "node", "type": "std.zig.Ast.Node.Index" },
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a Zig AST node matches a template method pattern, returning true or false.",
+      "is_pub": false,
+      "line": 288
+    },
+    {
+      "type": "test_decl",
+      "name": "detectRingBuffer",
+      "is_pub": false,
+      "line": 312
+    },
+    {
+      "type": "test_decl",
+      "name": "detectFactory",
+      "is_pub": false,
+      "line": 318
+    },
+    {
+      "type": "test_decl",
+      "name": "detectObserver",
+      "is_pub": false,
+      "line": 324
+    }
+  ]
+}

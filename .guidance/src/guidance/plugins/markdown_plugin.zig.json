@@ -1,0 +1,95 @@
+{
+  "meta": {
+    "module": "src.guidance.plugins.markdown_plugin",
+    "source": "src/guidance/plugins/markdown_plugin.zig",
+    "language": "zig"
+  },
+  "comment": " MarkdownPlugin — extracts sections and metadata from Markdown files.\n\n Each heading (# / ## / ###) becomes a \"member\" whose name is the heading\n text and whose line number is the heading's line.  The first paragraph of\n the document becomes the module-level comment.\n\n node_type values:\n   \"h1\"  — top-level heading\n   \"h2\"  — second-level heading\n   \"h3\"  — third-level heading\n   \"section\" — deeper / unrecognised headings",
+  "detail": "# MarkdownPlugin Module Documentation\n\n## Module Purpose and Architecture\n\nMarkdownPlugin is a language-specific parser plugin that transforms Markdown files into structured metadata suitable for AI coding assistant analysis. It operates as part of a larger plugin architecture, implementing the `LanguagePlugin` interface to provide parsing capabilities for `.md`, `.markdown`, and `.mdx` file extensions.\n\nThe module follows a clean separation between plugin registration and implementation:\n- **Registration Layer**: The `plugin()` function exposes a singleton descriptor containing metadata (name, supported extensions) and function pointers to the core logic\n- **Parsing Layer**: Implements stateful parsing that handles Markdown's hierarchical structure, code blocks, and content extraction\n\n## Key Abstractions and Relationships\n\n### Core Types\n| Type | Purpose | Relationship |\n|------|---------|--------------|\n| `LanguagePlugin` | Plugin interface contract | Implemented by MarkdownPlugin |\n| `ParsedFile` | Container for parsed file results | Returned by `parseMarkdown()` |\n| `types.Member` | Individual section/node representation | Populated from headings during parsing |\n\n### Data Flow\n```\nMarkdown Source → parseMarkdown() → ParsedFile {\n  - module: derived name\n  - members: [Member] (each heading as a node)\n  - comment: first paragraph text\n}\n```\n\n## Public API and Usage Patterns\n\n### Primary Functions\n\n**`plugin()`** - Entry point for plugin registration. Returns a singleton descriptor that the AI assistant uses to identify Markdown files and invoke parsing.\n\n**`parseMarkdown(arena, source, file_path)`** - Core parsing function that:\n- Derives module metadata from file path\n- Identifies headings as \"members\" with their line numbers preserved\n- Extracts first paragraph as module-level documentation\n- Returns structured `ParsedFile` for downstream processing\n\n**`extractMarkdownLinks(arena, source)`** - Extracts all links from the Markdown content, enabling navigation between referenced documents.\n\n**`deriveMarkdownModule(arena, file_path)`** - Generates a canonical module name from the file path, supporting relative paths (strips \"./\" prefix).\n\n## Important Implementation Details\n\n### Heading Hierarchy\nThe parser recognizes three explicit heading levels:\n- **h1**: Top-level section (skipped as module title)\n- **h2**: Second-level sections (become members)\n- **h3**: Third-level sections (become members)\n- **section**: Any deeper headings treated uniformly\n\n### Content Protection\nFenced code blocks (` ``` ` or `~~~`) are detected and skipped to prevent false positives from code examples within the Markdown. This ensures only actual documentation content is parsed.\n\n### Paragraph Collection Logic\nThe first paragraph extraction stops when encountering:\n1. A blank line (end of natural paragraph)\n2. A fenced code block\n3. Any heading (section boundary)\n\nThis preserves semantic meaning by treating headings as section delimiters.\n\n## Design Patterns Used\n\n**Singleton Pattern**: The `plugin()` function returns a singleton descriptor, ensuring consistent plugin identity across the system.\n\n**State Machine Parsing**: Maintains internal state (`in_code_block`, `first_para_done`) to track parsing context without requiring external state management.\n\n**Adapter Pattern**: Reuses existing `types.Member` and `fn_decl` structures to minimize code duplication while providing semantic meaning through naming conventions.\n\n**Composition over Inheritance**: Builds complex parsed output by composing simple member objects rather than creating specialized node types for each heading level.",
+  "keywords": ["MarkdownPlugin", "parseMarkdown", "LanguagePlugin", "ParsedFile", "Member", "deriveMarkdownModule", "extractMarkdownLinks", "module metadata extraction", "AI coding assistant plugin architecture"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "plugin",
+      "match_hash": "3a6f2a54a4f3e7fba098b1c4f632b29610caa99042ed81290bc41afefa7bc978",
+      "signature": "fn plugin() -> LanguagePlugin",
+      "returns": "LanguagePlugin",
+      "comment": "Returns the singleton MarkdownPlugin descriptor.",
+      "is_pub": true,
+      "line": 23
+    },
+    {
+      "type": "fn_private",
+      "name": "parseMarkdown",
+      "match_hash": "e2e6ff359df950fde93726a450f67d4a9d129852adcef0f51f16875b2bd02998",
+      "signature": "fn parseMarkdown(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
+      "returns": "anyerror!ParsedFile",
+      "comment": "Converts a markdown file into a Zig source code representation.",
+      "is_pub": false,
+      "line": 36
+    },
+    {
+      "type": "fn_private",
+      "name": "extractMarkdownLinks",
+      "match_hash": "ce6e891b06bf14842e46ad325e88d09287cceff5a68fa1abcdd45a39b435b450",
+      "signature": "fn extractMarkdownLinks(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
+      "returns": "anyerror![]const []const u8",
+      "comment": "Extract Markdown link targets as \"imports\" — useful for used_by analysis.",
+      "is_pub": false,
+      "line": 133
+    },
+    {
+      "type": "fn_private",
+      "name": "deriveMarkdownModule",
+      "match_hash": "72df3c07751c0f9a5e6b61167d29b2d900025bb2439b340a239a68f13842e81b",
+      "signature": "fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Derive a dot-separated module name from a Markdown file path.",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "test_decl",
+      "name": "MarkdownPlugin handles .md extension",
+      "is_pub": false,
+      "line": 183
+    },
+    {
+      "type": "test_decl",
+      "name": "MarkdownPlugin.parse extracts headings as members",
+      "is_pub": false,
+      "line": 193
+    },
+    {
+      "type": "test_decl",
+      "name": "MarkdownPlugin.parse code blocks are skipped",
+      "is_pub": false,
+      "line": 217
+    },
+    {
+      "type": "test_decl",
+      "name": "MarkdownPlugin.extractImports finds local links",
+      "is_pub": false,
+      "line": 237
+    },
+    {
+      "type": "test_decl",
+      "name": "FileType.fromExtension",
+      "is_pub": false,
+      "line": 253
+    }
+  ]
+}

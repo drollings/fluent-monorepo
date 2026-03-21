@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "module": "src.guidance.structure",
+    "source": "src/guidance/structure.zig",
+    "language": "zig"
+  },
+  "comment": "Generates structured Markdown from Zig project directories, merging new comments with existing ones.",
+  "detail": "# Structure Generator Module Documentation\n\n## Overview\n\nThis module implements a `StructureGenerator` that creates Markdown tree diagrams of Zig project directories with intelligent comment annotations. It mirrors Python's guidance.py `StructureGenerator` class and serves as the core component for generating project structure documentation.\n\n## Architecture\n\n### Core Components\n\n**TreeEntry**: A union type representing nodes in the directory tree:\n- `.text`: Plain text entries (directory labels, root marker \".\")\n- `.file`: File entries with metadata and annotations\n\n**FileEntry**: Struct containing file-level information:\n```zig\nprefix: []const u8  // Tree formatting prefix (e.g., \"│   ├── \")\nname: []const u8    // Filename only\nabs_path: []const u8  // Full absolute path\nrel_path: []const u8  // Path relative to project root\n```\n\n**StructureGenerator**: Main orchestrator with lifecycle management:\n- **State**: Project root, guidance directory, debug flag\n- **Resources**: Gitignore filter, JSON store for comments\n- **Operations**: Tree building, annotation merging, Markdown generation\n\n### Data Flow\n\n1. **Initialization** → `init()` creates gitignore filter and JSON store\n2. **Tree Building** → `buildTree()` recursively traverses directories\n3. **Annotation Phase** → Comments merged from guidance JSON + existing STRUCTURE.md\n4. **Output Generation** → `write()` formats tree with right-aligned comments\n\n## Public API\n\n### StructureGenerator\n\n```zig\npub fn init(allocator, project_root, guidance_dir, debug) StructureGenerator\npub fn deinit(self: *StructureGenerator) void\npub fn generate(self: *StructureGenerator) !void\n```\n\n**Usage Pattern**:\n```zig\nconst generator = try StructureGenerator.init(\n    arena,\n    \".\",\n    \"guidance\",\n    false,\n);\ndefer generator.deinit();\n\ntry generator.generate();\n```\n\n### Helper Functions\n\n- `extractFilename(line: []const u8) -> ?[]const u8` - Parses filename from tree line\n- `childLessThan(_: void, a, b: ChildEntry) -> bool` - Comparison for sorting\n\n## Key Design Decisions\n\n### 1. Two-Source Annotation Strategy\nThe module intelligently merges comments from:\n- **Guidance JSON**: First line of corresponding guidance file\n- **Existing STRUCTURE.md**: Preserved from previous runs\n\nThis ensures backward compatibility while incorporating new AI-generated context.\n\n### 2. Flexible Comment Column Width\nAutomatically calculates optimal column width as `max(60, longest_line + 2)`, ensuring readability regardless of tree depth.\n\n### 3. Gitignore Integration\nRespects `.gitignore` files to exclude irrelevant directories (node_modules, build artifacts, etc.) from the generated structure.\n\n### 4. Memory Safety Pattern\nExplicit resource management with:\n- `init()` for setup\n- `deinit()` for cleanup\n- Deferred allocation freeing to prevent leaks\n\n## Implementation Details\n\n### Tree Building Algorithm\nUses recursive traversal with proper prefix calculation:\n- Root marker: \".\"\n- Directory entries use \"├──\" or \"└──\" connectors\n- Proper spacing maintains visual tree structure\n\n### Comment Resolution Priority\n1. Check guidance JSON for new comment\n2. Fall back to existing STRUCTURE.md comment\n3. Preserve original if no guidance exists\n\n### Performance Considerations\n- Single-pass tree construction\n- Minimal string duplication through careful allocation\n- Efficient comment lookup with hash map\n\n## Design Patterns Employed\n\n| Pattern | Application |\n|---------|-------------|\n| **Builder** | Step-by-step tree construction |\n| **Merging/Observer** | Combining multiple comment sources |\n| **Tree Traversal** | Recursive directory exploration |\n| **Resource Manager** | Explicit init/deinit lifecycle |\n| **Adapter** | Bridges guidance JSON to Markdown format |\n\n## Integration Points\n\n- **git.zig**: Gitignore filtering via `GitignoreFilter`\n- **json_store.zig**: Comment persistence and retrieval\n- **common.llm**: Potential future LLM integration for comment generation\n\nThe module is designed as a standalone utility that can be embedded in larger tools for project documentation, code navigation assistance, or AI context building.",
+  "keywords": ["StructureGenerator", "TreeEntry", "FileEntry", "Markdown generator", "Directory traversal", "Gitignore filtering", "Guidance annotations", "Tree builder pattern", "JSON comment merging", "Zig module architecture"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "FileEntry",
+      "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
+      "signature": "keyword_struct FileEntry { ... }",
+      "comment": "Manages file entry metadata with fixed-size buffers; owned by the caller; ensures consistent state across operations.",
+      "is_pub": false,
+      "line": 24
+    },
+    {
+      "type": "struct",
+      "name": "StructureGenerator",
+      "match_hash": "53c3ce1f50f740dd1b57459c9b834ecdbae7efbf707da3e958474cbf1621b06c",
+      "signature": "keyword_struct StructureGenerator { ... }",
+      "comment": "Manages memory allocation and structure generation for Zig projects; owns allocator and guides build process.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "9c3f209e2489fcea45a6d16978dda0ed14cbc4294495d9d7b4cf675a1f832433",
+          "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, guidance_dir: []const u8, debug: bool) -> StructureGenerator",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "project_root", "type": "[]const u8" },
+            { "name": "guidance_dir", "type": "[]const u8" },
+            { "name": "debug", "type": "bool" }
+          ],
+          "returns": "StructureGenerator",
+          "is_pub": true,
+          "line": 43
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "c4360f29302f5c87da832f76ae20ff6bef6d5effb5dcdc42d3538be20ab82524",
+          "signature": "fn deinit(self: *StructureGenerator) -> void",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 59
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "generate",
+          "match_hash": "85cfee50c9b5677135937fe46027081030f7750566123382168461314727c4d2",
+          "signature": "fn generate(self: *StructureGenerator) -> void",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" }
+          ],
+          "returns": "void",
+          "comment": "Generate (or regenerate) STRUCTURE.md in `project_root`.",
+          "is_pub": true,
+          "line": 64
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "buildTree",
+          "match_hash": "b346438f5a45199d252c73abf84b2e64a03eeae1ddc764931372c9ba973e8f13",
+          "signature": "fn buildTree(self: *StructureGenerator, entries: *std.ArrayList(TreeEntry), dir_path: []const u8, prefix: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "entries", "type": "*std.ArrayList(TreeEntry)" },
+            { "name": "dir_path", "type": "[]const u8" },
+            { "name": "prefix", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 109
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "relPath",
+          "match_hash": "fce1ffeec1f700a42a54d4773e98fa7888281391579e1322b3049cca71d2d19d",
+          "signature": "fn relPath(self: *StructureGenerator, abs: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "abs", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 175
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "resolveComment",
+          "match_hash": "abbf8bc11b0305ee28b8aa326e66620d18e70a7592c0f486bc9c726f6fcb7f3b",
+          "signature": "fn resolveComment(self: *StructureGenerator, entry: FileEntry, old_comments: std.StringHashMapUnmanaged([]const u8)) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "entry", "type": "FileEntry" },
+            { "name": "old_comments", "type": "std.StringHashMapUnmanaged([]const u8)" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Look up the comment for a file entry.",
+          "is_pub": false,
+          "line": 185
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "commentFromGuidance",
+          "match_hash": "e26d33169f47aefcdcbe744997369df1a60641ccb89bc2c68253abd741e712bf",
+          "signature": "fn commentFromGuidance(self: *StructureGenerator, rel_path: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "rel_path", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Load the guidance JSON for `rel_path` and return the first line of `comment`.",
+          "is_pub": false,
+          "line": 202
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseOldComments",
+          "match_hash": "98d3846cdd0ea5da1a212a1efa38f75c838d22b28903c7ab6aa51d9dea768e80",
+          "signature": "fn parseOldComments(self: *StructureGenerator) -> std.StringHashMapUnmanaged([]const u8)",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" }
+          ],
+          "returns": "std.StringHashMapUnmanaged([]const u8)",
+          "comment": "Extract `filename → comment` from the existing STRUCTURE.md fenced block.",
+          "is_pub": false,
+          "line": 233
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "write",
+          "match_hash": "50810999ff16700d1d0bcb9a794a424dcf77942732986b34b32c75586c82fe89",
+          "signature": "fn write(self: *StructureGenerator, path: []const u8, entries: []const TreeEntry, old_comments: std.StringHashMapUnmanaged([]const u8), comment_col: usize) -> void",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "path", "type": "[]const u8" },
+            { "name": "entries", "type": "[]const TreeEntry" },
+            { "name": "old_comments", "type": "std.StringHashMapUnmanaged([]const u8)" },
+            { "name": "comment_col", "type": "usize" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 285
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "freeEntries",
+          "match_hash": "ce08d9075d0d0e4e9b081de86f7e744fb571580275a11efaf748de8edfbfbd3a",
+          "signature": "fn freeEntries(self: *StructureGenerator, entries: *std.ArrayList(TreeEntry)) -> void",
+          "params": [
+            { "name": "self", "type": "*StructureGenerator" },
+            { "name": "entries", "type": "*std.ArrayList(TreeEntry)" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 344
+        }
+      ],
+      "line": 35
+    },
+    {
+      "type": "struct",
+      "name": "ChildEntry",
+      "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
+      "signature": "keyword_struct ChildEntry { ... }",
+      "comment": "Manages child entry structures with ownership and invariants; ensures safe access patterns.",
+      "is_pub": false,
+      "line": 364
+    },
+    {
+      "type": "fn_private",
+      "name": "childLessThan",
+      "match_hash": "643541ae4953a0b78833f49ac5c5911fb49ef15c0353b9dccdbd07e5b68e385f",
+      "signature": "fn childLessThan(_: void, a: ChildEntry, b: ChildEntry) -> bool",
+      "params": [
+        { "name": "_", "type": "void" },
+        { "name": "a", "type": "ChildEntry" },
+        { "name": "b", "type": "ChildEntry" }
+      ],
+      "returns": "bool",
+      "comment": "Compares two child entries to check if one is less than another, returning true or false.",
+      "is_pub": false,
+      "line": 370
+    },
+    {
+      "type": "fn_private",
+      "name": "extractFilename",
+      "match_hash": "7e64071945cb742e49b9113861c0f8a22b62874c17b0635b5612f516ca858129",
+      "signature": "fn extractFilename(line: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "line", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Extract the filename from a tree line like \"│   ├── main.zig\".",
+      "is_pub": false,
+      "line": 379
+    }
+  ]
+}

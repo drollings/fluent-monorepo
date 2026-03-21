@@ -1,0 +1,194 @@
+{
+  "meta": {
+    "module": "src.coral.cli",
+    "source": "src/coral/cli.zig",
+    "language": "zig"
+  },
+  "comment": "Manages ingestion CLI arguments, tracks progress, and stores checkpoints in CozoDB.",
+  "detail": "The `cli.zig` module implements the core argument parsing and state management infrastructure for the `coral ingest` subcommand of an AI coding assistant's data ingestion pipeline. It provides a clean separation between CLI interface handling, batch processing configuration, and checkpointing mechanisms that enable resumable large-scale knowledge graph ingestion.\n\n**Architecture & Purpose:**\nThe module serves as the entry point for command-line interactions with the ingestion system. It orchestrates three primary concerns: argument validation, batch processing configuration translation, and progress tracking through checkpoints stored in CozoDB. The design follows a layered approach where CLI parsing feeds into higher-level ingestion logic while maintaining state through checkpoint objects.\n\n**Key Abstractions:**\n- `IngestStatus` enum tracks the lifecycle of ingestion operations (not_started → in_progress → completed/failed)\n- `Checkpoint` struct encapsulates persistent progress information including byte offsets, triple counts, and timestamps\n- `IngestArgs` handles command-line argument parsing with sensible defaults and validation\n- `CheckpointStore` manages checkpoint collection (with CozoDB persistence planned as future work)\n\n**Public API:**\nThe module exposes four main types: `IngestStatus`, `Checkpoint`, `IngestArgs`, and `CheckpointStore`. The `IngestArgs.parse()` function is the primary entry point for CLI interaction, supporting flags like `--source`, `--ontology`, `--batch-size`, `--resume`, and `--status`. The `toBatchConfig()` method translates parsed arguments into the internal `BatchConfig` format used by downstream processing.\n\n**Usage Patterns:**\nTypical usage involves calling `IngestArgs.parse(args)` to convert command-line tokens into a typed struct, then using `.toBatchConfig()` for batch operations. For resumable ingestion, the system saves checkpoints after batches and loads them via the `resume_checkpoint` field in subsequent runs.\n\n**Implementation Details:**\nThe argument parser uses manual iteration with bounds checking, returning specific errors (`MissingValue`, `InvalidBatchSize`) rather than generic failures. Checkpoints are designed to be lightweight yet comprehensive, storing byte offsets for precise resume capability and Unix timestamps for audit trails. The module imports `batch.zig` for integration with the broader ingestion pipeline.\n\n**Design Patterns:**\nThe module employs several patterns: **Command Pattern** through argument parsing, **State Pattern** via `IngestStatus`, **Repository Pattern** (emerging) through `CheckpointStore`, and **Adapter Pattern** by translating CLI arguments to internal batch configuration. The checkpoint system implements **Undo/Redo capability** through byte-offset tracking, enabling precise recovery points in long-running ingestion jobs.",
+  "keywords": ["IngestArgs", "Checkpoint", "IngestStatus", "CozoDB", "checkpointing", "argument parsing", "batch processing", "data ingestion", "CLI interface", "resumable operations"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "IngestStatus",
+      "match_hash": "9274d51ce89dec1e744b302507024983456742ecb927d085a631e18c67d7b79c",
+      "signature": "keyword_enum IngestStatus { ... }",
+      "comment": "Manages ingestion status with fixed buffers; owned by the client; ensures consistent state across operations.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "not_started",
+          "is_pub": false,
+          "line": 21
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "in_progress",
+          "is_pub": false,
+          "line": 22
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "completed",
+          "is_pub": false,
+          "line": 23
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "failed",
+          "is_pub": false,
+          "line": 24
+        }
+      ],
+      "line": 20
+    },
+    {
+      "type": "struct",
+      "name": "Checkpoint",
+      "match_hash": "627f9aa68dd09dcda9621541355dd554120342351dd98b37bb068b09c3798b59",
+      "signature": "keyword_struct Checkpoint { ... }",
+      "comment": "Manages checkpoint state with fixed-size buffers; owned by the client; ensures consistent initialization and deinitialization.",
+      "is_pub": true,
+      "line": 31
+    },
+    {
+      "type": "struct",
+      "name": "IngestArgs",
+      "match_hash": "10034f1e3441c1fe185f8480cd212d83f5586f06191ff7f1396da169183d712b",
+      "signature": "keyword_struct IngestArgs { ... }",
+      "comment": "Manages ingestion arguments with fixed-size buffers, owns state, and ensures controlled access.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "parse",
+          "match_hash": "5ea319d85654798beaf464394649a0dd968a72f49fe633b61f2838b833cf6cb2",
+          "signature": "fn parse(args: []const []const u8) -> IngestArgs",
+          "params": [
+            { "name": "args", "type": "[]const []const u8" }
+          ],
+          "returns": "IngestArgs",
+          "is_pub": true,
+          "line": 53
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "toBatchConfig",
+          "match_hash": "5bb121dabc01f1cfda7503c574996e94215ab6678ad5a5acff370f61ce1eec95",
+          "signature": "fn toBatchConfig(self: IngestArgs) -> BatchConfig",
+          "params": [
+            { "name": "self", "type": "IngestArgs" }
+          ],
+          "returns": "BatchConfig",
+          "is_pub": true,
+          "line": 85
+        }
+      ],
+      "line": 45
+    },
+    {
+      "type": "struct",
+      "name": "CheckpointStore",
+      "match_hash": "7e9be8d8247925b4db1e275f5bd7be63fc7c90ba84a1e2d61f1073e35561540b",
+      "signature": "keyword_struct CheckpointStore { ... }",
+      "comment": "Manages checkpoint storage with ownership and lifecycle control; ensures safe access and deallocation.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "085217bef3f4e4b0ecba06dc7bde6e9417e629116b6df83f35616b4dfb74496b",
+          "signature": "fn init(allocator: std.mem.Allocator) -> CheckpointStore",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "CheckpointStore",
+          "is_pub": true,
+          "line": 107
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "c8baec5b30c2b93433d10824461b0a4481eccd91a29976b51e3fed6ead2ae0c4",
+          "signature": "fn deinit(self: *CheckpointStore) -> void",
+          "params": [
+            { "name": "self", "type": "*CheckpointStore" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 114
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "save",
+          "match_hash": "c0b9afbda523134af538e822869a44737c28a734b3ac184671c82d7f74a1a4d4",
+          "signature": "fn save(self: *CheckpointStore, cp: Checkpoint) -> void",
+          "params": [
+            { "name": "self", "type": "*CheckpointStore" },
+            { "name": "cp", "type": "Checkpoint" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 122
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findLatest",
+          "match_hash": "8e7ce320be5e58bf581150b27759109b6ad78d0c75cf8ae79974dbfd5d82e49d",
+          "signature": "fn findLatest(self: *const CheckpointStore, source: []const u8) -> ?Checkpoint",
+          "params": [
+            { "name": "self", "type": "*const CheckpointStore" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "?Checkpoint",
+          "is_pub": true,
+          "line": 137
+        }
+      ],
+      "line": 103
+    },
+    {
+      "type": "test_decl",
+      "name": "parse ingest args source",
+      "is_pub": false,
+      "line": 156
+    },
+    {
+      "type": "test_decl",
+      "name": "parse ingest args batch size",
+      "is_pub": false,
+      "line": 162
+    },
+    {
+      "type": "test_decl",
+      "name": "parse ingest args status flag",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "test_decl",
+      "name": "parse ingest args resume",
+      "is_pub": false,
+      "line": 174
+    },
+    {
+      "type": "test_decl",
+      "name": "ingest args default batch size",
+      "is_pub": false,
+      "line": 180
+    },
+    {
+      "type": "test_decl",
+      "name": "checkpoint store save and retrieve",
+      "is_pub": false,
+      "line": 186
+    },
+    {
+      "type": "test_decl",
+      "name": "checkpoint store returns null for unknown source",
+      "is_pub": false,
+      "line": 204
+    }
+  ]
+}

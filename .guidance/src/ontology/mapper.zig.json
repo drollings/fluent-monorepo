@@ -1,0 +1,286 @@
+{
+  "meta": {
+    "module": "src.ontology.mapper",
+    "source": "src/ontology/mapper.zig",
+    "language": "zig"
+  },
+  "comment": "Transforms RDF triples into ContextNodes and edges for CozoDB, routing properties via YAGO schema and accumulating nodes in memory.",
+  "detail": "# Triple → ContextNode Mapper Module\n\n## Purpose and Architecture\n\nThis module transforms RDF triples into CozoDB-compatible ContextNodes and edges, implementing a batch-processing pipeline that accumulates graph data in memory before database insertion. It leverages the YAGO ontology schema to intelligently route different property types to appropriate LOD (Linked Open Data) levels, enabling hierarchical knowledge representation with varying detail granularity.\n\nThe architecture follows a producer-consumer pattern: `TripleMapper` processes incoming triples as they arrive from an RDF parser, while pending data structures accumulate state until `flush()` performs batch CozoDB insertion via the Library interface.\n\n## Key Abstractions and Relationships\n\n**PendingNode**: An in-memory accumulator that collects property values for a single entity before flush. It maintains:\n- A unique identifier (i64)\n- Multiple LOD-level string collections using ArrayLists\n- Type node IDs for classification\n- Full memory management via Zig's allocator abstraction\n\n**PendingEdge**: Represents directed relationships between entities, storing source/target IDs and the predicate IRI as an owned string slice.\n\n**PendingContradiction**: Detects conflicting literal values for the same subject-predicate combination, preserving both values for later resolution or confidence scoring.\n\nThe relationship flow is: Triple → PendingNode/PendingEdge accumulation → FlushResult → CozoDB ContextNodes\n\n## Public API and Usage Patterns\n\n**Structs (keyword_struct)**:\n- `PendingNode` - Accumulates node data; convert via `toContextNode()` before flush\n- `PendingEdge` - Directed edge representation with owned predicate string\n- `PendingContradiction` - Tracks value conflicts for quality metrics\n- `TripleMapper` - Main mapper orchestrator (batch processing)\n- `FlushResult` - Contains CozoDB insertion outcomes\n\n**Functions**:\n- `shouldUseLang()` - Language preference matching utility for multilingual content\n\n**Typical Usage Pattern**:\n```zig\nvar mapper = TripleMapper.init(allocator);\nwhile (triple_iter.next()) |triple| {\n    mapper.processTriple(triple);\n}\nconst result = mapper.flush(); // Batch CozoDB insertion\nmapper.deinit();\n```\n\n## Important Implementation Details\n\n1. **LOD Level Routing**: Properties are categorized by LOD level:\n   - `lod0_full` (rdfs:comment): Complete entity descriptions\n   - `lod1_summary` (schema:description): Concise summaries  \n   - `lod4_name` (rdfs:label/skos:prefLabel): Canonical names\n\n2. **Memory Ownership**: All string data uses Zig's allocator with explicit `dupe()` calls, ensuring proper ownership semantics and preventing dangling references.\n\n3. **Time Stamping**: Each ContextNode captures `valid_from` as creation timestamp and `valid_to` as null (open-ended), enabling temporal query capabilities.\n\n4. **Contradiction Handling**: Conflicting values are tracked separately rather than immediately rejected, supporting confidence scoring in downstream processing.\n\n5. **Type Inference**: `rdf:type` triples trigger entity type classification with relation-based ContextNode creation.\n\n## Design Patterns\n\n- **Batch Accumulator Pattern**: Pending structures collect data before expensive I/O operations\n- **Builder Pattern**: PendingNode progressively builds complete entities from partial triples\n- **Router Pattern**: YAGO schema routes properties to appropriate LOD levels\n- **Observer Pattern**: FlushResult notifies callers of insertion outcomes for error handling",
+  "keywords": ["PendingNode", "TripleMapper", "CozoDB", "LOD routing", "RDF transformer", "PendingEdge", "YAGO ontology", "batch processing", "ContextNode mapper", "data normalization"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "PendingNode",
+      "match_hash": "68275999eaa85cc31b5000c7d8ebd4be0398afbafc9ed2eb3ca18dddd2ec0e50",
+      "signature": "keyword_struct PendingNode { ... }",
+      "comment": "In-memory representation of a node being built from triples.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "0908ad809c2a7a9122a4f9ae5b693ab3e8a18c2c3240cde27e64126ed56c8f9c",
+          "signature": "fn init(allocator: std.mem.Allocator, id: i64) -> PendingNode",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "id", "type": "i64" }
+          ],
+          "returns": "PendingNode",
+          "is_pub": true,
+          "line": 42
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "ea78ccbc6df08f540a360d82f08855b77abfcbb89dabc620730cd84776d15d8c",
+          "signature": "fn deinit(self: *PendingNode) -> void",
+          "params": [
+            { "name": "self", "type": "*PendingNode" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 55
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "toContextNode",
+          "match_hash": "6c43ee1330847ca35ff152189085e3bcc9e8a64887087e0cc5abbd142e7201e5",
+          "signature": "fn toContextNode(self: *const PendingNode, allocator: std.mem.Allocator) -> ContextNode",
+          "params": [
+            { "name": "self", "type": "*const PendingNode" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "ContextNode",
+          "comment": "Convert to ContextNode (caller owns returned strings).",
+          "is_pub": true,
+          "line": 63
+        }
+      ],
+      "line": 36
+    },
+    {
+      "type": "struct",
+      "name": "PendingEdge",
+      "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
+      "signature": "keyword_struct PendingEdge { ... }",
+      "comment": "Represents a pending edge in the graph; managed by owner; key invariant is its pending state.",
+      "is_pub": true,
+      "line": 88
+    },
+    {
+      "type": "struct",
+      "name": "PendingContradiction",
+      "match_hash": "0abd7979f8fc6b42320521af20b9c6cdccc551a84e197ba4488186e9d33a23a1",
+      "signature": "keyword_struct PendingContradiction { ... }",
+      "comment": "Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with strict ownership and invariants.",
+      "is_pub": true,
+      "line": 98
+    },
+    {
+      "type": "struct",
+      "name": "TripleMapper",
+      "match_hash": "9c2805b3b1e99fd1f7502b85cb17ee6edec7263ffe2e9d3108d333ba7e0f0de6",
+      "signature": "keyword_struct TripleMapper { ... }",
+      "comment": "Manages triple mapping operations with allocation/deallocation; owns TripleMapper instance; ensures consistent state across calls.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "b793c62e6d8bf868d8d200ed85001b0fe67f4bf5fbb994485117ab4c14036929",
+          "signature": "fn init(allocator: std.mem.Allocator, config: MappingConfig) -> TripleMapper",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "MappingConfig" }
+          ],
+          "returns": "TripleMapper",
+          "is_pub": true,
+          "line": 127
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b943bf43593ecf4f264eb1c8ec99e4de0a62ef83c6d7d9ba1e0825b4bdc3b912",
+          "signature": "fn deinit(self: *TripleMapper) -> void",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 138
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "processTriple",
+          "match_hash": "7c897d0dadaf8e925540c7d4ca2599e424a0129d3c3d42df33c1760941260d94",
+          "signature": "fn processTriple(self: *TripleMapper, triple: Triple) -> void",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "triple", "type": "Triple" }
+          ],
+          "returns": "void",
+          "comment": "Process one RDF triple. Accumulates nodes/edges in memory.",
+          "is_pub": true,
+          "line": 157
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "flush",
+          "match_hash": "2b8c230c5ee4483de731c04110f19070e30e3a7cad9bd26c4b993523b2515408",
+          "signature": "fn flush(self: *TripleMapper, library: *Library) -> FlushResult",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "library", "type": "*Library" }
+          ],
+          "returns": "FlushResult",
+          "comment": "Flush all accumulated nodes and edges to CozoDB via Library.",
+          "is_pub": true,
+          "line": 218
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "detectAndRecordContradiction",
+          "match_hash": "8dc03945c4ab9e8e267771f79049a9573ccbcf41bc39cdca7ee44cdba1e7d13e",
+          "signature": "fn detectAndRecordContradiction(self: *TripleMapper, node: *const PendingNode, subject_id: i64, predicate: []const u8, lod_index: usize, new_value: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "node", "type": "*const PendingNode" },
+            { "name": "subject_id", "type": "i64" },
+            { "name": "predicate", "type": "[]const u8" },
+            { "name": "lod_index", "type": "usize" },
+            { "name": "new_value", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "comment": "If the node already has a non-empty value at lod_index that differs from",
+          "is_pub": false,
+          "line": 273
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "termKey",
+          "match_hash": "973b7b2486005f11c79948b9703a4bfa86ab7fe0ab04eb33b79552be60473a07",
+          "signature": "fn termKey(self: *TripleMapper, term: Term) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "term", "type": "Term" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 304
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "termToId",
+          "match_hash": "36cf94605a97c3daeaef83a8d94eaacc508148323eca06fd780a5ec3187f9e17",
+          "signature": "fn termToId(self: *TripleMapper, term: Term) -> i64",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "term", "type": "Term" }
+          ],
+          "returns": "i64",
+          "is_pub": false,
+          "line": 316
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "termToIRI",
+          "match_hash": "7d3c7c8ebfe714ca47f092429dfde8e989a7e7cbf87eb9731dc0336673d7afbf",
+          "signature": "fn termToIRI(self: *TripleMapper, term: Term) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "term", "type": "Term" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 324
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getOrCreateNode",
+          "match_hash": "163d7522428149deaef5279731fcfca94710919db261b1cae229c9df8ac31b57",
+          "signature": "fn getOrCreateNode(self: *TripleMapper, term: Term, id: i64) -> *PendingNode",
+          "params": [
+            { "name": "self", "type": "*TripleMapper" },
+            { "name": "term", "type": "Term" },
+            { "name": "id", "type": "i64" }
+          ],
+          "returns": "*PendingNode",
+          "is_pub": false,
+          "line": 333
+        }
+      ],
+      "line": 116
+    },
+    {
+      "type": "struct",
+      "name": "FlushResult",
+      "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
+      "signature": "keyword_struct FlushResult { ... }",
+      "comment": "Manages flush operations with fixed-size buffers; ensures single ownership and deterministic cleanup.",
+      "is_pub": true,
+      "line": 348
+    },
+    {
+      "type": "fn_private",
+      "name": "shouldUseLang",
+      "match_hash": "4043278801090d4e423dc0093d686a54ec272427ea7c041e2514e05b96d11835",
+      "signature": "fn shouldUseLang(actual: ?[]const u8, preferred: []const u8) -> bool",
+      "params": [
+        { "name": "actual", "type": "?[]const u8" },
+        { "name": "preferred", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if the actual and preferred language slices match, returning true if they align.",
+      "is_pub": false,
+      "line": 354
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: entity from rdf:type triple",
+      "is_pub": false,
+      "line": 366
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: label routes to lod[4]",
+      "is_pub": false,
+      "line": 380
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: comment routes to lod[0]",
+      "is_pub": false,
+      "line": 397
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: object property creates edge",
+      "is_pub": false,
+      "line": 414
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: multiple triples for same entity",
+      "is_pub": false,
+      "line": 434
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: contradiction detection for duplicate label",
+      "is_pub": false,
+      "line": 454
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: no contradiction for identical label",
+      "is_pub": false,
+      "line": 479
+    },
+    {
+      "type": "test_decl",
+      "name": "mapper: pending node to ContextNode",
+      "is_pub": false,
+      "line": 496
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "meta": {
+    "module": "src.coral.common.context",
+    "source": "src/coral/common/context.zig",
+    "language": "zig"
+  },
+  "comment": "This file manages Zig build configuration, handles dependencies, resolves targets, and tracks build metrics.",
+  "detail": "**Module Purpose and Architecture**\n\nThis module implements a build system context manager for an AI coding assistant's compilation pipeline. It orchestrates the complete build lifecycle from target resolution through execution, providing metrics tracking and error handling capabilities.\n\nThe architecture follows a **command orchestration pattern** where `BuildContext` serves as the central coordinator that delegates to specialized components:\n- **TargetRegistry**: Stores and manages available targets\n- **DependencyResolver**: Resolves abstract dependencies and builds dependency graphs\n- **StringInterner**: Efficiently stores target names with deduplication\n\n**Key Abstractions and Relationships**\n\n1. **BuildContext** - The primary coordinator holding all build state and delegating operations to component modules. It maintains references to registry, interner, and resolver while supporting configuration flags (dry_run, force, verbose).\n\n2. **BuildResult** - Immutable result container tracking build metrics: success status, target counts, failure details with names list, and elapsed time in nanoseconds.\n\n3. **BuildError** - Enumerated error types covering execution failures, missing targets, memory issues, and circular dependencies.\n\n**Public API and Usage Patterns**\n\n```zig\n// Initialize context with required components\nconst ctx = BuildContext.init(allocator, registry, interner);\n\n// Execute build with target names (or empty for default)\nconst result = try ctx.build(target_names);\n\n// Handle results\nif (!result.success) {\n    // Process failures from failed_names\n}\n```\n\nThe API supports three main usage patterns:\n1. **Explicit targets**: Pass specific target name array\n2. **Default target resolution**: Empty array triggers automatic default target discovery\n3. **Target graph operations**: `listTargets()` and `showGraph()` for visualization/debugging\n\n**Important Implementation Details**\n\n- **Memory Management**: BuildResult requires explicit deallocation via `deinit()` to free the failed_names ArrayList contents\n- **Circular Dependency Detection**: Handled at resolution phase with debug logging but doesn't crash the build\n- **Abstract Targets**: Skipped during execution, allowing intermediate dependency definitions\n- **Up-to-date Checking**: `isUpToDate()` enables incremental builds by checking target freshness\n- **Default Target Discovery**: Automatically collects all dependencies from default target when no targets specified\n\n**Design Patterns Used**\n\n1. **Builder Pattern**: `init()` constructs BuildContext with internal resolver initialization\n2. **Command Pattern**: `build()` encapsulates complex build logic as a single operation\n3. **Result Tracking**: Separates command execution from result reporting\n4. **Lazy Resolution**: Default targets only resolved when explicitly requested\n5. **Error Propagation**: Uses Zig's error union for clean failure handling with errdefer cleanup\n\nThe module emphasizes safety through allocator-aware operations, proper defer patterns, and comprehensive error categorization suitable for a production build system in an AI assistant context.",
+  "keywords": ["BuildContext", "BuildResult", "DependencyResolver", "TargetRegistry", "StringInterner", "circular dependency detection", "dry-run mode", "abstract targets", "incremental builds", "target graph visualization"],
+  "used_by": ["src/common/repl.zig", "src/coral/common/repl.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "BuildResult",
+      "match_hash": "294b5ff34ac1a631a126e0f6d85eac722d0d94dd915a62a2b67af358544842c8",
+      "signature": "keyword_struct BuildResult { ... }",
+      "comment": "Manages build result state with ownership transfer; ensures proper cleanup on deinit.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "6aefb924630bd248b5681c34026f7f549197d4bb2a8f7ea55c829ff4fd8f8042",
+          "signature": "fn deinit(self: *BuildResult, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*BuildResult" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 21
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "fn_decl",
+      "name": "init",
+      "match_hash": "97f020e34e93f12558d7fdf419f321ea50b1b4e0f4fa81e8aab2b8a8360ab6d7",
+      "signature": "fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner) -> BuildContext",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "registry", "type": "*TargetRegistry" },
+        { "name": "interner", "type": "*StringInterner" }
+      ],
+      "returns": "BuildContext",
+      "comment": "Initializes a BuildContext using an allocator, registry, and string interners.",
+      "is_pub": true,
+      "line": 39
+    },
+    {
+      "type": "fn_decl",
+      "name": "build",
+      "match_hash": "fbd69103c5534484f0c6369a6c56e33ce1e44d37c2dd693870432e8564e7e3b9",
+      "signature": "fn build(self: *BuildContext, target_names: []const []const u8) -> BuildResult",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target_names", "type": "[]const []const u8" }
+      ],
+      "returns": "BuildResult",
+      "comment": "Converts a C string into a Zig BuildContext result, handling conversion and errors.",
+      "is_pub": true,
+      "line": 52
+    },
+    {
+      "type": "fn_private",
+      "name": "isUpToDate",
+      "match_hash": "d5507bc1923434ef25aa2570f72077d74fae0643c33601a1b1990e08470f1beb",
+      "signature": "fn isUpToDate(self: *BuildContext, target: *const Target) -> bool",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target", "type": "*const Target" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a BuildContext's target is up-to-date by comparing versions.",
+      "is_pub": false,
+      "line": 151
+    },
+    {
+      "type": "fn_private",
+      "name": "executeTarget",
+      "match_hash": "0d284bb3fcbdf62fe381f0b174dbb268bd109e7ba736b9f9cfa2747a7a4607d5",
+      "signature": "fn executeTarget(self: *BuildContext, target: *const Target) -> bool",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target", "type": "*const Target" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a target is reachable and returns a boolean indicating success.",
+      "is_pub": false,
+      "line": 176
+    },
+    {
+      "type": "fn_decl",
+      "name": "listTargets",
+      "match_hash": "06fd4eefaf7add25e83b8e7b12de86a5a753ba93c8b2e689a7d8254b58d93ccd",
+      "signature": "fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) -> void",
+      "params": [
+        { "name": "self", "type": "*const BuildContext" },
+        { "name": "writer", "type": "*std.Io.Writer" }
+      ],
+      "returns": "void",
+      "comment": "Processes a list of target identifiers and returns them as a Zig slice.",
+      "is_pub": true,
+      "line": 222
+    },
+    {
+      "type": "fn_decl",
+      "name": "showGraph",
+      "match_hash": "09fc317b670c96c04bb1110fe6cfc93232b04010e4fa7686e29f3287ed39dec3",
+      "signature": "fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) -> void",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target_names", "type": "[]const []const u8" },
+        { "name": "writer", "type": "*std.Io.Writer" }
+      ],
+      "returns": "void",
+      "comment": "Displays a graphical representation using provided context and data.",
+      "is_pub": true,
+      "line": 261
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: empty target list with no default returns success",
+      "is_pub": false,
+      "line": 274
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: empty target list dispatches to default target",
+      "is_pub": false,
+      "line": 289
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: dry_run counts targets without executing",
+      "is_pub": false,
+      "line": 313
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: abstract target is skipped (no commands, no exists)",
+      "is_pub": false,
+      "line": 336
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: successful command target is counted",
+      "is_pub": false,
+      "line": 357
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: dry_run non-essential failing command is counted without executing",
+      "is_pub": false,
+      "line": 377
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: essential target — dry_run does not fail",
+      "is_pub": false,
+      "line": 401
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: phony target with no commands succeeds and counts as built",
+      "is_pub": false,
+      "line": 430
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: circular dependency is detected and build returns not-success",
+      "is_pub": false,
+      "line": 449
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: duration_ns is non-zero after a build",
+      "is_pub": false,
+      "line": 474
+    },
+    {
+      "type": "test_decl",
+      "name": "BuildContext: GPA no leaks across a multi-target build",
+      "is_pub": false,
+      "line": 491
+    }
+  ]
+}

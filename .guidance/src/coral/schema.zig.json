@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "module": "src.coral.schema",
+    "source": "src/coral/schema.zig",
+    "language": "zig"
+  },
+  "comment": "Defines Coral Context schema using CozoDB, integrating payloads, embeddings, and time-travel features with Datalog traversal.",
+  "detail": "# Coral Context Schema Module Documentation\n\n## Module Purpose and Architecture\n\nThis module defines the unified database schema for **Coral Context**, an AI coding assistant's semantic knowledge management system. It replaces a dual-engine architecture (PostgreSQL for payloads/embeddings + LadybugDB/Cypher for graph edges) with a single CozoDB backend that handles all data types natively.\n\nThe architecture leverages CozoDB's unique capabilities:\n- **Stored relations** (`:create`) for persistent data with compound keys\n- **Datalog recursive rules** for graph traversal (replacing Cypher MATCH)\n- **Built-in time travel** via the `@` operator, eliminating TimescaleDB requirements\n- **Embeddings** stored as List<Float> columns with KNN computed in Zig\n\n## Key Abstractions and Relationships\n\n### Core Relations\n\n1. **context_nodes** (§2.2): The primary semantic entity relation storing:\n   - LOD (Level of Detail) text pyramid across 6 levels (0=max detail → 5=minimal/alias)\n   - Vector embeddings for semantic similarity\n   - Temporal validity windows (`valid_from`, `valid_to`)\n   - Confidence scores and provenance tracking\n\n2. **targets** (§2.3): DAG execution targets with:\n   - Capability bitmasks encoded as word arrays (supports >63 bits)\n   - Name index for O(1) lookup\n   - Essential flag marking critical dependencies\n\n3. **Edge Relations** (§2.4): Three graph edge types:\n   - `depends_on`: from → to dependency chain\n   - `provides_capability`: capability inheritance paths  \n   - `neighbor_of`: semantic similarity and temporal sequences (with cosine distance)\n\n4. **WASM Tool Cache**: Stores compiled tool binaries for verified LLM-generated utilities\n\n## Public API and Usage Patterns\n\n```zig\npub const LOD_COUNT: usize = 6;\n\npub const DDL_CONTEXT_NODES: []const u8 = \"...\";\npub const DDL_TARGETS: []const u8 = \"...\";\npub const DDL_DEPENDS_ON: []const u8 = \"...\";\n// ... additional DDL constants\n```\n\n**Usage Pattern**: The DDL strings are passed to CozoDB migration tools to create the schema. Queries use CozoScript's `@` operator for time-travel queries (e.g., `?context_nodes := *context_nodes @ T`).\n\n## Important Implementation Details\n\n- **Embeddings**: Stored as `[Float]` defaulting to empty array; KNN search performed in Zig for precision\n- **Capability Bitmasks**: Split across multiple Int words with `total_bits` tracking logical length\n- **Graph Traversal**: Recursive Datalog rules replace traditional graph algorithms, enabling efficient reachability queries\n- **Temporal Queries**: Built-in versioning allows querying state at any point in time without external tools\n\n## Design Patterns Used\n\n1. **Schema-as-Code**: DDL embedded directly in source for version control and atomic updates\n2. **LOD Pyramid Pattern**: Multi-level abstraction from detailed to minimal representations\n3. **Capability Graph**: DAG-based dependency tracking with bitmask encoding\n4. **Time-Travel Queries**: Native temporal queries without additional infrastructure",
+  "keywords": ["DDL_CONTEXT_NODES", "DDL_TARGETS", "CozoDB", "LOD pyramid", "Datalog traversal", "capability graph", "time-travel queries", "WASM tool cache", "semantic similarity", "embedding storage"],
+  "used_by": ["src/context_node/context_node.zig", "src/context_node/context_node_schema.zig", "src/coral/cache.zig", "src/coral/db.zig", "src/coral/main.zig"],
+  "members": [
+    {
+      "type": "test_decl",
+      "name": "schema DDL constants are non-empty",
+      "is_pub": false,
+      "line": 259
+    },
+    {
+      "type": "test_decl",
+      "name": "LOD_COUNT is 6",
+      "is_pub": false,
+      "line": 268
+    },
+    {
+      "type": "test_decl",
+      "name": "schema DDL contains expected keywords",
+      "is_pub": false,
+      "line": 272
+    },
+    {
+      "type": "test_decl",
+      "name": "schema uses CozoDB syntax not PostgreSQL",
+      "is_pub": false,
+      "line": 299
+    },
+    {
+      "type": "test_decl",
+      "name": "schema uses CozoDB syntax not Cypher",
+      "is_pub": false,
+      "line": 307
+    },
+    {
+      "type": "test_decl",
+      "name": "SCHEMA_DDL has 11 statements",
+      "is_pub": false,
+      "line": 312
+    },
+    {
+      "type": "test_decl",
+      "name": "entity_types DDL is non-empty",
+      "is_pub": false,
+      "line": 316
+    },
+    {
+      "type": "test_decl",
+      "name": "query templates contain Datalog syntax",
+      "is_pub": false,
+      "line": 321
+    },
+    {
+      "type": "test_decl",
+      "name": "new DDL constants are non-empty",
+      "is_pub": false,
+      "line": 330
+    },
+    {
+      "type": "test_decl",
+      "name": "LOD columns are generically named",
+      "is_pub": false,
+      "line": 336
+    }
+  ]
+}

@@ -1,0 +1,254 @@
+{
+  "meta": {
+    "module": "src.common.log",
+    "source": "src/common/log.zig",
+    "language": "zig"
+  },
+  "comment": "Defines logging configuration, formatting, and file handling for a Zig application with color support.",
+  "detail": "## Module Purpose and Architecture\n\nThis module implements a comprehensive logging system for Zig applications, providing structured logging with multiple levels, configurable output formats, color terminal support, and optional file persistence. The architecture follows a clean separation between configuration, the logger state machine, and output handling.\n\n### Key Abstractions and Relationships\n\nThe module centers around three main abstractions:\n- **Level**: An enum defining log severity (debug, info, warn, err) with built-in methods for color codes and text prefixes\n- **LogConfig**: A runtime configuration struct controlling filtering, formatting, and output destinations\n- **Logger**: The primary interface managing state, allocation lifecycle, and actual logging operations\n\nThese components relate hierarchically: Logger holds a LogConfig instance and manages output streams (stdout and optional file). The global_logger variable implements a singleton pattern for application-wide access.\n\n### Public API and Usage Patterns\n\nThe module exposes several usage patterns:\n1. **Direct instantiation**: `init(allocator, config)` creates a logger with full control\n2. **Convenience methods**: `.debug()`, `.info()`, `.warn()`, `.err()` provide typed logging\n3. **Global access**: `setGlobal()`, `getGlobal()`, `logGlobal()` offer singleton-style convenience\n4. **Setup helper**: `setupLogging()` provides a factory function for common configurations\n\n### Important Implementation Details\n\n- Log filtering occurs at the Level enum comparison level, checking if log level meets minimum threshold\n- Output formatting uses fixed buffer streams to ensure safe string formatting before writing\n- Color codes are ANSI sequences embedded directly in output strings\n- Timestamp generation calculates epoch-based dates using std.time.epoch utilities\n- File logging appends to existing files when file_path is configured\n- All I/O operations use catch blocks for graceful error handling\n\n### Design Patterns Used\n\n1. **Singleton Pattern**: Global logger via `global_logger` variable for application-wide access\n2. **Builder/Configuration Pattern**: LogConfig struct with sensible defaults and extensible options\n3. **Factory Pattern**: Logger init method handles allocation and optional file creation\n4. **Resource Management Pattern**: Explicit deinit method ensures proper cleanup of allocated memory and file handles\n5. **Template Method Pattern**: Convenience methods (debug/info/warn/err) delegate to core log implementation\n\nThe module prioritizes performance through minimal allocations (fixed buffer streams), safe error handling with catch blocks, and flexible output destinations suitable for both development debugging and production monitoring.",
+  "keywords": ["Logger", "LogConfig", "Level enum", "color logging", "timestamp formatting", "file logging", "singleton pattern", "resource management", "ANSI colors", "global logger"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "Level",
+      "match_hash": "8902a0b88a5bb181526ca9c0a430e584b5f34aaf57642ae53e67e7b4585041a5",
+      "signature": "keyword_enum Level { ... }",
+      "comment": "Defines a level-based enum with fixed-size buffers, managing ownership and providing color/prefix methods.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "debug",
+          "is_pub": false,
+          "line": 5
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "info",
+          "is_pub": false,
+          "line": 6
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "warn",
+          "is_pub": false,
+          "line": 7
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "err",
+          "is_pub": false,
+          "line": 8
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "prefix",
+          "match_hash": "8e032ff8b75c353b74b2306e6988ed4590d78b9c5e5a8bd42134abf06c5edb19",
+          "signature": "fn prefix(self: Level) -> []const u8",
+          "params": [
+            { "name": "self", "type": "Level" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 10
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "color",
+          "match_hash": "c1c19e61aa74f095ee7691d50a8a2b2e559e6dbe33fc5abb9b6b61de54ead9ae",
+          "signature": "fn color(self: Level) -> []const u8",
+          "params": [
+            { "name": "self", "type": "Level" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 19
+        }
+      ],
+      "line": 4
+    },
+    {
+      "type": "struct",
+      "name": "LogConfig",
+      "match_hash": "8efa4f61d255c04c059b8bc166826b4119d3f72390952b8cc8ca45f39a11e033",
+      "signature": "keyword_struct LogConfig { ... }",
+      "comment": "Manages configuration settings for logging; owned by the module; ensures consistent initialization and cleanup.",
+      "is_pub": true,
+      "line": 29
+    },
+    {
+      "type": "struct",
+      "name": "Logger",
+      "match_hash": "2255b71d304e6cf503de74744c3267b57e6dafbbfe4c6aef9971f9f6e631e1d4",
+      "signature": "keyword_struct Logger { ... }",
+      "comment": "Logger manages logging operations with ownership transfer; provides init/deinit and multiple log levels.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "f31b573fcca23daa54eedf56c1b60e0803031882b57017ad810bc6866583e43c",
+          "signature": "fn init(allocator: std.mem.Allocator, config: LogConfig) -> *Logger",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "LogConfig" }
+          ],
+          "returns": "*Logger",
+          "is_pub": true,
+          "line": 43
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "9d20d7c0ddccb9e285af22e6b3eded99d5d781115a91ae7444a9e2b69faaee08",
+          "signature": "fn deinit(self: *Logger) -> void",
+          "params": [
+            { "name": "self", "type": "*Logger" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 60
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "log",
+          "match_hash": "8addc34fa5a1a9946139ae2bb5e1e80902644c48ada737c9a4019d4c72058387",
+          "signature": "fn log(self: *const Logger, level: Level, format: []const u8, args) -> void",
+          "params": [
+            { "name": "self", "type": "*const Logger" },
+            { "name": "level", "type": "Level" },
+            { "name": "format", "type": "[]const u8" },
+            { "name": "args" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 65
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "debug",
+          "match_hash": "750a1cf69e5ad587d9a12ccfa955edb5e53fce10f542a713e7ea9f5ea46b1d77",
+          "signature": "fn debug(self: *const Logger, format: []const u8, args) -> void",
+          "params": [
+            { "name": "self", "type": "*const Logger" },
+            { "name": "format", "type": "[]const u8" },
+            { "name": "args" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 119
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "info",
+          "match_hash": "efeeb57d8f1ea7adfedb34d602b6b9d8f98396a7dba7ea440860c5b6b72040a5",
+          "signature": "fn info(self: *const Logger, format: []const u8, args) -> void",
+          "params": [
+            { "name": "self", "type": "*const Logger" },
+            { "name": "format", "type": "[]const u8" },
+            { "name": "args" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 123
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "warn",
+          "match_hash": "3a5c98d928aa58ccc1407d978868d45319fb99f25cf5d54a8dfd201938b8ed21",
+          "signature": "fn warn(self: *const Logger, format: []const u8, args) -> void",
+          "params": [
+            { "name": "self", "type": "*const Logger" },
+            { "name": "format", "type": "[]const u8" },
+            { "name": "args" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 127
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "err",
+          "match_hash": "38c5aa565a2f910f71b0f04d2227731d32d40b1c19e0a559841bfdf4cf836db6",
+          "signature": "fn err(self: *const Logger, format: []const u8, args) -> void",
+          "params": [
+            { "name": "self", "type": "*const Logger" },
+            { "name": "format", "type": "[]const u8" },
+            { "name": "args" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 131
+        }
+      ],
+      "line": 38
+    },
+    {
+      "type": "fn_decl",
+      "name": "setGlobal",
+      "match_hash": "93a5666ce9a8bdbab684663bd31963e7ebf4caf3a6e2aa8f846972c03863ab72",
+      "signature": "fn setGlobal(logger: *Logger) -> void",
+      "params": [
+        { "name": "logger", "type": "*Logger" }
+      ],
+      "returns": "void",
+      "comment": "Updates global logging configuration by setting a logger instance.",
+      "is_pub": true,
+      "line": 138
+    },
+    {
+      "type": "fn_decl",
+      "name": "getGlobal",
+      "match_hash": "66b72130b212891ba3fdd0f6386c2c17f24fa26b7aca19ea50748f9ed1e8af18",
+      "signature": "fn getGlobal() -> ?*Logger",
+      "returns": "?*Logger",
+      "comment": "Retrieves a global logger instance from the system.",
+      "is_pub": true,
+      "line": 142
+    },
+    {
+      "type": "fn_decl",
+      "name": "logGlobal",
+      "match_hash": "1e63278b30283e2d0145339c35f947b499d0f22c7bd399c45c881c21275382ed",
+      "signature": "fn logGlobal(level: Level, format: []const u8, args) -> void",
+      "params": [
+        { "name": "level", "type": "Level" },
+        { "name": "format", "type": "[]const u8" },
+        { "name": "args" }
+      ],
+      "returns": "void",
+      "comment": "Logs a message with specified level and format, returning void.",
+      "is_pub": true,
+      "line": 146
+    },
+    {
+      "type": "fn_decl",
+      "name": "setupLogging",
+      "match_hash": "50e9d3e1ed7c86703deb78c310a8904c250eb6c93e8a0b16a682b55350f0e8d6",
+      "signature": "fn setupLogging(allocator: std.mem.Allocator, verbose: bool, quiet: bool, log_file: ?[]const u8, name: []const u8) -> *Logger",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "verbose", "type": "bool" },
+        { "name": "quiet", "type": "bool" },
+        { "name": "log_file", "type": "?[]const u8" },
+        { "name": "name", "type": "[]const u8" }
+      ],
+      "returns": "*Logger",
+      "comment": "Initializes logging configuration with allocator, verbosity, quiet settings, and optional log file paths.",
+      "is_pub": true,
+      "line": 152
+    },
+    {
+      "type": "test_decl",
+      "name": "Level: prefix and color",
+      "is_pub": false,
+      "line": 177
+    },
+    {
+      "type": "test_decl",
+      "name": "Logger: init and deinit",
+      "is_pub": false,
+      "line": 184
+    }
+  ]
+}

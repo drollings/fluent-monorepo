@@ -1,0 +1,358 @@
+{
+  "meta": {
+    "module": "src.guidance.config",
+    "source": "src/guidance/config.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across project and user levels.",
+  "detail": "",
+  "skills": [
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Provider",
+      "match_hash": "4973097466b2be8f42fdcd73c4302f2502d3b857a74fc3d888e6b144fe668ee2",
+      "signature": "keyword_struct Provider { ... }",
+      "comment": "Manages dynamic buffer allocation with ownership and deinit lifecycle; ensures safe resource cleanup.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "937836ec20ac568ce6609e01e2151ed068a362bf0842dfdc508636181e074ac6",
+          "signature": "fn deinit(self: *Provider, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Provider" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 39
+        }
+      ],
+      "line": 34
+    },
+    {
+      "type": "struct",
+      "name": "LintCommand",
+      "match_hash": "eb1b4c07333d26cf4189b2bd438bdd460d3d9c3120bd96f7bc28c9d9b27dd6ed",
+      "signature": "keyword_struct LintCommand { ... }",
+      "comment": "Per-extension test command. `{file}` is substituted for the extension \"*\".",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "01cf8f226ace115d2ce26bc1613c0b1cd04961187c71f5a510306dc14c5b2e07",
+          "signature": "fn deinit(self: LintCommand, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "LintCommand" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 51
+        }
+      ],
+      "line": 47
+    },
+    {
+      "type": "struct",
+      "name": "ProjectConfig",
+      "match_hash": "e24a06dce48aa2d9241b32d17d34e16b5e0bd4d7dfcb8a6b78d695f7d08fa5f7",
+      "signature": "keyword_struct ProjectConfig { ... }",
+      "comment": "Resolved, absolute paths for a single guidance project instance.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "0d733086fc310087a87c77d4df8de8e6fdd519d0d8f23e54c30dc15813702b2d",
+          "signature": "fn deinit(self: *ProjectConfig) -> void",
+          "params": [
+            { "name": "self", "type": "*ProjectConfig" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 130
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "infillModel",
+          "match_hash": "d8d054301613bd247a82f74e1a56f770071ead62af76e4847b57528481f53ac5",
+          "signature": "fn infillModel(self: *const ProjectConfig) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Return the model to use for comment infill: fast slot if set, else default.",
+          "is_pub": true,
+          "line": 159
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "thinkingModel",
+          "match_hash": "785c54428394b28e4b23de3fb4c8c8d8f30392fc21115ed35eafe6966844d23c",
+          "signature": "fn thinkingModel(self: *const ProjectConfig) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Return the model to use for thinking/reasoning tasks (module detail generation).",
+          "is_pub": true,
+          "line": 166
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getProvider",
+          "match_hash": "69c938a68d120041d599d1e5d7bc5ae82568dad0b766636b32ba5de5bdc8114f",
+          "signature": "fn getProvider(self: *const ProjectConfig, name: []const u8) -> ?Provider",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "?Provider",
+          "comment": "Find a provider by name. Returns null if not found.",
+          "is_pub": true,
+          "line": 171
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "parseModelRef",
+          "match_hash": "92f7e15cdfac190113eb0b46f0be0806080cef712adba800b73817053440503e",
+          "signature": "fn parseModelRef(model_ref: []const u8) -> ?struct { provider: []const u8, model: []const u8 }",
+          "params": [
+            { "name": "model_ref", "type": "[]const u8" }
+          ],
+          "returns": "?struct { provider: []const u8, model: []const u8 }",
+          "comment": "Parse a model reference like \"local:code:latest\" into (provider_name, model_name).",
+          "is_pub": true,
+          "line": 180
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "resolveModelUrl",
+          "match_hash": "c79f5ed702c12ab6a7dbf6e6b9847d837f360cfa2fc55ec07c53d0b8bb7c23ec",
+          "signature": "fn resolveModelUrl(self: *const ProjectConfig, allocator: std.mem.Allocator, model_ref: []const u8) -> ?struct { url: []const u8, provider: Provider, is_thinking_endpoint: bool }",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "model_ref", "type": "[]const u8" }
+          ],
+          "returns": "?struct { url: []const u8, provider: Provider, is_thinking_endpoint: bool }",
+          "comment": "Resolve a model reference to its provider and full API URL.",
+          "is_pub": true,
+          "line": 191
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isThinkingModelRef",
+          "match_hash": "89db955d8857e41493beef3232bd3b3783d4b3f6a45feaac124f435e9a07ee7d",
+          "signature": "fn isThinkingModelRef(self: *const ProjectConfig, model_ref: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "model_ref", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "comment": "Return true when `model_ref` requires the Ollama thinking API.",
+          "is_pub": true,
+          "line": 220
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "lintCommandForExt",
+          "match_hash": "29e27a4386b40bacf55c7f37e705aa0c1e519f1c1ed08e7cd0361506d8c839a2",
+          "signature": "fn lintCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "?[]const []const u8",
+          "comment": "Return the lint argv template for `ext`, or null if none is configured.",
+          "is_pub": true,
+          "line": 246
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "fmtCommandForExt",
+          "match_hash": "84583a00d969d38bdf4f179c6514e89243012a55b3ffbc0de7ac848a32cf4338",
+          "signature": "fn fmtCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
+          "params": [
+            { "name": "self", "type": "*const ProjectConfig" },
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "?[]const []const u8",
+          "comment": "Return the format argv template for `ext`, or null if none is configured.",
+          "is_pub": true,
+          "line": 254
+        }
+      ],
+      "line": 64
+    },
+    {
+      "type": "fn_decl",
+      "name": "loadConfig",
+      "match_hash": "53efcfcfabf4e8ee70407bfd7cdb60f9f9aa72c1953b6f61276da13983501c4f",
+      "signature": "fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Load project configuration with the two-level fallback chain.",
+      "is_pub": true,
+      "line": 268
+    },
+    {
+      "type": "fn_decl",
+      "name": "initConfig",
+      "match_hash": "aed14e11aa3af67ebaf0add9e40ee79b6a9f5c7325c8af15267dce9508245846",
+      "signature": "fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOptions) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" },
+        { "name": "options", "type": "InitOptions" }
+      ],
+      "returns": "bool",
+      "comment": "Create a default configuration file at `{cwd}/{guidance_dir}/{CONFIG_FILENAME}`.",
+      "is_pub": true,
+      "line": 304
+    },
+    {
+      "type": "fn_decl",
+      "name": "generateAgentsMdContent",
+      "match_hash": "8d7465fc339e7fac9eeed95e9bce26b42bc7bd23a1a57757957433a876e8a792",
+      "signature": "fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Generate AGENTS.md content for guidance integration.",
+      "is_pub": true,
+      "line": 382
+    },
+    {
+      "type": "fn_private",
+      "name": "parseCommandsObject",
+      "match_hash": "67c26c9fd65b2e56a0e1d2a4845b53d5798754d701e3f585326aae2c3a5cfa78",
+      "signature": "fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) -> []LintCommand",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "obj", "type": "std.json.ObjectMap" }
+      ],
+      "returns": "[]LintCommand",
+      "comment": "Parse a commands object (lint_commands, fmt_commands, test_commands) into LintCommand array.",
+      "is_pub": false,
+      "line": 459
+    },
+    {
+      "type": "fn_private",
+      "name": "tryLoadFile",
+      "match_hash": "0de89c8da404f3038eb34d0745b9fc9c90b3eea5de888d0306227d1741e37b18",
+      "signature": "fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Attempts to load a file into a project configuration, returning the loaded settings or an error.",
+      "is_pub": false,
+      "line": 492
+    },
+    {
+      "type": "fn_private",
+      "name": "buildDefault",
+      "match_hash": "da1283b255a7178eac8e62031745bba0c68bfbfce83c5c5c82991441ae0ab33a",
+      "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Constructs a default project configuration from an allocator and CWD input.",
+      "is_pub": false,
+      "line": 749
+    },
+    {
+      "type": "fn_private",
+      "name": "buildFromParts",
+      "match_hash": "647987f014a13257168287b59e6fc612de1308c726b9605bed375df2b1138cbd",
+      "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, db_path_rel: []const u8, capabilities_dir: []const u8, embedding_provider: []const u8, embedding_model: []const u8, embedding_dims: u32, src_dirs: []const []const u8, providers: []const Provider, model_default: []const u8, model_fast: []const u8, model_thinking: []const u8, test_commands: []const LintCommand, lint_commands: []const LintCommand, fmt_commands: []const LintCommand, embedding_cache_limit: u32) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" },
+        { "name": "guidance_dir_rel", "type": "[]const u8" },
+        { "name": "db_path_rel", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "embedding_provider", "type": "[]const u8" },
+        { "name": "embedding_model", "type": "[]const u8" },
+        { "name": "embedding_dims", "type": "u32" },
+        { "name": "src_dirs", "type": "[]const []const u8" },
+        { "name": "providers", "type": "[]const Provider" },
+        { "name": "model_default", "type": "[]const u8" },
+        { "name": "model_fast", "type": "[]const u8" },
+        { "name": "model_thinking", "type": "[]const u8" },
+        { "name": "test_commands", "type": "[]const LintCommand" },
+        { "name": "lint_commands", "type": "[]const LintCommand" },
+        { "name": "fmt_commands", "type": "[]const LintCommand" },
+        { "name": "embedding_cache_limit", "type": "u32" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Constructs a project configuration from Zig source parts using allocator and path data.",
+      "is_pub": false,
+      "line": 792
+    },
+    {
+      "type": "fn_private",
+      "name": "makeTestConfig",
+      "match_hash": "6b796bf876b1c9eee6711ceb6b5484481204d81f1d8716efa529b40ca2977fad",
+      "signature": "fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "model_thinking", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Build a minimal ProjectConfig for unit-testing `isThinkingModelRef`.",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": false,
+      "line": 862
+    },
+    {
+      "type": "test_decl",
+      "name": "isThinkingModelRef: exact slot match",
+      "is_pub": false,
+      "line": 896
+    },
+    {
+      "type": "test_decl",
+      "name": "isThinkingModelRef: same model, different provider alias",
+      "is_pub": false,
+      "line": 903
+    },
+    {
+      "type": "test_decl",
+      "name": "isThinkingModelRef: different model — not a thinking ref",
+      "is_pub": false,
+      "line": 911
+    },
+    {
+      "type": "test_decl",
+      "name": "isThinkingModelRef: empty thinking slot — always false",
+      "is_pub": false,
+      "line": 919
+    },
+    {
+      "type": "test_decl",
+      "name": "isThinkingModelRef: bare model ref (no provider prefix) — not treated as thinking",
+      "is_pub": false,
+      "line": 927
+    }
+  ]
+}

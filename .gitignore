@@ -15,12 +15,12 @@
 # Log files
 *.log
 
+.claude
 doc/Legacy
 .guidance.db
 
 # guidance test_passed marker (auto-generated)
 .guidance/.marks/
-.guidance/src
 
 # =============================================================================
 # Python Virtual Environments & Package Management

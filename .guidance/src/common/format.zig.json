@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "module": "src.common.format",
+    "source": "src/common/format.zig",
+    "language": "zig"
+  },
+  "comment": "Defines table structure with columns, rows, and formatting logic for JSON rendering.",
+  "detail": "This module provides comprehensive JSON formatting and tabular data rendering capabilities for Zig applications. It implements a clean separation between data representation (JSON values) and presentation logic (formatted output), making it ideal for CLI tools, debuggers, and reporting utilities.\n\n**Architecture & Abstractions:**\n\nThe module is built around two core abstractions: `Column` and `Table`. The `Column` struct encapsulates metadata about each table column—its header label, JSON key path, display width, and alignment preference. This allows flexible column configuration without hardcoding field names. The `Table` struct serves as the rendering engine, holding references to columns, rows (JSON values), a title, and an allocator for memory management.\n\n**Public API & Usage:**\n\nThe primary workflow follows a builder pattern:\n1. Initialize a Table with `init(allocator, columns, title)`\n2. Populate data using `withRows(rows)`\n3. Render output via `render(writer)`\n\nAdditional utility functions extend functionality beyond table rendering:\n- `valueToString()` converts any JSON value to its string representation\n- `formatJson()` and `stringify()` provide pretty-printing with indentation\n- `formatCsv()` enables CSV export of JSON data\n- Helper functions like `formatSize()` and `parseSize()` handle byte size formatting\n\n**Implementation Details:**\n\nThe render function implements ASCII table formatting with header, separator, and data rows. It dynamically calculates column widths based on either explicit width settings or the longest content in that column. The `valueToString` function recursively handles all JSON types (objects, arrays, primitives) while managing memory through Zig's allocator interface.\n\n**Design Patterns:**\n\n- **Builder Pattern**: Separates initialization from configuration\n- **Command Pattern**: Passes writer as a parameter for flexible output destinations\n- **Data Transformation**: Clean pipeline from JSON → string → formatted text\n- **Strategy Pattern**: Different formatting strategies (JSON, CSV, table) through function selection\n\nThe module demonstrates Zig's strong typing and memory ownership model by using `std.mem.Allocator` throughout, ensuring proper resource management in both debug and release modes.",
+  "keywords": ["Table", "Column", "JSON rendering", "formatJson", "render", "valueToString", "CSV formatting", "allocator", "std.json.Value", "CLI output"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Column",
+      "match_hash": "6a25e5598da7f1f1b61d2faffc105a3e696b1ff2f044768f644f746bede2e59d",
+      "signature": "keyword_struct Column { ... }",
+      "comment": "Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.",
+      "is_pub": true,
+      "line": 3
+    },
+    {
+      "type": "struct",
+      "name": "Table",
+      "match_hash": "a11d846131facd869c28d8377d6fb057fcd945583e70cda2bb637bc7c82fe59b",
+      "signature": "keyword_struct Table { ... }",
+      "comment": "Represents a table structure with column definitions and JSON rendering capabilities; owned by the instance, mutable via methods, no external ownership.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "f942b4e4ea29a8cd4bc680750c327360e033885c52e2285d75ac049cdfa3ad65",
+          "signature": "fn init(allocator: std.mem.Allocator, columns: []const Column, title: []const u8) -> Table",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "columns", "type": "[]const Column" },
+            { "name": "title", "type": "[]const u8" }
+          ],
+          "returns": "Table",
+          "is_pub": true,
+          "line": 16
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withRows",
+          "match_hash": "88c4e2a0b0dbabddb77750d44ae29562e5ef1053a9f6890c4b559ba59014a478",
+          "signature": "fn withRows(self: *Table, rows: []const std.json.Value) -> void",
+          "params": [
+            { "name": "self", "type": "*Table" },
+            { "name": "rows", "type": "[]const std.json.Value" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 25
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "render",
+          "match_hash": "33f8c751209c3bf01b2d5f21bd6a68bb8e11e2471d7429eb30a6bd13e7b11c6f",
+          "signature": "fn render(self: *const Table, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const Table" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 29
+        }
+      ],
+      "line": 10
+    },
+    {
+      "type": "fn_private",
+      "name": "valueToString",
+      "match_hash": "def7693d6d3298be9cd28c9815755cbe66f4b834489630cf3b91e6bc9b724e64",
+      "signature": "fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "val", "type": "std.json.Value" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Converts a JSON value into a Zig-safe string slice.",
+      "is_pub": false,
+      "line": 79
+    },
+    {
+      "type": "fn_decl",
+      "name": "formatJson",
+      "match_hash": "8d7d270fed04c799fa641224869b398eb6700a5825727548e60d740bfed883bf",
+      "signature": "fn formatJson(allocator: std.mem.Allocator, value, indent: usize) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "value" },
+        { "name": "indent", "type": "usize" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Converts a value into a formatted JSON slice using an allocator and indentation level.",
+      "is_pub": true,
+      "line": 121
+    },
+    {
+      "type": "fn_private",
+      "name": "stringify",
+      "match_hash": "7e5b2b8ddbe3cc7e66b0f0a2321d2aa8e977e9218c1c1b0ea743aa2307f51c87",
+      "signature": "fn stringify(value, indent: usize, level: usize, writer) -> void",
+      "params": [
+        { "name": "value" },
+        { "name": "indent", "type": "usize" },
+        { "name": "level", "type": "usize" },
+        { "name": "writer" }
+      ],
+      "returns": "void",
+      "comment": "Converts a value into a formatted string with specified indentation and level.",
+      "is_pub": false,
+      "line": 128
+    },
+    {
+      "type": "fn_decl",
+      "name": "formatCsv",
+      "match_hash": "5393cbb6a16366a48baec608a9cd8f1df266627c8bd46455ee2c3e527fccc775",
+      "signature": "fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "rows", "type": "[]const std.json.Value" },
+        { "name": "fieldnames", "type": "?[]const []const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Converts a CSV-formatted JSON slice into a CSV-formatted string using an allocator.",
+      "is_pub": true,
+      "line": 164
+    },
+    {
+      "type": "fn_private",
+      "name": "writeCsvField",
+      "match_hash": "9875b868161d0d9915e20f10b40f2b601c36273c0897988e7567c965d207757c",
+      "signature": "fn writeCsvField(writer, field: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "field", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a CSV field as a byte array, formatting it for storage.",
+      "is_pub": false,
+      "line": 209
+    },
+    {
+      "type": "fn_decl",
+      "name": "formatSize",
+      "match_hash": "6501fbaa84addf76ccd09a4cab0ddfc4c983d5e5106fe8fead656c2aa10077c8",
+      "signature": "fn formatSize(bytes: usize, buf: []u8) -> []const u8",
+      "params": [
+        { "name": "bytes", "type": "usize" },
+        { "name": "buf", "type": "[]u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Converts a given byte slice into a formatted size array in Zig.",
+      "is_pub": true,
+      "line": 223
+    },
+    {
+      "type": "fn_decl",
+      "name": "parseSize",
+      "match_hash": "4612b5ef86757538ac21a92de2f975da554a75d39e0a20c005ed33e01a1e6d59",
+      "signature": "fn parseSize(size_str: []const u8) -> ?usize",
+      "params": [
+        { "name": "size_str", "type": "[]const u8" }
+      ],
+      "returns": "?usize",
+      "comment": "Converts a null-terminated byte slice into a usize value representing its size.",
+      "is_pub": true,
+      "line": 240
+    },
+    {
+      "type": "test_decl",
+      "name": "formatSize: bytes",
+      "is_pub": false,
+      "line": 274
+    },
+    {
+      "type": "test_decl",
+      "name": "formatSize: kilobytes",
+      "is_pub": false,
+      "line": 280
+    },
+    {
+      "type": "test_decl",
+      "name": "parseSize: plain number",
+      "is_pub": false,
+      "line": 286
+    },
+    {
+      "type": "test_decl",
+      "name": "parseSize: with KB suffix",
+      "is_pub": false,
+      "line": 290
+    },
+    {
+      "type": "test_decl",
+      "name": "parseSize: with MB suffix",
+      "is_pub": false,
+      "line": 294
+    },
+    {
+      "type": "test_decl",
+      "name": "formatJson: simple struct",
+      "is_pub": false,
+      "line": 298
+    }
+  ]
+}

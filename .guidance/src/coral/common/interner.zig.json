@@ -1,0 +1,185 @@
+{
+  "meta": {
+    "module": "src.coral.common.interner",
+    "source": "src/coral/common/interner.zig",
+    "language": "zig"
+  },
+  "comment": "Manages string-to-index mapping, supports dynamic bit-set operations, and handles memory allocation for interned strings.",
+  "detail": "# String Interner Module Documentation\n\n## Module Purpose and Architecture\n\nThis module implements a high-performance string interning system designed for AI coding assistants, specifically supporting DAG (Directed Acyclic Graph) representations and capability tracking through bit-set operations. The interner maintains bidirectional mappings between strings and unique integer indices while managing memory efficiently through arena allocation.\n\nThe architecture follows a layered design:\n- **Core Interning Layer**: Manages string-to-index mapping with `StringInterner` struct\n- **Batch Operations Layer**: Provides optimized bulk operations like `internList()` and `internAndGetBitSet()`\n- **Serialization Layer**: Exposes bit-set constraint generation for cross-module serialization via the reflection system\n\n## Key Abstractions and Relationships\n\n### StringInterner\nThe central struct containing:\n- `arena`: ArenaAllocator for scoped memory management\n- `string_to_index`: HashMap mapping strings to indices\n- `index_to_string`: ArrayList storing owned string copies for retrieval\n- `next_index`: Counter tracking total interned entries\n\n### ConstraintVTable\nA reflection-based vtable enabling polymorphic bit-set operations. It supports three operation paths:\n1. **String path**: Human-readable capability names (e.g., \"compile,link,test\")\n2. **Binary path**: Wire format for serialization (u32 word count + u64 words)\n3. **Convert path**: Cross-interner compatibility via string name matching\n\n## Public API and Usage Patterns\n\n### Core Operations\n```zig\n// Initialize and use the interner\nvar interner = StringInterner.init(allocator);\ndefer interner.deinit();\n\n// Intern strings (idempotent)\nconst idx1 = interner.intern(\"compile\");  // Returns 0 if new, existing index if cached\nconst idx2 = interner.intern(\"compile\");  // Returns 0 again\n\n// Retrieve information\nif (interner.getIndex(\"compile\")) |idx| {\n    const str = interner.getString(idx);\n}\n```\n\n### Batch Operations\n- **`internList()`**: Interns multiple strings efficiently in a single pass\n- **`internAndGetBitSet()`**: Creates a bit-set representing which indices are set, useful for DAG node representation\n\n### Serialization Support\nThe `bitSetConstraint()` function generates a vtable that enables:\n- Converting capability sets to/from string paths\n- Binary serialization of bit-sets across module boundaries\n- Cross-interner compatibility through capability name matching\n\n## Important Implementation Details\n\n1. **Idempotent Interning**: `intern()` is safe to call repeatedly—the same string always returns the same index, making it suitable for DAG node identification\n\n2. **Arena Allocation**: All allocations use the interner's ArenaAllocator, ensuring efficient cleanup when `deinit()` is called\n\n3. **Bit-Set Constraint Design**: The constraint vtable bridges between runtime capability tracking and persistent storage through both string-based and binary wire formats\n\n4. **Cross-Module Compatibility**: The convertFn mechanism enables different interners to communicate by matching capability names rather than indices, supporting DAG duck-typing across module boundaries\n\n## Design Patterns Used\n\n- **Flyweight Pattern**: String interning reduces memory by sharing common strings\n- **Object Pool Pattern**: ArenaAllocator provides efficient allocation/reuse\n- **Vtable-Based Polymorphism**: ConstraintVTable enables extensible serialization without code duplication\n- **Idempotent Operations**: Safe reentrant design where `intern()` can be called at any time\n\n## Usage in AI Coding Context\n\nThis module is particularly valuable for representing DAG nodes where:\n- Each unique capability/operation maps to a consistent index\n- Bit-sets efficiently represent sets of capabilities per node\n- Cross-module compatibility is achieved through named capabilities rather than opaque indices",
+  "keywords": ["StringInterner", "intern", "bitSetConstraint", "ConstraintVTable", "DAG", "capability tracking", "arena allocation", "flyweight pattern", "serialization", "reflection system"],
+  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/registry.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/target.zig", "src/coral/common/context.zig", "src/coral/common/json_parser.zig", "src/coral/common/registry.zig", "src/coral/common/repl.zig", "src/coral/common/resolver.zig", "src/coral/common/target.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "init",
+      "match_hash": "d78d93e39a54fe8cc61b4b22172584ddebe3a42e0482b571e78dcc1b1131b595",
+      "signature": "fn init(allocator: std.mem.Allocator) -> StringInterner",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "StringInterner",
+      "comment": "Initializes a string interned slice using an allocator, returning the interned string.",
+      "is_pub": true,
+      "line": 11
+    },
+    {
+      "type": "fn_decl",
+      "name": "deinit",
+      "match_hash": "0dfe7c55c37605cfd60b7bb071288674aabdbbec34ba3f88674c80fa088de815",
+      "signature": "fn deinit(self: *StringInterner) -> void",
+      "params": [
+        { "name": "self", "type": "*StringInterner" }
+      ],
+      "returns": "void",
+      "comment": "Releases resources associated with the string interner, ensuring proper cleanup.",
+      "is_pub": true,
+      "line": 19
+    },
+    {
+      "type": "fn_decl",
+      "name": "intern",
+      "match_hash": "81dab6d284323336d6ed5589171e0b960d793d9fe2a798dd7b8536d1e8fbe668",
+      "signature": "fn intern(self: *StringInterner, str: []const u8) -> usize",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "str", "type": "[]const u8" }
+      ],
+      "returns": "usize",
+      "comment": "Converts a null-terminated C string into a Zig string slice, handling memory alignment and ownership.",
+      "is_pub": true,
+      "line": 25
+    },
+    {
+      "type": "fn_decl",
+      "name": "getIndex",
+      "match_hash": "3798fcd1426066a0bbaedc9ae60616d1e0c87c42bb6291afcb9dd3151991ea0e",
+      "signature": "fn getIndex(self: *const StringInterner, str: []const u8) -> ?usize",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" },
+        { "name": "str", "type": "[]const u8" }
+      ],
+      "returns": "?usize",
+      "comment": "Retrieves the index position of a given string slice within a Zig interned string buffer.",
+      "is_pub": true,
+      "line": 41
+    },
+    {
+      "type": "fn_decl",
+      "name": "getString",
+      "match_hash": "c0138eb01f828893e468fb295b0dc1ed395895cf2165085037101e166308dc85",
+      "signature": "fn getString(self: *const StringInterner, idx: usize) -> ?[]const u8",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" },
+        { "name": "idx", "type": "usize" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Retrieves a slice of bytes from a string at the specified index.",
+      "is_pub": true,
+      "line": 45
+    },
+    {
+      "type": "fn_decl",
+      "name": "count",
+      "match_hash": "52a9fe0ce6e6a92d98648138b5d54b54a2c5453193af93e9dc7e9ba30be26567",
+      "signature": "fn count(self: *const StringInterner) -> usize",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" }
+      ],
+      "returns": "usize",
+      "comment": "Counts characters in a string interned for performance.",
+      "is_pub": true,
+      "line": 50
+    },
+    {
+      "type": "fn_decl",
+      "name": "internList",
+      "match_hash": "706f36c38fd9b5880e3b7cedec7bc2a76b63163a0d5977618541a6c22393a2b9",
+      "signature": "fn internList(self: *StringInterner, strings: []const []const u8) -> void",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "strings", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Converts a null-terminated C string into a Zig-safe slice, handling memory safety and conversion.",
+      "is_pub": true,
+      "line": 54
+    },
+    {
+      "type": "fn_decl",
+      "name": "internAndGetBitSet",
+      "match_hash": "7f3d29512785d19f3b4760ffc718ebb7d8155cb533a80fffc2c439ff3330ff2e",
+      "signature": "fn internAndGetBitSet(self: *StringInterner, allocator: std.mem.Allocator, strings: []const []const u8) -> std.bit_set.DynamicBitSetUnmanaged",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "strings", "type": "[]const []const u8" }
+      ],
+      "returns": "std.bit_set.DynamicBitSetUnmanaged",
+      "comment": "Converts a C-style string into a dynamic bit set using Zig's internAndGetBitSet method.",
+      "is_pub": true,
+      "line": 60
+    },
+    {
+      "type": "fn_decl",
+      "name": "bitSetConstraint",
+      "match_hash": "66677f891530a4defce007a5b4ca52c8f373e7f4512ea012cbb1a7c93c442ae9",
+      "signature": "fn bitSetConstraint(self: *StringInterner) -> reflection.ConstraintVTable",
+      "params": [
+        { "name": "self", "type": "*StringInterner" }
+      ],
+      "returns": "reflection.ConstraintVTable",
+      "comment": "Returns a ConstraintVTable parameterised on `interner`.",
+      "is_pub": true,
+      "line": 112
+    },
+    {
+      "type": "fn_decl",
+      "name": "bitSetFromString",
+      "match_hash": "1d963356853c591b124081f93e529b20bfdcaef394dcf86ad3c88b83ea73a4ea",
+      "signature": "fn bitSetFromString(interner: *StringInterner, allocator: std.mem.Allocator, bs: *std.bit_set.DynamicBitSetUnmanaged, input: []const u8) -> void",
+      "params": [
+        { "name": "interner", "type": "*StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "bs", "type": "*std.bit_set.DynamicBitSetUnmanaged" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Parse a comma-separated capability string into a bitset.",
+      "is_pub": true,
+      "line": 247
+    },
+    {
+      "type": "fn_decl",
+      "name": "bitSetToString",
+      "match_hash": "ff292b62b0781900738b7ef3defb98c108123fd2b1e252b1f102feaeb27d6aac",
+      "signature": "fn bitSetToString(interner: *const StringInterner, allocator: std.mem.Allocator, bs: *const std.bit_set.DynamicBitSetUnmanaged) -> []const u8",
+      "params": [
+        { "name": "interner", "type": "*const StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "bs", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Serialise a bitset to a comma-separated capability string.",
+      "is_pub": true,
+      "line": 268
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner basic operations",
+      "is_pub": false,
+      "line": 288
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner bitset creation",
+      "is_pub": false,
+      "line": 306
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner GPA no leaks",
+      "is_pub": false,
+      "line": 322
+    }
+  ]
+}

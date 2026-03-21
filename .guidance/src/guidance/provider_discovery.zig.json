@@ -1,0 +1,145 @@
+{
+  "meta": {
+    "module": "src.guidance.provider_discovery",
+    "source": "src/guidance/provider_discovery.zig",
+    "language": "zig"
+  },
+  "comment": " External language provider discovery for guidance.\n\n Searches for provider binaries named `guidance-{ext_bare}` in:\n   1. `{workspace}/bin/guidance-{ext_bare}`   (workspace-local, highest priority)\n   2. PATH lookup for `guidance-{ext_bare}`   (system-wide)\n\n Provider protocol — subprocess invocation:\n   guidance-py sync --file {src_abs} --output {json_dir}\n   guidance-py sync --scan {src_dir} --output {json_dir}\n\n Providers must write guidance JSON files compatible with the existing format\n to `{json_dir}/src/{relative_path}{ext}.json`.\n\n All returned Provider values are owned by the caller; call provider.deinit().",
+  "detail": "# Module: guidance/provider_discovery.zig\n\n## Purpose and Architecture\n\nThis module implements an external language provider discovery and invocation system for the Guidance AI coding assistant. It enables the main application to dynamically discover and communicate with external language analysis tools (e.g., `guidance-py`, `guidance-rs`) that provide language-specific guidance data.\n\nThe architecture follows a layered design:\n- **Discovery Layer**: Two-tier binary search prioritizing workspace-local installations over system PATH\n- **Abstraction Layer**: The `Provider` struct encapsulates provider lifecycle and metadata\n- **Invocation Layer**: Command construction and execution for both single-file and directory scanning operations\n- **Protocol Interface**: Standardized subprocess protocol with fixed flags and extensible arguments\n\n## Key Abstractions\n\n### Provider Struct\nThe central abstraction representing a discovered external provider. It stores:\n- `name`: Human-readable language identifier (e.g., \"py\", \"rs\")\n- `binary`: Absolute path to the executable\n- `extension`: File extension handled (e.g., \".py\")\n\n**Ownership Model**: All string fields are allocated and owned by the caller, requiring explicit cleanup via `deinit()` to prevent memory leaks.\n\n### Discovery Hierarchy\n1. **Workspace-local**: `{workspace}/bin/guidance-{ext_bare}` — highest priority for project-specific providers\n2. **System PATH**: Global installation location for shared tools\n\n## Public API\n\n| Function | Description |\n|----------|-------------|\n| `discoverProvider()` | Finds provider binary by extension; returns null if not found |\n| `invokeProviderFile()` | Invokes provider with single file path |\n| `invokeProviderScan()` | Scans entire directory for guidance data |\n| `deinit()` | Frees all allocated strings in Provider |\n\n### Usage Pattern\n```zig\nconst allocator = std.heap.GeneralPurposeAllocator(.{}){};\ndefer allocator.deinit();\n\nconst provider = try discoverProvider(allocator, workspace_root, \".py\");\nif (provider) {\n    defer provider.deinit(allocator);\n    \n    const success = invokeProviderFile(\n        allocator, \n        provider, \n        \"/path/to/file.py\", \n        json_dir,\n        &.{ \"--infill\" }\n    );\n} else |err| {\n    // Handle discovery failure\n}\n```\n\n## Implementation Details\n\n### Memory Management\nThe module uses explicit allocation with `allocator.dupe()` for string fields, ensuring zero-copy efficiency while maintaining ownership semantics. The `defer` pattern prevents leaks in error paths.\n\n### Command Construction\nUses `std.ArrayList([]const u8)` as a builder for argv arrays, avoiding intermediate allocations. Extra arguments are appended after fixed flags (`sync --file/--scan ... --output`).\n\n### Protocol Design\nThe subprocess protocol separates concerns:\n- **Fixed flags**: Define operation type and output location\n- **Variable args**: Allow provider-specific features (e.g., `--infill`, `--verbose`)\n\nThis enables backward compatibility while supporting provider evolution.\n\n## Design Patterns\n\n1. **Factory Pattern**: `discoverProvider()` creates Provider instances with appropriate lifecycle management\n2. **Adapter Pattern**: External providers adapt to the internal JSON output format\n3. **Builder Pattern**: Command-line arguments constructed incrementally before execution\n4. **Singleton-like Discovery**: PATH lookup cached via `findInPath()` for efficiency\n\n### Error Handling\n- Returns `null` for discovery failures (non-fatal, allows fallback)\n- Propagates allocation errors via `!` return type\n- Uses `runCommand()` to handle subprocess exit codes uniformly",
+  "keywords": ["Provider", "discoverProvider", "invokeProviderFile", "guidance-py", "language-provider", "external-tool-discovery", "subprocess-invocation", "workspace-local", "PATH-lookup", "JSON-output"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Provider",
+      "match_hash": "d67a9c4857b714b8591f9a9708508063079adba16cc906377e372499b4ab6b9a",
+      "signature": "keyword_struct Provider { ... }",
+      "comment": "A discovered external language provider.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b28762fd0c071386871f3573f6bd6318e02046ca70d5fda2a35f5fb95d1bdf5b",
+          "signature": "fn deinit(self: Provider, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Provider" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 27
+        }
+      ],
+      "line": 19
+    },
+    {
+      "type": "fn_decl",
+      "name": "discoverProvider",
+      "match_hash": "e66b11613b7a81f7a665ead383f8e595238732f6655230e14b566c63434e70fc",
+      "signature": "fn discoverProvider(allocator: std.mem.Allocator, workspace: []const u8, ext: []const u8) -> ?Provider",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "ext", "type": "[]const u8" }
+      ],
+      "returns": "?Provider",
+      "comment": "Discover the provider binary for a given file extension.",
+      "is_pub": true,
+      "line": 41
+    },
+    {
+      "type": "fn_decl",
+      "name": "invokeProviderFile",
+      "match_hash": "83f94fc5c8f80ac69f967a6373d1c6b6aa5722eae587a8188673f6e804e780e9",
+      "signature": "fn invokeProviderFile(allocator: std.mem.Allocator, provider: Provider, src_abs: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "provider", "type": "Provider" },
+        { "name": "src_abs", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "extra_args", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Invoke a provider to process a single source file.",
+      "is_pub": true,
+      "line": 86
+    },
+    {
+      "type": "fn_decl",
+      "name": "invokeProviderScan",
+      "match_hash": "14ba8e541d76a8cf7aec3e9958967a641ea43c2d4273583e3aa27d062c196782",
+      "signature": "fn invokeProviderScan(allocator: std.mem.Allocator, provider: Provider, scan_dir: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "provider", "type": "Provider" },
+        { "name": "scan_dir", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "extra_args", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Invoke a provider to scan an entire source directory.",
+      "is_pub": true,
+      "line": 113
+    },
+    {
+      "type": "fn_private",
+      "name": "isExecutable",
+      "match_hash": "3e3c69769996964a630e08270e6ac6867b296be60661508d3c5af1df47cefe39",
+      "signature": "fn isExecutable(path: []const u8) -> bool",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Returns true when `path` is an accessible executable file.",
+      "is_pub": false,
+      "line": 139
+    },
+    {
+      "type": "fn_private",
+      "name": "findInPath",
+      "match_hash": "33f1e28323f60f82dfd66306b7a27f383306e16d329d6819310accbcd7a313f8",
+      "signature": "fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "binary_name", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Search PATH for `binary_name`.",
+      "is_pub": false,
+      "line": 154
+    },
+    {
+      "type": "fn_private",
+      "name": "runCommand",
+      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
+      "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "argv", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Spawn `argv` as a child process, inheriting stdout/stderr.",
+      "is_pub": false,
+      "line": 173
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: returns null for unknown extension",
+      "is_pub": false,
+      "line": 187
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: returns null for bare extension without dot",
+      "is_pub": false,
+      "line": 193
+    },
+    {
+      "type": "test_decl",
+      "name": "discoverProvider: workspace-local bin takes priority",
+      "is_pub": false,
+      "line": 198
+    }
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "meta": {
+    "module": "src.rdf.nquads",
+    "source": "src/rdf/nquads.zig",
+    "language": "zig"
+  },
+  "comment": "Parses Zig source code into structured quad structures, supporting terms, literals, and graphs.",
+  "detail": "# N-Quads/N-Triples Parser Module Documentation\n\n## Module Purpose and Architecture\n\nThis module provides a line-based parser for the N-Quads and N-Triples RDF serialization formats. It parses RDF quads into structured Zig data structures without performing prefix expansion, making it suitable for applications that need to process or transform RDF data at a lower level.\n\n**Architecture Overview:**\n- **Input**: Raw text containing N-Quads lines (one quad/triple per line)\n- **Processing**: Line-by-line iteration with term parsing delegated to `parser.zig`\n- **Output**: Structured `Quad` objects representing subject-predicate-object-graph tuples\n\nThe parser follows a simple state machine approach:\n1. Read and trim each line\n2. Skip comments (lines starting with `#`) and blank lines\n3. Parse four components: subject, predicate, object, optional graph IRI\n4. Validate trailing period terminator\n5. Return structured quad or null at EOF\n\n## Key Abstractions and Relationships\n\n### Quad Structure\nThe `Quad` struct represents a complete RDF quad:\n- **subject**: Required term (IRI, blank node, or literal)\n- **predicate**: Required term\n- **object**: Required term  \n- **graph**: Optional term; null indicates default graph\n\nThis mirrors the N-Quads format where a trailing `<graph>` denotes named graph context.\n\n### NQuadsParser Iterator\nThe parser uses an iterator pattern with explicit resource management:\n- `init()`: Creates parser from source text, using `std.mem.SplitIterator` for line iteration\n- `next()`: Yields next quad or null at EOF\n- `deinit()`: Cleanup hook (currently no-op)\n\n### Term Abstraction\nTerms are parsed via the external `parser.zig` module, supporting:\n- IRIs (`<iri>`)\n- Blank nodes (`_:bn`)\n- Literals (`\"literal\"`)\n\n## Public API and Usage Patterns\n\n```zig\nconst parser = NQuadsParser.init(allocator, source);\ndefer parser.deinit();\n\nwhile (try parser.next()) |quad| {\n    // Process quad...\n    quad.deinit(allocator);  // Critical: caller must free term resources\n}\n```\n\n**Key API Components:**\n\n| Component | Purpose |\n|-----------|---------|\n| `Quad` | Container for parsed quad data with cleanup method |\n| `NQuadsError` | Error types: MalformedLine, OutOfMemory |\n| `NQuadsParser.next()` | Iterator yielding optional Quad |\n| `Quad.deinit()` | Frees all allocated term resources |\n\n## Important Implementation Details\n\n**Resource Management**: All parsed terms allocate memory via `allocator.dupe()`. Callers must invoke `quad.deinit(allocator)` for each quad to prevent leaks. The parser uses `errdefer` for cleanup on parse failures.\n\n**Line Parsing Strategy**:\n- Uses `std.mem.trim()` to handle leading/trailing whitespace\n- Skips comment lines and empty lines automatically\n- Validates trailing `.` character strictly\n- Supports optional graph IRI as the fourth component\n\n**Error Handling**: The parser returns early errors for malformed input (missing components, invalid characters, missing terminator) while continuing on blank/comment lines.\n\n## Design Patterns Used\n\n1. **Iterator Pattern**: `next()` provides lazy evaluation of quads without loading entire dataset\n2. **Builder Pattern**: `init()` constructs parser from source and allocator\n3. **Resource Acquisition Is Initialization (RAII)**: Explicit deinit calls mirror C++ RAII semantics\n4. **Delegate Parsing**: Delegates term parsing to specialized module for separation of concerns\n\n**Memory Safety Considerations**: The explicit `deinit()` requirement is a trade-off between safety and convenience, common in systems programming where automatic cleanup may be complex.",
+  "keywords": ["NQuadsParser", "Quad", "RDF parser", "N-Quads", "term parsing", "allocator.dupe", "std.mem.SplitIterator", "deinit pattern", "MalformedLine error", "blank node parsing"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Quad",
+      "match_hash": "aeed8101ab89620ffe6266e13fd30c5e968d94ed45232f5c419ecb7682f34d01",
+      "signature": "keyword_struct Quad { ... }",
+      "comment": "Represents a quad structure with ownership of memory; managed via deinit; not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "8a09ba0f57ca7036c01fce8716c9ad5abc126fb277d702a4bcefd3c615aabd1f",
+          "signature": "fn deinit(self: Quad, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Quad" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 24
+        }
+      ],
+      "line": 18
+    },
+    {
+      "type": "struct",
+      "name": "NQuadsParser",
+      "match_hash": "8de2a7a9a82c5c738690aadaf85f7afd740c81d0b6696b334bde54071b898a45",
+      "signature": "keyword_struct NQuadsParser { ... }",
+      "comment": "Manages NQuad parsing state with allocator, tracks line position, and returns quad results.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "338b0cfef2a8eb572a8603cd3db1834b1358a1d758fbef40a8d27a7cf66a57b3",
+          "signature": "fn init(allocator: std.mem.Allocator, source: []const u8) -> NQuadsParser",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "NQuadsParser",
+          "is_pub": true,
+          "line": 41
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "0d21398740cc568f3f319b41416ccfe438ab72d4cf6aa34ffc71cd100818e5bc",
+          "signature": "fn deinit(self: *NQuadsParser) -> void",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 48
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "next",
+          "match_hash": "377f04ab681bfb5ad80963488bb775b50b7193480c27efa5ec579703d85b033a",
+          "signature": "fn next(self: *NQuadsParser) -> NQuadsError!?Quad",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" }
+          ],
+          "returns": "NQuadsError!?Quad",
+          "comment": "Returns next Quad or null at EOF. Caller must call quad.deinit(allocator).",
+          "is_pub": true,
+          "line": 53
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseLine",
+          "match_hash": "77b81de2522d60a626d9f827f5e1f62ed8228f3e068006eef6eb0780b9520742",
+          "signature": "fn parseLine(self: *NQuadsParser, line: []const u8) -> NQuadsError!Quad",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" },
+            { "name": "line", "type": "[]const u8" }
+          ],
+          "returns": "NQuadsError!Quad",
+          "is_pub": false,
+          "line": 63
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "skipWs",
+          "match_hash": "edc9ae84f0b0a5cf2710ba01949323aa4863d9f7bfa27dd4068360598e053e0c",
+          "signature": "fn skipWs(line: []const u8, pos: *usize) -> void",
+          "params": [
+            { "name": "line", "type": "[]const u8" },
+            { "name": "pos", "type": "*usize" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 91
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseTerm",
+          "match_hash": "88cb6bfc18bc63849b045f380c4e5817baae78521e0c0a823ff560cc2a34f75b",
+          "signature": "fn parseTerm(self: *NQuadsParser, line: []const u8, pos: *usize) -> NQuadsError!Term",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" },
+            { "name": "line", "type": "[]const u8" },
+            { "name": "pos", "type": "*usize" }
+          ],
+          "returns": "NQuadsError!Term",
+          "is_pub": false,
+          "line": 97
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseIRI",
+          "match_hash": "508d355fec48ee4aebee87010e52d2c1b99c12f5f90402ea1b7833eba9593887",
+          "signature": "fn parseIRI(self: *NQuadsParser, line: []const u8, pos: *usize) -> NQuadsError!Term",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" },
+            { "name": "line", "type": "[]const u8" },
+            { "name": "pos", "type": "*usize" }
+          ],
+          "returns": "NQuadsError!Term",
+          "is_pub": false,
+          "line": 108
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseBlankNode",
+          "match_hash": "066fc4a6b60922e8a24a74e734962d720335a99f3ce672f2fffe76970dc03ed9",
+          "signature": "fn parseBlankNode(self: *NQuadsParser, line: []const u8, pos: *usize) -> NQuadsError!Term",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" },
+            { "name": "line", "type": "[]const u8" },
+            { "name": "pos", "type": "*usize" }
+          ],
+          "returns": "NQuadsError!Term",
+          "is_pub": false,
+          "line": 118
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "parseLiteral",
+          "match_hash": "f0e7840729e8a397c92766648bc89451f9d2393cb0f8bc25cc3c5430e9dc2fcf",
+          "signature": "fn parseLiteral(self: *NQuadsParser, line: []const u8, pos: *usize) -> NQuadsError!Term",
+          "params": [
+            { "name": "self", "type": "*NQuadsParser" },
+            { "name": "line", "type": "[]const u8" },
+            { "name": "pos", "type": "*usize" }
+          ],
+          "returns": "NQuadsError!Term",
+          "is_pub": false,
+          "line": 129
+        }
+      ],
+      "line": 37
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads quad with graph",
+      "is_pub": false,
+      "line": 173
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads triple without graph",
+      "is_pub": false,
+      "line": 183
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads literal object",
+      "is_pub": false,
+      "line": 192
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads comment and blank line skipped",
+      "is_pub": false,
+      "line": 201
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads malformed line error",
+      "is_pub": false,
+      "line": 210
+    },
+    {
+      "type": "test_decl",
+      "name": "nquads blank node subject",
+      "is_pub": false,
+      "line": 218
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "meta": {
+    "module": "src.guidance.llm_filter",
+    "source": "src/guidance/llm_filter.zig",
+    "language": "zig"
+  },
+  "comment": " llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.\n\n For each prose, insight, or skill_doc Stage, asks a local LLM:\n   \"Is this content relevant to the query? Answer YES or NO.\"\n\n Code and metadata stages are always kept verbatim.\n On LLM error or unavailability, returns all input unchanged.",
+  "detail": "# Module: llm_filter.zig — LLM-Based Relevance Filtering\n\n## Purpose & Architecture\n\nThis module implements intelligent relevance filtering within a staged explain pipeline architecture. It leverages local LLM capabilities to determine whether prose, insight, or skill documentation content is relevant to a user's query, while preserving code and metadata stages verbatim. The system operates on a \"fail-open\" principle—when the LLM fails or becomes unavailable, all input content is retained to ensure no valuable information is lost due to filtering errors.\n\n### System Flow\n```\nInput Stages → filterStages() → [Code/Metadata: Always Keep] + [Prose/Insight/Skill: LLM-filtered] → Output Stages\n                    ↓\n              filterSeeAlso() → Bounded context → LLM query → Ranked file paths\n```\n\n## Key Abstractions & Relationships\n\n### Core Types\n- **`SeeAlsoEntry`**: A lightweight struct pairing a file path with keywords/signatures, enabling efficient indexing of code references for relevance matching.\n\n### Public API Functions\n\n**`filterStages()`**\nThe primary filtering function that processes a collection of Stages:\n- Code and metadata stages pass through unchanged\n- Prose/insight/skill_doc stages undergo LLM-based relevance evaluation\n- Returns an owned slice requiring proper memory management via `types.freeStages()` followed by allocator deallocation\n\n**`filterSeeAlso()`**\nSpecialized filtering for \"see also\" file references:\n- Implements early-exit optimization when entries ≤ max_keep\n- Constructs bounded context using \"path: keyword\" format for LLM efficiency\n- Returns ranked file paths as an owned slice of slices\n- Falls back to `keepAll()` on LLM errors or unavailability\n\n**`askRelevant()`** (Internal)\nBinary relevance classifier that queries the LLM with a simple YES/NO prompt for individual content pieces.\n\n**`dupeStage()`** (Internal)\nDuplicates Stage structures, ensuring proper string ownership in output slices.\n\n### Design Patterns\n\n1. **Fail-Open Pattern**: Critical safety mechanism where filtering failures default to preserving all data rather than discarding it—prioritizing recall over precision in AI-assisted workflows.\n\n2. **Bounded Context**: `filterSeeAlso()` limits LLM input size by formatting entries as compact \"path: keyword\" pairs, preventing prompt injection and maintaining response latency.\n\n3. **Early Exit Optimization**: When entry count ≤ max_keep threshold, the system bypasses LLM calls entirely, reducing unnecessary API overhead.\n\n4. **Deduplication via StringHashMapUnmanaged**: Ensures unique file paths in output while managing memory efficiently without GC.\n\n5. **Error Path Recovery**: Comprehensive `errdefer` blocks guarantee resource cleanup even when multiple allocation failures occur during processing.",
+  "keywords": ["filterStages", "filterSeeAlso", "SeeAlsoEntry", "relevance filtering", "LLM client", "fail-open pattern", "bounded context", "staged explain pipeline", "StringHashMapUnmanaged", "dupeStage"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "filterStages",
+      "match_hash": "533fd46241f267d7dafb1feddcfb7d40d217f046b7d6de49e28278562f6fb6df",
+      "signature": "fn filterStages(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> []types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "stages", "type": "[]const types.Stage" }
+      ],
+      "returns": "[]types.Stage",
+      "comment": "Filter `stages` for relevance to `query` using the provided LLM client.",
+      "is_pub": true,
+      "line": 21
+    },
+    {
+      "type": "fn_decl",
+      "name": "filterSeeAlso",
+      "match_hash": "a184c8f19fd4e1919c658789e41983b0a6eeabccf79a805fdce11ba0d9092078",
+      "signature": "fn filterSeeAlso(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, entries: []const SeeAlsoEntry, max_keep: usize) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "entries", "type": "[]const SeeAlsoEntry" },
+        { "name": "max_keep", "type": "usize" }
+      ],
+      "returns": "[][]const u8",
+      "comment": "Filter \"Used in files\" (see_also) entries for relevance using the fast LLM.",
+      "is_pub": true,
+      "line": 60
+    },
+    {
+      "type": "fn_private",
+      "name": "keepAll",
+      "match_hash": "d46c911743710272b341da3159267df1a399a54ba14624cb32861896b08676f6",
+      "signature": "fn keepAll(allocator: std.mem.Allocator, entries: []const SeeAlsoEntry) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "entries", "type": "[]const SeeAlsoEntry" }
+      ],
+      "returns": "[][]const u8",
+      "comment": "Processes a list of entries and returns a cleaned slice of zig slices.",
+      "is_pub": false,
+      "line": 158
+    },
+    {
+      "type": "fn_private",
+      "name": "askRelevant",
+      "match_hash": "dcb5879482652cac3997acb8642402c9af4d03390b64a4ec2a2c95682c4ae85b",
+      "signature": "fn askRelevant(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, content: []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Ask the LLM whether `content` is relevant to `query`.",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "fn_private",
+      "name": "dupeStage",
+      "match_hash": "633f384329ca14d2a0d1dba340e4735cb603dff3f30f5272ddbba5ff146091bb",
+      "signature": "fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) -> types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "types.Stage" }
+      ],
+      "returns": "types.Stage",
+      "comment": "Deep-copy a Stage so the returned copy fully owns its strings.",
+      "is_pub": false,
+      "line": 196
+    }
+  ]
+}

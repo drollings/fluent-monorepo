@@ -1,0 +1,79 @@
+{
+  "meta": {
+    "module": "src.coral.common.args",
+    "source": "src/coral/common/args.zig",
+    "language": "zig"
+  },
+  "comment": "Parses command-line arguments into a structured CommonArgs object for configuration and processing.",
+  "detail": "# Coral Common Arguments Module\n\n## Module Purpose and Architecture\n\nThis module provides command-line argument parsing infrastructure for Coral, an AI/LLM-enabled build tool or development utility. The `args.zig` file implements a flexible, permissive parser that converts flat command-line arguments into a structured `CommonArgs` configuration object.\n\nThe architecture follows a minimal design philosophy: a single public struct containing all parsed configuration, with one main parsing function. This reduces coupling and makes the module easy to integrate into larger applications. The parser intentionally uses \"permissive mode\" — unknown flags are skipped rather than causing errors, allowing command-specific extensions without breaking compatibility.\n\n## Key Abstractions and Relationships\n\nThe central abstraction is `CommonArgs`, a struct that captures:\n- **LLM Configuration**: API URL, model name, debug mode, AI enable/disable flags\n- **Build-tool Flags**: dry-run, force, verbose, list/graph/repl modes\n- **Optional Values**: config file path, LLM query prompt, positional arguments\n\nThe `parseCommonArgs` function orchestrates the parsing process, accepting a raw argument slice and accumulating positional arguments into an external buffer. This design avoids unnecessary allocations while maintaining flexibility for callers to manage memory lifetimes.\n\n## Public API and Usage Patterns\n\n### Struct Initialization\n```zig\nvar args = CommonArgs{}; // Uses default values\nargs.api_url = \"https://my-api.com/v1\";\nargs.model = \"gpt-4:latest\";\n```\n\n### Parsing Workflow\n```zig\nvar positional_buf = std.ArrayListUnmanaged([]const u8){};\nallocator.reinit(&positional_buf);\n\nvar parsed = try parseCommonArgs(\n    args_slice,\n    &positional_buf,\n    allocator\n);\n\n// Use parsed configuration\nif (parsed.api_url_set) {\n    // API was explicitly configured\n}\n```\n\n### Flag Handling Patterns\n- **Boolean flags**: `--debug`, `--no-ai`, `--force`\n- **Value-taking flags**: `--api-url`, `--model`, `--file`, `--llm-query`\n- **Short/long aliases**: `-m`/`--model`, `-l`/`--list`\n- **Positional arguments**: Target names, file paths, etc.\n\n## Important Implementation Details\n\n1. **Lifetime Safety**: The returned `CommonArgs` contains references to the original argument slice. Callers must ensure `args` remains valid for the struct's lifetime.\n\n2. **Explicit Tracking**: `api_url_set` and `model_set` flags track whether these values were explicitly provided, enabling fallback behavior when defaults should be used instead.\n\n3. **Verbose Implies Debug**: Setting `--verbose` automatically enables debug output, a common UX pattern for CLI tools.\n\n4. **Permissive Unknown Flags**: The parser skips unrecognized `-` prefixed arguments, supporting command-specific flags without requiring registry maintenance.\n\n5. **Missing Value Detection**: Value-taking flags that appear at the end of arguments produce `error.MissingValue`, preventing silent failures.\n\n## Design Patterns Used\n\n- **Builder Pattern**: Struct with default values provides a clean initialization baseline\n- **Permissive Parser**: Unknown flags are ignored rather than causing errors\n- **Lazy Allocation**: Positional arguments allocated by caller, reducing overhead\n- **Single Responsibility**: Each flag handled in one place, easy to extend or modify",
+  "keywords": ["CommonArgs", "parseCommonArgs", "command-line parser", "Zig module", "AI tool configuration", "LLM flags", "build-tool CLI", "permissive parsing", "positional arguments", "Coral utility"],
+  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/coral/common/cli.zig", "src/coral/common/llm.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "CommonArgs",
+      "match_hash": "98a28a70852ae1cb8ab49bf9bf8d7a0d37fb79100709824dfb8cabe94c5af13b",
+      "signature": "keyword_struct CommonArgs { ... }",
+      "comment": "Flags and values parsed from the command line.",
+      "is_pub": true,
+      "line": 5
+    },
+    {
+      "type": "fn_decl",
+      "name": "parseCommonArgs",
+      "match_hash": "477daa7c5586aea94d2fa1ad61b817bb0cb944838d403657117a800fdd26ce62",
+      "signature": "fn parseCommonArgs(args: []const []const u8, positional_buf: *std.ArrayListUnmanaged([]const u8), allocator: std.mem.Allocator) -> CommonArgs",
+      "params": [
+        { "name": "args", "type": "[]const []const u8" },
+        { "name": "positional_buf", "type": "*std.ArrayListUnmanaged([]const u8)" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "CommonArgs",
+      "comment": "Parse a flat args slice (excluding argv[0]) into a `CommonArgs`.",
+      "is_pub": true,
+      "line": 42
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: basic flags",
+      "is_pub": false,
+      "line": 107
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: model and api-url with set flags",
+      "is_pub": false,
+      "line": 120
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: positional arguments collected",
+      "is_pub": false,
+      "line": 133
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: --file and --llm-query",
+      "is_pub": false,
+      "line": 146
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: unknown flags are skipped (permissive mode)",
+      "is_pub": false,
+      "line": 157
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: missing value for -m returns error",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "test_decl",
+      "name": "parseCommonArgs: defaults when no args given",
+      "is_pub": false,
+      "line": 177
+    }
+  ]
+}

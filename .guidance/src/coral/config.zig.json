@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "module": "src.coral.config",
+    "source": "src/coral/config.zig",
+    "language": "zig"
+  },
+  "comment": "Defines Coral project config with multi-level path resolution for guidance system, supporting project, user, and defaults paths.",
+  "detail": "# Coral Configuration Module Documentation\n\n## Module Purpose and Architecture\n\nThe `config.zig` module implements a robust configuration loading system for the Coral AI coding assistant's guidance framework. It provides a two-level fallback chain that prioritizes project-local settings while gracefully degrading to user-global defaults when needed. This architecture ensures consistent behavior across different development environments while respecting user preferences at multiple levels of granularity.\n\n## Key Abstractions and Relationships\n\n### ProjectConfig Struct\nThe central abstraction is `ProjectConfig`, which encapsulates all resolved paths and configuration values for a single Coral project instance. It follows strict ownership semantics:\n\n- **Ownership**: All string fields are allocator-owned, requiring explicit cleanup via `deinit()`\n- **Pre-computed Paths**: Absolute paths are calculated during loading, eliminating caller-side derivation work\n- **Path Relationships**: The struct maintains the relationship between `guidance_root` and `json_base`, enabling callers to derive specific JSON file locations using relative paths\n\n### Path Resolution Hierarchy\n1. **Project-local**: `{cwd}/.ast-guidance/ast-guidance-config.json`\n2. **User-global**: `{HOME}/.config/ast-guidance/ast-guidance-config.json`  \n3. **Built-in defaults**: Fallback when no user config exists\n\n## Public API and Usage Patterns\n\n### Primary Entry Point\n```zig\nconst cfg = try loadConfig(allocator, cwd);\ndefer cfg.deinit();  // Critical: prevent memory leaks\n// Use cfg.guidance_root, cfg.src_dirs, etc.\n```\n\n### Builder Pattern Support\nThe module exposes helper functions for programmatic configuration building:\n- `buildDefault()`: Create config with all defaults\n- `buildFromParts()`: Construct from individual components\n- `tryLoadFile()`: Attempt loading a specific config file\n\n### Memory Management Contract\nAll returned values require explicit cleanup:\n```zig\npub fn deinit(self: *ProjectConfig) void {\n    // Frees all allocator-owned strings\n}\n```\n\n## Important Implementation Details\n\n### Path Calculation Formula\nThe module calculates JSON source locations using this formula:\n```\n{guidance_root}/{rel_from_project_root}.json\n```\nWhere `json_base` stores the `guidance_root` component, and callers append relative paths. For example, a file at `src/foo.zig` resolves to `{guidance_root}/src/foo.zig.json`.\n\n### Error Handling Strategy\n- **Silent degradation**: Invalid configs trigger warnings but don't halt execution\n- **Test-friendly**: Errors are suppressed in test builds via `builtin.is_test` check\n- **Graceful fallback**: Each level can fail without affecting subsequent levels\n\n### Default Values\n| Constant | Value |\n|----------|-------|\n| DEFAULT_GUIDANCE_DIR | `.ast-guidance` |\n| DEFAULT_SRC_DIR | `src` |\n| DEFAULT_MODEL | `code:latest` |\n| DEFAULT_API_URL | `http://localhost:11434/v1/chat/completions` |\n\n## Design Patterns Used\n\n1. **Configuration Hierarchy Pattern**: Multi-level resolution with clear precedence\n2. **Builder Pattern**: Helper functions for incremental config construction\n3. **Resource Ownership Pattern**: Explicit deinit ensures no leaks\n4. **Fail-Soft Pattern**: Invalid configs degrade to defaults rather than crashing\n5. **Pre-computation Optimization**: Paths calculated once, reused throughout application\n\nThe module balances flexibility with safety, allowing custom configurations while maintaining a predictable fallback behavior for production reliability.",
+  "keywords": ["ProjectConfig", "loadConfig", "config loader", "guidance system", "path resolution", "two-level fallback", "allocator-owned", "Zig configuration", "Coral AI", "builder pattern"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ProjectConfig",
+      "match_hash": "112d778ac3a1ff96e2480b8e7b3662c3cd85050e690ee0b05869375536ab52bc",
+      "signature": "keyword_struct ProjectConfig { ... }",
+      "comment": "Resolved, absolute paths for a single Coral project instance.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "0d733086fc310087a87c77d4df8de8e6fdd519d0d8f23e54c30dc15813702b2d",
+          "signature": "fn deinit(self: *ProjectConfig) -> void",
+          "params": [
+            { "name": "self", "type": "*ProjectConfig" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 57
+        }
+      ],
+      "line": 28
+    },
+    {
+      "type": "fn_decl",
+      "name": "loadConfig",
+      "match_hash": "53efcfcfabf4e8ee70407bfd7cdb60f9f9aa72c1953b6f61276da13983501c4f",
+      "signature": "fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Load project configuration with the two-level fallback chain.",
+      "is_pub": true,
+      "line": 75
+    },
+    {
+      "type": "fn_private",
+      "name": "tryLoadFile",
+      "match_hash": "0de89c8da404f3038eb34d0745b9fc9c90b3eea5de888d0306227d1741e37b18",
+      "signature": "fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Attempt to load and parse a config file.  Returns error on any failure so",
+      "is_pub": false,
+      "line": 109
+    },
+    {
+      "type": "fn_private",
+      "name": "buildDefault",
+      "match_hash": "da1283b255a7178eac8e62031745bba0c68bfbfce83c5c5c82991441ae0ab33a",
+      "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Constructs a default project configuration from an allocator and CWD input.",
+      "is_pub": false,
+      "line": 185
+    },
+    {
+      "type": "fn_private",
+      "name": "buildFromParts",
+      "match_hash": "6c1708ec9a6cea5e0f527d87ede44965504675ab306b97290a127bbd95244e6a",
+      "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8) -> ProjectConfig",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cwd", "type": "[]const u8" },
+        { "name": "guidance_dir_rel", "type": "[]const u8" },
+        { "name": "src_dirs", "type": "[]const []const u8" },
+        { "name": "model", "type": "[]const u8" },
+        { "name": "api_url", "type": "[]const u8" }
+      ],
+      "returns": "ProjectConfig",
+      "comment": "Constructs a project configuration from Zig source parts using allocator, paths, and model data.",
+      "is_pub": false,
+      "line": 198
+    }
+  ]
+}

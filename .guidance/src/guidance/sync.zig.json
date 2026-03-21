@@ -1,0 +1,262 @@
+{
+  "meta": {
+    "module": "src.guidance.sync",
+    "source": "src/guidance/sync.zig",
+    "language": "zig"
+  },
+  "comment": "Handles Zig file parsing, AST processing, and supports comment stripping and enhancement for documentation generation.",
+  "detail": "**SyncProcessor Module Documentation**\n\n## Overview\nThe SyncProcessor module is the core synchronization engine for a Zig guidance system that bridges source code analysis with AI-powered documentation generation. It processes Zig files by parsing their Abstract Syntax Tree (AST), extracting structural members, and coordinating with external services for comment enhancement and documentation generation.\n\n## Architecture\n\n### Core Components\n- **SyncProcessor**: Main orchestrator struct managing the entire processing lifecycle\n- **JSON Store Integration**: Persistent storage for guidance metadata using `json_store.JsonStore`\n- **AST Parser**: Leverages `ast_parser.AstParser` for Zig source code analysis\n- **AI Enhancers**: Optional LLM-based services for automatic comment generation and documentation\n\n### Memory Management Pattern\nThe module employs explicit resource management:\n- Uses `std.mem.Allocator` passed through the constructor\n- Employs `defer` statements for guaranteed cleanup of AST nodes, comments, and temporary buffers\n- Properly deallocates enhancer instances in `deinit()` to prevent memory leaks\n\n## Public API\n\n### Constructor\n```zig\npub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor\n```\nInitializes the processor with required paths and operational flags. The `dry_run` flag enables testing without side effects; `debug` controls verbose logging.\n\n### File Processing\n```zig\npub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult\n```\nThe primary entry point that:\n1. Opens and reads the Zig source file (up to 10MB)\n2. Initializes an AST parser with error handling\n3. Extracts structural members from the parsed tree\n4. Handles signature hash comparison for change detection\n5. Preserves or updates comments based on code modifications\n\n### Lifecycle Management\n```zig\npub fn deinit(self: *SyncProcessor) void\n```\nCleans up all allocated resources including optional enhancer instances.\n\n## Key Abstractions and Relationships\n\n| Component | Responsibility | Dependencies |\n|-----------|----------------|--------------|\n| SyncProcessor | Orchestrates file processing workflow | types, ast_parser, json_store, hash, enhancer_mod |\n| JSON Store | Persists guidance metadata | std.json |\n| AST Parser | Parses Zig source to member structures | std.mem, std.fs |\n| Enhancer | AI-powered comment infilling and enhancement | common.llm |\n\n### Data Flow\n```\nZig Source File → Open & Read → AST Parser → Extract Members → \nHash Comparison → Comment Handling → JSON Store Update → SyncResult Output\n```\n\n## Implementation Details\n\n### Signature Hash Tracking\nThe module uses hash-based signature comparison to determine whether code has changed. When signatures match, existing JSON comments are preserved; when they differ, source comments are used if available, otherwise marked as stale.\n\n### Comment Preservation Strategy\n- **Source doc comments** (`///`) are captured during parsing and stored in JSON\n- **AST comments** are not stripped at parse time to maintain fidelity\n- **Nested member comments** are recursively processed for comprehensive coverage\n\n### Error Handling\nRobust error handling covers:\n- File I/O operations (FileNotFound, ReadError)\n- AST parsing failures (ParseError)\n- Memory allocation failures through proper defer cleanup\n\n### Configuration Options\n- `regen_comments`: LLM-based comment regeneration with user selection\n- `regen_structure`: Creates guidance JSON for files lacking it\n- `dry_run`: Non-destructive mode for testing\n- `debug`: Enables verbose diagnostic output\n\n## Design Patterns\n\n1. **Command Pattern**: `processFile()` encapsulates the entire processing sequence as a single operation\n2. **Optional Dependencies**: Enhancers are optional, allowing graceful degradation when AI services unavailable\n3. **Builder Pattern**: The `init()` method constructs a fully configured instance with all required fields\n4. **Resource Acquisition Is Release** (RAII): Uses Zig's defer for guaranteed resource cleanup\n\n## Usage Patterns\n\n```zig\nconst processor = SyncProcessor.init(allocator, \"/project\", \"/output\", false, true);\ndefer processor.deinit();\n\nvar result = try processor.processFile(\"/path/to/file.zig\", 30);\n// Process result based on sync status and comments\n```\n\nThe module is designed for integration into larger guidance systems where it serves as the bridge between raw Zig source code and AI-enhanced documentation infrastructure.",
+  "keywords": ["SyncProcessor", "guidance system", "AST parsing", "Zig documentation", "comment enhancement", "LLM integration", "signature hashing", "JSON metadata", "dry-run mode", "module synchronization"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "SyncProcessor",
+      "match_hash": "2c2ddd807d37ed2e10296a70d45787f30fa4770828eb6cbfaaca832fc5b37583",
+      "signature": "keyword_struct SyncProcessor { ... }",
+      "comment": "Manages synchronization state with allocator, file processing, and member management; owns resources and ensures safe lifecycle.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "3ad1c77f63e42fd1d5609880c8e7a0683a178c20db36d86c3a076ef2d6d13088",
+          "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) -> SyncProcessor",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "project_root", "type": "[]const u8" },
+            { "name": "output_dir", "type": "[]const u8" },
+            { "name": "dry_run", "type": "bool" },
+            { "name": "debug", "type": "bool" }
+          ],
+          "returns": "SyncProcessor",
+          "is_pub": true,
+          "line": 29
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "720f21f21df52aee243bddbe27264b925b810d98219cfb91130477730625c7d2",
+          "signature": "fn deinit(self: *SyncProcessor) -> void",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 40
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "stripComments",
+          "match_hash": "f0bf87b2eac05a16f5ecaec6ef8a2fb09ff30fd6873bea1bf823587051ea65da",
+          "signature": "fn stripComments(self: *SyncProcessor, members: []types.Member) -> void",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "members", "type": "[]types.Member" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 45
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "processFile",
+          "match_hash": "aefe1f5b97c7d901a05eada6986c41ab6b538a8a51341cd90ea44a99c30eb292",
+          "signature": "fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) -> types.SyncResult",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "filepath", "type": "[]const u8" },
+            { "name": "timeout_seconds", "type": "u64" }
+          ],
+          "returns": "types.SyncResult",
+          "is_pub": true,
+          "line": 63
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "processDirectory",
+          "match_hash": "8867eb7f7faf90bb7a5760b802e87134bb1584d416ebdc64e2c15cb9a08b25a6",
+          "signature": "fn processDirectory(self: *SyncProcessor, dir_path: []const u8, timeout_seconds: u64) -> usize",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "dir_path", "type": "[]const u8" },
+            { "name": "timeout_seconds", "type": "u64" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 416
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "relPath",
+          "match_hash": "98ba1e4cd511dedb236dbdd727e670f53a2547006564d56dd091443ea2851302",
+          "signature": "fn relPath(abs: []const u8, root: []const u8) -> []const u8",
+          "params": [
+            { "name": "abs", "type": "[]const u8" },
+            { "name": "root", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 453
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "pathToModule",
+          "match_hash": "c689473d5418cbceb32d4a38d59c9a8d516ce6e693a5348a0b5f5a6c1dc08e5d",
+          "signature": "fn pathToModule(self: *SyncProcessor, rel_path: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "rel_path", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 457
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "buildModuleCommentFallback",
+          "match_hash": "d69bb57e07a6b4614878cc68c87cae5de8e58e1f889a634d36f6eeb705f0c8c1",
+          "signature": "fn buildModuleCommentFallback(self: *SyncProcessor, rel_path: []const u8, members: []const types.Member) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "rel_path", "type": "[]const u8" },
+            { "name": "members", "type": "[]const types.Member" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Build auto-generated module comment: \"module_name: N structs, M functions (name1, name2, ...)\"",
+          "is_pub": false,
+          "line": 479
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "hasGofPatterns",
+          "match_hash": "24294e0e1269a3395b90cf65eff1a9c7cea426758b33456c9b9838b2e1c10512",
+          "signature": "fn hasGofPatterns(members: []const types.Member) -> bool",
+          "params": [
+            { "name": "members", "type": "[]const types.Member" }
+          ],
+          "returns": "bool",
+          "comment": "Returns true when any member (or nested member) has at least one GoF pattern.",
+          "is_pub": false,
+          "line": 531
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "hasDomainPatterns",
+          "match_hash": "4e3397856a33418fa426c8024f9664501684fdf438ee3b7837fc4b609d4b64b8",
+          "signature": "fn hasDomainPatterns(members: []const types.Member) -> bool",
+          "params": [
+            { "name": "members", "type": "[]const types.Member" }
+          ],
+          "returns": "bool",
+          "is_pub": false,
+          "line": 541
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "buildSkills",
+          "match_hash": "0af0783715e7370bc6239f1b39ad444acd36de090043dbacf00f4331d018bc49",
+          "signature": "fn buildSkills(self: *SyncProcessor, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) -> []const types.Skill",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "existing_doc", "type": "?types.GuidanceDoc" },
+            { "name": "has_gof", "type": "bool" },
+            { "name": "has_domain", "type": "bool" }
+          ],
+          "returns": "[]const types.Skill",
+          "comment": "Build the skills slice: add domain-patterns only when domain patterns are detected;",
+          "is_pub": false,
+          "line": 554
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "buildCommentWithSkills",
+          "match_hash": "5a2c870423b86dca4fef3802ded11dc5854a62614607689b7b620e91e8025924",
+          "signature": "fn buildCommentWithSkills(self: *SyncProcessor, comment: ?[]const u8, skills: []const types.Skill) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "comment", "type": "?[]const u8" },
+            { "name": "skills", "type": "[]const types.Skill" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Prepend a `[skill1, skill2] ` prefix to the module comment using the",
+          "is_pub": false,
+          "line": 612
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "mergeTags",
+          "match_hash": "4a9778132994297e70485c8566c5a75545e7462e86fa75ea0974cbf95c4783fa",
+          "signature": "fn mergeTags(self: *SyncProcessor, existing: []const []const u8, new_tags: []const []const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "existing", "type": "[]const []const u8" },
+            { "name": "new_tags", "type": "[]const []const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Merge new tags from the LLM into the existing tag slice, deduplicating.",
+          "is_pub": false,
+          "line": 657
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "infillOneFile",
+          "match_hash": "25e220e4ff73affb7e166971f518b7cf358ddc417a6f2f308b524ac718b77599",
+          "signature": "fn infillOneFile(self: *SyncProcessor, json_path: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "json_path", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "comment": "Core infill logic for a single guidance JSON file (absolute path).",
+          "is_pub": false,
+          "line": 691
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "infillJsonFile",
+          "match_hash": "902fd3be826d9d57776990bb31474e787ca8538e957cbe0a2b1fa540fd47507c",
+          "signature": "fn infillJsonFile(self: *SyncProcessor, json_path: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "json_path", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "comment": "Infill a single guidance JSON file by absolute path.  Suitable for",
+          "is_pub": true,
+          "line": 820
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "infillAllJson",
+          "match_hash": "cc2b3ef26c1cfff79be1e2babe34ee05e968c33a08cefa1a78b448de1a25dc88",
+          "signature": "fn infillAllJson(self: *SyncProcessor, guidance_dir: []const u8, skip_paths: *const std.StringHashMapUnmanaged(void)) -> usize",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "guidance_dir", "type": "[]const u8" },
+            { "name": "skip_paths", "type": "*const std.StringHashMapUnmanaged(void)" }
+          ],
+          "returns": "usize",
+          "comment": "Walk guidance_dir for all *.json files (excluding those in `skip_paths`)",
+          "is_pub": true,
+          "line": 831
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "findReverseDeps",
+          "match_hash": "838fd3c3ac5d058137b1310101287255b23388c5bc4e6b39c700265eeabcc8ac",
+          "signature": "fn findReverseDeps(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "rel_path", "type": "[]const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Scan src/ directory for Zig files that @import the given module.",
+          "is_pub": false,
+          "line": 865
+        }
+      ],
+      "line": 9
+    }
+  ]
+}

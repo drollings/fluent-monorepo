@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "module": "src.guidance.plugin_registry",
+    "source": "src/guidance/plugin_registry.zig",
+    "language": "zig"
+  },
+  "comment": " PluginRegistry — maps file extensions to LanguagePlugin descriptors.\n\n The registry is populated at startup with built-in plugins.  External\n providers (Python, Rust, …) can be registered at runtime via the config.\n\n Usage:\n   var reg = PluginRegistry.init(allocator);\n   defer reg.deinit();\n   if (reg.getForExtension(\".zig\")) |p| { ... }",
+  "detail": "# PluginRegistry Module Documentation\n\n## Overview and Architecture\n\nThe PluginRegistry module serves as a central dispatch mechanism for an AI coding assistant's multi-language support system. It maps file extensions to language-specific plugin descriptors, enabling efficient identification of how to handle various programming languages when processing source code files.\n\n### System Design\n\nThe registry follows a **plugin architecture** where each language is represented by a `LanguagePlugin` descriptor containing metadata and capabilities. This design decouples the core engine from specific language implementations, allowing:\n\n- **Built-in plugins** (Zig, Markdown) to be registered at startup\n- **External providers** (Python, Rust, etc.) to register plugins at runtime via configuration\n- **Hot-swappable** plugin system where new languages can be added without recompiling the core\n\n### Data Flow\n\n```\nFile Path → Extension Extraction → Registry Lookup → Plugin Descriptor\n           ↓                          ↓\n    (std.fs.path)              (O(1) HashMap)\n```\n\n## Key Abstractions\n\n### LanguagePlugin Descriptor\nImported from `plugin.zig`, this interface represents a single language's capabilities:\n- **name**: Human-readable identifier (e.g., \"zig\")\n- **extensions**: Array of file extensions supported\n- Additional fields likely include syntax highlighting rules, linter configurations, and AI-specific processing instructions\n\n### PluginRegistry Structure\nThe registry combines two critical components:\n1. **StringHashMapUnmanaged** - Fast O(1) lookup from extension to plugin pointer\n2. **ArrayList(LanguagePlugin)** - Owned storage preventing dangling pointers during registration\n\nThis hybrid approach optimizes for both performance (fast lookups) and memory safety (owned data).\n\n## Public API Reference\n\n### Initialization and Lifecycle\n\n```zig\nvar reg = PluginRegistry.init(allocator);\ndefer reg.deinit();\n```\n\n- **`init(allocator)`**: Creates registry and auto-registers built-in plugins. Ignores OOM errors for graceful startup.\n- **`deinit()`**: Frees all allocated resources. Must be called on exit.\n\n### Plugin Registration\n\n```zig\nreg.register(allocator, plugin_descriptor);\n```\n\n**Behavior**:\n- Appends plugin to owned storage\n- Maps each extension from the plugin's extension list to the stored descriptor\n- **Overwrites** existing registrations for duplicate extensions\n\n### Lookup Operations\n\n| Function | Parameters | Returns | Notes |\n|----------|------------|---------|-------|\n| `getForExtension()` | Extension string (with dot) | `?*const LanguagePlugin` | Direct O(1) lookup |\n| `getForPath()` | Full file path | `?*const LanguagePlugin` | Auto-extracts extension, returns null if no extension found |\n\n### Utility Functions\n\n```zig\nvar names = reg.registeredLanguages(allocator);\n```\n\nReturns a sorted, deduplicated list of registered language names. Useful for:\n- Displaying available languages to users\n- Feature discovery in AI responses\n- Configuration validation\n\n## Usage Patterns\n\n### Pattern 1: File-Type Detection\n```zig\nconst path = \"src/main.zig\";\nif (reg.getForPath(path)) |plugin| {\n    // Execute language-specific logic\n    process_with_plugin(plugin);\n} else {\n    handle_unknown_extension();\n}\n```\n\n### Pattern 2: Language Discovery\n```zig\nvar names = try reg.registeredLanguages(allocator);\nfor (names) |name| {\n    log.info(\"Supporting {s}\", .{name});\n}\n```\n\n### Pattern 3: Runtime Plugin Addition\n```zig\n// From external provider\nconst new_plugin = create_python_plugin();\nreg.register(allocator, new_plugin);\n\n// Now .py files are handled automatically\n```\n\n## Implementation Details\n\n### Memory Management Strategy\n\nThe registry employs a **hybrid ownership model**:\n- **Owned storage** (`ArrayList`) holds actual `LanguagePlugin` instances\n- **Reference map** stores pointers to owned data\n- This prevents dangling pointer issues when plugins are re-registered with different descriptors\n\n### Performance Considerations\n\n1. **Unmanaged HashMap**: Uses `std.StringHashMapUnmanaged` for zero-allocation lookups during runtime (except initial allocation)\n2. **Single-pass registration**: Each plugin is mapped once per extension in O(n) where n = extensions count\n3. **Deduplication**: `registeredLanguages()` uses a secondary hash map to avoid duplicates\n\n### Error Handling\n\n- **OOM during init**: Gracefully continues without built-in plugins (fails open)\n- **Duplicate registration**: Silently overwrites previous plugin for same extension\n- **No extension in path**: Returns null rather than crashing\n\n## Design Patterns Employed\n\n1. **Registry Pattern**: Centralizes plugin discovery and lookup\n2. **Plugin/Extension Architecture**: Decouples core from language-specific logic\n3. **Service Locator**: Provides plugins on-demand without tight coupling\n4. **Factory Pattern**: Built-in plugins are created via factory functions (`zig_plugin.plugin()`)\n\n## File Structure Dependencies\n\n```\nsrc/\n├── guidance/\n│   └── plugin_registry.zig  ← This module\n├── plugins/\n│   ├── zig_plugin.zig       ← Zig language support\n│   └── markdown_plugin.zig  ← Markdown syntax highlighting\n└── plugin.zig               ← LanguagePlugin interface definition\n```\n\n## Testing Coverage\n\nThe module includes two critical tests:\n1. **Init verification**: Confirms built-in plugins register correctly\n2. **Path resolution**: Validates extension extraction from nested file paths",
+  "keywords": ["PluginRegistry", "getForExtension", "getForPath", "LanguagePlugin", "plugin registry", "extension mapping", "file type detection", "AI coding assistant", "plugin architecture", "service locator pattern"],
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "PluginRegistry",
+      "match_hash": "01beada2d510f1522a16d3e8be911980e70f55ac88e3b760c75f57f760e0d462",
+      "signature": "keyword_struct PluginRegistry { ... }",
+      "comment": "Manages plugin registrations and extensions; owns allocator, tracks registered plugins.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "4cf7ef047edd8c359228c38b52c1f94c509665d7e1cc3508be970d1f9e73bb3f",
+          "signature": "fn init(allocator: std.mem.Allocator) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "Self",
+          "comment": "Initialise the registry and register all built-in plugins.",
+          "is_pub": true,
+          "line": 29
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 41
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "register",
+          "match_hash": "d78862e92de5d2d10c9b946f3868181da086379cba68a6853c4791dec486e094",
+          "signature": "fn register(self: *Self, allocator: std.mem.Allocator, p: LanguagePlugin) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "p", "type": "LanguagePlugin" }
+          ],
+          "returns": "void",
+          "comment": "Register a plugin.  Overwrites any existing registration for the same",
+          "is_pub": true,
+          "line": 48
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getForExtension",
+          "match_hash": "271c7cd9421f09de72cda3dcf7b55be13f60f8cf4c40f14f474f9624d3ee0b80",
+          "signature": "fn getForExtension(self: *const Self, ext: []const u8) -> ?*const LanguagePlugin",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "ext", "type": "[]const u8" }
+          ],
+          "returns": "?*const LanguagePlugin",
+          "comment": "Look up a plugin by file extension (including the leading dot).",
+          "is_pub": true,
+          "line": 58
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getForPath",
+          "match_hash": "872b2971025031c58dcaa143cd89024333fe3a3834890bf57ef6f1f0d9bcef6a",
+          "signature": "fn getForPath(self: *const Self, path: []const u8) -> ?*const LanguagePlugin",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "?*const LanguagePlugin",
+          "comment": "Look up a plugin by source file path (extracts the extension automatically).",
+          "is_pub": true,
+          "line": 63
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "registeredLanguages",
+          "match_hash": "8b375d9555bbd0dc3d8cca6fe7a2007954d9afce3dcd0e96005e41809bf8294e",
+          "signature": "fn registeredLanguages(self: *const Self, allocator: std.mem.Allocator) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Return the names of all registered languages.",
+          "is_pub": true,
+          "line": 71
+        }
+      ],
+      "line": 18
+    },
+    {
+      "type": "test_decl",
+      "name": "PluginRegistry init registers Zig plugin",
+      "is_pub": false,
+      "line": 90
+    },
+    {
+      "type": "test_decl",
+      "name": "PluginRegistry getForPath",
+      "is_pub": false,
+      "line": 99
+    },
+    {
+      "type": "test_decl",
+      "name": "PluginRegistry registeredLanguages",
+      "is_pub": false,
+      "line": 117
+    },
+    {
+      "type": "test_decl",
+      "name": "PluginRegistry register custom plugin",
+      "is_pub": false,
+      "line": 132
+    }
+  ]
+}

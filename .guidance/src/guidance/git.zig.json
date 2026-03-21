@@ -1,0 +1,115 @@
+{
+  "meta": {
+    "module": "src.guidance.git",
+    "source": "src/guidance/git.zig",
+    "language": "zig"
+  },
+  "comment": "Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.",
+  "detail": "# Gitignore Filter Module Documentation\n\n## Module Purpose and Architecture\n\nThe `src/guidance/git.zig` module provides intelligent file filtering for AI coding assistants working with Zig projects. It implements a Gitignore-compatible pattern matching system that helps determine which files should be excluded from analysis, improving performance by avoiding unnecessary file parsing and enabling focused code understanding.\n\n### Architectural Components\n\n**GitignoreFilter Struct**: The central abstraction managing the complete gitignore lifecycle:\n- **Pattern Storage**: Maintains two arrays—positive patterns (files to ignore) and negation patterns (exceptions to ignore rules)\n- **Project Context**: Stores the project root path for relative path resolution\n- **Always Exclude List**: Pre-configured exclusions for Zig-specific artifacts (`.git`, `.zig-cache`, `zig-out`)\n\n**Memory Model**: The module follows strict memory ownership semantics:\n- Uses `std.mem.Allocator` for all dynamic allocations\n- Provides explicit `deinit()` for cleanup\n- Employs `errdefer` blocks to ensure resource safety on errors\n- Frees previously loaded patterns before replacement (prevents memory leaks)\n\n## Key Abstractions and Relationships\n\n```\nGitignoreFilter\n├── patterns: [][]const u8 (positive ignore rules)\n├── negations: [][]const u8 (exception rules)\n├── project_root: []const u8 (base path for relative resolution)\n└── always_exclude: []const []const u8 (hardcoded Zig exclusions)\n\nHelper Functions\n├── matchesPattern() — Core pattern matching logic\n│   └── Supports double-star (**), prefix/suffix matching, glob patterns\n└── globMatch() — Delegates to LLM library for complex globbing\n```\n\n## Public API and Usage Patterns\n\n### Initialization\n```zig\nvar filter = GitignoreFilter.init(allocator, project_root);\ndefer filter.deinit();  // Ensures cleanup\nfilter.loadFromFile(\"path/to/.gitignore\");\nconst ignored = filter.shouldIgnore(\"/src/main.zig\");\n```\n\n### Method Breakdown\n\n| Method | Purpose | Key Behavior |\n|--------|---------|--------------|\n| `init(allocator, project_root)` | Factory constructor | Pre-populates always_exclude list with Zig artifacts |\n| `deinit(self)` | Resource cleanup | Frees all allocated patterns and slices |\n| `loadFromFile(path)` | Pattern loading | Parses .gitignore, handles comments/whitespace, supports negations |\n| `shouldIgnore(filepath)` | Query method | Returns true if file matches any active pattern |\n\n### Usage Patterns\n\n**Pattern 1: Complete Lifecycle Management**\n```zig\nconst filter = GitignoreFilter.init(allocator, project_root);\ndefer filter.deinit(); // RAII-style cleanup\nfilter.loadFromFile(\".gitignore\");\n// Use filter throughout program lifetime\n```\n\n**Pattern 2: Batch File Filtering**\n```zig\nvar ignored_files: std.ArrayList([]const u8) = .{};\nfor (files) |f| {\n    if (filter.shouldIgnore(f)) {\n        try ignored_files.append(allocator, f);\n    }\n}\n```\n\n## Important Implementation Details\n\n### Pattern Matching Hierarchy\n1. **Always Exclude Check**: First filters hardcoded Zig artifacts\n2. **Positive Patterns**: Matches against loaded ignore patterns\n3. **Negation Override**: If matched, checks if any negation pattern applies (reverts to ignored=false)\n\n### Path Resolution Logic\n- `shouldIgnore()` calls `stripPathPrefix()` to convert absolute paths to relative paths\n- Relative paths are then compared against stored patterns\n- This enables portable filtering regardless of working directory\n\n### Pattern Type Support\n| Pattern Type | Example | Behavior |\n|--------------|---------|----------|\n| Double-star | `**/build/*.o` | Prefix/suffix matching with wildcard |\n| Absolute path | `/src/main.zig` | Glob matching from root |\n| Relative pattern | `*.zig-cache/*` | Matches anywhere in path |\n\n### Performance Considerations\n- **O(n) Pattern Matching**: Linear scan through patterns for each file\n- **Early Exit**: Breaks on first match (positive or negation)\n- **Memory Efficient**: Reuses allocator; pre-allocates always_exclude as static slice\n\n## Design Patterns Used\n\n1. **Resource Acquisition Is Initialization (RAII)**: The `init()` function creates a fully functional object with proper cleanup via `deinit()`, preventing resource leaks.\n\n2. **Strategy Pattern**: The pattern matching delegates to `globMatch()` from the LLM library for complex cases while handling simple patterns internally.\n\n3. **Filter Chain**: Multiple filtering stages (always_exclude → positive patterns → negations) progressively refine results.\n\n4. **Command/History Pattern**: Negation patterns act as \"undo\" commands, reverting previous ignore decisions.\n\n5. **Immutable State After Load**: Once `loadFromFile()` completes, the filter state remains stable—no mutation during queries ensures thread safety for read operations.",
+  "keywords": ["GitignoreFilter", "matchesPattern", "globMatch", "double-star patterns", "Zig project analysis", "file filtering", "AI coding assistant", "pattern matching", "negation patterns", "always_exclude"],
+  "used_by": ["src/guidance/structure.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "GitignoreFilter",
+      "match_hash": "3f778e8b387496fc61e8ceb7d9463c23e7fe55c7e78edeb331f9f76549eb76fe",
+      "signature": "keyword_struct GitignoreFilter { ... }",
+      "comment": "Manages Gitignore filtering logic, owns allocator and project root; ensures consistent state across initialization and cleanup.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "7a06ba318d5cd6b58c669dc6e817f85e8105ae069eacedef2c6451ad8c52d4fb",
+          "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8) -> GitignoreFilter",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "project_root", "type": "[]const u8" }
+          ],
+          "returns": "GitignoreFilter",
+          "is_pub": true,
+          "line": 11
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "1dd3aad6851a3bf0c7461b9f146cb510363dabf576fa1725db1ea98ad5e7d824",
+          "signature": "fn deinit(self: *GitignoreFilter) -> void",
+          "params": [
+            { "name": "self", "type": "*GitignoreFilter" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 21
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "loadFromFile",
+          "match_hash": "d1397fa7827e7bf18191f2433f4f286f377e77464c471b6dea80eb412d01ca0d",
+          "signature": "fn loadFromFile(self: *GitignoreFilter, path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*GitignoreFilter" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 28
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "shouldIgnore",
+          "match_hash": "7bd802b1e54e6695d73ccbf4c5149c660a7c9a163e824a7c2ffa53189892aa57",
+          "signature": "fn shouldIgnore(self: *const GitignoreFilter, filepath: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const GitignoreFilter" },
+            { "name": "filepath", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 63
+        }
+      ],
+      "line": 4
+    },
+    {
+      "type": "fn_private",
+      "name": "matchesPattern",
+      "match_hash": "a398612ec373e870eb66cb7f4e8d47fe34d93561b2446032c7bea089a1b5d760",
+      "signature": "fn matchesPattern(path: []const u8, pattern: []const u8) -> bool",
+      "params": [
+        { "name": "path", "type": "[]const u8" },
+        { "name": "pattern", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given byte pattern matches a path, returning true or false.",
+      "is_pub": false,
+      "line": 93
+    },
+    {
+      "type": "fn_private",
+      "name": "globMatch",
+      "match_hash": "9e43152a1ee2b4998f5519842f05c16e83f0712f52f66e3bf0c872d58ec717b4",
+      "signature": "fn globMatch(text: []const u8, pattern: []const u8) -> bool",
+      "params": [
+        { "name": "text", "type": "[]const u8" },
+        { "name": "pattern", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a pattern exists within a given text slice, returning true or false.",
+      "is_pub": false,
+      "line": 121
+    },
+    {
+      "type": "test_decl",
+      "name": "globMatch basic patterns",
+      "is_pub": false,
+      "line": 151
+    },
+    {
+      "type": "test_decl",
+      "name": "GitignoreFilter always excludes .git",
+      "is_pub": false,
+      "line": 159
+    }
+  ]
+}

@@ -1,0 +1,184 @@
+{
+  "meta": {
+    "module": "src.common.cli",
+    "source": "src/common/cli.zig",
+    "language": "zig"
+  },
+  "comment": "Defines CLI command structure, registration, and error handling for a Zig-based tool.",
+  "detail": "# src/common/cli.zig — CLI Framework Module\n\n## Overview and Architecture\n\nThis module provides a comprehensive command-line interface framework for building robust Zig applications. It implements a registry-based command system that allows modular addition of subcommands while maintaining centralized management of application lifecycle, argument parsing, and help generation.\n\nThe architecture follows a layered design:\n- **Core Layer**: `CommandRegistry` manages command storage and lookup using allocator-aware hash maps\n- **Application Layer**: `App` struct encapsulates the entire CLI application with global state\n- **Integration Layer**: Connects with `args.zig` for common argument parsing\n\n## Key Abstractions\n\n**CommonArgs**: Re-exported from args.zig, represents shared command-line options recognized across all commands. Includes flags for help, version, verbosity, debug mode, dry-run, force execution, and other global settings.\n\n**CliError**: A dedicated error set capturing CLI-specific failure modes: `UnknownCommand`, `MissingArgument`, `InvalidArgument`, and `OutOfMemory`. This provides semantic clarity over generic errors.\n\n**Command**: The fundamental command unit containing metadata (name, description, usage examples) and a handler function signature `*const fn (*std.process.ArgIterator, std.mem.Allocator) CliError!?i32`. The handler receives raw argument iteration and allocation context, returning an exit code or error.\n\n**CommandRegistry**: A typed registry implementing the plugin pattern. It maintains an unmanaged string hash map keyed by command name, with full lifecycle management through `init`/`deinit` pairs. The `names()` method returns sorted command names for organized help output.\n\n**App**: The application container struct that binds together the registry, common arguments, and metadata (name, description, version). It provides convenience methods for command registration and help generation.\n\n## Public API and Usage Patterns\n\nThe module exposes three primary structures through its public API:\n\n```zig\nconst app = App.init(allocator, \"myapp\", \"My Application\", \"1.0.0\");\ntry app.registerCommand(.{\n    .name = \"serve\",\n    .description = \"Start the server\",\n    .handler = myServeHandler,\n});\n```\n\nThe `parseCommonArgs` function accepts positional arguments, returns populated global args and any remaining positional arguments for command-specific parsing. This enables hierarchical argument processing where common flags are consumed first, then command-specific arguments.\n\n## Implementation Details\n\n**Memory Safety**: The registry uses unmanaged collections (`StringHashMapUnmanaged`, `ArrayListUnmanaged`) that require explicit allocator management. The `init`/`deinit` lifecycle ensures proper cleanup through the allocator passed during construction.\n\n**Error Handling**: The handler function returns `CliError!?i32` - a nullable integer representing either an exit code (on success) or error (on failure). This pattern integrates cleanly with Zig's error propagation model.\n\n**Help Generation**: The `printHelp` method dynamically discovers registered commands and formats them for display. It uses `std.mem.sort` with a custom comparator to ensure consistent alphabetical ordering across runs.\n\n## Design Patterns\n\n1. **Registry Pattern**: Commands are registered by name and looked up during execution, enabling plugin-like extensibility\n2. **Builder Pattern**: `App.init` constructs the application state in a single method call\n3. **Lifecycle Management**: Pairs of `init`/`deinit` methods ensure resources are properly allocated and freed\n4. **Error Union**: Dedicated error set provides semantic clarity over generic error codes",
+  "keywords": ["CommandRegistry", "Command", "App", "registerCommand", "parseCommonArgs", "CliError", "CLI framework", "command registration", "allocator management", "help generation"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Command",
+      "match_hash": "776647c3f6074d99e3e546d1338dfc717ac16ae4f5bc87d225568f08eebbdfa5",
+      "signature": "keyword_struct Command { ... }",
+      "comment": "Manages command execution logic, owns CLI workflow; ensures consistent initialization and cleanup.",
+      "is_pub": true,
+      "line": 14
+    },
+    {
+      "type": "struct",
+      "name": "CommandRegistry",
+      "match_hash": "b5a00690333c0c6e0c0ea861ea923f882c3ffe38504c3e04cfe1e0281b7e33a9",
+      "signature": "keyword_struct CommandRegistry { ... }",
+      "comment": "Manages command registry with allocator, supports registration/retrieval; owns state, not thread-safe.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "316941a7602c8a038677485517c84a150808ab3c4b020cc543010d11b6eb2587",
+          "signature": "fn init(allocator: std.mem.Allocator) -> CommandRegistry",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "CommandRegistry",
+          "is_pub": true,
+          "line": 26
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "6caf07263e3203a5000470f7b7f143e0b3d807c2a3b1bab3d96b4b3f55780b03",
+          "signature": "fn deinit(self: *CommandRegistry) -> void",
+          "params": [
+            { "name": "self", "type": "*CommandRegistry" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 33
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "register",
+          "match_hash": "a7effecdfc2dbb8f0027aa09901efd9c54adfedab0b69f66e444ea9e8c48a731",
+          "signature": "fn register(self: *CommandRegistry, cmd: Command) -> void",
+          "params": [
+            { "name": "self", "type": "*CommandRegistry" },
+            { "name": "cmd", "type": "Command" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 37
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "2e6ef2893d7cceaff456099a68eea49156434943c69ea7f440a6a32d106ed596",
+          "signature": "fn get(self: *const CommandRegistry, name: []const u8) -> ?Command",
+          "params": [
+            { "name": "self", "type": "*const CommandRegistry" },
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "?Command",
+          "is_pub": true,
+          "line": 41
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "names",
+          "match_hash": "e64df58eca25c0a79e5821bddbdf15b800699c666991efc1c25b7fcba027c681",
+          "signature": "fn names(self: *const CommandRegistry, allocator: std.mem.Allocator) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*const CommandRegistry" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[][]const u8",
+          "is_pub": true,
+          "line": 45
+        }
+      ],
+      "line": 22
+    },
+    {
+      "type": "struct",
+      "name": "App",
+      "match_hash": "a8920214baab9e6804684f11177e8d8b11b9b4f89a2a3ae7cb24cc730cee8839",
+      "signature": "keyword_struct App { ... }",
+      "comment": "Represents a command-line application with init/deinit lifecycle and command registration; owns its state and manages allocations.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "4c9a133dba8418365b5354887a22d610b937869a9abf2e6ecadca1c23d798c34",
+          "signature": "fn init(allocator: std.mem.Allocator, name: []const u8, description: []const u8, version: []const u8) -> App",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "name", "type": "[]const u8" },
+            { "name": "description", "type": "[]const u8" },
+            { "name": "version", "type": "[]const u8" }
+          ],
+          "returns": "App",
+          "is_pub": true,
+          "line": 68
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "60d8fe3bd5efac6ef3d834179ec0c27e38389acceaefd60ddef0d082bd624392",
+          "signature": "fn deinit(self: *App) -> void",
+          "params": [
+            { "name": "self", "type": "*App" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 83
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "registerCommand",
+          "match_hash": "31266cee5d533c2c0732a4b2e4ce9bf2462d1cc744a1b0f1912b376f087d91ce",
+          "signature": "fn registerCommand(self: *App, cmd: Command) -> void",
+          "params": [
+            { "name": "self", "type": "*App" },
+            { "name": "cmd", "type": "Command" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 87
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "printHelp",
+          "match_hash": "f7359ddf58051574ee67783bcbe4616886d61c7eb4234f82504ce8b006f7e5f3",
+          "signature": "fn printHelp(self: *const App, writer: *std.Io.Writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const App" },
+            { "name": "writer", "type": "*std.Io.Writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 91
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "run",
+          "match_hash": "dc84fa4867a5ee3e3f86ecd5820dc30236e889e37f79858d68d02051d10bacf1",
+          "signature": "fn run(self: *App, argv: []const []const u8) -> i32",
+          "params": [
+            { "name": "self", "type": "*App" },
+            { "name": "argv", "type": "[]const []const u8" }
+          ],
+          "returns": "i32",
+          "is_pub": true,
+          "line": 113
+        }
+      ],
+      "line": 61
+    },
+    {
+      "type": "test_decl",
+      "name": "CommandRegistry: register and get",
+      "is_pub": false,
+      "line": 178
+    },
+    {
+      "type": "test_decl",
+      "name": "CommandRegistry: names returns sorted list",
+      "is_pub": false,
+      "line": 194
+    }
+  ]
+}

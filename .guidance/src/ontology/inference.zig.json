@@ -1,0 +1,141 @@
+{
+  "meta": {
+    "module": "src.ontology.inference",
+    "source": "src/ontology/inference.zig",
+    "language": "zig"
+  },
+  "comment": "Defines inference engine stub for RDFS/OWL, handling transitive rules and materialization stubs.",
+  "detail": "## Module Purpose and Architecture\n\nThe `inference.zig` module provides a foundational interface for an ontology-based inference engine designed to support RDFS (RDF Schema) and OWL (Web Ontology Language) reasoning capabilities. Currently implemented as a stub, it establishes the architectural patterns and data structures necessary for future full implementation of semantic inference operations.\n\nThe architecture follows a clean separation of concerns:\n- **Rule Definition Layer**: Abstracts different types of inference rules through the `RuleType` enum\n- **Engine Core Layer**: Manages rule storage and execution via `InferenceEngine`\n- **I/O Integration Layer**: Interfaces with RDF parsing (`parser.zig`) and database persistence (CozoDB)\n\nThe module is designed to be extended with forward-chaining inference algorithms that process triples through defined rules to derive new knowledge.\n\n## Key Abstractions and Relationships\n\n### RuleType Enum\nDefines four categories of RDFS/OWL inference rules:\n- `subclass_transitivity`: If A ⊆ B and B ⊆ C, then A ⊆ C\n- `subproperty_transitivity`: Similar transitive reasoning for properties\n- `domain_range`: Infers type constraints from relationship domains and ranges\n- `inverse_of`: Handles bidirectional edges through owl:inverseOf predicates\n\n### InferenceRule Struct\nRepresents a single rule configuration with:\n- `rule_type`: Categorizes the inference operation\n- `trigger_predicate`: The specific RDF predicate that activates the rule (e.g., \"rdfs:subClassOf\")\n\n### InferenceEngine Struct\nThe central orchestration component managing:\n- Memory allocation via `std.mem.Allocator`\n- Dynamic rule collection through `std.ArrayList(InferenceRule)`\n- Triple processing pipeline for inference operations\n\n## Public API and Usage Patterns\n\n```zig\nvar engine = InferenceEngine.init(allocator);\ndefer engine.deinit();\n\n// Configure rules\ntry engine.addRule(.{\n    .rule_type = .subclass_transitivity,\n    .trigger_predicate = \"http://www.w3.org/2000/01/rdf-schema#subClassOf\",\n});\n\n// Execute inference\nconst inferred = try engine.infer(inputTriples);\n\n// Persist results\ntry engine.materialize();\n```\n\n## Important Implementation Details\n\n- **Memory Management**: Uses Zig's allocator pattern with explicit `init()` and `deinit()` lifecycle methods\n- **Current Behavior**: Both `infer()` and `materialize()` are stubs returning empty/no-op respectively\n- **Rule Storage**: Rules are stored in a dynamically growing ArrayList, allowing runtime configuration\n- **Type Safety**: Strongly-typed enum ensures only valid rule types can be instantiated\n\n## Design Patterns\n\n1. **Factory Pattern**: `init()` function creates properly initialized engine instances\n2. **Resource Management**: Explicit deinitialization prevents memory leaks through defer patterns\n3. **Configuration Builder**: Sequential `addRule()` calls build custom inference pipelines\n4. **Stub/Placeholder Pattern**: Provides interface stability while deferring complex implementation\n\nThe module is architected for extensibility, with clear interfaces that can be implemented once the core RDFS/OWL algorithms are developed.",
+  "keywords": ["InferenceEngine", "RuleType", "RDFS", "OWL", "ontology inference", "forward-chaining", "triple processing", "semantic reasoning", "CozoDB", "stub implementation"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "RuleType",
+      "match_hash": "e0580ff100d9e3bde1c80fef63b8d1aa23fa8ad281e7f73abd06cd2e49b2b9b6",
+      "signature": "keyword_enum RuleType { ... }",
+      "comment": "Defines inference rules with plain English semantics, manages ownership, ensures invariants; key model is rule-based inference.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "subclass_transitivity",
+          "is_pub": false,
+          "line": 16
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "subproperty_transitivity",
+          "is_pub": false,
+          "line": 17
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "domain_range",
+          "is_pub": false,
+          "line": 18
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "inverse_of",
+          "is_pub": false,
+          "line": 19
+        }
+      ],
+      "line": 15
+    },
+    {
+      "type": "struct",
+      "name": "InferenceEngine",
+      "match_hash": "e041047b304df9640feaa8b00589fd7a49d19ac589d4cdada71dd3588eace69a",
+      "signature": "keyword_struct InferenceEngine { ... }",
+      "comment": "Manages inference engine state with allocation, rule management, and triple processing; owns inference operations; requires proper allocation handling.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "41135966d67858e5c69315ab379b52e3fa0e9eb11e4427fb6c2bd9266cb8df37",
+          "signature": "fn init(allocator: std.mem.Allocator) -> InferenceEngine",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "InferenceEngine",
+          "is_pub": true,
+          "line": 32
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "6e01862860e17e50fbab022de1db04b8de55a29e6286329da51f2784bc207344",
+          "signature": "fn deinit(self: *InferenceEngine) -> void",
+          "params": [
+            { "name": "self", "type": "*InferenceEngine" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 39
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "addRule",
+          "match_hash": "28f5a4fed708ebc53fb288d662ecc8b2a0bfb6d066ac65f6b8659d24e3e89293",
+          "signature": "fn addRule(self: *InferenceEngine, rule: InferenceRule) -> void",
+          "params": [
+            { "name": "self", "type": "*InferenceEngine" },
+            { "name": "rule", "type": "InferenceRule" }
+          ],
+          "returns": "void",
+          "comment": "Add a rule for future use.",
+          "is_pub": true,
+          "line": 44
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "infer",
+          "match_hash": "f6525e04e637218042a9b1d04dedd87223d810fb35c4ec04f61c2e5b627ca2b9",
+          "signature": "fn infer(self: *InferenceEngine, triples: []const Triple) -> []Triple",
+          "params": [
+            { "name": "self", "type": "*InferenceEngine" },
+            { "name": "triples", "type": "[]const Triple" }
+          ],
+          "returns": "[]Triple",
+          "comment": "Return inferred triples from the given input.",
+          "is_pub": true,
+          "line": 51
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "materialize",
+          "match_hash": "403fda6f04287968c4f1f9e34872e735e6e65997605e7c97f0b3bd433e032ace",
+          "signature": "fn materialize(self: *InferenceEngine) -> void",
+          "params": [
+            { "name": "self", "type": "*InferenceEngine" }
+          ],
+          "returns": "void",
+          "comment": "Persist inferred edges to CozoDB.",
+          "is_pub": true,
+          "line": 59
+        }
+      ],
+      "line": 28
+    },
+    {
+      "type": "test_decl",
+      "name": "inference stub returns empty triples",
+      "is_pub": false,
+      "line": 70
+    },
+    {
+      "type": "test_decl",
+      "name": "inference stub materialize is no-op",
+      "is_pub": false,
+      "line": 77
+    },
+    {
+      "type": "test_decl",
+      "name": "inference rule addition",
+      "is_pub": false,
+      "line": 83
+    }
+  ]
+}

@@ -1,0 +1,1036 @@
+{
+  "meta": {
+    "module": "src.vector.lance_db",
+    "source": "src/vector/lance_db.zig",
+    "language": "zig"
+  },
+  "comment": " guidance LanceDB-style vector search database.\n\n Produces `.guidance.db` — a SQLite database with vector embeddings for\n semantic (cosine similarity) search, powering the `explain` subcommand.\n\n Public API:\n   pub fn syncDatabase(allocator, guidance_dir, db_path, embedder) !void\n   pub fn openDb(allocator, db_path, embedder) !GuidanceDb\n   pub fn loadSemanticAliases(allocator, path) !?SemanticAliases\n\n Schema (version 1):\n   schema_version   — single-row version table\n   ast_nodes        — relational table with metadata + embedding BLOB\n   embedding_cache  — content-hash → embedding blob (avoids redundant API calls)\n\n Search modes:\n   vectorSearch    — cosine similarity over stored embeddings (semantic)\n   keywordSearch   — SQL LIKE on name / comment / module / signature\n   search          — hybrid: vector + keyword, fused by weighted score",
+  "detail": "# Module Purpose and Architecture\n\nThis module implements a LanceDB-style vector search database system built on top of SQLite. It provides semantic search capabilities using cosine similarity over stored vector embeddings, designed specifically for powering AI coding assistant features like the `explain` subcommand. The architecture follows a hybrid search model that combines both vector-based semantic understanding and traditional keyword matching.\n\n## Key Abstractions and Relationships\n\nThe core data structures form a coherent search ecosystem:\n- **GuidanceDb**: The main database handle struct that manages SQLite connections, schema versioning, and search operations\n- **SemanticAliases**: A query expansion mechanism that maps keywords to related terms for more robust semantic understanding\n- **KeywordMatch** and **ModuleMatch**: Result types that bridge keyword search with module metadata\n- **ParsedMember** and **ParsedDoc**: JSON parsing utilities for extracting structured documentation from guidance files\n\nThese components work together through a layered architecture: the database layer handles persistence, the query expansion layer enriches search terms, and the result layers provide typed access to both vector similarity scores and keyword matches.\n\n## Public API and Usage Patterns\n\nThe module exposes three primary entry points:\n\n1. **`loadSemanticAliases(allocator, path)`**: Loads pre-computed semantic aliases from disk, enabling offline query expansion capabilities\n2. **`syncDatabase(allocator, guidance_dir, db_path, embedder, ...)`**: Initializes or updates the database with new embeddings and schema changes\n3. **`openDb(allocator, db_path, embedder)`**: Opens an existing database connection for search operations\n\nThe API follows Zig conventions with explicit allocator parameters throughout, ensuring memory safety in a resource-constrained environment. The hybrid search pattern allows users to query using either pure semantic similarity, traditional keyword matching, or a fused approach that weights both signals based on relevance thresholds.\n\n## Important Implementation Details\n\nSeveral architectural decisions shape the module's behavior:\n\n- **Schema Versioning**: Currently at version 2, with migration capabilities built into `syncDatabase`\n- **Embedding Cache**: Uses content-hash lookups to prevent redundant embedding API calls, improving performance for repeated queries\n- **SQLite Integration**: Leverages C interoperability for direct SQLite access with a 5000ms busy timeout to handle database contention gracefully\n- **Token Expansion**: Implements duplicate prevention during alias expansion using case-insensitive hashing\n\n## Design Patterns Used\n\nThe module employs several established patterns:\n- **Repository Pattern**: `GuidanceDb` encapsulates all data access logic\n- **Query Expansion**: Semantic aliases enhance search recall by connecting related terminology\n- **Hybrid Search**: Combines vector similarity with keyword matching for comprehensive results\n- **C Interop Pattern**: Direct SQLite bindings for performance-critical operations\n- **Cache-Aside**: Embedding cache reduces external API dependencies\n\nThe design prioritizes modularity, allowing the search functionality to be decoupled from the specific embedding provider while maintaining type safety through Zig's strong typing system.",
+  "keywords": ["SemanticAliases", "GuidanceDb", "syncDatabase", "loadSemanticAliases", "hybrid search", "vector embeddings", "SQLite", "cosine similarity", "query expansion", "LanceDB"],
+  "used_by": ["src/vector/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "SemanticAliases",
+      "match_hash": "5e4e3e49d934cfb5ab212ec33126948ec29e701ba256c5a3d061024bb6017240",
+      "signature": "keyword_struct SemanticAliases { ... }",
+      "comment": "Loaded semantic aliases (owned by caller).",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "f66a73660419e141bb9eafe715b517660386b9294a4f01116ff481c45f39fa34",
+          "signature": "fn deinit(self: *@This()) -> void",
+          "params": [
+            { "name": "self", "type": "*@This()" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 62
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "expandTokens",
+          "match_hash": "9d0a9a07c10a46dba4311b2f2b9ea30cf590a04026d004b96b69067672ad2115",
+          "signature": "fn expandTokens(self: @This(), allocator: std.mem.Allocator, tokens: []const []const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "@This()" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "tokens", "type": "[]const []const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Expand query tokens using aliases. Returns owned slice of owned strings.",
+          "is_pub": true,
+          "line": 73
+        }
+      ],
+      "line": 58
+    },
+    {
+      "type": "fn_decl",
+      "name": "loadSemanticAliases",
+      "match_hash": "5e6b1be5144e7448f6fbd5defe76827160c10bc846b45f5f7d85d723bdb7d7bc",
+      "signature": "fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) -> ?SemanticAliases",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "?SemanticAliases",
+      "comment": "Load semantic aliases from a JSON file.",
+      "is_pub": true,
+      "line": 125
+    },
+    {
+      "type": "fn_decl",
+      "name": "syncDatabase",
+      "match_hash": "8c7c1932a3418cb4b6fa54f9217baa22fcd597fc251615a1fe0ef9d2d4f727cd",
+      "signature": "fn syncDatabase(allocator: std.mem.Allocator, guidance_dir: []const u8, db_path: []const u8, embedder: vector.EmbeddingProvider, capabilities_dir: ?[]const u8, aliases: ?SemanticAliases, cache_limit: u32) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "guidance_dir", "type": "[]const u8" },
+        { "name": "db_path", "type": "[]const u8" },
+        { "name": "embedder", "type": "vector.EmbeddingProvider" },
+        { "name": "capabilities_dir", "type": "?[]const u8" },
+        { "name": "aliases", "type": "?SemanticAliases" },
+        { "name": "cache_limit", "type": "u32" }
+      ],
+      "returns": "void",
+      "comment": "Open (or create) `db_path`, synchronise it with every JSON file under",
+      "is_pub": true,
+      "line": 190
+    },
+    {
+      "type": "struct",
+      "name": "GuidanceDb",
+      "match_hash": "7dc084a760ee2754fdd13090f9db84d9ba8bc3872994662d98085f522ec9d7fc",
+      "signature": "keyword_struct GuidanceDb { ... }",
+      "comment": "Manages database configuration and sync operations; owns allocator and embedder; mutable state with clear ownership.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "5782c501c9811405a3b77e2d81a2c1330f919e1912e26c06d249119f4e19e362",
+          "signature": "fn init(allocator: std.mem.Allocator, db_path: []const u8, embedder: vector.EmbeddingProvider) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "db_path", "type": "[]const u8" },
+            { "name": "embedder", "type": "vector.EmbeddingProvider" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 235
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 259
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "configurePragmas",
+          "match_hash": "6f46eea9c5023375da0ad3fc2b0612697a6b5182eb4242789eaef10425023558",
+          "signature": "fn configurePragmas(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 268
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "migrate",
+          "match_hash": "429e183661f29ba7cdf660db5f208697c2a1f5f9b93ec8e326afdf1e74d6836f",
+          "signature": "fn migrate(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 284
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "syncFromDir",
+          "match_hash": "672ec7131a16459712bac2478868b6cc459d97f258e37da2db3c769cd8a18a83",
+          "signature": "fn syncFromDir(self: *Self, allocator: std.mem.Allocator, src_dir_path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "src_dir_path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "comment": "Walk `src_dir_path` and upsert stale JSON files, embedding each node.",
+          "is_pub": true,
+          "line": 490
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "syncCapabilities",
+          "match_hash": "7f3f7d08ccd07567877b61927b5fea49a668e03777b305a3848de5ecff7e5aef",
+          "signature": "fn syncCapabilities(self: *Self, allocator: std.mem.Allocator, cap_dir: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "cap_dir", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "comment": "Walk `cap_dir` for `CAPABILITY.md` files and upsert them into the",
+          "is_pub": true,
+          "line": 541
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "indexCapability",
+          "match_hash": "6b6c41368e0c76fff5e70028cb79e19ab66b7c2846e10fd30ae47763d31bc9e0",
+          "signature": "fn indexCapability(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "mtime", "type": "i64" }
+          ],
+          "returns": "void",
+          "comment": "Parse a CAPABILITY.md file and upsert it into the capabilities table.",
+          "is_pub": false,
+          "line": 595
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "fileIsUpToDate",
+          "match_hash": "13f85d5dbc72c7bff9148cf8e7b43157e0dde402258a514f9acdcf186f688014",
+          "signature": "fn fileIsUpToDate(self: *Self, file_path: []const u8, mtime: i64) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "mtime", "type": "i64" }
+          ],
+          "returns": "bool",
+          "is_pub": false,
+          "line": 664
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "indexFile",
+          "match_hash": "bc9f5c7c8576581437d583dfc3733183621dc0511340bbe3ca5e42f444107324",
+          "signature": "fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "mtime", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 678
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "deleteFileRecords",
+          "match_hash": "10d5d2ba2c16085a70f2c897f9b634b693b70da57b3fcba1f936dce42c1eb701",
+          "signature": "fn deleteFileRecords(self: *Self, file_path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "file_path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 696
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "moduleToProse",
+          "match_hash": "f6f52c83281a30986edeb2d65971a4dc314b74635cd2df58c7d3d03ef508b9a6",
+          "signature": "fn moduleToProse(allocator: std.mem.Allocator, module: []const u8) -> []u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "module", "type": "[]const u8" }
+          ],
+          "returns": "[]u8",
+          "comment": "Convert a dotted module path to human-readable prose.",
+          "is_pub": false,
+          "line": 713
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "nodeTypeToNoun",
+          "match_hash": "d3b0b41e313a77837ba78164e8fd6fe053ee93cb744c9b6335e60ed857757269",
+          "signature": "fn nodeTypeToNoun(node_type: []const u8) -> []const u8",
+          "params": [
+            { "name": "node_type", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Map node_type to a plain English noun for prose embedding.",
+          "is_pub": false,
+          "line": 739
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractParamNames",
+          "match_hash": "3469d2f1a8724e3b6f1959798b3230fc40ca659ce55a79b0cdce8d5c059cd703",
+          "signature": "fn extractParamNames(allocator: std.mem.Allocator, signature: []const u8) -> ?[]u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "signature", "type": "[]const u8" }
+          ],
+          "returns": "?[]u8",
+          "comment": "Extract parameter names from a signature string, stripping types.",
+          "is_pub": false,
+          "line": 755
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "buildEmbeddingText",
+          "match_hash": "e9058fad5492ea36bc3743f76b936cdf5597d3add2a53f44b6fdf6e808d8595e",
+          "signature": "fn buildEmbeddingText(allocator: std.mem.Allocator, module: []const u8, name: []const u8, node_type: []const u8, comment: ?[]const u8, signature: ?[]const u8, parent_comment: ?[]const u8) -> []const u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "module", "type": "[]const u8" },
+            { "name": "name", "type": "[]const u8" },
+            { "name": "node_type", "type": "[]const u8" },
+            { "name": "comment", "type": "?[]const u8" },
+            { "name": "signature", "type": "?[]const u8" },
+            { "name": "parent_comment", "type": "?[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Build rich prose embedding text for an AST node.",
+          "is_pub": false,
+          "line": 806
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getCachedEmbedding",
+          "match_hash": "3af420b9d6370a8467e9e3107e8c6164c754f635baaf4c64f560fd4ebf0288cb",
+          "signature": "fn getCachedEmbedding(self: *Self, allocator: std.mem.Allocator, content_hash: []const u8) -> ?[]f32",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "content_hash", "type": "[]const u8" }
+          ],
+          "returns": "?[]f32",
+          "is_pub": false,
+          "line": 875
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "cacheEmbedding",
+          "match_hash": "d63c75b11c41d77729e8805548dd161bd7a28fa98ad1ddff22fb0b2634328716",
+          "signature": "fn cacheEmbedding(self: *Self, content_hash: []const u8, model_name: []const u8, embedding: []const f32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "content_hash", "type": "[]const u8" },
+            { "name": "model_name", "type": "[]const u8" },
+            { "name": "embedding", "type": "[]const f32" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 906
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "trimCache",
+          "match_hash": "885fee3d936e7981205e3eccc09924d8f38951f49371800281df47603dde3888",
+          "signature": "fn trimCache(self: *Self, limit: u32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "limit", "type": "u32" }
+          ],
+          "returns": "void",
+          "comment": "Trim embedding cache to keep at most `limit` entries.",
+          "is_pub": false,
+          "line": 929
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getOrComputeEmbedding",
+          "match_hash": "942e55f55db92febfa97fa6e390b79e8792d4256fa161423607632e3cd52733e",
+          "signature": "fn getOrComputeEmbedding(self: *Self, allocator: std.mem.Allocator, text: []const u8) -> ?[]f32",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "text", "type": "[]const u8" }
+          ],
+          "returns": "?[]f32",
+          "comment": "Get embedding for text, using cache. Returns null-length slice for noop.",
+          "is_pub": false,
+          "line": 964
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "insertModule",
+          "match_hash": "db311f622f811065487e725e65a24b15daab2e43d98c98fb21da69145b44acdf",
+          "signature": "fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "doc", "type": "ParsedDoc" },
+            { "name": "mtime", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 1007
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "syncModuleKeywords",
+          "match_hash": "2aba512bb3905e7f0dd6f68905d0edbed00c645d669b75c4086db8f00bc83709",
+          "signature": "fn syncModuleKeywords(self: *Self, allocator: std.mem.Allocator, keywords: []const []const u8, module_id: i64, member_names: []const []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "keywords", "type": "[]const []const u8" },
+            { "name": "module_id", "type": "i64" },
+            { "name": "member_names", "type": "[]const []const u8" }
+          ],
+          "returns": "void",
+          "comment": "Sync keywords for a module: embed each keyword and link to module.",
+          "is_pub": false,
+          "line": 1093
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "insertMember",
+          "match_hash": "07ab63aaeb25f6e7216aafe64fafdb355521342148a4fad251e29ad43590425e",
+          "signature": "fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "doc", "type": "ParsedDoc" },
+            { "name": "m", "type": "ParsedMember" },
+            { "name": "mtime", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 1144
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "freeSearchResult",
+          "match_hash": "8586c967ac901c1f92a44fa710e97466c6d1494f395b38919f7cc9f71f9d117c",
+          "signature": "fn freeSearchResult(allocator: std.mem.Allocator, r: SearchResult) -> void",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "r", "type": "SearchResult" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 1234
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "searchWithAliases",
+          "match_hash": "379e55b796383a672954a74526bc324f57ae9c2d81d7fa4981a0542518fcbfc0",
+          "signature": "fn searchWithAliases(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, limit: usize, aliases: ?SemanticAliases) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" },
+            { "name": "aliases", "type": "?SemanticAliases" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Search with optional semantic alias expansion (alias → expanded tokens).",
+          "is_pub": true,
+          "line": 1253
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "searchWithAliasesOriginal",
+          "match_hash": "bcdb8dbb4e2895541bf444a9e465976165649cf4592d677ddf0a7304a5e27737",
+          "signature": "fn searchWithAliasesOriginal(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, original_query: []const u8, limit: usize, aliases: ?SemanticAliases) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "original_query", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" },
+            { "name": "aliases", "type": "?SemanticAliases" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Search with separate original query for deterministic matching.",
+          "is_pub": true,
+          "line": 1264
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "search",
+          "match_hash": "01a4371d1b37496cd39e08a019727e3945c795a8dcfb90b02dbe0e3368d2888a",
+          "signature": "fn search(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "is_pub": true,
+          "line": 1378
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "searchWithOriginal",
+          "match_hash": "a80a6d2a5d2aabc762c400ad3bdeb64660a554c937158aa5b0d1edd55c2055e9",
+          "signature": "fn searchWithOriginal(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, original_query: []const u8, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "original_query", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Search with separate original query for deterministic matching.",
+          "is_pub": true,
+          "line": 1391
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "findExactNameMatch",
+          "match_hash": "547a9b42a079e8b6778ed39c028d3870b3ae730e6d7b7cccd3b029a558081307",
+          "signature": "fn findExactNameMatch(self: *Self, allocator: std.mem.Allocator, name: []const u8, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "name", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Find exact case-sensitive name match in AST.",
+          "is_pub": false,
+          "line": 1460
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "vectorSearch",
+          "match_hash": "cd174bfe843078199bfb82e0c031b75191a75701e72baf52fd62484cef962f19",
+          "signature": "fn vectorSearch(self: *Self, allocator: std.mem.Allocator, query_embedding: []const f32, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_embedding", "type": "[]const f32" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Vector-only cosine similarity search.",
+          "is_pub": true,
+          "line": 1498
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "keywordSearch",
+          "match_hash": "c7fef3a77b193e4299638f78b74dbea06e5d7422573df78002c6b44b4d14bb69",
+          "signature": "fn keywordSearch(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Keyword search: multi-token LIKE over name, comment, module, signature.",
+          "is_pub": true,
+          "line": 1584
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "hybridSearch",
+          "match_hash": "b69f907733b32fa4bf94b07df446abb83e9d3b0b23e298c1c09eaf966cc581bc",
+          "signature": "fn hybridSearch(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, query_embedding: []const f32, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "query_embedding", "type": "[]const f32" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Hybrid search: fuse vector and keyword results.",
+          "is_pub": false,
+          "line": 1700
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "lookupId",
+          "match_hash": "50bfb01da929f60274bfe5f41ba5b9c956f2a37ba5f93c81b3d53ed24c054716",
+          "signature": "fn lookupId(self: *Self, file_path: []const u8, module: []const u8, name: []const u8, node_type: []const u8) -> i64",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "module", "type": "[]const u8" },
+            { "name": "name", "type": "[]const u8" },
+            { "name": "node_type", "type": "[]const u8" }
+          ],
+          "returns": "i64",
+          "is_pub": false,
+          "line": 1773
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "fetchById",
+          "match_hash": "f5b291e3b71a9ffb4c693ed30994d703b90744ff02341193f79897416cd54171",
+          "signature": "fn fetchById(self: *Self, allocator: std.mem.Allocator, id: i64) -> SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "id", "type": "i64" }
+          ],
+          "returns": "SearchResult",
+          "is_pub": false,
+          "line": 1796
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "rankByNodeType",
+          "match_hash": "2444a52e8580b505f96382c2810c6ddd734a68c31d326022e532863c302dddb6",
+          "signature": "fn rankByNodeType(results: []SearchResult) -> void",
+          "params": [
+            { "name": "results", "type": "[]SearchResult" }
+          ],
+          "returns": "void",
+          "comment": "Adjust scores based on node_type and presence of documentation.",
+          "is_pub": false,
+          "line": 1822
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readRowResult",
+          "match_hash": "f609b593b2ccd4cb20d4e89502c4c43e7388d874068c26e362a8eeddbaf74707",
+          "signature": "fn readRowResult(stmt: *c.sqlite3_stmt, allocator: std.mem.Allocator) -> SearchResult",
+          "params": [
+            { "name": "stmt", "type": "*c.sqlite3_stmt" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "SearchResult",
+          "comment": "Read columns 0..10: file_path, source, module, node_type, name, signature,",
+          "is_pub": false,
+          "line": 1856
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "execSimple",
+          "match_hash": "97e3f2a507a7fc25fd078694add121b80e04c6782ba51a864e09b5d906551f3f",
+          "signature": "fn execSimple(self: *Self, sql: [:0]const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "sql", "type": "[:0]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 1883
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "execSimpleNoErr",
+          "match_hash": "e2f1ac9ec1b1ff7c37c64aa8b31621186435183062e0cf3a0aee01d3195e75a5",
+          "signature": "fn execSimpleNoErr(self: *Self, sql: [:0]const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "sql", "type": "[:0]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 1893
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "storeAliasEmbedding",
+          "match_hash": "d877e9714de487d0b992871df4febedca677326b8d7e388c76889c40ea349e41",
+          "signature": "fn storeAliasEmbedding(self: *Self, allocator: std.mem.Allocator, alias_key: []const u8, embedding: []const f32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "alias_key", "type": "[]const u8" },
+            { "name": "embedding", "type": "[]const f32" }
+          ],
+          "returns": "void",
+          "comment": "Store an embedding for a semantic alias key.",
+          "is_pub": true,
+          "line": 1904
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findSimilarAliasKeys",
+          "match_hash": "2b6fd6bc48e48fcea88c6b098a76a2fdd374bcd62d67a7b02a29feb570118001",
+          "signature": "fn findSimilarAliasKeys(self: *Self, allocator: std.mem.Allocator, query_embedding: []const f32, threshold: f32, limit: usize) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_embedding", "type": "[]const f32" },
+            { "name": "threshold", "type": "f32" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]const []const u8",
+          "comment": "Find semantic alias keys whose embeddings are similar to the query embedding.",
+          "is_pub": true,
+          "line": 1929
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "syncAliasEmbeddings",
+          "match_hash": "eb83f34c2f9b7a25f8e5b9f3b72d4de8ea89d1127dded335937c4eef9b4b8043",
+          "signature": "fn syncAliasEmbeddings(self: *Self, allocator: std.mem.Allocator, aliases: SemanticAliases) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "aliases", "type": "SemanticAliases" }
+          ],
+          "returns": "void",
+          "comment": "Sync semantic alias embeddings from the aliases file.",
+          "is_pub": true,
+          "line": 2001
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "storeKeywordEmbedding",
+          "match_hash": "53f975297a1f66d5c7d9a382f67c3cbc8b1fab79c96843eb2818e0968fc012db",
+          "signature": "fn storeKeywordEmbedding(self: *Self, allocator: std.mem.Allocator, keyword: []const u8, embedding: []const f32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "keyword", "type": "[]const u8" },
+            { "name": "embedding", "type": "[]const f32" }
+          ],
+          "returns": "void",
+          "comment": "Store a keyword with its embedding. Idempotent (INSERT OR REPLACE).",
+          "is_pub": true,
+          "line": 2032
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "linkKeywordToModule",
+          "match_hash": "2b11ca830acdbb55b76b72dca46ef5be2c16ce5b9bb4c4ea3c754a69909949d6",
+          "signature": "fn linkKeywordToModule(self: *Self, keyword: []const u8, module_id: i64, relevance: f32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "keyword", "type": "[]const u8" },
+            { "name": "module_id", "type": "i64" },
+            { "name": "relevance", "type": "f32" }
+          ],
+          "returns": "void",
+          "comment": "Link a keyword to a module. Idempotent (PRIMARY KEY).",
+          "is_pub": true,
+          "line": 2055
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findSimilarKeywords",
+          "match_hash": "85337e0453772547bf3a8d1669fb6de632eb78d7563ae258fd24b0c70b036aa4",
+          "signature": "fn findSimilarKeywords(self: *Self, allocator: std.mem.Allocator, query_embedding: []const f32, threshold: f32, limit: usize) -> []KeywordMatch",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_embedding", "type": "[]const f32" },
+            { "name": "threshold", "type": "f32" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]KeywordMatch",
+          "comment": "Find keywords similar to query embedding (vector search on keyword_index).",
+          "is_pub": true,
+          "line": 2075
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findModulesForKeywords",
+          "match_hash": "f452ce2161d35376045aa118ac7f0261922317f2129b90c88529dd313b462786",
+          "signature": "fn findModulesForKeywords(self: *Self, allocator: std.mem.Allocator, keywords: []const []const u8) -> []ModuleMatch",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "keywords", "type": "[]const []const u8" }
+          ],
+          "returns": "[]ModuleMatch",
+          "comment": "Find module IDs for a set of keywords.",
+          "is_pub": true,
+          "line": 2142
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "fetchModuleDetail",
+          "match_hash": "bef30e8259436ce2430613277691aedd75b0b16e58997dcc17c06e9cc27ac45b",
+          "signature": "fn fetchModuleDetail(self: *Self, allocator: std.mem.Allocator, module_id: i64) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "module_id", "type": "i64" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Fetch module detail by ID.",
+          "is_pub": true,
+          "line": 2185
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "updateModuleDetail",
+          "match_hash": "3c64819191f82f43e5806c16cab44567fa0a0ab8b8572dbca221962460470b3b",
+          "signature": "fn updateModuleDetail(self: *Self, module_id: i64, detail: []const u8, comment: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "module_id", "type": "i64" },
+            { "name": "detail", "type": "[]const u8" },
+            { "name": "comment", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "comment": "Update module detail and comment by ID.",
+          "is_pub": true,
+          "line": 2207
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "clearKeywordLinksForModule",
+          "match_hash": "b27839adb867533e9734dd8e6fe18600172548a3521496f34f137c6ae4ccccfd",
+          "signature": "fn clearKeywordLinksForModule(self: *Self, module_id: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "module_id", "type": "i64" }
+          ],
+          "returns": "void",
+          "comment": "Delete all keyword links for a module (before re-syncing).",
+          "is_pub": true,
+          "line": 2226
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "keywordIndexSearch",
+          "match_hash": "cdbc3c38cf3afc7bd224e869a2ee7e4a7af22f9b7d10c74391f5a185835b9f33",
+          "signature": "fn keywordIndexSearch(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, limit: usize) -> []SearchResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "limit", "type": "usize" }
+          ],
+          "returns": "[]SearchResult",
+          "comment": "Keyword-based search: query → keyword match → module lookup.",
+          "is_pub": true,
+          "line": 2238
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getEmbeddingStats",
+          "match_hash": "23e22be041a5acf159cd5675b55a672798d05819aaee8d68aa063f66c53fae83",
+          "signature": "fn getEmbeddingStats(self: *Self) -> ?EmbeddingStats",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "?EmbeddingStats",
+          "comment": "Get embedding statistics from the database.",
+          "is_pub": true,
+          "line": 2300
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getAllAliasEmbeddings",
+          "match_hash": "71ca2111d3b3fd7058f8e08cf8850b34bd26a9b839b31af2f4d74064c13bfb9b",
+          "signature": "fn getAllAliasEmbeddings(self: *Self, allocator: std.mem.Allocator) -> []AliasEmbeddingEntry",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]AliasEmbeddingEntry",
+          "is_pub": true,
+          "line": 2350
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getAllKeywordEmbeddings",
+          "match_hash": "c09e8d0980e9b65f472d07a4f7e35f065d63c2d90259226ea483516a80e0a5fe",
+          "signature": "fn getAllKeywordEmbeddings(self: *Self, allocator: std.mem.Allocator) -> []KeywordEmbeddingEntry",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]KeywordEmbeddingEntry",
+          "is_pub": true,
+          "line": 2375
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getAllEmbeddingCacheEntries",
+          "match_hash": "c10af6892311a240f95b03d08a42e533b78fe928619a1e6d25494bee514fc34c",
+          "signature": "fn getAllEmbeddingCacheEntries(self: *Self, allocator: std.mem.Allocator) -> []EmbeddingCacheEntry",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]EmbeddingCacheEntry",
+          "is_pub": true,
+          "line": 2400
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getAllAstNodeEmbeddings",
+          "match_hash": "a66ae4764dc88efec759bffaec5b1260bf3cf732a2c0fe151e6e9cd9a8dbeeca",
+          "signature": "fn getAllAstNodeEmbeddings(self: *Self, allocator: std.mem.Allocator) -> []AstNodeEmbeddingEntry",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]AstNodeEmbeddingEntry",
+          "is_pub": true,
+          "line": 2425
+        }
+      ],
+      "line": 227
+    },
+    {
+      "type": "struct",
+      "name": "ParsedMember",
+      "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
+      "signature": "keyword_struct ParsedMember { ... }",
+      "comment": "Represents parsed member data with ownership and invariants; managed via parsing pipeline.",
+      "is_pub": false,
+      "line": 2458
+    },
+    {
+      "type": "struct",
+      "name": "ParsedDoc",
+      "match_hash": "a1b877e8d81db260185f98dfbe8b981183c9e06f76858f4204f4c6c12b724adf",
+      "signature": "keyword_struct ParsedDoc { ... }",
+      "comment": "Represents parsed document data with ownership and invariants; managed via parsing lifecycle.",
+      "is_pub": false,
+      "line": 2466
+    },
+    {
+      "type": "fn_private",
+      "name": "parseGuidanceJson",
+      "match_hash": "7ee0c083672dcfd26101877729182e24f02f7ad2f36a5403200dc6044a28396e",
+      "signature": "fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) -> ParsedDoc",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "json_data", "type": "[]const u8" }
+      ],
+      "returns": "ParsedDoc",
+      "comment": "Converts a JSON string into a ParsedDoc object using the provided arena and data.",
+      "is_pub": false,
+      "line": 2478
+    },
+    {
+      "type": "fn_private",
+      "name": "parseMemberValue",
+      "match_hash": "b6621e36a2d8a0a3c062d2c73368dabee14bdd014ab7ecd30834439b9e0844a5",
+      "signature": "fn parseMemberValue(item: std.json.Value) -> ParsedMember",
+      "params": [
+        { "name": "item", "type": "std.json.Value" }
+      ],
+      "returns": "ParsedMember",
+      "comment": "Converts a JSON value to a ParsedMember, handling nulls and errors gracefully.",
+      "is_pub": false,
+      "line": 2594
+    },
+    {
+      "type": "fn_private",
+      "name": "serializeUsedBy",
+      "match_hash": "5316a291e5894b2d49d07bae6f5c4d17f73324ce44d3be69d008536ef4b1ea53",
+      "signature": "fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "items", "type": "[]const []const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Serializes a list of memory items into a compact byte array using the provided allocator.",
+      "is_pub": false,
+      "line": 2636
+    },
+    {
+      "type": "fn_private",
+      "name": "parseUsedByCol",
+      "match_hash": "825deb4e42a4412ef450a0e6352584ff6fc2367a6e954fa7477b55d71794745e",
+      "signature": "fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) -> [][]const u8",
+      "params": [
+        { "name": "stmt", "type": "*c.sqlite3_stmt" },
+        { "name": "col", "type": "c_int" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "[][]const u8",
+      "comment": "Converts a SQLite statement result into a slice of byte slices for column parsing.",
+      "is_pub": false,
+      "line": 2656
+    },
+    {
+      "type": "fn_private",
+      "name": "dupeCol",
+      "match_hash": "b0094cf547c1d8b5c3f35bc3a1f91e8db9847def75d27a423e3779fb51f620f2",
+      "signature": "fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) -> []u8",
+      "params": [
+        { "name": "stmt", "type": "*c.sqlite3_stmt" },
+        { "name": "col", "type": "c_int" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "[]u8",
+      "comment": "Converts a SQLite column value to a Zig byte slice, handling conversion and allocation.",
+      "is_pub": false,
+      "line": 2679
+    },
+    {
+      "type": "fn_private",
+      "name": "dupeColNullable",
+      "match_hash": "ffbb7331b0d6dac78aaf54fd754ce74969d57e5b3907618ecc7fe19420141689",
+      "signature": "fn dupeColNullable(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) -> ?[]u8",
+      "params": [
+        { "name": "stmt", "type": "*c.sqlite3_stmt" },
+        { "name": "col", "type": "c_int" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "?[]u8",
+      "comment": "Converts a null-terminated C string into a Zig array of u8 values.",
+      "is_pub": false,
+      "line": 2686
+    },
+    {
+      "type": "fn_private",
+      "name": "logSqliteErr",
+      "match_hash": "19c7e29d39106cc8fb77120ab48d81fc6f3d5d8208c238f9be69dc3c10241775",
+      "signature": "fn logSqliteErr(context: []const u8, sql: []const u8, rc: c_int, err_msg: [*c]u8, db: ?*c.sqlite3) -> void",
+      "params": [
+        { "name": "context", "type": "[]const u8" },
+        { "name": "sql", "type": "[]const u8" },
+        { "name": "rc", "type": "c_int" },
+        { "name": "err_msg", "type": "[*c]u8" },
+        { "name": "db", "type": "?*c.sqlite3" }
+      ],
+      "returns": "void",
+      "comment": "Handles SQLite errors by logging details and returning an error code.",
+      "is_pub": false,
+      "line": 2694
+    },
+    {
+      "type": "test_decl",
+      "name": "GuidanceDb init and schema",
+      "is_pub": false,
+      "line": 2710
+    },
+    {
+      "type": "test_decl",
+      "name": "GuidanceDb index and keyword search round-trip",
+      "is_pub": false,
+      "line": 2734
+    },
+    {
+      "type": "test_decl",
+      "name": "GuidanceDb search falls back to keyword when noop embedder",
+      "is_pub": false,
+      "line": 2784
+    },
+    {
+      "type": "test_decl",
+      "name": "GuidanceDb skips unchanged files",
+      "is_pub": false,
+      "line": 2825
+    },
+    {
+      "type": "test_decl",
+      "name": "buildEmbeddingText prose format",
+      "is_pub": false,
+      "line": 2873
+    },
+    {
+      "type": "test_decl",
+      "name": "buildEmbeddingText module row",
+      "is_pub": false,
+      "line": 2897
+    },
+    {
+      "type": "test_decl",
+      "name": "moduleToProse strips src prefix and limits depth",
+      "is_pub": false,
+      "line": 2913
+    },
+    {
+      "type": "test_decl",
+      "name": "extractParamNames strips types",
+      "is_pub": false,
+      "line": 2921
+    }
+  ]
+}

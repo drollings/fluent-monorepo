@@ -1,0 +1,184 @@
+{
+  "meta": {
+    "module": "src.common.interner",
+    "source": "src/common/interner.zig",
+    "language": "zig"
+  },
+  "comment": "Manages stable string indices with arena-allocated storage, supporting interned strings and bitmask bitsets.",
+  "detail": "# String Interner Module Documentation\n\n## Module Purpose and Architecture\n\nThe `src/common/interner.zig` module implements a string interning system that assigns stable integer indices to unique strings, enabling efficient string comparison, deduplication, and capability tracking. The architecture follows a repository pattern with centralized ownership—once a `StringInterner` is created, it owns all string copies allocated within its arena.\n\n**Core Components:**\n- **Arena Allocator**: Ensures efficient batch allocation and single-cleanup deinit\n- **StringHashMapUnmanaged**: O(1) lookup of strings to indices\n- **ArrayListUnmanaged**: Reverse mapping from index back to owned string data\n- **DynamicBitSetUnmanaged**: Optional capability bitmask support\n\nThe interner maintains two critical invariants: (1) identical input strings always receive the same index, and (2) all interned strings are arena-owned copies managed by the interner.\n\n## Key Abstractions and Relationships\n\n| Abstraction | Relationship | Purpose |\n|-------------|--------------|---------|\n| `StringInterner` | Container | Main type managing all state |\n| `arena: ArenaAllocator` | Owned resource | Efficient memory management |\n| `string_to_index` | Index map | O(1) string lookup |\n| `index_to_string` | Reverse map | String retrieval by index |\n| `next_index` | Counter | Tracks total interned count |\n\nThe interner uses unmanaged container types (`Unmanaged`) specifically because all allocations go through the arena allocator, avoiding double-management overhead.\n\n## Public API and Usage Patterns\n\n### Lifecycle Management\n```zig\nconst interner = StringInterner.init(allocator);\ndefer interner.deinit();  // Single cleanup for all resources\n```\n\n### Basic Interning Pattern\n```zig\nconst idx1 = interner.intern(\"hello\");      // Returns 0 (new string)\nconst idx2 = interner.intern(\"hello\");      // Returns 0 (already interned)\ninterner.internList([ \"foo\", \"bar\", \"baz\" ]); // Bulk load, results discarded\n```\n\n### Lookup Operations\n```zig\n// Get index without modifying interner state\nif (interner.getIndex(\"unknown\")) |idx| {\n    _ = idx; // use it\n} else |_| {\n    // not interned yet\n}\n\n// Retrieve owned string by index\nif (interner.getString(0)) |owned_str| {\n    // owned_str is valid for lifetime of interner\n}\n```\n\n### Bitset Integration\nThe module supports capability parsing with comma-separated strings:\n```zig\nvar bitset = std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, 100);\ninterner.bitSetFromString(&interner, allocator, &bitset, \"read,write,execute\");\n// Resulting bitset has bits set at indices matching interned capability names\n```\n\n## Important Implementation Details\n\n1. **Memory Ownership**: The interner takes ownership of all strings via `arena.dupe()`. This prevents dangling references and simplifies cleanup.\n\n2. **Unmanaged Containers**: Using `StringHashMapUnmanaged` and `ArrayListUnmanaged` is safe here because all allocations funnel through the arena allocator, eliminating double-free risks.\n\n3. **Bitset Constraint Omission**: The coral-specific `bitSetConstraint()` vtable method was intentionally omitted for portability—only the core interning functionality is preserved.\n\n4. **Index Stability**: Indices are assigned sequentially and never reused. This guarantees that a string interned at index 5 will always be retrievable via index 5.\n\n5. **Allocator Separation**: The `internAndGetBitSet` function accepts an external allocator for the bitset, distinct from the interner's arena, providing flexibility in resource management.\n\n## Design Patterns Used\n\n- **Flyweight Pattern**: Interning unique strings while sharing identical ones\n- **Repository Pattern**: Centralized string storage with CRUD operations\n- **Singleton-like Ownership**: The interner is the sole owner of its internal state\n- **Builder Pattern**: `internList()` and `internAndGetBitSet()` for constructing capability sets\n\nThe module prioritizes performance (O(1) lookups, arena allocation) while maintaining memory safety through careful ownership semantics. All public methods are marked `pub` with clear documentation strings, following Zig best practices for library API design.",
+  "keywords": ["StringInterner", "intern", "bitset", "capability", "flyweight", "repository pattern", "arena allocator", "HashMapUnmanaged", "ArrayListUnmanaged", "DynamicBitSetUnmanaged"],
+  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/registry.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/target.zig", "src/coral/common/context.zig", "src/coral/common/json_parser.zig", "src/coral/common/registry.zig", "src/coral/common/repl.zig", "src/coral/common/resolver.zig", "src/coral/common/target.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "init",
+      "match_hash": "d78d93e39a54fe8cc61b4b22172584ddebe3a42e0482b571e78dcc1b1131b595",
+      "signature": "fn init(allocator: std.mem.Allocator) -> StringInterner",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "StringInterner",
+      "comment": "Initializes a memory allocator with a string interner for efficient string handling.",
+      "is_pub": true,
+      "line": 18
+    },
+    {
+      "type": "fn_decl",
+      "name": "deinit",
+      "match_hash": "0dfe7c55c37605cfd60b7bb071288674aabdbbec34ba3f88674c80fa088de815",
+      "signature": "fn deinit(self: *StringInterner) -> void",
+      "params": [
+        { "name": "self", "type": "*StringInterner" }
+      ],
+      "returns": "void",
+      "comment": "Releases resources associated with the StringInterner instance.",
+      "is_pub": true,
+      "line": 26
+    },
+    {
+      "type": "fn_decl",
+      "name": "intern",
+      "match_hash": "81dab6d284323336d6ed5589171e0b960d793d9fe2a798dd7b8536d1e8fbe668",
+      "signature": "fn intern(self: *StringInterner, str: []const u8) -> usize",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "str", "type": "[]const u8" }
+      ],
+      "returns": "usize",
+      "comment": "Intern `str`, returning its stable integer index.",
+      "is_pub": true,
+      "line": 35
+    },
+    {
+      "type": "fn_decl",
+      "name": "getIndex",
+      "match_hash": "3798fcd1426066a0bbaedc9ae60616d1e0c87c42bb6291afcb9dd3151991ea0e",
+      "signature": "fn getIndex(self: *const StringInterner, str: []const u8) -> ?usize",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" },
+        { "name": "str", "type": "[]const u8" }
+      ],
+      "returns": "?usize",
+      "comment": "Look up the index for `str` without inserting it.",
+      "is_pub": true,
+      "line": 54
+    },
+    {
+      "type": "fn_decl",
+      "name": "getString",
+      "match_hash": "c0138eb01f828893e468fb295b0dc1ed395895cf2165085037101e166308dc85",
+      "signature": "fn getString(self: *const StringInterner, idx: usize) -> ?[]const u8",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" },
+        { "name": "idx", "type": "usize" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Return the string at `idx`, or null when `idx` is out of range.",
+      "is_pub": true,
+      "line": 59
+    },
+    {
+      "type": "fn_decl",
+      "name": "count",
+      "match_hash": "52a9fe0ce6e6a92d98648138b5d54b54a2c5453193af93e9dc7e9ba30be26567",
+      "signature": "fn count(self: *const StringInterner) -> usize",
+      "params": [
+        { "name": "self", "type": "*const StringInterner" }
+      ],
+      "returns": "usize",
+      "comment": "Return the total number of interned strings.",
+      "is_pub": true,
+      "line": 65
+    },
+    {
+      "type": "fn_decl",
+      "name": "internList",
+      "match_hash": "706f36c38fd9b5880e3b7cedec7bc2a76b63163a0d5977618541a6c22393a2b9",
+      "signature": "fn internList(self: *StringInterner, strings: []const []const u8) -> void",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "strings", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Intern every string in `strings` (results discarded; useful for pre-loading).",
+      "is_pub": true,
+      "line": 70
+    },
+    {
+      "type": "fn_decl",
+      "name": "internAndGetBitSet",
+      "match_hash": "7f3d29512785d19f3b4760ffc718ebb7d8155cb533a80fffc2c439ff3330ff2e",
+      "signature": "fn internAndGetBitSet(self: *StringInterner, allocator: std.mem.Allocator, strings: []const []const u8) -> std.bit_set.DynamicBitSetUnmanaged",
+      "params": [
+        { "name": "self", "type": "*StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "strings", "type": "[]const []const u8" }
+      ],
+      "returns": "std.bit_set.DynamicBitSetUnmanaged",
+      "comment": "Intern all strings in `strings` and return a `DynamicBitSetUnmanaged`",
+      "is_pub": true,
+      "line": 80
+    },
+    {
+      "type": "fn_decl",
+      "name": "bitSetFromString",
+      "match_hash": "1d963356853c591b124081f93e529b20bfdcaef394dcf86ad3c88b83ea73a4ea",
+      "signature": "fn bitSetFromString(interner: *StringInterner, allocator: std.mem.Allocator, bs: *std.bit_set.DynamicBitSetUnmanaged, input: []const u8) -> void",
+      "params": [
+        { "name": "interner", "type": "*StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "bs", "type": "*std.bit_set.DynamicBitSetUnmanaged" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Parse a comma-separated capability string into a `DynamicBitSetUnmanaged`.",
+      "is_pub": true,
+      "line": 102
+    },
+    {
+      "type": "fn_decl",
+      "name": "bitSetToString",
+      "match_hash": "ff292b62b0781900738b7ef3defb98c108123fd2b1e252b1f102feaeb27d6aac",
+      "signature": "fn bitSetToString(interner: *const StringInterner, allocator: std.mem.Allocator, bs: *const std.bit_set.DynamicBitSetUnmanaged) -> []const u8",
+      "params": [
+        { "name": "interner", "type": "*const StringInterner" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "bs", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Serialise a `DynamicBitSetUnmanaged` to a comma-separated capability string.",
+      "is_pub": true,
+      "line": 124
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner basic operations",
+      "is_pub": false,
+      "line": 148
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner getIndex returns null for unknown",
+      "is_pub": false,
+      "line": 166
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner internAndGetBitSet",
+      "is_pub": false,
+      "line": 175
+    },
+    {
+      "type": "test_decl",
+      "name": "StringInterner GPA no leaks",
+      "is_pub": false,
+      "line": 191
+    },
+    {
+      "type": "test_decl",
+      "name": "bitSetFromString and bitSetToString roundtrip",
+      "is_pub": false,
+      "line": 215
+    }
+  ]
+}
