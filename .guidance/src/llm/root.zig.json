@@ -1,0 +1,213 @@
+{
+  "meta": {
+    "module": "src.llm.root",
+    "source": "src/llm/root.zig",
+    "language": "zig"
+  },
+  "comment": " llm — General-purpose LLM inference client.\n\n Provides:\n   LlmError    — error set for all LLM operations\n   LlmConfig   — endpoint, model, timeout, think-mode settings\n   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)\n\n Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives\n in src/common/llm.zig alongside the string utilities they depend on.",
+  "detail": "The `llm` module serves as a comprehensive interface for interacting with large language models (LLMs), specifically designed to abstract the complexities of model inference, configuration, and communication. Its primary purpose is to provide a unified API for developers to leverage LLM capabilities, including error handling, configuration management, and integration with external services like OpenAI and Ollama. The module is structured around key abstractions such as error handling, configuration settings, and HTTP client operations, ensuring seamless interaction with various LLM endpoints.\n\nThe module's architecture revolves around three main components: error management, configuration handling, and HTTP communication. The `LlmError` struct defines a standardized set of error types, enabling consistent error reporting across operations. The `LlmConfig` struct encapsulates critical settings such as API endpoints, model selection, timeout values, and think-mode parameters, allowing users to customize their LLM interactions. The `LlmClient` struct manages the HTTP client and integrates with external services, providing methods for initialization, completion handling, and response processing.\n\nKey implementation details include the use of utility functions like `writeEscapedString` for safe string manipulation and the `isOllamaEndpoint` function to validate endpoint types. The module leverages design patterns such as dependency injection for the HTTP client and modular error handling to ensure robustness. The documentation emphasizes the importance of understanding these components to effectively utilize the module's features.\n\nOverall, this module exemplifies a well-structured approach to LLM integration, balancing flexibility with reliability through clear abstractions and comprehensive documentation.",
+  "keywords": ["LLM", "Zig", "HTTP client", "error handling", "configuration", "think-mode"],
+  "used_by": ["src/vector/lance_db.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "LlmConfig",
+      "match_hash": "bef90ed130978e5a3e09e1fa913f669d0b017de048c8d832961268075af54bad",
+      "signature": "keyword_struct LlmConfig { ... }",
+      "comment": "Defines LLM configuration with methods for model checks and endpoint validation, managing model state and API access.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "isThinkingModel",
+          "match_hash": "5f4216c6e084ac4618e9225d8eec28135556235aad72f28c48062ee8d26a8226",
+          "signature": "fn isThinkingModel(self: LlmConfig) -> bool",
+          "params": [
+            { "name": "self", "type": "LlmConfig" }
+          ],
+          "returns": "bool",
+          "comment": "Returns true when thinking is explicitly enabled for this config.",
+          "is_pub": true,
+          "line": 41
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "extractModelName",
+          "match_hash": "d14499651af4525fa2299c9e9bfb88f20ed8ecbca8b513fd256436ce3724b4d2",
+          "signature": "fn extractModelName(model_ref: []const u8) -> []const u8",
+          "params": [
+            { "name": "model_ref", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Extract the model name from a model reference like \"provider:model:name\".",
+          "is_pub": true,
+          "line": 47
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isOllamaEndpoint",
+          "match_hash": "05374981ace68833b632fa55494f854c4ee96e542e38c1d2d0cda1e76e9db758",
+          "signature": "fn isOllamaEndpoint(api_url: []const u8) -> bool",
+          "params": [
+            { "name": "api_url", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "comment": "Check if an endpoint is an Ollama-native endpoint (uses /api/chat).",
+          "is_pub": true,
+          "line": 55
+        }
+      ],
+      "line": 26
+    },
+    {
+      "type": "fn_private",
+      "name": "writeEscapedString",
+      "match_hash": "7ce3ff9363b961c8a9e373488b7bd47e3dce769cf0ffd7cf0377c927b3bdf7f8",
+      "signature": "fn writeEscapedString(writer, s: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Writes a null-terminated string to a writer, handling escaped characters properly.",
+      "is_pub": false,
+      "line": 62
+    },
+    {
+      "type": "struct",
+      "name": "LlmClient",
+      "match_hash": "48372c90add81bd93c5a2ab36907c51afdfdef3bac759412dd55e7f95e3e03fa",
+      "signature": "keyword_struct LlmClient { ... }",
+      "comment": "Manages LLM interaction with fixed buffers; owns allocator and config; provides core API methods.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "86770a48dea19db1e756108f830de238c821ba3a49992b24a3bf93091a66ee58",
+          "signature": "fn init(allocator: std.mem.Allocator, config: LlmConfig) -> LlmClient",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "LlmConfig" }
+          ],
+          "returns": "LlmClient",
+          "is_pub": true,
+          "line": 87
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "3fff429679ebb90c3397aab7f9ac6b3d37f09f28334516de0df50900c164869f",
+          "signature": "fn deinit(self: *LlmClient) -> void",
+          "params": [
+            { "name": "self", "type": "*LlmClient" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 113
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "complete",
+          "match_hash": "1cf7f5e31460382df73465ae778017ca959945c0b5e1013ec38ce8d90adb4e7e",
+          "signature": "fn complete(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) -> LlmError!?[]const u8",
+          "params": [
+            { "name": "self", "type": "*LlmClient" },
+            { "name": "prompt", "type": "[]const u8" },
+            { "name": "max_tokens", "type": "usize" },
+            { "name": "temperature", "type": "f32" },
+            { "name": "system", "type": "?[]const u8" }
+          ],
+          "returns": "LlmError!?[]const u8",
+          "is_pub": true,
+          "line": 118
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "postJson",
+          "match_hash": "8002e0830a2abdf11bdbe8b89bf710d92c2a4fb209dc5485485cd712b16394ec",
+          "signature": "fn postJson(self: *LlmClient, url: []const u8, json_body: []const u8) -> LlmError!?[]const u8",
+          "params": [
+            { "name": "self", "type": "*LlmClient" },
+            { "name": "url", "type": "[]const u8" },
+            { "name": "json_body", "type": "[]const u8" }
+          ],
+          "returns": "LlmError!?[]const u8",
+          "comment": "POST `json_body` to `url` and return the extracted response text.",
+          "is_pub": false,
+          "line": 162
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractResponseText",
+          "match_hash": "977ffc3a0e9436f21393f6c9c0c4d36063d1ed03f3e8445772d5d48ac8dec389",
+          "signature": "fn extractResponseText(self: *LlmClient, resp: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*LlmClient" },
+            { "name": "resp", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "is_pub": false,
+          "line": 196
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "available",
+          "match_hash": "3d0c45d8023d0880c75881bce9cfc57df32f4800fce94b5de9ac0fc1744317c5",
+          "signature": "fn available(self: *LlmClient) -> bool",
+          "params": [
+            { "name": "self", "type": "*LlmClient" }
+          ],
+          "returns": "bool",
+          "comment": "Check whether the LLM endpoint is reachable.",
+          "is_pub": true,
+          "line": 264
+        }
+      ],
+      "line": 77
+    },
+    {
+      "type": "fn_private",
+      "name": "stripThinkBlockInline",
+      "match_hash": "5c790ef56908a9d122640663bda29bc7c2f6725229bf26f147d63623a61acefc",
+      "signature": "fn stripThinkBlockInline(text: []const u8) -> []const u8",
+      "params": [
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Minimal think-block stripper used internally by extractResponseText.",
+      "is_pub": false,
+      "line": 296
+    },
+    {
+      "type": "test_decl",
+      "name": "LlmClient init with v1/chat/completions URL uses it directly",
+      "is_pub": false,
+      "line": 324
+    },
+    {
+      "type": "test_decl",
+      "name": "LlmClient init with v1/completions URL normalises to v1/chat/completions",
+      "is_pub": false,
+      "line": 337
+    },
+    {
+      "type": "test_decl",
+      "name": "LlmClient init with OpenAI API URL sets is_openai_format",
+      "is_pub": false,
+      "line": 350
+    },
+    {
+      "type": "test_decl",
+      "name": "writeEscapedString escapes properly",
+      "is_pub": false,
+      "line": 363
+    },
+    {
+      "type": "test_decl",
+      "name": "writeEscapedString does not escape braces",
+      "is_pub": false,
+      "line": 371
+    }
+  ]
+}
