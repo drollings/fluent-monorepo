@@ -16,6 +16,7 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "i64",
+      "comment": "Deterministic i64 hash of an IRI string using Blake3 (64-bit truncation).",
       "is_pub": true,
       "line": 20
     },
@@ -29,6 +30,7 @@
         { "name": "id", "type": "[]const u8" }
       ],
       "returns": "i64",
+      "comment": "Scope-qualified i64 hash for a blank node.\nTwo blank nodes with the same local id but different scopes get different hashes.",
       "is_pub": true,
       "line": 29
     },
@@ -37,66 +39,68 @@
       "name": "XsdType",
       "match_hash": "21e517846b4415a4c89daf5488af865704043018403378f8257e3baefa60f499",
       "signature": "keyword_enum XsdType { ... }",
+      "comment": "Defines a schema for RDF keywords with XSD validation; manages ownership and invariants.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "string",
           "is_pub": false,
-          "line": 49
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "lang_string",
           "is_pub": false,
-          "line": 50
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "integer",
           "is_pub": false,
-          "line": 51
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "decimal",
           "is_pub": false,
-          "line": 52
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "double",
           "is_pub": false,
-          "line": 53
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "boolean",
           "is_pub": false,
-          "line": 54
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "date_time",
           "is_pub": false,
-          "line": 55
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "other",
           "is_pub": false,
-          "line": 56
+          "line": 57
         }
       ],
-      "line": 48
+      "line": 49
     },
     {
       "type": "union",
       "name": "TypedValue",
       "match_hash": "6c95d3c7f1dcc9b61545366d0e211921c5e0cbd1b82b890d2fa99ec59712105b",
       "signature": "keyword_union TypedValue { ... }",
+      "comment": "Manages a typed value set with union semantics; owned by the caller; ensures consistent key-value storage.",
       "is_pub": true,
-      "line": 59
+      "line": 61
     },
     {
       "type": "fn_decl",
@@ -107,8 +111,9 @@
         { "name": "datatype", "type": "?[]const u8" }
       ],
       "returns": "XsdType",
+      "comment": "Detect the XSD type from a datatype IRI.",
       "is_pub": true,
-      "line": 73
+      "line": 75
     },
     {
       "type": "fn_decl",
@@ -121,14 +126,16 @@
         { "name": "datatype", "type": "?[]const u8" }
       ],
       "returns": "TypedValue",
+      "comment": "Parse a literal's value string into a TypedValue.\nReturns .string / .lang_string / .other when parsing is not applicable.",
       "is_pub": true,
-      "line": 91
+      "line": 93
     },
     {
       "type": "struct",
       "name": "BlankNodeScope",
       "match_hash": "b836f3e8991464e66cfab710b9dda8f386f5e9b73cdda68db1be23758cdfc223",
       "signature": "keyword_struct BlankNodeScope { ... }",
+      "comment": "BlankNodeScope — tracks blank node ID → NodeId mapping within one file/scope.",
       "is_pub": true,
       "members": [
         {
@@ -142,7 +149,7 @@
           ],
           "returns": "BlankNodeScope",
           "is_pub": true,
-          "line": 127
+          "line": 129
         }
     ,    {
           "type": "fn_decl",
@@ -154,7 +161,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 135
+          "line": 137
         }
     ,    {
           "type": "fn_decl",
@@ -166,77 +173,78 @@
             { "name": "id", "type": "[]const u8" }
           ],
           "returns": "i64",
+          "comment": "Return stable i64 for blank node id.  Allocates on first encounter.",
           "is_pub": true,
-          "line": 142
+          "line": 144
         }
       ],
-      "line": 122
+      "line": 124
     },
     {
       "type": "test_decl",
       "name": "IRI hash is deterministic",
       "is_pub": false,
-      "line": 157
+      "line": 159
     },
     {
       "type": "test_decl",
       "name": "different IRIs produce different hashes",
       "is_pub": false,
-      "line": 164
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "blank node scoping",
       "is_pub": false,
-      "line": 170
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "blank node different scopes produce different IDs",
       "is_pub": false,
-      "line": 181
+      "line": 183
     },
     {
       "type": "test_decl",
       "name": "normalize integer literal",
       "is_pub": false,
-      "line": 187
+      "line": 189
     },
     {
       "type": "test_decl",
       "name": "normalize decimal literal",
       "is_pub": false,
-      "line": 193
+      "line": 195
     },
     {
       "type": "test_decl",
       "name": "normalize boolean literal true",
       "is_pub": false,
-      "line": 198
+      "line": 200
     },
     {
       "type": "test_decl",
       "name": "normalize boolean literal false",
       "is_pub": false,
-      "line": 204
+      "line": 206
     },
     {
       "type": "test_decl",
       "name": "normalize lang string",
       "is_pub": false,
-      "line": 209
+      "line": 211
     },
     {
       "type": "test_decl",
       "name": "normalize plain string",
       "is_pub": false,
-      "line": 214
+      "line": 216
     },
     {
       "type": "test_decl",
       "name": "normalize dateTime stub",
       "is_pub": false,
-      "line": 219
+      "line": 221
     }
   ]
 }

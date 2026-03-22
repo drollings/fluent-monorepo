@@ -12,6 +12,7 @@
       "name": "LlmConfig",
       "match_hash": "bef90ed130978e5a3e09e1fa913f669d0b017de048c8d832961268075af54bad",
       "signature": "keyword_struct LlmConfig { ... }",
+      "comment": "Defines configuration settings for the LLM model; manages ownership and invariants during initialization.",
       "is_pub": true,
       "members": [
         {
@@ -23,8 +24,9 @@
             { "name": "self", "type": "LlmConfig" }
           ],
           "returns": "bool",
+          "comment": "Returns true when thinking is explicitly enabled for this config.",
           "is_pub": true,
-          "line": 41
+          "line": 42
         }
     ,    {
           "type": "fn_decl",
@@ -35,8 +37,9 @@
             { "name": "model_ref", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Extract the model name from a model reference like \"provider:model:name\".\nReturns the part after the first colon, or the whole string if no colon.",
           "is_pub": true,
-          "line": 47
+          "line": 48
         }
     ,    {
           "type": "fn_decl",
@@ -47,11 +50,12 @@
             { "name": "api_url", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Check if an endpoint is an Ollama-native endpoint (uses /api/chat).",
           "is_pub": true,
-          "line": 55
+          "line": 56
         }
       ],
-      "line": 26
+      "line": 27
     },
     {
       "type": "fn_private",
@@ -64,13 +68,14 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 62
+      "line": 63
     },
     {
       "type": "struct",
       "name": "LlmClient",
       "match_hash": "48372c90add81bd93c5a2ab36907c51afdfdef3bac759412dd55e7f95e3e03fa",
       "signature": "keyword_struct LlmClient { ... }",
+      "comment": "Manages LLM client operations with fixed buffers; owned by the system; ensures consistent state across invocations.",
       "is_pub": true,
       "members": [
         {
@@ -84,7 +89,7 @@
           ],
           "returns": "LlmClient",
           "is_pub": true,
-          "line": 87
+          "line": 89
         }
     ,    {
           "type": "fn_decl",
@@ -96,7 +101,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 113
+          "line": 115
         }
     ,    {
           "type": "fn_decl",
@@ -112,7 +117,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": true,
-          "line": 118
+          "line": 120
         }
     ,    {
           "type": "fn_private",
@@ -125,8 +130,9 @@
             { "name": "json_body", "type": "[]const u8" }
           ],
           "returns": "LlmError!?[]const u8",
+          "comment": "POST `json_body` to `url` and return the extracted response text.",
           "is_pub": false,
-          "line": 162
+          "line": 164
         }
     ,    {
           "type": "fn_private",
@@ -139,7 +145,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 196
+          "line": 198
         }
     ,    {
           "type": "fn_decl",
@@ -150,11 +156,12 @@
             { "name": "self", "type": "*LlmClient" }
           ],
           "returns": "bool",
+          "comment": "Check whether the LLM endpoint is reachable.\n  OpenAI  → GET <base>/v1/models\n  Ollama  → GET <scheme>://<host:port>/api/tags",
           "is_pub": true,
-          "line": 264
+          "line": 266
         }
       ],
-      "line": 77
+      "line": 79
     },
     {
       "type": "fn_private",
@@ -165,38 +172,39 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Minimal think-block stripper used internally by extractResponseText.\nThe full public stripThinkBlock lives in src/common/llm.zig.",
       "is_pub": false,
-      "line": 296
+      "line": 298
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/chat/completions URL uses it directly",
       "is_pub": false,
-      "line": 324
+      "line": 326
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/completions URL normalises to v1/chat/completions",
       "is_pub": false,
-      "line": 337
+      "line": 339
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with OpenAI API URL sets is_openai_format",
       "is_pub": false,
-      "line": 350
+      "line": 352
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString escapes properly",
       "is_pub": false,
-      "line": 363
+      "line": 365
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString does not escape braces",
       "is_pub": false,
-      "line": 371
+      "line": 373
     }
   ]
 }

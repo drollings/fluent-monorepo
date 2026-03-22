@@ -68,6 +68,7 @@ const testing = std.testing;
 
 // ── primitive types ──────────────────────────────────────────────────────────
 
+/// Represents configuration settings with a fixed structure; owned by the module; ensures consistent initialization and deinitialization.
 const TestConfig = struct {
     port: u16 = 8080,
     timeout: f32 = 30.0,
@@ -143,6 +144,7 @@ test "Editable: string field set and get" {
 
 // ── enum field ───────────────────────────────────────────────────────────────
 
+/// Defines a status enum with compile-time checks; owned by the module; ensures invariant values are fixed.
 const Status = enum { pending, active, done };
 
 const TestEnum = struct {
@@ -290,6 +292,7 @@ test "Editable: access denied on read" {
 
 // ── Schema description for AI agents ───────────────────────────────────────
 
+/// Defines a test schema with fixed-size buffers, managed via ownership and lifecycle; ensures invariants are preserved.
 const TestSchema = struct {
     port: u16 = 8080,
     host: []const u8 = "localhost",
@@ -386,6 +389,7 @@ test "DynamicEditable: describeSchema generates JSON" {
 
 // ── TypedAccessorTable / TypedEditable / BinaryFieldCodec / EnumRegistry tests ──
 
+/// Defines a typed configuration struct for test settings, managed via reflection, with strict ownership and invariants.
 const TestConfigTyped = struct {
     port: u16 = 8080,
     max_connections: u32 = 100,
@@ -653,3 +657,7 @@ test "TypedEditable type mismatch error" {
     const result = editable.setTyped("port", @as(u32, 9000), .coder);
     try testing.expectError(error.TypeMismatch, result);
 }
+
+
+
+

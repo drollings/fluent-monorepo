@@ -16,8 +16,9 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a needle substring exists within the haystack, ignoring case sensitivity.",
       "is_pub": true,
-      "line": 3
+      "line": 4
     },
     {
       "type": "fn_decl",
@@ -29,8 +30,9 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a needle substring exists within the haystack array of bytes.",
       "is_pub": true,
-      "line": 13
+      "line": 15
     },
     {
       "type": "fn_decl",
@@ -42,8 +44,9 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if any keywords exist within the source string slice.",
       "is_pub": true,
-      "line": 26
+      "line": 29
     },
     {
       "type": "fn_decl",
@@ -55,8 +58,9 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if any word from keywords appears in the given source string.",
       "is_pub": true,
-      "line": 33
+      "line": 37
     },
     {
       "type": "fn_decl",
@@ -68,8 +72,9 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if the input string contains any of the specified extensions.",
       "is_pub": true,
-      "line": 40
+      "line": 45
     },
     {
       "type": "fn_decl",
@@ -81,44 +86,45 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a given slice of bytes matches a specified extension pattern.",
       "is_pub": true,
-      "line": 49
+      "line": 55
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase",
       "is_pub": false,
-      "line": 54
+      "line": 60
     },
     {
       "type": "test_decl",
       "name": "containsWord",
       "is_pub": false,
-      "line": 63
+      "line": 69
     },
     {
       "type": "test_decl",
       "name": "containsAny",
       "is_pub": false,
-      "line": 71
+      "line": 77
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord",
       "is_pub": false,
-      "line": 78
+      "line": 84
     },
     {
       "type": "test_decl",
       "name": "hasExtension",
       "is_pub": false,
-      "line": 84
+      "line": 90
     },
     {
       "type": "test_decl",
       "name": "isPathToken",
       "is_pub": false,
-      "line": 92
+      "line": 98
     }
   ]
 }

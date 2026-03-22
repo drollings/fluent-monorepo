@@ -18,6 +18,7 @@ const QueueReactor = cache.QueueReactor;
 // Tool definitions (P4.2)
 // ---------------------------------------------------------------------------
 
+/// Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.
 pub const ToolDef = struct {
     name: []const u8,
     description: []const u8,
@@ -52,6 +53,7 @@ pub const TOOLS = [_]ToolDef{
 // JSON-RPC primitives
 // ---------------------------------------------------------------------------
 
+/// Defines a JSON-RPC request structure for communication; managed by owner; requires valid payloads.
 const JsonRpcRequest = struct {
     jsonrpc: []const u8 = "2.0",
     id: ?std.json.Value = null,
@@ -63,6 +65,7 @@ const JsonRpcRequest = struct {
 // McpServer
 // ---------------------------------------------------------------------------
 
+/// Manages server state with fixed buffers; encapsulates initialization logic; not thread-safe.
 pub const McpServer = struct {
     allocator: std.mem.Allocator,
     reactor: *QueueReactor,
@@ -535,3 +538,6 @@ test "McpServer: unknown method returns error -32601" {
 
     try testing.expect(std.mem.indexOf(u8, resp, "-32601") != null);
 }
+
+
+

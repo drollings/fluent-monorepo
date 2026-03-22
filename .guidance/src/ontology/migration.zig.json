@@ -12,16 +12,18 @@
       "name": "OntologyVersion",
       "match_hash": "cefcf21e96bf43f01a911d311d5ee40d1d9a44bbaa9b642e3087bccc160cc1e8",
       "signature": "keyword_struct OntologyVersion { ... }",
+      "comment": "Tracks ontology version changes with fixed-size buffers; managed by owner; invariant version history.",
       "is_pub": true,
-      "line": 12
+      "line": 13
     },
     {
       "type": "struct",
       "name": "OntologyMigration",
       "match_hash": "aba79453c70effc7c20d824b0ed8c5cfacc6ab141ea9f98dc5e9e75d11eedcec",
       "signature": "keyword_struct OntologyMigration { ... }",
+      "comment": "Defines migration struct for ontology changes, manages invariants and lifecycle; owned by the system, not thread-safe.",
       "is_pub": true,
-      "line": 27
+      "line": 29
     },
     {
       "type": "fn_private",
@@ -33,13 +35,14 @@
       ],
       "returns": "anyerror!void",
       "is_pub": false,
-      "line": 34
+      "line": 36
     },
     {
       "type": "struct",
       "name": "VersionRegistry",
       "match_hash": "384e51c16f833bccd9debde66e9d1e357c862b8f2e97cda7323a99d75cb30037",
       "signature": "keyword_struct VersionRegistry { ... }",
+      "comment": "Manages version registry entries with strict ownership and invariants; ensures consistent state across operations.",
       "is_pub": true,
       "members": [
         {
@@ -52,7 +55,7 @@
           ],
           "returns": "VersionRegistry",
           "is_pub": true,
-          "line": 55
+          "line": 58
         }
     ,    {
           "type": "fn_decl",
@@ -64,7 +67,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 62
+          "line": 65
         }
     ,    {
           "type": "fn_decl",
@@ -77,7 +80,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 70
+          "line": 73
         }
     ,    {
           "type": "fn_decl",
@@ -89,28 +92,28 @@
           ],
           "returns": "?OntologyVersion",
           "is_pub": true,
-          "line": 83
+          "line": 86
         }
       ],
-      "line": 51
+      "line": 54
     },
     {
       "type": "test_decl",
       "name": "version recorded and retrieved",
       "is_pub": false,
-      "line": 95
+      "line": 98
     },
     {
       "type": "test_decl",
       "name": "migration stub is no-op",
       "is_pub": false,
-      "line": 111
+      "line": 114
     },
     {
       "type": "test_decl",
       "name": "latest returns null when empty",
       "is_pub": false,
-      "line": 115
+      "line": 118
     }
   ]
 }

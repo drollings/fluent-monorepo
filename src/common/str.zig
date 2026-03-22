@@ -5,15 +5,7 @@
 /// tool that needs lightweight text analysis.
 const std = @import("std");
 
-/// Return true when `token` looks like a code identifier rather than a plain
-/// English word.
-///
-/// Heuristics (any one is sufficient):
-///   - Contains an underscore        → snake_case / SCREAMING_SNAKE
-///   - Has an uppercase letter after the first character → camelCase / PascalCase
-///
-/// This filter prevents short, lowercase common words ("search", "work", "how")
-/// from accidentally matching AST names during deterministic lookup phases.
+/// Checks if a token matches a pattern resembling a Zig identifier, returning true or false.
 pub fn looksLikeIdentifier(token: []const u8) bool {
     if (token.len < 2) return false;
 
@@ -274,3 +266,4 @@ test "looksLikeIdentifier rejects plain words" {
     try std.testing.expect(!looksLikeIdentifier("how"));
     try std.testing.expect(!looksLikeIdentifier("a")); // too short
 }
+

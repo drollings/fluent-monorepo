@@ -12,6 +12,7 @@ const std = @import("std");
 const rdf = @import("rdf");
 const Triple = rdf.Triple;
 
+/// Defines inference rules with plain English semantics, manages ownership, ensures invariants; key model is rule-based inference.
 pub const RuleType = enum {
     subclass_transitivity,
     subproperty_transitivity,
@@ -25,6 +26,7 @@ pub const InferenceRule = struct {
     trigger_predicate: []const u8,
 };
 
+/// Manages inference logic with a structured keyword structure, owns inference operations, and ensures consistent state across runs.
 pub const InferenceEngine = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(InferenceRule),
@@ -90,3 +92,5 @@ test "inference rule addition" {
     try testing.expectEqual(@as(usize, 1), engine.rules.items.len);
     try testing.expectEqual(RuleType.subclass_transitivity, engine.rules.items[0].rule_type);
 }
+
+

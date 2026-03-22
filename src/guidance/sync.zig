@@ -7,6 +7,7 @@ const enhancer_mod = @import("enhancer.zig");
 const llm = @import("common");
 const comment_parser = @import("comment_parser.zig");
 
+/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access across calls.
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,

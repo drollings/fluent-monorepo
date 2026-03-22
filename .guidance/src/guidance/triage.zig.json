@@ -15,8 +15,9 @@
         { "name": "work_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Retrieves the lifecycle state slice from the allocator and work directory.",
       "is_pub": true,
-      "line": 22
+      "line": 20
     },
     {
       "type": "fn_decl",
@@ -28,8 +29,9 @@
         { "name": "affected_count", "type": "usize" }
       ],
       "returns": "[]const u8",
+      "comment": "Assess risk level deterministically from content and file count.",
       "is_pub": true,
-      "line": 37
+      "line": 35
     },
     {
       "type": "fn_decl",
@@ -42,8 +44,9 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
+      "comment": "Extract path-like tokens from content matching common project directories.\nReturns a deduplicated slice of owned paths (caller must free each + the slice).",
       "is_pub": true,
-      "line": 66
+      "line": 64
     },
     {
       "type": "fn_private",
@@ -55,7 +58,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 136
+      "line": 134
     },
     {
       "type": "fn_private",
@@ -69,38 +72,39 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Add path to list if not a duplicate. Verifies existence in project_root.\nReturns true if added.",
       "is_pub": false,
-      "line": 142
+      "line": 140
     },
     {
       "type": "test_decl",
       "name": "assessRisk high for delete",
       "is_pub": false,
-      "line": 166
+      "line": 164
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for refactor",
       "is_pub": false,
-      "line": 171
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for wide scope",
       "is_pub": false,
-      "line": 176
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "assessRisk low for simple change",
       "is_pub": false,
-      "line": 181
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "findAffectedFiles detects backtick paths",
       "is_pub": false,
-      "line": 186
+      "line": 184
     }
   ]
 }

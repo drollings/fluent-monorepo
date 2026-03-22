@@ -63,6 +63,7 @@ pub fn bytesToVec(allocator: std.mem.Allocator, bytes: []const u8) ![]f32 {
 
 // ── Scored result ─────────────────────────────────────────────────
 
+/// Represents a scored result with fixed-size buffers; managed via ownership model; ensures data integrity across operations.
 pub const ScoredResult = struct {
     id: i64,
     vector_score: ?f32 = null,
@@ -217,3 +218,4 @@ test "hybrid merge respects limit" {
     defer std.testing.allocator.free(merged);
     try std.testing.expectEqual(@as(usize, 5), merged.len);
 }
+

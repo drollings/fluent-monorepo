@@ -4,6 +4,7 @@ const hash = @import("hash.zig");
 const llm = @import("common");
 const line_verify = @import("line_verify.zig");
 
+/// Manages JSON data storage with fixed-size buffers; owned by the module; ensures consistent access patterns.
 pub const JsonStore = struct {
     allocator: std.mem.Allocator,
     debug: bool = false,
@@ -586,6 +587,7 @@ pub const JsonStore = struct {
     }
 };
 
+/// Represents the outcome of a merge operation, managing ownership and invariants for safe state transitions.
 pub const MergeResult = struct {
     members: []types.Member = &.{},
     members_added: usize = 0,
@@ -598,3 +600,5 @@ pub const MergeResult = struct {
     lines_corrected: usize = 0,
     has_changes: bool = false,
 };
+
+

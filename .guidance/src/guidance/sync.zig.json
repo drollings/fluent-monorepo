@@ -11,6 +11,7 @@
       "name": "SyncProcessor",
       "match_hash": "2c2ddd807d37ed2e10296a70d45787f30fa4770828eb6cbfaaca832fc5b37583",
       "signature": "keyword_struct SyncProcessor { ... }",
+      "comment": "Manages synchronization state with fixed buffers; owned by the module; ensures consistent access across calls.",
       "is_pub": true,
       "members": [
         {
@@ -27,7 +28,7 @@
           ],
           "returns": "SyncProcessor",
           "is_pub": true,
-          "line": 30
+          "line": 31
         }
     ,    {
           "type": "fn_decl",
@@ -39,7 +40,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 41
+          "line": 42
         }
     ,    {
           "type": "fn_private",
@@ -52,7 +53,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 46
+          "line": 47
         }
     ,    {
           "type": "fn_decl",
@@ -66,7 +67,7 @@
           ],
           "returns": "types.SyncResult",
           "is_pub": true,
-          "line": 64
+          "line": 65
         }
     ,    {
           "type": "fn_decl",
@@ -80,7 +81,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 458
+          "line": 459
         }
     ,    {
           "type": "fn_private",
@@ -93,7 +94,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 495
+          "line": 496
         }
     ,    {
           "type": "fn_private",
@@ -106,7 +107,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 499
+          "line": 500
         }
     ,    {
           "type": "fn_private",
@@ -119,8 +120,9 @@
             { "name": "members", "type": "[]const types.Member" }
           ],
           "returns": "?[]const u8",
+          "comment": "Build auto-generated module comment: \"module_name: N structs, M functions (name1, name2, ...)\"",
           "is_pub": false,
-          "line": 521
+          "line": 522
         }
     ,    {
           "type": "fn_private",
@@ -131,8 +133,9 @@
             { "name": "members", "type": "[]const types.Member" }
           ],
           "returns": "bool",
+          "comment": "Returns true when any member (or nested member) has at least one GoF pattern.",
           "is_pub": false,
-          "line": 573
+          "line": 574
         }
     ,    {
           "type": "fn_private",
@@ -144,7 +147,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 583
+          "line": 584
         }
     ,    {
           "type": "fn_private",
@@ -158,8 +161,9 @@
             { "name": "has_domain", "type": "bool" }
           ],
           "returns": "[]const types.Skill",
+          "comment": "Build the skills slice: add domain-patterns only when domain patterns are detected;\nadd gof-patterns when GoF patterns are detected.\nPreserves any extra skills that were already in the existing guidance.",
           "is_pub": false,
-          "line": 596
+          "line": 597
         }
     ,    {
           "type": "fn_private",
@@ -172,8 +176,9 @@
             { "name": "skills", "type": "[]const types.Skill" }
           ],
           "returns": "?[]const u8",
+          "comment": "Prepend a `[skill1, skill2] ` prefix to the module comment using the\ndeterministically-computed skills slice.  Any existing `[...]` prefix is\nstripped first so re-run s remain idempotent.\n\nReturns null when there's no actual comment content (skill tags alone\nare NOT a valid comment - they should only annotate real descriptions).",
           "is_pub": false,
-          "line": 654
+          "line": 655
         }
     ,    {
           "type": "fn_private",
@@ -186,8 +191,9 @@
             { "name": "new_tags", "type": "[]const []const u8" }
           ],
           "returns": "[]const []const u8",
+          "comment": "Merge new tags from the LLM into the existing tag slice, deduplicating.\nReturns a newly allocated slice owned by the caller.",
           "is_pub": false,
-          "line": 699
+          "line": 700
         }
     ,    {
           "type": "fn_private",
@@ -199,8 +205,9 @@
             { "name": "json_path", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Core infill logic for a single guidance JSON file (absolute path).\nLoads the JSON, fills blank member/module comments via the Enhancer, and\nwrites the file back if anything changed.  Returns true when the file was\nupdated, false when it was unchanged or the enhancer is unavailable.\n\nCalled automatically during processFile when LLM is available.",
           "is_pub": false,
-          "line": 733
+          "line": 734
         }
     ,    {
           "type": "fn_decl",
@@ -212,8 +219,9 @@
             { "name": "json_path", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Infill a single guidance JSON file by absolute path.  Suitable for\nMakefile per-file dependency targets (`make sync --file src/foo.zig`).\nReturns true when the file was updated.\n\nNo-op (returns false) when the enhancer is absent or unreachable.",
           "is_pub": true,
-          "line": 862
+          "line": 863
         }
     ,    {
           "type": "fn_decl",
@@ -226,8 +234,9 @@
             { "name": "skip_paths", "type": "*const std.StringHashMapUnmanaged(void)" }
           ],
           "returns": "usize",
+          "comment": "Walk guidance_dir for all *.json files (excluding those in `skip_paths`)\nand fill blank comment fields via the configured Enhancer.\nReturns the count of files that were changed.\n\nNo-op (returns 0) when the enhancer is absent or unreachable.",
           "is_pub": true,
-          "line": 873
+          "line": 874
         }
     ,    {
           "type": "fn_private",
@@ -239,11 +248,12 @@
             { "name": "rel_path", "type": "[]const u8" }
           ],
           "returns": "[]const []const u8",
+          "comment": "Scan src/ directory for Zig files that @import the given module.\nrel_path is the relative path of the file being processed (e.g. \"src/foo.zig\").",
           "is_pub": false,
-          "line": 907
+          "line": 908
         }
       ],
-      "line": 10
+      "line": 11
     }
   ]
 }

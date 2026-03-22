@@ -19,8 +19,9 @@
         { "name": "returns", "type": "?[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Computes a hash from allocator, name, and parameters, returning the resulting hash value.",
       "is_pub": true,
-      "line": 8
+      "line": 9
     },
     {
       "type": "fn_decl",
@@ -33,8 +34,9 @@
         { "name": "bases", "type": "[]const []const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Generates a hash for a given Zig struct using its allocator and base data.",
       "is_pub": true,
-      "line": 27
+      "line": 29
     },
     {
       "type": "fn_decl",
@@ -45,38 +47,39 @@
         { "name": "type_str", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Converts a null-terminated C string into a normalized Zig type slice.",
       "is_pub": true,
-      "line": 43
+      "line": 46
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 49
+      "line": 52
     },
     {
       "type": "test_decl",
       "name": "apiHash is deterministic",
       "is_pub": false,
-      "line": 55
+      "line": 58
     },
     {
       "type": "test_decl",
       "name": "apiHash differs for different names",
       "is_pub": false,
-      "line": 69
+      "line": 72
     },
     {
       "type": "test_decl",
       "name": "structHash differs when field names change",
       "is_pub": false,
-      "line": 80
+      "line": 83
     },
     {
       "type": "test_decl",
       "name": "structHash same fields produce same hash",
       "is_pub": false,
-      "line": 100
+      "line": 103
     }
   ]
 }

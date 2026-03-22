@@ -12,22 +12,25 @@
       "name": "IngestStats",
       "match_hash": "aeb5acaf8d1942fe774487b5d506fa61e98199544077fd24506563aa30edf840",
       "signature": "keyword_struct IngestStats { ... }",
+      "comment": "Tracks ingestion statistics with a fixed-size buffer pool; managed centrally; not thread-safe.",
       "is_pub": true,
-      "line": 37
+      "line": 38
     },
     {
       "type": "struct",
       "name": "BatchConfig",
       "match_hash": "53d9c0f49eabee8ae7db81dd895f2f3a94bbc66ee3df4a28311d1b66d7477719",
       "signature": "keyword_struct BatchConfig { ... }",
+      "comment": "Manages batch configuration settings with fixed-size buffers; owned by the batch engine; ensures consistent state across runs.",
       "is_pub": true,
-      "line": 49
+      "line": 51
     },
     {
       "type": "struct",
       "name": "BatchIngestor",
       "match_hash": "cda66af527c27665cf5ee5c7256ea1391e4ab7876337e2c5af22f9d1ad51c7ad",
       "signature": "keyword_struct BatchIngestor { ... }",
+      "comment": "Manages batch data ingestion with fixed buffers; owned by the engine; ensures consistent state across runs.",
       "is_pub": true,
       "members": [
         {
@@ -41,7 +44,7 @@
           ],
           "returns": "BatchIngestor",
           "is_pub": true,
-          "line": 67
+          "line": 70
         }
     ,    {
           "type": "fn_decl",
@@ -53,8 +56,9 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "IngestBuilder",
+          "comment": "Return a fluent IngestBuilder bound to `library`.\n\n  const stats = try BatchIngestor.from(allocator, library)\n      .batchSize(10_000)\n      .skipErrors(true)\n      .onProgress(myCallback)\n      .ingestSource(source);",
           "is_pub": true,
-          "line": 78
+          "line": 81
         }
     ,    {
           "type": "fn_private",
@@ -68,8 +72,9 @@
             { "name": "stats", "type": "*IngestStats" }
           ],
           "returns": "void",
+          "comment": "Flush accumulated mapper output to `library`, update `stats`, fire\nthe progress callback if configured.",
           "is_pub": false,
-          "line": 86
+          "line": 89
         }
     ,    {
           "type": "fn_private",
@@ -82,8 +87,9 @@
             { "name": "batch_arena", "type": "*std.heap.ArenaAllocator" }
           ],
           "returns": "void",
+          "comment": "Reset the batch arena and reinitialise `mapper` for the next batch window.\nReplaces the previous deinit+alloc cycle with a single arena reset.",
           "is_pub": false,
-          "line": 103
+          "line": 106
         }
     ,    {
           "type": "fn_decl",
@@ -96,8 +102,9 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest a Turtle source string into library.\nReads all triples, maps to nodes/edges, flushes in batches.",
           "is_pub": true,
-          "line": 112
+          "line": 115
         }
     ,    {
           "type": "fn_decl",
@@ -110,17 +117,19 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest a Turtle file at the given path.",
           "is_pub": true,
-          "line": 156
+          "line": 159
         }
       ],
-      "line": 63
+      "line": 66
     },
     {
       "type": "struct",
       "name": "IngestBuilder",
       "match_hash": "973075c19cdb42f92ba2af6241e01f44af07f8830972fc8632a11b50dd1ef729",
       "signature": "keyword_struct IngestBuilder { ... }",
+      "comment": "Manages ingestion pipelines with fixed-size buffers; owned by the caller; ensures consistent state across operations.",
       "is_pub": true,
       "members": [
         {
@@ -133,8 +142,9 @@
             { "name": "n", "type": "usize" }
           ],
           "returns": "*IngestBuilder",
+          "comment": "Triples accumulated before each flush (default: 10,000).",
           "is_pub": true,
-          "line": 179
+          "line": 183
         }
     ,    {
           "type": "fn_decl",
@@ -146,8 +156,9 @@
             { "name": "v", "type": "bool" }
           ],
           "returns": "*IngestBuilder",
+          "comment": "When true, parse errors are logged and skipped rather than aborting.",
           "is_pub": true,
-          "line": 185
+          "line": 189
         }
     ,    {
           "type": "fn_decl",
@@ -159,8 +170,9 @@
             { "name": "n", "type": "usize" }
           ],
           "returns": "*IngestBuilder",
+          "comment": "Stop after processing this many triples (0 = unlimited).",
           "is_pub": true,
-          "line": 191
+          "line": 195
         }
     ,    {
           "type": "fn_decl",
@@ -172,8 +184,9 @@
             { "name": "cb", "type": "ProgressCallback" }
           ],
           "returns": "*IngestBuilder",
+          "comment": "Callback invoked after every batch flush.",
           "is_pub": true,
-          "line": 197
+          "line": 201
         }
     ,    {
           "type": "fn_decl",
@@ -185,8 +198,9 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest from a Turtle source string.  Terminates the builder chain.",
           "is_pub": true,
-          "line": 203
+          "line": 207
         }
     ,    {
           "type": "fn_decl",
@@ -198,59 +212,60 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest from a Turtle file at `path`.  Terminates the builder chain.",
           "is_pub": true,
-          "line": 209
+          "line": 213
         }
       ],
-      "line": 173
+      "line": 177
     },
     {
       "type": "test_decl",
       "name": "batch ingestor accumulates triples without flush",
       "is_pub": false,
-      "line": 221
+      "line": 225
     },
     {
       "type": "test_decl",
       "name": "batch boundary: small batch_size flushes multiple times",
       "is_pub": false,
-      "line": 245
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "progress callback invoked",
       "is_pub": false,
-      "line": 265
+      "line": 269
     },
     {
       "type": "test_decl",
       "name": "batch config defaults",
       "is_pub": false,
-      "line": 281
+      "line": 285
     },
     {
       "type": "test_decl",
       "name": "max_triples: stops after limit",
       "is_pub": false,
-      "line": 289
+      "line": 293
     },
     {
       "type": "test_decl",
       "name": "ingest stats zero on init",
       "is_pub": false,
-      "line": 317
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestSource on YAGO sample returns nodes and edges",
       "is_pub": false,
-      "line": 334
+      "line": 338
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)",
       "is_pub": false,
-      "line": 366
+      "line": 370
     }
   ]
 }

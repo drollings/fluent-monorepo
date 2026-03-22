@@ -18,8 +18,9 @@
         { "name": "source_preview", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Generates a Zig file header slice using provided allocator, path, members, and preview data.",
       "is_pub": true,
-      "line": 20
+      "line": 10
     },
     {
       "type": "fn_decl",
@@ -32,8 +33,9 @@
         { "name": "header", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Insert `header` at the very beginning of `source`.\nReturns the new source content (owned by caller).",
       "is_pub": true,
-      "line": 84
+      "line": 74
     },
     {
       "type": "fn_decl",
@@ -44,38 +46,39 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when the first non-empty line of `source` starts with `//!`.",
       "is_pub": true,
-      "line": 98
+      "line": 88
     },
     {
       "type": "test_decl",
       "name": "sourceHasModuleDoc - with header",
       "is_pub": false,
-      "line": 112
+      "line": 102
     },
     {
       "type": "test_decl",
       "name": "sourceHasModuleDoc - without header",
       "is_pub": false,
-      "line": 117
+      "line": 107
     },
     {
       "type": "test_decl",
       "name": "generateFileHeader - returns null when header exists",
       "is_pub": false,
-      "line": 122
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "generateFileHeader - generates header for new file",
       "is_pub": false,
-      "line": 129
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "insertFileHeader - prepends header",
       "is_pub": false,
-      "line": 144
+      "line": 134
     }
   ]
 }

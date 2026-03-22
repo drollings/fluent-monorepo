@@ -12,6 +12,7 @@
       "name": "PendingNode",
       "match_hash": "68275999eaa85cc31b5000c7d8ebd4be0398afbafc9ed2eb3ca18dddd2ec0e50",
       "signature": "keyword_struct PendingNode { ... }",
+      "comment": "In-memory representation of a node being built from triples.",
       "is_pub": true,
       "members": [
         {
@@ -49,6 +50,7 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
+          "comment": "Convert to ContextNode (caller owns returned strings).",
           "is_pub": true,
           "line": 64
         }
@@ -60,22 +62,25 @@
       "name": "PendingEdge",
       "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
       "signature": "keyword_struct PendingEdge { ... }",
+      "comment": "Represents a pending edge in the graph; managed by owner; key invariant is its pending state.",
       "is_pub": true,
-      "line": 89
+      "line": 90
     },
     {
       "type": "struct",
       "name": "PendingContradiction",
       "match_hash": "0abd7979f8fc6b42320521af20b9c6cdccc551a84e197ba4488186e9d33a23a1",
       "signature": "keyword_struct PendingContradiction { ... }",
+      "comment": "Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with ownership and invariants.",
       "is_pub": true,
-      "line": 99
+      "line": 101
     },
     {
       "type": "struct",
       "name": "TripleMapper",
       "match_hash": "9c2805b3b1e99fd1f7502b85cb17ee6edec7263ffe2e9d3108d333ba7e0f0de6",
       "signature": "keyword_struct TripleMapper { ... }",
+      "comment": "Handles mapping between Zig keywords and structures, manages ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -89,7 +94,7 @@
           ],
           "returns": "TripleMapper",
           "is_pub": true,
-          "line": 128
+          "line": 131
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +106,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 139
+          "line": 142
         }
     ,    {
           "type": "fn_decl",
@@ -113,8 +118,9 @@
             { "name": "triple", "type": "Triple" }
           ],
           "returns": "void",
+          "comment": "Process one RDF triple. Accumulates nodes/edges in memory.",
           "is_pub": true,
-          "line": 158
+          "line": 161
         }
     ,    {
           "type": "fn_decl",
@@ -126,8 +132,9 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "FlushResult",
+          "comment": "Flush all accumulated nodes and edges to SQLite via Library.",
           "is_pub": true,
-          "line": 219
+          "line": 222
         }
     ,    {
           "type": "fn_private",
@@ -143,8 +150,9 @@
             { "name": "new_value", "type": "[]const u8" }
           ],
           "returns": "void",
+          "comment": "If the node already has a non-empty value at lod_index that differs from\nnew_value, record a PendingContradiction.",
           "is_pub": false,
-          "line": 274
+          "line": 277
         }
     ,    {
           "type": "fn_private",
@@ -157,7 +165,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 305
+          "line": 308
         }
     ,    {
           "type": "fn_private",
@@ -170,7 +178,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 317
+          "line": 320
         }
     ,    {
           "type": "fn_private",
@@ -183,7 +191,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 325
+          "line": 328
         }
     ,    {
           "type": "fn_private",
@@ -197,18 +205,19 @@
           ],
           "returns": "*PendingNode",
           "is_pub": false,
-          "line": 334
+          "line": 337
         }
       ],
-      "line": 117
+      "line": 120
     },
     {
       "type": "struct",
       "name": "FlushResult",
       "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
       "signature": "keyword_struct FlushResult { ... }",
+      "comment": "Manages flush operations with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
-      "line": 349
+      "line": 353
     },
     {
       "type": "fn_private",
@@ -221,55 +230,55 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 355
+      "line": 359
     },
     {
       "type": "test_decl",
       "name": "mapper: entity from rdf:type triple",
       "is_pub": false,
-      "line": 367
+      "line": 371
     },
     {
       "type": "test_decl",
       "name": "mapper: label routes to lod[4]",
       "is_pub": false,
-      "line": 381
+      "line": 385
     },
     {
       "type": "test_decl",
       "name": "mapper: comment routes to lod[0]",
       "is_pub": false,
-      "line": 398
+      "line": 402
     },
     {
       "type": "test_decl",
       "name": "mapper: object property creates edge",
       "is_pub": false,
-      "line": 415
+      "line": 419
     },
     {
       "type": "test_decl",
       "name": "mapper: multiple triples for same entity",
       "is_pub": false,
-      "line": 435
+      "line": 439
     },
     {
       "type": "test_decl",
       "name": "mapper: contradiction detection for duplicate label",
       "is_pub": false,
-      "line": 455
+      "line": 459
     },
     {
       "type": "test_decl",
       "name": "mapper: no contradiction for identical label",
       "is_pub": false,
-      "line": 480
+      "line": 484
     },
     {
       "type": "test_decl",
       "name": "mapper: pending node to ContextNode",
       "is_pub": false,
-      "line": 497
+      "line": 501
     }
   ]
 }

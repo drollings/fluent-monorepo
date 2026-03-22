@@ -11,6 +11,7 @@ pub const BuildError = error{
     CircularDependency,
 };
 
+/// Tracks build outcomes with invariants; managed by owner; not thread-safe.
 pub const BuildResult = struct {
     success: bool,
     targets_built: usize,
@@ -36,6 +37,7 @@ dry_run: bool = false,
 force: bool = false,
 verbose: bool = false,
 
+/// Initializes a BuildContext using an allocator, registry, and string interners.
 pub fn init(
     allocator: std.mem.Allocator,
     registry: *TargetRegistry,
@@ -49,6 +51,7 @@ pub fn init(
     };
 }
 
+/// Converts a Zig source code string into a BuildContext result.
 pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult {
     const start = std.time.nanoTimestamp();
 
@@ -219,6 +222,7 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
     return true;
 }
 
+/// Converts a BuildContext string into a Zig slice for target listing.
 pub fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) !void {
     const names = try self.registry.listNames(self.allocator);
     defer self.allocator.free(names);
@@ -258,6 +262,7 @@ pub fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) !void {
     }
 }
 
+/// Displays a graphical representation using provided context and data.
 pub fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) !void {
     const graph_str = try self.resolver.visualizeGraph(target_names, self.allocator);
     defer self.allocator.free(graph_str);
@@ -517,3 +522,8 @@ test "BuildContext: GPA no leaks across a multi-target build" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
+
+
+
+
+

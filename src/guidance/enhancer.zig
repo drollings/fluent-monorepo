@@ -36,6 +36,7 @@ pub const EnrichmentResult = struct {
     }
 };
 
+/// Manages static configuration structures; owned by the module; ensures consistent initialization state.
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
@@ -692,3 +693,4 @@ test "lastIndexOf basic" {
     try std.testing.expectEqual(@as(?usize, 6), lastIndexOf("hello tags: #a", "tags:"));
     try std.testing.expectEqual(@as(?usize, null), lastIndexOf("no match", "tags:"));
 }
+

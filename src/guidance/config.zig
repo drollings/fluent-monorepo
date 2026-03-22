@@ -34,6 +34,7 @@ pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const DEFAULT_EMBEDDING_CACHE_LIMIT: u32 = 400;
 pub const CONFIG_FILENAME = "guidance-config.json";
 
+/// Manages configuration structures for Zig projects, owns runtime settings, ensures consistent initialization and cleanup.
 pub const Provider = struct {
     name: []const u8,
     base_url: []const u8,
@@ -959,3 +960,4 @@ test "isThinkingModelRef: bare model ref (no provider prefix) — not treated as
     // match "deepseek-r1:7b", so this correctly returns false.
     try std.testing.expect(!cfg.isThinkingModelRef("deepseek-r1:7b"));
 }
+

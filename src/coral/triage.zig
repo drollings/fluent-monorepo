@@ -18,9 +18,7 @@ pub const TriageResult = struct {
     triage_path: []const u8,
 };
 
-/// Return the current lifecycle state of a work item directory.
-/// Walks LIFECYCLE in reverse and returns the first state file found.
-/// Falls back to "TODO" if none found.
+/// Retrieves the lifecycle state slice from the allocator and work directory.
 pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]const u8 {
     var i: usize = LIFECYCLE.len;
     while (i > 0) {
@@ -35,6 +33,7 @@ pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]
     return "TODO";
 }
 
+/// Evaluates risk based on content and affected count, returning a processed slice.
 pub fn assessRisk(content: []const u8, affected_count: usize) []const u8 {
     const has_high = string.containsIgnoreCase(content, "delete") or
         string.containsIgnoreCase(content, " remove ") or
@@ -201,3 +200,5 @@ test "findAffectedFiles detects backtick paths" {
     try std.testing.expect(files.len >= 1);
     try std.testing.expectEqualStrings("src/foo.zig", files[0]);
 }
+
+

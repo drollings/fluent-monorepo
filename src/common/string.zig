@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// Checks if a needle substring exists within the haystack, ignoring case sensitivity.
 pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (needle.len > haystack.len) return false;
@@ -10,6 +11,7 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
+/// Checks if a needle substring exists within the haystack array of bytes.
 pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
@@ -23,6 +25,7 @@ pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
+/// Checks if any keywords exist within the source string slice.
 pub fn containsAny(source: []const u8, keywords: []const []const u8) bool {
     for (keywords) |kw| {
         if (containsIgnoreCase(source, kw)) return true;
@@ -30,6 +33,7 @@ pub fn containsAny(source: []const u8, keywords: []const []const u8) bool {
     return false;
 }
 
+/// Checks if any word from keywords appears in the given source string.
 pub fn containsAnyWord(source: []const u8, keywords: []const []const u8) bool {
     for (keywords) |kw| {
         if (containsWord(source, kw)) return true;
@@ -37,6 +41,7 @@ pub fn containsAnyWord(source: []const u8, keywords: []const []const u8) bool {
     return false;
 }
 
+/// Checks if the input string contains any of the specified extensions.
 pub fn hasExtension(s: []const u8, extensions: []const []const u8) bool {
     const dot = std.mem.lastIndexOfScalar(u8, s, '.') orelse return false;
     const ext = s[dot + 1 ..];
@@ -46,6 +51,7 @@ pub fn hasExtension(s: []const u8, extensions: []const []const u8) bool {
     return false;
 }
 
+/// Checks if a given slice of bytes matches a specified extension pattern.
 pub fn isPathToken(s: []const u8, extensions: []const []const u8) bool {
     if (s.len < 3) return false;
     return hasExtension(s, extensions) or std.mem.indexOf(u8, s, "/") != null;
@@ -96,3 +102,9 @@ test "isPathToken" {
     try std.testing.expect(!isPathToken("ab", &exts));
     try std.testing.expect(isPathToken("path/to/file", &exts));
 }
+
+
+
+
+
+

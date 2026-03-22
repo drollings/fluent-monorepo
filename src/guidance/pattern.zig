@@ -117,6 +117,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
     return patterns.toOwnedSlice(allocator);
 }
 
+/// Detects pattern names in a Zig AST node, returning their slice of byte values.
 pub fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) ![][]const u8 {
     const full_patterns = try detectPatterns(allocator, tree, node);
     defer {
@@ -329,3 +330,4 @@ test "detectObserver" {
     ));
     try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
 }
+

@@ -17,6 +17,7 @@ const IngestStats = batch_mod.IngestStats;
 // Ingestion status
 // ---------------------------------------------------------------------------
 
+/// Tracks ingestion status with fixed buffers; managed by owner; ensures consistent state across operations.
 pub const IngestStatus = enum {
     not_started,
     in_progress,
@@ -28,6 +29,7 @@ pub const IngestStatus = enum {
 // Checkpoint — persists ingestion progress
 // ---------------------------------------------------------------------------
 
+/// Manages checkpoint state with fixed-size buffers; owned by the client; ensures consistent initialization and deinitialization.
 pub const Checkpoint = struct {
     checkpoint_id: []const u8, // owned
     source: []const u8, // owned
@@ -42,6 +44,7 @@ pub const Checkpoint = struct {
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
+/// Manages ingestion arguments with fixed buffers; owned by the client; ensures consistent state across operations.
 pub const IngestArgs = struct {
     source: ?[]const u8 = null,
     ontology: []const u8 = "yago-4.5",
@@ -100,6 +103,7 @@ pub const CliError = error{
 // CheckpointStore — in-memory (later persisted to SQLite)
 // ---------------------------------------------------------------------------
 
+/// Manages checkpoint storage with fixed-size buffers; owned by the client; ensures consistent state across operations.
 pub const CheckpointStore = struct {
     allocator: std.mem.Allocator,
     checkpoints: std.ArrayList(Checkpoint),
@@ -206,3 +210,7 @@ test "checkpoint store returns null for unknown source" {
     defer store.deinit();
     try testing.expect(store.findLatest("nonexistent.ttl") == null);
 }
+
+
+
+

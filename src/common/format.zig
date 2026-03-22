@@ -1,5 +1,6 @@
 const std = @import("std");
 
+/// Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.
 pub const Column = struct {
     header: []const u8,
     key: []const u8,
@@ -7,6 +8,7 @@ pub const Column = struct {
     align_left: bool = true,
 };
 
+/// Defines a table structure for structured data; owned by the module; maintains invariant schema integrity.
 pub const Table = struct {
     columns: []const Column,
     rows: []const std.json.Value,
@@ -118,6 +120,7 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
     };
 }
 
+/// Converts a value into a formatted JSON slice using an allocator and indentation level.
 pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .{};
     errdefer buf.deinit(allocator);
@@ -161,6 +164,7 @@ fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void
     }
 }
 
+/// Converts a CSV-formatted JSON slice into a CSV-formatted string using an allocator.
 pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) ![]const u8 {
     if (rows.len == 0) return allocator.dupe(u8, "");
 
@@ -220,6 +224,7 @@ fn writeCsvField(writer: anytype, field: []const u8) !void {
     }
 }
 
+/// Converts a given byte slice into a formatted size array in Zig.
 pub fn formatSize(bytes: usize, buf: []u8) []const u8 {
     const units = [_][]const u8{ "B", "KB", "MB", "GB", "TB" };
     var value: f64 = @floatFromInt(bytes);
@@ -237,6 +242,7 @@ pub fn formatSize(bytes: usize, buf: []u8) []const u8 {
     }
 }
 
+/// Converts a null-terminated byte slice into a usize representing its size.
 pub fn parseSize(size_str: []const u8) ?usize {
     const trimmed = std.mem.trim(u8, size_str, " \t\r\n");
     if (trimmed.len == 0) return null;
@@ -307,3 +313,9 @@ test "formatJson: simple struct" {
     try testing.expect(std.mem.indexOf(u8, result, "\"test\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "42") != null);
 }
+
+
+
+
+
+

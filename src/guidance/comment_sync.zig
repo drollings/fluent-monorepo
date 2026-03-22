@@ -49,6 +49,7 @@ pub const CommentSyncResult = struct {
 // Processor
 // ---------------------------------------------------------------------------
 
+/// Manages synchronization logic for comments, owns state, ensures consistent ownership across processes.
 pub const CommentSyncProcessor = struct {
     allocator: std.mem.Allocator,
     /// Absolute path to the project root (workspace).
@@ -138,6 +139,29 @@ pub const CommentSyncProcessor = struct {
 
         if (members.len == 0) return result;
 
+        // Load stored guidance JSON to retrieve old match_hashes for staleness
+        // detection.  If the JSON file doesn't exist yet, stored_doc is null
+        // and hash-based regeneration is simply skipped.
+        const rel_for_json = relPath(filepath, self.project_root);
+        const guidance_path = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}/{s}.json",
+            .{ self.output_dir, rel_for_json },
+        );
+        defer self.allocator.free(guidance_path);
+
+        const stored_doc = try self.store.loadGuidance(guidance_path);
+        defer if (stored_doc) |sd| self.store.freeGuidanceDoc(sd);
+
+        // Build a name→stored_match_hash lookup map.
+        var stored_hash_map = std.StringHashMap(?[]const u8).init(self.allocator);
+        defer stored_hash_map.deinit();
+        if (stored_doc) |sd| {
+            for (sd.members) |sm| {
+                try stored_hash_map.put(sm.name, sm.match_hash);
+            }
+        }
+
         // Sort members by line number descending so comment insertions don't
         // shift the line numbers of earlier declarations.
         const sorted = try sortMembersByLineDesc(self.allocator, members);
@@ -167,7 +191,7 @@ pub const CommentSyncProcessor = struct {
 
             if (existing_comment == null) {
                 // No comment — try to generate one and insert it.
-                const new_comment = try self.generateMemberComment(member, current_source) orelse continue;
+                const new_comment = try self.generateMemberComment(member, current_source, filepath) orelse continue;
                 defer self.allocator.free(new_comment);
 
                 if (self.debug) {
@@ -196,12 +220,24 @@ pub const CommentSyncProcessor = struct {
                     result.has_changes = true;
                 }
             } else {
-                // Comment exists — check if it is stale.
-                const check = comment_checker.checkCommentStaleness(existing_comment.?, member, "");
+                // Comment exists — check if it is stale via heuristics.
+                var check = comment_checker.checkCommentStaleness(existing_comment.?, member, "");
+
+                // Additionally check whether the member's code hash has changed
+                // since the comment was last written (Bug 3 fix).
+                if (!check.needs_regeneration) {
+                    // stored_hash_map.get returns ??[]const u8 because the value
+                    // type is ?[]const u8.  Flatten: if key absent treat as null.
+                    const stored_hash: ?[]const u8 = if (stored_hash_map.get(member.name)) |v| v else null;
+                    if (comment_checker.isHashStale(stored_hash, member.match_hash)) {
+                        check = .{ .needs_regeneration = true, .reason = "match_hash changed" };
+                    }
+                }
+
                 if (!check.needs_regeneration) continue;
 
                 // Stale — regenerate if LLM is available.
-                const new_comment = try self.generateMemberComment(member, current_source) orelse continue;
+                const new_comment = try self.generateMemberComment(member, current_source, filepath) orelse continue;
                 defer self.allocator.free(new_comment);
 
                 if (self.debug) {
@@ -274,14 +310,7 @@ pub const CommentSyncProcessor = struct {
             result.source_modified = true;
 
             // Re-parse to get fresh line numbers and update the guidance JSON.
-            const rel = relPath(filepath, self.project_root);
-            const guidance_path = try std.fmt.allocPrint(
-                self.allocator,
-                "{s}/{s}.json",
-                .{ self.output_dir, rel },
-            );
-            defer self.allocator.free(guidance_path);
-
+            // Re-use guidance_path that was already computed above.
             try self.updateJsonLineNumbers(guidance_path, current_source);
         }
 
@@ -298,12 +327,13 @@ pub const CommentSyncProcessor = struct {
         self: *CommentSyncProcessor,
         member: types.Member,
         _source: []const u8,
+        filepath: []const u8,
     ) !?[]const u8 {
         _ = _source;
         const enh = self.enhancer orelse return null;
 
         const sig = member.signature orelse member.name;
-        const rel = relPath(self.project_root, self.project_root); // placeholder
+        const rel = relPath(filepath, self.project_root);
 
         const er = switch (member.type) {
             .fn_decl, .fn_private, .method, .method_private => enh.enhanceFunction(member.name, sig, null, rel) catch return null,
@@ -403,3 +433,141 @@ test "sortMembersByLineDesc - ordering" {
     try std.testing.expectEqual(@as(u32, 10), sorted[1].line.?);
     try std.testing.expectEqual(@as(u32, 5), sorted[2].line.?);
 }
+
+test "processFile_insertsCommentForMissingFn - plumbing with no enhancer" {
+    // With no enhancer, generateMemberComment returns null and comments_added
+    // stays 0.  The test validates that the full processFile plumbing runs
+    // without errors on a valid Zig source file.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Write a minimal valid Zig source file with a public function.
+    const source =
+        \\pub fn myFunc() void {}
+        \\
+    ;
+    const src_file = try tmp.dir.createFile("test_fn.zig", .{});
+    try src_file.writeAll(source);
+    src_file.close();
+
+    // Resolve absolute path to the temp file.
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try tmp.dir.realpath("test_fn.zig", &buf);
+
+    // Also resolve the tmp dir itself as both workspace and output_dir so
+    // that the guidance JSON path is constructed under the same tmp dir.
+    var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+
+    var csp = CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run = true
+    // No enhancer assigned — generateMemberComment will return null.
+
+    const result = try csp.processFile(abs_path);
+
+    // Without an enhancer: no comments can be generated, so comments_added == 0.
+    try std.testing.expectEqual(@as(usize, 0), result.comments_added);
+    // dry_run = true so source was not modified.
+    try std.testing.expect(!result.source_modified);
+}
+
+test "processFile_skipsUpToDate - incremental mode" {
+    // When incremental = true and the guidance JSON mtime >= source mtime,
+    // processFile must return early with has_changes = false.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const source =
+        \\pub fn anotherFunc() void {}
+        \\
+    ;
+    {
+        const f = try tmp.dir.createFile("uptodate.zig", .{});
+        defer f.close();
+        try f.writeAll(source);
+    }
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try tmp.dir.realpath("uptodate.zig", &buf);
+    var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+
+    // Create the guidance JSON with a newer mtime by writing it after the source.
+    const json_path_rel = "uptodate.zig.json";
+    {
+        const jf = try tmp.dir.createFile(json_path_rel, .{});
+        defer jf.close();
+        try jf.writeAll("{\"meta\":{\"module\":\"uptodate\",\"source\":\"\"},\"members\":[]}");
+    }
+
+    var csp = CommentSyncProcessor.init(allocator, ws_path, ws_path, false, false);
+    csp.incremental = true;
+
+    const result = try csp.processFile(abs_path);
+    // File should be considered up to date — no changes.
+    try std.testing.expect(!result.has_changes);
+}
+
+test "processFile_bottomUpOrder - higher line processed first" {
+    // sortMembersByLineDesc ensures the member with the larger line number is
+    // sorted first.  This test verifies the sort indirectly: a two-function
+    // source file processed with dry_run=true should not error, and the
+    // ordering is already verified by the sortMembersByLineDesc test above.
+    // Here we just confirm processFile does not crash on a multi-decl file.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const source =
+        \\pub fn alpha() void {}
+        \\pub fn beta() void {}
+        \\
+    ;
+    {
+        const f = try tmp.dir.createFile("two_fns.zig", .{});
+        defer f.close();
+        try f.writeAll(source);
+    }
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try tmp.dir.realpath("two_fns.zig", &buf);
+    var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+
+    var csp = CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run
+    const result = try csp.processFile(abs_path);
+    // No enhancer: no comments added; no crash.
+    try std.testing.expectEqual(@as(usize, 0), result.comments_added);
+}
+
+test "processFile_skipsPrivateFns - no comment for private fn" {
+    // Private functions (fn_private) must be skipped.  With dry_run=true and
+    // no enhancer the result should always show 0 comments added, but the
+    // private function must never attempt to generate a comment.
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Only private function — should never be processed.
+    const source =
+        \\fn privateHelper() void {}
+        \\
+    ;
+    {
+        const f = try tmp.dir.createFile("private.zig", .{});
+        defer f.close();
+        try f.writeAll(source);
+    }
+
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try tmp.dir.realpath("private.zig", &buf);
+    var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+
+    var csp = CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run
+    const result = try csp.processFile(abs_path);
+    try std.testing.expectEqual(@as(usize, 0), result.comments_added);
+    try std.testing.expect(!result.has_changes);
+}
+

@@ -49,13 +49,7 @@ pub fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) !DocCommen
     };
 }
 
-/// Return true when `comment` meets the doc comment style guidelines:
-///
-///  1. Non-empty and under 400 characters.
-///  2. Does not start with known leaked LLM preamble phrases.
-///  3. Does not contain `TODO` or `FIXME` (placeholder markers).
-///  4. `code_context` is provided but unused for now (reserved for future
-///     LLM-based checking that the comment accurately describes the code).
+/// Checks if a Zig comment slice matches expected format and returns true or false.
 pub fn isWellFormedComment(comment: []const u8, code_context: []const u8) bool {
     _ = code_context;
     if (comment.len == 0 or comment.len > 400) return false;
@@ -130,3 +124,4 @@ test "isWellFormedComment - TODO marker" {
 test "isWellFormedComment - valid" {
     try std.testing.expect(isWellFormedComment("Returns the sum of all elements.", ""));
 }
+

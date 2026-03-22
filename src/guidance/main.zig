@@ -61,6 +61,7 @@ const comment_inserter_mod = @import("comment_inserter.zig");
 
 pub const version = "0.1.0";
 
+/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior and ownership model.
 const Command = enum {
     init,
     gen,
@@ -77,6 +78,7 @@ const Command = enum {
     @"migrate-comments",
 };
 
+/// Starts the Zig program execution by defining the entry point.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -232,6 +234,7 @@ fn printHelp() !void {
 // init — create default configuration
 // =============================================================================
 
+/// Manages initialization arguments for Zig's guidance system, owns state, ensures invariant correctness.
 const InitArgs = struct {
     guidance_dir: ?[]const u8 = null,
     db_path: ?[]const u8 = null,
@@ -433,6 +436,7 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
+/// Tracks commit member metadata; managed by owner; ensures consistent state across operations.
 const CommitMemberInfo = struct {
     name: []const u8, // owned
     line: ?u32,
@@ -939,6 +943,7 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
 // gen
 // =============================================================================
 
+/// Manages configuration parameters for Zig compilation; owns struct state; mutable during compilation.
 const GenArgs = struct {
     file: ?[]const u8 = null, // single-file mode (--file)
     scan: ?[]const u8 = null, // directory scan mode (--scan)
@@ -960,6 +965,8 @@ const GenArgs = struct {
     sync_comments: bool = false,
     /// Generate //! file headers for files that lack them (used with --sync-comments).
     sync_headers: bool = false,
+    /// Disable all LLM calls (no_ai=true disables automatic comment sync).
+    no_ai: bool = false,
     /// Set false via --no-db to skip database generation.
     compile_db: bool = true,
     /// Re-process all files even when guidance JSON is fresh.
@@ -1013,6 +1020,8 @@ const GenArgs = struct {
                 ga.sync_comments = true;
             } else if (std.mem.eql(u8, arg, "--sync-headers")) {
                 ga.sync_headers = true;
+            } else if (std.mem.eql(u8, arg, "--no-ai")) {
+                ga.no_ai = true;
             } else if (std.mem.eql(u8, arg, "--no-db")) {
                 ga.compile_db = false;
             } else if (std.mem.eql(u8, arg, "--force")) {
@@ -1083,6 +1092,75 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
 
     const db_path = try llm.resolvePath(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
+}
+
+/// Wire up the LLM enhancer on a `CommentSyncProcessor`.
+///
+/// Allocates an `Enhancer` on the heap (required because `CommentSyncProcessor`
+/// holds a `?*Enhancer` pointer).  The returned pointer must be freed with
+/// `teardownCspEnhancer` after the processor is done.
+fn setupCspEnhancer(
+    allocator: std.mem.Allocator,
+    ga: GenArgs,
+    cfg: *const config_mod.ProjectConfig,
+    csp: *comment_sync_mod.CommentSyncProcessor,
+) void {
+    const model = if (!std.mem.eql(u8, ga.model, config_mod.DEFAULT_MODEL) or ga.model_override)
+        ga.model
+    else
+        cfg.infillModel();
+
+    var resolved_url_to_free: ?[]const u8 = null;
+    const llm_config = resolveLlmConfigForThinking(
+        allocator,
+        cfg,
+        model,
+        if (ga.api_url_set) ga.api_url else null,
+    ) catch {
+        const fallback_config: llm.LlmConfig = .{
+            .api_url = ga.api_url,
+            .model = model,
+            .think = null,
+            .debug = ga.verbose,
+        };
+        const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return;
+        enh_ptr.* = enhancer_mod.Enhancer.init(allocator, fallback_config) catch {
+            allocator.destroy(enh_ptr);
+            return;
+        };
+        csp.enhancer = enh_ptr;
+        return;
+    };
+    resolved_url_to_free = llm_config.resolved_url;
+
+    const final_config: llm.LlmConfig = .{
+        .api_url = llm_config.api_url,
+        .model = llm_config.model,
+        .think = llm_config.think,
+        .debug = ga.verbose,
+    };
+
+    const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch {
+        if (resolved_url_to_free) |url| allocator.free(url);
+        return;
+    };
+    enh_ptr.* = enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
+        std.debug.print("warning: could not init LLM enhancer for comment sync: {}\n", .{err});
+        allocator.destroy(enh_ptr);
+        if (resolved_url_to_free) |url| allocator.free(url);
+        return;
+    };
+    if (resolved_url_to_free) |url| allocator.free(url);
+    csp.enhancer = enh_ptr;
+}
+
+/// Release the heap-allocated enhancer previously set by `setupCspEnhancer`.
+fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) void {
+    if (csp.enhancer) |enh_ptr| {
+        enh_ptr.deinit();
+        allocator.destroy(enh_ptr);
+        csp.enhancer = null;
+    }
 }
 
 /// Wire up the LLM enhancer for automatic comment generation.
@@ -1220,6 +1298,73 @@ fn processFiles(
     return total;
 }
 
+/// Returns true when `db_path` is newer than every dependency that `syncGuidanceDb`
+/// consumes:
+///   • every .json file under `json_dir/src/`
+///   • `json_dir/semantic-aliases.json`
+///   • `json_dir/capability-mapping.json`
+///   • `json_dir/guidance-config.json`
+///   • every file under `capabilities_dir` (when non-null)
+///
+/// Returns false (→ sync needed) when the db is absent or any dep is newer.
+fn guidanceDbIsUpToDate(
+    allocator: std.mem.Allocator,
+    db_path: []const u8,
+    json_dir: []const u8,
+    capabilities_dir: []const u8,
+) bool {
+    const db_mtime = marker_mod.fileMtime(db_path) orelse return false;
+
+    // Top-level config and data files in json_dir.
+    const top_level = [_][]const u8{
+        "semantic-aliases.json",
+        "capability-mapping.json",
+        "guidance-config.json",
+    };
+    for (top_level) |name| {
+        const p = std.fs.path.join(allocator, &.{ json_dir, name }) catch return false;
+        defer allocator.free(p);
+        const m = marker_mod.fileMtime(p) orelse continue; // absent → not a dep
+        if (m > db_mtime) return false;
+    }
+
+    // Walk json_dir/src/ for newest JSON mtime.
+    {
+        const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return false;
+        defer allocator.free(src_dir_path);
+        var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch return false;
+        defer src_dir.close();
+        var walker = src_dir.walk(allocator) catch return false;
+        defer walker.deinit();
+        while (walker.next() catch return false) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
+            const full = std.fs.path.join(allocator, &.{ src_dir_path, entry.path }) catch continue;
+            defer allocator.free(full);
+            const m = marker_mod.fileMtime(full) orelse continue;
+            if (m > db_mtime) return false;
+        }
+    }
+
+    // Walk capabilities_dir for newest mtime.
+    {
+        std.fs.accessAbsolute(capabilities_dir, .{}) catch return true; // absent → skip
+        var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return true;
+        defer cap_dir.close();
+        var walker = cap_dir.walk(allocator) catch return true;
+        defer walker.deinit();
+        while (walker.next() catch return true) |entry| {
+            if (entry.kind != .file) continue;
+            const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
+            defer allocator.free(full);
+            const m = marker_mod.fileMtime(full) orelse continue;
+            if (m > db_mtime) return false;
+        }
+    }
+
+    return true;
+}
+
 /// Sync .guidance.db (LanceDB-style vector database).
 /// Creates an embedding provider from config and calls lance_db.syncDatabase.
 /// Failures are logged as warnings but do not abort the gen pipeline.
@@ -1230,6 +1375,11 @@ fn syncGuidanceDb(
     cfg: *const config_mod.ProjectConfig,
     verbose: bool,
 ) void {
+    if (guidanceDbIsUpToDate(allocator, guidance_db_path, json_dir, cfg.capabilities_dir)) {
+        if (verbose) std.debug.print("gen: guidance.db is up to date, skipping\n", .{});
+        return;
+    }
+
     const embedder = vector_mod.createEmbeddingProvider(
         allocator,
         cfg.embedding_provider,
@@ -1338,10 +1488,14 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     defer cfg.deinit();
 
     // ── Optional comment sync pre-pass ────────────────────────────────────────
-    // When --sync-comments is passed, run CommentSyncProcessor over the target
-    // file(s) before JSON generation.  This inserts/updates /// doc comments in
-    // source files so they are captured in the subsequent JSON sync pass.
-    if (ga.sync_comments) {
+    // Run CommentSyncProcessor over the target file(s) before JSON generation.
+    // This inserts/updates /// doc comments in source files so they are
+    // captured in the subsequent JSON sync pass.
+    //
+    // Condition: run when --sync-comments is explicitly passed, OR when AI is
+    // not explicitly disabled (--no-ai).  When the LLM is unreachable,
+    // generateMemberComment returns null and no changes are made (no-op).
+    if (ga.sync_comments or !ga.no_ai) {
         var csp = comment_sync_mod.CommentSyncProcessor.init(
             allocator,
             paths.workspace,
@@ -1350,6 +1504,8 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             ga.dry_run,
         );
         csp.generate_headers = ga.sync_headers;
+        setupCspEnhancer(allocator, ga, &cfg, &csp);
+        defer teardownCspEnhancer(allocator, &csp);
 
         if (ga.file) |file_arg| {
             const src_abs = try llm.resolvePath(allocator, paths.workspace, file_arg);
@@ -1804,12 +1960,14 @@ fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // =============================================================================
 
 const SkillExcerpt = struct { name: []const u8, excerpt: []const u8 };
+/// Manages structured excerpt data with fixed-size buffers; owned by the module; ensures consistent state across operations.
 const ExcerptEntry = struct {
     file_path: []const u8, // borrowed from SearchResult
     label: []const u8, // owned: "src/foo.zig:42"
     code: []const u8, // owned: pruned source block
     lang: []const u8, // borrowed constant
 };
+/// Manages file match items with ownership and invariants; ensures consistent state across operations.
 const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 
 // =============================================================================
@@ -1942,6 +2100,7 @@ const FilterMode = enum {
     skip,
 };
 
+/// Describes argument handling in ExplainArgs, managing ownership and invariants for structured input.
 const ExplainArgs = struct {
     query_str: ?[]const u8 = null,
     limit: usize = 10,
@@ -3027,20 +3186,7 @@ fn emitStagedOutput(
 // Pipeline helpers — test → lint → fmt → guidance → touch
 // =============================================================================
 
-/// Derive the guidance JSON path for `src_abs` within a workspace.
-///
-/// Mirrors the path formula used by SyncProcessor.processFile exactly:
-///   `{json_dir}/{rel_path}.json`
-/// where `rel_path` is `src_abs` stripped of the leading `{workspace}/`.
-///
-/// Example:
-///   workspace = "/project"
-///   json_dir  = "/project/.guidance"
-///   src_abs   = "/project/src/foo.zig"
-///   → "/project/.guidance/src/foo.zig.json"
-///
-/// There is NO extra `/src/` injected here — the `src/` already present in
-/// `rel_path` (because source lives under `src/`) provides the single prefix.
+/// Extracts a JSON path from a Zig source file using an allocator and workspace parameters.
 pub fn guidanceJsonPath(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -3314,54 +3460,67 @@ fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // Public wrappers for testing
 // =============================================================================
 
+/// Converts a C string into a slice of two u32 values representing public range ranges.
 pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return parseHunkRanges(allocator, chunk);
 }
 
+/// Loads updated member information from a Zig file using an allocator and return a slice of member details.
 pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) ![]CommitMemberInfo {
     return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
 }
 
+/// Checks if a chunk should be ignored based on guidance data.
 pub fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) bool {
     return chunkIsExplainGenJson(chunk, guidance_dir);
 }
 
+/// Converts a byte slice into a public file path string.
 pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
     return chunkFilePath(chunk);
 }
 
+/// Splits a diff array by file-pub key, returning an allocated slice.
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }
 
+/// Checks if a list of name bytes exactly matches a list of term bytes, returning true or false.
 pub fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) bool {
     return isExactNameMatch(name, terms);
 }
 
+/// Loads skill data from a JSON path into a Zig array of bytes.
 pub fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
     return loadSkillsFromJson(allocator, json_path);
 }
 
+/// Loads used data from a JSON path into a Zig array of arrays of bytes.
 pub fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     return loadUsedByFromJson(allocator, json_path);
 }
 
+/// Loads public member names from a JSON path into a Zig array of arrays.
 pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     return loadPublicMemberNames(allocator, json_path);
 }
 
+/// Loads a skill parameter pack into a Zig slice, handling allocation and data parsing.
 pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
     return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
 }
 
+/// Extracts and explains a specified excerpt from a Zig source file, returning its contents.
 pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
     return explainExtractExcerpt(allocator, src, start_line, node_type);
 }
 
+/// Analyzes a file path and returns matching result indices.
 pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) ![]usize {
     return explainGrepFile(allocator, file_path, terms, max_results);
 }
 
+/// Checks if a query string is short enough for a public query, returning true or false.
 pub fn isShortQueryPub(query: []const u8) bool {
     return isShortQuery(query);
 }
@@ -3481,6 +3640,7 @@ fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // test command
 // =============================================================================
 
+/// Represents a query structure for testing; managed centrally, immutable by default.
 const TestQuery = struct {
     query: []const u8,
     accuracy: u8 = 0,
@@ -3923,6 +4083,11 @@ fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void
     var dry_run = false;
     var debug_mode = false;
     var gen_headers = false;
+    var no_ai = false;
+    var api_url: []const u8 = config_mod.DEFAULT_API_URL;
+    var api_url_set = false;
+    var model: []const u8 = config_mod.DEFAULT_MODEL;
+    var model_override = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -3954,6 +4119,24 @@ fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void
             debug_mode = true;
         } else if (std.mem.eql(u8, arg, "--headers")) {
             gen_headers = true;
+        } else if (std.mem.eql(u8, arg, "--no-ai")) {
+            no_ai = true;
+        } else if (std.mem.eql(u8, arg, "--api-url")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --api-url requires a value\n", .{});
+                return;
+            }
+            api_url = args[i];
+            api_url_set = true;
+        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --model requires a value\n", .{});
+                return;
+            }
+            model = args[i];
+            model_override = true;
         }
     }
 
@@ -3971,6 +4154,23 @@ fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void
 
     var processor = comment_sync_mod.CommentSyncProcessor.init(allocator, ws, src_json_dir, debug_mode, dry_run);
     processor.generate_headers = gen_headers;
+
+    // Wire up the LLM enhancer unless --no-ai was passed.
+    if (!no_ai) {
+        var cfg = config_mod.loadConfig(allocator, ws) catch
+            try config_mod.loadConfig(allocator, cwd);
+        defer cfg.deinit();
+        const ga_for_enh: GenArgs = .{
+            .api_url = api_url,
+            .api_url_set = api_url_set,
+            .model = model,
+            .model_override = model_override,
+            .verbose = debug_mode,
+            .no_ai = false,
+        };
+        setupCspEnhancer(allocator, ga_for_enh, &cfg, &processor);
+    }
+    defer teardownCspEnhancer(allocator, &processor);
 
     var total_added: usize = 0;
     var total_regen: usize = 0;

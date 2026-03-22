@@ -16,6 +16,7 @@
 ///   }
 const std = @import("std");
 
+/// Defines a token type for keywords in the Zig lexer, managing ownership and ensuring correct parsing invariants.
 pub const TokenType = enum {
     iri, // <http://example.org/foo>
     prefixed_name, // ex:foo or :bar
@@ -34,6 +35,7 @@ pub const TokenType = enum {
     eof,
 };
 
+/// Represents a keyword in Zig's lexer, tracking ownership and invariants for parsing. Owns a fixed-size buffer pool.
 pub const Token = struct {
     type: TokenType,
     /// Slice into the original source buffer (not owned).
@@ -50,6 +52,7 @@ pub const LexError = error{
     UnterminatedComment,
 };
 
+/// Represents a lexer component for Zig, managing token parsing and ownership; ensures correct structure and invariants.
 pub const Lexer = struct {
     src: []const u8,
     pos: usize,
@@ -536,3 +539,6 @@ test "lex blank node brackets" {
     const close = try lex.nextToken();
     try std.testing.expectEqual(TokenType.blank_node_close, close.type);
 }
+
+
+

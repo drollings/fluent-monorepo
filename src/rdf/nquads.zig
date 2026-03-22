@@ -15,6 +15,7 @@ const Term = parser_mod.Term;
 const Literal = parser_mod.Literal;
 const TermType = parser_mod.TermType;
 
+/// Represents a quad structure for spatial queries, managed with a fixed ownership model; key invariant is consistent indexing.
 pub const Quad = struct {
     subject: Term,
     predicate: Term,
@@ -34,6 +35,7 @@ pub const NQuadsError = error{
     OutOfMemory,
 };
 
+/// Manages NQuad parsing structures, owns parsing state, supports fixed-size buffers; not thread-safe.
 pub const NQuadsParser = struct {
     allocator: std.mem.Allocator,
     lines: std.mem.SplitIterator(u8, .scalar),
@@ -223,3 +225,5 @@ test "nquads blank node subject" {
     defer q.deinit(testing.allocator);
     try testing.expectEqualStrings("b1", q.subject.blank_node);
 }
+
+

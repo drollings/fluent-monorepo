@@ -5,13 +5,7 @@ const std = @import("std");
 // § 2  Constraint VTable
 // ============================================================
 
-/// Type-erased vtable for parsing a string into a field value and serialising
-/// a field value back to a string.  One static instance exists per type T —
-/// the Accessor only holds a pointer to it, so per-field cost is one pointer.
-///
-/// Extended fields (context, releaseFn, convertFn, setBinaryFn, getBinaryFn)
-/// are optional — null means "not applicable for this type".  The original
-/// setFn / getFn always operate on UTF-8 string representations.
+/// Defines a constraint table structure for validation; managed centrally, immutable after creation.
 pub const ConstraintVTable = struct {
     /// Parse `input` and write the result to the field at `ptr`.
     /// An allocator is required for string/slice fields to avoid dangling pointers.
@@ -134,6 +128,7 @@ pub fn Constraint(comptime T: type) ConstraintVTable {
 //       new ConstraintVTable just to call through a function pointer, and
 //   (c) setFast/getFast can call these directly, bypassing type erasure.
 
+/// Validates and sets constraints for a Zig type with allocator and input data.
 pub fn constraintSet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) anyerror!void {
     switch (@typeInfo(T)) {
         .int => typed_ptr.* = try std.fmt.parseInt(T, input, 10),
@@ -196,6 +191,7 @@ pub fn constraintSet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
     }
 }
 
+/// Retrieves a value from a typed pointer using reflection, returning any error if failed.
 pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: *const T) anyerror![]const u8 {
     switch (@typeInfo(T)) {
         .int, .float => return std.fmt.allocPrint(allocator, "{d}", .{typed_ptr.*}),
@@ -244,3 +240,6 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
         else => return error.UnsupportedType,
     }
 }
+
+
+

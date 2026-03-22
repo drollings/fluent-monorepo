@@ -152,6 +152,11 @@ pub fn build(b: *std.Build) void {
     guidance_exe.linkSystemLibrary("sqlite3");
     b.installArtifact(guidance_exe);
 
+    // Named step used by the Makefile TARGET_BIN rule so that only the
+    // guidance binary is (re)installed — coral is left untouched.
+    const guidance_step = b.step("guidance", "Build and install the guidance binary");
+    guidance_step.dependOn(&b.addInstallArtifact(guidance_exe, .{}).step);
+
     const run_guidance = b.addRunArtifact(guidance_exe);
     if (b.args) |args| run_guidance.addArgs(args);
     const run_guidance_step = b.step("run-guidance", "Run guidance");

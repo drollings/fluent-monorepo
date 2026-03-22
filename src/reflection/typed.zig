@@ -9,6 +9,7 @@ pub const Role = permissions_mod.Role;
 pub const RolePermissions = permissions_mod.RolePermissions;
 pub const perm_all = permissions_mod.perm_all;
 
+/// Defines a type identifier with enum capabilities; managed centrally; immutable once defined.
 pub const TypeId = enum(u8) {
     int_u8,
     int_u16,
@@ -31,6 +32,7 @@ pub const TypeId = enum(u8) {
     unknown,
 };
 
+/// Converts a Zig type to its corresponding TypeId identifier.
 pub fn typeIdFromType(comptime T: type) TypeId {
     return switch (@typeInfo(T)) {
         .int => |i| switch (i.bits) {
@@ -55,6 +57,7 @@ pub fn typeIdFromType(comptime T: type) TypeId {
     };
 }
 
+/// Defines a typed accessor structure for type-safe field access; manages ownership and invariants.
 pub const TypedAccessor = struct {
     name: []const u8,
     offset: usize,
@@ -103,6 +106,7 @@ pub const TypedAccessor = struct {
     }
 };
 
+/// Converts a Zig type reference to a typed accessor table, returning the underlying type.
 pub fn TypedAccessorTable(comptime Host: type) type {
     return struct {
         const Self = @This();
@@ -182,6 +186,7 @@ pub fn TypedAccessorTable(comptime Host: type) type {
     };
 }
 
+/// Represents a typed editable structure with strict ownership and invariants; managed via reflection.
 pub const TypedEditable = struct {
     host_ptr: *anyopaque,
     accessors: []const TypedAccessor,
@@ -261,3 +266,8 @@ pub const ValidationError = error{
     UnsupportedPointerType,
     BufferTooSmall,
 };
+
+
+
+
+

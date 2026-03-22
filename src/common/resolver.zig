@@ -20,6 +20,7 @@ interner: *StringInterner,
 options: ResolverOptions,
 
 // comment-above-init
+/// Initializes the dependency resolver with allocator, registry, and interners, returning a resolved dependency.
 pub fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner) DependencyResolver {
     return .{
         .allocator = allocator,
@@ -44,6 +45,7 @@ pub fn initWithOptions(
     };
 }
 
+/// Manages resolved build components, tracks ownership, ensures static invariants.
 pub const ResolvedBuild = struct {
     targets: []*Target,
     allocator: std.mem.Allocator,
@@ -248,6 +250,7 @@ fn collectDependenciesWithAbstracts(
     }
 }
 
+/// Generates a Zig array representation of a graph visualization based on dependency data.
 pub fn visualizeGraph(
     self: *DependencyResolver,
     target_names: []const []const u8,
@@ -692,3 +695,6 @@ test "DependencyResolver: GPA no leaks" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
+
+
+

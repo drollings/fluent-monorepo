@@ -10,14 +10,7 @@ const std = @import("std");
 const llm = @import("common");
 const types = @import("types.zig");
 
-/// Filter `stages` for relevance to `query` using the provided LLM client.
-///
-/// - .code and .metadata stages are always included.
-/// - .prose, .insight, .skill_doc stages are evaluated: kept if LLM says YES.
-///   On LLM failure the stage is kept (fail-open = better recall).
-///
-/// Returns a new owned slice of Stages (each Stage has freshly-duped strings).
-/// Caller must free with types.freeStages() then allocator.free(slice).
+/// Processes a query by filtering stages using an allocator and returns a cleaned slice of stages.
 pub fn filterStages(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -201,3 +194,4 @@ fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) !types.Stage {
         .line = s.line,
     };
 }
+

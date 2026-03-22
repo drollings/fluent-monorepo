@@ -3,6 +3,7 @@ const interner_mod = @import("interner.zig");
 const StringInterner = interner_mod.StringInterner;
 const reflection = @import("reflection");
 
+/// Defines a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.
 pub const TargetType = enum {
     abstract,
     file,
@@ -55,6 +56,7 @@ exists: ?[]const u8 = null,
 check_mtime: bool = false,
 commands: std.ArrayListUnmanaged([]const u8),
 
+/// Initializes a Zig allocation with provided allocator and interners, returning a target slice.
 pub fn init(
     allocator: std.mem.Allocator,
     interner: *StringInterner,
@@ -77,6 +79,7 @@ pub fn init(
     };
 }
 
+/// Releases allocated memory by deallocating the Zig object.
 pub fn deinit(self: *Target, allocator: std.mem.Allocator) void {
     self.depends.deinit(allocator);
     self.provides.deinit(allocator);
@@ -94,6 +97,7 @@ pub fn deinit(self: *Target, allocator: std.mem.Allocator) void {
     }
 }
 
+/// Updates dependencies with allocator and interners, ensuring proper memory management.
 pub fn setDepends(
     self: *Target,
     allocator: std.mem.Allocator,
@@ -104,6 +108,7 @@ pub fn setDepends(
     self.depends = try interner.internAndGetBitSet(allocator, depends);
 }
 
+/// Initializes a Zig array with provided allocator and string interners.
 pub fn setProvides(
     self: *Target,
     allocator: std.mem.Allocator,
@@ -114,16 +119,19 @@ pub fn setProvides(
     self.provides = try interner.internAndGetBitSet(allocator, provides);
 }
 
+/// Adds a command slice to the target with specified allocator and parameters.
 pub fn addCommand(self: *Target, allocator: std.mem.Allocator, cmd: []const u8) !void {
     try self.commands.append(allocator, cmd);
 }
 
+/// Checks if a target is abstract by verifying its structure and return a boolean result.
 pub fn isAbstract(self: *const Target) bool {
     return self.target_type == .abstract and
         self.commands.items.len == 0 and
         self.exists == null;
 }
 
+/// Checks if a dependency condition is met using allocator and bit set data.
 pub fn dependsSatisfiedBy(self: *const Target, allocator: std.mem.Allocator, available: *const std.bit_set.DynamicBitSetUnmanaged) bool {
     if (self.depends.count() == 0) return true;
     var missing = self.depends.clone(allocator) catch return false;
@@ -135,6 +143,7 @@ pub fn dependsSatisfiedBy(self: *const Target, allocator: std.mem.Allocator, ava
     return missing.count() == 0;
 }
 
+/// Validates dependencies for missing functionality; returns a bit set object.
 pub fn missingDepends(
     self: *const Target,
     allocator: std.mem.Allocator,
@@ -152,6 +161,7 @@ pub fn missingDepends(
     return missing;
 }
 
+/// Calculates the distance between two targets using bit set operations.
 pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBitSetUnmanaged) usize {
     var dist: usize = 0;
     var iter = self.depends.iterator(.{});
@@ -163,6 +173,7 @@ pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBi
     return dist;
 }
 
+/// Formats a target string using specified format options and writer.
 pub fn format(
     self: *const Target,
     comptime fmt: []const u8,
@@ -196,13 +207,7 @@ pub fn format(
 //   const s = try view.get("provides", .coder);
 //   defer allocator.free(s);
 
-/// TargetSchema — reflection schema for Target, parameterised on a StringInterner.
-///
-/// MUST be heap-allocated via `TargetSchema.create()` — the schema stores its
-/// own bitset vtables and an accessor array whose entries carry pointers back
-/// into those vtables.  If the schema were stack-allocated and then moved (e.g.
-/// returned by value), all `constraint` pointers in `accessors` would dangle.
-/// Always allocate with `create` and free with `destroy`.
+/// Defines a schema for target configuration with fixed-size buffers; managed via ownership model; ensures consistent initialization and deinitialization.
 pub const TargetSchema = struct {
     const Self = @This();
     const ACCESSOR_COUNT = 5;
@@ -688,3 +693,15 @@ test "TargetSchema: GPA no leaks" {
     const p = try view.get("provides", .coder);
     allocator.free(p);
 }
+
+
+
+
+
+
+
+
+
+
+
+

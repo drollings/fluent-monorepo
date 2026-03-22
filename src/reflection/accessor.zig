@@ -141,15 +141,7 @@ pub const RequiresWhenEntry = struct {
 // § 3b  Accessor descriptor
 // ============================================================
 
-/// A single field descriptor used by both static (Editable) and dynamic
-/// (DynamicEditable) schemas.  The constraint pointer references a statically
-/// compiled VTable, so adding the same field to a dynamic schema costs no
-/// additional code generation.
-///
-/// type_tag and ownership are cached here so that consumers (SQLite hydration,
-/// WASM IPC, TUI) can branch cheaply without re-dispatching through @typeInfo.
-/// binary_size is the fixed wire size in bytes for WASM IPC; 0 means variable.
-/// meta is field metadata for AI agent understanding and schema documentation.
+/// Defines a structured accessor with fixed-size buffers; manages ownership and invariants.
 pub const Accessor = struct {
     name: []const u8,
     offset: usize,
@@ -167,15 +159,7 @@ pub const Accessor = struct {
 // § 4  Editable mixin  (compile-time-known structs)
 // ============================================================
 
-/// Zero-size mixin that adds reflective set/get to any struct.
-///
-/// Add one field to your struct:
-///   editable: Editable(MyStruct) = .{},
-///
-/// The mixin generates a comptime accessor table and a StaticStringMap for
-/// O(1) name→index lookup.  All fields default to `perm_all`; override by
-/// providing a custom `permissions(comptime field_name: []const u8)` decl on
-/// your Host type (not yet wired — use DynamicEditable for per-field perms).
+/// Converts a Zig type to an editable representation, accepting a host type and returning its editable form.
 pub fn Editable(comptime Host: type) type {
     return struct {
         const Self = @This();
@@ -782,3 +766,5 @@ pub const DynamicEditable = struct {
         return self.accessors[index].meta;
     }
 };
+
+

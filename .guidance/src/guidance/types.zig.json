@@ -11,6 +11,7 @@
       "name": "FileType",
       "match_hash": "94aaa3d6a33d442c59ee7de81aa077705f380834991b7b2a0f5709ce5c7794e3",
       "signature": "keyword_enum FileType { ... }",
+      "comment": "Classification of a source file's content type.\nUsed in the `file_type` column of `ast_nodes` and by the plugin registry\nto route non-code files to appropriate handlers.",
       "is_pub": true,
       "members": [
         {
@@ -64,6 +65,7 @@
             { "name": "ext", "type": "[]const u8" }
           ],
           "returns": "FileType",
+          "comment": "Infer FileType from a file extension.",
           "is_pub": true,
           "line": 17
         }
@@ -76,6 +78,7 @@
             { "name": "self", "type": "FileType" }
           ],
           "returns": "[]const u8",
+          "comment": "Return the canonical string stored in the `file_type` DB column.",
           "is_pub": true,
           "line": 35
         }
@@ -87,190 +90,207 @@
       "name": "MemberType",
       "match_hash": "77bb0644cedcf58c7ee95907830fc847661f03cbb56f6e4134e8b952c3eabd9a",
       "signature": "keyword_enum MemberType { ... }",
+      "comment": "Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "fn_decl",
           "is_pub": false,
-          "line": 49
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "fn_private",
           "is_pub": false,
-          "line": 50
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "@\"struct\"",
           "is_pub": false,
-          "line": 51
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "@\"enum\"",
           "is_pub": false,
-          "line": 52
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "@\"union\"",
           "is_pub": false,
-          "line": 53
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "enum_field",
           "is_pub": false,
-          "line": 54
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "test_decl",
           "is_pub": false,
-          "line": 55
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "comptime_block",
           "is_pub": false,
-          "line": 56
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "method",
           "is_pub": false,
-          "line": 57
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "method_private",
           "is_pub": false,
-          "line": 58
+          "line": 59
         }
       ],
-      "line": 48
+      "line": 49
     },
     {
       "type": "struct",
       "name": "Pattern",
       "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
       "signature": "keyword_struct Pattern { ... }",
+      "comment": "Defines a pattern for structured data handling, managing ownership and invariants in Zig code.",
       "is_pub": true,
-      "line": 66
+      "line": 68
     },
     {
       "type": "struct",
       "name": "Param",
       "match_hash": "af50a6fe6cc9eacc97156983a19c76c443ed71068d0fb557cdae55743c108a68",
       "signature": "keyword_struct Param { ... }",
+      "comment": "Defines a parameter struct for configuration; managed by owner; immutable once initialized.",
       "is_pub": true,
-      "line": 72
+      "line": 75
     },
     {
       "type": "struct",
       "name": "Member",
       "match_hash": "3cd3a046821857b4b9b70fd37e1d23cb81c96026381554c53031be630e36c608",
       "signature": "keyword_struct Member { ... }",
+      "comment": "Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
-      "line": 78
+      "line": 82
     },
     {
       "type": "struct",
       "name": "Meta",
       "match_hash": "5b80824a2c945733e3ae8e331b59b4c63a0b607c78bb4c0c43132ca9fc79bafc",
       "signature": "keyword_struct Meta { ... }",
+      "comment": "Defines a metadata structure for configuration; owned by the project; ensures consistent initialization and invariants.",
       "is_pub": true,
-      "line": 107
+      "line": 112
     },
     {
       "type": "struct",
       "name": "GuidanceDoc",
       "match_hash": "e08ea291147c1f9ac3a24536eff32c907cd838a94f190ec06f2ea0bdf5e472c0",
       "signature": "keyword_struct GuidanceDoc { ... }",
+      "comment": "Defines guidance documents with structured metadata; managed centrally, immutable once created.",
       "is_pub": true,
-      "line": 113
+      "line": 119
     },
     {
       "type": "struct",
       "name": "FileMatch",
       "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
       "signature": "keyword_struct FileMatch { ... }",
+      "comment": "Tracks file matches with ownership model; manages lifecycle; not thread-safe.",
       "is_pub": true,
-      "line": 136
+      "line": 143
     },
     {
       "type": "struct",
       "name": "GuidanceInfo",
       "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
       "signature": "keyword_struct GuidanceInfo { ... }",
+      "comment": "Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.",
       "is_pub": true,
-      "line": 143
+      "line": 151
     },
     {
       "type": "struct",
       "name": "ASTAnalysis",
       "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
       "signature": "keyword_struct ASTAnalysis { ... }",
+      "comment": "Tracks AST nodes with ownership model; ensures invariants on structure and state.",
       "is_pub": true,
-      "line": 152
+      "line": 161
     },
     {
       "type": "struct",
       "name": "QueryResult",
       "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
       "signature": "keyword_struct QueryResult { ... }",
+      "comment": "Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.",
       "is_pub": true,
-      "line": 162
+      "line": 172
     },
     {
       "type": "enum",
       "name": "StageKind",
       "match_hash": "877fc93b121e96d8efb225fa545cf9533c15f6ee83802c865e90899efee9a417",
       "signature": "keyword_enum StageKind { ... }",
+      "comment": "Classifies the kind of content in a Stage.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "prose",
+          "comment": "Human-readable explanation from module or member comment.",
           "is_pub": false,
-          "line": 181
+          "line": 191
         }
     ,    {
           "type": "enum_field",
           "name": "code",
+          "comment": "Verbatim source code excerpt.  Never altered by LLM.",
           "is_pub": false,
-          "line": 183
+          "line": 193
         }
     ,    {
           "type": "enum_field",
           "name": "metadata",
+          "comment": "Structured metadata: keywords, see_also, skills from guidance JSON.",
           "is_pub": false,
-          "line": 185
+          "line": 195
         }
     ,    {
           "type": "enum_field",
           "name": "insight",
+          "comment": "Matching bullet from INSIGHTS.md or CAPABILITIES.md.",
           "is_pub": false,
-          "line": 187
+          "line": 197
         }
     ,    {
           "type": "enum_field",
           "name": "skill_doc",
+          "comment": "Excerpt from a SKILL.md document.",
           "is_pub": false,
-          "line": 189
+          "line": 199
         }
       ],
-      "line": 179
+      "line": 189
     },
     {
       "type": "struct",
       "name": "Stage",
       "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
       "signature": "keyword_struct Stage { ... }",
+      "comment": "A single unit of information collected by the staged explain pipeline.\nAll string fields are owned by this struct; call freeStage() to release.",
       "is_pub": true,
-      "line": 194
+      "line": 204
     },
     {
       "type": "fn_decl",
@@ -282,8 +302,9 @@
         { "name": "s", "type": "Stage" }
       ],
       "returns": "void",
+      "comment": "Free all allocations owned by a single Stage.",
       "is_pub": true,
-      "line": 205
+      "line": 215
     },
     {
       "type": "fn_decl",
@@ -295,16 +316,18 @@
         { "name": "stages", "type": "[]const Stage" }
       ],
       "returns": "void",
+      "comment": "Free a slice of Stages and all allocations they own.",
       "is_pub": true,
-      "line": 211
+      "line": 221
     },
     {
       "type": "struct",
       "name": "SyncResult",
       "match_hash": "311599e172acc49d264122c1e2903728f4389a6c683d932c25c1f4d43ccb5d6a",
       "signature": "keyword_struct SyncResult { ... }",
+      "comment": "Manages synchronization state with fixed buffers; owned by the caller; ensures consistent access.",
       "is_pub": true,
-      "line": 215
+      "line": 226
     },
     {
       "type": "fn_decl",
@@ -316,8 +339,9 @@
         { "name": "member", "type": "Member" }
       ],
       "returns": "?[]u8",
+      "comment": "Converts a Zig member to a JSON-serializable slice, handling allocator and type safety.",
       "is_pub": true,
-      "line": 226
+      "line": 238
     },
     {
       "type": "fn_private",
@@ -331,7 +355,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 330
+      "line": 342
     },
     {
       "type": "fn_private",
@@ -344,7 +368,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 338
+      "line": 350
     },
     {
       "type": "fn_private",
@@ -358,7 +382,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 351
+      "line": 363
     },
     {
       "type": "fn_decl",
@@ -370,8 +394,9 @@
         { "name": "doc", "type": "GuidanceDoc" }
       ],
       "returns": "[]u8",
+      "comment": "Converts a GuidanceDoc into a JSON array of bytes for storage.",
       "is_pub": true,
-      "line": 357
+      "line": 370
     }
   ]
 }

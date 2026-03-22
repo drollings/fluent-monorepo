@@ -21,8 +21,9 @@
       "match_hash": "6c5ad37f2ac0c5a6e0ff25be3f928c420c00348840b24ba116f3fb89af371977",
       "signature": "fn getTerminalWidth() -> usize",
       "returns": "usize",
+      "comment": "Returns the terminal width in bytes for the current screen size.",
       "is_pub": true,
-      "line": 19
+      "line": 20
     },
     {
       "type": "fn_decl",
@@ -30,8 +31,9 @@
       "match_hash": "93b9650729632a318c2aff501fc84f8e20927f0e23ed0329fac0e875b74a5c66",
       "signature": "fn getTerminalHeight() -> usize",
       "returns": "usize",
+      "comment": "Returns the terminal height in bytes for the current Zig source file.",
       "is_pub": true,
-      "line": 24
+      "line": 26
     },
     {
       "type": "fn_decl",
@@ -39,8 +41,9 @@
       "match_hash": "612dd0302de5cec5e599347ee95241db8c60672f3ebd7bf582cf8276dff2428e",
       "signature": "fn isTerminal() -> bool",
       "returns": "bool",
+      "comment": "Checks if the provided string is a valid terminal string, returning true or false.",
       "is_pub": true,
-      "line": 29
+      "line": 32
     },
     {
       "type": "fn_decl",
@@ -52,8 +55,9 @@
         { "name": "default", "type": "bool" }
       ],
       "returns": "bool",
+      "comment": "Validates a boolean question input and returns true or false based on the provided value.",
       "is_pub": true,
-      "line": 34
+      "line": 38
     },
     {
       "type": "fn_decl",
@@ -66,8 +70,9 @@
         { "name": "default", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Retrieves a response from an allocator using a Zig array and question parameters.",
       "is_pub": true,
-      "line": 59
+      "line": 64
     },
     {
       "type": "fn_decl",
@@ -80,14 +85,16 @@
         { "name": "default", "type": "?i64" }
       ],
       "returns": "i64",
+      "comment": "Retrieves an integer from an allocator using a Zig array, returning the value or an error.",
       "is_pub": true,
-      "line": 84
+      "line": 90
     },
     {
       "type": "struct",
       "name": "ProgressBar",
       "match_hash": "bc9366429efd7db6cc360b916353769ade38898d6a7e1485145d53a11649b680",
       "signature": "keyword_struct ProgressBar { ... }",
+      "comment": "Manages progress tracking UI; owned by the application; ensures consistent state across sessions.",
       "is_pub": true,
       "members": [
         {
@@ -101,7 +108,7 @@
           ],
           "returns": "ProgressBar",
           "is_pub": true,
-          "line": 118
+          "line": 125
         }
     ,    {
           "type": "fn_decl",
@@ -114,7 +121,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 127
+          "line": 134
         }
     ,    {
           "type": "fn_decl",
@@ -127,7 +134,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 134
+          "line": 141
         }
     ,    {
           "type": "fn_decl",
@@ -140,7 +147,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 138
+          "line": 145
         }
     ,    {
           "type": "fn_decl",
@@ -153,119 +160,120 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 158
+          "line": 165
         }
       ],
-      "line": 112
+      "line": 119
     },
     {
       "type": "enum",
       "name": "Color",
       "match_hash": "9fb21703b4ee0fb04f7309bbb232e8a34189614a877c02ef9c69f8bd8840c24b",
       "signature": "keyword_enum Color { ... }",
+      "comment": "Defines a color enum for terminal UI; managed centrally with ownership model; immutable values ensure consistency.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "reset",
           "is_pub": false,
-          "line": 165
+          "line": 173
         }
     ,    {
           "type": "enum_field",
           "name": "black",
           "is_pub": false,
-          "line": 166
+          "line": 174
         }
     ,    {
           "type": "enum_field",
           "name": "red",
           "is_pub": false,
-          "line": 167
+          "line": 175
         }
     ,    {
           "type": "enum_field",
           "name": "green",
           "is_pub": false,
-          "line": 168
+          "line": 176
         }
     ,    {
           "type": "enum_field",
           "name": "yellow",
           "is_pub": false,
-          "line": 169
+          "line": 177
         }
     ,    {
           "type": "enum_field",
           "name": "blue",
           "is_pub": false,
-          "line": 170
+          "line": 178
         }
     ,    {
           "type": "enum_field",
           "name": "magenta",
           "is_pub": false,
-          "line": 171
+          "line": 179
         }
     ,    {
           "type": "enum_field",
           "name": "cyan",
           "is_pub": false,
-          "line": 172
+          "line": 180
         }
     ,    {
           "type": "enum_field",
           "name": "white",
           "is_pub": false,
-          "line": 173
+          "line": 181
         }
     ,    {
           "type": "enum_field",
           "name": "bright_black",
           "is_pub": false,
-          "line": 174
+          "line": 182
         }
     ,    {
           "type": "enum_field",
           "name": "bright_red",
           "is_pub": false,
-          "line": 175
+          "line": 183
         }
     ,    {
           "type": "enum_field",
           "name": "bright_green",
           "is_pub": false,
-          "line": 176
+          "line": 184
         }
     ,    {
           "type": "enum_field",
           "name": "bright_yellow",
           "is_pub": false,
-          "line": 177
+          "line": 185
         }
     ,    {
           "type": "enum_field",
           "name": "bright_blue",
           "is_pub": false,
-          "line": 178
+          "line": 186
         }
     ,    {
           "type": "enum_field",
           "name": "bright_magenta",
           "is_pub": false,
-          "line": 179
+          "line": 187
         }
     ,    {
           "type": "enum_field",
           "name": "bright_cyan",
           "is_pub": false,
-          "line": 180
+          "line": 188
         }
     ,    {
           "type": "enum_field",
           "name": "bright_white",
           "is_pub": false,
-          "line": 181
+          "line": 189
         }
     ,    {
           "type": "fn_decl",
@@ -277,10 +285,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 183
+          "line": 191
         }
       ],
-      "line": 164
+      "line": 172
     },
     {
       "type": "fn_decl",
@@ -293,32 +301,33 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Prints a colored string using the provided writer, color, and text data.",
       "is_pub": true,
-      "line": 206
+      "line": 215
     },
     {
       "type": "test_decl",
       "name": "getTerminalWidth returns at least 80",
       "is_pub": false,
-      "line": 214
+      "line": 223
     },
     {
       "type": "test_decl",
       "name": "getTerminalHeight returns at least 24",
       "is_pub": false,
-      "line": 219
+      "line": 228
     },
     {
       "type": "test_decl",
       "name": "Color codes are valid ANSI sequences",
       "is_pub": false,
-      "line": 224
+      "line": 233
     },
     {
       "type": "test_decl",
       "name": "ProgressBar init and advance",
       "is_pub": false,
-      "line": 230
+      "line": 239
     }
   ]
 }

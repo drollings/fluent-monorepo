@@ -11,6 +11,7 @@
       "name": "CommentSyncResult",
       "match_hash": "bcd9feeebcdbe7b7e6de6ac5ad5b7fbc0c1a4e3834dc03acbe2c9dec5c14cfd2",
       "signature": "keyword_struct CommentSyncResult { ... }",
+      "comment": "Per-file result from `CommentSyncProcessor.processFile()`.",
       "is_pub": true,
       "line": 32
     },
@@ -19,6 +20,7 @@
       "name": "CommentSyncProcessor",
       "match_hash": "15586d1c4e519c2eb0c1066ffa837ea3edcd73475642f365af0b53ba013c38f8",
       "signature": "keyword_struct CommentSyncProcessor { ... }",
+      "comment": "Manages synchronization logic for comments, owns state, ensures consistent ownership across processes.",
       "is_pub": true,
       "members": [
         {
@@ -35,7 +37,7 @@
           ],
           "returns": "CommentSyncProcessor",
           "is_pub": true,
-          "line": 71
+          "line": 72
         }
     ,    {
           "type": "fn_decl",
@@ -47,8 +49,9 @@
             { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Return true when `filepath` has not been modified since its corresponding\nguidance JSON was last written.  Requires `incremental = true`.",
           "is_pub": true,
-          "line": 93
+          "line": 94
         }
     ,    {
           "type": "fn_decl",
@@ -60,22 +63,25 @@
             { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "CommentSyncResult",
+          "comment": "Process a single source file: insert/update `///` comments and\noptionally a `//!` file header.  The source file is modified in-place\nwhen `dry_run` is false.",
           "is_pub": true,
-          "line": 107
+          "line": 108
         }
     ,    {
           "type": "fn_private",
           "name": "generateMemberComment",
-          "match_hash": "71bfe63081accd3091f90935ca8de043efb9380055f7246497609a3b076a3232",
-          "signature": "fn generateMemberComment(self: *CommentSyncProcessor, member: types.Member, _source: []const u8) -> ?[]const u8",
+          "match_hash": "243f9c7a20b20d4b4dc78cdc42addbfd67e028d950ea16c5f27826e4bc8a5ecb",
+          "signature": "fn generateMemberComment(self: *CommentSyncProcessor, member: types.Member, _source: []const u8, filepath: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*CommentSyncProcessor" },
             { "name": "member", "type": "types.Member" },
-            { "name": "_source", "type": "[]const u8" }
+            { "name": "_source", "type": "[]const u8" },
+            { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
+          "comment": "Generate a `///` doc comment for `member` using the LLM enhancer when\navailable.  Returns null when no comment can be produced.",
           "is_pub": false,
-          "line": 297
+          "line": 326
         }
     ,    {
           "type": "fn_private",
@@ -88,11 +94,12 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "void",
+          "comment": "Re-parse `source` and update the guidance JSON at `guidance_path` with\ncorrected line numbers.",
           "is_pub": false,
-          "line": 320
+          "line": 350
         }
       ],
-      "line": 52
+      "line": 53
     },
     {
       "type": "fn_private",
@@ -104,8 +111,9 @@
         { "name": "members", "type": "[]const types.Member" }
       ],
       "returns": "[]types.Member",
+      "comment": "Sort members by line number in descending order.",
       "is_pub": false,
-      "line": 361
+      "line": 391
     },
     {
       "type": "fn_private",
@@ -118,7 +126,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 373
+      "line": 403
     },
     {
       "type": "fn_private",
@@ -131,13 +139,37 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 382
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "sortMembersByLineDesc - ordering",
       "is_pub": false,
-      "line": 392
+      "line": 422
+    },
+    {
+      "type": "test_decl",
+      "name": "processFile_insertsCommentForMissingFn - plumbing with no enhancer",
+      "is_pub": false,
+      "line": 437
+    },
+    {
+      "type": "test_decl",
+      "name": "processFile_skipsUpToDate - incremental mode",
+      "is_pub": false,
+      "line": 474
+    },
+    {
+      "type": "test_decl",
+      "name": "processFile_bottomUpOrder - higher line processed first",
+      "is_pub": false,
+      "line": 512
+    },
+    {
+      "type": "test_decl",
+      "name": "processFile_skipsPrivateFns - no comment for private fn",
+      "is_pub": false,
+      "line": 544
     }
   ]
 }

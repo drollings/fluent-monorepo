@@ -12,114 +12,117 @@
       "name": "TokenType",
       "match_hash": "ca88e580b50fd929bc2e67efd14f579423235d535928c2504bee58740f267d05",
       "signature": "keyword_enum TokenType { ... }",
+      "comment": "Defines a token type for keywords in the Zig lexer, managing ownership and ensuring correct parsing invariants.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "iri",
           "is_pub": false,
-          "line": 20
+          "line": 21
         }
     ,    {
           "type": "enum_field",
           "name": "prefixed_name",
           "is_pub": false,
-          "line": 21
+          "line": 22
         }
     ,    {
           "type": "enum_field",
           "name": "blank_node",
           "is_pub": false,
-          "line": 22
+          "line": 23
         }
     ,    {
           "type": "enum_field",
           "name": "blank_node_open",
           "is_pub": false,
-          "line": 23
+          "line": 24
         }
     ,    {
           "type": "enum_field",
           "name": "blank_node_close",
           "is_pub": false,
-          "line": 24
+          "line": 25
         }
     ,    {
           "type": "enum_field",
           "name": "literal",
           "is_pub": false,
-          "line": 25
+          "line": 26
         }
     ,    {
           "type": "enum_field",
           "name": "lang_tag",
           "is_pub": false,
-          "line": 26
+          "line": 27
         }
     ,    {
           "type": "enum_field",
           "name": "datatype_marker",
           "is_pub": false,
-          "line": 27
+          "line": 28
         }
     ,    {
           "type": "enum_field",
           "name": "keyword",
           "is_pub": false,
-          "line": 28
+          "line": 29
         }
     ,    {
           "type": "enum_field",
           "name": "dot",
           "is_pub": false,
-          "line": 29
+          "line": 30
         }
     ,    {
           "type": "enum_field",
           "name": "semicolon",
           "is_pub": false,
-          "line": 30
+          "line": 31
         }
     ,    {
           "type": "enum_field",
           "name": "comma",
           "is_pub": false,
-          "line": 31
+          "line": 32
         }
     ,    {
           "type": "enum_field",
           "name": "open_paren",
           "is_pub": false,
-          "line": 32
+          "line": 33
         }
     ,    {
           "type": "enum_field",
           "name": "close_paren",
           "is_pub": false,
-          "line": 33
+          "line": 34
         }
     ,    {
           "type": "enum_field",
           "name": "eof",
           "is_pub": false,
-          "line": 34
+          "line": 35
         }
       ],
-      "line": 19
+      "line": 20
     },
     {
       "type": "struct",
       "name": "Token",
       "match_hash": "4304edd65a473119d1cbc94da4957291ea22810d66e965af353d6d5d965329db",
       "signature": "keyword_struct Token { ... }",
+      "comment": "Represents a keyword in Zig's lexer, tracking ownership and invariants for parsing. Owns a fixed-size buffer pool.",
       "is_pub": true,
-      "line": 37
+      "line": 39
     },
     {
       "type": "struct",
       "name": "Lexer",
       "match_hash": "ac951e707f2d4616ef49ba664404494efdb382d1a49bb0fc973f2e29e9ab7425",
       "signature": "keyword_struct Lexer { ... }",
+      "comment": "Represents a lexer component for Zig, managing token parsing and ownership; ensures correct structure and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -132,7 +135,7 @@
           ],
           "returns": "Lexer",
           "is_pub": true,
-          "line": 59
+          "line": 62
         }
     ,    {
           "type": "fn_private",
@@ -143,8 +146,9 @@
             { "name": "self", "type": "*Lexer" }
           ],
           "returns": "void",
+          "comment": "Advance past whitespace and comments.",
           "is_pub": false,
-          "line": 64
+          "line": 67
         }
     ,    {
           "type": "fn_private",
@@ -156,7 +160,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 89
+          "line": 92
         }
     ,    {
           "type": "fn_decl",
@@ -168,7 +172,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": true,
-          "line": 101
+          "line": 104
         }
     ,    {
           "type": "fn_private",
@@ -182,7 +186,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": false,
-          "line": 204
+          "line": 207
         }
     ,    {
           "type": "fn_private",
@@ -196,7 +200,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": false,
-          "line": 229
+          "line": 232
         }
     ,    {
           "type": "fn_private",
@@ -209,8 +213,9 @@
             { "name": "start_col", "type": "u32" }
           ],
           "returns": "LexError!Token",
+          "comment": "Lex a bare numeric literal: integer, decimal, or double.\nEmitted as .literal so the parser can handle them uniformly.",
           "is_pub": false,
-          "line": 287
+          "line": 290
         }
     ,    {
           "type": "fn_private",
@@ -224,7 +229,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": false,
-          "line": 322
+          "line": 325
         }
     ,    {
           "type": "fn_private",
@@ -238,7 +243,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": false,
-          "line": 332
+          "line": 335
         }
     ,    {
           "type": "fn_private",
@@ -252,7 +257,7 @@
           ],
           "returns": "LexError!Token",
           "is_pub": false,
-          "line": 352
+          "line": 355
         }
     ,    {
           "type": "fn_private",
@@ -264,7 +269,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 384
+          "line": 387
         }
     ,    {
           "type": "fn_private",
@@ -276,7 +281,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 390
+          "line": 393
         }
     ,    {
           "type": "fn_private",
@@ -288,7 +293,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 394
+          "line": 397
         }
     ,    {
           "type": "fn_private",
@@ -300,7 +305,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 398
+          "line": 401
         }
     ,    {
           "type": "fn_private",
@@ -312,7 +317,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 405
+          "line": 408
         }
     ,    {
           "type": "fn_private",
@@ -324,94 +329,94 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 410
+          "line": 413
         }
       ],
-      "line": 53
+      "line": 56
     },
     {
       "type": "test_decl",
       "name": "lex IRI basic",
       "is_pub": false,
-      "line": 419
+      "line": 422
     },
     {
       "type": "test_decl",
       "name": "lex prefixed name",
       "is_pub": false,
-      "line": 429
+      "line": 432
     },
     {
       "type": "test_decl",
       "name": "lex literal basic",
       "is_pub": false,
-      "line": 437
+      "line": 440
     },
     {
       "type": "test_decl",
       "name": "lex literal with language tag",
       "is_pub": false,
-      "line": 445
+      "line": 448
     },
     {
       "type": "test_decl",
       "name": "lex literal with datatype",
       "is_pub": false,
-      "line": 455
+      "line": 458
     },
     {
       "type": "test_decl",
       "name": "lex blank node",
       "is_pub": false,
-      "line": 467
+      "line": 470
     },
     {
       "type": "test_decl",
       "name": "lex comment skipping",
       "is_pub": false,
-      "line": 475
+      "line": 478
     },
     {
       "type": "test_decl",
       "name": "lex at-prefix keyword",
       "is_pub": false,
-      "line": 482
+      "line": 485
     },
     {
       "type": "test_decl",
       "name": "lex keyword a",
       "is_pub": false,
-      "line": 490
+      "line": 493
     },
     {
       "type": "test_decl",
       "name": "lex punctuation",
       "is_pub": false,
-      "line": 499
+      "line": 502
     },
     {
       "type": "test_decl",
       "name": "lex error unterminated IRI",
       "is_pub": false,
-      "line": 510
+      "line": 513
     },
     {
       "type": "test_decl",
       "name": "lex error unterminated literal",
       "is_pub": false,
-      "line": 517
+      "line": 520
     },
     {
       "type": "test_decl",
       "name": "lex literal with escape sequence",
       "is_pub": false,
-      "line": 524
+      "line": 527
     },
     {
       "type": "test_decl",
       "name": "lex blank node brackets",
       "is_pub": false,
-      "line": 531
+      "line": 534
     }
   ]
 }

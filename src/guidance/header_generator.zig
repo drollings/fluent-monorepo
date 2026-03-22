@@ -6,17 +6,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-/// Generate a `//!` file header comment for a source file.
-///
-/// The header is built from:
-///  1. The file's relative path as a one-line identifier.
-///  2. A list of public member signatures for context.
-///  3. Up to 500 bytes of `source_preview` for content-based generation.
-///
-/// When `source` already contains `//!` lines at the top, returns null
-/// (existing header is preserved; use replaceHeader to update it).
-///
-/// Returns an owned slice (caller must free), or null when no header is needed.
+/// Generates a Zig file header slice using provided allocator, path, members, and preview data.
 pub fn generateFileHeader(
     allocator: std.mem.Allocator,
     rel_path: []const u8,
@@ -149,3 +139,4 @@ test "insertFileHeader - prepends header" {
     defer allocator.free(result);
     try std.testing.expectEqualStrings("//! My module.\nconst x = 1;\n", result);
 }
+

@@ -21,8 +21,9 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "DependencyResolver",
+      "comment": "Initializes the dependency resolver with allocator, registry, and interners, returning a resolved dependency.",
       "is_pub": true,
-      "line": 23
+      "line": 24
     },
     {
       "type": "fn_decl",
@@ -36,14 +37,16 @@
         { "name": "options", "type": "ResolverOptions" }
       ],
       "returns": "DependencyResolver",
+      "comment": "Like `init`, but accepts explicit `ResolverOptions`.",
       "is_pub": true,
-      "line": 33
+      "line": 34
     },
     {
       "type": "struct",
       "name": "ResolvedBuild",
       "match_hash": "dfa71d3221c7ad7dec562ceb97e30683f592d08b0c879fc6786ceb9923507cd4",
       "signature": "keyword_struct ResolvedBuild { ... }",
+      "comment": "Manages resolved build components, tracks ownership, ensures static invariants.",
       "is_pub": true,
       "members": [
         {
@@ -56,10 +59,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 51
+          "line": 53
         }
       ],
-      "line": 47
+      "line": 49
     },
     {
       "type": "fn_decl",
@@ -71,8 +74,9 @@
         { "name": "target_names", "type": "[]const []const u8" }
       ],
       "returns": "ResolvedBuild",
+      "comment": "Simple topological sort over all transitive concrete dependencies.",
       "is_pub": true,
-      "line": 57
+      "line": 59
     },
     {
       "type": "fn_decl",
@@ -85,8 +89,9 @@
         { "name": "provided", "type": "*std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "ResolvedBuild",
+      "comment": "Abstract-aware resolution: resolves abstract dependencies via provider selection.",
       "is_pub": true,
-      "line": 70
+      "line": 72
     },
     {
       "type": "fn_private",
@@ -98,8 +103,9 @@
         { "name": "all_needed", "type": "*std.AutoHashMap(usize, *Target)" }
       ],
       "returns": "ResolvedBuild",
+      "comment": "Kahn's topological sort on the collected target set.",
       "is_pub": false,
-      "line": 90
+      "line": 92
     },
     {
       "type": "fn_private",
@@ -113,7 +119,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 170
+      "line": 172
     },
     {
       "type": "fn_private",
@@ -128,7 +134,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 195
+      "line": 197
     },
     {
       "type": "fn_decl",
@@ -141,8 +147,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]u8",
+      "comment": "Generates a Zig array representation of a graph visualization based on dependency data.",
       "is_pub": true,
-      "line": 251
+      "line": 254
     },
     {
       "type": "fn_private",
@@ -159,7 +166,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 276
+      "line": 279
     },
     {
       "type": "fn_private",
@@ -177,91 +184,91 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 332
+      "line": 335
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver basic resolution",
       "is_pub": false,
-      "line": 347
+      "line": 350
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver GPA no leaks",
       "is_pub": false,
-      "line": 374
+      "line": 377
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: resolve unknown target returns TargetNotFound",
       "is_pub": false,
-      "line": 415
+      "line": 418
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: strict mode returns TargetNotFound for missing dep",
       "is_pub": false,
-      "line": 426
+      "line": 429
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: non-strict mode silently skips missing dep",
       "is_pub": false,
-      "line": 442
+      "line": 445
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: single target with no deps resolves to itself",
       "is_pub": false,
-      "line": 461
+      "line": 464
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: diamond dependency resolves all nodes once",
       "is_pub": false,
-      "line": 478
+      "line": 481
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: multi-root resolve includes all roots",
       "is_pub": false,
-      "line": 517
+      "line": 520
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: circular dependency returns CircularDependency",
       "is_pub": false,
-      "line": 535
+      "line": 538
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: abstract dep resolved via provider",
       "is_pub": false,
-      "line": 557
+      "line": 560
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: resolveAbstractDependencies unknown target returns error",
       "is_pub": false,
-      "line": 590
+      "line": 593
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: visualizeGraph contains target names",
       "is_pub": false,
-      "line": 608
+      "line": 611
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: visualizeGraph revisited node shows already shown",
       "is_pub": false,
-      "line": 628
+      "line": 631
     },
     {
       "type": "test_decl",
       "name": "DependencyResolver: GPA no leaks",
       "is_pub": false,
-      "line": 655
+      "line": 658
     }
   ]
 }

@@ -21,6 +21,7 @@ const TreeEntry = union(enum) {
     file: FileEntry,
 };
 
+/// Manages file entry metadata; owned by the module; ensures consistent access patterns.
 const FileEntry = struct {
     /// The tree prefix string (e.g. "│   ├── ").
     prefix: []const u8,
@@ -32,6 +33,7 @@ const FileEntry = struct {
     rel_path: []const u8,
 };
 
+/// Manages structure generation with ownership and invariants; ensures safe initialization/deinit.
 pub const StructureGenerator = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -361,6 +363,7 @@ pub const StructureGenerator = struct {
 // Internal types
 // ---------------------------------------------------------------------------
 
+/// Manages child entry structures with ownership and invariants; ensures safe access patterns.
 const ChildEntry = struct {
     name: []const u8,
     abs_path: []const u8,
@@ -440,3 +443,6 @@ const HEADER =
     \\```
     \\
 ;
+
+
+

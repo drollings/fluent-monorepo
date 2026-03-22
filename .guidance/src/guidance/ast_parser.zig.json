@@ -11,6 +11,7 @@
       "name": "AstParser",
       "match_hash": "9f5213920b63badb9712c4b2eca7f126db59c04da26b04484cfbc799ebec90de",
       "signature": "keyword_struct AstParser { ... }",
+      "comment": "Manages AST parsing state, owns parsing logic, ensures invariant correctness.",
       "is_pub": true,
       "members": [
         {
@@ -24,7 +25,7 @@
           ],
           "returns": "AstParser",
           "is_pub": true,
-          "line": 11
+          "line": 12
         }
     ,    {
           "type": "fn_decl",
@@ -36,7 +37,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 20
+          "line": 21
         }
     ,    {
           "type": "fn_decl",
@@ -48,7 +49,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 24
+          "line": 25
         }
     ,    {
           "type": "fn_decl",
@@ -60,7 +61,7 @@
           ],
           "returns": "[]types.Member",
           "is_pub": true,
-          "line": 28
+          "line": 29
         }
     ,    {
           "type": "fn_private",
@@ -73,7 +74,7 @@
           ],
           "returns": "?types.Member",
           "is_pub": false,
-          "line": 41
+          "line": 42
         }
     ,    {
           "type": "fn_private",
@@ -86,7 +87,7 @@
           ],
           "returns": "?types.Member",
           "is_pub": false,
-          "line": 58
+          "line": 59
         }
     ,    {
           "type": "fn_private",
@@ -99,7 +100,7 @@
           ],
           "returns": "?types.Member",
           "is_pub": false,
-          "line": 106
+          "line": 107
         }
     ,    {
           "type": "fn_private",
@@ -115,7 +116,7 @@
           ],
           "returns": "?types.Member",
           "is_pub": false,
-          "line": 130
+          "line": 131
         }
     ,    {
           "type": "fn_private",
@@ -128,7 +129,7 @@
           ],
           "returns": "?types.Member",
           "is_pub": false,
-          "line": 213
+          "line": 214
         }
     ,    {
           "type": "fn_private",
@@ -141,7 +142,7 @@
           ],
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 234
+          "line": 235
         }
     ,    {
           "type": "fn_private",
@@ -154,7 +155,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 261
+          "line": 262
         }
     ,    {
           "type": "fn_private",
@@ -167,7 +168,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 266
+          "line": 267
         }
     ,    {
           "type": "fn_private",
@@ -182,7 +183,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 271
+          "line": 272
         }
     ,    {
           "type": "fn_private",
@@ -195,7 +196,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 299
+          "line": 300
         }
     ,    {
           "type": "fn_decl",
@@ -207,8 +208,9 @@
             { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
           ],
           "returns": "?[]const u8",
+          "comment": "Extract the full multi-line doc comment block above a declaration.\nReturns an owned slice with all `///` lines joined by newlines, or null\nwhen no doc comment exists above the node.",
           "is_pub": true,
-          "line": 335
+          "line": 336
         }
     ,    {
           "type": "fn_decl",
@@ -219,8 +221,9 @@
             { "name": "self", "type": "*AstParser" }
           ],
           "returns": "?[]const u8",
+          "comment": "Extract module-level `//!` comments as a single block.\nReturns an owned slice with all lines joined by newlines, or null when\nno module doc comment exists.",
           "is_pub": true,
-          "line": 378
+          "line": 379
         }
     ,    {
           "type": "fn_decl",
@@ -232,7 +235,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 382
+          "line": 383
         }
     ,    {
           "type": "fn_decl",
@@ -243,8 +246,9 @@
             { "name": "self", "type": "*AstParser" }
           ],
           "returns": "[][]const u8",
+          "comment": "Walk the token stream for @import(\"...\") string literals and return\na slice of their string values (without surrounding quotes), owned by the caller.",
           "is_pub": true,
-          "line": 414
+          "line": 415
         }
     ,    {
           "type": "fn_decl",
@@ -256,10 +260,10 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 443
+          "line": 444
         }
       ],
-      "line": 6
+      "line": 7
     },
     {
       "type": "fn_decl",
@@ -271,8 +275,9 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "AstParser",
+      "comment": "Converts a file path into an AstParser instance using the provided allocator.",
       "is_pub": true,
-      "line": 448
+      "line": 450
     }
   ]
 }

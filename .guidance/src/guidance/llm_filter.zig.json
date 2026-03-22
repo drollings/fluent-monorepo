@@ -19,8 +19,9 @@
         { "name": "stages", "type": "[]const types.Stage" }
       ],
       "returns": "[]types.Stage",
+      "comment": "Processes a query by filtering stages using an allocator and returns a cleaned slice of stages.",
       "is_pub": true,
-      "line": 21
+      "line": 14
     },
     {
       "type": "fn_decl",
@@ -35,8 +36,9 @@
         { "name": "max_keep", "type": "usize" }
       ],
       "returns": "[][]const u8",
+      "comment": "Filter \"Used in files\" (see_also) entries for relevance using the fast LLM.\nGiven a list of file paths and their context, returns only the most relevant ones.\nUses bounded context: `keyword: comment` format for each entry.\nReturns an owned slice of owned strings; caller must free.",
       "is_pub": true,
-      "line": 60
+      "line": 53
     },
     {
       "type": "fn_private",
@@ -49,7 +51,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 158
+      "line": 151
     },
     {
       "type": "fn_private",
@@ -63,8 +65,9 @@
         { "name": "content", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Ask the LLM whether `content` is relevant to `query`.\nReturns true (keep) or false (discard).  Fails open on error.",
       "is_pub": false,
-      "line": 168
+      "line": 161
     },
     {
       "type": "fn_private",
@@ -76,8 +79,9 @@
         { "name": "s", "type": "types.Stage" }
       ],
       "returns": "types.Stage",
+      "comment": "Deep-copy a Stage so the returned copy fully owns its strings.",
       "is_pub": false,
-      "line": 196
+      "line": 189
     }
   ]
 }

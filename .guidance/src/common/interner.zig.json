@@ -16,8 +16,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "StringInterner",
+      "comment": "Initializes a memory allocator with a string interner for Zig code.",
       "is_pub": true,
-      "line": 22
+      "line": 23
     },
     {
       "type": "fn_decl",
@@ -28,8 +29,9 @@
         { "name": "self", "type": "*StringInterner" }
       ],
       "returns": "void",
+      "comment": "Releases resources associated with the StringInterner instance.",
       "is_pub": true,
-      "line": 30
+      "line": 32
     },
     {
       "type": "fn_decl",
@@ -41,8 +43,9 @@
         { "name": "str", "type": "[]const u8" }
       ],
       "returns": "usize",
+      "comment": "Intern `str`, returning its stable integer index.\nIf `str` was already interned the existing index is returned without\nallocating.  The interner owns a copy of every new string.\nThread-safe: uses double-checked locking (read lock fast path, write lock slow path).",
       "is_pub": true,
-      "line": 40
+      "line": 42
     },
     {
       "type": "fn_decl",
@@ -54,8 +57,9 @@
         { "name": "str", "type": "[]const u8" }
       ],
       "returns": "?usize",
+      "comment": "Look up the index for `str` without inserting it.\nReturns null when `str` has not been interned yet.\nThread-safe: uses shared read lock.",
       "is_pub": true,
-      "line": 76
+      "line": 78
     },
     {
       "type": "fn_decl",
@@ -67,8 +71,9 @@
         { "name": "idx", "type": "usize" }
       ],
       "returns": "?[]const u8",
+      "comment": "Return the string at `idx`, or null when `idx` is out of range.",
       "is_pub": true,
-      "line": 83
+      "line": 85
     },
     {
       "type": "fn_decl",
@@ -79,8 +84,9 @@
         { "name": "self", "type": "*const StringInterner" }
       ],
       "returns": "usize",
+      "comment": "Return the total number of interned strings.",
       "is_pub": true,
-      "line": 89
+      "line": 91
     },
     {
       "type": "fn_decl",
@@ -92,8 +98,9 @@
         { "name": "strings", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Intern every string in `strings` (results discarded; useful for pre-loading).",
       "is_pub": true,
-      "line": 94
+      "line": 96
     },
     {
       "type": "fn_decl",
@@ -106,8 +113,9 @@
         { "name": "strings", "type": "[]const []const u8" }
       ],
       "returns": "std.bit_set.DynamicBitSetUnmanaged",
+      "comment": "Intern all strings in `strings` and return a `DynamicBitSetUnmanaged`\nwith each corresponding bit set.  The bitset is allocated with\n`allocator` (not the interner's arena) and must be freed by the caller\nvia `bitset.deinit(allocator)`.",
       "is_pub": true,
-      "line": 104
+      "line": 106
     },
     {
       "type": "fn_decl",
@@ -121,8 +129,9 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Parse a comma-separated capability string into a `DynamicBitSetUnmanaged`.\nInterns any new names into `interner`.\nThe bitset is allocated with `allocator` and must be freed by the caller.",
       "is_pub": true,
-      "line": 126
+      "line": 128
     },
     {
       "type": "fn_decl",
@@ -135,8 +144,9 @@
         { "name": "bs", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "[]const u8",
+      "comment": "Serialise a `DynamicBitSetUnmanaged` to a comma-separated capability string.\nReturns an allocator-owned string; caller must free.",
       "is_pub": true,
-      "line": 148
+      "line": 150
     },
     {
       "type": "fn_decl",
@@ -147,44 +157,45 @@
         { "name": "self", "type": "*StringInterner" }
       ],
       "returns": "reflection.ConstraintVTable",
+      "comment": "Validates and returns a ConstraintVTable for bit-setting operations.",
       "is_pub": true,
-      "line": 174
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "StringInterner basic operations",
       "is_pub": false,
-      "line": 309
+      "line": 304
     },
     {
       "type": "test_decl",
       "name": "StringInterner getIndex returns null for unknown",
       "is_pub": false,
-      "line": 327
+      "line": 322
     },
     {
       "type": "test_decl",
       "name": "StringInterner internAndGetBitSet",
       "is_pub": false,
-      "line": 336
+      "line": 331
     },
     {
       "type": "test_decl",
       "name": "StringInterner GPA no leaks",
       "is_pub": false,
-      "line": 352
+      "line": 347
     },
     {
       "type": "test_decl",
       "name": "StringInterner: concurrent intern, 8 threads",
       "is_pub": false,
-      "line": 376
+      "line": 371
     },
     {
       "type": "test_decl",
       "name": "bitSetFromString and bitSetToString roundtrip",
       "is_pub": false,
-      "line": 413
+      "line": 408
     }
   ]
 }

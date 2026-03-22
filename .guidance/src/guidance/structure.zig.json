@@ -11,14 +11,16 @@
       "name": "FileEntry",
       "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
       "signature": "keyword_struct FileEntry { ... }",
+      "comment": "Manages file entry metadata; owned by the module; ensures consistent access patterns.",
       "is_pub": false,
-      "line": 24
+      "line": 25
     },
     {
       "type": "struct",
       "name": "StructureGenerator",
       "match_hash": "53c3ce1f50f740dd1b57459c9b834ecdbae7efbf707da3e958474cbf1621b06c",
       "signature": "keyword_struct StructureGenerator { ... }",
+      "comment": "Manages structure generation with ownership and invariants; ensures safe initialization/deinit.",
       "is_pub": true,
       "members": [
         {
@@ -34,7 +36,7 @@
           ],
           "returns": "StructureGenerator",
           "is_pub": true,
-          "line": 43
+          "line": 45
         }
     ,    {
           "type": "fn_decl",
@@ -46,7 +48,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 59
+          "line": 61
         }
     ,    {
           "type": "fn_decl",
@@ -57,8 +59,9 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "void",
+          "comment": "Generate (or regenerate) STRUCTURE.md in `project_root`.",
           "is_pub": true,
-          "line": 64
+          "line": 66
         }
     ,    {
           "type": "fn_private",
@@ -73,7 +76,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 109
+          "line": 111
         }
     ,    {
           "type": "fn_private",
@@ -86,7 +89,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 175
+          "line": 177
         }
     ,    {
           "type": "fn_private",
@@ -99,8 +102,9 @@
             { "name": "old_comments", "type": "std.StringHashMapUnmanaged([]const u8)" }
           ],
           "returns": "?[]const u8",
+          "comment": "Look up the comment for a file entry.\nPriority: guidance JSON documentation → old STRUCTURE.md comment → null.",
           "is_pub": false,
-          "line": 185
+          "line": 187
         }
     ,    {
           "type": "fn_private",
@@ -112,8 +116,9 @@
             { "name": "rel_path", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
+          "comment": "Load the guidance JSON for `rel_path` and return the first line of `comment`.\nReturns null if no guidance file exists or the field is empty.",
           "is_pub": false,
-          "line": 202
+          "line": 204
         }
     ,    {
           "type": "fn_private",
@@ -124,8 +129,9 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "std.StringHashMapUnmanaged([]const u8)",
+          "comment": "Extract `filename → comment` from the existing STRUCTURE.md fenced block.\nPattern: `[tree-chars] filename  # comment`",
           "is_pub": false,
-          "line": 233
+          "line": 235
         }
     ,    {
           "type": "fn_private",
@@ -141,7 +147,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 285
+          "line": 287
         }
     ,    {
           "type": "fn_private",
@@ -154,18 +160,19 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 344
+          "line": 346
         }
       ],
-      "line": 35
+      "line": 37
     },
     {
       "type": "struct",
       "name": "ChildEntry",
       "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
       "signature": "keyword_struct ChildEntry { ... }",
+      "comment": "Manages child entry structures with ownership and invariants; ensures safe access patterns.",
       "is_pub": false,
-      "line": 364
+      "line": 367
     },
     {
       "type": "fn_private",
@@ -179,7 +186,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 370
+      "line": 373
     },
     {
       "type": "fn_private",
@@ -190,8 +197,9 @@
         { "name": "line", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Extract the filename from a tree line like \"│   ├── main.zig\".\nReturns a slice into the input — not heap-allocated.",
       "is_pub": false,
-      "line": 379
+      "line": 382
     }
   ]
 }

@@ -12,40 +12,42 @@
       "name": "RuleType",
       "match_hash": "e0580ff100d9e3bde1c80fef63b8d1aa23fa8ad281e7f73abd06cd2e49b2b9b6",
       "signature": "keyword_enum RuleType { ... }",
+      "comment": "Defines inference rules with plain English semantics, manages ownership, ensures invariants; key model is rule-based inference.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "subclass_transitivity",
           "is_pub": false,
-          "line": 16
+          "line": 17
         }
     ,    {
           "type": "enum_field",
           "name": "subproperty_transitivity",
           "is_pub": false,
-          "line": 17
+          "line": 18
         }
     ,    {
           "type": "enum_field",
           "name": "domain_range",
           "is_pub": false,
-          "line": 18
+          "line": 19
         }
     ,    {
           "type": "enum_field",
           "name": "inverse_of",
           "is_pub": false,
-          "line": 19
+          "line": 20
         }
       ],
-      "line": 15
+      "line": 16
     },
     {
       "type": "struct",
       "name": "InferenceEngine",
       "match_hash": "e041047b304df9640feaa8b00589fd7a49d19ac589d4cdada71dd3588eace69a",
       "signature": "keyword_struct InferenceEngine { ... }",
+      "comment": "Manages inference logic with a structured keyword structure, owns inference operations, and ensures consistent state across runs.",
       "is_pub": true,
       "members": [
         {
@@ -58,7 +60,7 @@
           ],
           "returns": "InferenceEngine",
           "is_pub": true,
-          "line": 32
+          "line": 34
         }
     ,    {
           "type": "fn_decl",
@@ -70,7 +72,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 39
+          "line": 41
         }
     ,    {
           "type": "fn_decl",
@@ -82,8 +84,9 @@
             { "name": "rule", "type": "InferenceRule" }
           ],
           "returns": "void",
+          "comment": "Add a rule for future use.",
           "is_pub": true,
-          "line": 44
+          "line": 46
         }
     ,    {
           "type": "fn_decl",
@@ -95,8 +98,9 @@
             { "name": "triples", "type": "[]const Triple" }
           ],
           "returns": "[]Triple",
+          "comment": "Return inferred triples from the given input.\nSTUB: always returns empty slice.\nTODO: Implement RDFS/OWL forward-chaining inference.",
           "is_pub": true,
-          "line": 51
+          "line": 53
         }
     ,    {
           "type": "fn_decl",
@@ -107,29 +111,30 @@
             { "name": "self", "type": "*InferenceEngine" }
           ],
           "returns": "void",
+          "comment": "Persist inferred edges to SQLite via Library.\nSTUB: no-op.",
           "is_pub": true,
-          "line": 59
+          "line": 61
         }
       ],
-      "line": 28
+      "line": 30
     },
     {
       "type": "test_decl",
       "name": "inference stub returns empty triples",
       "is_pub": false,
-      "line": 70
+      "line": 72
     },
     {
       "type": "test_decl",
       "name": "inference stub materialize is no-op",
       "is_pub": false,
-      "line": 77
+      "line": 79
     },
     {
       "type": "test_decl",
       "name": "inference rule addition",
       "is_pub": false,
-      "line": 83
+      "line": 85
     }
   ]
 }

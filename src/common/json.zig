@@ -69,16 +69,7 @@ pub fn appendEscaped(
 // JSON file loading
 // =============================================================================
 
-/// Open `path`, read up to `max_size` bytes, and parse as JSON.
-///
-/// Returns null on any error (file not found, read error, parse error, or
-/// a root value that is not a JSON object).
-///
-/// On success the caller **must** call `parsed.deinit()` to release memory.
-///
-/// This helper eliminates the recurring 7-line boilerplate pattern:
-///   open → read → parse → guard(.object)
-/// that appears throughout the guidance JSON loading functions.
+/// Converts a JSON string to a Zig JSON value, handling allocator and size limits.
 pub fn parseJsonFile(
     allocator: std.mem.Allocator,
     path: []const u8,
@@ -152,3 +143,4 @@ test "appendEscaped handles control chars" {
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u0001") != null);
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "normal") != null);
 }
+

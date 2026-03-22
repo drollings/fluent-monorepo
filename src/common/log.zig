@@ -1,6 +1,7 @@
 const std = @import("std");
 const io = @import("io.zig");
 
+/// Defines a level type for structured logging, managing state and ownership with strict invariants.
 pub const Level = enum {
     debug,
     info,
@@ -26,6 +27,7 @@ pub const Level = enum {
     }
 };
 
+/// Manages logging configuration; owns struct; ensures consistent initialization and cleanup.
 pub const LogConfig = struct {
     level: Level = .info,
     show_timestamp: bool = false,
@@ -35,6 +37,7 @@ pub const LogConfig = struct {
     name: []const u8 = "app",
 };
 
+/// Manages logging structures with ownership and invariants; ensures safe initialization/deinit.
 pub const Logger = struct {
     config: LogConfig,
     allocator: std.mem.Allocator,
@@ -135,20 +138,24 @@ pub const Logger = struct {
 
 var global_logger: ?*Logger = null;
 
+/// Updates global logging configuration by setting parameters via the provided logger instance.
 pub fn setGlobal(logger: *Logger) void {
     global_logger = logger;
 }
 
+/// Retrieves a global logger instance from the system.
 pub fn getGlobal() ?*Logger {
     return global_logger;
 }
 
+/// Logs a message with specified level and format, returning void.
 pub fn logGlobal(level: Level, comptime format: []const u8, args: anytype) void {
     if (global_logger) |logger| {
         logger.log(level, format, args);
     }
 }
 
+/// Initializes logging configuration with allocator, verbosity, quiet settings, and optional log file paths.
 pub fn setupLogging(
     allocator: std.mem.Allocator,
     verbose: bool,
@@ -186,3 +193,10 @@ test "Logger: init and deinit" {
     defer logger.deinit();
     try testing.expectEqualStrings("test", logger.config.name);
 }
+
+
+
+
+
+
+

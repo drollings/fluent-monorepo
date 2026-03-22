@@ -17,6 +17,7 @@
         { "name": "b", "type": "[]const f32" }
       ],
       "returns": "f32",
+      "comment": "Cosine similarity between two vectors. Returns 0.0–1.0.\nReturns 0.0 for empty, mismatched, or degenerate inputs.",
       "is_pub": true,
       "line": 11
     },
@@ -30,6 +31,7 @@
         { "name": "v", "type": "[]const f32" }
       ],
       "returns": "[]u8",
+      "comment": "Serialize f32 vector to bytes (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 44
     },
@@ -43,6 +45,7 @@
         { "name": "bytes", "type": "[]const u8" }
       ],
       "returns": "[]f32",
+      "comment": "Deserialize bytes to f32 vector (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 54
     },
@@ -51,8 +54,9 @@
       "name": "ScoredResult",
       "match_hash": "14e4c6cfca89b2ca7bbff4130ca4975455160b0ad8e30624d72e0083c8235340",
       "signature": "keyword_struct ScoredResult { ... }",
+      "comment": "Represents a scored result with fixed-size buffers; managed via ownership model; ensures data integrity across operations.",
       "is_pub": true,
-      "line": 66
+      "line": 67
     },
     {
       "type": "fn_decl",
@@ -68,44 +72,45 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
+      "comment": "Hybrid merge: combine vector and keyword results with weighted fusion.\n\nNormalizes keyword scores to [0, 1]. Vector scores (cosine similarity)\nare assumed to already be in [0, 1].\n\nfinal_score = vector_weight * vector_score + keyword_weight * keyword_score\n\nDeduplicates by id. Results sorted by final_score descending.\nCaller owns the returned slice and must free it.",
       "is_pub": true,
-      "line": 89
+      "line": 90
     },
     {
       "type": "test_decl",
       "name": "cosine identical vectors",
       "is_pub": false,
-      "line": 167
+      "line": 168
     },
     {
       "type": "test_decl",
       "name": "cosine orthogonal vectors",
       "is_pub": false,
-      "line": 173
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "cosine empty returns zero",
       "is_pub": false,
-      "line": 180
+      "line": 181
     },
     {
       "type": "test_decl",
       "name": "vec bytes roundtrip",
       "is_pub": false,
-      "line": 185
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "hybrid merge deduplicates",
       "is_pub": false,
-      "line": 199
+      "line": 200
     },
     {
       "type": "test_decl",
       "name": "hybrid merge respects limit",
       "is_pub": false,
-      "line": 211
+      "line": 212
     }
   ]
 }

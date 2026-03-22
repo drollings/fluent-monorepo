@@ -12,22 +12,25 @@
       "name": "ToolDef",
       "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
       "signature": "keyword_struct ToolDef { ... }",
+      "comment": "Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
-      "line": 21
+      "line": 22
     },
     {
       "type": "struct",
       "name": "JsonRpcRequest",
       "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
       "signature": "keyword_struct JsonRpcRequest { ... }",
+      "comment": "Defines a JSON-RPC request structure for communication; managed by owner; requires valid payloads.",
       "is_pub": false,
-      "line": 55
+      "line": 57
     },
     {
       "type": "struct",
       "name": "McpServer",
       "match_hash": "e6043e4781e4ac55df457ded001af893105e13c89e925e9a61066b1ab680245a",
       "signature": "keyword_struct McpServer { ... }",
+      "comment": "Manages server state with fixed buffers; encapsulates initialization logic; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -41,8 +44,9 @@
             { "name": "writer", "type": "*std.Io.Writer" }
           ],
           "returns": "void",
+          "comment": "Serve requests from reader, writing responses to writer.\nReads Content-Length framed JSON-RPC messages until EOF.",
           "is_pub": true,
-          "line": 78
+          "line": 81
         }
     ,    {
           "type": "fn_decl",
@@ -54,8 +58,9 @@
             { "name": "raw_json", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Handle a single JSON-RPC request.\nReturns an allocator-owned JSON response string (caller must free).\narena #5: all parse/routing scratch lives in req_arena; only the\nserialized response escapes to self.allocator.",
           "is_pub": true,
-          "line": 122
+          "line": 125
         }
     ,    {
           "type": "fn_private",
@@ -69,7 +74,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 141
+          "line": 144
         }
     ,    {
           "type": "fn_private",
@@ -83,7 +88,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 154
+          "line": 157
         }
     ,    {
           "type": "fn_private",
@@ -97,7 +102,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 169
+          "line": 172
         }
     ,    {
           "type": "fn_private",
@@ -111,7 +116,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 193
+          "line": 196
         }
     ,    {
           "type": "fn_private",
@@ -126,7 +131,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 227
+          "line": 230
         }
     ,    {
           "type": "fn_private",
@@ -141,7 +146,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 255
+          "line": 258
         }
     ,    {
           "type": "fn_private",
@@ -156,7 +161,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 294
+          "line": 297
         }
     ,    {
           "type": "fn_private",
@@ -172,7 +177,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 366
+          "line": 369
         }
     ,    {
           "type": "fn_private",
@@ -185,10 +190,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 380
+          "line": 383
         }
       ],
-      "line": 66
+      "line": 69
     },
     {
       "type": "fn_private",
@@ -201,7 +206,7 @@
       ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
-      "line": 392
+      "line": 395
     },
     {
       "type": "fn_private",
@@ -213,32 +218,33 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Write `s` to `writer` with JSON string escaping (no surrounding quotes).",
       "is_pub": false,
-      "line": 417
+      "line": 420
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest initialize",
       "is_pub": false,
-      "line": 437
+      "line": 440
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest tools/list",
       "is_pub": false,
-      "line": 462
+      "line": 465
     },
     {
       "type": "test_decl",
       "name": "McpServer: tools/call coral_query routes to L5",
       "is_pub": false,
-      "line": 488
+      "line": 491
     },
     {
       "type": "test_decl",
       "name": "McpServer: unknown method returns error -32601",
       "is_pub": false,
-      "line": 515
+      "line": 518
     }
   ]
 }

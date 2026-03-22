@@ -12,6 +12,7 @@ pub const ParseError = error{
     OutOfMemory,
 };
 
+/// Reads a file from the given path and parses its contents into a Zig-safe data structure.
 pub fn parseFile(
     allocator: std.mem.Allocator,
     path: []const u8,
@@ -32,6 +33,7 @@ pub fn parseFile(
     try parseJson(allocator, contents, registry, interner);
 }
 
+/// Converts a null-terminated C string into a Zig-safe slice using the provided allocator and registry.
 pub fn parseJson(
     allocator: std.mem.Allocator,
     json_text: []const u8,
@@ -177,6 +179,7 @@ fn determineTargetType(obj: std.json.ObjectMap) TargetType {
     return .abstract;
 }
 
+/// Writes a Zig example string to memory using the provided allocator.
 pub fn writeExample(allocator: std.mem.Allocator, path: []const u8) !void {
     _ = allocator;
     const file = std.fs.cwd().createFile(path, .{}) catch |err| {
@@ -467,3 +470,6 @@ test "JSON parsing: parseFile returns IoError for missing file" {
     const result = parseFile(testing.allocator, "/nonexistent/path/coral.json", &registry, &interner);
     try testing.expectError(ParseError.IoError, result);
 }
+
+
+

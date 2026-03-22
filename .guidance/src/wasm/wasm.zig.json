@@ -14,6 +14,7 @@
       "name": "BinaryExecutionRequest",
       "match_hash": "f3ab3a52c0c4e7e653f76815775376c8d9d1c200ac1db36d242918e1160e8122",
       "signature": "keyword_struct BinaryExecutionRequest { ... }",
+      "comment": "Execution request sent to WASM tool.",
       "is_pub": true,
       "line": 40
     },
@@ -22,6 +23,7 @@
       "name": "BinaryExecutionResult",
       "match_hash": "0d90c6316e82792af2283c401f4d5264cc93305d9554bf81b237e9b5f67486e6",
       "signature": "keyword_struct BinaryExecutionResult { ... }",
+      "comment": "Execution result returned from WASM tool.\n\nprovides_words_count / provides_words_offset replace the old i64 provides_mask.\nThe word array is appended to the binary payload immediately after this header.\nWire format of the words section: [word0: u64 LE, word1: u64 LE, ...]\nUse getProvidesBitSet() to reconstruct a DynamicBitSetUnmanaged.",
       "is_pub": true,
       "members": [
         {
@@ -35,6 +37,7 @@
             { "name": "payload", "type": "[]const u8" }
           ],
           "returns": "std.bit_set.DynamicBitSetUnmanaged",
+          "comment": "Reconstruct the provides bitset from the trailing word array.\nCaller owns the returned bitset and must deinit it.",
           "is_pub": true,
           "line": 71
         }
@@ -46,6 +49,7 @@
       "name": "ExtismValType",
       "match_hash": "53202749e587cfcd17cdecc29d93a2ce8c5e269704a1a7b516c15187c56c3871",
       "signature": "keyword_enum ExtismValType { ... }",
+      "comment": "Extism value type for host functions.",
       "is_pub": true,
       "members": [
         {
@@ -110,6 +114,7 @@
       "name": "extism",
       "match_hash": "a1472bbf5cb23b4a382779bb403e0c1880ab31da5e0b54e2901b003fef9d52db",
       "signature": "keyword_struct extism { ... }",
+      "comment": "Extism C-API function declarations.",
       "is_pub": true,
       "line": 129
     },
@@ -118,6 +123,7 @@
       "name": "WasmManifest",
       "match_hash": "0a51e5e2e3d08d708a91ecbdc78c64a43adb7d975fe8895b547fb788d9cd3013",
       "signature": "keyword_struct WasmManifest { ... }",
+      "comment": "Manifest for WASM plugin configuration.",
       "is_pub": true,
       "members": [
         {
@@ -140,6 +146,7 @@
       "name": "WasmPlugin",
       "match_hash": "769c20072dcd8c9df9e5d2071448b152df12fc6be132b0f3291bcb00d899af17",
       "signature": "keyword_struct WasmPlugin { ... }",
+      "comment": "WASM Plugin wrapper with lifecycle management.",
       "is_pub": true,
       "members": [
         {
@@ -252,6 +259,7 @@
         { "name": "user_data", "type": "?*anyopaque" }
       ],
       "returns": "void",
+      "comment": "Host function: Get node LOD1 summary by ID.\nInput: (id: i64)\nReturns pointer to string in WASM memory.",
       "is_pub": true,
       "line": 316
     },
@@ -269,6 +277,7 @@
         { "name": "user_data", "type": "?*anyopaque" }
       ],
       "returns": "void",
+      "comment": "Host function: Get neighbor node IDs for a given node.\nInput: (id: i64)\nOutput: ptr to [count: u32][id0: i64, ...] in WASM memory.",
       "is_pub": true,
       "line": 351
     },
@@ -277,6 +286,7 @@
       "name": "HostFunctionRegistry",
       "match_hash": "9c3a668e513307aacada98dbecbff8389f208c990b9c523f144ae35d72479e1e",
       "signature": "keyword_struct HostFunctionRegistry { ... }",
+      "comment": "Host function registry for controlled I/O.",
       "is_pub": true,
       "members": [
         {
@@ -313,6 +323,7 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
+          "comment": "Register the standard host functions for Coral Context.",
           "is_pub": true,
           "line": 425
         }
@@ -325,6 +336,7 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "[]ExtismFunction",
+          "comment": "Get function array for plugin creation.",
           "is_pub": true,
           "line": 454
         }
@@ -336,6 +348,7 @@
       "name": "WasmExecutionResult",
       "match_hash": "22aac9110d1076b6825ea3c5c63eca139d55fc1bf9c11b2e959fd5823f3d8044",
       "signature": "keyword_struct WasmExecutionResult { ... }",
+      "comment": "Result of executing a WASM-backed Target.\n`provides` is caller-owned; free with provides.deinit(allocator).",
       "is_pub": true,
       "members": [
         {
@@ -366,6 +379,7 @@
         { "name": "host_registry", "type": "?*HostFunctionRegistry" }
       ],
       "returns": "WasmExecutionResult",
+      "comment": "Execute a WASM-backed Target against a ContextNode input.\nThe target's executor must be .wasm; asserts otherwise.",
       "is_pub": true,
       "line": 484
     },
@@ -380,6 +394,7 @@
         { "name": "registry", "type": "*HostFunctionRegistry" }
       ],
       "returns": "WasmPlugin",
+      "comment": "Create plugin with host functions from the registry wired in.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -391,45 +406,47 @@
       "name": "ToolCompilerConfig",
       "match_hash": "53887d99f8d259d5f740eac7e7c48f55f64574e6efd1e8fb67252f4aacf703b1",
       "signature": "keyword_struct ToolCompilerConfig { ... }",
+      "comment": "Defines compiler configuration settings for Zig tooling; manages ownership and invariants of tool parameters.",
       "is_pub": true,
-      "line": 601
+      "line": 589
     },
     {
       "type": "enum",
       "name": "WasmLanguage",
       "match_hash": "4f51b07f310ed775820f2ad804311833d43285c8cc50d4f2e80d62c1b948bf0a",
       "signature": "keyword_enum WasmLanguage { ... }",
+      "comment": "Supported WASM source languages.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "zig",
           "is_pub": false,
-          "line": 613
+          "line": 601
         }
     ,    {
           "type": "enum_field",
           "name": "rust",
           "is_pub": false,
-          "line": 614
+          "line": 602
         }
     ,    {
           "type": "enum_field",
           "name": "assemblyscript",
           "is_pub": false,
-          "line": 615
+          "line": 603
         }
     ,    {
           "type": "enum_field",
           "name": "c",
           "is_pub": false,
-          "line": 616
+          "line": 604
         }
     ,    {
           "type": "enum_field",
           "name": "go",
           "is_pub": false,
-          "line": 617
+          "line": 605
         }
     ,    {
           "type": "fn_decl",
@@ -441,16 +458,17 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 619
+          "line": 607
         }
       ],
-      "line": 612
+      "line": 600
     },
     {
       "type": "struct",
       "name": "ToolGenerator",
       "match_hash": "0347ffbc5ddd918e9309e02610a04a0b495c70c40ba90f2ea5dc03c026e43eb9",
       "signature": "keyword_struct ToolGenerator { ... }",
+      "comment": "Dynamic tool generator - compiles source code to WASM.",
       "is_pub": true,
       "members": [
         {
@@ -464,7 +482,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 638
+          "line": 626
         }
     ,    {
           "type": "fn_decl",
@@ -476,7 +494,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 646
+          "line": 634
         }
     ,    {
           "type": "fn_private",
@@ -490,8 +508,9 @@
             { "name": "compiler_argv", "type": "[]const []const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Shared implementation: write `source` to a temp file, run `compiler_argv`,\nthen read and return the produced `tool.wasm`.\nBoth `temp_path` and `wasm_path` are allocated in the arena allocator and\nfreed when `self.arena` is deinitialized.",
           "is_pub": false,
-          "line": 654
+          "line": 642
         }
     ,    {
           "type": "fn_decl",
@@ -503,8 +522,9 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Compile Zig source to WASM (wasm32-freestanding, ReleaseSmal).",
           "is_pub": true,
-          "line": 677
+          "line": 665
         }
     ,    {
           "type": "fn_decl",
@@ -516,8 +536,9 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Compile AssemblyScript source to WASM.",
           "is_pub": true,
-          "line": 692
+          "line": 680
         }
     ,    {
           "type": "fn_decl",
@@ -530,8 +551,9 @@
             { "name": "test_input", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Verify a WASM tool by running test input.",
           "is_pub": true,
-          "line": 710
+          "line": 698
         }
     ,    {
           "type": "fn_decl",
@@ -544,17 +566,19 @@
             { "name": "language", "type": "WasmLanguage" }
           ],
           "returns": "[]const u8",
+          "comment": "Generate WASM tool from LLM prompt response.",
           "is_pub": true,
-          "line": 722
+          "line": 710
         }
       ],
-      "line": 631
+      "line": 619
     },
     {
       "type": "struct",
       "name": "WasmToolCache",
       "match_hash": "55e610634a1035a522ae3b22279a485a576a42974b66e43ff532d5364ff3db32",
       "signature": "keyword_struct WasmToolCache { ... }",
+      "comment": "WASM tool cache — stores compiled tools in memory and SQLite.",
       "is_pub": true,
       "members": [
         {
@@ -567,7 +591,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 738
+          "line": 726
         }
     ,    {
           "type": "fn_decl",
@@ -579,7 +603,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 745
+          "line": 733
         }
     ,    {
           "type": "fn_decl",
@@ -592,7 +616,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 754
+          "line": 742
         }
     ,    {
           "type": "fn_decl",
@@ -606,7 +630,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 758
+          "line": 746
         }
     ,    {
           "type": "fn_decl",
@@ -619,160 +643,160 @@
           ],
           "returns": "[32]u8",
           "is_pub": true,
-          "line": 773
+          "line": 761
         }
       ],
-      "line": 732
+      "line": 720
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader validation",
       "is_pub": false,
-      "line": 785
+      "line": 773
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode serialization",
       "is_pub": false,
-      "line": 794
+      "line": 782
     },
     {
       "type": "test_decl",
       "name": "PayloadType enum values",
       "is_pub": false,
-      "line": 808
+      "line": 796
     },
     {
       "type": "test_decl",
       "name": "WasmManifest defaults",
       "is_pub": false,
-      "line": 814
+      "line": 802
     },
     {
       "type": "test_decl",
       "name": "WasmLanguage extension",
       "is_pub": false,
-      "line": 821
+      "line": 809
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache put and get",
       "is_pub": false,
-      "line": 827
+      "line": 815
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache hash computation",
       "is_pub": false,
-      "line": 839
+      "line": 827
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig defaults",
       "is_pub": false,
-      "line": 852
+      "line": 840
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: editable mixin is zero size",
       "is_pub": false,
-      "line": 859
+      "line": 847
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set and get for compiler path",
       "is_pub": false,
-      "line": 863
+      "line": 851
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set of bool field",
       "is_pub": false,
-      "line": 880
+      "line": 868
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: field not found returns error",
       "is_pub": false,
-      "line": 886
+      "line": 874
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionRequest flag values",
       "is_pub": false,
-      "line": 892
+      "line": 880
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionResult provides words layout",
       "is_pub": false,
-      "line": 898
+      "line": 886
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: getLod returns correct slices",
       "is_pub": false,
-      "line": 914
+      "line": 902
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: id round-trip via getId",
       "is_pub": false,
-      "line": 925
+      "line": 913
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: empty strings produce zero lengths",
       "is_pub": false,
-      "line": 933
+      "line": 921
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong magic fails validate",
       "is_pub": false,
-      "line": 945
+      "line": 933
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong version fails validate",
       "is_pub": false,
-      "line": 951
+      "line": 939
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put then get retrieves bytes",
       "is_pub": false,
-      "line": 957
+      "line": 945
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put collision replaces old bytes",
       "is_pub": false,
-      "line": 969
+      "line": 957
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: get for unknown name returns null",
       "is_pub": false,
-      "line": 984
+      "line": 972
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: hash is 32 bytes and deterministic",
       "is_pub": false,
-      "line": 991
+      "line": 979
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: different inputs produce different hashes",
       "is_pub": false,
-      "line": 1003
+      "line": 991
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: GPA no leaks across put and deinit",
       "is_pub": false,
-      "line": 1015
+      "line": 1003
     }
   ]
 }

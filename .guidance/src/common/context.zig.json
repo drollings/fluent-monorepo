@@ -12,6 +12,7 @@
       "name": "BuildResult",
       "match_hash": "294b5ff34ac1a631a126e0f6d85eac722d0d94dd915a62a2b67af358544842c8",
       "signature": "keyword_struct BuildResult { ... }",
+      "comment": "Tracks build outcomes with invariants; managed by owner; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -25,10 +26,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 21
+          "line": 22
         }
       ],
-      "line": 14
+      "line": 15
     },
     {
       "type": "fn_decl",
@@ -41,8 +42,9 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "BuildContext",
+      "comment": "Initializes a BuildContext using an allocator, registry, and string interners.",
       "is_pub": true,
-      "line": 39
+      "line": 41
     },
     {
       "type": "fn_decl",
@@ -54,8 +56,9 @@
         { "name": "target_names", "type": "[]const []const u8" }
       ],
       "returns": "BuildResult",
+      "comment": "Converts a Zig source code string into a BuildContext result.",
       "is_pub": true,
-      "line": 52
+      "line": 55
     },
     {
       "type": "fn_private",
@@ -68,7 +71,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 151
+      "line": 154
     },
     {
       "type": "fn_private",
@@ -81,7 +84,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 176
+      "line": 179
     },
     {
       "type": "fn_decl",
@@ -93,8 +96,9 @@
         { "name": "writer", "type": "*std.Io.Writer" }
       ],
       "returns": "void",
+      "comment": "Converts a BuildContext string into a Zig slice for target listing.",
       "is_pub": true,
-      "line": 222
+      "line": 226
     },
     {
       "type": "fn_decl",
@@ -107,74 +111,75 @@
         { "name": "writer", "type": "*std.Io.Writer" }
       ],
       "returns": "void",
+      "comment": "Displays a graphical representation using provided context and data.",
       "is_pub": true,
-      "line": 261
+      "line": 266
     },
     {
       "type": "test_decl",
       "name": "BuildContext: empty target list with no default returns success",
       "is_pub": false,
-      "line": 274
+      "line": 279
     },
     {
       "type": "test_decl",
       "name": "BuildContext: empty target list dispatches to default target",
       "is_pub": false,
-      "line": 289
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "BuildContext: dry_run counts targets without executing",
       "is_pub": false,
-      "line": 313
+      "line": 318
     },
     {
       "type": "test_decl",
       "name": "BuildContext: abstract target is skipped (no commands, no exists)",
       "is_pub": false,
-      "line": 336
+      "line": 341
     },
     {
       "type": "test_decl",
       "name": "BuildContext: successful command target is counted",
       "is_pub": false,
-      "line": 357
+      "line": 362
     },
     {
       "type": "test_decl",
       "name": "BuildContext: dry_run non-essential failing command is counted without executing",
       "is_pub": false,
-      "line": 377
+      "line": 382
     },
     {
       "type": "test_decl",
       "name": "BuildContext: essential target — dry_run does not fail",
       "is_pub": false,
-      "line": 401
+      "line": 406
     },
     {
       "type": "test_decl",
       "name": "BuildContext: phony target with no commands succeeds and counts as built",
       "is_pub": false,
-      "line": 430
+      "line": 435
     },
     {
       "type": "test_decl",
       "name": "BuildContext: circular dependency is detected and build returns not-success",
       "is_pub": false,
-      "line": 449
+      "line": 454
     },
     {
       "type": "test_decl",
       "name": "BuildContext: duration_ns is non-zero after a build",
       "is_pub": false,
-      "line": 474
+      "line": 479
     },
     {
       "type": "test_decl",
       "name": "BuildContext: GPA no leaks across a multi-target build",
       "is_pub": false,
-      "line": 491
+      "line": 496
     }
   ]
 }

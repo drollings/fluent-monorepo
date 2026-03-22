@@ -10,31 +10,32 @@
       "name": "Level",
       "match_hash": "8902a0b88a5bb181526ca9c0a430e584b5f34aaf57642ae53e67e7b4585041a5",
       "signature": "keyword_enum Level { ... }",
+      "comment": "Defines a level type for structured logging, managing state and ownership with strict invariants.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "debug",
           "is_pub": false,
-          "line": 5
+          "line": 6
         }
     ,    {
           "type": "enum_field",
           "name": "info",
           "is_pub": false,
-          "line": 6
+          "line": 7
         }
     ,    {
           "type": "enum_field",
           "name": "warn",
           "is_pub": false,
-          "line": 7
+          "line": 8
         }
     ,    {
           "type": "enum_field",
           "name": "err",
           "is_pub": false,
-          "line": 8
+          "line": 9
         }
     ,    {
           "type": "fn_decl",
@@ -46,7 +47,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 10
+          "line": 11
         }
     ,    {
           "type": "fn_decl",
@@ -58,24 +59,26 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 19
+          "line": 20
         }
       ],
-      "line": 4
+      "line": 5
     },
     {
       "type": "struct",
       "name": "LogConfig",
       "match_hash": "8efa4f61d255c04c059b8bc166826b4119d3f72390952b8cc8ca45f39a11e033",
       "signature": "keyword_struct LogConfig { ... }",
+      "comment": "Manages logging configuration; owns struct; ensures consistent initialization and cleanup.",
       "is_pub": true,
-      "line": 29
+      "line": 31
     },
     {
       "type": "struct",
       "name": "Logger",
       "match_hash": "2255b71d304e6cf503de74744c3267b57e6dafbbfe4c6aef9971f9f6e631e1d4",
       "signature": "keyword_struct Logger { ... }",
+      "comment": "Manages logging structures with ownership and invariants; ensures safe initialization/deinit.",
       "is_pub": true,
       "members": [
         {
@@ -89,7 +92,7 @@
           ],
           "returns": "*Logger",
           "is_pub": true,
-          "line": 43
+          "line": 46
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +104,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 60
+          "line": 63
         }
     ,    {
           "type": "fn_decl",
@@ -116,7 +119,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 65
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -130,7 +133,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 119
+          "line": 122
         }
     ,    {
           "type": "fn_decl",
@@ -144,7 +147,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 123
+          "line": 126
         }
     ,    {
           "type": "fn_decl",
@@ -158,7 +161,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 127
+          "line": 130
         }
     ,    {
           "type": "fn_decl",
@@ -172,10 +175,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 131
+          "line": 134
         }
       ],
-      "line": 38
+      "line": 41
     },
     {
       "type": "fn_decl",
@@ -186,8 +189,9 @@
         { "name": "logger", "type": "*Logger" }
       ],
       "returns": "void",
+      "comment": "Updates global logging configuration by setting parameters via the provided logger instance.",
       "is_pub": true,
-      "line": 138
+      "line": 142
     },
     {
       "type": "fn_decl",
@@ -195,8 +199,9 @@
       "match_hash": "66b72130b212891ba3fdd0f6386c2c17f24fa26b7aca19ea50748f9ed1e8af18",
       "signature": "fn getGlobal() -> ?*Logger",
       "returns": "?*Logger",
+      "comment": "Retrieves a global logger instance from the system.",
       "is_pub": true,
-      "line": 142
+      "line": 147
     },
     {
       "type": "fn_decl",
@@ -209,8 +214,9 @@
         { "name": "args" }
       ],
       "returns": "void",
+      "comment": "Logs a message with specified level and format, returning void.",
       "is_pub": true,
-      "line": 146
+      "line": 152
     },
     {
       "type": "fn_decl",
@@ -225,20 +231,21 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "*Logger",
+      "comment": "Initializes logging configuration with allocator, verbosity, quiet settings, and optional log file paths.",
       "is_pub": true,
-      "line": 152
+      "line": 159
     },
     {
       "type": "test_decl",
       "name": "Level: prefix and color",
       "is_pub": false,
-      "line": 177
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "Logger: init and deinit",
       "is_pub": false,
-      "line": 184
+      "line": 191
     }
   ]
 }

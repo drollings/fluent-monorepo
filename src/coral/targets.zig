@@ -39,6 +39,7 @@ pub const TargetKind = enum {
     command,
 };
 
+/// Defines a target definition with fixed-size buffers; managed via ownership model; ensures correct initialization/deinit state.
 pub const TargetDef = struct {
     name: []const u8,
     kind: TargetKind,
@@ -276,3 +277,4 @@ test "topoSort: download is first, yago_ingest is last" {
     try testing.expectEqualStrings(TARGET_DOWNLOAD, order[0]);
     try testing.expectEqualStrings(TARGET_INGEST, order[order.len - 1]);
 }
+

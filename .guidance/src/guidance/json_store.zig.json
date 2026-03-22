@@ -11,6 +11,7 @@
       "name": "JsonStore",
       "match_hash": "3f34465f5f4a2dcc3dcf8c2ed5ed82d029ab59c7ef7240583dfb5e1d78378df6",
       "signature": "keyword_struct JsonStore { ... }",
+      "comment": "Manages JSON data storage with fixed-size buffers; owned by the module; ensures consistent access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -23,7 +24,7 @@
           ],
           "returns": "JsonStore",
           "is_pub": true,
-          "line": 16
+          "line": 17
         }
     ,    {
           "type": "fn_decl",
@@ -36,7 +37,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": true,
-          "line": 20
+          "line": 21
         }
     ,    {
           "type": "fn_private",
@@ -49,7 +50,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": false,
-          "line": 27
+          "line": 28
         }
     ,    {
           "type": "fn_private",
@@ -62,7 +63,7 @@
           ],
           "returns": "std.mem.Allocator.Error![]types.Member",
           "is_pub": false,
-          "line": 144
+          "line": 145
         }
     ,    {
           "type": "fn_private",
@@ -73,8 +74,9 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "bool",
+          "comment": "Returns true when a stored comment is a leaked LLM reasoning preamble rather\nthan real documentation.  Such comments should be treated as absent so the\nPython AI infill phase can regenerate them with a proper answer.",
           "is_pub": false,
-          "line": 161
+          "line": 162
         }
     ,    {
           "type": "fn_private",
@@ -87,7 +89,7 @@
           ],
           "returns": "std.mem.Allocator.Error!?types.Member",
           "is_pub": false,
-          "line": 181
+          "line": 182
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +103,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 315
+          "line": 316
         }
     ,    {
           "type": "fn_decl",
@@ -113,8 +115,9 @@
             { "name": "m", "type": "types.Member" }
           ],
           "returns": "types.Member",
+          "comment": "Deep-copy a single Member; every string field is independently owned.",
           "is_pub": true,
-          "line": 329
+          "line": 330
         }
     ,    {
           "type": "fn_private",
@@ -127,7 +130,7 @@
           ],
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 364
+          "line": 365
         }
     ,    {
           "type": "fn_decl",
@@ -139,8 +142,9 @@
             { "name": "strs", "type": "[]const []const u8" }
           ],
           "returns": "[][]const u8",
+          "comment": "Deep-copy a string slice.  Delegates to the generic helper in\nsrc/common/str.zig so callers continue to work without change.",
           "is_pub": true,
-          "line": 378
+          "line": 379
         }
     ,    {
           "type": "fn_private",
@@ -153,7 +157,7 @@
           ],
           "returns": "[]types.Pattern",
           "is_pub": false,
-          "line": 382
+          "line": 383
         }
     ,    {
           "type": "fn_decl",
@@ -165,8 +169,9 @@
             { "name": "skills", "type": "[]const types.Skill" }
           ],
           "returns": "[]types.Skill",
+          "comment": "Deep-copy a slice of Skills.",
           "is_pub": true,
-          "line": 395
+          "line": 396
         }
     ,    {
           "type": "fn_decl",
@@ -179,7 +184,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 406
+          "line": 407
         }
     ,    {
           "type": "fn_decl",
@@ -191,8 +196,9 @@
             { "name": "doc", "type": "types.GuidanceDoc" }
           ],
           "returns": "void",
+          "comment": "Free all heap memory owned by a GuidanceDoc.",
           "is_pub": true,
-          "line": 430
+          "line": 431
         }
     ,    {
           "type": "fn_decl",
@@ -207,7 +213,7 @@
           ],
           "returns": "std.mem.Allocator.Error!MergeResult",
           "is_pub": true,
-          "line": 452
+          "line": 453
         }
     ,    {
           "type": "fn_private",
@@ -223,18 +229,19 @@
           ],
           "returns": "types.Member",
           "is_pub": false,
-          "line": 495
+          "line": 496
         }
       ],
-      "line": 7
+      "line": 8
     },
     {
       "type": "struct",
       "name": "MergeResult",
       "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
+      "comment": "Represents the outcome of a merge operation, managing ownership and invariants for safe state transitions.",
       "is_pub": true,
-      "line": 589
+      "line": 591
     }
   ]
 }

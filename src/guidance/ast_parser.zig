@@ -3,6 +3,7 @@ const types = @import("types.zig");
 const hash = @import("hash.zig");
 const pattern = @import("pattern.zig");
 
+/// Manages AST parsing state, owns parsing logic, ensures invariant correctness.
 pub const AstParser = struct {
     allocator: std.mem.Allocator,
     source: [:0]const u8,
@@ -445,6 +446,7 @@ pub const AstParser = struct {
     }
 };
 
+/// Converts a file path into an AstParser instance using the provided allocator.
 pub fn parseFile(allocator: std.mem.Allocator, path: []const u8) !AstParser {
     const file = std.fs.openFileAbsolute(path, .{}) catch |err| return err;
     defer file.close();
@@ -457,3 +459,5 @@ pub fn parseFile(allocator: std.mem.Allocator, path: []const u8) !AstParser {
         return err;
     };
 }
+
+

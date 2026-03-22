@@ -11,74 +11,77 @@
       "name": "IngestionErrorKind",
       "match_hash": "3bdc94f3935f8b39a9baf1954df9e9f64b82fa6ffca3fcf39ff1aa1d695b91fc",
       "signature": "keyword_enum IngestionErrorKind { ... }",
+      "comment": "Represents an ingestion error during data handling; manages fixed-size buffers with strict ownership and invariants.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "count_mismatch",
           "is_pub": false,
-          "line": 14
+          "line": 15
         }
     ,    {
           "type": "enum_field",
           "name": "orphan_node",
           "is_pub": false,
-          "line": 15
+          "line": 16
         }
     ,    {
           "type": "enum_field",
           "name": "invalid_iri",
           "is_pub": false,
-          "line": 16
+          "line": 17
         }
     ,    {
           "type": "enum_field",
           "name": "missing_label",
           "is_pub": false,
-          "line": 17
+          "line": 18
         }
     ,    {
           "type": "enum_field",
           "name": "dangling_blank_node",
           "is_pub": false,
-          "line": 18
+          "line": 19
         }
       ],
-      "line": 13
+      "line": 14
     },
     {
       "type": "enum",
       "name": "IngestionWarningKind",
       "match_hash": "ef0a0c240e9e67a8ae9b33828fc572e44f6f7c1480761311210925f8102dda74",
       "signature": "keyword_enum IngestionWarningKind { ... }",
+      "comment": "Tracks ingestion events with a fixed-size buffer; managed by the owner; not thread-safe.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "no_type",
           "is_pub": false,
-          "line": 22
+          "line": 24
         }
     ,    {
           "type": "enum_field",
           "name": "no_description",
           "is_pub": false,
-          "line": 23
+          "line": 25
         }
     ,    {
           "type": "enum_field",
           "name": "blank_node_heavy",
           "is_pub": false,
-          "line": 24
+          "line": 26
         }
       ],
-      "line": 21
+      "line": 23
     },
     {
       "type": "struct",
       "name": "IngestionReport",
       "match_hash": "4688d8f22eb2540c796609ad89b3a8bced4bcd50a79aebf463e7d852e3627999",
       "signature": "keyword_struct IngestionReport { ... }",
+      "comment": "Tracks ingestion metrics; managed by owner; key invariant is data integrity.",
       "is_pub": true,
       "members": [
         {
@@ -91,7 +94,7 @@
           ],
           "returns": "IngestionReport",
           "is_pub": true,
-          "line": 45
+          "line": 48
         }
     ,    {
           "type": "fn_decl",
@@ -103,7 +106,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 56
+          "line": 59
         }
     ,    {
           "type": "fn_decl",
@@ -115,24 +118,26 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 63
+          "line": 66
         }
       ],
-      "line": 37
+      "line": 40
     },
     {
       "type": "struct",
       "name": "VerifierConfig",
       "match_hash": "26d6aafbbd8b8d9d2c291ff300e80e308e1117bfe3aa6e9a2d8909a311b49c72",
       "signature": "keyword_struct VerifierConfig { ... }",
+      "comment": "Manages verification configuration with fixed buffers; owned by the verifier; ensures invariant state.",
       "is_pub": true,
-      "line": 72
+      "line": 76
     },
     {
       "type": "struct",
       "name": "Verifier",
       "match_hash": "87d283cad8765ad31d66d13a7666cd160c1e26a66f7a5288d3f6bd2330521d60",
       "signature": "keyword_struct Verifier { ... }",
+      "comment": "Manages verification logic with fixed buffers; owned by the module; ensures invariant correctness.",
       "is_pub": true,
       "members": [
         {
@@ -146,7 +151,7 @@
           ],
           "returns": "Verifier",
           "is_pub": true,
-          "line": 85
+          "line": 90
         }
     ,    {
           "type": "fn_decl",
@@ -159,8 +164,9 @@
             { "name": "report", "type": "*IngestionReport" }
           ],
           "returns": "void",
+          "comment": "Verify mapper state (before flush) for basic integrity.",
           "is_pub": true,
-          "line": 90
+          "line": 95
         }
     ,    {
           "type": "fn_decl",
@@ -175,47 +181,48 @@
             { "name": "report", "type": "*IngestionReport" }
           ],
           "returns": "void",
+          "comment": "Verify statistics from completed ingestion.",
           "is_pub": true,
-          "line": 126
+          "line": 131
         }
       ],
-      "line": 81
+      "line": 86
     },
     {
       "type": "test_decl",
       "name": "report initialized empty",
       "is_pub": false,
-      "line": 149
+      "line": 154
     },
     {
       "type": "test_decl",
       "name": "verify stats count match",
       "is_pub": false,
-      "line": 156
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "verify stats count mismatch",
       "is_pub": false,
-      "line": 164
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "verify mapper with labelled nodes - no warnings",
       "is_pub": false,
-      "line": 173
+      "line": 178
     },
     {
       "type": "test_decl",
       "name": "verify mapper missing label generates warning",
       "is_pub": false,
-      "line": 195
+      "line": 200
     },
     {
       "type": "test_decl",
       "name": "report serializes error count",
       "is_pub": false,
-      "line": 218
+      "line": 223
     }
   ]
 }

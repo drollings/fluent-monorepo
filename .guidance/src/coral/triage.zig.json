@@ -15,8 +15,9 @@
         { "name": "work_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Retrieves the lifecycle state slice from the allocator and work directory.",
       "is_pub": true,
-      "line": 24
+      "line": 22
     },
     {
       "type": "fn_decl",
@@ -28,8 +29,9 @@
         { "name": "affected_count", "type": "usize" }
       ],
       "returns": "[]const u8",
+      "comment": "Evaluates risk based on content and affected count, returning a processed slice.",
       "is_pub": true,
-      "line": 38
+      "line": 37
     },
     {
       "type": "fn_decl",
@@ -42,8 +44,9 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
+      "comment": "Extract path-like tokens from content matching common project directories.\nReturns a deduplicated slice of owned paths (caller must free each + the slice).",
       "is_pub": true,
-      "line": 67
+      "line": 66
     },
     {
       "type": "fn_private",
@@ -57,38 +60,39 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Add path to list if not a duplicate. Verifies existence in project_root.\nReturns true if added.",
       "is_pub": false,
-      "line": 136
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "assessRisk high for delete",
       "is_pub": false,
-      "line": 160
+      "line": 159
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for refactor",
       "is_pub": false,
-      "line": 165
+      "line": 164
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for wide scope",
       "is_pub": false,
-      "line": 170
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "assessRisk low for simple change",
       "is_pub": false,
-      "line": 175
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "findAffectedFiles detects backtick paths",
       "is_pub": false,
-      "line": 180
+      "line": 179
     }
   ]
 }

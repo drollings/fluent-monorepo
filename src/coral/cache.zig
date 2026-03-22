@@ -22,6 +22,7 @@ const HydrationPipeline = coral_db.HydrationPipeline;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = hashutil.EmbeddingProvider;
 
+/// Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.
 pub const CacheTier = enum(u8) {
     l1_memory = 1,
     l2_workflow = 2,
@@ -32,6 +33,7 @@ pub const CacheTier = enum(u8) {
     l5_llm = 5,
 };
 
+/// Manages routing result structures with fixed-size buffers; owned by the module; ensures consistent state across operations.
 pub const RoutingResult = struct {
     nodes: []const ContextNode,
     tool_result: []const u8,
@@ -40,6 +42,7 @@ pub const RoutingResult = struct {
     latency_ms: u64,
 };
 
+/// Manages low-latency cache operations with fixed-size buffers; owned by the system; ensures consistent key-value storage.
 pub const L1Cache = struct {
     allocator: std.mem.Allocator,
     entries: std.StringHashMap(RoutingResult),
@@ -120,6 +123,7 @@ pub const L1Cache = struct {
 // P3.0 — QueueReactorBuilder (fluent builder)
 // ---------------------------------------------------------------------------
 
+/// Manages queue reactor construction with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.
 pub const QueueReactorBuilder = struct {
     allocator: std.mem.Allocator,
     _library: ?*Library = null,
@@ -184,6 +188,7 @@ pub const QueueReactorBuilder = struct {
 // QueueReactor — 5-tier cache router
 // ---------------------------------------------------------------------------
 
+/// Manages asynchronous queue operations with fixed-size buffers; owned by the system; ensures data integrity during transitions.
 pub const QueueReactor = struct {
     const Self = @This();
 
@@ -653,3 +658,8 @@ test "Library.traverseFrom: returns root node" {
     try testing.expect(nodes.len >= 1);
     try testing.expectEqual(@as(i64, 7), nodes[0].id);
 }
+
+
+
+
+

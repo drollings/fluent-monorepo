@@ -1,6 +1,7 @@
 /// enum_registry.zig — EnumRegistry for runtime enum name/value lookups.
 const std = @import("std");
 
+/// Manages enum definitions with compile-time registration; owns registry state; ensures type safety and ownership clarity.
 pub const EnumRegistry = struct {
     name_to_index: std.StringHashMapUnmanaged(usize),
     index_to_name: std.ArrayListUnmanaged([]const u8),
@@ -52,3 +53,4 @@ pub const EnumRegistry = struct {
         return null;
     }
 };
+

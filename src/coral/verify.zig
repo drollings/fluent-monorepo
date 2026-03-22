@@ -10,6 +10,7 @@ const TripleMapper = mapper_mod.TripleMapper;
 // Report types
 // ---------------------------------------------------------------------------
 
+/// Represents an ingestion error during data handling; manages fixed-size buffers with strict ownership and invariants.
 pub const IngestionErrorKind = enum {
     count_mismatch,
     orphan_node,
@@ -18,6 +19,7 @@ pub const IngestionErrorKind = enum {
     dangling_blank_node,
 };
 
+/// Tracks ingestion events with a fixed-size buffer; managed by the owner; not thread-safe.
 pub const IngestionWarningKind = enum {
     no_type,
     no_description,
@@ -34,6 +36,7 @@ pub const IngestionWarning = struct {
     message: []const u8, // owned
 };
 
+/// Tracks ingestion metrics; managed by owner; key invariant is data integrity.
 pub const IngestionReport = struct {
     allocator: std.mem.Allocator,
     triples_total: usize,
@@ -69,6 +72,7 @@ pub const IngestionReport = struct {
 // Verifier
 // ---------------------------------------------------------------------------
 
+/// Manages verification configuration with fixed buffers; owned by the verifier; ensures invariant state.
 pub const VerifierConfig = struct {
     /// Expected triple count (0 = unchecked)
     expected_triples: usize = 0,
@@ -78,6 +82,7 @@ pub const VerifierConfig = struct {
     warn_missing_types: bool = true,
 };
 
+/// Manages verification logic with fixed buffers; owned by the module; ensures invariant correctness.
 pub const Verifier = struct {
     allocator: std.mem.Allocator,
     config: VerifierConfig,
@@ -223,3 +228,8 @@ test "report serializes error count" {
     try testing.expectEqual(@as(usize, 1), report.errors.items.len);
     try testing.expect(report.hasErrors());
 }
+
+
+
+
+

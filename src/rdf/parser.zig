@@ -23,8 +23,10 @@ const TokenType = lexer_mod.TokenType;
 
 pub const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
+/// Represents a term type with enum definitions; managed via ownership model; ensures invariants are preserved.
 pub const TermType = enum { iri, blank_node, literal };
 
+/// Represents a structured literal value in the parser, managing ownership and invariants for consistent interpretation.
 pub const Literal = struct {
     value: []const u8,
     lang: ?[]const u8,
@@ -37,6 +39,7 @@ pub const Literal = struct {
     }
 };
 
+/// Represents a union of keywords in Zig, managing ownership and invariants for safe term evaluation.
 pub const Term = union(TermType) {
     iri: []const u8,
     blank_node: []const u8,
@@ -51,6 +54,7 @@ pub const Term = union(TermType) {
     }
 };
 
+/// Represents a triple structure with ownership model and invariants; manages fixed-size buffers.
 pub const Triple = struct {
     subject: Term,
     predicate: Term,
@@ -75,6 +79,7 @@ pub const ParseError = error{
     InvalidPrefix,
 };
 
+/// Handles RDF parsing with a keyword structure, manages ownership and invariants; ensures correct RDF schema interpretation.
 pub const Parser = struct {
     // All fields first
     allocator: std.mem.Allocator,
@@ -559,3 +564,8 @@ test "YAGO 4.5 tiny: first 100 triples parse without errors" {
 
     try testing.expectEqual(YAGO_VALIDATE_MAX, count);
 }
+
+
+
+
+

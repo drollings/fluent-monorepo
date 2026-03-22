@@ -181,12 +181,7 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
 // Public entry points
 // ---------------------------------------------------------------------------
 
-/// Open (or create) `db_path`, synchronise it with every JSON file under
-/// `<guidance_dir>/src/`, embedding each node via `embedder`.
-/// If `capabilities_dir` is non-null, also indexes CAPABILITY.md files from
-/// that directory into the `capabilities` table.
-/// If `aliases` is non-null, pre-computes embeddings for alias keys.
-/// `cache_limit` sets the maximum number of entries in the embedding cache (0 = unlimited).
+/// Synchronizes the database by loading data from the specified path using the allocator and embedding provider.
 pub fn syncDatabase(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -231,6 +226,7 @@ pub fn syncDatabase(
 //       .cacheLimit(500)              // optional (default: 0 = unlimited)
 //       .sync();
 
+/// Manages database sync operations with a fixed-size buffer pool; owned by the module; ensures consistent state across invocations.
 pub const DbSyncBuilder = struct {
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -294,6 +290,7 @@ pub const DbSyncBuilder = struct {
 // GuidanceDb — the database handle
 // ---------------------------------------------------------------------------
 
+/// Manages guidance data structures with fixed-size buffers; owned by the system; ensures consistent state across operations.
 pub const GuidanceDb = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
@@ -2177,10 +2174,23 @@ pub const GuidanceDb = struct {
         aliases: SemanticAliases,
     ) !void {
         var synced: usize = 0;
+        const model_name = self.embedder.getName();
         for (aliases.aliases) |alias| {
             // Lowercase the key for case-insensitive embedding comparison
             const key_lower = std.ascii.allocLowerString(allocator, alias.key) catch continue;
             defer allocator.free(key_lower);
+
+            // Skip when this (alias_key, embedding_model) pair is already stored.
+            const already_stored: bool = blk: {
+                const chk = "SELECT COUNT(*) FROM semantic_alias_embeddings WHERE alias_key=?1 AND embedding_model=?2";
+                var chk_stmt: ?*c.sqlite3_stmt = null;
+                if (c.sqlite3_prepare_v2(self.db, chk, -1, &chk_stmt, null) != c.SQLITE_OK) break :blk false;
+                defer _ = c.sqlite3_finalize(chk_stmt);
+                _ = c.sqlite3_bind_text(chk_stmt, 1, key_lower.ptr, @intCast(key_lower.len), SQLITE_STATIC);
+                _ = c.sqlite3_bind_text(chk_stmt, 2, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
+                break :blk c.sqlite3_step(chk_stmt) == c.SQLITE_ROW and c.sqlite3_column_int(chk_stmt, 0) > 0;
+            };
+            if (already_stored) continue;
 
             // Embed the lowercase alias key
             const emb = self.embedder.embed(allocator, key_lower) catch |err| {
@@ -2628,6 +2638,7 @@ pub const GuidanceDb = struct {
 // JSON parsing — internal structure
 // ---------------------------------------------------------------------------
 
+/// Represents parsed member data with ownership and invariants; managed via parsing pipeline.
 const ParsedMember = struct {
     node_type: []const u8,
     name: []const u8,
@@ -2636,6 +2647,7 @@ const ParsedMember = struct {
     line: ?u32,
 };
 
+/// Represents parsed document data with ownership and invariants; managed via parsing lifecycle.
 const ParsedDoc = struct {
     module: []const u8,
     source: []const u8,

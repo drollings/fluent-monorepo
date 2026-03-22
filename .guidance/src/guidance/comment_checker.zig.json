@@ -18,8 +18,9 @@
         { "name": "source_context", "type": "[]const u8" }
       ],
       "returns": "CheckResult",
+      "comment": "Checks if a comment is stale based on existing data and context.",
       "is_pub": true,
-      "line": 29
+      "line": 18
     },
     {
       "type": "fn_decl",
@@ -31,50 +32,57 @@
         { "name": "current_hash", "type": "?[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when a stored `match_hash` differs from `current_hash`,\nindicating that the code changed since the comment was written.",
       "is_pub": true,
-      "line": 57
+      "line": 46
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - valid comment",
       "is_pub": false,
-      "line": 67
+      "line": 56
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - empty comment",
       "is_pub": false,
-      "line": 73
+      "line": 62
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - leaked prompt",
       "is_pub": false,
-      "line": 79
+      "line": 68
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - too long",
       "is_pub": false,
-      "line": 85
+      "line": 74
     },
     {
       "type": "test_decl",
       "name": "isHashStale - different hashes",
       "is_pub": false,
-      "line": 93
+      "line": 82
     },
     {
       "type": "test_decl",
       "name": "isHashStale - same hash",
       "is_pub": false,
-      "line": 97
+      "line": 86
     },
     {
       "type": "test_decl",
       "name": "isHashStale - null hash",
       "is_pub": false,
-      "line": 101
+      "line": 90
+    },
+    {
+      "type": "test_decl",
+      "name": "isHashStale triggers regeneration path",
+      "is_pub": false,
+      "line": 95
     }
   ]
 }

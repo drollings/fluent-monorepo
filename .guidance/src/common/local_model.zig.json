@@ -11,14 +11,16 @@
       "name": "DecomposerConfig",
       "match_hash": "65886122986a46e3edb305166f69bc3fe99e5ff578454776c53c8f465eb7f1b9",
       "signature": "keyword_struct DecomposerConfig { ... }",
+      "comment": "Manages decomposer configuration with fixed buffers; ensures ownership and invariants are preserved.",
       "is_pub": true,
-      "line": 21
+      "line": 22
     },
     {
       "type": "struct",
       "name": "LocalDecomposer",
       "match_hash": "92e53c4a8935a29a2d42e9bf2963651af9a584a0977fd7c533ebd940b9fbeebf",
       "signature": "keyword_struct LocalDecomposer { ... }",
+      "comment": "Manages local model state with fixed buffers; owned by the local context; ensures consistent invariants.",
       "is_pub": true,
       "members": [
         {
@@ -32,7 +34,7 @@
           ],
           "returns": "LocalDecomposer",
           "is_pub": true,
-          "line": 38
+          "line": 40
         }
     ,    {
           "type": "fn_decl",
@@ -45,8 +47,9 @@
             { "name": "task", "type": "[]const u8" }
           ],
           "returns": "[][]const u8",
+          "comment": "Decompose `task` into an ordered list of sub-task strings.\n\nReturns a slice allocated from `arena`.  On any LLM failure or malformed\nresponse the function returns a single-element slice containing `task`\nso the caller always has at least one item to route.",
           "is_pub": true,
-          "line": 47
+          "line": 49
         }
     ,    {
           "type": "fn_private",
@@ -60,10 +63,10 @@
           ],
           "returns": "[][]const u8",
           "is_pub": false,
-          "line": 77
+          "line": 79
         }
       ],
-      "line": 34
+      "line": 36
     },
     {
       "type": "fn_private",
@@ -74,8 +77,9 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Strip <think>...</think> blocks (identical to common/llm.zig version but\ninlined here to avoid importing the full common module root from common/).",
       "is_pub": false,
-      "line": 91
+      "line": 93
     },
     {
       "type": "fn_private",
@@ -86,8 +90,9 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true if `text` does not look like a JSON array.",
       "is_pub": false,
-      "line": 104
+      "line": 106
     },
     {
       "type": "fn_private",
@@ -100,50 +105,51 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[][]const u8",
+      "comment": "Parse a JSON array of strings from `text` into `arena`-allocated slice.\nAt most `limit` entries are returned.",
       "is_pub": false,
-      "line": 114
+      "line": 116
     },
     {
       "type": "test_decl",
       "name": "isMalformedJsonArray: rejects non-arrays",
       "is_pub": false,
-      "line": 143
+      "line": 145
     },
     {
       "type": "test_decl",
       "name": "isMalformedJsonArray: accepts well-formed arrays",
       "is_pub": false,
-      "line": 150
+      "line": 152
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock: removes think tags",
       "is_pub": false,
-      "line": 155
+      "line": 157
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock: no think block passes through",
       "is_pub": false,
-      "line": 161
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "parseJsonArray: parses simple array",
       "is_pub": false,
-      "line": 166
+      "line": 168
     },
     {
       "type": "test_decl",
       "name": "parseJsonArray: respects limit",
       "is_pub": false,
-      "line": 176
+      "line": 178
     },
     {
       "type": "test_decl",
       "name": "LocalDecomposer.fallback returns single task",
       "is_pub": false,
-      "line": 184
+      "line": 186
     }
   ]
 }

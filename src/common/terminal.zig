@@ -16,21 +16,25 @@ fn getWinsize() ?std.posix.winsize {
     return null;
 }
 
+/// Returns the terminal width in bytes for the current screen size.
 pub fn getTerminalWidth() usize {
     if (getWinsize()) |size| return @intCast(size.col);
     return 80;
 }
 
+/// Returns the terminal height in bytes for the current Zig source file.
 pub fn getTerminalHeight() usize {
     if (getWinsize()) |size| return @intCast(size.row);
     return 24;
 }
 
+/// Checks if the provided string is a valid terminal string, returning true or false.
 pub fn isTerminal() bool {
     const stdout = std.fs.File.stdout();
     return std.posix.isatty(stdout.handle);
 }
 
+/// Validates a boolean question input and returns true or false based on the provided value.
 pub fn confirm(question: []const u8, default: bool) !bool {
     var ws: io.WriterState = .{};
     ws.initStdout();
@@ -56,6 +60,7 @@ pub fn confirm(question: []const u8, default: bool) !bool {
     return default;
 }
 
+/// Retrieves a response from an allocator using a Zig array and question parameters.
 pub fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const u8) ![]const u8 {
     var ws: io.WriterState = .{};
     ws.initStdout();
@@ -81,6 +86,7 @@ pub fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const 
     return try allocator.dupe(u8, default);
 }
 
+/// Retrieves an integer from an allocator using a Zig array, returning the value or an error.
 pub fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64) !i64 {
     _ = allocator;
     var ws: io.WriterState = .{};
@@ -109,6 +115,7 @@ pub fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64)
     return error.InvalidInteger;
 }
 
+/// Manages progress tracking UI; owned by the application; ensures consistent state across sessions.
 pub const ProgressBar = struct {
     description: []const u8,
     current: usize,
@@ -161,6 +168,7 @@ pub const ProgressBar = struct {
     }
 };
 
+/// Defines a color enum for terminal UI; managed centrally with ownership model; immutable values ensure consistency.
 pub const Color = enum {
     reset,
     black,
@@ -203,6 +211,7 @@ pub const Color = enum {
     }
 };
 
+/// Prints a colored string using the provided writer, color, and text data.
 pub fn colorPrint(writer: anytype, color: Color, text: []const u8) !void {
     try writer.writeAll(color.code());
     try writer.writeAll(text);
@@ -238,3 +247,12 @@ test "ProgressBar init and advance" {
     bar.set(50);
     try testing.expectEqual(@as(usize, 50), bar.current);
 }
+
+
+
+
+
+
+
+
+

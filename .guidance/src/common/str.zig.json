@@ -16,8 +16,9 @@
         { "name": "token", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a token matches a pattern resembling a Zig identifier, returning true or false.",
       "is_pub": true,
-      "line": 17
+      "line": 9
     },
     {
       "type": "fn_decl",
@@ -28,8 +29,9 @@
         { "name": "rel_path", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `rel_path` matches common test file naming conventions.\n\nChecks both Unix (`/test/`, `/tests/`) and Windows (`\\test\\`, `\\tests\\`)\ndirectory separators.  Suitable for filtering test files out of `used_by`\nlists and reverse-dependency scans.",
       "is_pub": true,
-      "line": 39
+      "line": 31
     },
     {
       "type": "fn_decl",
@@ -40,8 +42,9 @@
         { "name": "ref", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extract a short skill name from a JSON skill ref path.\n\nExamples:\n  \"skills/gof-patterns/SKILL.md\"  → \"gof-patterns\"\n  \"skills/zig-current/SKILL.md\"   → \"zig-current\"\n  \"gof-patterns\"                   → \"gof-patterns\"  (bare name, returned as-is)\n\nReturns a slice into the original `ref` — no allocation.",
       "is_pub": true,
-      "line": 62
+      "line": 54
     },
     {
       "type": "fn_decl",
@@ -53,8 +56,9 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `needle` appears in `haystack` as a whole-word match\n(case-insensitive).  A word boundary is any non-alphanumeric character or\nthe start/end of the string.",
       "is_pub": true,
-      "line": 78
+      "line": 70
     },
     {
       "type": "fn_decl",
@@ -66,8 +70,9 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `source` contains ANY of the given `keywords`\n(case-insensitive substring match).",
       "is_pub": true,
-      "line": 93
+      "line": 85
     },
     {
       "type": "fn_decl",
@@ -79,8 +84,9 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `source` contains ANY of the given `keywords` as whole\nwords (case-insensitive word-boundary match).",
       "is_pub": true,
-      "line": 102
+      "line": 94
     },
     {
       "type": "fn_decl",
@@ -92,8 +98,9 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `s` ends with one of the given `extensions`.\n\nExtensions are matched WITHOUT the leading dot — pass `\"zig\"`, not `\".zig\"`.\nComparison is case-sensitive (file system semantics).",
       "is_pub": true,
-      "line": 113
+      "line": 105
     },
     {
       "type": "fn_decl",
@@ -105,8 +112,9 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `s` looks like a path-like token: it is at least 3 chars\nlong AND either has a recognised extension or contains a `/`.",
       "is_pub": true,
-      "line": 124
+      "line": 116
     },
     {
       "type": "fn_decl",
@@ -118,8 +126,9 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `needle` appears anywhere in `haystack` (case-insensitive).\n\nUses a sliding-window comparison with `std.ascii.eqlIgnoreCase`.\nNo allocation — suitable for hot paths and large haystacks.\nAn empty needle always matches.",
       "is_pub": true,
-      "line": 134
+      "line": 126
     },
     {
       "type": "fn_decl",
@@ -130,8 +139,9 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Map a file path to a fenced-code-block language identifier.\n\nUsed for Markdown output (e.g. ` ```zig `) when embedding source excerpts.\nRecognised extensions: .zig, .py, .rs, .ts, .tsx, .js.\nFalls back to \"text\" for unrecognised extensions.\n\nReturns a `[]const u8` into a static string literal — no allocation.",
       "is_pub": true,
-      "line": 151
+      "line": 143
     },
     {
       "type": "fn_decl",
@@ -143,80 +153,81 @@
         { "name": "strs", "type": "[]const []const u8" }
       ],
       "returns": "[][]const u8",
+      "comment": "Deep-copy a slice of strings — each element is individually owned.\n\nReturns a freshly allocated `[][]const u8` whose backing strings are all\nduped with `allocator`.  On error any already-allocated elements are freed\nbefore propagating the error.\n\nOwnership: the caller must free every element and then the slice itself:\n  for (result) |s| allocator.free(s);\n  allocator.free(result);",
       "is_pub": true,
-      "line": 169
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier snake_case",
       "is_pub": false,
-      "line": 187
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier camelCase and PascalCase",
       "is_pub": false,
-      "line": 192
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "containsWord whole-word match",
       "is_pub": false,
-      "line": 198
+      "line": 190
     },
     {
       "type": "test_decl",
       "name": "containsAny matches any keyword",
       "is_pub": false,
-      "line": 206
+      "line": 198
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord whole-word multi-keyword",
       "is_pub": false,
-      "line": 213
+      "line": 205
     },
     {
       "type": "test_decl",
       "name": "hasExtension matches without dot",
       "is_pub": false,
-      "line": 219
+      "line": 211
     },
     {
       "type": "test_decl",
       "name": "isPathToken detects paths and extensions",
       "is_pub": false,
-      "line": 227
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase finds substring",
       "is_pub": false,
-      "line": 235
+      "line": 227
     },
     {
       "type": "test_decl",
       "name": "langFromPath maps extensions",
       "is_pub": false,
-      "line": 242
+      "line": 234
     },
     {
       "type": "test_decl",
       "name": "dupeStrings produces independent copies",
       "is_pub": false,
-      "line": 250
+      "line": 242
     },
     {
       "type": "test_decl",
       "name": "dupeStrings handles empty slice",
       "is_pub": false,
-      "line": 265
+      "line": 257
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier rejects plain words",
       "is_pub": false,
-      "line": 271
+      "line": 263
     }
   ]
 }

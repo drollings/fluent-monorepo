@@ -7,6 +7,7 @@ const schema = coral_db.schema;
 pub const BINARY_SCHEMA_VERSION: u32 = 1;
 pub const BINARY_MAGIC: [4]u8 = .{ 'C', 'C', 'N', 'D' };
 
+/// Defines a payload type with enum-based payload definitions, managed by owner; ensures fixed-size buffers and clear ownership model.
 pub const PayloadType = enum(u32) {
     context_node = 1,
     execution_request = 2,
@@ -16,6 +17,7 @@ pub const PayloadType = enum(u32) {
     host_function_result = 6,
 };
 
+/// Manages binary header structures with fixed-size buffers; owned by the context; ensures invariant buffer integrity.
 pub const BinaryHeader = extern struct {
     magic: [4]u8 align(1),
     version: u32 align(1),
@@ -39,6 +41,7 @@ pub const BinaryHeader = extern struct {
     }
 };
 
+/// Manages binary context nodes with ownership and invariants; ensures safe access patterns.
 pub const BinaryContextNode = extern struct {
     header: BinaryHeader align(1),
     id: i64 align(1),
@@ -114,6 +117,7 @@ pub const BinaryContextNode = extern struct {
     }
 };
 
+/// Defines a schema for context nodes with ownership and invariants; manages fixed buffers and lifecycle.
 pub const ContextNodeSchema = struct {
     const Self = @This();
     const ACCESSOR_COUNT = 11;
@@ -422,3 +426,7 @@ test "ContextNodeSchema: access denied on protected field" {
     const result = view.set("id", "99", .player);
     try testing.expectError(error.AccessDenied, result);
 }
+
+
+
+

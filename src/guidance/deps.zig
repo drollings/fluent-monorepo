@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast_parser = @import("ast_parser.zig");
 
+/// Manages dependency resolution for Zig projects; owns a structured graph; not thread-safe by design.
 pub const DepsGenerator = struct {
     allocator: std.mem.Allocator,
     cwd: []const u8,
@@ -179,3 +180,4 @@ pub const DepsGenerator = struct {
         return null;
     }
 };
+

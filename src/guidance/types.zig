@@ -45,6 +45,7 @@ pub const FileType = enum {
     }
 };
 
+/// Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const MemberType = enum {
     fn_decl,
     fn_private,
@@ -63,18 +64,21 @@ pub const PatternType = enum {
     GoF,
 };
 
+/// Defines a pattern for structured data handling, managing ownership and invariants in Zig code.
 pub const Pattern = struct {
     name: []const u8,
     type: PatternType,
     ref: ?[]const u8 = null,
 };
 
+/// Defines a parameter struct for configuration; managed by owner; immutable once initialized.
 pub const Param = struct {
     name: []const u8,
     type: ?[]const u8 = null,
     default: ?[]const u8 = null,
 };
 
+/// Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const Member = struct {
     type: MemberType,
     name: []const u8,
@@ -104,12 +108,14 @@ pub const Skill = struct {
     context: ?[]const u8 = null,
 };
 
+/// Defines a metadata structure for configuration; owned by the project; ensures consistent initialization and invariants.
 pub const Meta = struct {
     module: []const u8,
     source: []const u8,
     language: []const u8 = "zig",
 };
 
+/// Defines guidance documents with structured metadata; managed centrally, immutable once created.
 pub const GuidanceDoc = struct {
     meta: Meta,
     /// Module-level one-line description.
@@ -133,6 +139,7 @@ pub const GuidanceDoc = struct {
     members: []const Member = &.{},
 };
 
+/// Tracks file matches with ownership model; manages lifecycle; not thread-safe.
 pub const FileMatch = struct {
     filename: []const u8,
     filepath: []const u8,
@@ -140,6 +147,7 @@ pub const FileMatch = struct {
     line_context: []const u8 = "",
 };
 
+/// Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.
 pub const GuidanceInfo = struct {
     path: []const u8,
     comment: []const u8 = "",
@@ -149,6 +157,7 @@ pub const GuidanceInfo = struct {
     tags: []const []const u8 = &.{},
 };
 
+/// Tracks AST nodes with ownership model; ensures invariants on structure and state.
 pub const ASTAnalysis = struct {
     filepath: []const u8,
     functions: []const Member = &.{},
@@ -159,6 +168,7 @@ pub const ASTAnalysis = struct {
     signature_preview: []const u8 = "",
 };
 
+/// Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.
 pub const QueryResult = struct {
     query: []const u8,
     file_matches: []const FileMatch = &.{},
@@ -212,6 +222,7 @@ pub fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) void {
     for (stages) |s| freeStage(allocator, s);
 }
 
+/// Manages synchronization state with fixed buffers; owned by the caller; ensures consistent access.
 pub const SyncResult = struct {
     filepath: []const u8,
     members_added: usize = 0,
@@ -223,6 +234,7 @@ pub const SyncResult = struct {
 /// Serialize `value` to pretty-printed JSON.  Delegates to src/common/json.zig.
 pub const jsonStringifyAlloc = common.jsonStringifyAlloc;
 
+/// Converts a Zig member to a JSON-serializable slice, handling allocator and type safety.
 pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
     var list: std.ArrayList(u8) = .{};
     errdefer list.deinit(allocator);
@@ -354,6 +366,7 @@ fn writeEscapedString(writer: anytype, key: []const u8, value: []const u8) !void
     try writer.writeAll("\",\n");
 }
 
+/// Converts a GuidanceDoc into a JSON array of bytes for storage.
 pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 {
     var list: std.ArrayList(u8) = .{};
     errdefer list.deinit(allocator);
@@ -492,3 +505,16 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     try writer.writeAll("}\n");
     return list.toOwnedSlice(allocator);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

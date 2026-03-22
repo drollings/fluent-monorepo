@@ -10,6 +10,7 @@ pub const Repl = @This();
 allocator: std.mem.Allocator,
 ctx: *BuildContext,
 
+/// Initializes a Zig allocator with a BuildContext, preparing it for use.
 pub fn init(allocator: std.mem.Allocator, ctx: *BuildContext) Repl {
     return .{
         .allocator = allocator,
@@ -17,8 +18,10 @@ pub fn init(allocator: std.mem.Allocator, ctx: *BuildContext) Repl {
     };
 }
 
+/// Releases resources by deallocating the provided Repl instance.
 pub fn deinit(_: *Repl) void {}
 
+/// Processes a Zig code snippet and executes it, returning the result or error.
 pub fn run(self: *Repl) !void {
     var ws: io.WriterState = .{};
     ws.initStdout();
@@ -150,3 +153,6 @@ fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !v
         });
     }
 }
+
+
+

@@ -23,6 +23,7 @@ const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
+/// Manages dynamic embedding generation; owns inference pipeline; key invariant is consistent key-value storage.
 pub const EmbeddingProvider = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -54,6 +55,7 @@ pub const EmbeddingProvider = struct {
 
 // ── Noop provider (keyword-only fallback) ─────────────────────────
 
+/// Manages static embedding structures without computation; owned by the module; no runtime dependencies.
 pub const NoopEmbedding = struct {
     allocator: ?std.mem.Allocator = null,
 
@@ -95,6 +97,7 @@ pub const NoopEmbedding = struct {
 
 // ── Ollama embedding provider ─────────────────────────────────────
 
+/// Manages Ollama embeddings with a keyword structure, owns the model, and ensures consistent key-value pairs.
 pub const OllamaEmbedding = struct {
     allocator: std.mem.Allocator,
     base_url: []const u8,
@@ -251,6 +254,7 @@ pub fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
 
 // ── OpenAI-compatible provider ────────────────────────────────────
 
+/// Manages OpenAI embeddings with a fixed-size structure; owned by the service; key invariants include fixed dimensions and pre-trained weights.
 pub const OpenAiEmbedding = struct {
     allocator: std.mem.Allocator,
     base_url: []const u8,
@@ -436,17 +440,7 @@ pub const contentHashWithModel = hash_mod.contentHashWithModel;
 
 // ── Factory ───────────────────────────────────────────────────────
 
-/// Create an embedding provider from a config string.
-///
-/// Supported strings:
-///   "none"                      — NoopEmbedding (keyword-only)
-///   "ollama"                    — Ollama with default model
-///   "ollama:nomic-embed-text"   — Ollama with specific model
-///   "openai:<api_key>"          — OpenAI with provided key
-///   "local:<model>"             — Ollama-compatible local endpoint
-///   "custom:<url>"              — Custom OpenAI-compatible endpoint (no key)
-///
-/// Caller must call .deinit() on the returned provider when done.
+/// Creates an embedding provider using an allocator, parameters, and model dimensions.
 pub fn createEmbeddingProvider(
     allocator: std.mem.Allocator,
     provider_name: []const u8,
@@ -555,3 +549,8 @@ test "contentHashWithModel is deterministic and model-sensitive" {
     try std.testing.expectEqualSlices(u8, &h1, &h2);
     try std.testing.expect(!std.mem.eql(u8, &h1, &h3));
 }
+
+
+
+
+

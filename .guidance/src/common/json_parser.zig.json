@@ -19,8 +19,9 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
+      "comment": "Reads a file from the given path and parses its contents into a Zig-safe data structure.",
       "is_pub": true,
-      "line": 15
+      "line": 16
     },
     {
       "type": "fn_decl",
@@ -34,8 +35,9 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
+      "comment": "Converts a null-terminated C string into a Zig-safe slice using the provided allocator and registry.",
       "is_pub": true,
-      "line": 35
+      "line": 37
     },
     {
       "type": "fn_private",
@@ -50,8 +52,9 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
+      "comment": "Parse a single target entry from the JSON object map.\n\nAllocator contract: all allocations for the produced `Target` (including\nits name, command strings, and `exists` string) are made with `allocator`.\nThe caller must ensure that `allocator` is the same allocator used to\ninitialise the `registry` so that `registry.deinit()` can free them\ncorrectly.",
       "is_pub": false,
-      "line": 75
+      "line": 77
     },
     {
       "type": "fn_private",
@@ -63,7 +66,7 @@
       ],
       "returns": "TargetType",
       "is_pub": false,
-      "line": 158
+      "line": 160
     },
     {
       "type": "fn_decl",
@@ -75,86 +78,87 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Writes a Zig example string to memory using the provided allocator.",
       "is_pub": true,
-      "line": 180
+      "line": 183
     },
     {
       "type": "test_decl",
       "name": "JSON parsing",
       "is_pub": false,
-      "line": 231
+      "line": 234
     },
     {
       "type": "test_decl",
       "name": "JSON parsing GPA no leaks",
       "is_pub": false,
-      "line": 258
+      "line": 261
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: invalid JSON returns error",
       "is_pub": false,
-      "line": 298
+      "line": 301
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: non-object root returns error",
       "is_pub": false,
-      "line": 308
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: empty object produces zero targets",
       "is_pub": false,
-      "line": 318
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — phony",
       "is_pub": false,
-      "line": 328
+      "line": 331
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — file (exists key)",
       "is_pub": false,
-      "line": 344
+      "line": 347
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — command (commands key)",
       "is_pub": false,
-      "line": 361
+      "line": 364
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — abstract (no distinguishing key)",
       "is_pub": false,
-      "line": 379
+      "line": 382
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: essential and check_mtime fields",
       "is_pub": false,
-      "line": 395
+      "line": 398
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: depends and provides are recorded",
       "is_pub": false,
-      "line": 418
+      "line": 421
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: multiple commands are all stored",
       "is_pub": false,
-      "line": 443
+      "line": 446
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: parseFile returns IoError for missing file",
       "is_pub": false,
-      "line": 461
+      "line": 464
     }
   ]
 }

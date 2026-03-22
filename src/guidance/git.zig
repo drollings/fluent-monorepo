@@ -1,6 +1,7 @@
 const std = @import("std");
 const llm = @import("common");
 
+/// Manages Gitignore rules for repository; owns a structured filtering system; ensures consistent ownership model.
 pub const GitignoreFilter = struct {
     allocator: std.mem.Allocator,
     patterns: [][]const u8,
@@ -163,3 +164,4 @@ test "GitignoreFilter always excludes .git" {
     try std.testing.expect(filter.shouldIgnore("/project/.git/config"));
     try std.testing.expect(filter.shouldIgnore("/project/.zig-cache/foo"));
 }
+

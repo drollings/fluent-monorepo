@@ -585,19 +585,7 @@ fn createPluginWithHostFunctions(
 // §4.4 Dynamic Tool Lifecycle (LLM-to-WASM Pipeline)
 // ---------------------------------------------------------------------------
 
-/// Tool compiler configuration.
-///
-/// The `editable` mixin exposes all fields via the Accessor/Constraint/Editable
-/// pattern, enabling:
-///   - Config-file-based loading:  config.editable.set(alloc, "zig_compiler", path, .coder)
-///   - TUI / REPL editing of compiler paths without recompilation
-///   - Role-gated writes (e.g. only .coder may change compiler paths)
-///
-/// Ownership note: the default field values are string literals and need no
-/// freeing.  When a field is set via `editable.set()`, the constraint allocates
-/// a copy of the input string which then must be freed by the caller on teardown.
-/// If this struct is used with dynamically set strings, provide a deinit that
-/// frees any fields that were set via reflection.
+/// Defines compiler configuration settings for Zig tooling; manages ownership and invariants of tool parameters.
 pub const ToolCompilerConfig = struct {
     zig_compiler: []const u8 = "zig",
     assemblyscript_compiler: []const u8 = "asc",
@@ -1027,3 +1015,4 @@ test "WasmToolCache: GPA no leaks across put and deinit" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
+

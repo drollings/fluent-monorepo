@@ -12,6 +12,7 @@
       "name": "EnrichmentResult",
       "match_hash": "d35c65f8ec8e88f88680e840bb6680d69c0901dd806dfb074b0b7db05aff807d",
       "signature": "keyword_struct EnrichmentResult { ... }",
+      "comment": "Result returned by each enhancement call.",
       "is_pub": true,
       "members": [
         {
@@ -35,6 +36,7 @@
       "name": "Enhancer",
       "match_hash": "17d942f761bded4ea862dfba9425bd588903c8234e2deca689984b858729d758",
       "signature": "keyword_struct Enhancer { ... }",
+      "comment": "Manages static configuration structures; owned by the module; ensures consistent initialization state.",
       "is_pub": true,
       "members": [
         {
@@ -48,7 +50,7 @@
           ],
           "returns": "Enhancer",
           "is_pub": true,
-          "line": 47
+          "line": 48
         }
     ,    {
           "type": "fn_decl",
@@ -60,7 +62,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 64
+          "line": 65
         }
     ,    {
           "type": "fn_decl",
@@ -71,8 +73,9 @@
             { "name": "self", "type": "*Enhancer" }
           ],
           "returns": "bool",
+          "comment": "Check whether the LLM endpoint is reachable.",
           "is_pub": true,
-          "line": 72
+          "line": 73
         }
     ,    {
           "type": "fn_private",
@@ -84,8 +87,9 @@
             { "name": "base_tokens", "type": "usize" }
           ],
           "returns": "usize",
+          "comment": "Get appropriate max_tokens for this model.\nThinking models need more tokens for chain-of-thought.",
           "is_pub": false,
-          "line": 78
+          "line": 79
         }
     ,    {
           "type": "fn_decl",
@@ -100,8 +104,9 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
+          "comment": "Generate a description for a Zig function / method.\n\nReturns an EnrichmentResult owned by the caller.\nFalls back to `existing_doc` (duped) if the LLM is unavailable or\nproduces a hallucinated response.",
           "is_pub": true,
-          "line": 94
+          "line": 95
         }
     ,    {
           "type": "fn_decl",
@@ -117,8 +122,9 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
+          "comment": "Generate a description for a Zig struct / enum / union.",
           "is_pub": true,
-          "line": 108
+          "line": 109
         }
     ,    {
           "type": "fn_decl",
@@ -132,8 +138,9 @@
             { "name": "source_preview", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
+          "comment": "Generate a one-line file-level description (≤200 chars) for STRUCTURE.md.",
           "is_pub": true,
-          "line": 123
+          "line": 124
         }
     ,    {
           "type": "fn_decl",
@@ -145,7 +152,7 @@
           ],
           "returns": "u32",
           "is_pub": true,
-          "line": 171
+          "line": 172
         }
     ,    {
           "type": "fn_private",
@@ -160,7 +167,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 196
+          "line": 197
         }
     ,    {
           "type": "fn_private",
@@ -173,7 +180,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 234
+          "line": 235
         }
     ,    {
           "type": "fn_private",
@@ -185,8 +192,9 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "[]const []const u8",
+          "comment": "Extract #hashtags from a \"Tags: #a #b\" line at the end of the response.",
           "is_pub": false,
-          "line": 241
+          "line": 242
         }
     ,    {
           "type": "fn_private",
@@ -198,8 +206,9 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
+          "comment": "Remove the trailing \"Tags: #a #b\" line from text.",
           "is_pub": false,
-          "line": 272
+          "line": 273
         }
     ,    {
           "type": "fn_private",
@@ -215,7 +224,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 297
+          "line": 298
         }
     ,    {
           "type": "fn_private",
@@ -232,7 +241,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 331
+          "line": 332
         }
     ,    {
           "type": "fn_private",
@@ -247,7 +256,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 378
+          "line": 379
         }
     ,    {
           "type": "fn_decl",
@@ -264,8 +273,9 @@
             { "name": "existing_comment", "type": "?[]const u8" }
           ],
           "returns": "ModuleDetailResult",
+          "comment": "Generate comprehensive module documentation using the thinking model.\nInput: source code, member signatures, capabilities, skills.\nOutput: detail (<800 words), keywords (5-10), comment (≤200 chars).",
           "is_pub": true,
-          "line": 442
+          "line": 443
         }
     ,    {
           "type": "fn_private",
@@ -283,7 +293,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 470
+          "line": 471
         }
     ,    {
           "type": "fn_private",
@@ -297,7 +307,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 538
+          "line": 539
         }
     ,    {
           "type": "fn_private",
@@ -310,10 +320,10 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 597
+          "line": 598
         }
       ],
-      "line": 39
+      "line": 40
     },
     {
       "type": "fn_private",
@@ -326,43 +336,43 @@
       ],
       "returns": "?usize",
       "is_pub": false,
-      "line": 611
+      "line": 612
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring empty",
       "is_pub": false,
-      "line": 625
+      "line": 626
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring quality",
       "is_pub": false,
-      "line": 629
+      "line": 630
     },
     {
       "type": "test_decl",
       "name": "extractTags parses hashtags",
       "is_pub": false,
-      "line": 635
+      "line": 636
     },
     {
       "type": "test_decl",
       "name": "extractTags returns empty when no Tags line",
       "is_pub": false,
-      "line": 657
+      "line": 658
     },
     {
       "type": "test_decl",
       "name": "stripTagsLine removes Tags line",
       "is_pub": false,
-      "line": 675
+      "line": 676
     },
     {
       "type": "test_decl",
       "name": "lastIndexOf basic",
       "is_pub": false,
-      "line": 691
+      "line": 692
     }
   ]
 }

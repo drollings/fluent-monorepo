@@ -11,6 +11,7 @@ targets: std.StringHashMapUnmanaged(*Target),
 by_bit_index: std.AutoHashMapUnmanaged(usize, *Target),
 provider_map: std.AutoHashMapUnmanaged(usize, std.ArrayListUnmanaged(*Target)),
 
+/// Initializes the registry with an allocator and interners, returning a target registry instance.
 pub fn init(allocator: std.mem.Allocator, interner: *StringInterner) TargetRegistry {
     return .{
         .allocator = allocator,
@@ -21,6 +22,7 @@ pub fn init(allocator: std.mem.Allocator, interner: *StringInterner) TargetRegis
     };
 }
 
+/// Cleans up resources by releasing the registry instance.
 pub fn deinit(self: *TargetRegistry) void {
     var iter = self.targets.valueIterator();
     while (iter.next()) |t| {
@@ -37,20 +39,24 @@ pub fn deinit(self: *TargetRegistry) void {
     self.provider_map.deinit(self.allocator);
 }
 
+/// Adds a target registry entry to the registry.
 pub fn add(self: *TargetRegistry, tgt: *Target) !void {
     try self.targets.put(self.allocator, tgt.name, tgt);
     try self.by_bit_index.put(self.allocator, tgt.bit_index, tgt);
     self.updateProviderMap(tgt);
 }
 
+/// Retrieves a target registry entry by name, returning a pointer to its registry data.
 pub fn get(self: *const TargetRegistry, name: []const u8) ?*Target {
     return self.targets.get(name);
 }
 
+/// Retrieves a target registry entry by its bit index, returning a pointer to the matching record.
 pub fn getByBitIndex(self: *const TargetRegistry, idx: usize) ?*Target {
     return self.by_bit_index.get(idx);
 }
 
+/// Removes a registry entry by name, returning void and no error on success.
 pub fn remove(self: *TargetRegistry, name: []const u8) void {
     if (self.targets.get(name)) |t| {
         _ = self.by_bit_index.remove(t.bit_index);
@@ -58,6 +64,7 @@ pub fn remove(self: *TargetRegistry, name: []const u8) void {
     }
 }
 
+/// Converts a registry string into a slice of byte slices, returning an array of arrays of u8.
 pub fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) ![][]const u8 {
     var names: std.ArrayList([]const u8) = .{};
     errdefer names.deinit(allocator);
@@ -87,6 +94,7 @@ fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
     }
 }
 
+/// Retrieves provider addresses for a specified registry bit index.
 pub fn getProviders(self: *const TargetRegistry, bit_index: usize) ?[]*Target {
     if (self.provider_map.get(bit_index)) |list| {
         return list.items;
@@ -94,15 +102,18 @@ pub fn getProviders(self: *const TargetRegistry, bit_index: usize) ?[]*Target {
     return null;
 }
 
+/// Retrieves registry providers matching the given name, returning their addresses.
 pub fn getProvidersForName(self: *const TargetRegistry, name: []const u8) ?[]*Target {
     const idx = self.interner.getIndex(name) orelse return null;
     return self.getProviders(idx);
 }
 
+/// Counts registry entries; returns the number of valid targets.
 pub fn count(self: *const TargetRegistry) usize {
     return self.targets.count();
 }
 
+/// Retrieves essential target registry entries with allocator support.
 pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
     var essentials: std.ArrayList(*Target) = .{};
     errdefer essentials.deinit(allocator);
@@ -117,6 +128,7 @@ pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocato
     return essentials.toOwnedSlice(allocator);
 }
 
+/// Converts a TargetRegistry reference into a slice of Target objects.
 pub fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
     var abstracts: std.ArrayList(*Target) = .{};
     errdefer abstracts.deinit(allocator);
@@ -150,6 +162,7 @@ pub fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator
 // Ownership: on successful .register() the Target is owned by the registry.
 // On error (surfaced at .register()) the Target is freed before returning.
 
+/// Manages registry targets with ownership and invariants; ensures stable access patterns.
 pub const TargetBuilder = struct {
     allocator: std.mem.Allocator,
     registry: *TargetRegistry,
@@ -617,3 +630,16 @@ test "TargetBuilder: integrates with DependencyResolver end-to-end" {
     }
     try testing.expect(base_pos < top_pos);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

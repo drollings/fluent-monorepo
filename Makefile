@@ -67,7 +67,7 @@ help: ## Show this help
 # This rule is kept for direct `make .explain.db` invocations.
 $(GUIDANCE_DB): | $(TARGET_BIN)
 	$(Q)echo "Syncing database: $@"
-	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(GUIDANCE_DIR) --db $@ --timeout 20
+	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(GUIDANCE_DIR) --db $@ --timeout 1
 	$(Q)touch $@
 
 .PHONY: commit
@@ -153,7 +153,9 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
 	$(Q)echo "Building guidance..."
-	$(Q)zig build
+	$(Q)zig build --summary failures
+	$(Q)zig build test --summary all
+	zig build guidance
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install

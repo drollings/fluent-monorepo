@@ -12,6 +12,7 @@
       "name": "GitignoreFilter",
       "match_hash": "3f778e8b387496fc61e8ceb7d9463c23e7fe55c7e78edeb331f9f76549eb76fe",
       "signature": "keyword_struct GitignoreFilter { ... }",
+      "comment": "Manages Gitignore rules for repository; owns a structured filtering system; ensures consistent ownership model.",
       "is_pub": true,
       "members": [
         {
@@ -25,7 +26,7 @@
           ],
           "returns": "GitignoreFilter",
           "is_pub": true,
-          "line": 11
+          "line": 12
         }
     ,    {
           "type": "fn_decl",
@@ -37,7 +38,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 21
+          "line": 22
         }
     ,    {
           "type": "fn_decl",
@@ -50,7 +51,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 28
+          "line": 29
         }
     ,    {
           "type": "fn_decl",
@@ -63,10 +64,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 63
+          "line": 64
         }
       ],
-      "line": 4
+      "line": 5
     },
     {
       "type": "fn_private",
@@ -79,7 +80,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 93
+      "line": 94
     },
     {
       "type": "fn_private",
@@ -92,19 +93,19 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 121
+      "line": 122
     },
     {
       "type": "test_decl",
       "name": "globMatch basic patterns",
       "is_pub": false,
-      "line": 151
+      "line": 152
     },
     {
       "type": "test_decl",
       "name": "GitignoreFilter always excludes .git",
       "is_pub": false,
-      "line": 159
+      "line": 160
     }
   ]
 }

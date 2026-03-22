@@ -15,6 +15,7 @@ const BatchIngestor = batch_mod.BatchIngestor;
 
 pub const version = "0.1.0";
 
+/// Starts the Zig program execution by defining the entry point.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -281,3 +282,4 @@ test "coral: core module imports compile" {
     _ = coral_db; // exercises db.zig + schema.zig via named module
     _ = @import("scrub.zig"); // scrub.zig is not part of coral_db, safe to import relatively
 }
+

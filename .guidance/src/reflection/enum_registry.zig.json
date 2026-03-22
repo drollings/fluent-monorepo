@@ -11,6 +11,7 @@
       "name": "EnumRegistry",
       "match_hash": "21e629a1098a69b01ae2892df416f51a64fe1d573622ecdcb03616467ea0b09f",
       "signature": "keyword_struct EnumRegistry { ... }",
+      "comment": "Manages enum definitions with compile-time registration; owns registry state; ensures type safety and ownership clarity.",
       "is_pub": true,
       "members": [
         {
@@ -23,7 +24,7 @@
           ],
           "returns": "EnumRegistry",
           "is_pub": true,
-          "line": 9
+          "line": 10
         }
     ,    {
           "type": "fn_decl",
@@ -36,7 +37,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 18
+          "line": 19
         }
     ,    {
           "type": "fn_decl",
@@ -50,7 +51,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 24
+          "line": 25
         }
     ,    {
           "type": "fn_decl",
@@ -63,7 +64,7 @@
           ],
           "returns": "?i64",
           "is_pub": true,
-          "line": 43
+          "line": 44
         }
     ,    {
           "type": "fn_decl",
@@ -76,10 +77,10 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 48
+          "line": 49
         }
       ],
-      "line": 4
+      "line": 5
     }
   ]
 }

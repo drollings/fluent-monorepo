@@ -12,6 +12,7 @@
       "name": "TypeTag",
       "match_hash": "3f4b280ac94968209d4d6ab18f0d3278d45a8c2cc830c5014528d96c806c21d8",
       "signature": "keyword_enum TypeTag { ... }",
+      "comment": "Broad type category attached to each Accessor.\nUsed by binary IPC and the WASM schema descriptor to encode field types\nwithout requiring comptime dispatch at the call site.",
       "is_pub": true,
       "members": [
         {
@@ -100,29 +101,34 @@
       "name": "OwnershipMode",
       "match_hash": "9c1dd43ff500e556c097174fc81bd7c65bab68954b50b9eec602726235c69746",
       "signature": "keyword_enum OwnershipMode { ... }",
+      "comment": "Who owns the memory behind a field value.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "value",
+          "comment": "The struct field holds a plain value; no heap allocation involved.",
           "is_pub": false,
           "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "owned",
+          "comment": "The field is an allocator-owned heap allocation; the reflection layer\nwill call `releaseFn` when replacing or releasing the field.",
           "is_pub": false,
           "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "borrowed",
+          "comment": "The field is a borrowed pointer; the reflection layer never frees it.",
           "is_pub": false,
           "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "rc",
+          "comment": "The field is reference-counted; the reflection layer calls `releaseFn`\n(which decrements the refcount) when replacing or releasing.",
           "is_pub": false,
           "line": 50
         }
@@ -134,6 +140,7 @@
       "name": "FieldMeta",
       "match_hash": "74d8e0c0578e83b38f915f7fe11acdfa73f8eaee2bef4959f2da359179f5e99e",
       "signature": "keyword_struct FieldMeta { ... }",
+      "comment": "Field metadata for AI agent understanding and schema documentation.\nPopulated via comptime decls on the Host type:\n  pub fn describeField(comptime name: []const u8) FieldMeta { ... }\n\nThis enables deterministic schema output for:\n  - LLM tool definition (MCP tools/call schemas)\n  - TUI help text and autocomplete hints\n  - Knowledge graph relation hints\n  - Cross-module duck typing validation",
       "is_pub": true,
       "line": 66
     },
@@ -142,8 +149,9 @@
       "name": "Accessor",
       "match_hash": "3f8ffbd5771a3dc887231b26b81b1697e0cdb998d90856eb6f4856dc2b536f8c",
       "signature": "keyword_struct Accessor { ... }",
+      "comment": "Defines a structured accessor with fixed-size buffers; manages ownership and invariants.",
       "is_pub": true,
-      "line": 153
+      "line": 145
     },
     {
       "type": "fn_decl",
@@ -154,8 +162,9 @@
         { "name": "Host", "type": "type" }
       ],
       "returns": "type",
+      "comment": "Converts a Zig type to an editable representation, accepting a host type and returning its editable form.",
       "is_pub": true,
-      "line": 179
+      "line": 163
     },
     {
       "type": "fn_decl",
@@ -168,8 +177,9 @@
         { "name": "accessors_slice", "type": "[]const Accessor" }
       ],
       "returns": "[]const u8",
+      "comment": "Generate JSON Schema from an accessor slice.\nUsed by both Editable.describeSchema and DynamicEditable.describeSchema.",
       "is_pub": true,
-      "line": 398
+      "line": 382
     },
     {
       "type": "fn_private",
@@ -182,8 +192,9 @@
         { "name": "indent", "type": "usize" }
       ],
       "returns": "void",
+      "comment": "Write a single field's JSON Schema property.",
       "is_pub": false,
-      "line": 462
+      "line": 446
     },
     {
       "type": "fn_private",
@@ -194,8 +205,9 @@
         { "name": "tag", "type": "TypeTag" }
       ],
       "returns": "[]const u8",
+      "comment": "Convert TypeTag to JSON Schema type string.",
       "is_pub": false,
-      "line": 643
+      "line": 627
     },
     {
       "type": "fn_private",
@@ -208,8 +220,9 @@
         { "name": "operation", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Write role permission set as comma-separated role names.\noperation: \"read\" or \"write\"",
       "is_pub": false,
-      "line": 663
+      "line": 647
     },
     {
       "type": "fn_private",
@@ -221,14 +234,16 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Write escaped JSON string.",
       "is_pub": false,
-      "line": 683
+      "line": 667
     },
     {
       "type": "struct",
       "name": "DynamicEditable",
       "match_hash": "bd90575620092c8ca1848915298f4a611e62e270c3bd5c4a09d5232115ce5339",
       "signature": "keyword_struct DynamicEditable { ... }",
+      "comment": "Runtime field editor backed by a raw byte buffer and a slice of Accessors.",
       "is_pub": true,
       "members": [
         {
@@ -243,7 +258,7 @@
           ],
           "returns": "DynamicEditable",
           "is_pub": true,
-          "line": 709
+          "line": 693
         }
     ,    {
           "type": "fn_decl",
@@ -255,7 +270,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 727
+          "line": 711
         }
     ,    {
           "type": "fn_decl",
@@ -266,8 +281,9 @@
             { "name": "self", "type": "*DynamicEditable" }
           ],
           "returns": "void",
+          "comment": "Release heap memory owned by every field that has a releaseFn.",
           "is_pub": true,
-          "line": 732
+          "line": 716
         }
     ,    {
           "type": "fn_decl",
@@ -281,8 +297,9 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror!void",
+          "comment": "Set a field by name via string input, role-checked.",
           "is_pub": true,
-          "line": 742
+          "line": 726
         }
     ,    {
           "type": "fn_decl",
@@ -295,8 +312,9 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror![]const u8",
+          "comment": "Get a field by name as a caller-owned string, role-checked.",
           "is_pub": true,
-          "line": 754
+          "line": 738
         }
     ,    {
           "type": "fn_decl",
@@ -309,8 +327,9 @@
             { "name": "type_name", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
+          "comment": "Generate a JSON Schema describing all fields, types, constraints, and metadata.",
           "is_pub": true,
-          "line": 766
+          "line": 750
         }
     ,    {
           "type": "fn_decl",
@@ -322,8 +341,9 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "[]const []const u8",
+          "comment": "Generate a list of field names for iteration.",
           "is_pub": true,
-          "line": 771
+          "line": 755
         }
     ,    {
           "type": "fn_decl",
@@ -335,11 +355,12 @@
             { "name": "key", "type": "[]const u8" }
           ],
           "returns": "?FieldMeta",
+          "comment": "Get metadata for a specific field by name.",
           "is_pub": true,
-          "line": 780
+          "line": 764
         }
       ],
-      "line": 701
+      "line": 685
     }
   ]
 }

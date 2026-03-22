@@ -14,18 +14,7 @@ pub const CheckResult = struct {
     reason: ?[]const u8 = null,
 };
 
-/// Check whether `existing_comment` is stale for `member`.
-///
-/// A comment is considered stale when any of the following hold:
-///  1. `match_hash` changed — code was modified since the comment was written.
-///  2. The comment is not well-formed (empty, too long, or leaked LLM preamble).
-///  3. The comment is over 400 characters.
-///
-/// `source_context` is the raw source text of the declaration; currently used
-/// only for future LLM-based accuracy checking (pass "" to skip).
-///
-/// This function never calls the LLM directly; that responsibility belongs to
-/// the `CommentSyncProcessor` in `comment_sync.zig`.
+/// Checks if a comment is stale based on existing data and context.
 pub fn checkCommentStaleness(
     existing_comment: []const u8,
     member: types.Member,
@@ -102,3 +91,15 @@ test "isHashStale - null hash" {
     try std.testing.expect(!isHashStale(null, "abc"));
     try std.testing.expect(!isHashStale("abc", null));
 }
+
+test "isHashStale triggers regeneration path" {
+    // When the stored hash in the JSON differs from the current member hash,
+    // isHashStale must return true so the caller sets needs_regeneration.
+    const stored_hash: ?[]const u8 = "oldhash_abc123";
+    const current_hash: ?[]const u8 = "newhash_xyz789";
+    try std.testing.expect(isHashStale(stored_hash, current_hash));
+
+    // Verify: same hash means no regeneration needed.
+    try std.testing.expect(!isHashStale("samehash", "samehash"));
+}
+

@@ -12,74 +12,77 @@
       "name": "OntologyClass",
       "match_hash": "948f8186746d05df605c18bfc3d3be269a3aeafaa238fe1294e57b2b3172cfb0",
       "signature": "keyword_struct OntologyClass { ... }",
+      "comment": "Represents a fixed-size buffer pool with ownership and lifecycle management; key invariants include size and allocation limits.",
       "is_pub": true,
-      "line": 29
+      "line": 30
     },
     {
       "type": "enum",
       "name": "PropertyRange",
       "match_hash": "6be8bb6a15ebe0f53adcdda6f962468cf5c04106978311cfe077d43159cb2bb8",
       "signature": "keyword_enum PropertyRange { ... }",
+      "comment": "Defines a range of property values with fixed bounds; managed centrally; ensures consistent invariants.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "iri",
           "is_pub": false,
-          "line": 40
+          "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "string",
           "is_pub": false,
-          "line": 41
+          "line": 43
         }
     ,    {
           "type": "enum_field",
           "name": "lang_string",
           "is_pub": false,
-          "line": 42
+          "line": 44
         }
     ,    {
           "type": "enum_field",
           "name": "integer",
           "is_pub": false,
-          "line": 43
+          "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "decimal",
           "is_pub": false,
-          "line": 44
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "boolean",
           "is_pub": false,
-          "line": 45
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "date_time",
           "is_pub": false,
-          "line": 46
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "any",
           "is_pub": false,
-          "line": 47
+          "line": 49
         }
       ],
-      "line": 39
+      "line": 41
     },
     {
       "type": "struct",
       "name": "OntologyProperty",
       "match_hash": "265b817001c1a1cdb915f5be472ed9a6141967a41e10a132b7e9edbb405daec5",
       "signature": "keyword_struct OntologyProperty { ... }",
+      "comment": "Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
-      "line": 50
+      "line": 53
     },
     {
       "type": "fn_decl",
@@ -90,8 +93,9 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyClass",
+      "comment": "Look up a class by IRI. Returns null if unknown.",
       "is_pub": true,
-      "line": 145
+      "line": 148
     },
     {
       "type": "fn_decl",
@@ -103,8 +107,9 @@
         { "name": "out", "type": "[][]const u8" }
       ],
       "returns": "usize",
+      "comment": "Collect superclass chain for a given class IRI (including self).\nOut slice must have enough capacity. Returns number written.",
       "is_pub": true,
-      "line": 154
+      "line": 157
     },
     {
       "type": "fn_decl",
@@ -115,50 +120,51 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyProperty",
+      "comment": "Look up a property by IRI.",
       "is_pub": true,
-      "line": 296
+      "line": 299
     },
     {
       "type": "test_decl",
       "name": "class lookup by IRI",
       "is_pub": false,
-      "line": 309
+      "line": 312
     },
     {
       "type": "test_decl",
       "name": "class lookup unknown IRI returns null",
       "is_pub": false,
-      "line": 315
+      "line": 318
     },
     {
       "type": "test_decl",
       "name": "property lookup by IRI",
       "is_pub": false,
-      "line": 319
+      "line": 322
     },
     {
       "type": "test_decl",
       "name": "property lookup rdf:type",
       "is_pub": false,
-      "line": 325
+      "line": 328
     },
     {
       "type": "test_decl",
       "name": "superclass chain for Person",
       "is_pub": false,
-      "line": 331
+      "line": 334
     },
     {
       "type": "test_decl",
       "name": "domain validation on hasGender",
       "is_pub": false,
-      "line": 339
+      "line": 342
     },
     {
       "type": "test_decl",
       "name": "transitive property subClassOf",
       "is_pub": false,
-      "line": 345
+      "line": 348
     }
   ]
 }

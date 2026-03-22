@@ -23,6 +23,7 @@ pub const LlmError = error{
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
+/// Defines configuration settings for the LLM model; manages ownership and invariants during initialization.
 pub const LlmConfig = struct {
     api_url: []const u8,
     model: []const u8,
@@ -74,6 +75,7 @@ fn writeEscapedString(writer: anytype, s: []const u8) !void {
 
 // ── HTTP client ───────────────────────────────────────────────────────────────
 
+/// Manages LLM client operations with fixed buffers; owned by the system; ensures consistent state across invocations.
 pub const LlmClient = struct {
     allocator: std.mem.Allocator,
     config: LlmConfig,
@@ -375,3 +377,5 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
+
+

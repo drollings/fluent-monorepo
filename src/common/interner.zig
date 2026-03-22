@@ -19,6 +19,7 @@ index_to_string: std.ArrayListUnmanaged([]const u8),
 next_index: usize = 0,
 lock: std.Thread.RwLock = .{},
 
+/// Initializes a memory allocator with a string interner for Zig code.
 pub fn init(allocator: std.mem.Allocator) StringInterner {
     return .{
         .arena = std.heap.ArenaAllocator.init(allocator),
@@ -27,6 +28,7 @@ pub fn init(allocator: std.mem.Allocator) StringInterner {
     };
 }
 
+/// Releases resources associated with the StringInterner instance.
 pub fn deinit(self: *StringInterner) void {
     self.string_to_index.deinit(self.arena.allocator());
     self.index_to_string.deinit(self.arena.allocator());
@@ -163,14 +165,7 @@ pub fn bitSetToString(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Returns a ConstraintVTable parameterised on `interner`.
-/// The returned vtable must outlive all Accessors that reference it.
-/// Typically stored as a field on TargetSchema.
-///
-/// String path  — via setCtxFn / getCtxFn (comma-separated capability names).
-/// Binary path  — via setBinaryFn / getBinaryFn (u32 word-count + u64 words LE).
-/// Convert path — via convertFn (cross-interner bitset duck-typing).
-/// Release      — via releaseFn (DynamicBitSetUnmanaged.deinit + zero).
+/// Validates and returns a ConstraintVTable for bit-setting operations.
 pub fn bitSetConstraint(self: *StringInterner) reflection.ConstraintVTable {
     return .{
         .context = @ptrCast(self),
@@ -426,3 +421,6 @@ test "bitSetFromString and bitSetToString roundtrip" {
     try testing.expect(std.mem.indexOf(u8, out, "link") != null);
     try testing.expect(std.mem.indexOf(u8, out, "test") != null);
 }
+
+
+
