@@ -41,7 +41,22 @@ Example: `"guidance database module — function syncDatabase: synchronises the 
 
 - `src/vector/lance_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
 - `src/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`
-- `src/vector/embeddings.zig` — `EmbeddingProvider` vtable
+- `src/common/embeddings.zig` — `EmbeddingProvider` vtable (moved from `src/vector/` in P1.3)
+- `src/vector/lance_db.zig` — `SemanticAliases`, `loadSemanticAliases`, `DbSyncBuilder.withAliases`
+- `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
+
+## Semantic alias expansion
+
+`SemanticAliases` maps query tokens to synonyms before the search, broadening recall without degrading precision. Aliases are loaded from a JSON file:
+
+```zig
+const aliases = try loadSemanticAliases(allocator, ".guidance/semantic-aliases.json");
+// aliases: ?SemanticAliases — null if file absent
+```
+
+`SemanticAliases.expandTokens()` deduplicates tokens (case-insensitive), inserting alias values after each matched token. The expanded token set is used in both vector and keyword search paths.
+
+`DbSyncBuilder` exposes `withAliases(SemanticAliases)` to pass pre-loaded aliases into `syncDatabase`.
 
 ## Performance notes
 

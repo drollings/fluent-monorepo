@@ -10,13 +10,22 @@ The `guidance explain` command answers natural-language questions about the code
 ## Pipeline (staged mode, default)
 
 ```
-1. Search .guidance.db for relevant AST nodes (hybrid vector + keyword)
-2. Load skill excerpts from skills[] referenced in matching guidance JSON
-3. Load capability excerpts from capabilities[] in matching guidance JSON  
-4. Load source excerpts (30 lines around each match)
-5. LLM synthesis (unless --no-llm): produces a structured answer with
+1. Expand query via SemanticAliases (if .guidance/semantic-aliases.json present)
+2. Search .guidance.db for relevant AST nodes (hybrid vector + keyword)
+3. Load skill excerpts from skills[] referenced in matching guidance JSON
+4. Load capability excerpts from capabilities[] in matching guidance JSON
+5. Load source excerpts (30 lines around each match)
+6. LLM synthesis (unless --no-llm): produces a structured answer with
    file:line citations, relevant functions, and a brief explanation
-6. Render: text/JSON/markdown output
+7. Render: text/JSON/markdown output
+```
+
+## Semantic alias expansion
+
+`SemanticAliases` maps query tokens to expanded synonyms at search time. For example, `"sync"` → `["synchronise", "sync", "update"]`. Aliases are loaded from `.guidance/semantic-aliases.json` by `loadSemanticAliases()` and passed to `executeStagedWithAliases()`. If the file does not exist, aliases are silently skipped.
+
+```bash
+guidance gen --aliases   # generate semantic-aliases.json from guidance JSON
 ```
 
 ## CLI
@@ -45,7 +54,8 @@ The hybrid search combines:
 
 ## Key files
 
-- `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`
-- `src/guidance/staged.zig` — Staged pipeline with LLM filter and synthesis
-- `src/vector/lance_db.zig` — `GuidanceDb` (hybrid vector + keyword search)
-- `src/vector/` — Embedding providers and cosine similarity math
+- `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`, `loadAliases`
+- `src/guidance/staged.zig` — `executeStaged`, `executeStagedWithAliases`, `formatStaged`
+- `src/vector/lance_db.zig` — `GuidanceDb`, `SemanticAliases`, `loadSemanticAliases`
+- `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
+- `src/common/embeddings.zig` — `EmbeddingProvider` vtable

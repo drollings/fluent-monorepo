@@ -32,7 +32,7 @@ Before calling the embedding API, the provider computes `SHA-256(model_name + "\
 
 ## Key files
 
-- `src/vector/embeddings.zig` — `EmbeddingProvider` vtable, `OllamaEmbedding`, `OpenAiEmbedding`, `NoopEmbedding`, `createEmbeddingProvider`
+- `src/common/embeddings.zig` — `EmbeddingProvider` vtable, `OllamaEmbedding`, `OpenAiEmbedding`, `NoopEmbedding`, `createEmbeddingProvider`
 - `src/vector/math.zig` — `vecToBytes`, `bytesToVec` (serialization for BLOB storage)
 
 ## Security
