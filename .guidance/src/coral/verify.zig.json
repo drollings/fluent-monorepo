@@ -4,16 +4,13 @@
     "source": "src/coral/verify.zig",
     "language": "zig"
   },
-  "comment": "This file defines verification logic for Zig data ingestion, tracking errors, warnings, and report metrics using a custom allocator and mapper.",
-  "detail": "# Module: src/coral/verify.zig — Ingestion Verification and Integrity Checking\n\n## Purpose and Architecture\n\nThis module provides verification logic for Zig data ingestion pipelines, ensuring ingested data is complete, consistent, and well-formed before being committed to storage. It operates as a quality gate between raw data ingestion and persistent storage (CozoDB), producing detailed audit reports that track metrics, errors, and warnings throughout the ingestion process.\n\nThe architecture follows a producer-consumer pattern where the TripleMapper (from `ontology/mapper.zig`) handles the actual data transformation, while this module validates the mapper's state before flush operations. This separation of concerns allows for flexible verification strategies without coupling to specific storage backends.\n\n## Key Abstractions and Relationships\n\n**IngestionReport**: The central reporting structure that aggregates all verification results. It tracks:\n- `triples_total`, `nodes_created`, `edges_created` — quantitative metrics\n- `errors` and `warnings` — categorized issue collections (both use std.ArrayList for dynamic sizing)\n- Proper memory management through explicit allocator handling\n\n**Verifier**: The core verification engine with configurable thresholds. It validates mapper state by comparing actual counts against expected values, checking for structural issues like missing labels or types, and categorizing problems as errors (blocking) or warnings (non-blocking).\n\n**Error/Warning Kinds**: \n- **Errors**: count_mismatch, orphan_node, invalid_iri, missing_label, dangling_blank_node\n- **Warnings**: no_type, no_description, blank_node_heavy\n\n## Public API and Usage Patterns\n\n```zig\n// 1. Initialize report with allocator\nconst report = IngestionReport.init(my_allocator);\n\n// 2. Run ingestion through TripleMapper\n// ... mapper operations ...\n\n// 3. Configure verifier based on requirements\nconst config = VerifierConfig{\n    .expected_triples = expected_count,\n    .expected_nodes = expected_node_count,\n    .warn_missing_labels = true,\n};\n\n// 4. Verify mapper state before flush\ntry verifier.verifyMapper(&mapper, &report);\n\n// 5. Process results\nif (report.hasErrors()) {\n    // Handle critical failures\n}\nfor (report.errors.items) |error| {\n    handle_error(error);\n}\n```\n\n## Important Implementation Details\n\n- **Memory Ownership**: Both IngestionError and IngestionWarning structs own their message strings, requiring explicit deallocation in `deinit()` to prevent memory leaks\n- **Allocator Propagation**: The report stores its allocator reference for proper cleanup, following Zig best practices for resource management\n- **Configurable Strictness**: VerifierConfig allows tuning verification behavior per ingestion run—expected counts can be disabled (0 = unchecked), and warning flags can be selectively enabled\n- **Deferred Processing**: Orphan detection is intentionally deferred to post-flush CozoDB queries rather than handled during mapper verification, suggesting a two-phase validation approach\n\n## Design Patterns\n\n1. **Explicit Resource Management**: Uses Zig's explicit allocator pattern with init/deinit lifecycle methods\n2. **Configuration Object Pattern**: VerifierConfig encapsulates all behavioral options in one struct\n3. **Separation of Concerns**: Verification logic is decoupled from both the mapper and storage layers\n4. **Categorized Issue Tracking**: Distinct error vs warning enums enable different handling strategies\n5. **Deferred Processing**: Non-critical validations (orphan detection) are moved to later pipeline stages",
-  "keywords": ["IngestionReport", "Verifier", "TripleMapper", "ingestion verification", "data integrity checking", "knowledge graph validation", "CozoDB", "allocator management", "error reporting", "RDF triple validation"],
+  "keywords": ["Verification", "Data Integrity", "Zig", "IngestionReport", "ErrorChecking"],
   "members": [
     {
       "type": "enum",
       "name": "IngestionErrorKind",
       "match_hash": "3bdc94f3935f8b39a9baf1954df9e9f64b82fa6ffca3fcf39ff1aa1d695b91fc",
       "signature": "keyword_enum IngestionErrorKind { ... }",
-      "comment": "Represents an ingestion error during data handling; manages fixed buffers with strict ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -54,7 +51,6 @@
       "name": "IngestionWarningKind",
       "match_hash": "ef0a0c240e9e67a8ae9b33828fc572e44f6f7c1480761311210925f8102dda74",
       "signature": "keyword_enum IngestionWarningKind { ... }",
-      "comment": "Tracks ingestion events with a fixed-size buffer; managed by the owner; ensures consistent state across operations.",
       "is_pub": true,
       "members": [
         {
@@ -83,7 +79,6 @@
       "name": "IngestionReport",
       "match_hash": "4688d8f22eb2540c796609ad89b3a8bced4bcd50a79aebf463e7d852e3627999",
       "signature": "keyword_struct IngestionReport { ... }",
-      "comment": "Manages ingestion report data with ownership transfer; ensures proper cleanup and error handling.",
       "is_pub": true,
       "members": [
         {
@@ -130,7 +125,6 @@
       "name": "VerifierConfig",
       "match_hash": "26d6aafbbd8b8d9d2c291ff300e80e308e1117bfe3aa6e9a2d8909a311b49c72",
       "signature": "keyword_struct VerifierConfig { ... }",
-      "comment": "Manages verification configuration with fixed buffers; owned by the verifier; ensures invariant state.",
       "is_pub": true,
       "line": 72
     },
@@ -139,7 +133,6 @@
       "name": "Verifier",
       "match_hash": "87d283cad8765ad31d66d13a7666cd160c1e26a66f7a5288d3f6bd2330521d60",
       "signature": "keyword_struct Verifier { ... }",
-      "comment": "Manages verification logic for Zig verification; owns allocator and config; provides init, verifyMapper, and verifyStats methods with strict ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -166,7 +159,6 @@
             { "name": "report", "type": "*IngestionReport" }
           ],
           "returns": "void",
-          "comment": "Verify mapper state (before flush) for basic integrity.",
           "is_pub": true,
           "line": 90
         }
@@ -183,7 +175,6 @@
             { "name": "report", "type": "*IngestionReport" }
           ],
           "returns": "void",
-          "comment": "Verify statistics from completed ingestion.",
           "is_pub": true,
           "line": 126
         }

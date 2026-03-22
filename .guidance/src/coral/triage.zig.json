@@ -4,9 +4,6 @@
     "source": "src/coral/triage.zig",
     "language": "zig"
   },
-  "comment": "Generates TRIAGE.md from a TODO.md file by analyzing affected paths, assessing risk, and suggesting steps.",
-  "detail": "# Triage Module Documentation\n\n## Module Purpose and Architecture\n\nThe `src/coral/triage.zig` module implements the core triage functionality for an AI coding assistant's workflow management system. It processes TODO.md work items located in `.ast-guidance/.todo/<item>/TODO.md` and generates comprehensive TRIAGE.md documentation files that guide developers through implementation decisions.\n\nThe architecture follows a deterministic analysis pattern:\n1. **Input Analysis**: Reads TODO.md content to extract affected file references\n2. **Risk Assessment**: Evaluates change scope using keyword matching against predefined categories\n3. **Recommendation Generation**: Provides structured steps for safe implementation\n\nThe module operates as part of a larger lifecycle management system, tracking work items through states: TODO → TRIAGE → WORK → COMPLETE → COMMITTED.\n\n## Key Abstractions and Relationships\n\n**TriageResult** - The output container holding the generated TRIAGE.md path, serving as the bridge between triage analysis and document generation.\n\n**LIFECYCLE** - A state machine defining five workflow stages with implicit ordering. The module uses reverse iteration to determine current state by checking for marker files (.md files named after each state).\n\n**SOURCE_EXTENSIONS** - A constant array of 9 file extensions (zig, py, md, json, toml, yaml, yml, sh, txt) used for path validation during affected file detection.\n\n**DEFAULT_STEPS** - A hardcoded 7-step implementation checklist promoting TDD practices and incremental development with pre-commit hooks.\n\n## Public API and Usage Patterns\n\n### `getLifecycleState(allocator, work_dir)`\nDetermines the current lifecycle state of a work item directory by searching for state marker files in reverse order. Returns \"TODO\" as default if no markers found. Uses `std.fs.accessAbsolute` for file existence checks with proper allocator cleanup via `defer`.\n\n### `assessRisk(content, affected_count)`\nPerforms deterministic risk categorization using three-tier keyword matching:\n- **High**: Destructive operations (\"delete\", \" remove \", \"breaking\")\n- **Medium**: Structural changes (\"refactor\", \"rename\", \"migration\") OR wide scope (>5 affected files)\n- **Low**: Targeted changes\n\nReturns formatted strings with risk level and description.\n\n### `findAffectedFiles(allocator, content, project_root)`\nExtracts file paths from two sources:\n1. Backtick-quoted paths: `` `path.ext` `` - parsed for position bounds\n2. Prefix-based paths: Matches against 6 common prefixes (src/, bin/, test/, tests/, doc/, guidance/)\n\nReturns deduplicated owned slice requiring manual memory management. Uses `errdefer` for comprehensive cleanup on error paths.\n\n### `addUnique(allocator, list, path, project_root)` - Helper function\nAdds paths to the found list while maintaining uniqueness, returning boolean success status.\n\n## Important Implementation Details\n\n**Memory Management**: The module uses Zig's explicit allocator pattern throughout. Caller is responsible for freeing returned owned slices in `findAffectedFiles`. The `errdefer` block ensures cleanup on early returns or errors.\n\n**Path Validation**: `string.isPathToken()` validates extracted paths against SOURCE_EXTENSIONS, ensuring only legitimate project paths are captured.\n\n**Case Insensitivity**: All keyword searches use `containsIgnoreCase`, making risk assessment robust to formatting variations in TODO.md content.\n\n**Deterministic Behavior**: The module provides predictable, reproducible output suitable for automated triage pipelines and CI/CD integration.\n\n## Design Patterns Used\n\n1. **State Machine Pattern**: Lifecycle tracking with file-based state persistence\n2. **Risk Matrix Pattern**: Multi-factor risk assessment combining keyword analysis with scope metrics\n3. **Pattern Matching**: Hybrid approach using both literal prefix matching and backtick delimiter parsing\n4. **Fail-Fast**: Early returns with explicit error propagation for clear control flow\n5. **Resource Ownership**: Clear separation between borrowed (slices) and owned (allocated) data with documented lifetimes",
-  "keywords": ["TriageResult", "LIFECYCLE", "getLifecycleState", "assessRisk", "findAffectedFiles", "lifecycle state machine", "risk assessment", "workflow management", "TODO.md processing", "backtick path extraction"],
   "members": [
     {
       "type": "fn_decl",
@@ -18,7 +15,6 @@
         { "name": "work_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Return the current lifecycle state of a work item directory.",
       "is_pub": true,
       "line": 24
     },
@@ -32,7 +28,6 @@
         { "name": "affected_count", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Evaluates risk based on content and affected count, returning a processed slice.",
       "is_pub": true,
       "line": 38
     },
@@ -47,7 +42,6 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Extract path-like tokens from content matching common project directories.",
       "is_pub": true,
       "line": 67
     },
@@ -63,7 +57,6 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Add path to list if not a duplicate. Verifies existence in project_root.",
       "is_pub": false,
       "line": 136
     },

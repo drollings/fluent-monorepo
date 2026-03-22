@@ -113,21 +113,28 @@ pub fn main() !void {
         return;
     };
 
-    switch (subcmd) {
-        .init => try cmdInit(allocator, args[2..]),
-        .gen => try cmdGen(allocator, args[2..]),
-        .status => try cmdStatus(allocator, args[2..]),
-        .clean => try cmdClean(allocator, args[2..]),
-        .structure => try cmdStructure(allocator, args[2..]),
-        .deps => try cmdDeps(allocator, args[2..]),
-        .explain => try cmdExplain(allocator, args[2..]),
-        .commit => try cmdCommit(allocator, args[2..]),
-        .check => try cmdCheck(allocator, args[2..]),
-        .show => try cmdShow(allocator, args[2..]),
-        .@"test" => try cmdTest(allocator, args[2..]),
-        .@"sync-comments" => try cmdSyncComments(allocator, args[2..]),
-        .@"migrate-comments" => try cmdMigrateComments(allocator, args[2..]),
-    }
+    // Pipeline-failure errors (LintFailed, TestFailed) are expected failures
+    // that have already printed their diagnostics.  Propagating them through
+    // !void main produces a confusing stack trace; exit(1) is cleaner.
+    const run_result = switch (subcmd) {
+        .init => cmdInit(allocator, args[2..]),
+        .gen => cmdGen(allocator, args[2..]),
+        .status => cmdStatus(allocator, args[2..]),
+        .clean => cmdClean(allocator, args[2..]),
+        .structure => cmdStructure(allocator, args[2..]),
+        .deps => cmdDeps(allocator, args[2..]),
+        .explain => cmdExplain(allocator, args[2..]),
+        .commit => cmdCommit(allocator, args[2..]),
+        .check => cmdCheck(allocator, args[2..]),
+        .show => cmdShow(allocator, args[2..]),
+        .@"test" => cmdTest(allocator, args[2..]),
+        .@"sync-comments" => cmdSyncComments(allocator, args[2..]),
+        .@"migrate-comments" => cmdMigrateComments(allocator, args[2..]),
+    };
+    run_result catch |err| switch (err) {
+        error.LintFailed, error.TestFailed => std.process.exit(1),
+        else => return err,
+    };
 }
 
 fn printHelp() !void {
@@ -177,7 +184,7 @@ fn printHelp() !void {
         \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
         \\  -m, --model NAME      Model name (default: code:latest)
         \\
-        \\Query/Explain options:
+        \\Explain options:
         \\  <query>              Search query (required)
         \\  -l, --limit N         Max results (default: 10)
         \\  --json                Output JSON (query only)
@@ -3221,10 +3228,13 @@ fn runBuiltinLanguagePipeline(
     }
 
     // ── Per-file phases ───────────────────────────────────────────────────
+    // Process every stale file so all lint failures are reported before exiting.
+    var any_lint_failed = false;
     for (stale_files) |src_abs| {
         const ok = try runBuiltinFilePipeline(allocator, cfg, processor, src_abs, ga);
-        if (!ok) return error.LintFailed;
+        if (!ok) any_lint_failed = true;
     }
+    if (any_lint_failed) return error.LintFailed;
 }
 
 // =============================================================================
@@ -3257,6 +3267,11 @@ fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
             ga.force = true;
         } else if (std.mem.eql(u8, arg, "--verbose")) {
             ga.verbose = true;
+        } else if (std.mem.eql(u8, arg, "--timeout")) {
+            i += 1;
+            if (i < args.len) {
+                ga.timeout_seconds = std.fmt.parseInt(u64, args[i], 10) catch ga.timeout_seconds;
+            }
         }
     }
 

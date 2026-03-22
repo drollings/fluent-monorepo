@@ -4,9 +4,7 @@
     "source": "src/coral/scrub.zig",
     "language": "zig"
   },
-  "comment": "Detects synthetic or LLM-generated comments in Zig code for re-infilling.",
-  "detail": "# Module: scrub.zig — AI Comment Quality Filter\n\n## Purpose and Architecture\n\nThis module implements a quality filter for detecting synthetic or LLM-generated comments in Zig code, designed specifically for an ast-guidance infill pipeline. Its primary function is to identify comment artifacts that indicate incomplete or suboptimal AI generation, enabling the system to re-request infill passes on subsequent runs rather than accepting poor-quality output.\n\nThe architecture follows a layered detection approach:\n- **Entry point**: `isSyntheticComment()` orchestrates multiple validation layers\n- **Core detector**: `isMalformedResponse()` implements the primary pattern matching logic\n- **Specialized helpers**: Domain-specific functions for distinct artifact types (truncation, self-reference, genericity)\n\n## Key Abstractions and Relationships\n\n### Detection Categories\n\n1. **Dangling End Detection** (`llmHasDanglingEnd`)\n   - Identifies truncated sentences ending in prepositions or articles (\"of\", \"in\", \"for\", \"from\", \"with\", \"to\")\n   - Indicates the LLM stopped mid-sentence during generation\n\n2. **Self-Reference Detection** (`llmIsGenericSelfRef`)\n   - Catches boilerplate phrases like \"this function\", \"this method\"\n   - These are hallmarks of AI explaining its own work rather than providing actual insight\n\n3. **Overly Generic Detection** (`llmIsOverlyGeneric`)\n   - Flags single generic words (≤20 chars, no spaces) that appear to be placeholder responses\n   - Examples: \"function\", \"helper\", \"util\", \"handler\"\n\n4. **Preamble/Chain-of-Thought Leakage**\n   - Detects reasoning artifacts from models trained on chain-of-thought outputs\n   - Phrases like \"we need to...\", \"let's think...\", \"i'll explain...\"\n   - Indicates the model is showing its thinking process rather than delivering clean output\n\n### API Design\n\n```zig\npub fn isMalformedResponse(text: []const u8) bool\npub fn isSyntheticComment(comment: []const u8) bool\n```\n\nThe public API provides two levels of abstraction:\n- `isMalformedResponse()`: Lower-level detection for specific artifact types\n- `isSyntheticComment()`: High-level decision combining multiple checks with a minimum length threshold (<10 chars = synthetic placeholder)\n\n## Public API and Usage Patterns\n\n### Primary Entry Point\n```zig\nif (scrub.isSyntheticComment(existing_comment)) {\n    // Re-request infill from the LLM\n}\n```\n\n### Detection Flow\n1. Trim whitespace from input\n2. Check minimum length (reject short placeholders)\n3. Run `isMalformedResponse()` with multiple pattern checks:\n   - Dangling end detection\n   - Generic self-reference matching\n   - Overly generic word detection\n   - Known LLM preamble phrases\n   - Chain-of-thought leakage patterns\n4. Check for boilerplate management patterns (via `hasBoilerplateManagesPattern`)\n5. Return true if any indicator present\n\n## Important Implementation Details\n\n### Text Normalization\nAll functions apply consistent trimming before analysis:\n- `std.mem.trim()` removes leading/trailing whitespace and newlines\n- `std.mem.trimRight()` handles trailing punctuation for end-detection\n- Case-insensitive comparison using `std.ascii.eqlIgnoreCase`\n\n### Pattern Matching Strategy\nThe module uses exact string matching rather than regex for performance in a hot path. Patterns are stored as static arrays (`[_][]const u8`) for zero-allocation iteration.\n\n### Synchronization Note\nThe `isMalformedResponse` logic is explicitly kept synchronized with `common/llm.zig` to maintain consistency across the codebase.\n\n## Design Patterns\n\n1. **Guard Clause Pattern**: Early returns reject invalid inputs immediately (empty strings, too-short comments)\n\n2. **Composition Pattern**: Complex detection built from simple, testable functions\n\n3. **Fail-Fast Approach**: OR logic combines checks—any indicator triggers synthetic classification\n\n4. **Domain-Driven Functions**: Each helper targets a specific LLM artifact type, enabling independent testing and tuning",
-  "keywords": ["isMalformedResponse", "isSyntheticComment", "llmHasDanglingEnd", "scrub.zig", "ast-guidance", "LLM detection", "comment quality filter", "synthetic placeholder detection", "chain-of-thought leakage", "boilerplate pattern matching"],
+  "keywords": ["Zig", "AI-generated comments", "comment detection", "LLM", "code quality", "syntax analysis", "pattern matching", "synthetic code", "code refactoring", "Zig module"],
   "used_by": ["src/coral/main.zig"],
   "members": [
     {
@@ -18,7 +16,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns `true` if the comment text appears to be malformed/incomplete",
       "is_pub": true,
       "line": 20
     },
@@ -31,7 +28,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a string ends with a null character, returning true if so.",
       "is_pub": false,
       "line": 49
     },
@@ -44,7 +40,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig array represents a valid LLM self-reference, returning true if it matches expected patterns.",
       "is_pub": false,
       "line": 62
     },
@@ -57,7 +52,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the provided LLM input is overly generic, returning true if it lacks specificity.",
       "is_pub": false,
       "line": 74
     },
@@ -70,7 +64,6 @@
         { "name": "comment", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns `true` if `comment` is a synthetic placeholder that should be",
       "is_pub": true,
       "line": 90
     },
@@ -83,7 +76,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the input text contains boilerplate patterns for Zig code.",
       "is_pub": false,
       "line": 100
     },

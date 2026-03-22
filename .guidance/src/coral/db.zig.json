@@ -4,11 +4,7 @@
     "source": "src/coral/db.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns, gof-patterns] Defines CozoDB integration for Coral, handling embeddings, graph hydration, LOD selection, and time travel with optimized Zig operations.",
-  "detail": "# Coral Database Module — CozoDB Integration Layer\n\n## Module Purpose and Architecture\n\nThis module provides a unified database interface for the Coral AI coding assistant, replacing a previous dual-engine architecture (PostgreSQL/pgvector + LadybugDB Cypher) with CozoDB as a single source of truth. The design philosophy emphasizes simplicity and directness—CozoDB's native `Int` type is directly mapped to Zig's `i64` via the `NodeId` type, eliminating abstraction layers that could obscure data flow.\n\nThe architecture follows three core principles:\n1. **Unified Storage**: Payloads, embeddings, graph edges, and temporal data coexist in one database\n2. **LOD Text Pyramid**: ContextNode entities maintain multi-level-of-detail text representations for efficient retrieval\n3. **Time Travel Native**: CozoDB's built-in versioning eliminates the need for TimescaleDB extensions\n\n## Key Abstractions and Relationships\n\n- **NodeId (i64)**: The canonical identifier type, directly matching CozoDB's native Int. This design choice ensures zero-cost serialization and maximum performance in graph operations.\n\n- **Helper Extraction Functions**: A suite of utility functions (`colStr`, `colFloat`, `colOptFloat`, `colBool`, `colInt`) converts CozoDB's JSON-based row values into native Zig types. These eliminate repetitive null-checking boilerplate at call sites and provide a consistent interface for data access.\n\n- **KNN Search Pipeline**: For semantic similarity, the system fetches candidate embeddings from CozoDB, computes cosine similarity using SIMD-friendly dot products in Zig, then sorts top-K results. This approach is optimized for edge-scale deployments (≤100K nodes on RAM-constrained devices).\n\n## Public API and Usage Patterns\n\nThe module exposes a minimal public surface focused on data extraction:\n\n```zig\ncolStr(allocator, val)    // String cell with null safety\ncolFloat(val, default)   // f64 with fallback for missing/invalid cells\ncolOptFloat(val)         // Optional f64 preserving null semantics\ncolBool(val, default)    // Boolean accepting CozoDB Bool or integer 0/1\ncolInt(val, default)     // i64 with numeric type coercion\n```\n\nThese functions accept optional `std.json.Value` parameters returned by CozoDB's column accessors, enabling direct composition like `CozoDB.colByHeader()` without intermediate null checks.\n\n## Important Implementation Details\n\n- **Embedding Storage**: CozoDB stores float embeddings as `List<Float>`. No native HNSW index exists; KNN relies on in-process computation after fetching candidates.\n\n- **Temporal Validity**: The `valid_from` and `valid_to` columns (Unix timestamps) provide explicit temporal ranges, maintaining compatibility with the previous PostgreSQL schema while leveraging CozoDB's versioning capabilities.\n\n- **Scale Considerations**: For server-scale deployments requiring advanced ANN indexing, the architecture supports plugging in external ANN services while using CozoDB for graph topology and payload storage.\n\n## Design Patterns\n\n1. **Type Extraction Pattern**: Reusable utility functions that handle type coercion and null safety consistently across the codebase.\n\n2. **Unified Data Model**: Single database backend serving multiple semantic purposes (storage, retrieval, temporal queries).\n\n3. **LOD Selection Pattern**: Multi-level text representations enable efficient context packing based on graph distance.\n\n4. **Time-Travel Database**: Built-in versioning provides historical query capabilities without additional infrastructure.",
-  "keywords": ["CozoDB", "NodeId", "ContextNode", "KNN search", "LOD pyramid", "HydrationPipeline", "time travel", "embedding storage", "Zig type extraction", "semantic retrieval"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" },
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
@@ -17,7 +13,6 @@
       "name": "ContextNode",
       "match_hash": "5f8472211630b37509c1f35abfa18b1f88ab20383a69d76b87267e1246240907",
       "signature": "keyword_struct ContextNode { ... }",
-      "comment": "ContextNode — the universal semantic data structure.",
       "is_pub": true,
       "members": [
         {
@@ -32,7 +27,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
-          "comment": "Initialise with allocator-owned copies of `full_text` (lod0) and `name`",
           "is_pub": true,
           "line": 63
         }
@@ -73,7 +67,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "void",
-          "comment": "Free allocator-owned LOD strings tracked by `lod_owned`.",
           "is_pub": true,
           "line": 90
         }
@@ -85,7 +78,6 @@
       "name": "KnnHit",
       "match_hash": "5c19a058b27631568e7786db5513d9e869fb4e74712f602220050064be936613",
       "signature": "keyword_struct KnnHit { ... }",
-      "comment": "KnnHit — result from in-Zig cosine similarity search.",
       "is_pub": true,
       "line": 102
     },
@@ -94,7 +86,6 @@
       "name": "EdgeType",
       "match_hash": "9ba75c7914570541f9cb4d90c43e8f32f28b825390fd8a3c56d69ee22dbd085f",
       "signature": "keyword_enum EdgeType { ... }",
-      "comment": "EdgeType — logical classification for neighbor_of edges.",
       "is_pub": true,
       "members": [
         {
@@ -136,7 +127,6 @@
             { "name": "self", "type": "EdgeType" }
           ],
           "returns": "[]const u8",
-          "comment": "SQL table name (depends_on uses its own table; others share neighbor_of).",
           "is_pub": true,
           "line": 117
         }
@@ -149,7 +139,6 @@
             { "name": "self", "type": "EdgeType" }
           ],
           "returns": "[]const u8",
-          "comment": "String stored in the `edge_type` column of neighbor_of.",
           "is_pub": true,
           "line": 126
         }
@@ -161,7 +150,6 @@
       "name": "WasmTool",
       "match_hash": "43a63d9d96074a65b218dadf2eeba76b51e5bdda6ed6ce93c47545c3434dbfa8",
       "signature": "keyword_struct WasmTool { ... }",
-      "comment": "WasmTool — mirror of the `wasm_tools` SQLite table.",
       "is_pub": true,
       "line": 147
     },
@@ -170,7 +158,6 @@
       "name": "Library",
       "match_hash": "bc4f03f8759f7c15493a05166572012e928db9c63fb0fe8572ca22479a7dfffd",
       "signature": "keyword_struct Library { ... }",
-      "comment": "Library — unified database interface backed by SQLite.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -187,7 +174,6 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "*Self",
-          "comment": "Open the SQLite database.",
           "is_pub": true,
           "line": 184
         }
@@ -213,7 +199,6 @@
             { "name": "sql", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Run a single SQL statement (no params, no result rows).",
           "is_pub": false,
           "line": 227
         }
@@ -227,7 +212,6 @@
             { "name": "sql", "type": "[]const u8" }
           ],
           "returns": "*c.sqlite3_stmt",
-          "comment": "Prepare a statement; caller must finalize.",
           "is_pub": false,
           "line": 235
         }
@@ -252,7 +236,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Create all tables and indexes (idempotent — IF NOT EXISTS guards).",
           "is_pub": true,
           "line": 256
         }
@@ -266,7 +249,6 @@
             { "name": "node", "type": "ContextNode" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a ContextNode (upsert by id).",
           "is_pub": true,
           "line": 268
         }
@@ -280,7 +262,6 @@
             { "name": "id", "type": "i64" }
           ],
           "returns": "?ContextNode",
-          "comment": "Fetch a ContextNode by id.  Strings in the returned node are",
           "is_pub": true,
           "line": 300
         }
@@ -299,7 +280,6 @@
             { "name": "is_essential", "type": "bool" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a target definition.",
           "is_pub": true,
           "line": 341
         }
@@ -313,7 +293,6 @@
             { "name": "tool", "type": "WasmTool" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a WasmTool record.",
           "is_pub": true,
           "line": 380
         }
@@ -327,7 +306,6 @@
             { "name": "id", "type": "i64" }
           ],
           "returns": "?WasmTool",
-          "comment": "Fetch a WasmTool by id.  Strings are allocator-owned; free with freeWasmTool().",
           "is_pub": true,
           "line": 402
         }
@@ -341,7 +319,6 @@
             { "name": "tool", "type": "WasmTool" }
           ],
           "returns": "void",
-          "comment": "Free allocator-owned strings in a WasmTool returned by fetchWasmTool().",
           "is_pub": true,
           "line": 429
         }
@@ -356,7 +333,6 @@
             { "name": "to_id", "type": "i64" }
           ],
           "returns": "void",
-          "comment": "Insert a DEPENDS_ON edge (upsert by primary key).",
           "is_pub": true,
           "line": 439
         }
@@ -373,7 +349,6 @@
             { "name": "edge_type", "type": "EdgeType" }
           ],
           "returns": "void",
-          "comment": "Insert a NEIGHBOR_OF edge with cosine distance and edge type.",
           "is_pub": true,
           "line": 449
         }
@@ -418,7 +393,6 @@
             { "name": "knn_hits", "type": "[]const KnnHit" }
           ],
           "returns": "void",
-          "comment": "Persist NEIGHBOR_OF edges from KNN hits.",
           "is_pub": true,
           "line": 486
         }
@@ -433,7 +407,6 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "[]i64",
-          "comment": "Fetch outgoing neighbor IDs from neighbor_of for `node_id`.",
           "is_pub": true,
           "line": 500
         }
@@ -449,7 +422,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "[]KnnHit",
-          "comment": "Fetch all ContextNode IDs with a non-empty embedding (for KNN scan).",
           "is_pub": true,
           "line": 516
         }
@@ -465,7 +437,6 @@
             { "name": "max_depth", "type": "u8" }
           ],
           "returns": "[]ContextNode",
-          "comment": "BFS traversal from root_id up to max_depth hops.",
           "is_pub": true,
           "line": 524
         }
@@ -479,7 +450,6 @@
             { "name": "name", "type": "[]const u8" }
           ],
           "returns": "?i64",
-          "comment": "Look up a node id by exact lod4 (name) match.",
           "is_pub": true,
           "line": 559
         }
@@ -494,7 +464,6 @@
             { "name": "parent_name", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "isA returns true when child_id has `parent_name` anywhere in its",
           "is_pub": true,
           "line": 581
         }
@@ -597,7 +566,6 @@
       "name": "HydrationPipeline",
       "match_hash": "89c5b513b4f57814e4dff974813958fd639cefb31f738f6ec0ec42b746c62059",
       "signature": "keyword_struct HydrationPipeline { ... }",
-      "comment": "Implements the 3-step hydration pipeline:",
       "is_pub": true,
       "members": [
         {
@@ -623,7 +591,6 @@
             { "name": "b", "type": "[]const f32" }
           ],
           "returns": "f32",
-          "comment": "Cosine distance between two equal-length float slices.",
           "is_pub": true,
           "line": 722
         }
@@ -638,7 +605,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "[]KnnHit",
-          "comment": "KNN search — fetch all non-empty embeddings from SQLite, compute",
           "is_pub": true,
           "line": 739
         }
@@ -652,7 +618,6 @@
             { "name": "knn_hits", "type": "[]const KnnHit" }
           ],
           "returns": "void",
-          "comment": "Persist NEIGHBOR_OF edges from KNN hits.",
           "is_pub": true,
           "line": 788
         }
@@ -667,7 +632,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "usize",
-          "comment": "Full hydration: KNN → persist neighbor edges.  Returns number of nodes found.",
           "is_pub": true,
           "line": 793
         }
@@ -679,7 +643,6 @@
       "name": "ContextPacker",
       "match_hash": "64fc8294fa9795d4dfd3600dbac456ef57bf8753135c540d64fcb0577e1171d5",
       "signature": "keyword_struct ContextPacker { ... }",
-      "comment": "Assigns LOD levels to nodes based on BFS hop distance from semantic center.",
       "is_pub": true,
       "members": [
         {
@@ -707,7 +670,6 @@
             { "name": "graph_distance", "type": "u32" }
           ],
           "returns": "[]const u8",
-          "comment": "Select which LOD text to use for a node at a given graph distance.",
           "is_pub": true,
           "line": 823
         }
@@ -721,7 +683,6 @@
             { "name": "semantic_center_id", "type": "i64" }
           ],
           "returns": "[]GraphNode",
-          "comment": "BFS from `semantic_center_id` using the neighbor_of table.",
           "is_pub": true,
           "line": 835
         }
@@ -735,7 +696,6 @@
             { "name": "semantic_center_id", "type": "i64" }
           ],
           "returns": "[]const u8",
-          "comment": "Pack context window text for LLM injection, respecting token budget.",
           "is_pub": true,
           "line": 854
         }

@@ -4,9 +4,7 @@
     "source": "src/coral/mcp.zig",
     "language": "zig"
   },
-  "comment": "Implements JSON-RPC 2.0 over STDIO for Coral MCP, handling routing, responses, and arena-based execution.",
-  "detail": "# Coral MCP Server Module\n\n## Module Purpose and Architecture\n\nThe Coral MCP (Model Context Protocol) server module implements a JSON-RPC 2.0 over STDIO transport layer for AI coding assistants. It serves as an interface between LLM-based coding tools (Claude Code, NullClaw, Cursor) and the Coral database system, enabling intelligent query routing through a tiered caching architecture (L1 memory → L4 KNN → L5 LLM).\n\nThe module follows a perimeter-parsing design philosophy: JSON parsing occurs only at the entry/exit boundaries, while all internal request routing uses the `QueueReactor` directly for zero-copy efficiency. This minimizes allocation overhead during high-frequency query processing.\n\n## Key Abstractions and Relationships\n\n- **McpServer**: The central orchestrator that manages the reactor loop, handles I/O framing (Content-Length headers), and coordinates request-response cycles\n- **ToolDef**: Defines MCP tool specifications including name, description, and input schema for discoverability by clients\n- **JsonRpcRequest**: Minimal wrapper around JSON-RPC 2.0 envelope containing method and parameters\n- **QueueReactor**: Internal routing mechanism that processes requests without external JSON parsing overhead\n\nThe `McpServer` owns an arena allocator scoped to each request cycle, ensuring memory isolation between concurrent operations while avoiding the caller's heap for temporary data structures.\n\n## Public API and Usage Patterns\n\n### Structs\n```zig\nToolDef          // MCP tool definition with schema\nJsonRpcRequest   // JSON-RPC envelope\nMcpServer        // Server orchestrator with serve() entry point\nServerInfo       // Metadata (name, version)\n```\n\n### Functions\n```zig\nparseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest\nwriteJsonEscaped(writer, s: []const u8) -> void\nserve(self: *McpServer, reader: *std.Io.Reader, writer: *std.Io.Writer) !void\n```\n\n**Usage Pattern**: Initialize `McpServer` with an allocator and reactor pointer, then call `serve()` with STDIO streams. The server reads Content-Length framed messages until EOF, parses requests using `parseJsonRpc`, routes through the reactor, and writes responses via `writeJsonEscaped`.\n\n## Important Implementation Details\n\n1. **Arena Allocation Strategy**: Each request receives its own arena (`ArenaAllocator`), with only serialized responses escaping to the caller's allocator. This prevents memory fragmentation and enables predictable garbage collection behavior.\n\n2. **Header Parsing**: The `serve()` function reads header lines until a blank line, extracting `Content-Length:` to determine body size. Lines are trimmed of `\\r\\n` and whitespace before parsing.\n\n3. **Tool Registry**: Three tools are registered:\n   - `coral_query`: Routes queries through tiered caching\n   - `coral_insert_node`: Adds ContextNodes to the database\n   - `coral_explain`: Returns BFS neighbors as LOD-packed context\n\n## Design Patterns Used\n\n- **Perimeter Parsing**: Minimal JSON parsing at boundaries only\n- **Arena Allocation Per Request**: Isolated memory lifecycle per operation\n- **Singleton Tool Registry**: Immutable `TOOLS` array for tool definitions\n- **I/O Framing Protocol**: Content-Length delimited message transport\n- **Reactor Pattern**: Non-blocking request routing via QueueReactor",
-  "keywords": ["McpServer", "parseJsonRpc", "coral_query", "QueueReactor", "JSON-RPC 2.0", "STDIO transport", "arena allocator", "MCP server", "Coral database", "tiered caching"],
+  "keywords": ["JSON-RPC", "Coral MCP", "STDIO", "QueueReactor", "Arena", "ContextNode", "Claude", "NullClaw", "Cursor"],
   "used_by": ["src/coral/main.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "ToolDef",
       "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
       "signature": "keyword_struct ToolDef { ... }",
-      "comment": "Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
       "line": 21
     },
@@ -23,7 +20,6 @@
       "name": "JsonRpcRequest",
       "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
       "signature": "keyword_struct JsonRpcRequest { ... }",
-      "comment": "Represents a JSON-RPC request structure with fixed-size buffers; managed via ownership model; key invariant is data integrity.",
       "is_pub": false,
       "line": 55
     },
@@ -32,7 +28,6 @@
       "name": "McpServer",
       "match_hash": "e6043e4781e4ac55df457ded001af893105e13c89e925e9a61066b1ab680245a",
       "signature": "keyword_struct McpServer { ... }",
-      "comment": "Manages server state and request handling; owns buffers, not shared; requires careful memory management.",
       "is_pub": true,
       "members": [
         {
@@ -46,7 +41,6 @@
             { "name": "writer", "type": "*std.Io.Writer" }
           ],
           "returns": "void",
-          "comment": "Serve requests from reader, writing responses to writer.",
           "is_pub": true,
           "line": 78
         }
@@ -60,7 +54,6 @@
             { "name": "raw_json", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Handle a single JSON-RPC request.",
           "is_pub": true,
           "line": 122
         }
@@ -207,7 +200,6 @@
         { "name": "raw", "type": "[]const u8" }
       ],
       "returns": "JsonRpcRequest",
-      "comment": "Converts a raw C string into a JsonRpcRequest object using the provided allocator.",
       "is_pub": false,
       "line": 392
     },
@@ -221,7 +213,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write `s` to `writer` with JSON string escaping (no surrounding quotes).",
       "is_pub": false,
       "line": 417
     },

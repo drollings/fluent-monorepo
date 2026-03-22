@@ -4,9 +4,7 @@
     "source": "src/vector/math.zig",
     "language": "zig"
   },
-  "comment": " Vector operations — cosine similarity, normalization, hybrid merge.\n\n Used by guidance's LanceDB-style vector search backend.",
-  "detail": "# Vector Math Module — Comprehensive Documentation\n\n## Module Purpose and Architecture\n\nThis module provides essential vector mathematics operations for AI/ML search applications, specifically designed for a LanceDB-style vector search backend. It implements core similarity computation, serialization utilities, and hybrid ranking mechanisms that combine vector embeddings with keyword-based search results.\n\nThe architecture follows a clean utility pattern:\n- **Mathematical primitives** (`cosineSimilarity`) handle the core ML operations\n- **Serialization layer** (`vecToBytes`, `bytesToVec`) enables efficient storage/transmission\n- **Ranking fusion engine** (`hybridMerge`) combines multiple ranking signals\n\n## Key Abstractions and Relationships\n\n### Core Data Structures\n\n**`ScoredResult`**: The composite result structure holding both vector-based and keyword-based scores, along with a final fused score. This enables multi-modal search where embeddings and text matching contribute to the overall ranking.\n\n**`IdScore`**: A lightweight tuple-like struct pairing an identifier with its associated score, used as input/output format for search results before fusion.\n\n### API Relationships\n\n1. **Similarity → Serialization**: `cosineSimilarity` operates on raw vectors; `vecToBytes`/`bytesToVec` enable persistence or transmission of these vectors\n2. **Search Results → Fusion**: Multiple `IdScore` arrays (vector and keyword) feed into `hybridMerge`, producing ranked `ScoredResult` entries\n\n## Public API and Usage Patterns\n\n### Similarity Computation\n```zig\nconst score = cosineSimilarity(vector_a, vector_b); // Returns 0.0–1.0\n```\n- Robust handling of edge cases (empty vectors, mismatched lengths)\n- Automatic clamping to [0,1] range for positive embeddings\n\n### Serialization\n```zig\nconst bytes = try vecToBytes(allocator, my_vector);\nconst restored = try bytesToVec(allocator, bytes);\n```\n- Little-endian format for cross-platform compatibility\n- Caller owns allocated memory and must free appropriately\n\n### Hybrid Search Fusion\n```zig\nconst results = try hybridMerge(\n    allocator,\n    vector_results,      // []IdScore from vector search\n    keyword_results,     // []IdScore from text matching\n    0.7,                 // vector_weight\n    0.3,                 // keyword_weight  \n    100                  // limit\n);\n```\n\n## Important Implementation Details\n\n### Numerical Robustness\n- Uses `f64` internally for precision during computation before casting back to `f32`\n- Checks for non-finite values and underflow conditions\n- Clamps cosine similarity output to [0,1] assuming positive embeddings\n\n### Deduplication Strategy\nWhen multiple results share the same ID:\n- Vector scores take maximum value (preserves highest similarity)\n- Keyword scores are normalized by their maximum before fusion\n- Final score uses weighted linear combination\n\n### Memory Ownership\n- All allocations use explicit `std.mem.Allocator` parameters\n- Caller owns returned slices and must free with appropriate deallocation\n- Deferred cleanup in `hybridMerge` prevents leaks on early returns\n\n## Design Patterns\n\n1. **Hybrid Search Pattern**: Combines dense vector similarity with sparse keyword matching using learnable weights\n2. **Score Normalization**: Ensures different scoring scales contribute equally to final ranking\n3. **Early Termination**: Returns 0.0 for degenerate inputs without unnecessary computation\n4. **Iterator-Based Processing**: Uses `for` loops with structured bindings for clean iteration\n\nThe module exemplifies production-ready ML infrastructure code: numerically stable, memory-safe, and designed for performance in search-heavy workloads.",
-  "keywords": ["cosineSimilarity", "hybridMerge", "ScoredResult", "IdScore", "vector_search", "embedding_ranking", "weighted_fusion", "LanceDB", "similarity_computation", "search_backend"],
+  "keywords": ["Vector operations", "cosine similarity", "normalization", "hybrid merge", "AI coding assistant", "LanceDB", "serialization", "deserialization", "vector search", "numerical stability"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {
@@ -19,7 +17,6 @@
         { "name": "b", "type": "[]const f32" }
       ],
       "returns": "f32",
-      "comment": "Cosine similarity between two vectors. Returns 0.0–1.0.",
       "is_pub": true,
       "line": 11
     },
@@ -33,7 +30,6 @@
         { "name": "v", "type": "[]const f32" }
       ],
       "returns": "[]u8",
-      "comment": "Serialize f32 vector to bytes (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 44
     },
@@ -47,7 +43,6 @@
         { "name": "bytes", "type": "[]const u8" }
       ],
       "returns": "[]f32",
-      "comment": "Deserialize bytes to f32 vector (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 54
     },
@@ -56,7 +51,6 @@
       "name": "ScoredResult",
       "match_hash": "14e4c6cfca89b2ca7bbff4130ca4975455160b0ad8e30624d72e0083c8235340",
       "signature": "keyword_struct ScoredResult { ... }",
-      "comment": "Represents a scored result with fixed-size buffers; managed via ownership model; ensures data integrity across operations.",
       "is_pub": true,
       "line": 66
     },
@@ -74,7 +68,6 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
-      "comment": "Hybrid merge: combine vector and keyword results with weighted fusion.",
       "is_pub": true,
       "line": 89
     },

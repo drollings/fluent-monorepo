@@ -4,16 +4,13 @@
     "source": "src/coral/targets.zig",
     "language": "zig"
   },
-  "comment": "Defines the YAGO ingestion pipeline with structured target nodes and dependencies for data processing.",
-  "detail": "# YAGO Ingestion Target Definitions Module\n\n## Module Purpose and Architecture\n\nThis module implements a **Directed Acyclic Graph (DAG) target definition system** for orchestrating the YAGO knowledge graph ingestion pipeline. It provides a structured, dependency-aware representation of data processing stages that can be executed in correct topological order.\n\nThe architecture follows a **registry pattern** with `INGEST_TARGET_DEFS` serving as the central catalog of all pipeline stages. Each target is defined by name, kind, essentiality flag, dependencies, and description—creating a self-documenting pipeline specification.\n\n## Key Abstractions and Relationships\n\n### TargetKind Enum\n- **phony**: Placeholder targets that represent logical groupings or composite operations without executable work (e.g., `yago_ingest`)\n- **command**: Actual executable stages that perform data processing\n\n### TargetDef Struct\nA lightweight definition struct containing:\n- `name`: Unique identifier string\n- `kind`: Target type classification\n- `essential`: Boolean flag for critical vs optional stages\n- `depends`: Compile-time dependency array (static slices)\n- `description`: Human-readable documentation\n\n### Dependency Graph Structure\nThe pipeline forms a strict DAG with these relationships:\n```\nyago_ingest → yago_verify → yago_index → yago_embed → yago_map → yago_parse → yago_download\n```\nEach stage depends only on predecessors, ensuring acyclic execution flow.\n\n## Public API and Usage Patterns\n\n### Primary Functions\n\n**`lookupTargetDef(name: []const u8) ?*const TargetDef`**\n- O(n) linear search through the registry\n- Returns null if target not found\n- Usage: `if (target := lookupTargetDef(\"yago_parse\")) { ... }`\n\n**`validateDependencies() bool`**\n- Verifies all dependency references resolve to valid targets\n- Ensures pipeline integrity at compile/initialization time\n- Returns false on any missing dependency reference\n\n### Typical Workflow\n```zig\nconst defs = IngestTargetDefs.init(allocator);\ndefer defs.deinit();\n// Validate pipeline structure\nif (!defs.validateDependencies()) {\n    std.debug.print(\"Pipeline has broken dependencies\\n\", .{});\n}\n// Execute in topological order using dependency information\n```\n\n## Important Implementation Details\n\n1. **Compile-Time Dependencies**: Uses Zig's static arrays (`[_][]const u8`) for dependency storage, eliminating runtime heap allocation and enabling compiler optimization.\n\n2. **String-Based Identifiers**: Targets use string names rather than enum values, enabling:\n   - Easy serialization to configuration files or databases\n   - Flexible external pipeline orchestration\n   - Human-readable debugging output\n\n3. **Essential Flag**: Allows marking critical stages (`essential = true`) versus optional enhancements (embeddings, indexing), supporting conditional pipeline execution.\n\n4. **Phony Targets**: The `yago_ingest` target demonstrates a composite operation pattern—grouping multiple targets without performing actual work, useful for logical pipeline boundaries.\n\n## Design Patterns\n\n- **Registry Pattern**: Central catalog of all targets with lookup capabilities\n- **Dependency Injection**: Compile-time dependency arrays enable static analysis and validation\n- **Builder Pattern**: Initialization with `init()`/`deinit()` lifecycle management (shown in usage example)\n- **DAG Representation**: Explicit edge definitions enable topological sorting for execution order",
-  "keywords": ["lookupTargetDef", "validateDependencies", "TargetDef", "TargetKind", "YAGO ingestion pipeline", "DAG targets", "essential flag", "phony target", "compile-time dependencies", "registry pattern"],
+  "keywords": ["Zig", "YAGO", "ingestion pipeline", "target definitions", "dependency management", "modular design", "command pattern", "dependency validation", "ANN indexing", "verification"],
   "members": [
     {
       "type": "struct",
       "name": "TargetDef",
       "match_hash": "985b6c1f09a8ae0e5321656e82345eba10cb52f2e6614349be5de2275cf6c543",
       "signature": "keyword_struct TargetDef { ... }",
-      "comment": "Defines a target definition with fixed-size buffers; managed via ownership model; ensures correct initialization/deinit state.",
       "is_pub": true,
       "line": 42
     },
@@ -26,7 +23,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?*const TargetDef",
-      "comment": "Look up a target definition by name.",
       "is_pub": true,
       "line": 119
     },
@@ -36,7 +32,6 @@
       "match_hash": "1d8763431dd69e14ef43e02783a2ac2dd80dd0d36b14e7efa8d9ea9da9a091d2",
       "signature": "fn validateDependencies() -> bool",
       "returns": "bool",
-      "comment": "Verify that all dependency names exist in the definitions.",
       "is_pub": true,
       "line": 127
     },
@@ -49,7 +44,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]const []const u8",
-      "comment": "Compute a valid topological execution order from INGEST_TARGET_DEFS.",
       "is_pub": true,
       "line": 143
     },

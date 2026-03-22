@@ -93,10 +93,10 @@ pub const SyncProcessor = struct {
             self.allocator.free(source_members);
         }
 
-        // Note: We do NOT strip AST comments here. Source doc comments (///...)
-        // should be captured into JSON. mergeMembers handles comment preservation:
-        // - If signature hash unchanged: keep existing JSON comment (or use source)
-        // - If signature hash changed: use source comment if present, else mark stale
+        // For Zig source files, comments live in source code (/// and //!) and are
+        // NOT stored in JSON.  We still extract them from the AST so they are
+        // available for LLM enhancement during a sync-comments pass; they are
+        // stripped from the merge result before saving (see stripping block below).
 
         const rel_path = relPath(filepath, self.project_root);
 
@@ -355,6 +355,23 @@ pub const SyncProcessor = struct {
             }
         }
 
+        // --- Strip source comments for Zig files ---
+        // For .zig files, /// and //! comments are the source of truth.
+        // JSON stores only structural metadata (line numbers, signatures, etc.).
+        // The comment/detail fields are reserved for file formats that cannot
+        // embed inline comments (e.g., future Python or Go support).
+        if (std.mem.endsWith(u8, rel_path, ".zig")) {
+            self.stripComments(merge_result.members);
+            if (module_comment) |c| {
+                self.allocator.free(c);
+                module_comment = null;
+            }
+            if (module_detail) |d| {
+                self.allocator.free(d);
+                module_detail = null;
+            }
+        }
+
         // --- Reverse dependencies (used_by) ---
         const used_by = try self.findReverseDeps(rel_path);
         // used_by owned here; transferred to doc below.
@@ -420,8 +437,11 @@ pub const SyncProcessor = struct {
             std.debug.print("Generated: {s}\n", .{guidance_path});
         }
 
-        // Sleep for the specified timeout before processing the next file
-        if (timeout_seconds > 0) {
+        // Sleep for the specified timeout before processing the next file.
+        // Only applies when an LLM enhancer is configured — the sleep exists
+        // purely to rate-limit API calls.  Without an enhancer there is nothing
+        // to rate-limit and the sleep would just add unnecessary latency.
+        if (timeout_seconds > 0 and self.enhancer != null) {
             std.Thread.sleep(timeout_seconds * std.time.ns_per_s);
         }
 

@@ -4,9 +4,6 @@
     "source": "src/coral/config.zig",
     "language": "zig"
   },
-  "comment": "Defines Coral project config with multi-level path resolution for guidance system, supporting project, user, and defaults paths.",
-  "detail": "# Coral Configuration Module Documentation\n\n## Module Purpose and Architecture\n\nThe `config.zig` module implements a robust configuration loading system for the Coral AI coding assistant's guidance framework. It provides a two-level fallback chain that prioritizes project-local settings while gracefully degrading to user-global defaults when needed. This architecture ensures consistent behavior across different development environments while respecting user preferences at multiple levels of granularity.\n\n## Key Abstractions and Relationships\n\n### ProjectConfig Struct\nThe central abstraction is `ProjectConfig`, which encapsulates all resolved paths and configuration values for a single Coral project instance. It follows strict ownership semantics:\n\n- **Ownership**: All string fields are allocator-owned, requiring explicit cleanup via `deinit()`\n- **Pre-computed Paths**: Absolute paths are calculated during loading, eliminating caller-side derivation work\n- **Path Relationships**: The struct maintains the relationship between `guidance_root` and `json_base`, enabling callers to derive specific JSON file locations using relative paths\n\n### Path Resolution Hierarchy\n1. **Project-local**: `{cwd}/.ast-guidance/ast-guidance-config.json`\n2. **User-global**: `{HOME}/.config/ast-guidance/ast-guidance-config.json`  \n3. **Built-in defaults**: Fallback when no user config exists\n\n## Public API and Usage Patterns\n\n### Primary Entry Point\n```zig\nconst cfg = try loadConfig(allocator, cwd);\ndefer cfg.deinit();  // Critical: prevent memory leaks\n// Use cfg.guidance_root, cfg.src_dirs, etc.\n```\n\n### Builder Pattern Support\nThe module exposes helper functions for programmatic configuration building:\n- `buildDefault()`: Create config with all defaults\n- `buildFromParts()`: Construct from individual components\n- `tryLoadFile()`: Attempt loading a specific config file\n\n### Memory Management Contract\nAll returned values require explicit cleanup:\n```zig\npub fn deinit(self: *ProjectConfig) void {\n    // Frees all allocator-owned strings\n}\n```\n\n## Important Implementation Details\n\n### Path Calculation Formula\nThe module calculates JSON source locations using this formula:\n```\n{guidance_root}/{rel_from_project_root}.json\n```\nWhere `json_base` stores the `guidance_root` component, and callers append relative paths. For example, a file at `src/foo.zig` resolves to `{guidance_root}/src/foo.zig.json`.\n\n### Error Handling Strategy\n- **Silent degradation**: Invalid configs trigger warnings but don't halt execution\n- **Test-friendly**: Errors are suppressed in test builds via `builtin.is_test` check\n- **Graceful fallback**: Each level can fail without affecting subsequent levels\n\n### Default Values\n| Constant | Value |\n|----------|-------|\n| DEFAULT_GUIDANCE_DIR | `.ast-guidance` |\n| DEFAULT_SRC_DIR | `src` |\n| DEFAULT_MODEL | `code:latest` |\n| DEFAULT_API_URL | `http://localhost:11434/v1/chat/completions` |\n\n## Design Patterns Used\n\n1. **Configuration Hierarchy Pattern**: Multi-level resolution with clear precedence\n2. **Builder Pattern**: Helper functions for incremental config construction\n3. **Resource Ownership Pattern**: Explicit deinit ensures no leaks\n4. **Fail-Soft Pattern**: Invalid configs degrade to defaults rather than crashing\n5. **Pre-computation Optimization**: Paths calculated once, reused throughout application\n\nThe module balances flexibility with safety, allowing custom configurations while maintaining a predictable fallback behavior for production reliability.",
-  "keywords": ["ProjectConfig", "loadConfig", "config loader", "guidance system", "path resolution", "two-level fallback", "allocator-owned", "Zig configuration", "Coral AI", "builder pattern"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -14,7 +11,6 @@
       "name": "ProjectConfig",
       "match_hash": "112d778ac3a1ff96e2480b8e7b3662c3cd85050e690ee0b05869375536ab52bc",
       "signature": "keyword_struct ProjectConfig { ... }",
-      "comment": "Resolved, absolute paths for a single Coral project instance.",
       "is_pub": true,
       "members": [
         {
@@ -42,7 +38,6 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Load project configuration with the two-level fallback chain.",
       "is_pub": true,
       "line": 98
     },
@@ -57,7 +52,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Attempt to load and parse a config file.  Returns error on any failure so",
       "is_pub": false,
       "line": 132
     },
@@ -71,7 +65,6 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Constructs a default project configuration from an allocator and CWD input.",
       "is_pub": false,
       "line": 208
     },
@@ -89,7 +82,6 @@
         { "name": "api_url", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Constructs a project configuration from Zig source parts using allocator, paths, and model data.",
       "is_pub": false,
       "line": 221
     }

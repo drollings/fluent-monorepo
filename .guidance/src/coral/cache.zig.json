@@ -4,9 +4,7 @@
     "source": "src/coral/cache.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns] Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.",
-  "detail": "# Cache Module Documentation\n\n## Module Purpose and Architecture\n\nThis module implements a 5-tier cache hierarchy for query routing in an AI coding assistant system. The architecture follows a progressive refinement model where queries attempt faster, more specific caches first before falling back to slower but more comprehensive methods:\n\n- **L1 (Memory Cache)**: <10ms latency - Exact query hash lookup returning pre-rendered ContextNodes\n- **L2 (Workflow Cache)**: <50ms latency - Pre-compiled WASM tools via Extism\n- **L3 (Graph Traversal)**: <200ms latency - CozoDB Datalog queries\n- **L4 (Semantic Search)**: <500ms latency - KNN similarity search via embeddings\n- **L5 (LLM Fallback)**: >1s latency - External HTTP MCP call for complex reasoning\n\nThe system prioritizes query performance by caching results at multiple levels of abstraction, from exact matches to semantic approximations.\n\n## Key Abstractions and Relationships\n\n### Core Types\n\n**`CacheTier`** - Enum defining the five cache tiers with priority ordering (lower tier numbers = faster access). This serves as the primary abstraction for routing decisions.\n\n**`RoutingResult`** - Composite result struct containing:\n- `nodes`: Pre-rendered ContextNodes from database\n- `tool_result`: Binary tool execution output from WASM modules\n- `llm_response`: Text responses from external LLM services\n- `tier_used`: Which cache tier was successfully queried\n- `latency_ms`: Performance metric for routing optimization\n\n**`L1Cache`** - In-memory hash map cache with custom memory management. Unlike standard containers, it provides:\n- Ownership tracking via `dupeRoutingResult()` that deep-copies all heap allocations\n- Explicit deallocation via `freeRoutingResult()` that recursively frees nested data structures\n- Safe iteration and cleanup through proper iterator handling\n\n### Inter-Module Dependencies\n\nThe module integrates with four key subsystems:\n- **db_mod**: Provides ContextNode, Library, and hydration pipeline abstractions\n- **wasm_mod**: WASM tool execution via Extism runtime\n- **schema.zig**: Database schema definitions for query structures\n- **hashutil**: Query hashing utilities for consistent cache keys\n\n## Public API and Usage Patterns\n\n### Initialization Pattern\n```zig\nconst allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);\ndefer allocator.deinit();\n\nvar l1_cache = L1Cache.init(allocator.allocator());\ndefer l1_cache.deinit();\n```\n\n### Query Flow\n1. Compute query hash using `hashutil` utilities\n2. Attempt L1 cache lookup via `.get(query_hash)`\n3. On miss, cascade through L2-L5 tiers (external modules)\n4. Store result with `.put(query_hash, result)` for future queries\n5. Use `RoutingResult.tier_used` to optimize future routing decisions\n\n### Memory Safety Guarantees\nThe module implements strict ownership semantics:\n- All heap allocations are tracked in the cache structure\n- `dupeRoutingResult()` performs deep copies of all nested data\n- `freeRoutingResult()` recursively deallocates LOD arrays, strings, and nodes\n- Iterator-based cleanup ensures no memory leaks during deinitialization\n\n## Important Implementation Details\n\n### Nested Data Structure Handling\nContextNode contains Level-of-Detail (LOD) arrays that require special attention:\n```zig\nfor (result.nodes) |n| {\n    for (n.lod) |l| allocator.free(l);  // Free each LOD string\n}\nallocator.free(result.nodes);         // Free nodes array\n```\n\n### String Hash Map Configuration\nL1Cache uses `std.StringHashMap` with default settings optimized for:\n- O(1) average lookup time\n- Automatic collision handling\n- Memory-efficient key storage via owned keys\n\n### Latency Tracking\nThe `latency_ms` field enables adaptive routing by recording actual query times, allowing the system to learn which tiers perform best under different workloads.\n\n## Design Patterns\n\n1. **Tiered Fallback**: Progressive refinement from exact matches to semantic approximations\n2. **Cache-Aside**: External modules populate cache on miss rather than pre-warming\n3. **Custom Allocator Wrappers**: Encapsulates deep-copy semantics for complex nested structures\n4. **Dependency Injection**: Module dependencies injected via `@import` chains at compile time\n5. **Iterator-Based Cleanup**: Ensures safe, complete resource deallocation even with partial state",
-  "keywords": ["CacheTier", "RoutingResult", "L1Cache", "QueueReactor", "tiered caching", "WASM tools", "ContextNodes", "CozoDB", "semantic search", "KNN embeddings"],
+  "keywords": ["cache hierarchy", "tiered routing", "query optimization", "L1 cache", "L2 cache", "L3 graph search", "semantic search", "LLM fallback", "performance tuning", "memory allocation"],
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
@@ -17,7 +15,6 @@
       "name": "CacheTier",
       "match_hash": "2ee80326d2e14d4cda90f086ed56116c4e5ae736db1b9b043ef63c404ed5de0e",
       "signature": "keyword_enum CacheTier { ... }",
-      "comment": "Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -47,7 +44,6 @@
     ,    {
           "type": "enum_field",
           "name": "l4_5_decompose",
-          "comment": "P6.2 — Local model decomposition: query split into sub-tasks then re-routed.",
           "is_pub": false,
           "line": 31
         }
@@ -65,7 +61,6 @@
       "name": "RoutingResult",
       "match_hash": "9b535d00a3c6018e6fc792300c3d96697b113c6eeafac16989ab740a843a940a",
       "signature": "keyword_struct RoutingResult { ... }",
-      "comment": "Manages routing result structures with fixed-size buffers; owned by the module; ensures consistent state across operations.",
       "is_pub": true,
       "line": 35
     },
@@ -74,7 +69,6 @@
       "name": "L1Cache",
       "match_hash": "43ad3d400ceade64154bee12e803b63fb52e05df1fe1f16036eaa414a75f21f8",
       "signature": "keyword_struct L1Cache { ... }",
-      "comment": "Manages L1 cache operations with fixed-size allocations; owns state, requires caller responsibility for cleanup.",
       "is_pub": true,
       "members": [
         {
@@ -162,7 +156,6 @@
       "name": "QueueReactorBuilder",
       "match_hash": "6e750a6f613e10a32b4222a971748316adc2566fd504f0cb9fea974e43cd28e8",
       "signature": "keyword_struct QueueReactorBuilder { ... }",
-      "comment": "Manages queue reactor initialization and configuration; owns allocator, provides thread-safe operations.",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
       ],
@@ -255,7 +248,6 @@
             { "name": "cfg", "type": "DecomposerConfig" }
           ],
           "returns": "*@This()",
-          "comment": "Enable L4.5 local decomposition with the supplied LLM config.",
           "is_pub": true,
           "line": 163
         }
@@ -279,7 +271,6 @@
       "name": "QueueReactor",
       "match_hash": "ab9941da4b42c44fcbe612d70b0d103d847ff156a70ea2f63a6f1b6adbf64b31",
       "signature": "keyword_struct QueueReactor { ... }",
-      "comment": "Manages routing and context nodes for queue operations; owns allocator and library; thread-safe design.",
       "is_pub": true,
       "members": [
         {
@@ -318,7 +309,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "anyerror!RoutingResult",
-          "comment": "Route a query through the L1-L5 hierarchy.",
           "is_pub": true,
           "line": 220
         }
@@ -385,7 +375,6 @@
             { "name": "depth", "type": "u8" }
           ],
           "returns": "?[]ContextNode",
-          "comment": "Decompose `query` into sub-tasks via local LLM and route each recursively.",
           "is_pub": false,
           "line": 394
         }
@@ -400,7 +389,6 @@
             { "name": "result", "type": "RoutingResult" }
           ],
           "returns": "void",
-          "comment": "Cache a successful routing result in L1.",
           "is_pub": true,
           "line": 437
         }

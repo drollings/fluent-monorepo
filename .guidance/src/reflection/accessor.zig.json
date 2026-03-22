@@ -4,9 +4,7 @@
     "source": "src/reflection/accessor.zig",
     "language": "zig"
   },
-  "comment": "Defines accessor metadata, type tags, ownership modes, and field descriptions for schema and AI context.",
-  "detail": "## Module Purpose and Architecture\n\nThis module implements a reflection system designed specifically for AI coding assistants, providing rich type metadata and field descriptions that enable intelligent tool generation, schema documentation, and cross-module validation. It serves as the bridge between Zig's compile-time capabilities and runtime introspection needs required by AI agents.\n\nThe architecture centers around two key abstractions: **TypeTag** (an 8-bit enum encoding broad type categories for efficient IPC/WASM serialization) and **OwnershipMode** (tracking memory ownership semantics). These enable binary protocol efficiency while maintaining semantic clarity about how field values are stored and managed.\n\n## Key Abstractions\n\n- **Accessor**: The core metadata container linking types to their fields with complete descriptions\n- **FieldMeta**: Rich metadata structure containing human-readable descriptions, constraints (min/max values), regex patterns, default values, examples, and knowledge graph relations\n- **TypeTag**: Compact 8-bit type categorization for IPC/WASM schema descriptors\n- **OwnershipMode**: Memory ownership tracking (value, owned, borrowed, rc)\n\n## Public API and Usage Patterns\n\nThe module exposes three primary interfaces:\n\n1. **Metadata Types**: `TypeTag`, `OwnershipMode`, `FieldMeta` — used at both comptime and runtime\n2. **Accessor System**: The `Editable(Host: type)` trait pattern enables automatic accessor generation for any Host type via comptime declarations\n3. **Schema Generation**: Functions like `describeSchemaFromAccessors()` and `describeFieldToJson()` produce JSON schemas for LLM tool definitions, MCP tools, and TUI autocomplete\n\nTypical usage involves declaring field metadata on a Host type using `pub fn describeField(comptime name: []const u8) FieldMeta`, then calling schema generation functions to produce AI-understandable representations.\n\n## Implementation Details\n\nThe module leverages Zig's unique comptime capabilities by allowing metadata declarations at the type level rather than requiring runtime parsing. This ensures deterministic schema output while maintaining zero-cost abstractions when not in use. The 8-bit TypeTag design specifically targets performance-critical scenarios like WASM IPC where minimizing payload size is essential.\n\n## Design Patterns\n\n1. **Metadata-First Design**: Rich compile-time metadata enables both static analysis and dynamic introspection\n2. **Schema-as-Code**: Field descriptions are declared alongside types, not extracted post-hoc\n3. **IPC-Oriented Type System**: 8-bit type tags enable efficient cross-language communication\n4. **Knowledge Graph Integration**: `relation` field in FieldMeta enables AI agents to traverse semantic connections between fields",
-  "keywords": ["reflection", "accessor", "FieldMeta", "schema generation", "MCP tools", "AI agent metadata", "knowledge graph", "introspection", "ownership tracking", "IPC serialization"],
+  "keywords": ["Accessor", "DynamicEditable", "FieldMeta", "OwnershipMode", "Permissions", "Constraint"],
   "used_by": ["src/reflection/root.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "TypeTag",
       "match_hash": "3f4b280ac94968209d4d6ab18f0d3278d45a8c2cc830c5014528d96c806c21d8",
       "signature": "keyword_enum TypeTag { ... }",
-      "comment": "Broad type category attached to each Accessor.",
       "is_pub": true,
       "members": [
         {
@@ -103,34 +100,29 @@
       "name": "OwnershipMode",
       "match_hash": "9c1dd43ff500e556c097174fc81bd7c65bab68954b50b9eec602726235c69746",
       "signature": "keyword_enum OwnershipMode { ... }",
-      "comment": "Who owns the memory behind a field value.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "value",
-          "comment": "The struct field holds a plain value; no heap allocation involved.",
           "is_pub": false,
           "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "owned",
-          "comment": "The field is an allocator-owned heap allocation; the reflection layer",
           "is_pub": false,
           "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "borrowed",
-          "comment": "The field is a borrowed pointer; the reflection layer never frees it.",
           "is_pub": false,
           "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "rc",
-          "comment": "The field is reference-counted; the reflection layer calls `releaseFn`",
           "is_pub": false,
           "line": 50
         }
@@ -142,7 +134,6 @@
       "name": "FieldMeta",
       "match_hash": "74d8e0c0578e83b38f915f7fe11acdfa73f8eaee2bef4959f2da359179f5e99e",
       "signature": "keyword_struct FieldMeta { ... }",
-      "comment": "Field metadata for AI agent understanding and schema documentation.",
       "is_pub": true,
       "line": 66
     },
@@ -151,7 +142,6 @@
       "name": "Accessor",
       "match_hash": "3f8ffbd5771a3dc887231b26b81b1697e0cdb998d90856eb6f4856dc2b536f8c",
       "signature": "keyword_struct Accessor { ... }",
-      "comment": "A single field descriptor used by both static (Editable) and dynamic",
       "is_pub": true,
       "line": 153
     },
@@ -164,7 +154,6 @@
         { "name": "Host", "type": "type" }
       ],
       "returns": "type",
-      "comment": "Zero-size mixin that adds reflective set/get to any struct.",
       "is_pub": true,
       "line": 179
     },
@@ -179,7 +168,6 @@
         { "name": "accessors_slice", "type": "[]const Accessor" }
       ],
       "returns": "[]const u8",
-      "comment": "Generate JSON Schema from an accessor slice.",
       "is_pub": true,
       "line": 398
     },
@@ -194,7 +182,6 @@
         { "name": "indent", "type": "usize" }
       ],
       "returns": "void",
-      "comment": "Write a single field's JSON Schema property.",
       "is_pub": false,
       "line": 462
     },
@@ -207,7 +194,6 @@
         { "name": "tag", "type": "TypeTag" }
       ],
       "returns": "[]const u8",
-      "comment": "Convert TypeTag to JSON Schema type string.",
       "is_pub": false,
       "line": 643
     },
@@ -222,7 +208,6 @@
         { "name": "operation", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write role permission set as comma-separated role names.",
       "is_pub": false,
       "line": 663
     },
@@ -236,7 +221,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write escaped JSON string.",
       "is_pub": false,
       "line": 683
     },
@@ -245,7 +229,6 @@
       "name": "DynamicEditable",
       "match_hash": "bd90575620092c8ca1848915298f4a611e62e270c3bd5c4a09d5232115ce5339",
       "signature": "keyword_struct DynamicEditable { ... }",
-      "comment": "Runtime field editor backed by a raw byte buffer and a slice of Accessors.",
       "is_pub": true,
       "members": [
         {
@@ -283,7 +266,6 @@
             { "name": "self", "type": "*DynamicEditable" }
           ],
           "returns": "void",
-          "comment": "Release heap memory owned by every field that has a releaseFn.",
           "is_pub": true,
           "line": 732
         }
@@ -299,7 +281,6 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror!void",
-          "comment": "Set a field by name via string input, role-checked.",
           "is_pub": true,
           "line": 742
         }
@@ -314,7 +295,6 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror![]const u8",
-          "comment": "Get a field by name as a caller-owned string, role-checked.",
           "is_pub": true,
           "line": 754
         }
@@ -329,7 +309,6 @@
             { "name": "type_name", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Generate a JSON Schema describing all fields, types, constraints, and metadata.",
           "is_pub": true,
           "line": 766
         }
@@ -343,7 +322,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Generate a list of field names for iteration.",
           "is_pub": true,
           "line": 771
         }
@@ -357,7 +335,6 @@
             { "name": "key", "type": "[]const u8" }
           ],
           "returns": "?FieldMeta",
-          "comment": "Get metadata for a specific field by name.",
           "is_pub": true,
           "line": 780
         }

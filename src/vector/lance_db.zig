@@ -558,6 +558,11 @@ pub const GuidanceDb = struct {
 
     /// Walk `src_dir_path` and upsert stale JSON files, embedding each node.
     pub fn syncFromDir(self: *Self, allocator: std.mem.Allocator, src_dir_path: []const u8) !void {
+        // Derive workspace root: src_dir_path = "{workspace}/.guidance/src"
+        // Two dirname levels up: .guidance/src → .guidance → workspace
+        const guidance_dir = std.fs.path.dirname(src_dir_path) orelse ".";
+        const workspace = std.fs.path.dirname(guidance_dir) orelse ".";
+
         var src_dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
                 log.warn("guidance src dir not found: {s}", .{src_dir_path});
@@ -595,7 +600,7 @@ pub const GuidanceDb = struct {
             defer file_arena.deinit();
             const fa = file_arena.allocator();
 
-            self.indexFile(fa, rel_path, mtime_sec) catch |err| {
+            self.indexFile(fa, rel_path, mtime_sec, workspace) catch |err| {
                 log.warn("indexFile({s}): {s}", .{ rel_path, @errorName(err) });
                 continue;
             };
@@ -745,19 +750,28 @@ pub const GuidanceDb = struct {
         return false;
     }
 
-    fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) !void {
+    fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64, workspace: []const u8) !void {
         const file_data = try std.fs.cwd().readFileAlloc(allocator, file_path, 8 * 1024 * 1024);
         defer allocator.free(file_data);
 
         const parsed = try parseGuidanceJson(allocator, file_data);
 
+        // For Zig files, read source text so insertModule/insertMember can
+        // fall back to /// and //! inline comments when JSON has none.
+        const source_text: ?[]u8 = if (std.mem.eql(u8, parsed.language, "zig")) blk: {
+            const src_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ workspace, parsed.source });
+            defer allocator.free(src_path);
+            break :blk std.fs.cwd().readFileAlloc(allocator, src_path, 5 * 1024 * 1024) catch null;
+        } else null;
+        defer if (source_text) |t| allocator.free(t);
+
         try self.execSimple("BEGIN");
         errdefer _ = self.execSimpleNoErr("ROLLBACK");
 
         try self.deleteFileRecords(file_path);
-        try self.insertModule(allocator, file_path, parsed, mtime);
+        try self.insertModule(allocator, file_path, parsed, mtime, source_text);
         for (parsed.members) |m| {
-            try self.insertMember(allocator, file_path, parsed, m, mtime);
+            try self.insertMember(allocator, file_path, parsed, m, mtime, source_text);
         }
 
         try self.execSimple("COMMIT");
@@ -1072,20 +1086,94 @@ pub const GuidanceDb = struct {
         return emb;
     }
 
+    // ── Source comment readers (Zig only) ──────────────────────────
+
+    /// Extract `//!` module doc lines from Zig source.
+    /// Returns an allocator-owned string or null.
+    fn extractSourceModuleDoc(allocator: std.mem.Allocator, source: []const u8) !?[]u8 {
+        var lines: std.ArrayList([]const u8) = .empty;
+        defer lines.deinit(allocator);
+        var it = std.mem.splitScalar(u8, source, '\n');
+        while (it.next()) |line| {
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            if (std.mem.startsWith(u8, trimmed, "//!")) {
+                const after = trimmed[3..];
+                const text = if (after.len > 0 and after[0] == ' ') after[1..] else after;
+                try lines.append(allocator, text);
+            } else {
+                if (lines.items.len > 0) break;
+            }
+        }
+        if (lines.items.len == 0) return null;
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        for (lines.items, 0..) |dl, i| {
+            if (i > 0) try buf.append(allocator, '\n');
+            try buf.appendSlice(allocator, dl);
+        }
+        const result = try buf.toOwnedSlice(allocator);
+        if (result.len == 0) { allocator.free(result); return null; }
+        return result;
+    }
+
+    /// Extract `///` doc comment above the declaration at 1-based `line`.
+    /// Returns an allocator-owned string or null.
+    fn extractSourceMemberDoc(allocator: std.mem.Allocator, source: []const u8, line: u32) !?[]u8 {
+        if (line == 0) return null;
+        var all_lines: std.ArrayList([]const u8) = .empty;
+        defer all_lines.deinit(allocator);
+        var it = std.mem.splitScalar(u8, source, '\n');
+        while (it.next()) |ln| try all_lines.append(allocator, ln);
+        if (line > all_lines.items.len) return null;
+
+        var doc_lines: std.ArrayList([]const u8) = .empty;
+        defer doc_lines.deinit(allocator);
+        var idx = line - 1; // 0-based index of declaration
+        while (idx > 0) {
+            idx -= 1;
+            const prev = std.mem.trimLeft(u8, all_lines.items[idx], " \t");
+            if (!std.mem.startsWith(u8, prev, "///")) break;
+            const after = prev[3..];
+            const text = if (after.len > 0 and after[0] == ' ') after[1..] else after;
+            try doc_lines.append(allocator, text);
+        }
+        if (doc_lines.items.len == 0) return null;
+        std.mem.reverse([]const u8, doc_lines.items);
+
+        var buf: std.ArrayList(u8) = .empty;
+        errdefer buf.deinit(allocator);
+        for (doc_lines.items, 0..) |dl, i| {
+            if (i > 0) try buf.append(allocator, '\n');
+            try buf.appendSlice(allocator, dl);
+        }
+        const result = try buf.toOwnedSlice(allocator);
+        if (result.len == 0) { allocator.free(result); return null; }
+        return result;
+    }
+
     // ── Insert helpers ─────────────────────────────────────────────
 
-    fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) !void {
-        const name = doc.module_comment orelse doc.module;
+    fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64, source_text: ?[]const u8) !void {
+        // When JSON has no module comment (stripped for Zig source-code-first
+        // workflow), read //! lines directly from the source file.
+        const source_comment: ?[]u8 = if (doc.module_comment == null)
+            if (source_text) |src| try extractSourceModuleDoc(allocator, src) else null
+        else
+            null;
+        defer if (source_comment) |sc| allocator.free(sc);
+        const effective_comment: ?[]const u8 = doc.module_comment orelse source_comment;
+
+        const name = effective_comment orelse doc.module;
 
         // Build embedding text - use SHORT comment only (searchable phrase)
         // Do NOT embed full detail - it's comprehensive docs, not a search phrase
         // Keywords from detail are embedded separately in keyword_index table
-        const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", doc.module_comment, null, null);
+        const emb_text = try buildEmbeddingText(allocator, doc.module, name, "module", effective_comment, null, null);
         defer allocator.free(emb_text);
 
         // Only generate embedding for modules with short searchable content
         // Embedding should be for "what does X do?" style queries
-        const has_semantic_content = doc.module_comment != null and doc.module_comment.?.len > 0;
+        const has_semantic_content = effective_comment != null and effective_comment.?.len > 0;
         const emb: ?[]f32 = if (has_semantic_content)
             try self.getOrComputeEmbedding(allocator, emb_text)
         else
@@ -1112,7 +1200,7 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_text(stmt, 2, doc.source.ptr, @intCast(doc.source.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 3, doc.module.ptr, @intCast(doc.module.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 4, name.ptr, @intCast(name.len), SQLITE_STATIC);
-        if (doc.module_comment) |cm|
+        if (effective_comment) |cm|
             _ = c.sqlite3_bind_text(stmt, 5, cm.ptr, @intCast(cm.len), SQLITE_STATIC)
         else
             _ = c.sqlite3_bind_null(stmt, 5);
@@ -1211,7 +1299,16 @@ pub const GuidanceDb = struct {
         }
     }
 
-    fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) !void {
+    fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64, source_text: ?[]const u8) !void {
+        // When JSON has no member comment (stripped for Zig source-code-first
+        // workflow), read /// lines directly from the source file at m.line.
+        const source_comment: ?[]u8 = if (m.comment == null)
+            if (source_text) |src| if (m.line) |ln| try extractSourceMemberDoc(allocator, src, ln) else null else null
+        else
+            null;
+        defer if (source_comment) |sc| allocator.free(sc);
+        const effective_comment: ?[]const u8 = m.comment orelse source_comment;
+
         // Skip embeddings for test declarations - they add noise without semantic value
         const is_test = std.mem.eql(u8, m.node_type, "test_decl");
 
@@ -1219,7 +1316,7 @@ pub const GuidanceDb = struct {
         // - Has a comment (primary signal for "what does this do?")
         // - Is a top-level struct/function (high-value navigation targets)
         // Module comment provides context for members without their own comment
-        const has_comment = m.comment != null and m.comment.?.len > 0;
+        const has_comment = effective_comment != null and effective_comment.?.len > 0;
         const has_module_context = doc.module_comment != null and doc.module_comment.?.len > 0;
         const is_top_level = std.mem.eql(u8, m.node_type, "struct") or
             std.mem.eql(u8, m.node_type, "enum") or
@@ -1229,7 +1326,7 @@ pub const GuidanceDb = struct {
         const should_embed = !is_test and (has_comment or (is_top_level and has_module_context));
 
         const emb: ?[]f32 = if (should_embed) blk: {
-            const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, m.comment, m.signature, doc.module_comment);
+            const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, effective_comment, m.signature, doc.module_comment);
             defer allocator.free(emb_text);
             break :blk try self.getOrComputeEmbedding(allocator, emb_text);
         } else null;
@@ -1260,7 +1357,7 @@ pub const GuidanceDb = struct {
             _ = c.sqlite3_bind_text(stmt, 6, sig.ptr, @intCast(sig.len), SQLITE_STATIC)
         else
             _ = c.sqlite3_bind_null(stmt, 6);
-        if (m.comment) |cm|
+        if (effective_comment) |cm|
             _ = c.sqlite3_bind_text(stmt, 7, cm.ptr, @intCast(cm.len), SQLITE_STATIC)
         else
             _ = c.sqlite3_bind_null(stmt, 7);

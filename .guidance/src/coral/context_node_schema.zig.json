@@ -4,11 +4,9 @@
     "source": "src/coral/context_node_schema.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns] Defines schema structures, payload types, and binary header validation for Coral DB context nodes.",
-  "detail": "This module defines the schema and operations for handling context nodes within the Coral Database system. It serves as a bridge between the Coral DB's internal data structures and the external Zig environment, ensuring data integrity and compatibility. The module is structured around binary schemas, payload types, and context node representations, providing a robust framework for serialization, validation, and retrieval of context data.\n\nKey abstractions include the `BinaryHeader` struct, which encapsulates essential metadata for binary data, and the `ContextNode` and `BinaryContextNode` structs, which represent the actual data structures used in the database. The module leverages Zig's reflection and memory management features to dynamically handle binary data and validate payloads against predefined schemas.\n\nThe public API exposes functions for initializing, validating, and reading context nodes, along with utility functions for managing LOD (Level of Detail) data. The design emphasizes modularity, allowing seamless integration with Coral DB's broader architecture while maintaining strict type and version control.\n\nImplementation details focus on efficient memory handling, ensuring that binary data is correctly aligned and validated. The module employs a clear separation of concerns, with distinct responsibilities for schema definition, data storage, and retrieval. This design supports scalability and maintainability, making it suitable for complex database operations.",
-  "keywords": ["Zig", "Coral DB", "BinaryHeader", "ContextNode", "Schema", "PayloadType"],
+  "keywords": ["Zig", "Coral DB", "BinaryHeader", "ContextNode", "Schema", "PayloadType", "Validation", "Memory Management", "Reflection", "JSON Schema"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
     {
@@ -16,7 +14,6 @@
       "name": "PayloadType",
       "match_hash": "1cabcf77e8879039e1d2d3ecad4dc64cd59b3fb071a0bc8e828b4ae3db10ffb0",
       "signature": "keyword_enum PayloadType { ... }",
-      "comment": "Defines a payload type with enum-based payload definitions, managed by owner; ensures fixed-size buffers and clear ownership model.",
       "is_pub": true,
       "members": [
         {
@@ -63,7 +60,6 @@
       "name": "BinaryHeader",
       "match_hash": "c69cbaf8a3179739f71fa0a4578bfdb816781daa6e9f5408c3b8f1bcc56c112f",
       "signature": "keyword_struct BinaryHeader { ... }",
-      "comment": "Manages binary header structures with ownership and validation logic; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -99,7 +95,6 @@
       "name": "BinaryContextNode",
       "match_hash": "0f74a3f86e0fe3de76c1fe14cacaf33d10108fb131ec0065c5a9e31474fad4af",
       "signature": "keyword_struct BinaryContextNode { ... }",
-      "comment": "Manages binary context nodes with ID, buffer operations, and allocator integration; owns buffers, not shared.",
       "is_pub": true,
       "members": [
         {
@@ -111,7 +106,6 @@
             { "name": "self", "type": "*const BinaryContextNode" }
           ],
           "returns": "i64",
-          "comment": "Convenience accessor for backward compatibility with wasm.zig tests",
           "is_pub": true,
           "line": 53
         }
@@ -176,7 +170,6 @@
       "name": "ContextNodeSchema",
       "match_hash": "730d2d6cc43fd07d1cddc933feb78ef8c349ec4f81c042c710434d7b5a4ff58c",
       "signature": "keyword_struct ContextNodeSchema { ... }",
-      "comment": "Defines a context node schema with ownership, dynamic editing, and size metadata; manages allocation/deallocation.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
