@@ -3139,14 +3139,26 @@ fn runBuiltinFilePipeline(
 ) !bool {
     const ext = std.fs.path.extension(src_abs);
 
-    // ── 1. Lint ───────────────────────────────────────────────────────────
+    // ── 1. Lint (with one auto-fix attempt via fmt) ───────────────────────
     if (!ga.skip_lint) {
         if (cfg.lintCommandForExt(ext)) |lint_argv| {
             if (ga.verbose) std.debug.print("lint:     {s}\n", .{src_abs});
             const ok = try runPhaseCommand(allocator, lint_argv, src_abs);
             if (!ok) {
-                std.debug.print("error: lint failed for {s}\n", .{src_abs});
-                return false;
+                // One attempt to auto-fix via the fmt command.
+                const fixed = if (!ga.skip_fmt)
+                    if (cfg.fmtCommandForExt(ext)) |fmt_argv| blk: {
+                        if (ga.verbose) std.debug.print("lint-fix: {s}\n", .{src_abs});
+                        _ = try runPhaseCommand(allocator, fmt_argv, src_abs);
+                        break :blk try runPhaseCommand(allocator, lint_argv, src_abs);
+                    } else false
+                else
+                    false;
+                if (!fixed) {
+                    std.debug.print("error: lint failed for {s}\n", .{src_abs});
+                    return false;
+                }
+                if (ga.verbose) std.debug.print("lint-fix: fixed {s}\n", .{src_abs});
             }
         }
     }

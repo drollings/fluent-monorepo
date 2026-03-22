@@ -230,7 +230,10 @@ pub const SyncProcessor = struct {
         // --- AI Enhancement: file-level comment ---
         // Automatically generate module comment when LLM is available and missing.
         // --regen forces regeneration with score comparison.
-        if (self.enhancer) |*enh| {
+        // Skipped for .zig files: comments live in source (/// / //!) and are
+        // stripped from JSON before saving, so generating them is pure waste.
+        const is_zig = std.mem.endsWith(u8, rel_path, ".zig");
+        if (!is_zig) if (self.enhancer) |*enh| {
             const do_file_llm = blk: {
                 if (!enh.available()) break :blk false;
                 // --regen: always call LLM for comparison
@@ -249,7 +252,7 @@ pub const SyncProcessor = struct {
                     result.has_changes = true;
                 }
             }
-        }
+        }; // end !is_zig file-comment block
 
         // --- Skills: add skills when relevant patterns are detected ---
         const has_gof = hasGofPatterns(merge_result.members);
@@ -289,8 +292,9 @@ pub const SyncProcessor = struct {
             }
         }
 
-        // Generate detail if thinking model is available and detail is missing
-        if (self.thinking_enhancer) |*th| {
+        // Generate detail if thinking model is available and detail is missing.
+        // Skipped for .zig files: detail is stripped from JSON before saving.
+        if (!is_zig) if (self.thinking_enhancer) |*th| {
             const do_detail_llm = blk: {
                 if (!th.available()) break :blk false;
                 // Auto-generate: call LLM when detail is missing
@@ -353,7 +357,7 @@ pub const SyncProcessor = struct {
                     }
                 }
             }
-        }
+        }; // end !is_zig detail block
 
         // --- Strip source comments for Zig files ---
         // For .zig files, /// and //! comments are the source of truth.
@@ -417,7 +421,10 @@ pub const SyncProcessor = struct {
         // replacement (--regen without LLM, or LLM rejection).  The flag is set
         // by loadGuidance whenever isLeakedPrompt discards a stored comment.
         const leaked_on_disk = self.store.leaked_prompts_found;
-        const needs_write = merge_result.has_changes or comment_changed or detail_changed or leaked_on_disk;
+        // Also write when JSON is absent: ensures memberless files (pure re-export
+        // root.zig) get a stub JSON on first pass so they don't appear stale every run.
+        const json_absent = existing_doc == null;
+        const needs_write = json_absent or merge_result.has_changes or comment_changed or detail_changed or leaked_on_disk;
         if (self.debug and needs_write) {
             std.debug.print("[needs-write] has_changes={} comment_changed={} detail_changed={} added={} updated={} removed={}\n", .{
                 merge_result.has_changes,   comment_changed,              detail_changed,

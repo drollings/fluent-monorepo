@@ -80,7 +80,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 451
+          "line": 458
         }
     ,    {
           "type": "fn_private",
@@ -93,7 +93,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 488
+          "line": 495
         }
     ,    {
           "type": "fn_private",
@@ -106,7 +106,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 492
+          "line": 499
         }
     ,    {
           "type": "fn_private",
@@ -120,7 +120,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 514
+          "line": 521
         }
     ,    {
           "type": "fn_private",
@@ -132,7 +132,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 566
+          "line": 573
         }
     ,    {
           "type": "fn_private",
@@ -144,7 +144,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 576
+          "line": 583
         }
     ,    {
           "type": "fn_private",
@@ -159,7 +159,7 @@
           ],
           "returns": "[]const types.Skill",
           "is_pub": false,
-          "line": 589
+          "line": 596
         }
     ,    {
           "type": "fn_private",
@@ -173,7 +173,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 647
+          "line": 654
         }
     ,    {
           "type": "fn_private",
@@ -187,7 +187,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 692
+          "line": 699
         }
     ,    {
           "type": "fn_private",
@@ -200,7 +200,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 726
+          "line": 733
         }
     ,    {
           "type": "fn_decl",
@@ -213,7 +213,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 855
+          "line": 862
         }
     ,    {
           "type": "fn_decl",
@@ -227,7 +227,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 866
+          "line": 873
         }
     ,    {
           "type": "fn_private",
@@ -240,7 +240,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 900
+          "line": 907
         }
       ],
       "line": 10
