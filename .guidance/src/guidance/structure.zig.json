@@ -14,7 +14,7 @@
       "name": "FileEntry",
       "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
       "signature": "keyword_struct FileEntry { ... }",
-      "comment": "Manages file entry metadata; owned by the module; ensures consistent state across initialization and cleanup.",
+      "comment": "Manages file entry metadata with fixed-size buffers; owned by the caller; ensures consistent state across operations.",
       "is_pub": false,
       "line": 24
     },
@@ -173,7 +173,7 @@
       "name": "ChildEntry",
       "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
       "signature": "keyword_struct ChildEntry { ... }",
-      "comment": "Manages a fixed-size buffer pool; owned by the struct; ensures consistent memory access.",
+      "comment": "Manages child entry structures with ownership and invariants; ensures safe access patterns.",
       "is_pub": false,
       "line": 364
     },

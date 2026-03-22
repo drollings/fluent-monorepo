@@ -38,43 +38,6 @@ Then you you must read
 ├── bin
 │   └── guidance-py
 ├── doc
-│   ├── capabilities
-│   │   ├── ast-indexing
-│   │   │   └── CAPABILITY.md
-│   │   ├── config-system
-│   │   │   └── CAPABILITY.md
-│   │   ├── coral-cache
-│   │   │   └── CAPABILITY.md
-│   │   ├── coral-database
-│   │   │   └── CAPABILITY.md
-│   │   ├── coral-ingestion
-│   │   │   └── CAPABILITY.md
-│   │   ├── coral-mcp
-│   │   │   └── CAPABILITY.md
-│   │   ├── embedding-providers
-│   │   │   └── CAPABILITY.md
-│   │   ├── explain-query
-│   │   │   └── CAPABILITY.md
-│   │   ├── llm-client
-│   │   │   └── CAPABILITY.md
-│   │   ├── local-model-decomposition
-│   │   │   └── CAPABILITY.md
-│   │   ├── ontology
-│   │   │   └── CAPABILITY.md
-│   │   ├── plugin-system
-│   │   │   └── CAPABILITY.md
-│   │   ├── rdf-parsing
-│   │   │   └── CAPABILITY.md
-│   │   ├── reflection
-│   │   │   └── CAPABILITY.md
-│   │   ├── sync-pipeline
-│   │   │   └── CAPABILITY.md
-│   │   ├── target-registry
-│   │   │   └── CAPABILITY.md
-│   │   ├── vector-search
-│   │   │   └── CAPABILITY.md
-│   │   └── wasm-tools
-│   │       └── CAPABILITY.md
 │   ├── coral
 │   │   ├── Legacy
 │   │   │   ├── CoralContext
@@ -130,7 +93,6 @@ Then you you must read
 │   │   │   ├── DESIGN-DECISIONS-RECOMMENDATIONS.md
 │   │   │   ├── DETAILED_SPECS.md
 │   │   │   ├── EXAMPLE_QUERY.md
-│   │   │   ├── EXPLAIN_BENCHMARK.md
 │   │   │   ├── GEMINI_DISCUSS_EMBEDDING.md
 │   │   │   ├── GUIDANCE_LANCEDB.md
 │   │   │   ├── MAKEFILE_GUIDANCE.md
@@ -151,11 +113,8 @@ Then you you must read
 │   │   └── DESIGN.md
 │   ├── patterns
 │   │   └── FLUENT_WVR.md
+│   ├── capabilities
 │   └── skills
-│       ├── gof-patterns
-│       │   └── SKILL.md
-│       └── zig-current
-│           └── SKILL.md
 ├── env
 │   ├── mise
 │   │   ├── mise.go.toml
@@ -221,7 +180,6 @@ Then you you must read
 │   │   ├── ast_parser.zig                                         # Parses Zig AST, extracts member signatures, and manages memory for the parser.
 │   │   ├── config.zig                                             # [gof-patterns, gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across...
 │   │   ├── deps.zig                                               # Extracts dependency information from Zig source files, building a map of module paths and their imports.
-│   │   ├── diary.zig                                              # Diary and INBOX management for the guidance second brain.
 │   │   ├── enhancer.zig                                           # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
 │   │   ├── git.zig                                                # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
 │   │   ├── hash.zig                                               # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
@@ -277,14 +235,6 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
-├── FLUENT_WVR.md
-├── FLUENT_WVR_COMPARISON.md
-├── FLUENT_WVR_REFACTOR_THREADS.md
-├── FLUENT_WVR_REFLECTION.md
-├── FLUENT_WVR_ROADMAP.md
-├── FLUENT_WVR_RUNTIME.md
-├── FLUENT_WVR_STANDARD.md
-├── FLUENT_WVR_TUTORIAL.md
 ├── GEMINI_FLUENT_WVR_STANDARD_ADDITIONS.md
 ├── GLM_FLUENT_GUIDANCE_ASSESSMENT.md
 ├── GLM_REVIEW_FLUENT_WVR_STANDARD_ADDITIONS.md
