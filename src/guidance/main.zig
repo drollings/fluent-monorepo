@@ -1229,17 +1229,10 @@ fn syncGuidanceDb(
         std.debug.print("gen: syncing guidance.db to {s} (embedder={s})\n", .{ guidance_db_path, embedder.getName() });
     }
 
-    // Resolve capabilities_dir relative to workspace (not json_dir)
-    // We derive workspace from json_dir by stripping /.guidance suffix.
-    const cap_dir_abs = blk: {
-        const workspace = std.fs.path.dirname(json_dir) orelse json_dir;
-        const abs = std.fs.path.join(allocator, &.{ workspace, cfg.capabilities_dir }) catch break :blk null;
-        // Check it exists before passing it through
-        std.fs.accessAbsolute(abs, .{}) catch {
-            allocator.free(abs);
-            break :blk null;
-        };
-        break :blk abs;
+    // cfg.capabilities_dir is now an absolute path (resolved in config loader).
+    const cap_dir_abs: ?[]const u8 = blk: {
+        std.fs.accessAbsolute(cfg.capabilities_dir, .{}) catch break :blk null;
+        break :blk allocator.dupe(u8, cfg.capabilities_dir) catch break :blk null;
     };
     defer if (cap_dir_abs) |p| allocator.free(p);
 
@@ -2296,7 +2289,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     );
     defer allocator.free(db_path);
 
-    const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
     defer allocator.free(guidance_dir);
 
     // ── Open .guidance.db ─────────────────────────────────────────────────────

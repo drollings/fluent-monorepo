@@ -18,7 +18,10 @@ pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_DB_PATH = ".guidance.db";
 pub const DEFAULT_GUIDANCE_DB_PATH = ".guidance.db";
-pub const DEFAULT_CAPABILITIES_DIR = "doc/capabilities";
+/// Relative to guidance_root (e.g. ".guidance/capabilities").
+pub const DEFAULT_CAPABILITIES_DIR = "capabilities";
+/// Relative to guidance_root (e.g. ".guidance/skills").
+pub const DEFAULT_SKILLS_DIR = "skills";
 pub const DEFAULT_MODEL = "local:code:latest";
 pub const DEFAULT_EMBEDDING_PROVIDER = "ollama";
 pub const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
@@ -92,7 +95,7 @@ pub const ProjectConfig = struct {
     /// Embedding vector dimensions (0 = use provider default).
     embedding_dims: u32,
 
-    /// Path to the capabilities tree (e.g. "doc/capabilities").
+    /// Absolute path to the capabilities tree ({guidance_root}/capabilities by default).
     /// Each subdirectory may contain a CAPABILITY.md file that is indexed
     /// into the LanceDB capabilities table for semantic search.
     capabilities_dir: []const u8,
@@ -331,6 +334,8 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "version": "1",
             \\  "guidance_dir": "{s}",
             \\  "db_path": "{s}",
+            \\  "skills_dir": "skills",
+            \\  "capabilities_dir": "capabilities",
             \\  "src_dirs": ["src"],
             \\  "providers": {{
             \\    "local": {{
@@ -635,11 +640,17 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         }
     }
 
-    // Capabilities dir
+    // Capabilities dir (relative to guidance_root, or absolute)
     const capabilities_dir_rel: []const u8 = if (root.object.get("capabilities_dir")) |cd|
         if (cd == .string) cd.string else DEFAULT_CAPABILITIES_DIR
     else
         DEFAULT_CAPABILITIES_DIR;
+
+    // Skills dir (relative to guidance_root, or absolute)
+    const skills_dir_rel: []const u8 = if (root.object.get("skills_dir")) |sd|
+        if (sd == .string) sd.string else DEFAULT_SKILLS_DIR
+    else
+        DEFAULT_SKILLS_DIR;
 
     // Parse embed object (dims, cache_limit) with fallback to flat fields (backward compat)
     const embed_obj = if (root.object.get("embed")) |eo| if (eo == .object) eo.object else null else null;
@@ -730,7 +741,8 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         cwd,
         guidance_dir_rel,
         db_path_rel,
-        try allocator.dupe(u8, capabilities_dir_rel),
+        skills_dir_rel,
+        capabilities_dir_rel,
         try allocator.dupe(u8, embedding_provider),
         try allocator.dupe(u8, embedding_model),
         embedding_dims,
@@ -773,7 +785,8 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
         cwd,
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
-        try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
+        DEFAULT_SKILLS_DIR,
+        DEFAULT_CAPABILITIES_DIR,
         try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
         DEFAULT_EMBEDDING_DIMS,
@@ -794,7 +807,10 @@ fn buildFromParts(
     cwd: []const u8,
     guidance_dir_rel: []const u8,
     db_path_rel: []const u8,
-    capabilities_dir: []const u8,
+    /// Relative to guidance_root, or absolute. Default: "skills".
+    skills_dir_rel: []const u8,
+    /// Relative to guidance_root, or absolute. Default: "capabilities".
+    capabilities_dir_rel: []const u8,
     embedding_provider: []const u8,
     embedding_model: []const u8,
     embedding_dims: u32,
@@ -820,11 +836,20 @@ fn buildFromParts(
     const json_base = try allocator.dupe(u8, guidance_root);
     errdefer allocator.free(json_base);
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_root, "skills" });
+    const skills_dir = if (std.fs.path.isAbsolute(skills_dir_rel))
+        try allocator.dupe(u8, skills_dir_rel)
+    else
+        try std.fs.path.join(allocator, &.{ guidance_root, skills_dir_rel });
     errdefer allocator.free(skills_dir);
 
     const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, "inbox" });
     errdefer allocator.free(inbox_dir);
+
+    const capabilities_dir = if (std.fs.path.isAbsolute(capabilities_dir_rel))
+        try allocator.dupe(u8, capabilities_dir_rel)
+    else
+        try std.fs.path.join(allocator, &.{ guidance_root, capabilities_dir_rel });
+    errdefer allocator.free(capabilities_dir);
 
     const db_path = try allocator.dupe(u8, db_path_rel);
     errdefer allocator.free(db_path);
@@ -865,7 +890,8 @@ fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) !Pro
         "/tmp",
         DEFAULT_GUIDANCE_DIR,
         DEFAULT_DB_PATH,
-        try allocator.dupe(u8, DEFAULT_CAPABILITIES_DIR),
+        DEFAULT_SKILLS_DIR,
+        DEFAULT_CAPABILITIES_DIR,
         try allocator.dupe(u8, DEFAULT_EMBEDDING_PROVIDER),
         try allocator.dupe(u8, DEFAULT_EMBEDDING_MODEL),
         DEFAULT_EMBEDDING_DIMS,
