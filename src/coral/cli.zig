@@ -7,7 +7,7 @@
 ///   coral ingest --resume <checkpoint-file>
 ///   coral ingest --status
 ///
-/// Checkpointing: stores progress in CozoDB ingestion_checkpoints relation.
+/// Checkpointing: stores progress in the SQLite ingestion_checkpoints table.
 const std = @import("std");
 const batch_mod = @import("batch.zig");
 const BatchConfig = batch_mod.BatchConfig;
@@ -97,7 +97,7 @@ pub const CliError = error{
 };
 
 // ---------------------------------------------------------------------------
-// CheckpointStore — in-memory (later persisted to CozoDB)
+// CheckpointStore — in-memory (later persisted to SQLite)
 // ---------------------------------------------------------------------------
 
 pub const CheckpointStore = struct {

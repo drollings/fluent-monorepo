@@ -1,0 +1,784 @@
+/// accessor.zig — Accessor, DynamicEditable, Editable(T), FieldMeta, TypeTag, OwnershipMode.
+const std = @import("std");
+const constraint_mod = @import("constraint.zig");
+const permissions_mod = @import("permissions.zig");
+
+pub const ConstraintVTable = constraint_mod.ConstraintVTable;
+pub const Constraint = constraint_mod.Constraint;
+pub const constraintSet = constraint_mod.constraintSet;
+pub const constraintGet = constraint_mod.constraintGet;
+
+pub const Role = permissions_mod.Role;
+pub const RolePermissions = permissions_mod.RolePermissions;
+pub const perm_all = permissions_mod.perm_all;
+pub const perm_coder = permissions_mod.perm_coder;
+
+// ============================================================
+// § 1b  Type metadata enums
+// ============================================================
+
+/// Broad type category attached to each Accessor.
+/// Used by binary IPC and the WASM schema descriptor to encode field types
+/// without requiring comptime dispatch at the call site.
+pub const TypeTag = enum(u8) {
+    int,
+    float,
+    bool,
+    string_owned, // []const u8 — allocator-owned copy
+    string_borrowed, // []const u8 — borrowed, never freed by the reflection layer
+    string_rc, // []const u8 — reference-counted; releaseFn decrements refcount
+    @"enum",
+    optional,
+    array,
+    vector,
+    bitset, // DynamicBitSetUnmanaged — parameterised by a StringInterner
+    collection, // ArrayListUnmanaged or similar — held by reference
+    unknown,
+};
+
+/// Who owns the memory behind a field value.
+pub const OwnershipMode = enum(u8) {
+    /// The struct field holds a plain value; no heap allocation involved.
+    value,
+    /// The field is an allocator-owned heap allocation; the reflection layer
+    /// will call `releaseFn` when replacing or releasing the field.
+    owned,
+    /// The field is a borrowed pointer; the reflection layer never frees it.
+    borrowed,
+    /// The field is reference-counted; the reflection layer calls `releaseFn`
+    /// (which decrements the refcount) when replacing or releasing.
+    rc,
+};
+
+// ============================================================
+// § 3  Field metadata for AI agents and schema description
+// ============================================================
+
+/// Field metadata for AI agent understanding and schema documentation.
+/// Populated via comptime decls on the Host type:
+///   pub fn describeField(comptime name: []const u8) FieldMeta { ... }
+///
+/// This enables deterministic schema output for:
+///   - LLM tool definition (MCP tools/call schemas)
+///   - TUI help text and autocomplete hints
+///   - Knowledge graph relation hints
+///   - Cross-module duck typing validation
+pub const FieldMeta = struct {
+    /// Human-readable description for AI agents and documentation.
+    /// Example: "TCP port for the HTTP server (1-65535)"
+    description: ?[]const u8 = null,
+
+    /// For enums: list of valid values. Auto-populated from enum type.
+    /// Example: ["pending", "active", "done"]
+    enum_values: ?[]const []const u8 = null,
+
+    /// For integers/floats: inclusive minimum value.
+    min: ?i128 = null,
+
+    /// For integers/floats: inclusive maximum value.
+    max: ?i128 = null,
+
+    /// For strings: regex pattern or format hint.
+    /// Example: "^[a-z_]+$" or "uuidv7" or "comma-separated"
+    pattern: ?[]const u8 = null,
+
+    /// Default value as string (for reconstruction/initialization).
+    /// Example: "8080" or "pending"
+    default: ?[]const u8 = null,
+
+    /// Example values for AI understanding. Multi-valued to show variety.
+    /// Example: ["8080", "3000", "443"]
+    examples: ?[]const []const u8 = null,
+
+    /// For knowledge graph fields: relation/table this field references.
+    /// Example: "context_nodes" or "targets"
+    /// Enables AI agents to traverse the graph intelligently.
+    relation: ?[]const u8 = null,
+
+    /// For bitset fields: domain source for capability names.
+    /// Example: "StringInterner" — signals that valid values come from interner
+    bitset_domain: ?[]const u8 = null,
+
+    /// Is this field deprecated? If so, AI should prefer alternatives.
+    deprecated: bool = false,
+
+    /// Human-readable deprecation message explaining migration path.
+    deprecated_message: ?[]const u8 = null,
+
+    /// Fields that must be set before this field is valid.
+    /// Example: for "port", depends_on could be ["protocol"]
+    depends_on: ?[]const []const u8 = null,
+
+    /// Fields that become required when this field has a specific value.
+    /// Enables conditional validation for AI agents.
+    /// Key: this field's value, Value: list of required field names.
+    requires_when: ?[]const RequiresWhenEntry = null,
+
+    /// Units for numeric values. Helps AI understand scale.
+    /// Example: "milliseconds" or "bytes" or "count"
+    units: ?[]const u8 = null,
+
+    /// Whether this field is part of the entity's identity/key.
+    /// AI agents should prioritize identity fields in queries.
+    identity: bool = false,
+
+    /// Whether this field is mutable after creation.
+    /// AI agents should check this before attempting updates.
+    immutable: bool = false,
+
+    /// Semantic category for AI understanding.
+    /// Example: "identifier", "temporal", "spatial", "relational"
+    category: ?[]const u8 = null,
+};
+
+/// Conditional requirement entry for requires_when field.
+pub const RequiresWhenEntry = struct {
+    when_value: []const u8,
+    required_fields: []const []const u8,
+};
+
+// ============================================================
+// § 3b  Accessor descriptor
+// ============================================================
+
+/// A single field descriptor used by both static (Editable) and dynamic
+/// (DynamicEditable) schemas.  The constraint pointer references a statically
+/// compiled VTable, so adding the same field to a dynamic schema costs no
+/// additional code generation.
+///
+/// type_tag and ownership are cached here so that consumers (SQLite hydration,
+/// WASM IPC, TUI) can branch cheaply without re-dispatching through @typeInfo.
+/// binary_size is the fixed wire size in bytes for WASM IPC; 0 means variable.
+/// meta is field metadata for AI agent understanding and schema documentation.
+pub const Accessor = struct {
+    name: []const u8,
+    offset: usize,
+    permissions: RolePermissions,
+    constraint: *const ConstraintVTable,
+    type_tag: TypeTag = .unknown,
+    ownership: OwnershipMode = .value,
+    /// Fixed binary wire size in bytes.  0 = variable-length (length-prefixed).
+    binary_size: u16 = 0,
+    /// AI-readable metadata for schema description.
+    meta: FieldMeta = .{},
+};
+
+// ============================================================
+// § 4  Editable mixin  (compile-time-known structs)
+// ============================================================
+
+/// Zero-size mixin that adds reflective set/get to any struct.
+///
+/// Add one field to your struct:
+///   editable: Editable(MyStruct) = .{},
+///
+/// The mixin generates a comptime accessor table and a StaticStringMap for
+/// O(1) name→index lookup.  All fields default to `perm_all`; override by
+/// providing a custom `permissions(comptime field_name: []const u8)` decl on
+/// your Host type (not yet wired — use DynamicEditable for per-field perms).
+pub fn Editable(comptime Host: type) type {
+    return struct {
+        const Self = @This();
+
+        /// Comptime-generated accessor table (one entry per non-"editable" field).
+        pub const accessors: [fieldCount()]Accessor = buildAccessors();
+
+        /// O(1) name → index lookup backed by a perfect hash at comptime.
+        pub const accessor_map: std.StaticStringMap(usize) = buildMap();
+
+        // ── comptime helpers ────────────────────────────────────────────────
+
+        fn fieldCount() usize {
+            var n: usize = 0;
+            for (std.meta.fields(Host)) |f| {
+                if (!std.mem.eql(u8, f.name, "editable")) n += 1;
+            }
+            return n;
+        }
+
+        fn buildAccessors() [fieldCount()]Accessor {
+            const fields = std.meta.fields(Host);
+            var arr: [fieldCount()]Accessor = undefined;
+            var i: usize = 0;
+            for (fields) |field| {
+                if (std.mem.eql(u8, field.name, "editable")) continue;
+                // Allow the Host type to inject a custom vtable for any field via a
+                // comptime decl:  pub fn fieldConstraint(comptime name: []const u8)
+                //                     ?*const ConstraintVTable
+                // Return non-null to override the default Constraint(T) for that field.
+                const custom: ?*const ConstraintVTable = blk: {
+                    if (@hasDecl(Host, "fieldConstraint")) {
+                        break :blk Host.fieldConstraint(field.name);
+                    }
+                    break :blk null;
+                };
+                const vtable = custom orelse comptimeConstraint(field.type);
+
+                // Allow the Host type to provide AI-readable metadata via:
+                //   pub fn describeField(comptime name: []const u8) FieldMeta { ... }
+                // This enables deterministic schema output for LLM tool definitions.
+                const meta: FieldMeta = blk: {
+                    if (@hasDecl(Host, "describeField")) {
+                        break :blk Host.describeField(field.name);
+                    }
+                    break :blk .{};
+                };
+
+                arr[i] = .{
+                    .name = field.name,
+                    .offset = @offsetOf(Host, field.name),
+                    .permissions = perm_all,
+                    .constraint = vtable,
+                    .type_tag = comptimeTypeTag(field.type),
+                    .ownership = comptimeOwnership(field.type),
+                    .binary_size = comptimeBinarySize(field.type),
+                    .meta = meta,
+                };
+                i += 1;
+            }
+            return arr;
+        }
+
+        fn buildMap() std.StaticStringMap(usize) {
+            const KVPair = struct { []const u8, usize };
+            var kvs: [accessors.len]KVPair = undefined;
+            for (accessors, 0..) |acc, i| kvs[i] = .{ acc.name, i };
+            return std.StaticStringMap(usize).initComptime(kvs);
+        }
+
+        /// Comptime type validation: unsupported types trigger a clear compile error
+        /// at Editable instantiation time rather than a runtime error.
+        /// Types that require a runtime-parameterised vtable (bitsets, collections)
+        /// must be injected via the Host.fieldConstraint hook; they are rejected here
+        /// to force explicit registration rather than silently producing a broken vtable.
+        fn comptimeConstraint(comptime T: type) *const ConstraintVTable {
+            switch (@typeInfo(T)) {
+                .int, .float, .bool, .@"enum", .optional, .array, .vector => {},
+                .pointer => |p| if (!(p.size == .slice and p.child == u8))
+                    @compileError("Unsupported pointer type for Editable — use fieldConstraint hook: " ++ @typeName(T)),
+                .@"struct" => @compileError("Struct fields require a runtime vtable — use fieldConstraint hook: " ++ @typeName(T)),
+                else => @compileError("Unsupported type for Editable — use fieldConstraint hook: " ++ @typeName(T)),
+            }
+            return &comptime Constraint(T);
+        }
+
+        /// Derive a TypeTag at comptime from a field type.
+        fn comptimeTypeTag(comptime T: type) TypeTag {
+            return switch (@typeInfo(T)) {
+                .int => .int,
+                .float => .float,
+                .bool => .bool,
+                .@"enum" => .@"enum",
+                .optional => .optional,
+                .array => .array,
+                .vector => .vector,
+                .pointer => |p| if (p.size == .slice and p.child == u8) .string_owned else .unknown,
+                else => .unknown,
+            };
+        }
+
+        /// Derive OwnershipMode at comptime from a field type.
+        fn comptimeOwnership(comptime T: type) OwnershipMode {
+            return switch (@typeInfo(T)) {
+                // []const u8 slices are treated as owned copies when set via reflection.
+                .pointer => |p| if (p.size == .slice and p.child == u8) .owned else .borrowed,
+                else => .value,
+            };
+        }
+
+        /// Fixed binary wire size in bytes; 0 for variable-length types.
+        fn comptimeBinarySize(comptime T: type) u16 {
+            return switch (@typeInfo(T)) {
+                .int, .float, .bool, .@"enum" => @sizeOf(T),
+                .array => |a| @as(u16, @intCast(@sizeOf(a.child) * a.len)),
+                .vector => |v| @as(u16, @intCast(@sizeOf(v.child) * v.len)),
+                // strings, optionals, structs → variable
+                else => 0,
+            };
+        }
+
+        // ── public API ──────────────────────────────────────────────────────
+
+        /// Set a field by name via string input.  Permission-checked against `role`.
+        /// Errors: error.FieldNotFound, error.AccessDenied, plus any constraint parse errors.
+        pub fn set(
+            self: *Self,
+            allocator: std.mem.Allocator,
+            key: []const u8,
+            value: []const u8,
+            role: Role,
+        ) anyerror!void {
+            const host: *Host = @alignCast(@fieldParentPtr("editable", self));
+            const index = accessor_map.get(key) orelse return error.FieldNotFound;
+            const accessor = accessors[index];
+            if (!accessor.permissions.canWrite(role)) return error.AccessDenied;
+            const host_bytes: [*]u8 = @ptrCast(host);
+            const field_ptr: *anyopaque = @ptrCast(host_bytes + accessor.offset);
+            if (accessor.constraint.setCtxFn) |f|
+                try f(accessor.constraint, allocator, field_ptr, value)
+            else
+                try accessor.constraint.setFn(allocator, field_ptr, value);
+        }
+
+        /// Get a field by name, returned as a caller-owned string.  Permission-checked against `role`.
+        /// Errors: error.FieldNotFound, error.AccessDenied, error.OutOfMemory, plus any constraint errors.
+        pub fn get(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            key: []const u8,
+            role: Role,
+        ) anyerror![]const u8 {
+            const host: *const Host = @alignCast(@fieldParentPtr("editable", self));
+            const index = accessor_map.get(key) orelse return error.FieldNotFound;
+            const accessor = accessors[index];
+            if (!accessor.permissions.canRead(role)) return error.AccessDenied;
+            const host_bytes: [*]const u8 = @ptrCast(host);
+            const field_ptr: *const anyopaque = @ptrCast(host_bytes + accessor.offset);
+            if (accessor.constraint.getCtxFn) |f|
+                return f(accessor.constraint, allocator, field_ptr)
+            else
+                return accessor.constraint.getFn(allocator, field_ptr);
+        }
+
+        /// Zero-cost set for trusted internal code: comptime key, no allocation, no permission check.
+        /// The key must be a string literal known at compile time; unknown keys are a compile error.
+        pub fn setFast(self: *Self, comptime key: []const u8, value: anytype) void {
+            const host: *Host = @alignCast(@fieldParentPtr("editable", self));
+            inline for (std.meta.fields(Host)) |field| {
+                if (comptime std.mem.eql(u8, field.name, key)) {
+                    @field(host.*, field.name) = value;
+                    return;
+                }
+            }
+            @compileError("Field not found: " ++ key);
+        }
+
+        /// Zero-cost get for trusted internal code: comptime key, returns strongly-typed value.
+        pub fn getFast(self: *const Self, comptime key: []const u8) @TypeOf(@field(@as(Host, undefined), key)) {
+            const host: *const Host = @alignCast(@fieldParentPtr("editable", self));
+            inline for (std.meta.fields(Host)) |field| {
+                if (comptime std.mem.eql(u8, field.name, key)) {
+                    return @field(host.*, field.name);
+                }
+            }
+            @compileError("Field not found: " ++ key);
+        }
+
+        // ── Schema description for AI agents ───────────────────────────────────
+
+        /// Generate a JSON Schema describing all fields, types, constraints, and metadata.
+        pub fn describeSchema(allocator: std.mem.Allocator) ![]const u8 {
+            return describeSchemaFromAccessors(allocator, @typeName(Host), &accessors);
+        }
+
+        /// Generate a list of field names for iteration.
+        pub fn fieldNames(allocator: std.mem.Allocator) ![]const []const u8 {
+            var names = try allocator.alloc([]const u8, accessors.len);
+            for (accessors, 0..) |acc, i| {
+                names[i] = acc.name;
+            }
+            return names;
+        }
+
+        /// Get metadata for a specific field by name.
+        /// Returns null if field doesn't exist.
+        pub fn getFieldMeta(key: []const u8) ?FieldMeta {
+            const index = accessor_map.get(key) orelse return null;
+            return accessors[index].meta;
+        }
+    };
+}
+
+// ============================================================
+// § 4b  Schema description utilities
+// ============================================================
+
+/// Generate JSON Schema from an accessor slice.
+/// Used by both Editable.describeSchema and DynamicEditable.describeSchema.
+pub fn describeSchemaFromAccessors(
+    allocator: std.mem.Allocator,
+    type_name: []const u8,
+    accessors_slice: []const Accessor,
+) ![]const u8 {
+    var buf: std.ArrayListUnmanaged(u8) = .{};
+    errdefer buf.deinit(allocator);
+    const writer = buf.writer(allocator);
+
+    // Open object
+    try writer.writeAll("{\n");
+    try writer.print("  \"$schema\": \"https://json-schema.org/draft/2020-12/schema\",\n", .{});
+    try writer.print("  \"title\": \"{s}\",\n", .{type_name});
+    try writer.print("  \"type\": \"object\",\n", .{});
+
+    // Properties object
+    try writer.writeAll("  \"properties\": {\n");
+
+    for (accessors_slice, 0..) |acc, i| {
+        if (i > 0) try writer.writeAll(",\n");
+        try describeFieldToJson(writer, acc, 2);
+    }
+
+    try writer.writeAll("\n  },\n");
+
+    // Required fields (identity fields + fields with no default)
+    try writer.writeAll("  \"required\": [");
+    var first_required = true;
+    for (accessors_slice) |acc| {
+        if (acc.meta.identity or acc.meta.default == null) {
+            if (!first_required) try writer.writeAll(", ");
+            first_required = false;
+            try writer.print("\"{s}\"", .{acc.name});
+        }
+    }
+    try writer.writeAll("],\n");
+
+    // Field ordering hint (for deterministic AI input ordering)
+    try writer.writeAll("  \"x-order\": [");
+    for (accessors_slice, 0..) |acc, i| {
+        if (i > 0) try writer.writeAll(", ");
+        try writer.print("\"{s}\"", .{acc.name});
+    }
+    try writer.writeAll("],\n");
+
+    // Role permissions map (Coral Context extension)
+    try writer.writeAll("  \"x-permissions\": {\n");
+    for (accessors_slice, 0..) |acc, i| {
+        if (i > 0) try writer.writeAll(",\n");
+        try writer.print("    \"{s}\": {{\"read\": \"", .{acc.name});
+        try describeRoleSet(writer, acc.permissions, "read");
+        try writer.writeAll("\", \"write\": \"");
+        try describeRoleSet(writer, acc.permissions, "write");
+        try writer.writeAll("\"}");
+    }
+    try writer.writeAll("\n  }\n");
+
+    // Close object
+    try writer.writeAll("}");
+
+    return buf.toOwnedSlice(allocator);
+}
+
+/// Write a single field's JSON Schema property.
+fn describeFieldToJson(writer: anytype, accessor: Accessor, indent: usize) !void {
+    var i: usize = 0;
+    while (i < indent) : (i += 1) {
+        try writer.writeByte(' ');
+    }
+
+    try writer.print("\"{s}\": {{\n", .{accessor.name});
+
+    // Type
+    i = 0;
+    while (i < indent) : (i += 1) try writer.writeByte(' ');
+    try writer.print("  \"type\": \"{s}\",\n", .{typeTagToJsonSchema(accessor.type_tag)});
+
+    // Description (if provided)
+    if (accessor.meta.description) |desc| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"description\": \"");
+        try writeEscapedJsonString(writer, desc);
+        try writer.writeAll("\",\n");
+    }
+
+    // Enum values (if provided)
+    if (accessor.meta.enum_values) |values| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"enum\": [");
+        for (values, 0..) |v, idx| {
+            if (idx > 0) try writer.writeAll(", ");
+            try writer.print("\"{s}\"", .{v});
+        }
+        try writer.writeAll("],\n");
+    }
+
+    // Numeric bounds
+    if (accessor.meta.min) |min| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"minimum\": {d},\n", .{min});
+    }
+    if (accessor.meta.max) |max| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"maximum\": {d},\n", .{max});
+    }
+
+    // Pattern for strings
+    if (accessor.meta.pattern) |pattern| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"pattern\": \"");
+        try writeEscapedJsonString(writer, pattern);
+        try writer.writeAll("\",\n");
+    }
+
+    // Default value
+    if (accessor.meta.default) |def| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"default\": \"");
+        try writeEscapedJsonString(writer, def);
+        try writer.writeAll("\",\n");
+    }
+
+    // Examples
+    if (accessor.meta.examples) |examples| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"examples\": [");
+        for (examples, 0..) |ex, idx| {
+            if (idx > 0) try writer.writeAll(", ");
+            try writer.print("\"{s}\"", .{ex});
+        }
+        try writer.writeAll("],\n");
+    }
+
+    // Units (Coral Context extension)
+    if (accessor.meta.units) |units| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"x-units\": \"{s}\",\n", .{units});
+    }
+
+    // Category (Coral Context extension)
+    if (accessor.meta.category) |cat| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"x-category\": \"{s}\",\n", .{cat});
+    }
+
+    // Relation (knowledge graph hint)
+    if (accessor.meta.relation) |rel| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"x-relation\": \"{s}\",\n", .{rel});
+    }
+
+    // Bitset domain (capability names source)
+    if (accessor.meta.bitset_domain) |domain| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.print("  \"x-bitset-domain\": \"{s}\",\n", .{domain});
+    }
+
+    // Identity flag
+    if (accessor.meta.identity) {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"x-identity\": true,\n");
+    }
+
+    // Immutability flag
+    if (accessor.meta.immutable) {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"x-immutable\": true,\n");
+    }
+
+    // Deprecation
+    if (accessor.meta.deprecated) {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"deprecated\": true");
+        if (accessor.meta.deprecated_message) |msg| {
+            try writer.writeAll(", \"x-deprecated-message\": \"");
+            try writeEscapedJsonString(writer, msg);
+            try writer.writeAll("\"");
+        }
+        try writer.writeAll(",\n");
+    }
+
+    // Dependencies
+    if (accessor.meta.depends_on) |deps| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"x-depends-on\": [");
+        for (deps, 0..) |dep, idx| {
+            if (idx > 0) try writer.writeAll(", ");
+            try writer.print("\"{s}\"", .{dep});
+        }
+        try writer.writeAll("],\n");
+    }
+
+    // Conditional requirements
+    if (accessor.meta.requires_when) |reqs| {
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  \"x-requires-when\": {\n");
+        for (reqs, 0..) |req, idx| {
+            if (idx > 0) try writer.writeAll(",\n");
+            i = 0;
+            while (i < indent + 4) : (i += 1) try writer.writeByte(' ');
+            try writer.print("\"{s}\": [", .{req.when_value});
+            for (req.required_fields, 0..) |rf, j| {
+                if (j > 0) try writer.writeAll(", ");
+                try writer.print("\"{s}\"", .{rf});
+            }
+            try writer.writeAll("]");
+        }
+        i = 0;
+        while (i < indent) : (i += 1) try writer.writeByte(' ');
+        try writer.writeAll("  },\n");
+    }
+
+    // Binary size (WASM IPC hint)
+    i = 0;
+    while (i < indent) : (i += 1) try writer.writeByte(' ');
+    try writer.print("  \"x-binary-size\": {d},\n", .{accessor.binary_size});
+
+    // Ownership mode
+    i = 0;
+    while (i < indent) : (i += 1) try writer.writeByte(' ');
+    try writer.print("  \"x-ownership\": \"{s}\"\n", .{@tagName(accessor.ownership)});
+
+    // Close field object
+    i = 0;
+    while (i < indent) : (i += 1) try writer.writeByte(' ');
+    try writer.writeAll("}");
+}
+
+/// Convert TypeTag to JSON Schema type string.
+fn typeTagToJsonSchema(tag: TypeTag) []const u8 {
+    return switch (tag) {
+        .int => "integer",
+        .float => "number",
+        .bool => "boolean",
+        .string_owned => "string",
+        .string_borrowed => "string",
+        .string_rc => "string",
+        .@"enum" => "string",
+        .optional => "null",
+        .array => "array",
+        .vector => "array",
+        .bitset => "array",
+        .collection => "array",
+        .unknown => "object",
+    };
+}
+
+/// Write role permission set as comma-separated role names.
+/// operation: "read" or "write"
+fn describeRoleSet(writer: anytype, perms: RolePermissions, comptime operation: []const u8) !void {
+    const role_names: [6][]const u8 = .{ "coder", "creator", "staff", "world", "script", "player" };
+    const roles: [6]Role = .{ .coder, .creator, .staff, .world, .script, .player };
+    var first = true;
+    for (role_names, roles) |name, role| {
+        const allowed = if (std.mem.eql(u8, operation, "read"))
+            perms.canRead(role)
+        else if (std.mem.eql(u8, operation, "write"))
+            perms.canWrite(role)
+        else
+            perms.canDerive(role);
+        if (allowed) {
+            if (!first) try writer.writeAll(", ");
+            first = false;
+            try writer.writeAll(name);
+        }
+    }
+}
+
+/// Write escaped JSON string.
+fn writeEscapedJsonString(writer: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => try writer.writeByte(c),
+        }
+    }
+}
+
+// ============================================================
+// § 5  DynamicEditable  (runtime-defined schemas, e.g. dynamic SQLite rows)
+// ============================================================
+
+/// Runtime field editor backed by a raw byte buffer and a slice of Accessors.
+pub const DynamicEditable = struct {
+    buffer: []u8,
+    accessors: []const Accessor,
+    /// Zig 0.15 unmanaged hash map — allocator passed per-operation.
+    name_map: std.StringHashMapUnmanaged(usize),
+    /// Stored so that set/get callers don't have to re-supply it.
+    allocator: std.mem.Allocator,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        buffer: []u8,
+        accessors: []const Accessor,
+    ) !DynamicEditable {
+        var name_map: std.StringHashMapUnmanaged(usize) = .{};
+        errdefer name_map.deinit(allocator);
+        for (accessors, 0..) |acc, i| {
+            try name_map.put(allocator, acc.name, i);
+        }
+        return .{
+            .buffer = buffer,
+            .accessors = accessors,
+            .name_map = name_map,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *DynamicEditable) void {
+        self.name_map.deinit(self.allocator);
+    }
+
+    /// Release heap memory owned by every field that has a releaseFn.
+    pub fn releaseAll(self: *DynamicEditable) void {
+        for (self.accessors) |accessor| {
+            if (accessor.constraint.releaseFn) |rel| {
+                const field_ptr: *anyopaque = @ptrCast(self.buffer.ptr + accessor.offset);
+                rel(self.allocator, field_ptr);
+            }
+        }
+    }
+
+    /// Set a field by name via string input, role-checked.
+    pub fn set(self: *DynamicEditable, key: []const u8, value: []const u8, role: Role) anyerror!void {
+        const index = self.name_map.get(key) orelse return error.FieldNotFound;
+        const accessor = self.accessors[index];
+        if (!accessor.permissions.canWrite(role)) return error.AccessDenied;
+        const field_ptr: *anyopaque = @ptrCast(self.buffer.ptr + accessor.offset);
+        if (accessor.constraint.setCtxFn) |f|
+            try f(accessor.constraint, self.allocator, field_ptr, value)
+        else
+            try accessor.constraint.setFn(self.allocator, field_ptr, value);
+    }
+
+    /// Get a field by name as a caller-owned string, role-checked.
+    pub fn get(self: *const DynamicEditable, key: []const u8, role: Role) anyerror![]const u8 {
+        const index = self.name_map.get(key) orelse return error.FieldNotFound;
+        const accessor = self.accessors[index];
+        if (!accessor.permissions.canRead(role)) return error.AccessDenied;
+        const field_ptr: *const anyopaque = @ptrCast(self.buffer.ptr + accessor.offset);
+        if (accessor.constraint.getCtxFn) |f|
+            return f(accessor.constraint, self.allocator, field_ptr)
+        else
+            return accessor.constraint.getFn(self.allocator, field_ptr);
+    }
+
+    /// Generate a JSON Schema describing all fields, types, constraints, and metadata.
+    pub fn describeSchema(self: *const DynamicEditable, allocator: std.mem.Allocator, type_name: []const u8) ![]const u8 {
+        return describeSchemaFromAccessors(allocator, type_name, self.accessors);
+    }
+
+    /// Generate a list of field names for iteration.
+    pub fn fieldNames(self: *const DynamicEditable, allocator: std.mem.Allocator) ![]const []const u8 {
+        var names = try allocator.alloc([]const u8, self.accessors.len);
+        for (self.accessors, 0..) |acc, i| {
+            names[i] = acc.name;
+        }
+        return names;
+    }
+
+    /// Get metadata for a specific field by name.
+    pub fn getFieldMeta(self: *const DynamicEditable, key: []const u8) ?FieldMeta {
+        const index = self.name_map.get(key) orelse return null;
+        return self.accessors[index].meta;
+    }
+};

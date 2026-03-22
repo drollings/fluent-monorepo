@@ -4,12 +4,12 @@
 /// Strings are arena-allocated; the interner owns all copies.
 ///
 /// `bitSetConstraint()` returns a `reflection.ConstraintVTable` that bridges
-/// this interner to the reflection field-access layer (CozoDB row hydration,
+/// this interner to the reflection field-access layer (SQLite row hydration,
 /// TUI editors, RPC handlers).  String path: comma-separated capability names.
 /// Binary path: u32 word-count + u64 words LE.  Convert path: cross-interner
 /// duck-typing by matching capability names.
 const std = @import("std");
-const reflection = @import("reflection.zig");
+const reflection = @import("reflection");
 
 pub const StringInterner = @This();
 
@@ -17,6 +17,7 @@ arena: std.heap.ArenaAllocator,
 string_to_index: std.StringHashMapUnmanaged(usize),
 index_to_string: std.ArrayListUnmanaged([]const u8),
 next_index: usize = 0,
+lock: std.Thread.RwLock = .{},
 
 pub fn init(allocator: std.mem.Allocator) StringInterner {
     return .{
@@ -35,7 +36,24 @@ pub fn deinit(self: *StringInterner) void {
 /// Intern `str`, returning its stable integer index.
 /// If `str` was already interned the existing index is returned without
 /// allocating.  The interner owns a copy of every new string.
+/// Thread-safe: uses double-checked locking (read lock fast path, write lock slow path).
 pub fn intern(self: *StringInterner, str: []const u8) !usize {
+    // fast path: read lock
+    self.lock.lockShared();
+    if (self.string_to_index.get(str)) |idx| {
+        self.lock.unlockShared();
+        return idx;
+    }
+    self.lock.unlockShared();
+
+    // slow path: write lock
+    self.lock.lock();
+    defer self.lock.unlock();
+    // double-check after acquiring write lock
+    if (self.string_to_index.get(str)) |idx| {
+        return idx;
+    }
+
     const gop = try self.string_to_index.getOrPut(self.arena.allocator(), str);
     if (gop.found_existing) {
         return gop.value_ptr.*;
@@ -54,7 +72,10 @@ pub fn intern(self: *StringInterner, str: []const u8) !usize {
 
 /// Look up the index for `str` without inserting it.
 /// Returns null when `str` has not been interned yet.
-pub fn getIndex(self: *const StringInterner, str: []const u8) ?usize {
+/// Thread-safe: uses shared read lock.
+pub fn getIndex(self: *StringInterner, str: []const u8) ?usize {
+    self.lock.lockShared();
+    defer self.lock.unlockShared();
     return self.string_to_index.get(str);
 }
 
@@ -350,6 +371,43 @@ test "StringInterner GPA no leaks" {
     }
 
     try testing.expectEqual(.ok, gpa.deinit());
+}
+
+test "StringInterner: concurrent intern, 8 threads" {
+    // spawn 8 threads, all trying to intern the same string "hello"
+    // all must return the same index, 0 leaks
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var interner = StringInterner.init(allocator);
+    defer interner.deinit();
+
+    const Ctx = struct {
+        si: *StringInterner,
+        result: usize = 0,
+    };
+
+    const threadFn = struct {
+        fn run(ctx: *Ctx) void {
+            ctx.result = ctx.si.intern("hello") catch 0xFFFF_FFFF;
+        }
+    }.run;
+
+    var ctxs: [8]Ctx = undefined;
+    for (&ctxs) |*ctx| ctx.* = .{ .si = &interner };
+
+    var threads: [8]std.Thread = undefined;
+    for (&threads, &ctxs) |*t, *ctx| {
+        t.* = try std.Thread.spawn(.{}, threadFn, .{ctx});
+    }
+    for (&threads) |*t| t.join();
+
+    // All threads must have received index 0
+    for (&ctxs) |*ctx| {
+        try testing.expectEqual(@as(usize, 0), ctx.result);
+    }
+    try testing.expectEqual(@as(usize, 1), interner.count());
 }
 
 test "bitSetFromString and bitSetToString roundtrip" {

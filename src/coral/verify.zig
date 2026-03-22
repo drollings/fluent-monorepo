@@ -118,8 +118,8 @@ pub const Verifier = struct {
             }
         }
 
-        // Orphan detection is deferred to post-flush CozoDB queries.
-        // TODO: implement after flush() is integrated with CozoDB.
+        // Orphan detection post-flush: use Library.getNeighborIds() to find nodes
+        // with no incoming edges.  Deferred to Phase 5 post-integration verification.
     }
 
     /// Verify statistics from completed ingestion.

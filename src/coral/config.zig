@@ -20,6 +20,29 @@ pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_API_URL = "http://localhost:11434/v1/chat/completions";
 
 // ---------------------------------------------------------------------------
+// YAGO 4.5 Sparse Ingestion — Type Whitelist (P5.3)
+// ---------------------------------------------------------------------------
+//
+// Only entities whose rdf:type matches one of these schema.org class URIs are
+// ingested.  This keeps the SQLite database below 1 GB for the on-device
+// duck-typing use case.  Add entries here to expand coverage.
+//
+// Target: < 5M nodes, < 1 GB SQLite file.
+pub const YAGO_TYPE_WHITELIST = [_][]const u8{
+    "schema:Person",
+    "schema:SoftwareApplication",
+    "schema:Organization",
+    "schema:CreativeWork",
+    "schema:Place",
+    "schema:Event",
+    "schema:Product",
+    "schema:Action",
+    "schema:MedicalEntity",
+    "schema:BioChemEntity",
+    "schema:Taxon",
+};
+
+// ---------------------------------------------------------------------------
 // ProjectConfig
 // ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 /// normalize.zig — RDF Term Normalization
 ///
-/// Converts RDF terms into canonical forms suitable for CozoDB storage.
+/// Converts RDF terms into canonical forms suitable for SQLite storage.
 /// Uses Blake3 (64-bit truncated) for deterministic IRI → NodeId hashing.
 ///
 /// Key exports:

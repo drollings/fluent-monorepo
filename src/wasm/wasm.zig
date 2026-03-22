@@ -331,7 +331,7 @@ pub fn hostGetNodeLod1(
 
     const node_id: i64 = @bitCast(inputs[0].v);
 
-    // Fetch node from CozoDB
+    // Fetch node from SQLite via Library
     const node = ctx.library.fetchNode(node_id) catch {
         outputs[0] = .{ .t = .ptr, .v = 0 };
         return;
@@ -728,7 +728,7 @@ pub const ToolGenerator = struct {
     }
 };
 
-/// WASM tool cache - stores compiled tools in memory and CozoDB.
+/// WASM tool cache — stores compiled tools in memory and SQLite.
 pub const WasmToolCache = struct {
     const Self = @This();
 

@@ -266,7 +266,7 @@ test "schema DDL contains expected column names" {
 test "schema uses SQLite syntax" {
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "CREATE TABLE") != null);
     try testing.expect(std.mem.indexOf(u8, DDL_TARGETS, "CREATE TABLE") != null);
-    // No CozoDB Datalog syntax
+    // No Datalog or CozoScript syntax
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, ":create") == null);
     // No PostgreSQL-specific types
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "VECTOR(1536)") == null);

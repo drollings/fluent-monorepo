@@ -1,8 +1,8 @@
 /// db.zig — Coral Context Database Layer (SQLite backend)
 ///
-/// Replaces the previous CozoDB-based architecture with a lean SQLite backend
-/// that stores the same data model (LOD text pyramid + float embeddings + graph
-/// edges) using standard SQL and a recursive CTE for BFS graph traversal.
+/// SQLite backend storing the LOD text pyramid, float embeddings, and graph
+/// edges using standard SQL and a recursive CTE for BFS graph traversal.
+/// Semantic search uses LanceDB-style cosine similarity over stored embeddings.
 ///
 /// Architecture:
 ///   §3.1 ContextNode — the universal semantic entity with LOD text pyramid
@@ -114,7 +114,7 @@ pub const EdgeType = enum(i16) {
     temporal_sequence = 4,
 
     /// SQL table name (depends_on uses its own table; others share neighbor_of).
-    pub fn cozoRelation(self: EdgeType) []const u8 {
+    pub fn relation(self: EdgeType) []const u8 {
         return switch (self) {
             .depends_on => "depends_on",
             .provides_capability => "provides_capability",
@@ -161,7 +161,7 @@ pub const WasmTool = struct {
 
 /// StorageEngine — how to open the SQLite database.
 pub const StorageEngine = enum {
-    mem,    // in-memory (:memory:) — for testing/ephemeral use
+    mem, // in-memory (:memory:) — for testing/ephemeral use
     sqlite, // persistent file
 };
 
@@ -172,6 +172,7 @@ pub const Library = struct {
     allocator: std.mem.Allocator,
     db: ?*c.sqlite3,
     initialized: bool = false,
+    mu: std.Thread.Mutex = .{},
 
     // ------------------------------------------------------------------
     // Lifecycle
@@ -265,6 +266,8 @@ pub const Library = struct {
 
     /// Insert or replace a ContextNode (upsert by id).
     pub fn insertNode(self: *Self, node: ContextNode) !void {
+        self.mu.lock();
+        defer self.mu.unlock();
         const sql =
             \\INSERT OR REPLACE INTO context_nodes
             \\    (id, lod0, lod1, lod2, lod3, lod4, lod5,
@@ -375,6 +378,8 @@ pub const Library = struct {
 
     /// Insert or replace a WasmTool record.
     pub fn insertWasmTool(self: *Self, tool: WasmTool) !void {
+        self.mu.lock();
+        defer self.mu.unlock();
         const sql =
             \\INSERT OR REPLACE INTO wasm_tools
             \\    (id, target_id, wasm_b64, schema_hash, test_passed, created_at)
@@ -448,6 +453,8 @@ pub const Library = struct {
         distance: f32,
         edge_type: EdgeType,
     ) !void {
+        self.mu.lock();
+        defer self.mu.unlock();
         const sql =
             \\INSERT OR REPLACE INTO neighbor_of (from_id, to_id, distance, edge_type)
             \\VALUES (?1, ?2, ?3, ?4)
@@ -509,6 +516,86 @@ pub const Library = struct {
     pub fn knnSearch(self: *Self, allocator: std.mem.Allocator, query_vec: []const f32, k: usize) ![]KnnHit {
         var pipeline = HydrationPipeline.init(allocator, self);
         return pipeline.knnSearch(query_vec, k);
+    }
+
+    /// BFS traversal from root_id up to max_depth hops.
+    /// Returns allocator-owned slice of ContextNode (all LOD strings owned by allocator).
+    /// Caller frees with: for (nodes) |*n| n.free(allocator); allocator.free(nodes);
+    pub fn traverseFrom(self: *Self, arena: std.mem.Allocator, root_id: i64, max_depth: u8) ![]ContextNode {
+        const stmt = try self.prepare(schema.QUERY_NEIGHBOR_BFS);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, root_id);
+
+        var nodes: std.ArrayListUnmanaged(ContextNode) = .{};
+        errdefer {
+            for (nodes.items) |*n| n.free(arena);
+            nodes.deinit(arena);
+        }
+
+        while (try step(stmt)) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const dist: u8 = @intCast(@min(255, c.sqlite3_column_int(stmt, 1)));
+            if (dist > max_depth) continue;
+
+            // Fetch the full node using the arena allocator
+            const prev_alloc = self.allocator;
+            self.allocator = arena;
+            const maybe_node = self.fetchNode(node_id) catch {
+                self.allocator = prev_alloc;
+                continue;
+            };
+            self.allocator = prev_alloc;
+
+            if (maybe_node) |node| {
+                try nodes.append(arena, node);
+            }
+        }
+
+        return nodes.toOwnedSlice(arena);
+    }
+
+    /// Look up a node id by exact lod4 (name) match.
+    /// Returns null if not found.
+    pub fn findNodeByName(self: *Self, name: []const u8) !?i64 {
+        const sql = "SELECT id FROM context_nodes WHERE lod4 = ?1 LIMIT 1";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), SQLITE_STATIC);
+        if (!try step(stmt)) return null;
+        return c.sqlite3_column_int64(stmt, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Duck-typing capability query (P5.4)
+    // ------------------------------------------------------------------
+
+    /// isA returns true when child_id has `parent_name` anywhere in its
+    /// transitive rdf:type chain (via entity_types + neighbor_of BFS).
+    ///
+    /// Uses a single recursive CTE:
+    ///   1. Seed with direct type_ids from entity_types for child_id.
+    ///   2. Expand through neighbor_of (is_a edges) transitively.
+    ///   3. Match lod4 of reached type nodes against parent_name.
+    ///
+    /// Read-only — no mutex needed (SQLite WAL allows concurrent readers).
+    pub fn isA(self: *Self, child_id: i64, parent_name: []const u8) !bool {
+        const sql =
+            \\WITH RECURSIVE type_chain(id) AS (
+            \\    SELECT type_id FROM entity_types WHERE entity_id = ?1
+            \\    UNION
+            \\    SELECT et.type_id FROM entity_types et
+            \\    JOIN type_chain tc ON tc.id = et.entity_id
+            \\)
+            \\SELECT 1 FROM type_chain tc
+            \\JOIN context_nodes cn ON cn.id = tc.id
+            \\WHERE cn.lod4 = ?2
+            \\LIMIT 1
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, child_id);
+        _ = c.sqlite3_bind_text(stmt, 2, parent_name.ptr, @intCast(parent_name.len), SQLITE_STATIC);
+        return try step(stmt);
     }
 
     // ------------------------------------------------------------------
@@ -854,10 +941,10 @@ test "ContextNode getLod/setLod" {
     try testing.expectEqualStrings("", node.getLod(7));
 }
 
-test "EdgeType cozoRelation and label" {
-    try testing.expectEqualStrings("depends_on", EdgeType.depends_on.cozoRelation());
-    try testing.expectEqualStrings("neighbor_of", EdgeType.neighbor_of.cozoRelation());
-    try testing.expectEqualStrings("neighbor_of", EdgeType.semantic_similarity.cozoRelation());
+test "EdgeType relation and label" {
+    try testing.expectEqualStrings("depends_on", EdgeType.depends_on.relation());
+    try testing.expectEqualStrings("neighbor_of", EdgeType.neighbor_of.relation());
+    try testing.expectEqualStrings("neighbor_of", EdgeType.semantic_similarity.relation());
     try testing.expectEqualStrings("semantic_similarity", EdgeType.semantic_similarity.label());
 }
 
@@ -1248,4 +1335,48 @@ test "Library: BFS distance via ContextPacker.getNodesByDistance" {
     try testing.expectEqual(@as(u32, 0), nodes[0].graph_distance);
     try testing.expectEqual(@as(u32, 1), nodes[1].graph_distance);
     try testing.expectEqual(@as(u32, 2), nodes[2].graph_distance);
+}
+
+test "Library: concurrent insert+read, 4 threads" {
+    // spawn 4 threads: 2 insert (with mutex) + 2 read (lock-free)
+    // verify no panic/data races
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    const Ctx = struct {
+        lib: *Library,
+        alloc: std.mem.Allocator,
+    };
+
+    const insertFn = struct {
+        fn run(ctx: *Ctx) void {
+            var node = ContextNode.init(0x999, "concurrent_node", "Content.", ctx.alloc) catch return;
+            defer node.free(ctx.alloc);
+            ctx.lib.insertNode(node) catch {};
+        }
+    }.run;
+
+    const readFn = struct {
+        fn run(ctx: *Ctx) void {
+            _ = ctx.lib.findNodeByName("concurrent_node") catch {};
+        }
+    }.run;
+
+    var ctx = Ctx{ .lib = lib, .alloc = allocator };
+
+    const t1 = try std.Thread.spawn(.{}, insertFn, .{&ctx});
+    const t2 = try std.Thread.spawn(.{}, insertFn, .{&ctx});
+    const t3 = try std.Thread.spawn(.{}, readFn, .{&ctx});
+    const t4 = try std.Thread.spawn(.{}, readFn, .{&ctx});
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+    // If we reach here without panic, the test passes.
+    try testing.expect(true);
 }

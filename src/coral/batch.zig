@@ -12,10 +12,12 @@
 ///     allocations.  arena.reset(.retain_capacity) between batches replaces
 ///     individual free/alloc cycles, avoiding per-node allocator overhead.
 const std = @import("std");
-const parser_mod = @import("../rdf/parser.zig");
-const mapper_mod = @import("../ontology/mapper.zig");
-const migration_mod = @import("../ontology/migration.zig");
-const db_mod = @import("db.zig");
+const rdf = @import("rdf");
+const ontology = @import("ontology");
+const db_mod = @import("coral_db");
+const parser_mod = rdf.parser;
+const mapper_mod = ontology.mapper;
+const migration_mod = ontology.migration;
 
 const Parser = parser_mod.Parser;
 const TripleMapper = mapper_mod.TripleMapper;
@@ -208,7 +210,7 @@ pub const IngestBuilder = struct {
 };
 
 // =============================================================================
-// Tests — Milestone 3.2 (pure memory — no CozoDB required for basic tests)
+// Tests — Milestone 3.2 (pure memory — no SQLite required for basic tests)
 // =============================================================================
 
 const testing = std.testing;
@@ -238,7 +240,7 @@ test "batch ingestor accumulates triples without flush" {
 }
 
 test "batch boundary: small batch_size flushes multiple times" {
-    // We can't actually flush to CozoDB in unit tests, but we can verify
+    // We can't actually flush to SQLite in unit tests, but we can verify
     // the batch counting logic by using a dry-run mapper.
     const src =
         \\<http://a> <http://www.w3.org/2000/01/rdf-schema#label> "A" .

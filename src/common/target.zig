@@ -1,7 +1,7 @@
 const std = @import("std");
 const interner_mod = @import("interner.zig");
 const StringInterner = interner_mod.StringInterner;
-const reflection = @import("reflection.zig");
+const reflection = @import("reflection");
 
 pub const TargetType = enum {
     abstract,
@@ -183,7 +183,7 @@ pub fn format(
 //
 // TargetSchema is constructed once per interner and vends DynamicEditable views
 // over any Target instance.  This keeps the hot DAG path free of reflection
-// overhead while giving TUI editors, CozoDB hydration, and WASM IPC a single
+// overhead while giving TUI editors, SQLite hydration, and WASM IPC a single
 // composable path to read/write Target fields — including the DynamicBitSet
 // `depends` and `provides` fields — via the BitSetConstraint vtable.
 //

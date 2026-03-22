@@ -24,15 +24,34 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // `common` — full umbrella: reflection, interner, registry, target, hash,
-    // context, repl, json_parser, embeddings, etc.
-    // All sub-modules are within src/common/ so relative imports are valid.
-    const common_module = b.createModule(.{
-        .root_source_file = b.path("src/common/llm.zig"),
+    // `local_model` — LocalDecomposer for L4.5 task decomposition (P6.1).
+    // Standalone module so cache.zig can import it without pulling it into common module.
+    const local_model_module = b.createModule(.{
+        .root_source_file = b.path("src/common/local_model.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "llm", .module = llm_module },
+        },
+    });
+
+    // `reflection` — standalone peer module (promoted from src/common/reflection.zig in P2.4).
+    const reflection_module = b.createModule(.{
+        .root_source_file = b.path("src/reflection/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // `common` — full umbrella: reflection, interner, registry, target, hash,
+    // context, repl, json_parser, embeddings, etc.
+    // All sub-modules are within src/common/ so relative imports are valid.
+    const common_module = b.createModule(.{
+        .root_source_file = b.path("src/common/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "llm", .module = llm_module },
+            .{ .name = "reflection", .module = reflection_module },
         },
     });
 
@@ -44,6 +63,38 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "common", .module = common_module },
+        },
+    });
+
+    // `rdf` — Turtle/N-Quads lexer, parser, and normalization helpers.
+    const rdf_module = b.createModule(.{
+        .root_source_file = b.path("src/rdf/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // `ontology` — Triple mapper, YAGO helpers, migration, inference.
+    // Depends on rdf for parsing and coral_db for Library/ContextNode types.
+    const ontology_module = b.createModule(.{
+        .root_source_file = b.path("src/ontology/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "rdf", .module = rdf_module },
+            .{ .name = "coral_db", .module = coral_db_module },
+        },
+    });
+
+    // `coral_batch` — Streaming Turtle ingestion pipeline (batch.zig).
+    // Uses named module deps only to avoid cross-directory relative import errors.
+    const coral_batch_module = b.createModule(.{
+        .root_source_file = b.path("src/coral/batch.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "rdf", .module = rdf_module },
+            .{ .name = "ontology", .module = ontology_module },
+            .{ .name = "coral_db", .module = coral_db_module },
         },
     });
 
@@ -120,6 +171,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "coral_batch", .module = coral_batch_module },
+                .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "coral_schema", .module = coral_schema_module },
+                .{ .name = "local_model", .module = local_model_module },
             },
         }),
     });
@@ -176,6 +232,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // -- Local model decomposer tests (P6.1) --
+    const local_model_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/local_model.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "llm", .module = llm_module },
+            },
+        }),
+    });
+
     const vector_math_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/vector/math.zig"),
@@ -198,9 +266,12 @@ pub fn build(b: *std.Build) void {
     lance_db_tests.linkSystemLibrary("sqlite3");
 
     // -- Common / reflection tests --
+    // Now points to the standalone src/reflection/root.zig module (P2.4).
+    // All tests from the original reflection.zig and novelreflection/typed_reflection.zig
+    // are included in root.zig.
     const reflection_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/reflection.zig"),
+            .root_source_file = b.path("src/reflection/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -211,12 +282,31 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/common/interner.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "reflection", .module = reflection_module },
+            },
         }),
     });
 
     const registry_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/common/registry.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "reflection", .module = reflection_module },
+            },
+        }),
+    });
+
+    // -- Novel reflection tests (typed reflection extensions) --
+    // Now uses the standalone reflection_module (P2.4).
+    // typed_reflection.zig content has been merged into src/reflection/typed.zig,
+    // binary.zig, and enum_registry.zig; tests are in src/reflection/root.zig.
+    // This step remains for build compatibility but points to the new module root.
+    const novelreflection_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/reflection/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -279,11 +369,31 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "local_model", .module = local_model_module },
             },
         }),
     });
     coral_cache_tests.linkLibC();
     coral_cache_tests.linkSystemLibrary("sqlite3");
+
+    // -- Coral MCP server tests --
+    // mcp.zig imports cache.zig (relative) which requires common, coral_db, wasm, local_model.
+    const coral_mcp_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/mcp.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "coral_schema", .module = coral_schema_module },
+                .{ .name = "local_model", .module = local_model_module },
+            },
+        }),
+    });
+    coral_mcp_tests.linkLibC();
+    coral_mcp_tests.linkSystemLibrary("sqlite3");
 
     // -- WASM IPC tests (no Extism runtime — tests cover pure Zig parts) --
     const wasm_tests = b.addTest(.{
@@ -302,8 +412,23 @@ pub fn build(b: *std.Build) void {
     wasm_tests.linkSystemLibrary("sqlite3");
 
     // -- Coral main integration test (pulls in schema, db, context_node_schema, scrub) --
-    // Note: coral/main.zig runtime does not use wasm directly; wasm excluded to avoid
-    // module conflict with the relative db.zig/schema.zig imports in the test block.
+    // -- Coral batch ingestion tests (batch.zig + rdf + ontology) --
+    const coral_batch_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/batch.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "rdf", .module = rdf_module },
+                .{ .name = "ontology", .module = ontology_module },
+                .{ .name = "coral_db", .module = coral_db_module },
+            },
+        }),
+    });
+    coral_batch_tests.linkLibC();
+    coral_batch_tests.linkSystemLibrary("sqlite3");
+
+    // Note: main.zig imports coral_db, coral_batch, wasm, coral_schema, local_model as named modules.
     const coral_main_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/coral/main.zig"),
@@ -311,6 +436,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "coral_batch", .module = coral_batch_module },
+                .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "coral_schema", .module = coral_schema_module },
+                .{ .name = "local_model", .module = local_model_module },
             },
         }),
     });
@@ -322,17 +452,21 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
+    test_step.dependOn(&b.addRunArtifact(local_model_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_math_tests).step);
     test_step.dependOn(&b.addRunArtifact(lance_db_tests).step);
     test_step.dependOn(&b.addRunArtifact(reflection_tests).step);
     test_step.dependOn(&b.addRunArtifact(interner_tests).step);
     test_step.dependOn(&b.addRunArtifact(registry_tests).step);
+    test_step.dependOn(&b.addRunArtifact(novelreflection_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_targets_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_schema_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_db_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_batch_tests).step);
     test_step.dependOn(&b.addRunArtifact(context_node_schema_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_cache_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_mcp_tests).step);
     test_step.dependOn(&b.addRunArtifact(wasm_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_main_tests).step);
 }

@@ -9,8 +9,8 @@
 ///   - rdfs:domain / rdfs:range type inference
 ///   - owl:inverseOf bidirectional edges
 const std = @import("std");
-const parser_mod = @import("../rdf/parser.zig");
-const Triple = parser_mod.Triple;
+const rdf = @import("rdf");
+const Triple = rdf.Triple;
 
 pub const RuleType = enum {
     subclass_transitivity,
@@ -54,7 +54,7 @@ pub const InferenceEngine = struct {
         return &[_]Triple{};
     }
 
-    /// Persist inferred edges to CozoDB.
+    /// Persist inferred edges to SQLite via Library.
     /// STUB: no-op.
     pub fn materialize(self: *InferenceEngine) !void {
         _ = self;

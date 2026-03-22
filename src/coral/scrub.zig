@@ -128,7 +128,7 @@ test "isSyntheticComment: empty and short are synthetic" {
 }
 
 test "isSyntheticComment: boilerplate manages pattern" {
-    try testing.expect(isSyntheticComment("Manages CozoResult instances with ownership, provides slicing and validation; self-manages memory."));
+    try testing.expect(isSyntheticComment("Manages SqliteResult instances with ownership, provides slicing and validation; self-manages memory."));
     try testing.expect(isSyntheticComment("Manages fixed-size buffer allocations with ownership and lifecycle control; ensures safe initialization/deinit."));
     try testing.expect(!isSyntheticComment("Manages the active REPL session: reads user input, evaluates it, and writes output to stdout."));
 }

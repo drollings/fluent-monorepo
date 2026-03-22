@@ -29,7 +29,7 @@ const embed_mod = @import("embeddings.zig");
 // Sub-module namespace exports — structured access for Coral and future tools
 // ---------------------------------------------------------------------------
 /// Field-level reflection: ConstraintVTable, Accessor, Editable(T), DynamicEditable.
-pub const reflection = @import("reflection.zig");
+pub const reflection = @import("reflection");
 /// String interning with arena storage + bitset ConstraintVTable bridge.
 pub const interner = @import("interner.zig");
 /// Target DAG registry: TargetRegistry, TargetBuilder (fluent DSL).

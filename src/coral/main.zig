@@ -1,11 +1,17 @@
 const std = @import("std");
 const common = @import("common");
+const coral_db = @import("coral_db");
+const mcp = @import("mcp.zig");
+const batch_mod = @import("coral_batch");
 const StringInterner = common.interner.StringInterner;
 const TargetRegistry = common.registry.TargetRegistry;
 const BuildContext = common.context.BuildContext;
 const Repl = common.repl.Repl;
 const json_parser = common.json_parser;
 const llm = common;
+const Library = coral_db.Library;
+const QueueReactor = @import("cache.zig").QueueReactor;
+const BatchIngestor = batch_mod.BatchIngestor;
 
 pub const version = "0.1.0";
 
@@ -42,6 +48,84 @@ pub fn main() !void {
 
     if (args.show_version) {
         try stdout.print("coral {s}\n", .{version});
+        try stdout.flush();
+        return;
+    }
+
+    // MCP subcommand: `coral mcp` or `coral --mcp`
+    const want_mcp = blk: {
+        if (positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "mcp")) break :blk true;
+        break :blk false;
+    };
+    if (want_mcp) {
+        const use_memory = args.dry_run; // --dry-run doubles as --memory for MCP
+        const lib = if (use_memory)
+            try Library.init(allocator, .mem, "")
+        else blk: {
+            // Default db path: ~/.coral/context.db
+            const home = std.posix.getenv("HOME") orelse ".";
+            const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+            defer allocator.free(db_dir);
+            std.fs.makeDirAbsolute(db_dir) catch |e| {
+                if (e != error.PathAlreadyExists) return e;
+            };
+            const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
+            defer allocator.free(db_path);
+            break :blk try Library.init(allocator, .sqlite, db_path);
+        };
+        defer lib.deinit();
+        try lib.initSchema();
+
+        var reactor = QueueReactor.init(allocator, lib, 20);
+        defer reactor.deinit();
+
+        var server = mcp.McpServer{
+            .allocator = allocator,
+            .reactor = &reactor,
+        };
+
+        var mcp_rs: llm.ReaderState = .{};
+        mcp_rs.initStdin();
+        var mcp_ws: llm.WriterState = .{};
+        mcp_ws.initStdout();
+        try server.serve(mcp_rs.reader(), mcp_ws.writer());
+        return;
+    }
+
+    // Ingest subcommand: `coral ingest --source <ttl-file>`
+    const want_ingest = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "ingest");
+    if (want_ingest) {
+        // Resolve source file from --file flag or second positional arg.
+        const source_path: []const u8 = blk: {
+            if (args.config_file) |f| break :blk f;
+            if (positional.items.len > 1) break :blk positional.items[1];
+            std.log.err("coral ingest: specify source with --file <path> or as second argument", .{});
+            std.process.exit(1);
+        };
+
+        // Default db: ~/.coral/context.db
+        const home = std.posix.getenv("HOME") orelse ".";
+        const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+        defer allocator.free(db_dir);
+        std.fs.makeDirAbsolute(db_dir) catch |e| {
+            if (e != error.PathAlreadyExists) return e;
+        };
+        const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
+        defer allocator.free(db_path);
+
+        const lib = try Library.init(allocator, .sqlite, db_path);
+        defer lib.deinit();
+        try lib.initSchema();
+
+        var builder = BatchIngestor.from(allocator, lib);
+        const stats = try builder.batchSize(10_000).skipErrors(true).ingestFile(source_path);
+
+        try stdout.print("Ingestion complete:\n", .{});
+        try stdout.print("  triples processed : {d}\n", .{stats.triples_processed});
+        try stdout.print("  nodes created     : {d}\n", .{stats.nodes_created});
+        try stdout.print("  edges created     : {d}\n", .{stats.edges_created});
+        try stdout.print("  errors skipped    : {d}\n", .{stats.errors_skipped});
+        try stdout.print("  batches flushed   : {d}\n", .{stats.batches_flushed});
         try stdout.flush();
         return;
     }
@@ -158,6 +242,10 @@ fn printHelp(writer: anytype) !void {
         \\
         \\Usage: coral [options] [targets...]
         \\
+        \\Subcommands:
+        \\  coral mcp              Start MCP server (STDIO transport)
+        \\  coral ingest           Ingest a Turtle/N-Triples file into ~/.coral/context.db
+        \\
         \\Options:
         \\  -h, --help          Show this help message
         \\  -v, --version       Show version
@@ -181,14 +269,15 @@ fn printHelp(writer: anytype) !void {
         \\  coral --dry-run all             Show build plan without executing
         \\  coral --repl                    Enter interactive mode
         \\  coral --llm-query "how do I add a new target?"
+        \\  coral mcp                       Start MCP server on STDIO
+        \\  coral ingest --file yago.ttl    Ingest YAGO 4.5 Turtle file (sparse, type-whitelisted)
         \\
     );
 }
 
 test "coral: core module imports compile" {
-    // Local coral files only — context_node_schema has its own test target
-    // (it uses named modules so cannot be imported relatively alongside db.zig)
-    _ = @import("schema.zig");
-    _ = @import("db.zig");
-    _ = @import("scrub.zig");
+    // db.zig and schema.zig are exposed via the `coral_db` named module.
+    // They cannot be imported relatively when coral_db is a build dep (module conflict).
+    _ = coral_db; // exercises db.zig + schema.zig via named module
+    _ = @import("scrub.zig"); // scrub.zig is not part of coral_db, safe to import relatively
 }

@@ -31,7 +31,7 @@ pub const TARGET_VERIFY = "yago_verify";
 pub const TARGET_INGEST = "yago_ingest";
 
 // ---------------------------------------------------------------------------
-// Target definition (lightweight, no CozoDB or Registry dependency)
+// Target definition (lightweight, no external DB or Registry dependency)
 // ---------------------------------------------------------------------------
 
 pub const TargetKind = enum {

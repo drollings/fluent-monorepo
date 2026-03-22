@@ -1,11 +1,11 @@
 /// mapper.zig — Triple → ContextNode Mapper
 ///
-/// Transforms RDF triples into ContextNodes and edges for CozoDB insertion.
+/// Transforms RDF triples into ContextNodes and edges for SQLite insertion.
 /// Uses the YAGO ontology schema to route properties to appropriate LOD levels.
 ///
 /// Design:
 ///   - TripleMapper accumulates nodes and edges in memory.
-///   - flush() batch-inserts to CozoDB via Library.
+///   - flush() batch-inserts to SQLite via Library.
 ///   - processTriple() is called once per triple from the parser.
 ///
 /// Property routing:
@@ -15,11 +15,12 @@
 ///   rdf:type                   → entity_types relation + ContextNode creation
 ///   Other properties           → edge in neighbor_of with predicate IRI as label
 const std = @import("std");
-const parser_mod = @import("../rdf/parser.zig");
-const normalize_mod = @import("../rdf/normalize.zig");
+const rdf = @import("rdf");
+const parser_mod = rdf.parser;
+const normalize_mod = rdf.normalize;
 const yago = @import("yago.zig");
-const db_mod = @import("../coral/db.zig");
-const schema_mod = @import("../coral/schema.zig");
+const db_mod = @import("coral_db");
+const schema_mod = db_mod.schema;
 
 const Triple = parser_mod.Triple;
 const Term = parser_mod.Term;
@@ -214,7 +215,7 @@ pub const TripleMapper = struct {
         // Future: store in a separate attributes relation.
     }
 
-    /// Flush all accumulated nodes and edges to CozoDB via Library.
+    /// Flush all accumulated nodes and edges to SQLite via Library.
     pub fn flush(self: *TripleMapper, library: *Library) !FlushResult {
         var nodes_created: usize = 0;
         var edges_created: usize = 0;
@@ -358,7 +359,7 @@ fn shouldUseLang(actual: ?[]const u8, preferred: []const u8) bool {
 }
 
 // =============================================================================
-// Tests — Milestone 2.2 (pure memory — no CozoDB required)
+// Tests — Milestone 2.2 (pure memory — no SQLite required)
 // =============================================================================
 
 const testing = std.testing;

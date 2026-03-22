@@ -1,7 +1,8 @@
 //! guidance vector module — cosine search, embeddings, hybrid merge.
 
+const common = @import("common");
+
 pub const math = @import("math.zig");
-pub const embeddings = @import("embeddings.zig");
 pub const lance_db = @import("lance_db.zig");
 
 pub const GuidanceDb = lance_db.GuidanceDb;
@@ -10,12 +11,12 @@ pub const SemanticAliases = lance_db.SemanticAliases;
 pub const syncDatabase = lance_db.syncDatabase;
 pub const loadSemanticAliases = lance_db.loadSemanticAliases;
 
-pub const EmbeddingProvider = embeddings.EmbeddingProvider;
-pub const NoopEmbedding = embeddings.NoopEmbedding;
-pub const OllamaEmbedding = embeddings.OllamaEmbedding;
-pub const OpenAiEmbedding = embeddings.OpenAiEmbedding;
-pub const createEmbeddingProvider = embeddings.createEmbeddingProvider;
-pub const contentHashWithModel = embeddings.contentHashWithModel;
+pub const EmbeddingProvider = common.EmbeddingProvider;
+pub const NoopEmbedding = common.NoopEmbedding;
+pub const OllamaEmbedding = common.OllamaEmbedding;
+pub const OpenAiEmbedding = common.OpenAiEmbedding;
+pub const createEmbeddingProvider = common.createEmbeddingProvider;
+pub const contentHashWithModel = common.contentHashWithModel;
 
 pub const cosineSimilarity = math.cosineSimilarity;
 pub const vecToBytes = math.vecToBytes;
