@@ -4,10 +4,8 @@
     "source": "src/guidance/marker.zig",
     "language": "zig"
   },
-  "comment": " Mtime-based change detection for guidance's incremental RALPH loop.\n\n ## Design\n\n The guidance JSON file's mtime IS the per-file marker.  When a provider\n (Zig built-in, guidance-py, or any future language tool) finishes its\n full test→lint→fmt→guidance cycle for a source file, it writes the JSON,\n advancing its mtime.  guidance then uses a simple mtime comparison to\n decide whether re-processing is needed:\n\n   source mtime > JSON mtime  →  stale, needs processing\n   source mtime ≤ JSON mtime  →  fresh, skip\n\n ## Test marker\n\n A separate marker file `.guidance/.marks/test_passed` records the last\n successful test run.  If no source file is newer than this marker, tests\n can be skipped.  This enables fast incremental runs of lint→fmt→guidance\n without re-running the full test suite.\n\n ## Provider contract\n\n Each provider (built-in or external) must:\n   1. Run the language test suite (once, whole suite).\n   2. Run lint on the file.\n   3. Run the formatter on the file (must precede AST parse so line numbers\n      in the JSON reflect the final formatted source).\n   4. Generate or update the guidance JSON.\n\n The Zig provider implements steps 1-4 inside guidance itself.\n External providers (e.g. guidance-py) honour the same contract in their\n own implementation.",
-  "detail": "# Module Documentation: src/guidance/marker.zig\n\n## Purpose and Architecture\n\nThis module implements mtime-based change detection for guidance's incremental RALPH loop, an AI-assisted coding workflow that processes source files through test→lint→fmt→guidance cycles. The architecture relies on timestamp comparison rather than content hashing to determine staleness, prioritizing simplicity and performance over absolute accuracy.\n\n### Core Design Philosophy\nThe module uses modification time (mtime) as the primary change indicator. When a provider completes its full processing cycle for a file, it updates the guidance JSON, which advances the JSON's mtime. Subsequent checks compare source vs. JSON mtimes to decide whether re-processing is needed.\n\n## Key Abstractions and Relationships\n\n### File Processing Decision\n- **`fileNeedsProcessing(src_abs, json_abs)`**: The central decision function that returns true when a source file requires (re-)processing\n- **Relationship**: Compares `src_mtime > json_mtime` → stale; otherwise fresh\n- **Early Exit Strategy**: Returns immediately if JSON is absent or source is unreadable\n\n### Test Optimization Mechanism\n- **`.guidance/.marks/test_passed`**: A marker file recording the last successful test run timestamp\n- **`testsCanBeSkipped(marker_path, src_files)`**: Determines if full test suite can be skipped based on whether any source file is newer than the marker\n- **Benefit**: Enables incremental test runs without re-executing the entire test suite\n\n### Provider Contract Abstraction\nThe module defines an implicit contract that all providers (built-in Zig provider or external tools like guidance-py) must follow:\n1. Run full language test suite\n2. Execute linting\n3. Apply formatter before AST parsing\n4. Generate/update guidance JSON\n\n## Public API and Usage Patterns\n\n### Primary Functions\n| Function | Purpose | Typical Use Case |\n|----------|---------|------------------|\n| `fileNeedsProcessing` | Determine if file needs re-processing | Called in main loop before each provider invocation |\n| `fileMtime` | Utility to stat file modification time | Internal helper, may be used externally for debugging |\n| `touchTestMarker` | Record successful test completion | Called after all tests pass successfully |\n\n### Usage Pattern\n```zig\n// Main loop iteration\nif (fileNeedsProcessing(src_path, json_path)) {\n    // Run provider: test→lint→fmt→guidance\n} else {\n    // Skip processing - source is fresh\n}\n\n// After successful test run\ntouchTestMarker(test_marker_path)\n```\n\n## Important Implementation Details\n\n### Error Handling Strategy\n- **Absent JSON**: Treated as stale (return true) — forces re-processing\n- **Unreadable Source**: Returns false — skips to avoid errors\n- **Stat failures**: Return null from `fileMtime`, handled by early returns\n\n### Memory Safety\n- `testMarkerPath` allocates owned memory; caller must free\n- Uses `std.fs.path.join` for safe path construction\n- Proper defer cleanup on file handles in `fileMtime`\n\n### Performance Considerations\n- Minimal I/O: Only stat() calls, no file reading\n- Early returns prevent unnecessary comparisons\n- O(n) complexity where n = number of source files for test skipping\n\n## Design Patterns Applied\n\n1. **Timestamp-Based Caching**: Uses mtimes as cache invalidation signals rather than content hashing\n2. **Marker File Pattern**: `.marks/test_passed` serves as a persistent state cache\n3. **Provider Contract**: Abstracts away implementation details through standardized workflow contract\n4. **Guard Clause Pattern**: Multiple early returns for performance and code clarity\n\nThe design prioritizes the incremental RALPH loop's need for speed over perfect staleness detection, accepting that occasional redundant processing is preferable to missed changes in an AI-assisted coding context.",
-  "keywords": ["fileNeedsProcessing", "fileMtime", "testsCanBeSkipped", "touchTestMarker", "mtime-based detection", "change tracking", "RALPH loop", "incremental processing", "provider contract", "marker file"],
-  "used_by": ["src/guidance/main.zig"],
+  "keywords": ["Zig", "guidance", "mtime", "incremental processing", "test cycle", "JSON file", "file monitoring", "language tools"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -19,7 +17,6 @@
         { "name": "json_abs", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true when `src_abs` needs to be (re-)processed.",
       "is_pub": true,
       "line": 45
     },
@@ -32,7 +29,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "?i128",
-      "comment": "Return the mtime (nanoseconds since epoch) of `path`, or null when the",
       "is_pub": true,
       "line": 53
     },
@@ -45,7 +41,6 @@
         { "name": "marker_path", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Create or touch the test_passed marker file to record a successful test run.",
       "is_pub": true,
       "line": 95
     },

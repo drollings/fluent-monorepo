@@ -4,10 +4,8 @@
     "source": "src/guidance/hash.zig",
     "language": "zig"
   },
-  "comment": "Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring deterministic output.",
-  "detail": "# Guidance Hash Module Documentation\n\n## Module Purpose and Architecture\n\nThis module provides deterministic hashing utilities specifically designed for AI coding assistant guidance systems. It generates SHA-256 hex digests from canonical string representations of API signatures and struct definitions, enabling reliable comparison, caching, and deduplication of code patterns.\n\nThe architecture follows a delegation pattern: the actual SHA-256 implementation resides in `src/common/hash.zig`, while this module provides domain-specific abstractions that transform code elements into hashable strings before delegating to the underlying cryptographic function.\n\n## Key Abstractions and Relationships\n\n### Core Functions\n- **apiHash**: Maps API/function signatures to unique hashes, incorporating parameter names and types\n- **structHash**: Maps struct definitions to unique hashes based on field names\n- **normalizeType**: Cleans type strings by trimming whitespace with \"void\" as default\n\n### Dependencies\n- `src/common`: Provides foundational hash utilities including SHA-256 implementation\n- `types.zig`: Contains the `Param` struct definition used in apiHash\n\n## Public API and Usage Patterns\n\n### apiHash\nGenerates a hash for an API signature. The canonical string format is:\n```\nname(param1:type1,param2:type2)->returntype\n```\n\n**Example:**\n```zig\nconst params = [_]types.Param{.{ .name = \"x\", .type = \"f64\" }};\nconst hash = try apiHash(allocator, \"add\", &params, \"f64\");\n// Produces deterministic hex digest for caching or comparison\n```\n\n### structHash\nGenerates a hash for struct definitions. The canonical format is:\n```\nname(field1,field2,...)\n```\n\n**Example:**\n```zig\nconst fields = [_][]const u8{\"x\", \"y\"};\nconst hash = try structHash(allocator, \"Vec2\", &fields);\n// Different field orders produce different hashes\n```\n\n### normalizeType\nUtility function that trims whitespace from type strings and defaults empty/whitespace-only types to \"void\". Ensures consistent type representation regardless of formatting.\n\n## Implementation Details\n\n1. **String Building**: Both apiHash and structHash use `std.ArrayList(u8)` as a mutable buffer, writing bytes sequentially before converting to immutable slices for hashing. This approach is memory-efficient and avoids intermediate string allocations.\n\n2. **Determinism**: The hash output depends solely on:\n   - Function/struct name\n   - Parameter/field names (in order)\n   - Type information (for apiHash only)\n   \n   This ensures identical inputs always produce identical hashes, critical for caching strategies.\n\n3. **Type Normalization**: The `normalizeType` function ensures that `\"  f64  \"` and `\"f64\"` produce equivalent canonical representations, preventing hash collisions due to formatting differences.\n\n## Design Patterns\n\n- **Builder Pattern**: Sequential string construction using a writer interface\n- **Delegation Pattern**: Offloading core cryptographic operations to common module\n- **Canonicalization**: Transforming variable inputs into normalized forms before hashing",
-  "keywords": ["apiHash", "structHash", "SHA-256", "guidance", "signature hashing", "deterministic hash", "Zig AI assistant", "code caching", "type normalization", "function signature comparison"],
-  "used_by": ["src/common/llm.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
+  "keywords": ["Zig", "SHA-256", "structHash", "APIHash", "normalizeType"],
+  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -21,7 +19,6 @@
         { "name": "returns", "type": "?[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Computes a hash from allocator, name, and parameters, returning the resulting hash value.",
       "is_pub": true,
       "line": 8
     },
@@ -36,7 +33,6 @@
         { "name": "bases", "type": "[]const []const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Generates a hash for a given Zig struct using its allocator and base data.",
       "is_pub": true,
       "line": 27
     },
@@ -49,7 +45,6 @@
         { "name": "type_str", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Converts a null-terminated C string into a normalized Zig type slice.",
       "is_pub": true,
       "line": 43
     },

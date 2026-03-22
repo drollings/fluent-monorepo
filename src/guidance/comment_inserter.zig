@@ -236,7 +236,9 @@ pub fn formatDocComment(allocator: std.mem.Allocator, comment: []const u8) ![]co
 
 fn countLines(text: []const u8) u32 {
     var n: u32 = 0;
-    for (text) |c| if (c == '\n') { n += 1; };
+    for (text) |c| if (c == '\n') {
+        n += 1;
+    };
     return n;
 }
 

@@ -4,9 +4,7 @@
     "source": "src/guidance/plugins/zig_plugin.zig",
     "language": "zig"
   },
-  "comment": " ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.\n\n Handles .zig and .zon files.  Parses with Zig's stdlib AST, extracting\n top-level declarations and imports.",
-  "detail": "# ZigPlugin Module Documentation\n\n## Overview\n\nZigPlugin is a language-specific plugin module that integrates Zig file parsing capabilities into an AI coding assistant's analysis pipeline. It serves as the bridge between raw source files and semantic understanding, enabling the assistant to comprehend Zig code structure, declarations, and dependencies.\n\n## Architecture & Purpose\n\nThe module implements the `LanguagePlugin` interface defined in `plugin_mod.zig`, providing a standardized way for the AI assistant to process different programming languages. Its primary responsibilities include:\n\n1. **File Discovery**: Identifies .zig and .zon files through extension matching\n2. **AST Parsing**: Leverages Zig's standard library AST parser via `ast_parser.zig`\n3. **Symbol Extraction**: Extracts top-level declarations (functions, constants, types)\n4. **Dependency Analysis**: Parses import statements to understand module relationships\n\n### Component Relationships\n\n```\nZigPlugin (this module)\n    │\n    ├──► AstParser (from ast_parser.zig) - AST parsing engine\n    ├──► ParsedFile - Output structure for parsed content\n    ├──► LanguagePlugin - Interface contract\n    └──► deriveModule - Path-to-module-name converter\n```\n\n## Public API Reference\n\n### `plugin() -> LanguagePlugin`\n\nReturns the singleton plugin descriptor. This is the entry point for the plugin system to discover and instantiate Zig support. The returned structure contains:\n- `.name`: Identifies the language as \"zig\"\n- `.extensions`: Array of handled file extensions (\".zig\", \".zon\")\n- `.parseFn`: Callback function for full file parsing\n- `.extractImportsFn`: Callback for import statement extraction\n\n### `parseZig(arena, source, file_path) -> anyerror!ParsedFile`\n\nCore parsing function that processes a complete Zig source file. Parameters:\n- `arena`: Memory allocator for temporary storage\n- `source`: Raw source code bytes (null-terminated)\n- `file_path`: Original file path for module name derivation\n\nReturns a `ParsedFile` containing:\n- `.module`: Dot-separated module name derived from path\n- `.source`: Normalized relative path\n- `.language`: Language identifier (\"zig\")\n- `.members`: Extracted top-level declarations\n- `.module_comment`: Reserved for future doc-comment extraction\n\n### `extractZigImports(arena, source) -> anyerror![]const []const u8`\n\nSpecialized function to extract only import statements from source code. Useful for dependency analysis without full parsing overhead. Returns an array of imported module paths as strings.\n\n### `deriveModule(arena, file_path) -> []const u8`\n\nUtility function converting file system paths to Zig module names. Transforms:\n- `\"src/foo/bar.zig\"` → `\"src.foo.bar\"`\n- Handles both forward slashes and platform-specific separators\n- Strips file extensions before conversion\n\n## Usage Patterns\n\n### Basic Parsing Flow\n\n```zig\nconst p = plugin(); // Get singleton descriptor\nconst result = try p.parse(allocator, source_code, \"src/main.zig\");\n// Process result.members for semantic analysis\n```\n\n### Import Extraction Only\n\n```zig\nconst imports = try extractZigImports(allocator, source);\n// Analyze dependency graph from imported modules\n```\n\n## Implementation Details\n\n### Memory Management\n\nThe module uses Zig's arena allocator pattern throughout:\n- All allocations are scoped to the parsing operation\n- `defer parser.deinit()` ensures cleanup on early returns\n- This pattern prevents memory leaks in long-running analysis sessions\n\n### Module Name Derivation Algorithm\n\n1. Strip leading \"./\" if present (normalizes relative paths)\n2. Remove file extension by finding last '.' character\n3. Replace path separators ('/', '\\') with '.' for Zig module syntax\n4. Result is a valid Zig module identifier compatible with `@import()`\n\n### Error Handling\n\n- Returns `anyerror!` for all public functions, allowing callers to handle parsing failures gracefully\n- Common errors include: allocation failures, invalid UTF-8, malformed AST\n\n## Design Patterns\n\n1. **Singleton Pattern**: `plugin()` returns a single instance of the plugin descriptor\n2. **Adapter Pattern**: Wraps `ast_parser.zig` functionality through the LanguagePlugin interface\n3. **Command Pattern**: Uses function pointers (`.parseFn`, `.extractImportsFn`) for extensible operation dispatching\n4. **Factory Pattern**: `AstParser.init()` creates parser instances tailored to specific source content\n\n## Performance Considerations\n\n- AST parsing is O(n) where n = source code size\n- Memory allocations are minimized through arena reuse\n- Import extraction can be called independently for incremental analysis without full parsing\n\n## Future Extensibility\n\nThe architecture supports easy extension:\n- New file extensions can be added to `EXTENSIONS` array\n- Additional metadata (doc-comments, type information) can be extracted in future versions\n- The plugin interface allows swapping parsers while maintaining consistent output format",
-  "keywords": ["LanguagePlugin", "zig_plugin", "ast_parser", "deriveModule", "parseZig", "extractZigImports", "Zig AST", "module discovery", "import analysis", "top-level declarations"],
+  "keywords": ["ZigPlugin", "ASTParser", "LanguagePlugin", "ZigSource", "ModuleDerivation", "PluginArchitecture", "CodeExtraction", "CompilerIntegration"],
   "members": [
     {
       "type": "fn_decl",
@@ -14,7 +12,6 @@
       "match_hash": "3a6f2a54a4f3e7fba098b1c4f632b29610caa99042ed81290bc41afefa7bc978",
       "signature": "fn plugin() -> LanguagePlugin",
       "returns": "LanguagePlugin",
-      "comment": "Returns the singleton ZigPlugin descriptor.",
       "is_pub": true,
       "line": 18
     },
@@ -29,7 +26,6 @@
         { "name": "file_path", "type": "[]const u8" }
       ],
       "returns": "anyerror!ParsedFile",
-      "comment": "Converts a Zig source file into a parsed Zig data structure, handling errors gracefully.",
       "is_pub": false,
       "line": 31
     },
@@ -43,7 +39,6 @@
         { "name": "source", "type": "[:0]const u8" }
       ],
       "returns": "anyerror![]const []const u8",
-      "comment": "Extracts Zig import addresses from a source string, returning an array of byte slices.",
       "is_pub": false,
       "line": 59
     },
@@ -57,7 +52,6 @@
         { "name": "file_path", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Convert a file path to a dot-separated module name.",
       "is_pub": false,
       "line": 73
     },

@@ -4,9 +4,7 @@
     "source": "src/common/repl.zig",
     "language": "zig"
   },
-  "comment": "Implements a Zig REPL interface handling commands, parsing input and managing stdout/stdin streams.",
-  "detail": "# coral REPL Module\n\n## Overview\n\nThis module implements an interactive Read-Eval-Print Loop (REPL) interface for the Zig build system \"coral\". It provides users with a command-line environment to interactively explore, manage, and visualize build targets without requiring external tooling.\n\n## Architecture\n\nThe module follows a classic REPL architecture:\n\n```\n┌─────────────┐     ┌──────────────────┐     ┌──────────────┐\n│  User Input │────▶│  Command Parser  │────▶│  Command     │\n└─────────────┘     └──────────────────┘     │ Dispatcher   │\n                                            └──────────────┘\n                                                        │\n                    ┌───────────────────────────────────┼──────────────────┐\n                    ▼                                   ▼                  ▼\n        ┌────────────────┐              ┌───────────────┐  ┌──────────────┐\n        │ .help/.quit    │              │ .list/.graph  │  │ .load/.clear │\n        └────────────────┘              └───────────────┘  └──────────────┘\n```\n\n## Key Abstractions\n\n### Repl Struct\nThe central state container holding:\n- **allocator**: Memory allocation strategy for the REPL session\n- **ctx**: Pointer to BuildContext providing access to targets, registry, and interner\n\n### Command Handlers\n1. **handleDotCommand**: Routes dot-prefixed commands to specific handlers\n2. **handleBuildCommand**: Processes regular build commands passed to the REPL\n\n## Public API\n\n```zig\nfn init(allocator: std.mem.Allocator, ctx: *BuildContext) -> Repl\nfn deinit(_: *Repl) -> void\nfn run(self: *Repl) -> void\nfn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> bool\nfn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> void\n```\n\n### Usage Pattern\n\n```zig\nconst repl = Repl.init(allocator, ctx);\ndefer repl.deinit();\n\ntry repl.run();\n```\n\n## Command Reference\n\n| Command | Description |\n|---------|-------------|\n| `.help` | Display available commands |\n| `.list` | List all loaded targets |\n| `.graph [targets...]` | Visualize dependency graph (optional target filters) |\n| `.load <file.json>` | Import targets from JSON configuration |\n| `.clear` | Reset the target registry |\n| `.quit` / `.exit` | Terminate REPL session |\n\n## Implementation Details\n\n### Input Processing Pipeline\n1. **Stream Acquisition**: Uses `io.ReaderState` with stdin initialization\n2. **Delimiter Detection**: Employs `takeDelimiterInclusive('\\n')` for line-based input\n3. **Whitespace Normalization**: Trims leading/trailing whitespace before parsing\n4. **Command Classification**: Checks for dot-prefixed commands vs. build commands\n\n### Error Handling Strategy\n- **Ephemeral Errors**: Non-fatal errors (command not found) return `true` to continue REPL loop\n- **Fatal Errors**: Stream I/O errors propagate up and terminate the REPL\n- **End of Stream**: Gracefully detected via `error.EndOfStream`, triggers exit\n\n### Memory Management\n- **Allocator Ownership**: All allocations use the provided allocator parameter\n- **Deferred Cleanup**: Uses `defer` blocks for ArrayListUnmanaged cleanup\n- **Registry Reset**: `.clear` command reinitializes TargetRegistry with fresh allocation\n\n## Design Patterns\n\n| Pattern | Application |\n|---------|-------------|\n| **Command Dispatcher** | Centralized command routing via string comparison |\n| **Stateful REPL Loop** | Infinite loop with break conditions for .quit/.exit |\n| **Dependency Injection** | BuildContext pointer passed to constructor |\n| **Tokenization Parser** | Space-delimited token sequence parsing |\n\n## Integration Points\n\n- **BuildContext**: Provides registry access, target listing, graph visualization\n- **TargetRegistry**: Manages loaded build targets with deinit/clear capability\n- **StringInterner**: Ensures unique string representations for targets\n- **json_parser**: Handles JSON file parsing for bulk target loading",
-  "keywords": ["Repl", "REPL", "coral", "BuildContext", "TargetRegistry", "handleDotCommand", "dependency graph", "command dispatcher", "std.mem.tokenizeSequence", "io.ReaderState"],
+  "keywords": ["Unique API names", "domain concepts", "design patterns", "technical terms"],
   "used_by": ["src/common/llm.zig", "src/common/root.zig"],
   "members": [
     {
@@ -19,7 +17,6 @@
         { "name": "ctx", "type": "*BuildContext" }
       ],
       "returns": "Repl",
-      "comment": "Initializes a Zig module with an allocator and build context, returning the compiled Repl.",
       "is_pub": true,
       "line": 13
     },
@@ -32,7 +29,6 @@
         { "name": "_", "type": "*Repl" }
       ],
       "returns": "void",
-      "comment": "Releases resources by deallocating the provided Repl instance.",
       "is_pub": true,
       "line": 20
     },
@@ -45,7 +41,6 @@
         { "name": "self", "type": "*Repl" }
       ],
       "returns": "void",
-      "comment": "Processes a Zig code snippet and executes it, returning the result or error.",
       "is_pub": true,
       "line": 22
     },
@@ -60,7 +55,6 @@
         { "name": "writer", "type": "*std.Io.Writer" }
       ],
       "returns": "bool",
-      "comment": "Processes a Zig command string, validates input, and returns a boolean status.",
       "is_pub": false,
       "line": 61
     },
@@ -75,7 +69,6 @@
         { "name": "writer", "type": "*std.Io.Writer" }
       ],
       "returns": "void",
-      "comment": "Processes a Zig build command input and returns a compiled result.",
       "is_pub": false,
       "line": 126
     }

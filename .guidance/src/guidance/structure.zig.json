@@ -4,9 +4,6 @@
     "source": "src/guidance/structure.zig",
     "language": "zig"
   },
-  "comment": "Generates structured Markdown from Zig project directories, merging new comments with existing ones.",
-  "detail": "# Structure Generator Module Documentation\n\n## Overview\n\nThis module implements a `StructureGenerator` that creates Markdown tree diagrams of Zig project directories with intelligent comment annotations. It mirrors Python's guidance.py `StructureGenerator` class and serves as the core component for generating project structure documentation.\n\n## Architecture\n\n### Core Components\n\n**TreeEntry**: A union type representing nodes in the directory tree:\n- `.text`: Plain text entries (directory labels, root marker \".\")\n- `.file`: File entries with metadata and annotations\n\n**FileEntry**: Struct containing file-level information:\n```zig\nprefix: []const u8  // Tree formatting prefix (e.g., \"│   ├── \")\nname: []const u8    // Filename only\nabs_path: []const u8  // Full absolute path\nrel_path: []const u8  // Path relative to project root\n```\n\n**StructureGenerator**: Main orchestrator with lifecycle management:\n- **State**: Project root, guidance directory, debug flag\n- **Resources**: Gitignore filter, JSON store for comments\n- **Operations**: Tree building, annotation merging, Markdown generation\n\n### Data Flow\n\n1. **Initialization** → `init()` creates gitignore filter and JSON store\n2. **Tree Building** → `buildTree()` recursively traverses directories\n3. **Annotation Phase** → Comments merged from guidance JSON + existing STRUCTURE.md\n4. **Output Generation** → `write()` formats tree with right-aligned comments\n\n## Public API\n\n### StructureGenerator\n\n```zig\npub fn init(allocator, project_root, guidance_dir, debug) StructureGenerator\npub fn deinit(self: *StructureGenerator) void\npub fn generate(self: *StructureGenerator) !void\n```\n\n**Usage Pattern**:\n```zig\nconst generator = try StructureGenerator.init(\n    arena,\n    \".\",\n    \"guidance\",\n    false,\n);\ndefer generator.deinit();\n\ntry generator.generate();\n```\n\n### Helper Functions\n\n- `extractFilename(line: []const u8) -> ?[]const u8` - Parses filename from tree line\n- `childLessThan(_: void, a, b: ChildEntry) -> bool` - Comparison for sorting\n\n## Key Design Decisions\n\n### 1. Two-Source Annotation Strategy\nThe module intelligently merges comments from:\n- **Guidance JSON**: First line of corresponding guidance file\n- **Existing STRUCTURE.md**: Preserved from previous runs\n\nThis ensures backward compatibility while incorporating new AI-generated context.\n\n### 2. Flexible Comment Column Width\nAutomatically calculates optimal column width as `max(60, longest_line + 2)`, ensuring readability regardless of tree depth.\n\n### 3. Gitignore Integration\nRespects `.gitignore` files to exclude irrelevant directories (node_modules, build artifacts, etc.) from the generated structure.\n\n### 4. Memory Safety Pattern\nExplicit resource management with:\n- `init()` for setup\n- `deinit()` for cleanup\n- Deferred allocation freeing to prevent leaks\n\n## Implementation Details\n\n### Tree Building Algorithm\nUses recursive traversal with proper prefix calculation:\n- Root marker: \".\"\n- Directory entries use \"├──\" or \"└──\" connectors\n- Proper spacing maintains visual tree structure\n\n### Comment Resolution Priority\n1. Check guidance JSON for new comment\n2. Fall back to existing STRUCTURE.md comment\n3. Preserve original if no guidance exists\n\n### Performance Considerations\n- Single-pass tree construction\n- Minimal string duplication through careful allocation\n- Efficient comment lookup with hash map\n\n## Design Patterns Employed\n\n| Pattern | Application |\n|---------|-------------|\n| **Builder** | Step-by-step tree construction |\n| **Merging/Observer** | Combining multiple comment sources |\n| **Tree Traversal** | Recursive directory exploration |\n| **Resource Manager** | Explicit init/deinit lifecycle |\n| **Adapter** | Bridges guidance JSON to Markdown format |\n\n## Integration Points\n\n- **git.zig**: Gitignore filtering via `GitignoreFilter`\n- **json_store.zig**: Comment persistence and retrieval\n- **common.llm**: Potential future LLM integration for comment generation\n\nThe module is designed as a standalone utility that can be embedded in larger tools for project documentation, code navigation assistance, or AI context building.",
-  "keywords": ["StructureGenerator", "TreeEntry", "FileEntry", "Markdown generator", "Directory traversal", "Gitignore filtering", "Guidance annotations", "Tree builder pattern", "JSON comment merging", "Zig module architecture"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -14,7 +11,6 @@
       "name": "FileEntry",
       "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
       "signature": "keyword_struct FileEntry { ... }",
-      "comment": "Manages file entry metadata with fixed-size buffers; owned by the caller; ensures consistent state across operations.",
       "is_pub": false,
       "line": 24
     },
@@ -23,7 +19,6 @@
       "name": "StructureGenerator",
       "match_hash": "53c3ce1f50f740dd1b57459c9b834ecdbae7efbf707da3e958474cbf1621b06c",
       "signature": "keyword_struct StructureGenerator { ... }",
-      "comment": "Manages memory allocation and structure generation for Zig projects; owns allocator and guides build process.",
       "is_pub": true,
       "members": [
         {
@@ -62,7 +57,6 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "void",
-          "comment": "Generate (or regenerate) STRUCTURE.md in `project_root`.",
           "is_pub": true,
           "line": 64
         }
@@ -105,7 +99,6 @@
             { "name": "old_comments", "type": "std.StringHashMapUnmanaged([]const u8)" }
           ],
           "returns": "?[]const u8",
-          "comment": "Look up the comment for a file entry.",
           "is_pub": false,
           "line": 185
         }
@@ -119,7 +112,6 @@
             { "name": "rel_path", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Load the guidance JSON for `rel_path` and return the first line of `comment`.",
           "is_pub": false,
           "line": 202
         }
@@ -132,7 +124,6 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "std.StringHashMapUnmanaged([]const u8)",
-          "comment": "Extract `filename → comment` from the existing STRUCTURE.md fenced block.",
           "is_pub": false,
           "line": 233
         }
@@ -173,7 +164,6 @@
       "name": "ChildEntry",
       "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
       "signature": "keyword_struct ChildEntry { ... }",
-      "comment": "Manages child entry structures with ownership and invariants; ensures safe access patterns.",
       "is_pub": false,
       "line": 364
     },
@@ -188,7 +178,6 @@
         { "name": "b", "type": "ChildEntry" }
       ],
       "returns": "bool",
-      "comment": "Compares two child entries to check if one is less than another, returning true or false.",
       "is_pub": false,
       "line": 370
     },
@@ -201,7 +190,6 @@
         { "name": "line", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Extract the filename from a tree line like \"│   ├── main.zig\".",
       "is_pub": false,
       "line": 379
     }

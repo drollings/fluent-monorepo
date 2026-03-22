@@ -4,16 +4,14 @@
     "source": "src/ontology/migration.zig",
     "language": "zig"
   },
-  "comment": "Tracks ontology versions and provides stub migration functions for YAGO schema changes.",
-  "detail": "**Module Purpose and Architecture**\n\nThis module implements a version tracking and migration framework for YAGO ontology data. It serves as the central coordination point for managing schema evolution across different YAGO releases (4.5, 4.6, etc.) while maintaining an audit trail of all loaded ontologies. The architecture follows a registry pattern with explicit lifecycle management—initialization, recording, querying, and cleanup phases are clearly defined through `init()`, `record()`, `latest()`, and `deinit()` methods.\n\n**Key Abstractions and Relationships**\n\nThe module centers around three primary abstractions:\n- **OntologyVersion**: An immutable record capturing snapshot metadata of a loaded ontology—version identifier, load timestamp, source location (file or HTTP), and triple count for progress tracking.\n- **Migration System**: Composed of `MigrateFn` (a function pointer type) and `OntologyMigration` (wrapping the function with version metadata). This decouples migration logic from versioning concerns, allowing future implementation of actual transformation functions.\n- **VersionRegistry**: The orchestrator maintaining an append-only history of all loaded ontologies through a thread-safe `std.ArrayList`. It provides O(1) access to the latest entry while preserving historical context for rollback or audit purposes.\n\n**Public API and Usage Patterns**\n\nThe public API exposes four main components:\n1. **OntologyVersion struct**: Used when recording new ontology loads via `record()`\n2. **OntologyMigration struct**: Configures migration behavior between specific version pairs\n3. **noopMigration function**: Default no-op implementation that allocators can safely ignore\n4. **VersionRegistry struct**: The primary interface with lifecycle methods:\n   - `init(allocator)` — Creates a fresh registry instance\n   - `record(ver)` — Appends ontology metadata to the history\n   - `latest()` — Returns most recent entry or null if empty\n   - `deinit()` — Frees all allocated strings and list resources\n\n**Important Implementation Details**\n\nMemory safety is paramount: all string fields use dynamic allocation via `dupe()`, with `errdefer` clauses guaranteeing cleanup on failure. The registry maintains ownership of duplicated version strings and URLs, preventing dangling references when the registry is dropped. Migration functions are intentionally stubbed (pointing to `noopMigration`) since actual schema transformations require deep understanding of YAGO's RDF triple structure changes between releases.\n\n**Design Patterns Used**\n\n1. **Registry Pattern**: Centralizes state management for ontology metadata\n2. **Strategy Pattern**: Migration functions can be swapped without changing calling code\n3. **Builder Pattern**: `record()` constructs complete version entries from partial input\n4. **Observer Pattern (implicit)**: Registry could notify other modules when new versions load\n5. **Stub Architecture**: Placeholder implementations enable incremental development",
-  "keywords": ["OntologyVersion", "VersionRegistry", "MigrateFn", "YAGO migration", "schema evolution", "triple tracking", "ontology versioning", "RDF migration", "allocator management", "version registry"],
+  "keywords": ["OntologyVersion", "OntologyMigration", "Zig", "YAGO", "Migration", "Registry", "MemoryManagement"],
+  "used_by": ["src/ontology/root.zig"],
   "members": [
     {
       "type": "struct",
       "name": "OntologyVersion",
       "match_hash": "cefcf21e96bf43f01a911d311d5ee40d1d9a44bbaa9b642e3087bccc160cc1e8",
       "signature": "keyword_struct OntologyVersion { ... }",
-      "comment": "Tracks ontology version changes with fixed-size buffers; managed by owner; invariant version history.",
       "is_pub": true,
       "line": 12
     },
@@ -22,7 +20,6 @@
       "name": "OntologyMigration",
       "match_hash": "aba79453c70effc7c20d824b0ed8c5cfacc6ab141ea9f98dc5e9e75d11eedcec",
       "signature": "keyword_struct OntologyMigration { ... }",
-      "comment": "Defines migration struct for ontology updates, manages state transitions, ensures consistent invariants across environments.",
       "is_pub": true,
       "line": 27
     },
@@ -35,7 +32,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "anyerror!void",
-      "comment": "Performs a no-operation migration with the provided allocator, returning no error.",
       "is_pub": false,
       "line": 34
     },
@@ -44,7 +40,6 @@
       "name": "VersionRegistry",
       "match_hash": "384e51c16f833bccd9debde66e9d1e357c862b8f2e97cda7323a99d75cb30037",
       "signature": "keyword_struct VersionRegistry { ... }",
-      "comment": "Manages version registry with allocator, provides init/deinit, records versions, and returns latest version.",
       "is_pub": true,
       "members": [
         {

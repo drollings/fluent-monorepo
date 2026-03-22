@@ -4,11 +4,8 @@
     "source": "src/common/target.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns, gof-patterns] Defines target execution types, manages WASM/executor lifecycle, and handles dynamic bit manipulation for Zig targets.",
-  "detail": "# Module: src/common/target.zig\n\n## Overview\nThis module defines the core `Target` abstraction for an AI coding assistant's build and execution system. It represents executable units that can be either abstract definitions, concrete files, commands, or phony targets, with support for both native OS process execution and WASM sandboxing via Extism runtime.\n\n## Architecture & Key Abstractions\n\n### Target Type Hierarchy\n- **`TargetType`**: Enum defining target categories (abstract, file, command, phony)\n- **`ExecutorKind`**: Discriminated union selecting execution strategy:\n  - `.native`: Standard OS process execution via shell commands\n  - `.wasm`: WASM sandbox execution through Extism runtime\n\n### The Target Struct\nA comprehensive build target with:\n- **Identity**: Unique ID, bit index (from string interner), owned name\n- **Metadata**: Type classification, essential flag, existence path\n- **Execution**: Executor kind, command list via ArrayList\n- **Dependency Graph**: Bit sets for both dependencies and provides relationships\n- **Configuration**: Mtime checking flag\n\n## Design Patterns\n\n### 1. Hybrid Execution Model\nThe `ExecutorKind` union elegantly decouples execution strategy from target definition. Registry and resolver code need only understand `Target`, not the underlying executor implementation—this follows the Strategy pattern while maintaining type safety through Zig's unions.\n\n### 2. Resource Ownership with RAII-like Semantics\n- **Owned Name**: Always duplicated during initialization to ensure safe cleanup\n- **WasmExecutor**: Explicit `deinit()` method for WASM resources (binary and entry point strings)\n- **Bit Sets**: Properly initialized and cleaned up in lifecycle methods\n\n### 3. String Interning Integration\nLeverages the interner module for:\n- Name deduplication via bit indices\n- Dependency/provides tracking through `internAndGetBitSet()`\n- Efficient memory usage through shared string representations\n\n### 4. Builder Pattern via init()\nThe constructor function handles complex initialization with proper error handling:\n- Interns name and retrieves bit index\n- Allocates owned copy of name with errdefer cleanup\n- Initializes empty bit sets sized to interner count\n- Sets default values for optional fields\n\n## Public API Summary\n\n| Function | Purpose |\n|----------|---------|\n| `init()` | Constructor with allocator, name, and type |\n| `deinit()` | Complete resource cleanup including executor |\n| `setDepends()` / `setProvides()` | Configure dependency graph edges |\n| `addCommand()` | Append execution commands to target |\n| `isAbstract()` | Quick check for abstract targets (no commands, no exists) |\n| `dependsSatisfiedBy()` | Verify all dependencies met by available targets |\n| `missingDepends()` | Compute unsatisfied dependencies as bit set |\n| `distanceFrom()` | Calculate resolution distance from available targets |\n\n## Usage Patterns\n\n```zig\n// Create a native file target\nconst target = try Target.init(allocator, interner, \"main\", .file);\ntarget.addCommand(allocator, \"build.sh\");\n\n// Create WASM target with sandboxed execution\nconst wasm_exec = WasmExecutor{\n    .wasm_bytes = allocator.dupe(u8, wasm_binary),\n    .entry_point = \"main\",\n};\nconst wasm_target = try Target.init(allocator, interner, \"sandbox\", .command);\nwasm_target.executor = .wasm;\n\n// Configure dependencies\ntry target.setDepends(allocator, interner, &.{ \"lib:core\", \"lib:utils\" });\n```\n\n## Implementation Details\n\n- **Memory Safety**: All allocations tracked with proper errdefer in `init()`\n- **Bit Set Sizing**: Pre-sized to interner count for efficient lookups\n- **Null Handling**: Optional exists field uses null sentinel rather than empty slice\n- **Format Support**: Built-in fmt support for debugging and logging\n\n## Related Capabilities\nThis module connects to the string interner system for identity management and the reflection module for potential schema introspection capabilities.",
-  "keywords": ["Target", "TargetType", "ExecutorKind", "WASMExecutor", "build system", "dependency resolution", "string interning", "Extism sandboxing", "dynamic bit sets", "RAII pattern"],
+  "keywords": ["Zig target", "WASM executor", "memory management", "dependency tracking", "dynamic bit manipulation", "executors", "Zig compiler", "resource cleanup", "modular design"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" },
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/registry.zig", "src/common/resolver.zig", "src/common/root.zig"],
@@ -18,7 +15,6 @@
       "name": "TargetType",
       "match_hash": "e496c382d60e78e274abae607f6a4f488f9f623a583f67668026a13cdcdfdf91",
       "signature": "keyword_enum TargetType { ... }",
-      "comment": "Defines a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.",
       "is_pub": true,
       "members": [
         {
@@ -53,7 +49,6 @@
       "name": "WasmExecutor",
       "match_hash": "770f4da119ef265fd79b6f0e4d0683964faef85d05578e4e2e04232175cb154c",
       "signature": "keyword_struct WasmExecutor { ... }",
-      "comment": "Configuration for a WASM-backed executor.",
       "is_pub": true,
       "members": [
         {
@@ -84,7 +79,6 @@
         { "name": "target_type", "type": "TargetType" }
       ],
       "returns": "Target",
-      "comment": "Initializes a target Zig allocation with provided allocator and interners, returning the initialized target.",
       "is_pub": true,
       "line": 58
     },
@@ -98,7 +92,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
-      "comment": "Releases allocated memory by cleaning up Zig resources.",
       "is_pub": true,
       "line": 80
     },
@@ -114,7 +107,6 @@
         { "name": "depends", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Updates dependencies with allocator and interners, ensuring proper memory management.",
       "is_pub": true,
       "line": 97
     },
@@ -130,7 +122,6 @@
         { "name": "provides", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Initializes a Zig array with provided allocator and string interners.",
       "is_pub": true,
       "line": 107
     },
@@ -145,7 +136,6 @@
         { "name": "cmd", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Adds a command slice to the target with specified allocator and parameters.",
       "is_pub": true,
       "line": 117
     },
@@ -158,7 +148,6 @@
         { "name": "self", "type": "*const Target" }
       ],
       "returns": "bool",
-      "comment": "Checks if a target is abstract by verifying its structure and return a boolean result.",
       "is_pub": true,
       "line": 121
     },
@@ -173,7 +162,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "bool",
-      "comment": "Checks if a dependency condition is met using allocator and bit set data.",
       "is_pub": true,
       "line": 127
     },
@@ -188,7 +176,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "std.bit_set.DynamicBitSetUnmanaged",
-      "comment": "Validates dependencies for missing data structures; returns a bit set if all checks pass.",
       "is_pub": true,
       "line": 138
     },
@@ -202,7 +189,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "usize",
-      "comment": "Calculates the distance between two bit sets in a target structure.",
       "is_pub": true,
       "line": 155
     },
@@ -218,7 +204,6 @@
         { "name": "writer" }
       ],
       "returns": "void",
-      "comment": "Formats a target string using specified format options and writer.",
       "is_pub": true,
       "line": 166
     },
@@ -227,7 +212,6 @@
       "name": "TargetSchema",
       "match_hash": "f3b8fe75657788eb4bef44df49b68e5d39a2fce26d83133ecb1651fe4eb0651c",
       "signature": "keyword_struct TargetSchema { ... }",
-      "comment": "TargetSchema — reflection schema for Target, parameterised on a StringInterner.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -243,7 +227,6 @@
             { "name": "interner", "type": "*StringInterner" }
           ],
           "returns": "*Self",
-          "comment": "Allocate and initialise a TargetSchema for the given interner.",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
@@ -274,7 +257,6 @@
             { "name": "target", "type": "*Target" }
           ],
           "returns": "reflection.DynamicEditable",
-          "comment": "Return a DynamicEditable view over `target`.",
           "is_pub": true,
           "line": 286
         }

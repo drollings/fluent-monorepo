@@ -4,17 +4,13 @@
     "source": "src/common/args.zig",
     "language": "zig"
   },
-  "comment": "Parses command-line arguments into a structured CommonArgs object for configuration handling.",
-  "detail": "# Command-Line Argument Parsing Module\n\n## Module Purpose and Architecture\n\nThis module provides command-line argument parsing functionality for an AI coding assistant tool. It transforms flat argv slices into a structured configuration object (`CommonArgs`) that consolidates all runtime options, flags, and values in one place. The architecture follows a single-pass parsing model where each argument is matched against known flags, with unknown flags silently skipped to support extensibility.\n\n## Key Abstractions and Relationships\n\n**`CommonArgs` Struct**: The central abstraction holding parsed configuration. It includes:\n- **LLM/Intelligence flags**: debug, no_ai, api_url, model (with metadata tracking via `_set` booleans)\n- **Build-tool flags**: dry_run, force, verbose, show_list, show_graph, enter_repl, show_help, show_version\n- **Optional values**: config_file, llm_query as nullable string slices pointing to original argv memory\n\n**Memory Ownership Model**: The struct contains no owned allocations—all string slices reference the original `args` slice. This zero-allocation design (except for positional argument collection) minimizes heap usage and ensures predictable performance.\n\n## Public API and Usage Patterns\n\n### Primary Function\n```zig\nparseCommonArgs(args: []const []const u8, \n                positional_buf: *std.ArrayListUnmanaged([]const u8), \n                allocator: std.mem.Allocator) !CommonArgs\n```\n\n**Parameters**:\n- `args`: Command-line arguments excluding argv[0]\n- `positional_buf`: Caller-owned ArrayList for collecting non-flag arguments (must outlive the result)\n- `allocator`: For positional argument storage\n\n**Returns**: Parsed `CommonArgs` struct, or error if a required value is missing\n\n### Typical Usage Pattern\n```zig\nvar args: []const []const u8 = std.process.argsWithSentinel(.{}).?;\nargs = args[1..]; // Skip program name\n\nvar positional_buf = std.ArrayListUnmanaged([]const u8){};\npositional_buf.allocator = gpa;\n\nconst parsed = try parseCommonArgs(args, &positional_buf, gpa);\n\n// Use parsed.config_file if .? != null\nif (parsed.config_file) |cfg| {\n    // Load config from cfg\n}\n```\n\n## Important Implementation Details\n\n1. **Flag Matching**: Supports both short (`-h`) and long (`--help`) forms for common flags, with `-n` as alias for `--dry-run`. The `-v/--verbose` flag automatically enables debug output.\n\n2. **Value Assignment Flags**: Six flags require arguments: `--file`, `--llm-query`, `--api-url`, `-m/--model`, and positional argument collection captures everything else.\n\n3. **Permissive Mode**: Unknown flags starting with `-` are skipped rather than causing errors, enabling gradual feature addition without breaking existing commands.\n\n4. **Metadata Tracking**: `_set` booleans indicate whether a value was explicitly provided on the command line, allowing defaults to be overridden selectively.\n\n5. **Error Handling**: Returns `error.MissingValue` when a flag requiring an argument is the last argument in the slice.\n\n## Design Patterns Used\n\n- **Builder Pattern**: Struct with default values progressively modified by flags\n- **Single-Pass Parser**: O(n) complexity with one iteration through arguments\n- **Permissive/Unknown Flag Handling**: Graceful extensibility for future features\n- **Caller-Owned Memory**: Positional arguments stored in caller's buffer, reducing allocation overhead",
-  "keywords": ["CommonArgs", "parseCommonArgs", "command-line parsing", "argv processing", "AI assistant configuration", "flag parsing", "single-pass parser", "permissive mode", "Zig std.ArrayListUnmanaged", "build-tool flags"],
-  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/coral/common/cli.zig", "src/coral/common/llm.zig"],
+  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "struct",
       "name": "CommonArgs",
       "match_hash": "98a28a70852ae1cb8ab49bf9bf8d7a0d37fb79100709824dfb8cabe94c5af13b",
       "signature": "keyword_struct CommonArgs { ... }",
-      "comment": "Flags and values parsed from the command line.",
       "is_pub": true,
       "line": 5
     },
@@ -29,7 +25,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "CommonArgs",
-      "comment": "Parse a flat args slice (excluding argv[0]) into a `CommonArgs`.",
       "is_pub": true,
       "line": 42
     },

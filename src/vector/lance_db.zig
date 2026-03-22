@@ -1112,7 +1112,10 @@ pub const GuidanceDb = struct {
             try buf.appendSlice(allocator, dl);
         }
         const result = try buf.toOwnedSlice(allocator);
-        if (result.len == 0) { allocator.free(result); return null; }
+        if (result.len == 0) {
+            allocator.free(result);
+            return null;
+        }
         return result;
     }
 
@@ -1147,7 +1150,10 @@ pub const GuidanceDb = struct {
             try buf.appendSlice(allocator, dl);
         }
         const result = try buf.toOwnedSlice(allocator);
-        if (result.len == 0) { allocator.free(result); return null; }
+        if (result.len == 0) {
+            allocator.free(result);
+            return null;
+        }
         return result;
     }
 

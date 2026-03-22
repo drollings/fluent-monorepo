@@ -4,9 +4,7 @@
     "source": "src/ontology/mapper.zig",
     "language": "zig"
   },
-  "comment": "Transforms RDF triples into ContextNodes and edges for CozoDB, routing properties via YAGO schema and accumulating nodes in memory.",
-  "detail": "# Triple → ContextNode Mapper Module\n\n## Purpose and Architecture\n\nThis module transforms RDF triples into CozoDB-compatible ContextNodes and edges, implementing a batch-processing pipeline that accumulates graph data in memory before database insertion. It leverages the YAGO ontology schema to intelligently route different property types to appropriate LOD (Linked Open Data) levels, enabling hierarchical knowledge representation with varying detail granularity.\n\nThe architecture follows a producer-consumer pattern: `TripleMapper` processes incoming triples as they arrive from an RDF parser, while pending data structures accumulate state until `flush()` performs batch CozoDB insertion via the Library interface.\n\n## Key Abstractions and Relationships\n\n**PendingNode**: An in-memory accumulator that collects property values for a single entity before flush. It maintains:\n- A unique identifier (i64)\n- Multiple LOD-level string collections using ArrayLists\n- Type node IDs for classification\n- Full memory management via Zig's allocator abstraction\n\n**PendingEdge**: Represents directed relationships between entities, storing source/target IDs and the predicate IRI as an owned string slice.\n\n**PendingContradiction**: Detects conflicting literal values for the same subject-predicate combination, preserving both values for later resolution or confidence scoring.\n\nThe relationship flow is: Triple → PendingNode/PendingEdge accumulation → FlushResult → CozoDB ContextNodes\n\n## Public API and Usage Patterns\n\n**Structs (keyword_struct)**:\n- `PendingNode` - Accumulates node data; convert via `toContextNode()` before flush\n- `PendingEdge` - Directed edge representation with owned predicate string\n- `PendingContradiction` - Tracks value conflicts for quality metrics\n- `TripleMapper` - Main mapper orchestrator (batch processing)\n- `FlushResult` - Contains CozoDB insertion outcomes\n\n**Functions**:\n- `shouldUseLang()` - Language preference matching utility for multilingual content\n\n**Typical Usage Pattern**:\n```zig\nvar mapper = TripleMapper.init(allocator);\nwhile (triple_iter.next()) |triple| {\n    mapper.processTriple(triple);\n}\nconst result = mapper.flush(); // Batch CozoDB insertion\nmapper.deinit();\n```\n\n## Important Implementation Details\n\n1. **LOD Level Routing**: Properties are categorized by LOD level:\n   - `lod0_full` (rdfs:comment): Complete entity descriptions\n   - `lod1_summary` (schema:description): Concise summaries  \n   - `lod4_name` (rdfs:label/skos:prefLabel): Canonical names\n\n2. **Memory Ownership**: All string data uses Zig's allocator with explicit `dupe()` calls, ensuring proper ownership semantics and preventing dangling references.\n\n3. **Time Stamping**: Each ContextNode captures `valid_from` as creation timestamp and `valid_to` as null (open-ended), enabling temporal query capabilities.\n\n4. **Contradiction Handling**: Conflicting values are tracked separately rather than immediately rejected, supporting confidence scoring in downstream processing.\n\n5. **Type Inference**: `rdf:type` triples trigger entity type classification with relation-based ContextNode creation.\n\n## Design Patterns\n\n- **Batch Accumulator Pattern**: Pending structures collect data before expensive I/O operations\n- **Builder Pattern**: PendingNode progressively builds complete entities from partial triples\n- **Router Pattern**: YAGO schema routes properties to appropriate LOD levels\n- **Observer Pattern**: FlushResult notifies callers of insertion outcomes for error handling",
-  "keywords": ["PendingNode", "TripleMapper", "CozoDB", "LOD routing", "RDF transformer", "PendingEdge", "YAGO ontology", "batch processing", "ContextNode mapper", "data normalization"],
+  "keywords": ["Zig", "RDF", "YAGO", "SQLite", "ContextNode", "TripleMapper", "LOD", "Data Transformation", "Memory Management"],
   "used_by": ["src/ontology/root.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "PendingNode",
       "match_hash": "68275999eaa85cc31b5000c7d8ebd4be0398afbafc9ed2eb3ca18dddd2ec0e50",
       "signature": "keyword_struct PendingNode { ... }",
-      "comment": "In-memory representation of a node being built from triples.",
       "is_pub": true,
       "members": [
         {
@@ -52,7 +49,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
-          "comment": "Convert to ContextNode (caller owns returned strings).",
           "is_pub": true,
           "line": 64
         }
@@ -64,7 +60,6 @@
       "name": "PendingEdge",
       "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
       "signature": "keyword_struct PendingEdge { ... }",
-      "comment": "Represents a pending edge in the graph; managed by the owner; key invariant is its pending state.",
       "is_pub": true,
       "line": 89
     },
@@ -73,7 +68,6 @@
       "name": "PendingContradiction",
       "match_hash": "0abd7979f8fc6b42320521af20b9c6cdccc551a84e197ba4488186e9d33a23a1",
       "signature": "keyword_struct PendingContradiction { ... }",
-      "comment": "Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with strict ownership and invariants.",
       "is_pub": true,
       "line": 99
     },
@@ -82,7 +76,6 @@
       "name": "TripleMapper",
       "match_hash": "9c2805b3b1e99fd1f7502b85cb17ee6edec7263ffe2e9d3108d333ba7e0f0de6",
       "signature": "keyword_struct TripleMapper { ... }",
-      "comment": "Manages triple mapping operations with allocation/deallocation; owns TripleMapper instance; ensures consistent state across calls.",
       "is_pub": true,
       "members": [
         {
@@ -120,7 +113,6 @@
             { "name": "triple", "type": "Triple" }
           ],
           "returns": "void",
-          "comment": "Process one RDF triple. Accumulates nodes/edges in memory.",
           "is_pub": true,
           "line": 158
         }
@@ -134,7 +126,6 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "FlushResult",
-          "comment": "Flush all accumulated nodes and edges to SQLite via Library.",
           "is_pub": true,
           "line": 219
         }
@@ -152,7 +143,6 @@
             { "name": "new_value", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "If the node already has a non-empty value at lod_index that differs from",
           "is_pub": false,
           "line": 274
         }
@@ -217,7 +207,6 @@
       "name": "FlushResult",
       "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
       "signature": "keyword_struct FlushResult { ... }",
-      "comment": "Manages flush operations with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
       "line": 349
     },
@@ -231,7 +220,6 @@
         { "name": "preferred", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the actual and preferred language slices match, returning true if they align.",
       "is_pub": false,
       "line": 355
     },

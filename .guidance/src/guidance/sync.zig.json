@@ -4,9 +4,6 @@
     "source": "src/guidance/sync.zig",
     "language": "zig"
   },
-  "comment": "Handles Zig file parsing, AST processing, and supports comment stripping and enhancement for documentation generation.",
-  "detail": "**SyncProcessor Module Documentation**\n\n## Overview\nThe SyncProcessor module is the core synchronization engine for a Zig guidance system that bridges source code analysis with AI-powered documentation generation. It processes Zig files by parsing their Abstract Syntax Tree (AST), extracting structural members, and coordinating with external services for comment enhancement and documentation generation.\n\n## Architecture\n\n### Core Components\n- **SyncProcessor**: Main orchestrator struct managing the entire processing lifecycle\n- **JSON Store Integration**: Persistent storage for guidance metadata using `json_store.JsonStore`\n- **AST Parser**: Leverages `ast_parser.AstParser` for Zig source code analysis\n- **AI Enhancers**: Optional LLM-based services for automatic comment generation and documentation\n\n### Memory Management Pattern\nThe module employs explicit resource management:\n- Uses `std.mem.Allocator` passed through the constructor\n- Employs `defer` statements for guaranteed cleanup of AST nodes, comments, and temporary buffers\n- Properly deallocates enhancer instances in `deinit()` to prevent memory leaks\n\n## Public API\n\n### Constructor\n```zig\npub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor\n```\nInitializes the processor with required paths and operational flags. The `dry_run` flag enables testing without side effects; `debug` controls verbose logging.\n\n### File Processing\n```zig\npub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult\n```\nThe primary entry point that:\n1. Opens and reads the Zig source file (up to 10MB)\n2. Initializes an AST parser with error handling\n3. Extracts structural members from the parsed tree\n4. Handles signature hash comparison for change detection\n5. Preserves or updates comments based on code modifications\n\n### Lifecycle Management\n```zig\npub fn deinit(self: *SyncProcessor) void\n```\nCleans up all allocated resources including optional enhancer instances.\n\n## Key Abstractions and Relationships\n\n| Component | Responsibility | Dependencies |\n|-----------|----------------|--------------|\n| SyncProcessor | Orchestrates file processing workflow | types, ast_parser, json_store, hash, enhancer_mod |\n| JSON Store | Persists guidance metadata | std.json |\n| AST Parser | Parses Zig source to member structures | std.mem, std.fs |\n| Enhancer | AI-powered comment infilling and enhancement | common.llm |\n\n### Data Flow\n```\nZig Source File → Open & Read → AST Parser → Extract Members → \nHash Comparison → Comment Handling → JSON Store Update → SyncResult Output\n```\n\n## Implementation Details\n\n### Signature Hash Tracking\nThe module uses hash-based signature comparison to determine whether code has changed. When signatures match, existing JSON comments are preserved; when they differ, source comments are used if available, otherwise marked as stale.\n\n### Comment Preservation Strategy\n- **Source doc comments** (`///`) are captured during parsing and stored in JSON\n- **AST comments** are not stripped at parse time to maintain fidelity\n- **Nested member comments** are recursively processed for comprehensive coverage\n\n### Error Handling\nRobust error handling covers:\n- File I/O operations (FileNotFound, ReadError)\n- AST parsing failures (ParseError)\n- Memory allocation failures through proper defer cleanup\n\n### Configuration Options\n- `regen_comments`: LLM-based comment regeneration with user selection\n- `regen_structure`: Creates guidance JSON for files lacking it\n- `dry_run`: Non-destructive mode for testing\n- `debug`: Enables verbose diagnostic output\n\n## Design Patterns\n\n1. **Command Pattern**: `processFile()` encapsulates the entire processing sequence as a single operation\n2. **Optional Dependencies**: Enhancers are optional, allowing graceful degradation when AI services unavailable\n3. **Builder Pattern**: The `init()` method constructs a fully configured instance with all required fields\n4. **Resource Acquisition Is Release** (RAII): Uses Zig's defer for guaranteed resource cleanup\n\n## Usage Patterns\n\n```zig\nconst processor = SyncProcessor.init(allocator, \"/project\", \"/output\", false, true);\ndefer processor.deinit();\n\nvar result = try processor.processFile(\"/path/to/file.zig\", 30);\n// Process result based on sync status and comments\n```\n\nThe module is designed for integration into larger guidance systems where it serves as the bridge between raw Zig source code and AI-enhanced documentation infrastructure.",
-  "keywords": ["SyncProcessor", "guidance system", "AST parsing", "Zig documentation", "comment enhancement", "LLM integration", "signature hashing", "JSON metadata", "dry-run mode", "module synchronization"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -14,7 +11,6 @@
       "name": "SyncProcessor",
       "match_hash": "2c2ddd807d37ed2e10296a70d45787f30fa4770828eb6cbfaaca832fc5b37583",
       "signature": "keyword_struct SyncProcessor { ... }",
-      "comment": "Manages synchronization state with allocator, file processing, and member management; owns resources and ensures safe lifecycle.",
       "is_pub": true,
       "members": [
         {
@@ -31,7 +27,7 @@
           ],
           "returns": "SyncProcessor",
           "is_pub": true,
-          "line": 29
+          "line": 30
         }
     ,    {
           "type": "fn_decl",
@@ -43,7 +39,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 40
+          "line": 41
         }
     ,    {
           "type": "fn_private",
@@ -56,7 +52,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 45
+          "line": 46
         }
     ,    {
           "type": "fn_decl",
@@ -70,7 +66,7 @@
           ],
           "returns": "types.SyncResult",
           "is_pub": true,
-          "line": 63
+          "line": 64
         }
     ,    {
           "type": "fn_decl",
@@ -84,7 +80,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 416
+          "line": 451
         }
     ,    {
           "type": "fn_private",
@@ -97,7 +93,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 453
+          "line": 488
         }
     ,    {
           "type": "fn_private",
@@ -110,7 +106,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 457
+          "line": 492
         }
     ,    {
           "type": "fn_private",
@@ -123,9 +119,8 @@
             { "name": "members", "type": "[]const types.Member" }
           ],
           "returns": "?[]const u8",
-          "comment": "Build auto-generated module comment: \"module_name: N structs, M functions (name1, name2, ...)\"",
           "is_pub": false,
-          "line": 479
+          "line": 514
         }
     ,    {
           "type": "fn_private",
@@ -136,9 +131,8 @@
             { "name": "members", "type": "[]const types.Member" }
           ],
           "returns": "bool",
-          "comment": "Returns true when any member (or nested member) has at least one GoF pattern.",
           "is_pub": false,
-          "line": 531
+          "line": 566
         }
     ,    {
           "type": "fn_private",
@@ -150,7 +144,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 541
+          "line": 576
         }
     ,    {
           "type": "fn_private",
@@ -164,9 +158,8 @@
             { "name": "has_domain", "type": "bool" }
           ],
           "returns": "[]const types.Skill",
-          "comment": "Build the skills slice: add domain-patterns only when domain patterns are detected;",
           "is_pub": false,
-          "line": 554
+          "line": 589
         }
     ,    {
           "type": "fn_private",
@@ -179,9 +172,8 @@
             { "name": "skills", "type": "[]const types.Skill" }
           ],
           "returns": "?[]const u8",
-          "comment": "Prepend a `[skill1, skill2] ` prefix to the module comment using the",
           "is_pub": false,
-          "line": 612
+          "line": 647
         }
     ,    {
           "type": "fn_private",
@@ -194,9 +186,8 @@
             { "name": "new_tags", "type": "[]const []const u8" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Merge new tags from the LLM into the existing tag slice, deduplicating.",
           "is_pub": false,
-          "line": 657
+          "line": 692
         }
     ,    {
           "type": "fn_private",
@@ -208,9 +199,8 @@
             { "name": "json_path", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Core infill logic for a single guidance JSON file (absolute path).",
           "is_pub": false,
-          "line": 691
+          "line": 726
         }
     ,    {
           "type": "fn_decl",
@@ -222,9 +212,8 @@
             { "name": "json_path", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Infill a single guidance JSON file by absolute path.  Suitable for",
           "is_pub": true,
-          "line": 820
+          "line": 855
         }
     ,    {
           "type": "fn_decl",
@@ -237,9 +226,8 @@
             { "name": "skip_paths", "type": "*const std.StringHashMapUnmanaged(void)" }
           ],
           "returns": "usize",
-          "comment": "Walk guidance_dir for all *.json files (excluding those in `skip_paths`)",
           "is_pub": true,
-          "line": 831
+          "line": 866
         }
     ,    {
           "type": "fn_private",
@@ -251,12 +239,11 @@
             { "name": "rel_path", "type": "[]const u8" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Scan src/ directory for Zig files that @import the given module.",
           "is_pub": false,
-          "line": 865
+          "line": 900
         }
       ],
-      "line": 9
+      "line": 10
     }
   ]
 }

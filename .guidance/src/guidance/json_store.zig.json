@@ -4,17 +4,13 @@
     "source": "src/guidance/json_store.zig",
     "language": "zig"
   },
-  "comment": "Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.",
-  "detail": "# JsonStore Module Documentation\n\n## Module Purpose and Architecture\n\nThe `JsonStore` module serves as a central JSON parser and storage manager for AI-generated guidance documentation in Zig projects. It bridges the gap between LLM-generated guidance files (stored as JSON) and the type system used by the rest of the codebase.\n\n**Architecture Overview:**\n- **Entry Point**: `loadGuidance(path)` - High-level API that reads a file, parses JSON, and returns a structured `GuidanceDoc`\n- **Parsing Core**: `parseGuidance(content)` - Extracts metadata, comments, details, keywords, and skills from raw JSON\n- **State Tracking**: `leaked_prompts_found` flag tracks when LLM-generated prompts accidentally appear in source files (security/quality issue)\n\nThe module follows a clean separation of concerns:\n1. File I/O is delegated to the `llm` module\n2. JSON parsing uses Zig's standard library with custom error handling\n3. Memory management uses explicit allocator patterns for ownership clarity\n4. Type conversion handles schema validation at parse time\n\n## Key Abstractions and Relationships\n\n| Abstraction | Purpose | Relationship |\n|-------------|---------|--------------|\n| `JsonStore` | Main parsing/storage entity | Orchestrates all operations |\n| `GuidanceDoc` | Output container (imported) | Holds parsed results; owned by caller |\n| `Skill` | Structured capability metadata | Part of `GuidanceDoc`; has ref + optional context |\n| `keywords` | Discovery/search terms | Array within `GuidanceDoc` for semantic search |\n\n**Data Flow:**\n```\nJSON File → readFileAlloc() → parseGuidance() → GuidanceDoc{meta, comment, detail, keywords, skills}\n                     ↓\n              leaked_prompts_found flag set if needed\n```\n\n## Public API and Usage Patterns\n\n### Primary Methods\n\n1. **`init(allocator: std.mem.Allocator) JsonStore`**\n   - Factory method requiring an allocator for memory operations\n   - No internal state initialization beyond the allocator reference\n\n2. **`loadGuidance(self: *JsonStore, path: []const u8) !?types.GuidanceDoc`**\n   - Reads up to 10MB of content\n   - Returns `null` on parse errors or missing fields\n   - Caller owns returned `GuidanceDoc` memory\n\n### Usage Pattern\n```zig\nconst store = JsonStore.init(std.heap.page_allocator);\ndefer store.allocator.free(...); // cleanup if needed\n\nconst doc = try store.loadGuidance(\"guidance.json\");\nif (doc) |d| {\n    std.debug.print(\"{s}\\n\", .{d.meta.module});\n} else {\n    // handle null/parse error\n}\n```\n\n## Important Implementation Details\n\n**Leaked Prompt Detection:**\n- The `isLeakedPrompt()` function checks if text appears to be LLM-generated prompts\n- When detected, the flag is set but content is rejected (not stored)\n- Callers can use this flag to force write-back operations that clear leaked text from disk\n\n**Schema Validation:**\n- Required fields: `meta.module`, `meta.source`\n- Optional fields: `comment`, `detail`, `keywords`, `skills`\n- Returns `null` on missing required fields or invalid JSON structure\n\n**Memory Safety:**\n- All string duplication uses the provided allocator\n- Defer blocks ensure proper cleanup of parsed JSON values\n- Early returns with null propagate errors without requiring explicit error handling\n\n## Design Patterns Used\n\n1. **Single Responsibility**: Each method has one clear purpose\n2. **State Flag Pattern**: `leaked_prompts_found` tracks cross-cutting concerns\n3. **Guard Clause Pattern**: Early returns on validation failures\n4. **Resource Acquisition Is Initialization**: Allocator passed at init time\n5. **Defer Cleanup**: Ensures deterministic resource release",
-  "keywords": ["JsonStore", "GuidanceDoc", "leaked prompts", "semantic search", "Zig documentation", "JSON parsing", "metadata extraction", "AI guidance", "skill tracking", "module discovery"],
-  "used_by": ["src/guidance/structure.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig", "src/guidance/structure.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "struct",
       "name": "JsonStore",
       "match_hash": "3f34465f5f4a2dcc3dcf8c2ed5ed82d029ab59c7ef7240583dfb5e1d78378df6",
       "signature": "keyword_struct JsonStore { ... }",
-      "comment": "Manages JSON guidance storage with allocation, parsing, and leak detection; owns data structures; mutable access controlled.",
       "is_pub": true,
       "members": [
         {
@@ -27,7 +23,7 @@
           ],
           "returns": "JsonStore",
           "is_pub": true,
-          "line": 15
+          "line": 16
         }
     ,    {
           "type": "fn_decl",
@@ -40,7 +36,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": true,
-          "line": 19
+          "line": 20
         }
     ,    {
           "type": "fn_private",
@@ -53,7 +49,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": false,
-          "line": 26
+          "line": 27
         }
     ,    {
           "type": "fn_private",
@@ -66,7 +62,7 @@
           ],
           "returns": "std.mem.Allocator.Error![]types.Member",
           "is_pub": false,
-          "line": 143
+          "line": 144
         }
     ,    {
           "type": "fn_private",
@@ -77,9 +73,8 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Returns true when a stored comment is a leaked LLM reasoning preamble rather",
           "is_pub": false,
-          "line": 160
+          "line": 161
         }
     ,    {
           "type": "fn_private",
@@ -92,7 +87,7 @@
           ],
           "returns": "std.mem.Allocator.Error!?types.Member",
           "is_pub": false,
-          "line": 180
+          "line": 181
         }
     ,    {
           "type": "fn_decl",
@@ -106,7 +101,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 314
+          "line": 315
         }
     ,    {
           "type": "fn_decl",
@@ -118,9 +113,8 @@
             { "name": "m", "type": "types.Member" }
           ],
           "returns": "types.Member",
-          "comment": "Deep-copy a single Member; every string field is independently owned.",
           "is_pub": true,
-          "line": 328
+          "line": 329
         }
     ,    {
           "type": "fn_private",
@@ -133,7 +127,7 @@
           ],
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 363
+          "line": 364
         }
     ,    {
           "type": "fn_decl",
@@ -145,9 +139,8 @@
             { "name": "strs", "type": "[]const []const u8" }
           ],
           "returns": "[][]const u8",
-          "comment": "Deep-copy a string slice.  Delegates to the generic helper in",
           "is_pub": true,
-          "line": 377
+          "line": 378
         }
     ,    {
           "type": "fn_private",
@@ -160,7 +153,7 @@
           ],
           "returns": "[]types.Pattern",
           "is_pub": false,
-          "line": 381
+          "line": 382
         }
     ,    {
           "type": "fn_decl",
@@ -172,9 +165,8 @@
             { "name": "skills", "type": "[]const types.Skill" }
           ],
           "returns": "[]types.Skill",
-          "comment": "Deep-copy a slice of Skills.",
           "is_pub": true,
-          "line": 394
+          "line": 395
         }
     ,    {
           "type": "fn_decl",
@@ -187,7 +179,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 405
+          "line": 406
         }
     ,    {
           "type": "fn_decl",
@@ -199,9 +191,8 @@
             { "name": "doc", "type": "types.GuidanceDoc" }
           ],
           "returns": "void",
-          "comment": "Free all heap memory owned by a GuidanceDoc.",
           "is_pub": true,
-          "line": 429
+          "line": 430
         }
     ,    {
           "type": "fn_decl",
@@ -216,7 +207,7 @@
           ],
           "returns": "std.mem.Allocator.Error!MergeResult",
           "is_pub": true,
-          "line": 451
+          "line": 452
         }
     ,    {
           "type": "fn_private",
@@ -232,19 +223,18 @@
           ],
           "returns": "types.Member",
           "is_pub": false,
-          "line": 494
+          "line": 495
         }
       ],
-      "line": 6
+      "line": 7
     },
     {
       "type": "struct",
       "name": "MergeResult",
-      "match_hash": "38f8f71ba2c1e2f8c98146d1167ea9cf28f43fe1857bc46ff5cc713273923b72",
+      "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
-      "comment": "Represents a merged result with ownership model and invariants; managed by the caller.",
       "is_pub": true,
-      "line": 587
+      "line": 589
     }
   ]
 }

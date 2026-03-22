@@ -4,9 +4,6 @@
     "source": "src/guidance/synthesize.zig",
     "language": "zig"
   },
-  "comment": " synthesize.zig — LLM-based synthesis for the staged explain pipeline.\n\n Combines prose stages and module detail into an answer proportionate to query detail.\n Uses fast model with cached detail context.",
-  "detail": "",
-  "keywords": ["synthesize", "SynthesisResult", "isDirectLookup", "LLM-based synthesis", "explanation pipeline", "types.Stage", "prose stages", "code snippets", "detail content", "adaptive query handling"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -18,7 +15,6 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Check if query is a direct lookup (single identifier token)",
       "is_pub": false,
       "line": 17
     },
@@ -34,7 +30,6 @@
         { "name": "stages", "type": "[]const types.Stage" }
       ],
       "returns": "SynthesisResult",
-      "comment": "Synthesize an answer proportionate to query detail.",
       "is_pub": true,
       "line": 44
     },
@@ -48,7 +43,6 @@
         { "name": "stages", "type": "[]const types.Stage" }
       ],
       "returns": "[]const []const u8",
-      "comment": "Extract all prose content from stages as a slice of string views.",
       "is_pub": true,
       "line": 272
     },
@@ -62,7 +56,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Remove lines containing \"absence\" phrases from LLM output.",
       "is_pub": true,
       "line": 288
     }

@@ -4,17 +4,13 @@
     "source": "src/common/source.zig",
     "language": "zig"
   },
-  "comment": "Extracts Zig source excerpts based on node type and line limits for documentation and LLM use.",
-  "detail": "# Source Code Excerpt Extraction Module\n\n## Module Purpose and Architecture\n\nThe `source.zig` module provides a centralized utility for extracting relevant source code excerpts from Zig files, optimized for AI coding assistant use cases including LLM context windows, documentation generation, and error message formatting. The architecture follows a pure utility pattern with minimal dependencies (only `std`) and clear separation between classification logic and extraction logic.\n\n## Key Abstractions and Relationships\n\n**NodeType Enum**: Serves as the central abstraction classifying source constructs into semantic categories:\n- **Function types** (`fn_decl`, `fn_private`): Regular functions\n- **Method types** (`method`, `method_private`): Struct/enum methods\n- **Container types** (`struct_decl`, `enum_decl`, `union_decl`): Type declarations\n- **Test types** (`test_decl`): Test function declarations\n- **Field type** (`enum_field`): Enum field definitions\n- **Other**: Catch-all for miscellaneous constructs\n\nThe enum includes helper methods:\n- `isFunction()`: Returns true for function-related node types\n- `isContainer()`: Returns true for container type declarations\n- `fromString()`: Parses string representation to NodeType\n\n**extractExcerpt Function**: The core extraction logic that intelligently handles different node types with specialized behavior based on NodeType classification.\n\n## Public API and Usage Patterns\n\n### Primary Function\n\n```zig\npub fn extractExcerpt(\n    allocator: std.mem.Allocator,\n    src: []const u8,\n    start_line: u32,\n    node_type: NodeType,\n    max_lines: usize,\n) ![]const u8\n```\n\n**Parameters:**\n- `allocator`: Memory allocator for returning owned allocations\n- `src`: Full source file content\n- `start_line`: 1-based line number where extraction begins\n- `node_type`: Classification determining extraction strategy\n- `max_lines`: Maximum lines to extract (defaults to 200)\n\n**Returns:** Owned allocation containing extracted excerpt; caller must free.\n\n### Typical Usage Pattern\n\n```zig\nconst node_type = NodeType.fromString(\"struct\");\nconst excerpt = try extractExcerpt(allocator, file_content, 45, node_type, DEFAULT_MAX_LINES);\ndefer allocator.free(excerpt);\n// Process excerpt for LLM context or documentation\n```\n\n## Important Implementation Details\n\n### Smart Extraction Strategies\n\n1. **Function/Method Body Extraction**: Uses brace matching to extract the complete function body from start line through closing brace, regardless of how many lines it spans.\n\n2. **Container Declaration Only**: For structs/enums/unions, shows declaration and signatures but skips body content (nested members, implementation details) to keep excerpts concise.\n\n3. **Limited Extraction for Other Types**: Falls back to extracting up to max_lines when node type doesn't match specialized handlers.\n\n### Special Handling Features\n\n- **Separator Comment Detection**: Skips lines starting with `// ---` to avoid including artificial separators in excerpts\n- **Nested Container Awareness**: Tracks brace depth to detect and skip nested container bodies within containers\n- **Comment Filtering**: Recognizes documentation comments (`///`, `//!`) and skips them appropriately based on context\n\n### Memory Management\n\nThe function returns an owned allocation that the caller must free using their allocator. This design allows flexible memory management while ensuring no leaks through proper defer handling in the caller's scope.\n\n## Design Patterns Used\n\n1. **Strategy Pattern**: NodeType enum with `isFunction()` and `isContainer()` methods enables different extraction strategies based on construct type.\n\n2. **Line-by-Line State Machine**: Processes source character by character with state tracking for brace depth, scope start detection, and line number monitoring.\n\n3. **Early Termination Optimization**: Skips lines before the requested start_line to avoid unnecessary processing.\n\n4. **Pure Function Design**: No global state, no side effects beyond return value - enables safe reuse and testing.",
-  "keywords": ["extractExcerpt", "NodeType", "source excerpt extraction", "LLM context window", "brace matching", "Zig documentation generation", "container declaration extraction", "strategy pattern", "utility module", "AI coding assistant"],
-  "used_by": ["src/common/llm.zig", "src/coral/common/llm.zig"],
+  "used_by": ["src/common/llm.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "enum",
       "name": "NodeType",
       "match_hash": "58ec64885c9d7ecbc77dba8d88cad8df9f6d9e2974fddecba8e26aa75b1fd03e",
       "signature": "keyword_enum NodeType { ... }",
-      "comment": "Node type classification for excerpt extraction.",
       "is_pub": true,
       "members": [
         {
@@ -129,7 +125,6 @@
         { "name": "max_lines", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Extract a source code excerpt from `src` starting at `start_line` (1-based).",
       "is_pub": true,
       "line": 53
     },
@@ -145,7 +140,6 @@
         { "name": "max_lines", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Extract up to `max_lines` source lines starting at `start_line` (1-based).",
       "is_pub": true,
       "line": 169
     },

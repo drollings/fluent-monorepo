@@ -4,9 +4,7 @@
     "source": "src/reflection/root.zig",
     "language": "zig"
   },
-  "comment": "This file exports core reflection utilities for validation, access control, and type handling in the Coral codebase.",
-  "detail": "# Coral Reflection Module Architecture\n\n## Purpose and Architecture\n\nThe `src/reflection/root.zig` module serves as the central entry point for Coral's field-level reflection, validation, access control, and type handling infrastructure. It acts as a modular federation that exposes six specialized sub-modules while maintaining a flat, backward-compatible API surface.\n\n### Architectural Design\n\n**Modular Federation Pattern**: The module imports six specialized sub-modules:\n- `constraint.zig` — Constraint system with VTable-based validation\n- `accessor.zig` — Field access and editing abstractions\n- `permissions.zig` — Role-based access control\n- `typed.zig` — Type-safe accessor operations\n- `binary.zig` — Binary field codec for serialization\n- `enum_registry.zig` — Enum management system\n\n**Flat API Surface**: Through public re-exports, the module exposes a unified namespace that preserves backward-compatible call sites from the original `src/common/reflection.zig`, allowing gradual migration while maintaining API stability.\n\n### Key Abstractions and Relationships\n\n1. **Constraint System**: The `ConstraintVTable` provides polymorphic validation through virtual method dispatch. `Constraint(T)` wraps types with constraint metadata, while `constraintSet/Get` utilities manage constraint composition.\n\n2. **Accessor Layer**: `Editable(T)` and `DynamicEditable` define how fields are accessed and modified. `FieldMeta` carries schema information including ownership modes (`OwnershipMode`) and type tags (`TypeTag`).\n\n3. **Permissions Model**: A role-based system where `Role` defines permissions via `RolePermissions`. Predefined roles include `perm_coder`, `perm_staff`, and `perm_public_read`.\n\n4. **Typed Operations**: The `TypedAccessorTable(T)` provides type-indexed access patterns, with `ValidationError` capturing type-mismatch failures during validation.\n\n5. **Binary Codec**: `BinaryFieldCodec` enables efficient field serialization through the reflection layer.\n\n### Public API and Usage Patterns\n\n```zig\n// Import the root module for all reflection utilities\nconst reflection = @import(\"reflection.zig\");\n\n// Use flat re-exports for constraint-based validation\nconst Constraint = reflection.Constraint;\nconst perm_coder = reflection.perm_coder;\n\n// Access field metadata through Editable types\nconst Editable = reflection.Editable;\n```\n\n**Common Patterns**:\n- **Validation Chains**: Compose constraints using `constraintSet` then apply via `Constraint(T)`\n- **Field Access**: Use `Accessor` or `TypedAccessor` for type-safe field retrieval\n- **Permission Checks**: Verify access via `RolePermissions.perm_*` constants\n\n### Implementation Details\n\n- The module uses Zig's `@import()` for sub-module federation, enabling clean dependency resolution\n- Flat re-exports are declared as `pub const` to maintain namespace cleanliness while preserving API compatibility\n- Type-level abstractions leverage Zig's generic capabilities (`Constraint(T)`, `Editable(T)`)\n\n### Design Patterns\n\n1. **Module Federation**: Clean separation of concerns across specialized sub-modules\n2. **Flat API with Re-exports**: Unified public surface with internal modularity\n3. **VTable-based Polymorphism**: Efficient constraint dispatch through virtual methods\n4. **Type-Level Abstraction**: Generic constraints and accessors for compile-time safety",
-  "keywords": ["Constraint", "Accessor", "Editable", "FieldMeta", "RolePermissions", "BinaryFieldCodec", "ConstraintVTable", "TypedAccessor", "perm_coder", "Coral Reflection"],
+  "keywords": ["Reflection", "Validation", "Access Control", "Type Safety", "Coral", "Zig", "Modularity", "Security", "API", "Extensibility"],
   "used_by": ["src/vector/lance_db.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "TestConfig",
       "match_hash": "2bdee22dcce48dbc7f389cfbdc91fad1e2b259a68ac8fefa94889f44ea293a44",
       "signature": "keyword_struct TestConfig { ... }",
-      "comment": "Represents configuration settings with strict ownership and invariants; managed via reflection.",
       "is_pub": false,
       "line": 71
     },
@@ -65,7 +62,6 @@
       "name": "Status",
       "match_hash": "5e17af7d2b56b085692e0c26090e7c90fc9a441428abdee948cfda088bb47bbf",
       "signature": "keyword_enum Status { ... }",
-      "comment": "Defines a status enum with compile-time checks; owned by the module; ensures invariant values are fixed.",
       "is_pub": false,
       "members": [
         {
@@ -160,7 +156,6 @@
       "name": "TestSchema",
       "match_hash": "cb9e97a8a8c42ec45990b5c1797d1c4e9b35b5d9a4afb39eec667244a10e6b9a",
       "signature": "keyword_struct TestSchema { ... }",
-      "comment": "Defines a schema for field description with ownership and invariants; provides metadata via describeField.",
       "is_pub": false,
       "members": [
         {
@@ -207,7 +202,6 @@
       "name": "TestConfigTyped",
       "match_hash": "372df65bb4ea2bfc65f1032c206794b734a4b6a775d2135546dc3254938f4e47",
       "signature": "keyword_struct TestConfigTyped { ... }",
-      "comment": "Defines a typed configuration struct for test settings, managed via reflection, with strict ownership and invariants.",
       "is_pub": false,
       "line": 389
     },

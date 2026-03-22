@@ -4,10 +4,8 @@
     "source": "src/common/hash.zig",
     "language": "zig"
   },
-  "comment": "Provides SHA-256 and content+model hashing utilities for Zig, supporting allocator-friendly outputs and secure key generation.",
-  "detail": "# Hash Module Documentation\n\n## Module Purpose and Architecture\n\nThe `src/common/hash.zig` module provides a comprehensive suite of cryptographic hashing utilities designed for flexible, allocator-friendly operations across various use cases. The architecture follows a modular design pattern where algorithm selection is centralized through an enum dispatch system, while specific hashing functions are optimized for their intended domains—whether generating cache keys, verifying file integrity, or building batch processing pipelines.\n\nThe module leverages Zig's standard library `std.crypto.hash` as its cryptographic foundation, ensuring compatibility with well-tested implementations of SHA-256, SHA-512, and BLAKE3 algorithms. This abstraction layer allows the module to remain agnostic to underlying algorithm implementations while providing consistent interfaces for callers.\n\n## Key Abstractions and Relationships\n\nThe module's core abstractions center around three main components:\n\n**HashAlgorithm Enum**: Serves as the central dispatch mechanism for algorithm selection. It defines supported algorithms (SHA-256, SHA-512, BLAKE3) and provides a `digestLength()` method that returns the output size in bytes for each algorithm. This enum enables polymorphic behavior through switch expressions while maintaining compile-time type safety.\n\n**BatchHashResult Struct**: A container struct representing per-file results from batch operations. It includes fields for the file path, optional hash value, and optional error message, allowing callers to collect heterogeneous results across multiple files in a single operation.\n\n**HashState Struct**: Although not explicitly shown in the source code, this appears to be part of the public API for maintaining hashing state across multiple update calls—useful for incremental hashing scenarios where data arrives in chunks over time.\n\n## Public API and Usage Patterns\n\nThe module exposes several key functions:\n\n1. **sha256Hex()**: Returns a 64-character lowercase hexadecimal string representing the SHA-256 digest of input data. Callers must allocate memory and free the returned slice when done, following Zig's ownership model.\n\n2. **contentHashWithModel()**: A specialized function that produces a 16-byte hash by combining content with a model identifier separated by a null byte. This prevents cache collisions when the same content is hashed under different embedding models—a critical feature for AI/ML systems managing model-specific caches.\n\n3. **hashFile()**: Reads an entire file in 64KB chunks and computes its hash using the specified algorithm, returning an allocator-owned hex string. The function handles streaming efficiently by processing data incrementally rather than loading files entirely into memory.\n\n4. **hashBatch()**: Processes multiple files sequentially with optional progress callbacks, returning a slice of BatchHashResult structs that capture success or failure for each file. This enables monitoring large-scale hashing operations without blocking the caller.\n\n5. **blake3Hash/Hex**: BLAKE3-specific utilities providing both raw digest bytes and hex string representations.\n\n## Important Implementation Details\n\nThe module employs several important implementation strategies:\n\n- **Buffer Sizing**: A fixed 64KB buffer is used for file I/O, balancing memory efficiency with system call overhead. This size is large enough to amortize seek costs while small enough to fit in cache.\n\n- **Error Handling**: File reading operations use `catch` expressions within loops to gracefully handle errors and break out of processing when files cannot be read.\n\n- **Hex Encoding Optimization**: The `contentHashWithModel()` function uses a precomputed lookup table (\"0123456789abcdef\") rather than calling `std.fmt.bytesToHex()`, reducing overhead for fixed-size output requirements.\n\n- **Memory Ownership Semantics**: Functions consistently distinguish between zero-allocation returns (fixed-size arrays) and allocator-owned returns (slices requiring deallocation), making memory management explicit and predictable.\n\n## Design Patterns\n\nThe module demonstrates several Zig design patterns:\n\n1. **Factory Pattern**: The `HashAlgorithm` enum with switch expressions acts as a factory, creating the appropriate hasher instance based on algorithm selection.\n\n2. **Stream Processing**: File hashing uses chunked reading with incremental updates to the hasher state, demonstrating efficient streaming rather than bulk loading.\n\n3. **Builder/Progress Pattern**: The optional progress callback parameter in `hashBatch()` allows external monitoring of large operations without requiring polling or busy-waiting.\n\n4. **Resource Management via Defer**: File handles are automatically closed using defer statements, ensuring cleanup even when errors occur during processing.",
-  "keywords": ["sha256Hex", "contentHashWithModel", "hashFile", "BatchHashResult", "HashAlgorithm", "blake3Hash", "batch processing", "cryptographic hashing", "cache key generation", "file integrity verification"],
-  "used_by": ["src/common/llm.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
+  "keywords": ["SHA256", "contentHashWithModel", "hashFile", "hashBatch", "allocator", "cryptographic", "hashing", "Zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -19,7 +17,6 @@
         { "name": "data", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Compute SHA-256 over `data` and return the digest as a 64-char lowercase",
       "is_pub": true,
       "line": 10
     },
@@ -33,7 +30,6 @@
         { "name": "model", "type": "[]const u8" }
       ],
       "returns": "[16]u8",
-      "comment": "SHA-256-based 16-hex-char content+model hash.",
       "is_pub": true,
       "line": 25
     },
@@ -42,7 +38,6 @@
       "name": "HashAlgorithm",
       "match_hash": "3cb9be44bf1a157270fe1a89d38832a410ab6085d3a1bfc89b8754c07d47dab3",
       "signature": "keyword_enum HashAlgorithm { ... }",
-      "comment": "Supported hash algorithms.",
       "is_pub": true,
       "members": [
         {
@@ -89,7 +84,6 @@
         { "name": "algorithm", "type": "HashAlgorithm" }
       ],
       "returns": "[]const u8",
-      "comment": "Hash a file at `path` with the given algorithm.",
       "is_pub": true,
       "line": 63
     },
@@ -98,7 +92,6 @@
       "name": "BatchHashResult",
       "match_hash": "cf64cfb3f02d2a51975bb70cb19680210a82df4724a5ce8633ca50243cf936dd",
       "signature": "keyword_struct BatchHashResult { ... }",
-      "comment": "Per-file result from `hashBatch`.",
       "is_pub": true,
       "line": 114
     },
@@ -114,7 +107,6 @@
         { "name": "progress_callback", "type": "?*const fn (usize, usize) void" }
       ],
       "returns": "[]BatchHashResult",
-      "comment": "Hash multiple files in sequence, collecting results.",
       "is_pub": true,
       "line": 123
     },
@@ -129,7 +121,6 @@
         { "name": "algorithm", "type": "HashAlgorithm" }
       ],
       "returns": "[]const u8",
-      "comment": "Hash an in-memory byte slice with the given algorithm.",
       "is_pub": true,
       "line": 149
     },
@@ -142,7 +133,6 @@
         { "name": "data", "type": "[]const u8" }
       ],
       "returns": "[32]u8",
-      "comment": "Compute a Blake3 digest of `data` — no allocation, returns raw bytes.",
       "is_pub": true,
       "line": 177
     },
@@ -156,7 +146,6 @@
         { "name": "data", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Compute a Blake3 digest of `data` and return it as an allocator-owned hex string.",
       "is_pub": true,
       "line": 184
     },
@@ -165,7 +154,6 @@
       "name": "HashState",
       "match_hash": "40c2851e653bf88d9148cc4d5ea81c5c5afa95242e7aa1ae7d0fc376a794384a",
       "signature": "keyword_struct HashState { ... }",
-      "comment": "Incremental streaming hash: accumulate data in multiple `update()` calls,",
       "is_pub": true,
       "members": [
         {
@@ -203,7 +191,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "[]const u8",
-          "comment": "Finalise the hash and return an allocator-owned hex string; caller must free.",
           "is_pub": true,
           "line": 215
         }

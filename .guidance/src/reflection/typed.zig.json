@@ -4,9 +4,7 @@
     "source": "src/reflection/typed.zig",
     "language": "zig"
   },
-  "comment": "Defines typed accessor structures, type conversions, and permission handling for Zig type safety.",
-  "detail": "# Module: typed.zig — Typed Access and Permission System\n\n## Overview\n\nThis module provides a sophisticated type-safe access mechanism for struct fields in Zig, combining compile-time type checking with runtime flexibility through vtable-based dispatch. It enables generic field access while maintaining strict type safety and permission control.\n\n## Architecture\n\nThe module implements a three-tier architecture:\n\n1. **Type Identification Layer**: The `TypeId` enum provides compile-time mapping of Zig types to canonical identifiers (int_u8, float_f64, string_type, etc.), enabling runtime type checks without expensive reflection.\n\n2. **Accessor Layer**: `TypedAccessor` structs encapsulate field metadata (offset, size, alignment, permissions) alongside operation handlers via vtables. This separates data from behavior, allowing extensible operations like serialization and validation.\n\n3. **Table Layer**: `TypedAccessorTable(Host)` generates a complete field index for any type, filtering out special fields like \"editable\" to avoid recursion issues.\n\n## Key Abstractions\n\n### TypedAccessor\nThe core accessor struct combines:\n- **Static metadata**: name, offset, type_id, size, alignment\n- **Dynamic operations**: via string_vtable (ConstraintVTable) and enum_values\n- **Validation bounds**: min_value, max_value for range checking\n- **Permissions**: RolePermissions for access control\n\n### TypedAccessorTable\nA compile-time generated table providing:\n- Field enumeration with type information\n- Direct offset-based field access\n- Permission-aware field iteration\n- Automatic exclusion of special fields\n\n## Public API\n\n**Type Identification:**\n```zig\ntypeIdFromType(comptime T: type) TypeId\n```\nMaps any Zig type to its canonical identifier at compile time.\n\n**Accessor Operations:**\n- `setTyped()`: Direct memory assignment with offset adjustment\n- `getTyped()`: Safe retrieval with type checking\n- `setString()`/`getString()`: Serialization through vtable dispatch\n- `validateRange()`: Bounds checking for numeric types\n\n**Table Generation:**\n```zig\nconst Table = TypedAccessorTable(MyStruct);\n```\nGenerates a complete field index for any Host type.\n\n## Implementation Details\n\n1. **Vtable Pattern**: The module uses ConstraintVTable for polymorphic operations, enabling runtime dispatch of string parsing and serialization while maintaining compile-time safety.\n\n2. **Pointer Arithmetic Safety**: All access operations use `@alignCast` and explicit pointer casting to ensure memory alignment is respected.\n\n3. **Compile-Time Type Info**: Extensive use of `@typeInfo()` enables exhaustive type pattern matching without runtime overhead.\n\n4. **Permission Integration**: RolePermissions from the permissions module provide fine-grained access control per field, enabling security-aware serialization.\n\n5. **Range Validation**: The validateRange function efficiently checks bounds for integer types using i128 sentinel values to prevent overflow.\n\n## Design Patterns\n\n- **Vtable/Strategy Pattern**: Extensible operations through vtables\n- **Accessor Pattern**: Metadata + operations separation\n- **Type Erasure with Specialization**: Compile-time type info + runtime flexibility\n- **Compile-Time Code Generation**: comptime functions generate complete field tables",
-  "keywords": ["TypedAccessor", "TypedAccessorTable", "typeIdFromType", "ConstraintVTable", "RolePermissions", "TypeId", "vtable pattern", "compile-time type checking", "field accessors", "permission system"],
+  "keywords": ["TypedAccessor", "TypedEditable", "ConstraintVTable", "RolePermissions", "TypeId", "Permissions", "Zig"],
   "used_by": ["src/reflection/root.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "TypeId",
       "match_hash": "eef8aca451dc108d0bd36120358147b5cd561d1c7fee655b4b648e516e1fb465",
       "signature": "keyword_enum TypeId { ... }",
-      "comment": "Defines a type identifier with compile-time checks; manages ownership and invariants for safe usage.",
       "is_pub": true,
       "members": [
         {
@@ -143,7 +140,6 @@
         { "name": "T", "type": "type" }
       ],
       "returns": "TypeId",
-      "comment": "Converts a Zig type to its corresponding TypeId identifier.",
       "is_pub": true,
       "line": 34
     },
@@ -152,7 +148,6 @@
       "name": "TypedAccessor",
       "match_hash": "d61918491f8d3019aabfaa64c7bb6a6bf67cacb736f7ab6dc830fb33fe03d50f",
       "signature": "keyword_struct TypedAccessor { ... }",
-      "comment": "Manages typed accessors with strict type safety, enforcing compile-time constraints on values and allocators.",
       "is_pub": true,
       "members": [
         {
@@ -237,7 +232,6 @@
         { "name": "Host", "type": "type" }
       ],
       "returns": "type",
-      "comment": "Converts a Zig type reference to a typed accessor table, returning the underlying type.",
       "is_pub": true,
       "line": 106
     },
@@ -246,7 +240,6 @@
       "name": "TypedEditable",
       "match_hash": "8b315bdadabbe2f9eb425542acedb72bf7bfd4b49de2bb0c5ed2306c9b4b11d9",
       "signature": "keyword_struct TypedEditable { ... }",
-      "comment": "Represents a typed editable structure with accessor methods; owned by the caller, mutable via setTyped, and returns typed values.",
       "is_pub": true,
       "members": [
         {

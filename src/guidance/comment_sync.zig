@@ -306,10 +306,8 @@ pub const CommentSyncProcessor = struct {
         const rel = relPath(self.project_root, self.project_root); // placeholder
 
         const er = switch (member.type) {
-            .fn_decl, .fn_private, .method, .method_private =>
-                enh.enhanceFunction(member.name, sig, null, rel) catch return null,
-            .@"struct", .@"enum", .@"union" =>
-                enh.enhanceStruct(member.name, sig, &.{}, null, rel) catch return null,
+            .fn_decl, .fn_private, .method, .method_private => enh.enhanceFunction(member.name, sig, null, rel) catch return null,
+            .@"struct", .@"enum", .@"union" => enh.enhanceStruct(member.name, sig, &.{}, null, rel) catch return null,
             else => return null,
         };
         defer er.deinit(self.allocator);

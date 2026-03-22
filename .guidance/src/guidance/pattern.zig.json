@@ -4,11 +4,9 @@
     "source": "src/guidance/pattern.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns] Detects design patterns in Zig AST nodes using text heuristics and node metadata.",
-  "detail": "# Design Pattern Detection Module - Documentation\n\n## Purpose and Architecture\n\nThe `pattern.zig` module implements a design pattern detection system for Zig code analysis, serving as the core engine for identifying architectural patterns in source code. It operates on two complementary fronts: **AST-based structural analysis** and **text-based heuristic matching**.\n\n### Core Design Philosophy\nThe architecture follows a hybrid approach inspired by Python's PatternDetector, combining:\n- **Tree traversal**: Leverages Zig's `std.zig.Ast` to understand code structure\n- **Source text extraction**: Uses `tree.getNodeSource()` to obtain node content for pattern matching\n- **Heuristic detection**: Applies keyword and structural patterns to identify design patterns\n\n### Module Dependencies\n```\npattern.zig\n├── std (standard library)\n├── types.zig (data structures for Pattern, etc.)\n└── common.zig (LLM integration utilities)\n```\n\n## Key Abstractions\n\n### The `Pattern` Structure\nEach detected pattern contains:\n- **name**: Human-readable pattern identifier\n- **type**: Classification (.Domain or .GoF)\n- **ref**: Documentation reference path to skill guides\n\n### Detection Functions by Category\n\n**Domain Patterns:**\n- `detectRingBuffer()` - Identifies circular buffer implementations\n- `detectStatePersistence()` - Finds state management patterns\n\n**GoF Creational:**\n- `detectFactory()`, `detectSingleton()`, `detectBuilder()` - Object creation patterns requiring tree access for constructor analysis\n\n**GoF Structural:**\n- `detectAdapter()`, `detectDecorator()`, `detectProxy()` - Object composition patterns using text heuristics\n\n**GoF Behavioral:**\n- `detectStrategy()`, `detectObserver()`, `detectTemplateMethod()` - Interaction and algorithm patterns\n\n## Public API Usage Patterns\n\n### Primary Entry Point\n```zig\nconst patterns = try detectPatterns(allocator, tree, node_index);\n// Returns: []types.Pattern containing all detected patterns\n```\n\n### Utility Functions\n- **`containsWord()`** / **`containsAny()`** - String matching utilities for keyword detection\n- **`detectPatternNames()`** - Extracts just pattern names without full metadata\n\n### Memory Management\nThe module uses `errdefer` with explicit cleanup to free allocated strings, ensuring no memory leaks when errors occur during pattern detection.\n\n## Implementation Details\n\n### Text-Based Heuristic Approach\nUnlike pure AST analysis, this module extracts source text and applies keyword matching:\n```zig\nconst node_source = tree.getNodeSource(node);\nif (detectFactory(tree, node, node_source)) { ... }\n```\n\nThis hybrid approach handles cases where:\n- Pattern intent isn't immediately obvious from structure alone\n- Comments or documentation provide crucial context\n- Multiple patterns overlap in the same code region\n\n### Error Handling Strategy\nThe `errdefer` block ensures proper cleanup of all allocated memory (`p.name`, `p.ref`) regardless of which detection function fails, following Zig's RAII-inspired error handling conventions.\n\n## Design Patterns Used (in Implementation)\n\n1. **Strategy Pattern** - Each detector function is a standalone strategy for pattern identification\n2. **Command Pattern** - `detectPatterns()` orchestrates multiple detection commands\n3. **Template Method** - Follows consistent structure: extract source → check conditions → append result\n\n## Related Documentation\n- GoF Patterns: `.skills/gof-patterns/SKILL.md`\n- Domain Patterns: `.skills/domain_patterns/SKILL.md`",
-  "keywords": ["detectPatterns", "design pattern detection", "Zig AST analysis", "GoF patterns", "Ring Buffer", "State Persistence", "Factory Singleton Builder", "Adapter Decorator Proxy", "Strategy Observer Template Method", "text-based heuristics"],
+  "keywords": ["Zig", "pattern detection", "AST analysis", "design patterns", "GoF", "memory management", "code refactoring"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "used_by": ["src/guidance/ast_parser.zig"],
   "members": [
@@ -23,7 +21,6 @@
         { "name": "node", "type": "std.zig.Ast.Node.Index" }
       ],
       "returns": "[]types.Pattern",
-      "comment": "Detect design patterns from a Zig AST node's source text.",
       "is_pub": true,
       "line": 8
     },
@@ -38,7 +35,6 @@
         { "name": "node", "type": "std.zig.Ast.Node.Index" }
       ],
       "returns": "[][]const u8",
-      "comment": "Detects pattern names in a Zig AST node using an allocator and returns their slice.",
       "is_pub": true,
       "line": 120
     },
@@ -52,7 +48,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true if `needle` appears in `haystack` as a word boundary match (case-insensitive).",
       "is_pub": false,
       "line": 143
     },
@@ -66,7 +61,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true if the source text contains any of the given keywords (substring match).",
       "is_pub": false,
       "line": 159
     },
@@ -80,7 +74,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true if the source text contains any of the given keywords as word-boundary matches.",
       "is_pub": false,
       "line": 167
     },
@@ -93,7 +86,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the input slice represents a valid ring buffer structure.",
       "is_pub": false,
       "line": 178
     },
@@ -106,7 +98,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a sequence maintains consistent state across slices, returning true if stable.",
       "is_pub": false,
       "line": 185
     },
@@ -121,7 +112,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig AST node matches a factory definition, returning true or false.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -139,7 +129,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig AST node is a singleton by analyzing its structure and return a boolean.",
       "is_pub": false,
       "line": 203
     },
@@ -154,7 +143,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig AST node can be built using a given source slice, returning true or false.",
       "is_pub": false,
       "line": 212
     },
@@ -169,7 +157,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given node matches an adapter pattern in the Zig AST tree, returning true or false.",
       "is_pub": false,
       "line": 238
     },
@@ -182,7 +169,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given source slice contains valid Zig syntax and returns a boolean result.",
       "is_pub": false,
       "line": 246
     },
@@ -195,7 +181,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given source slice matches a proxy pattern, returning true or false.",
       "is_pub": false,
       "line": 255
     },
@@ -210,7 +195,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig AST node matches a specified strategy pattern, returning true or false.",
       "is_pub": false,
       "line": 267
     },
@@ -225,7 +209,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given node matches an observer pattern definition in the tree structure.",
       "is_pub": false,
       "line": 276
     },
@@ -240,7 +223,6 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig AST node matches a template method pattern, returning true or false.",
       "is_pub": false,
       "line": 288
     },

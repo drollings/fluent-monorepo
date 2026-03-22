@@ -1,0 +1,143 @@
+{
+  "meta": {
+    "module": "src.guidance.comment_sync",
+    "source": "src/guidance/comment_sync.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "CommentSyncResult",
+      "match_hash": "bcd9feeebcdbe7b7e6de6ac5ad5b7fbc0c1a4e3834dc03acbe2c9dec5c14cfd2",
+      "signature": "keyword_struct CommentSyncResult { ... }",
+      "is_pub": true,
+      "line": 32
+    },
+    {
+      "type": "struct",
+      "name": "CommentSyncProcessor",
+      "match_hash": "15586d1c4e519c2eb0c1066ffa837ea3edcd73475642f365af0b53ba013c38f8",
+      "signature": "keyword_struct CommentSyncProcessor { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "0547623f454019abcf52718d1c8dd487f77dd8b3a6948924aabe0693cd63a872",
+          "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, debug: bool, dry_run: bool) -> CommentSyncProcessor",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "project_root", "type": "[]const u8" },
+            { "name": "output_dir", "type": "[]const u8" },
+            { "name": "debug", "type": "bool" },
+            { "name": "dry_run", "type": "bool" }
+          ],
+          "returns": "CommentSyncProcessor",
+          "is_pub": true,
+          "line": 71
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isUpToDate",
+          "match_hash": "027b9b677b2debc80381d54bf2d6e2fffb9b79c8e0f8ef1cbaa673285a53deb6",
+          "signature": "fn isUpToDate(self: *const CommentSyncProcessor, filepath: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const CommentSyncProcessor" },
+            { "name": "filepath", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 93
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "processFile",
+          "match_hash": "41f27269769ef051576702bef23dea7249ded84f60d91c1fecf80e0bbe70b7e7",
+          "signature": "fn processFile(self: *CommentSyncProcessor, filepath: []const u8) -> CommentSyncResult",
+          "params": [
+            { "name": "self", "type": "*CommentSyncProcessor" },
+            { "name": "filepath", "type": "[]const u8" }
+          ],
+          "returns": "CommentSyncResult",
+          "is_pub": true,
+          "line": 107
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "generateMemberComment",
+          "match_hash": "71bfe63081accd3091f90935ca8de043efb9380055f7246497609a3b076a3232",
+          "signature": "fn generateMemberComment(self: *CommentSyncProcessor, member: types.Member, _source: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*CommentSyncProcessor" },
+            { "name": "member", "type": "types.Member" },
+            { "name": "_source", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "is_pub": false,
+          "line": 297
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "updateJsonLineNumbers",
+          "match_hash": "d10de563df7e1b7d989c3d8a27f232ba77512d1db6d4ace1ed5dd5e8d9e40bae",
+          "signature": "fn updateJsonLineNumbers(self: *CommentSyncProcessor, guidance_path: []const u8, source: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentSyncProcessor" },
+            { "name": "guidance_path", "type": "[]const u8" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 320
+        }
+      ],
+      "line": 52
+    },
+    {
+      "type": "fn_private",
+      "name": "sortMembersByLineDesc",
+      "match_hash": "f0f245f0e5ba7b1327ccb9424271430a9e094265811b5b3a56659dc1ce2891f6",
+      "signature": "fn sortMembersByLineDesc(allocator: std.mem.Allocator, members: []const types.Member) -> []types.Member",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "members", "type": "[]const types.Member" }
+      ],
+      "returns": "[]types.Member",
+      "is_pub": false,
+      "line": 361
+    },
+    {
+      "type": "fn_private",
+      "name": "relPath",
+      "match_hash": "23fe5c5a333311f93453e24865637d67028431d33b0f33f5a26177489f87b896",
+      "signature": "fn relPath(filepath: []const u8, root: []const u8) -> []const u8",
+      "params": [
+        { "name": "filepath", "type": "[]const u8" },
+        { "name": "root", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": false,
+      "line": 373
+    },
+    {
+      "type": "fn_private",
+      "name": "writeFile",
+      "match_hash": "7eb67abac378474aaa9aba2b39c593de054ee2036f55b8a104a21eb88b984dce",
+      "signature": "fn writeFile(path: []const u8, content: []const u8) -> void",
+      "params": [
+        { "name": "path", "type": "[]const u8" },
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 382
+    },
+    {
+      "type": "test_decl",
+      "name": "sortMembersByLineDesc - ordering",
+      "is_pub": false,
+      "line": 392
+    }
+  ]
+}

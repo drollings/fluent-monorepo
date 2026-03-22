@@ -4,17 +4,14 @@
     "source": "src/rdf/lexer.zig",
     "language": "zig"
   },
-  "comment": "This file defines a streaming lexer for Terse RDF Triple Language, handling tokens, line/column tracking, and returning slices to the caller's buffer.",
-  "detail": "# src/rdf/lexer.zig — Streaming Turtle Lexer Module\n\n## Module Purpose and Architecture\n\nThis module implements a streaming lexer for Terse RDF Triple Language (Turtle), designed with zero-allocation semantics that returns slices into caller-owned source buffers. The architecture follows a classic state-machine parser pattern with position tracking for accurate error diagnostics.\n\n### Key Design Decisions\n- **Zero-allocation**: All token values are slices referencing the original source buffer, eliminating heap allocations during parsing\n- **Streaming capability**: Process large files incrementally without loading entirely into memory\n- **Diagnostics support**: Line/column tracking enables precise error reporting in downstream parsers\n- **Caller ownership**: Source buffer lifetime is managed externally, reducing API complexity\n\n## Key Abstractions and Relationships\n\n### `Lexer` Struct (Stateful Parser)\nThe central state machine maintains:\n- Current position in source (`pos`)\n- Line and column for diagnostics\n- Reference to source buffer (`src`)\n\n### `Token` Struct (Parse Output)\nEncapsulates parsed content with metadata:\n- `type`: Enum identifying token category\n- `value`: Slice into original buffer (not owned)\n- `line`, `col`: Position information for error reporting\n\n### `TokenType` Enum (16 Categories)\n| Category | Examples | Description |\n|----------|----------|-------------|\n| IRI | `<http://example.org/foo>` | Internationalized Resource Identifier |\n| PrefixedName | `ex:foo`, `:bar` | Names with prefixes or default prefix |\n| BlankNode | `_:node1` | Anonymous resource identifiers |\n| Literal | `\"text\"`, `\"text\"@en` | String values with optional language tags |\n| Punctuation | `.`, `,`, `;`, `()`, `[]` | Structural delimiters |\n| Keyword | `@prefix`, `a` | Reserved Turtle keywords |\n| DatatypeMarker | `^^` | Language-independent datatype indicator |\n\n### `LexError` Error Union\nFour error conditions for malformed input:\n- `UnterminatedIRI`: Missing closing angle bracket\n- `UnterminatedLiteral`: Unclosed quoted string\n- `InvalidEscape`: Malformed escape sequences\n- `UnexpectedChar`: Invalid characters in token context\n\n## Public API and Usage Patterns\n\n### Primary Usage Pattern\n```zig\nconst source = std.fs.cwd().readFileAlloc(\"data.ttl\", 0) catch unreachable;\ndefer source.deinit();\n\nvar lex = Lexer.init(source);\nwhile (true) {\n    const tok = try lex.nextToken();\n    if (tok.type == .eof) break;\n    \n    // Process token: handle IRI, literal, punctuation, etc.\n    switch (tok.type) {\n        .iri => processIRI(tok.value),\n        .literal => processLiteral(tok.value),\n        else => {},\n    }\n}\n```\n\n### API Components\n- **`init(source: []const u8)`**: Constructor accepting source buffer\n- **`nextToken(self: *Lexer) LexError!Token`**: Main parsing entry point, returns next token or `.eof`\n\n## Important Implementation Details\n\n### Whitespace and Comment Handling\nThe lexer automatically skips:\n- Space and tab characters\n- Hash comments (`#...`) to end of line\n- Newlines update line/column counters correctly (handles `\\r\\n` sequences)\n\n### Token Extraction Strategy\nEach token type has dedicated lexing functions that return slices directly from the source buffer. The IRI lexer (`lexIRI`) and literal lexer (`lexLiteral`) handle multi-character tokens with proper error checking for unterminated cases.\n\n### Position Tracking Accuracy\nLine/column counters maintain accuracy across different line ending conventions, ensuring error messages point to correct locations in source files.\n\n## Design Patterns Used\n\n1. **Zero-Copy Pattern**: Returns slices rather than owned data, reducing memory pressure\n2. **Streaming Parser**: Processes input incrementally without full buffering\n3. **State Machine Parser**: Deterministic transitions based on character classes\n4. **Error Propagation**: Uses Zig's error union for clean error handling\n5. **Diagnostics-First Design**: Captures position information at token boundaries\n\nThe module is intentionally minimal, delegating semantic validation to downstream parsers while ensuring robust tokenization and accurate source location tracking.",
-  "keywords": ["Lexer", "Turtle", "RDF", "tokenizer", "streaming parser", "zero-allocation", "IRI", "blank node", "literal parsing", "line column tracking"],
-  "used_by": ["src/rdf/parser.zig"],
+  "keywords": ["Zig", "lexer", "Terse RDF-TL", "tokenization", "streaming", "error handling", "state management"],
+  "used_by": ["src/rdf/parser.zig", "src/rdf/root.zig"],
   "members": [
     {
       "type": "enum",
       "name": "TokenType",
       "match_hash": "ca88e580b50fd929bc2e67efd14f579423235d535928c2504bee58740f267d05",
       "signature": "keyword_enum TokenType { ... }",
-      "comment": "Defines a token type for Zig keywords, managing ownership and ensuring correct usage patterns.",
       "is_pub": true,
       "members": [
         {
@@ -115,7 +112,6 @@
       "name": "Token",
       "match_hash": "4304edd65a473119d1cbc94da4957291ea22810d66e965af353d6d5d965329db",
       "signature": "keyword_struct Token { ... }",
-      "comment": "Represents a keyword in Zig's lexer, tracking ownership and invariants for parsing. Owns a fixed-size buffer pool.",
       "is_pub": true,
       "line": 37
     },
@@ -124,7 +120,6 @@
       "name": "Lexer",
       "match_hash": "ac951e707f2d4616ef49ba664404494efdb382d1a49bb0fc973f2e29e9ab7425",
       "signature": "keyword_struct Lexer { ... }",
-      "comment": "Handles RDF lexing with ownership and line/column tracking; provides tokenization for structured RDF syntax.",
       "is_pub": true,
       "members": [
         {
@@ -148,7 +143,6 @@
             { "name": "self", "type": "*Lexer" }
           ],
           "returns": "void",
-          "comment": "Advance past whitespace and comments.",
           "is_pub": false,
           "line": 64
         }
@@ -215,7 +209,6 @@
             { "name": "start_col", "type": "u32" }
           ],
           "returns": "LexError!Token",
-          "comment": "Lex a bare numeric literal: integer, decimal, or double.",
           "is_pub": false,
           "line": 287
         }

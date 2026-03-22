@@ -4,9 +4,7 @@
     "source": "src/guidance/provider_discovery.zig",
     "language": "zig"
   },
-  "comment": " External language provider discovery for guidance.\n\n Searches for provider binaries named `guidance-{ext_bare}` in:\n   1. `{workspace}/bin/guidance-{ext_bare}`   (workspace-local, highest priority)\n   2. PATH lookup for `guidance-{ext_bare}`   (system-wide)\n\n Provider protocol — subprocess invocation:\n   guidance-py sync --file {src_abs} --output {json_dir}\n   guidance-py sync --scan {src_dir} --output {json_dir}\n\n Providers must write guidance JSON files compatible with the existing format\n to `{json_dir}/src/{relative_path}{ext}.json`.\n\n All returned Provider values are owned by the caller; call provider.deinit().",
-  "detail": "# Module: guidance/provider_discovery.zig\n\n## Purpose and Architecture\n\nThis module implements an external language provider discovery and invocation system for the Guidance AI coding assistant. It enables the main application to dynamically discover and communicate with external language analysis tools (e.g., `guidance-py`, `guidance-rs`) that provide language-specific guidance data.\n\nThe architecture follows a layered design:\n- **Discovery Layer**: Two-tier binary search prioritizing workspace-local installations over system PATH\n- **Abstraction Layer**: The `Provider` struct encapsulates provider lifecycle and metadata\n- **Invocation Layer**: Command construction and execution for both single-file and directory scanning operations\n- **Protocol Interface**: Standardized subprocess protocol with fixed flags and extensible arguments\n\n## Key Abstractions\n\n### Provider Struct\nThe central abstraction representing a discovered external provider. It stores:\n- `name`: Human-readable language identifier (e.g., \"py\", \"rs\")\n- `binary`: Absolute path to the executable\n- `extension`: File extension handled (e.g., \".py\")\n\n**Ownership Model**: All string fields are allocated and owned by the caller, requiring explicit cleanup via `deinit()` to prevent memory leaks.\n\n### Discovery Hierarchy\n1. **Workspace-local**: `{workspace}/bin/guidance-{ext_bare}` — highest priority for project-specific providers\n2. **System PATH**: Global installation location for shared tools\n\n## Public API\n\n| Function | Description |\n|----------|-------------|\n| `discoverProvider()` | Finds provider binary by extension; returns null if not found |\n| `invokeProviderFile()` | Invokes provider with single file path |\n| `invokeProviderScan()` | Scans entire directory for guidance data |\n| `deinit()` | Frees all allocated strings in Provider |\n\n### Usage Pattern\n```zig\nconst allocator = std.heap.GeneralPurposeAllocator(.{}){};\ndefer allocator.deinit();\n\nconst provider = try discoverProvider(allocator, workspace_root, \".py\");\nif (provider) {\n    defer provider.deinit(allocator);\n    \n    const success = invokeProviderFile(\n        allocator, \n        provider, \n        \"/path/to/file.py\", \n        json_dir,\n        &.{ \"--infill\" }\n    );\n} else |err| {\n    // Handle discovery failure\n}\n```\n\n## Implementation Details\n\n### Memory Management\nThe module uses explicit allocation with `allocator.dupe()` for string fields, ensuring zero-copy efficiency while maintaining ownership semantics. The `defer` pattern prevents leaks in error paths.\n\n### Command Construction\nUses `std.ArrayList([]const u8)` as a builder for argv arrays, avoiding intermediate allocations. Extra arguments are appended after fixed flags (`sync --file/--scan ... --output`).\n\n### Protocol Design\nThe subprocess protocol separates concerns:\n- **Fixed flags**: Define operation type and output location\n- **Variable args**: Allow provider-specific features (e.g., `--infill`, `--verbose`)\n\nThis enables backward compatibility while supporting provider evolution.\n\n## Design Patterns\n\n1. **Factory Pattern**: `discoverProvider()` creates Provider instances with appropriate lifecycle management\n2. **Adapter Pattern**: External providers adapt to the internal JSON output format\n3. **Builder Pattern**: Command-line arguments constructed incrementally before execution\n4. **Singleton-like Discovery**: PATH lookup cached via `findInPath()` for efficiency\n\n### Error Handling\n- Returns `null` for discovery failures (non-fatal, allows fallback)\n- Propagates allocation errors via `!` return type\n- Uses `runCommand()` to handle subprocess exit codes uniformly",
-  "keywords": ["Provider", "discoverProvider", "invokeProviderFile", "guidance-py", "language-provider", "external-tool-discovery", "subprocess-invocation", "workspace-local", "PATH-lookup", "JSON-output"],
+  "keywords": ["Provider", "discovery", "Zig", "subprocess", "JSON", "workspace", "path", "executable"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "Provider",
       "match_hash": "d67a9c4857b714b8591f9a9708508063079adba16cc906377e372499b4ab6b9a",
       "signature": "keyword_struct Provider { ... }",
-      "comment": "A discovered external language provider.",
       "is_pub": true,
       "members": [
         {
@@ -44,7 +41,6 @@
         { "name": "ext", "type": "[]const u8" }
       ],
       "returns": "?Provider",
-      "comment": "Discover the provider binary for a given file extension.",
       "is_pub": true,
       "line": 41
     },
@@ -61,7 +57,6 @@
         { "name": "extra_args", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Invoke a provider to process a single source file.",
       "is_pub": true,
       "line": 86
     },
@@ -78,7 +73,6 @@
         { "name": "extra_args", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Invoke a provider to scan an entire source directory.",
       "is_pub": true,
       "line": 113
     },
@@ -91,7 +85,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true when `path` is an accessible executable file.",
       "is_pub": false,
       "line": 139
     },
@@ -105,7 +98,6 @@
         { "name": "binary_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Search PATH for `binary_name`.",
       "is_pub": false,
       "line": 154
     },
@@ -119,7 +111,6 @@
         { "name": "argv", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Spawn `argv` as a child process, inheriting stdout/stderr.",
       "is_pub": false,
       "line": 173
     },

@@ -4,9 +4,6 @@
     "source": "src/vector/lance_db.zig",
     "language": "zig"
   },
-  "comment": " guidance LanceDB-style vector search database.\n\n Produces `.guidance.db` — a SQLite database with vector embeddings for\n semantic (cosine similarity) search, powering the `explain` subcommand.\n\n Public API:\n   pub fn syncDatabase(allocator, guidance_dir, db_path, embedder) !void\n   pub fn openDb(allocator, db_path, embedder) !GuidanceDb\n   pub fn loadSemanticAliases(allocator, path) !?SemanticAliases\n\n Schema (version 1):\n   schema_version   — single-row version table\n   ast_nodes        — relational table with metadata + embedding BLOB\n   embedding_cache  — content-hash → embedding blob (avoids redundant API calls)\n\n Search modes:\n   vectorSearch    — cosine similarity over stored embeddings (semantic)\n   keywordSearch   — SQL LIKE on name / comment / module / signature\n   search          — hybrid: vector + keyword, fused by weighted score",
-  "detail": "# Module Purpose and Architecture\n\nThis module implements a LanceDB-style vector search database system built on top of SQLite. It provides semantic search capabilities using cosine similarity over stored vector embeddings, designed specifically for powering AI coding assistant features like the `explain` subcommand. The architecture follows a hybrid search model that combines both vector-based semantic understanding and traditional keyword matching.\n\n## Key Abstractions and Relationships\n\nThe core data structures form a coherent search ecosystem:\n- **GuidanceDb**: The main database handle struct that manages SQLite connections, schema versioning, and search operations\n- **SemanticAliases**: A query expansion mechanism that maps keywords to related terms for more robust semantic understanding\n- **KeywordMatch** and **ModuleMatch**: Result types that bridge keyword search with module metadata\n- **ParsedMember** and **ParsedDoc**: JSON parsing utilities for extracting structured documentation from guidance files\n\nThese components work together through a layered architecture: the database layer handles persistence, the query expansion layer enriches search terms, and the result layers provide typed access to both vector similarity scores and keyword matches.\n\n## Public API and Usage Patterns\n\nThe module exposes three primary entry points:\n\n1. **`loadSemanticAliases(allocator, path)`**: Loads pre-computed semantic aliases from disk, enabling offline query expansion capabilities\n2. **`syncDatabase(allocator, guidance_dir, db_path, embedder, ...)`**: Initializes or updates the database with new embeddings and schema changes\n3. **`openDb(allocator, db_path, embedder)`**: Opens an existing database connection for search operations\n\nThe API follows Zig conventions with explicit allocator parameters throughout, ensuring memory safety in a resource-constrained environment. The hybrid search pattern allows users to query using either pure semantic similarity, traditional keyword matching, or a fused approach that weights both signals based on relevance thresholds.\n\n## Important Implementation Details\n\nSeveral architectural decisions shape the module's behavior:\n\n- **Schema Versioning**: Currently at version 2, with migration capabilities built into `syncDatabase`\n- **Embedding Cache**: Uses content-hash lookups to prevent redundant embedding API calls, improving performance for repeated queries\n- **SQLite Integration**: Leverages C interoperability for direct SQLite access with a 5000ms busy timeout to handle database contention gracefully\n- **Token Expansion**: Implements duplicate prevention during alias expansion using case-insensitive hashing\n\n## Design Patterns Used\n\nThe module employs several established patterns:\n- **Repository Pattern**: `GuidanceDb` encapsulates all data access logic\n- **Query Expansion**: Semantic aliases enhance search recall by connecting related terminology\n- **Hybrid Search**: Combines vector similarity with keyword matching for comprehensive results\n- **C Interop Pattern**: Direct SQLite bindings for performance-critical operations\n- **Cache-Aside**: Embedding cache reduces external API dependencies\n\nThe design prioritizes modularity, allowing the search functionality to be decoupled from the specific embedding provider while maintaining type safety through Zig's strong typing system.",
-  "keywords": ["SemanticAliases", "GuidanceDb", "syncDatabase", "loadSemanticAliases", "hybrid search", "vector embeddings", "SQLite", "cosine similarity", "query expansion", "LanceDB"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {
@@ -14,7 +11,6 @@
       "name": "SemanticAliases",
       "match_hash": "5e4e3e49d934cfb5ab212ec33126948ec29e701ba256c5a3d061024bb6017240",
       "signature": "keyword_struct SemanticAliases { ... }",
-      "comment": "Loaded semantic aliases (owned by caller).",
       "is_pub": true,
       "members": [
         {
@@ -40,7 +36,6 @@
             { "name": "tokens", "type": "[]const []const u8" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Expand query tokens using aliases. Returns owned slice of owned strings.",
           "is_pub": true,
           "line": 73
         }
@@ -57,7 +52,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "?SemanticAliases",
-      "comment": "Load semantic aliases from a JSON file.",
       "is_pub": true,
       "line": 125
     },
@@ -76,7 +70,6 @@
         { "name": "cache_limit", "type": "u32" }
       ],
       "returns": "void",
-      "comment": "Open (or create) `db_path`, synchronise it with every JSON file under",
       "is_pub": true,
       "line": 190
     },
@@ -85,7 +78,6 @@
       "name": "DbSyncBuilder",
       "match_hash": "5e28158afbe53175ad89ebc818c54e5a825db5cb15f551e58728817e665ec970",
       "signature": "keyword_struct DbSyncBuilder { ... }",
-      "comment": "Manages database sync operations with allocator, guidance, and embedding; owns sync state; mutable methods for integration.",
       "is_pub": true,
       "members": [
         {
@@ -100,7 +92,6 @@
             { "name": "embedder", "type": "vector.EmbeddingProvider" }
           ],
           "returns": "DbSyncBuilder",
-          "comment": "Create a builder bound to the required arguments.",
           "is_pub": true,
           "line": 244
         }
@@ -114,7 +105,6 @@
             { "name": "dir", "type": "[]const u8" }
           ],
           "returns": "DbSyncBuilder",
-          "comment": "Set the directory to scan for CAPABILITY.md files.",
           "is_pub": true,
           "line": 259
         }
@@ -128,7 +118,6 @@
             { "name": "aliases", "type": "SemanticAliases" }
           ],
           "returns": "DbSyncBuilder",
-          "comment": "Attach pre-loaded semantic aliases for embedding-based query steering.",
           "is_pub": true,
           "line": 266
         }
@@ -142,7 +131,6 @@
             { "name": "limit", "type": "u32" }
           ],
           "returns": "DbSyncBuilder",
-          "comment": "Maximum entries in the embedding cache (0 = unlimited).",
           "is_pub": true,
           "line": 273
         }
@@ -155,7 +143,6 @@
             { "name": "self", "type": "DbSyncBuilder" }
           ],
           "returns": "void",
-          "comment": "Execute the sync.  Terminal method — equivalent to calling syncDatabase directly.",
           "is_pub": true,
           "line": 280
         }
@@ -167,7 +154,6 @@
       "name": "GuidanceDb",
       "match_hash": "7dc084a760ee2754fdd13090f9db84d9ba8bc3872994662d98085f522ec9d7fc",
       "signature": "keyword_struct GuidanceDb { ... }",
-      "comment": "Manages database configuration and sync operations; owns allocator and embedder; mutable state with clear ownership.",
       "is_pub": true,
       "members": [
         {
@@ -231,7 +217,6 @@
             { "name": "src_dir_path", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Walk `src_dir_path` and upsert stale JSON files, embedding each node.",
           "is_pub": true,
           "line": 560
         }
@@ -246,9 +231,8 @@
             { "name": "cap_dir", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Walk `cap_dir` for `CAPABILITY.md` files and upsert them into the",
           "is_pub": true,
-          "line": 611
+          "line": 616
         }
     ,    {
           "type": "fn_private",
@@ -262,9 +246,8 @@
             { "name": "mtime", "type": "i64" }
           ],
           "returns": "void",
-          "comment": "Parse a CAPABILITY.md file and upsert it into the capabilities table.",
           "is_pub": false,
-          "line": 665
+          "line": 670
         }
     ,    {
           "type": "fn_private",
@@ -278,22 +261,23 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 734
+          "line": 739
         }
     ,    {
           "type": "fn_private",
           "name": "indexFile",
-          "match_hash": "bc9f5c7c8576581437d583dfc3733183621dc0511340bbe3ca5e42f444107324",
-          "signature": "fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) -> void",
+          "match_hash": "f33f3594dbd298fcca627e2e7ec0854759056cdf83dbc6612675d4bd775b5dcf",
+          "signature": "fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64, workspace: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "file_path", "type": "[]const u8" },
-            { "name": "mtime", "type": "i64" }
+            { "name": "mtime", "type": "i64" },
+            { "name": "workspace", "type": "[]const u8" }
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 748
+          "line": 753
         }
     ,    {
           "type": "fn_private",
@@ -306,7 +290,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 766
+          "line": 780
         }
     ,    {
           "type": "fn_private",
@@ -318,9 +302,8 @@
             { "name": "module", "type": "[]const u8" }
           ],
           "returns": "[]u8",
-          "comment": "Convert a dotted module path to human-readable prose.",
           "is_pub": false,
-          "line": 783
+          "line": 797
         }
     ,    {
           "type": "fn_private",
@@ -331,9 +314,8 @@
             { "name": "node_type", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Map node_type to a plain English noun for prose embedding.",
           "is_pub": false,
-          "line": 809
+          "line": 823
         }
     ,    {
           "type": "fn_private",
@@ -345,9 +327,8 @@
             { "name": "signature", "type": "[]const u8" }
           ],
           "returns": "?[]u8",
-          "comment": "Extract parameter names from a signature string, stripping types.",
           "is_pub": false,
-          "line": 825
+          "line": 839
         }
     ,    {
           "type": "fn_private",
@@ -364,9 +345,8 @@
             { "name": "parent_comment", "type": "?[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Build rich prose embedding text for an AST node.",
           "is_pub": false,
-          "line": 876
+          "line": 890
         }
     ,    {
           "type": "fn_private",
@@ -380,7 +360,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 945
+          "line": 959
         }
     ,    {
           "type": "fn_private",
@@ -395,7 +375,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 976
+          "line": 990
         }
     ,    {
           "type": "fn_private",
@@ -407,9 +387,8 @@
             { "name": "limit", "type": "u32" }
           ],
           "returns": "void",
-          "comment": "Trim embedding cache to keep at most `limit` entries.",
           "is_pub": false,
-          "line": 999
+          "line": 1013
         }
     ,    {
           "type": "fn_private",
@@ -422,25 +401,52 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "?[]f32",
-          "comment": "Get embedding for text, using cache. Returns null-length slice for noop.",
           "is_pub": false,
-          "line": 1034
+          "line": 1048
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractSourceModuleDoc",
+          "match_hash": "90cbf850666bd5761de62b2e7609dcb093d0cff786b33453cf2ddfa0f7057663",
+          "signature": "fn extractSourceModuleDoc(allocator: std.mem.Allocator, source: []const u8) -> ?[]u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "?[]u8",
+          "is_pub": false,
+          "line": 1093
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractSourceMemberDoc",
+          "match_hash": "361e33429a60cbcc2ad0ed2415007fed0f8a3adffb418691b26f9fcb69b45242",
+          "signature": "fn extractSourceMemberDoc(allocator: std.mem.Allocator, source: []const u8, line: u32) -> ?[]u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[]const u8" },
+            { "name": "line", "type": "u32" }
+          ],
+          "returns": "?[]u8",
+          "is_pub": false,
+          "line": 1124
         }
     ,    {
           "type": "fn_private",
           "name": "insertModule",
-          "match_hash": "db311f622f811065487e725e65a24b15daab2e43d98c98fb21da69145b44acdf",
-          "signature": "fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64) -> void",
+          "match_hash": "9f48fa82ce71fb6aace8f633899dc7fd47590af6215a475bafb5ce92bc025ffb",
+          "signature": "fn insertModule(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, mtime: i64, source_text: ?[]const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "file_path", "type": "[]const u8" },
             { "name": "doc", "type": "ParsedDoc" },
-            { "name": "mtime", "type": "i64" }
+            { "name": "mtime", "type": "i64" },
+            { "name": "source_text", "type": "?[]const u8" }
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1077
+          "line": 1162
         }
     ,    {
           "type": "fn_private",
@@ -455,26 +461,26 @@
             { "name": "member_names", "type": "[]const []const u8" }
           ],
           "returns": "void",
-          "comment": "Sync keywords for a module: embed each keyword and link to module.",
           "is_pub": false,
-          "line": 1163
+          "line": 1257
         }
     ,    {
           "type": "fn_private",
           "name": "insertMember",
-          "match_hash": "07ab63aaeb25f6e7216aafe64fafdb355521342148a4fad251e29ad43590425e",
-          "signature": "fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64) -> void",
+          "match_hash": "14762fa664f12a3d37e7bae456b5504980e0a2e4a21c08f8743d8c53fbc57330",
+          "signature": "fn insertMember(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, doc: ParsedDoc, m: ParsedMember, mtime: i64, source_text: ?[]const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "file_path", "type": "[]const u8" },
             { "name": "doc", "type": "ParsedDoc" },
             { "name": "m", "type": "ParsedMember" },
-            { "name": "mtime", "type": "i64" }
+            { "name": "mtime", "type": "i64" },
+            { "name": "source_text", "type": "?[]const u8" }
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1214
+          "line": 1308
         }
     ,    {
           "type": "fn_decl",
@@ -487,7 +493,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1304
+          "line": 1407
         }
     ,    {
           "type": "fn_decl",
@@ -502,9 +508,8 @@
             { "name": "aliases", "type": "?SemanticAliases" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Search with optional semantic alias expansion (alias → expanded tokens).",
           "is_pub": true,
-          "line": 1323
+          "line": 1426
         }
     ,    {
           "type": "fn_decl",
@@ -520,9 +525,8 @@
             { "name": "aliases", "type": "?SemanticAliases" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Search with separate original query for deterministic matching.",
           "is_pub": true,
-          "line": 1334
+          "line": 1437
         }
     ,    {
           "type": "fn_decl",
@@ -537,7 +541,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1448
+          "line": 1551
         }
     ,    {
           "type": "fn_decl",
@@ -552,9 +556,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Search with separate original query for deterministic matching.",
           "is_pub": true,
-          "line": 1461
+          "line": 1564
         }
     ,    {
           "type": "fn_private",
@@ -568,9 +571,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Find exact case-sensitive name match in AST.",
           "is_pub": false,
-          "line": 1530
+          "line": 1633
         }
     ,    {
           "type": "fn_decl",
@@ -584,9 +586,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Vector-only cosine similarity search.",
           "is_pub": true,
-          "line": 1568
+          "line": 1671
         }
     ,    {
           "type": "fn_decl",
@@ -600,9 +601,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Keyword search: multi-token LIKE over name, comment, module, signature.",
           "is_pub": true,
-          "line": 1654
+          "line": 1757
         }
     ,    {
           "type": "fn_private",
@@ -617,9 +617,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Hybrid search: fuse vector and keyword results.",
           "is_pub": false,
-          "line": 1770
+          "line": 1873
         }
     ,    {
           "type": "fn_private",
@@ -635,7 +634,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 1843
+          "line": 1946
         }
     ,    {
           "type": "fn_private",
@@ -649,7 +648,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 1866
+          "line": 1969
         }
     ,    {
           "type": "fn_private",
@@ -660,9 +659,8 @@
             { "name": "results", "type": "[]SearchResult" }
           ],
           "returns": "void",
-          "comment": "Adjust scores based on node_type and presence of documentation.",
           "is_pub": false,
-          "line": 1892
+          "line": 1995
         }
     ,    {
           "type": "fn_private",
@@ -674,9 +672,8 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "SearchResult",
-          "comment": "Read columns 0..10: file_path, source, module, node_type, name, signature,",
           "is_pub": false,
-          "line": 1926
+          "line": 2029
         }
     ,    {
           "type": "fn_private",
@@ -689,7 +686,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1953
+          "line": 2056
         }
     ,    {
           "type": "fn_private",
@@ -702,7 +699,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1963
+          "line": 2066
         }
     ,    {
           "type": "fn_decl",
@@ -716,9 +713,8 @@
             { "name": "embedding", "type": "[]const f32" }
           ],
           "returns": "void",
-          "comment": "Store an embedding for a semantic alias key.",
           "is_pub": true,
-          "line": 1974
+          "line": 2077
         }
     ,    {
           "type": "fn_decl",
@@ -733,9 +729,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Find semantic alias keys whose embeddings are similar to the query embedding.",
           "is_pub": true,
-          "line": 1999
+          "line": 2102
         }
     ,    {
           "type": "fn_decl",
@@ -748,9 +743,8 @@
             { "name": "aliases", "type": "SemanticAliases" }
           ],
           "returns": "void",
-          "comment": "Sync semantic alias embeddings from the aliases file.",
           "is_pub": true,
-          "line": 2071
+          "line": 2174
         }
     ,    {
           "type": "fn_decl",
@@ -764,9 +758,8 @@
             { "name": "embedding", "type": "[]const f32" }
           ],
           "returns": "void",
-          "comment": "Store a keyword with its embedding. Idempotent (INSERT OR REPLACE).",
           "is_pub": true,
-          "line": 2102
+          "line": 2205
         }
     ,    {
           "type": "fn_decl",
@@ -780,9 +773,8 @@
             { "name": "relevance", "type": "f32" }
           ],
           "returns": "void",
-          "comment": "Link a keyword to a module. Idempotent (PRIMARY KEY).",
           "is_pub": true,
-          "line": 2125
+          "line": 2228
         }
     ,    {
           "type": "fn_decl",
@@ -797,9 +789,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]KeywordMatch",
-          "comment": "Find keywords similar to query embedding (vector search on keyword_index).",
           "is_pub": true,
-          "line": 2145
+          "line": 2248
         }
     ,    {
           "type": "fn_decl",
@@ -812,9 +803,8 @@
             { "name": "keywords", "type": "[]const []const u8" }
           ],
           "returns": "[]ModuleMatch",
-          "comment": "Find module IDs for a set of keywords.",
           "is_pub": true,
-          "line": 2212
+          "line": 2315
         }
     ,    {
           "type": "fn_decl",
@@ -827,9 +817,8 @@
             { "name": "module_id", "type": "i64" }
           ],
           "returns": "?[]const u8",
-          "comment": "Fetch module detail by ID.",
           "is_pub": true,
-          "line": 2255
+          "line": 2358
         }
     ,    {
           "type": "fn_decl",
@@ -843,9 +832,8 @@
             { "name": "comment", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Update module detail and comment by ID.",
           "is_pub": true,
-          "line": 2277
+          "line": 2380
         }
     ,    {
           "type": "fn_decl",
@@ -857,9 +845,8 @@
             { "name": "module_id", "type": "i64" }
           ],
           "returns": "void",
-          "comment": "Delete all keyword links for a module (before re-syncing).",
           "is_pub": true,
-          "line": 2296
+          "line": 2399
         }
     ,    {
           "type": "fn_decl",
@@ -873,9 +860,8 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "comment": "Keyword-based search: query → keyword match → module lookup.",
           "is_pub": true,
-          "line": 2308
+          "line": 2411
         }
     ,    {
           "type": "fn_decl",
@@ -886,9 +872,8 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "?EmbeddingStats",
-          "comment": "Get embedding statistics from the database.",
           "is_pub": true,
-          "line": 2370
+          "line": 2473
         }
     ,    {
           "type": "fn_decl",
@@ -901,7 +886,7 @@
           ],
           "returns": "[]AliasEmbeddingEntry",
           "is_pub": true,
-          "line": 2420
+          "line": 2523
         }
     ,    {
           "type": "fn_decl",
@@ -914,7 +899,7 @@
           ],
           "returns": "[]KeywordEmbeddingEntry",
           "is_pub": true,
-          "line": 2445
+          "line": 2548
         }
     ,    {
           "type": "fn_decl",
@@ -927,7 +912,7 @@
           ],
           "returns": "[]EmbeddingCacheEntry",
           "is_pub": true,
-          "line": 2470
+          "line": 2573
         }
     ,    {
           "type": "fn_decl",
@@ -940,7 +925,7 @@
           ],
           "returns": "[]AstNodeEmbeddingEntry",
           "is_pub": true,
-          "line": 2495
+          "line": 2598
         }
       ],
       "line": 297
@@ -950,18 +935,16 @@
       "name": "ParsedMember",
       "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
       "signature": "keyword_struct ParsedMember { ... }",
-      "comment": "Represents parsed member data structures; managed by owner; key invariant is integrity of parsed content.",
       "is_pub": false,
-      "line": 2528
+      "line": 2631
     },
     {
       "type": "struct",
       "name": "ParsedDoc",
       "match_hash": "a1b877e8d81db260185f98dfbe8b981183c9e06f76858f4204f4c6c12b724adf",
       "signature": "keyword_struct ParsedDoc { ... }",
-      "comment": "Represents parsed document data with ownership and invariants; managed via parsing lifecycle.",
       "is_pub": false,
-      "line": 2536
+      "line": 2639
     },
     {
       "type": "fn_private",
@@ -973,9 +956,8 @@
         { "name": "json_data", "type": "[]const u8" }
       ],
       "returns": "ParsedDoc",
-      "comment": "Converts a JSON string into a ParsedDoc object using the provided arena and data.",
       "is_pub": false,
-      "line": 2548
+      "line": 2651
     },
     {
       "type": "fn_private",
@@ -986,9 +968,8 @@
         { "name": "item", "type": "std.json.Value" }
       ],
       "returns": "ParsedMember",
-      "comment": "Converts a JSON value to a ParsedMember, handling nulls and errors.",
       "is_pub": false,
-      "line": 2664
+      "line": 2767
     },
     {
       "type": "fn_private",
@@ -1000,9 +981,8 @@
         { "name": "items", "type": "[]const []const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Serializes a list of memory items into a compact byte array using the provided allocator.",
       "is_pub": false,
-      "line": 2706
+      "line": 2809
     },
     {
       "type": "fn_private",
@@ -1015,9 +995,8 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[][]const u8",
-      "comment": "Converts a SQLite statement result into a slice of byte slices for column parsing.",
       "is_pub": false,
-      "line": 2726
+      "line": 2829
     },
     {
       "type": "fn_private",
@@ -1030,9 +1009,8 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]u8",
-      "comment": "Converts a SQLite column value to a Zig byte slice, handling conversion and allocation.",
       "is_pub": false,
-      "line": 2749
+      "line": 2852
     },
     {
       "type": "fn_private",
@@ -1045,9 +1023,8 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "?[]u8",
-      "comment": "Converts a null-terminated C string into a Zig array of u8 values.",
       "is_pub": false,
-      "line": 2756
+      "line": 2859
     },
     {
       "type": "fn_private",
@@ -1062,75 +1039,74 @@
         { "name": "db", "type": "?*c.sqlite3" }
       ],
       "returns": "void",
-      "comment": "Handles SQLite errors by logging details and returning an error code.",
       "is_pub": false,
-      "line": 2764
+      "line": 2867
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 2780
+      "line": 2883
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 2804
+      "line": 2907
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 2854
+      "line": 2957
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 2895
+      "line": 2998
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText prose format",
       "is_pub": false,
-      "line": 2943
+      "line": 3046
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 2967
+      "line": 3070
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 2983
+      "line": 3086
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 2991
+      "line": 3094
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
       "is_pub": false,
-      "line": 3006
+      "line": 3109
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder fluent setters return updated values",
       "is_pub": false,
-      "line": 3024
+      "line": 3127
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
       "is_pub": false,
-      "line": 3044
+      "line": 3147
     }
   ]
 }

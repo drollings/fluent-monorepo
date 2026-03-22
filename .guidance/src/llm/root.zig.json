@@ -4,9 +4,7 @@
     "source": "src/llm/root.zig",
     "language": "zig"
   },
-  "comment": " llm — General-purpose LLM inference client.\n\n Provides:\n   LlmError    — error set for all LLM operations\n   LlmConfig   — endpoint, model, timeout, think-mode settings\n   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)\n\n Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives\n in src/common/llm.zig alongside the string utilities they depend on.",
-  "detail": "The `llm` module serves as a comprehensive interface for interacting with large language models (LLMs), specifically designed to abstract the complexities of model inference, configuration, and communication. Its primary purpose is to provide a unified API for developers to leverage LLM capabilities, including error handling, configuration management, and integration with external services like OpenAI and Ollama. The module is structured around key abstractions such as error handling, configuration settings, and HTTP client operations, ensuring seamless interaction with various LLM endpoints.\n\nThe module's architecture revolves around three main components: error management, configuration handling, and HTTP communication. The `LlmError` struct defines a standardized set of error types, enabling consistent error reporting across operations. The `LlmConfig` struct encapsulates critical settings such as API endpoints, model selection, timeout values, and think-mode parameters, allowing users to customize their LLM interactions. The `LlmClient` struct manages the HTTP client and integrates with external services, providing methods for initialization, completion handling, and response processing.\n\nKey implementation details include the use of utility functions like `writeEscapedString` for safe string manipulation and the `isOllamaEndpoint` function to validate endpoint types. The module leverages design patterns such as dependency injection for the HTTP client and modular error handling to ensure robustness. The documentation emphasizes the importance of understanding these components to effectively utilize the module's features.\n\nOverall, this module exemplifies a well-structured approach to LLM integration, balancing flexibility with reliability through clear abstractions and comprehensive documentation.",
-  "keywords": ["LLM", "Zig", "HTTP client", "error handling", "configuration", "think-mode"],
+  "keywords": ["LLM", "Zig", "HTTP client", "error handling", "configuration", "string utilities"],
   "used_by": ["src/vector/lance_db.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "LlmConfig",
       "match_hash": "bef90ed130978e5a3e09e1fa913f669d0b017de048c8d832961268075af54bad",
       "signature": "keyword_struct LlmConfig { ... }",
-      "comment": "Defines LLM configuration with methods for model checks and endpoint validation, managing model state and API access.",
       "is_pub": true,
       "members": [
         {
@@ -26,7 +23,6 @@
             { "name": "self", "type": "LlmConfig" }
           ],
           "returns": "bool",
-          "comment": "Returns true when thinking is explicitly enabled for this config.",
           "is_pub": true,
           "line": 41
         }
@@ -39,7 +35,6 @@
             { "name": "model_ref", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Extract the model name from a model reference like \"provider:model:name\".",
           "is_pub": true,
           "line": 47
         }
@@ -52,7 +47,6 @@
             { "name": "api_url", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Check if an endpoint is an Ollama-native endpoint (uses /api/chat).",
           "is_pub": true,
           "line": 55
         }
@@ -69,7 +63,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Writes a null-terminated string to a writer, handling escaped characters properly.",
       "is_pub": false,
       "line": 62
     },
@@ -78,7 +71,6 @@
       "name": "LlmClient",
       "match_hash": "48372c90add81bd93c5a2ab36907c51afdfdef3bac759412dd55e7f95e3e03fa",
       "signature": "keyword_struct LlmClient { ... }",
-      "comment": "Manages LLM interaction with fixed buffers; owns allocator and config; provides core API methods.",
       "is_pub": true,
       "members": [
         {
@@ -133,7 +125,6 @@
             { "name": "json_body", "type": "[]const u8" }
           ],
           "returns": "LlmError!?[]const u8",
-          "comment": "POST `json_body` to `url` and return the extracted response text.",
           "is_pub": false,
           "line": 162
         }
@@ -159,7 +150,6 @@
             { "name": "self", "type": "*LlmClient" }
           ],
           "returns": "bool",
-          "comment": "Check whether the LLM endpoint is reachable.",
           "is_pub": true,
           "line": 264
         }
@@ -175,7 +165,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Minimal think-block stripper used internally by extractResponseText.",
       "is_pub": false,
       "line": 296
     },

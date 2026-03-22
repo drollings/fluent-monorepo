@@ -4,17 +4,14 @@
     "source": "src/ontology/yago.zig",
     "language": "zig"
   },
-  "comment": "Defines YAGO 4.5 ontology schema with classes, properties, and registry for structured knowledge representation.",
-  "detail": "# YAGO Ontology Module Documentation\n\n## Module Purpose and Architecture\n\nThe `yago.zig` module provides a type-safe, compile-time representation of the YAGO 4.5 knowledge graph ontology schema. It enables AI coding assistants to perform structured reasoning over ontological relationships with zero runtime overhead for schema lookups through Zig's compile-time evaluation capabilities.\n\n### Architectural Overview\n\n```\n┌─────────────────────────────────────────────────────────┐\n│              YAGO Ontology Schema Layer                   │\n├──────────────────┬──────────────────┬────────────────────┤\n│  OntologyClass   │  OntologyProperty│    PropertyRange   │\n│  (Classes)       │  (Properties)    │    (Value Types)   │\n└────────┬─────────┴────────┬────────┴────────────────────┘\n         │                  │\n         ▼                  ▼\n┌─────────────────────────────────────────────────────────┐\n│              Compile-Time Registry Layer                  │\n│  ALL_CLASSES[] · CLASS_ENTITY · CLASS_PERSON · ...       │\n└─────────────────────────────────────────────────────────┘\n```\n\n## Key Abstractions and Relationships\n\n### OntologyClass Struct\nRepresents a YAGO class with four attributes:\n- **iri**: Unique identifier (e.g., `http://yago-knowledge.org/resource/Entity`)\n- **label**: Human-readable name (\"Entity\", \"Person\")\n- **superclass**: Optional parent class IRI; null indicates root class\n- **properties**: Array of property IRIs defining instance constraints\n\n### OntologyProperty Struct\nEncapsulates RDF property metadata:\n- **domain/range**: Type constraints for valid usage\n- **transitive/symmetric**: Logical property characteristics\n- **lod_target**: Linked Open Data context level (0-5)\n\n### PropertyRange Enum\nMaps to RDF datatype categories: `iri`, `string`, `lang_string`, `integer`, `decimal`, `boolean`, `date_time`, `any`\n\n## Public API and Usage Patterns\n\n### Core Functions\n\n```zig\n// Lookup class by IRI at compile-time or runtime\nconst cls = lookupClass(\"http://yago-knowledge.org/resource/Person\");\n\n// Traverse inheritance hierarchy\nvar chain: [][]const u8 = undefined;\nconst depth = superclassChain(iri, &chain);\n\n// Retrieve property metadata with validation\nconst prop = lookupProperty(\"http://schema.org/birthDate\");\n```\n\n### Usage Pattern 1: Type-Safe Reasoning\n```zig\npub fn isPerson(cls: *OntologyClass) bool {\n    return cls.iri == CLASS_PERSON.iri or \n           (cls.superclass != null and superclassChain(cls.superclass, &{}).contains(CLASS_PERSON));\n}\n```\n\n### Usage Pattern 2: Property Validation\n```zig\npub fn isValidProperty(cls: *OntologyClass, propIri: []const u8) bool {\n    return cls.properties.any(|p| p == propIri);\n}\n```\n\n## Important Implementation Details\n\n1. **Namespace Prefixes**: Six standard prefixes (YAGO, RDF, RDFS, OWL, XSD, Schema.org) enable IRI construction without string concatenation overhead in most contexts.\n\n2. **Registry Pattern**: `ALL_CLASSES` array provides ordered access to all registered classes with constant-time lookup via pointer comparison.\n\n3. **Property Arrays**: Each class maintains a compile-known property list for O(1) membership testing.\n\n4. **Version Constant**: `YAGO_VERSION = \"4.5\"` enables schema compatibility checking at module boundaries.\n\n## Design Patterns\n\n- **Schema-as-Code**: Ontology structure defined as Zig structs, enabling IDE autocomplete and type checking\n- **Compile-Time Evaluation**: All class/property data available during compilation for zero-runtime overhead lookups\n- **Registry Pattern**: Centralized `ALL_CLASSES` array with direct pointer references\n- **I/O Separation**: IRI strings stored externally; metadata encapsulated in typed structs",
-  "keywords": ["OntologyClass", "OntologyProperty", "lookupClass", "superclassChain", "YAGO", "knowledge graph", "schema-as-code", "compile-time evaluation", "registry pattern", "RDF ontology"],
-  "used_by": ["src/ontology/mapper.zig", "src/ontology/migration.zig"],
+  "keywords": ["YAGO 4.5 ontology", "Zig module", "ontology schema", "class registry", "property lookup", "data modeling", "semantic web", "ontology design", "Zig structs", "API functions"],
+  "used_by": ["src/ontology/mapper.zig", "src/ontology/migration.zig", "src/ontology/root.zig"],
   "members": [
     {
       "type": "struct",
       "name": "OntologyClass",
       "match_hash": "948f8186746d05df605c18bfc3d3be269a3aeafaa238fe1294e57b2b3172cfb0",
       "signature": "keyword_struct OntologyClass { ... }",
-      "comment": "Represents a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.",
       "is_pub": true,
       "line": 29
     },
@@ -23,7 +20,6 @@
       "name": "PropertyRange",
       "match_hash": "6be8bb6a15ebe0f53adcdda6f962468cf5c04106978311cfe077d43159cb2bb8",
       "signature": "keyword_enum PropertyRange { ... }",
-      "comment": "Defines a range of property values with fixed bounds; managed centrally; ensures consistent invariants.",
       "is_pub": true,
       "members": [
         {
@@ -82,7 +78,6 @@
       "name": "OntologyProperty",
       "match_hash": "265b817001c1a1cdb915f5be472ed9a6141967a41e10a132b7e9edbb405daec5",
       "signature": "keyword_struct OntologyProperty { ... }",
-      "comment": "Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
       "line": 50
     },
@@ -95,7 +90,6 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyClass",
-      "comment": "Look up a class by IRI. Returns null if unknown.",
       "is_pub": true,
       "line": 145
     },
@@ -109,7 +103,6 @@
         { "name": "out", "type": "[][]const u8" }
       ],
       "returns": "usize",
-      "comment": "Collect superclass chain for a given class IRI (including self).",
       "is_pub": true,
       "line": 154
     },
@@ -122,7 +115,6 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyProperty",
-      "comment": "Look up a property by IRI.",
       "is_pub": true,
       "line": 296
     },

@@ -4,9 +4,7 @@
     "source": "src/guidance/line_verify.zig",
     "language": "zig"
   },
-  "comment": "Verifies member line numbers in Zig source by checking declaration presence and correcting stale references.",
-  "detail": "# Module: src/guidance/line_verify.zig\n\n## Purpose and Architecture\n\nThis module implements a **line number verification system** for AI coding assistants that maintain metadata about source code declarations. When guidance JSON files store line numbers pointing to function/method/struct/enum declarations, these references can become stale due to refactoring or file changes. This module detects such staleness and attempts to recover correct locations.\n\n### System Flow\n```\nverifyMemberLine() → Check recorded line → Match? → YES: Verified\n                              ↓ NO: Search entire file → Found? → YES: Return corrected\n                                                      ↓ NO: Mark as unverified\n```\n\n## Key Abstractions\n\n| Component | Responsibility |\n|-----------|----------------|\n| `VerificationResult` | Encapsulates verification outcome with correction data |\n| `member.type` | Determines pattern matching strategy for declaration detection |\n\n### Member Types Supported\n- **Functions**: `fn_decl`, `fn_private`, `method`, `method_private`\n- **Types**: `struct`, `enum`, `union`  \n- **Fields**: `enum_field`\n- **Tests**: `test_decl` (incomplete in source)\n\n## Public API\n\n### Primary Interface\n```zig\npub fn verifyMemberLine(\n    allocator: std.mem.Allocator,\n    source: []const u8,  // Full file contents (not null-terminated)\n    member: types.Member,\n) !VerificationResult\n```\n\n**Usage Pattern:**\n```zig\nconst result = try line_verify.verifyMemberLine(allocator, file_content, member);\nif (!result.verified) {\n    if (result.corrected_line) |new_line| {\n        // Update guidance JSON with corrected line number\n    } else {\n        // Declaration not found - may need manual review\n    }\n}\n```\n\n### Helper Functions\n- `lineMatchesDecl()` - Validates specific line contains expected declaration\n- `declPatternInLine()` - Pattern matching based on member type\n- `searchForDecl()` - File-wide search when recorded line is stale\n\n## Implementation Details\n\n### Pattern Matching Strategy\nThe module uses **type-specific patterns** to avoid false positives:\n\n1. **Functions**: Matches `\"fn name(\"` pattern anywhere in line\n2. **Structs/Enums/Unions**: Requires both the keyword AND `\"name =\"` assignment\n3. **Enum Fields**: Uses word-boundary matching via `containsWord()`\n\n### Memory Management\n- `found_snippet` uses arena allocation requiring explicit `deinit()`\n- Caller must ensure proper cleanup of returned results\n\n### Line Number Convention\nUses Zig's **1-based indexing** for compatibility with source editors and most tooling.\n\n## Design Patterns\n\n| Pattern | Application |\n|---------|-------------|\n| **Fallback Search** | Primary check fails → secondary file-wide search |\n| **Strategy Pattern** | Different pattern matching per member type |\n| **Result Object** | Encapsulates verification state with correction data |\n\n## Limitations & Considerations\n\n1. **Incomplete Type Support**: `test_decl` case appears truncated in source\n2. **Pattern Fragility**: Simple string patterns may fail on edge cases (comments, multi-line declarations)\n3. **No Context Awareness**: Cannot detect if a found declaration is the correct one among duplicates\n4. **Allocation Responsibility**: Caller must manage `found_snippet` memory lifecycle\n\n## Verification Workflow\n\n```\n┌─────────────────┐\n│  JSON Metadata  │\n└────────┬────────┘\n         │ stored line: 42\n         ▼\n┌─────────────────┐\n│  verifyMember   │── Check line 42 ──► Found? ──► YES → Verified\n│  Line()         │                     NO      ──► Search file\n└────────┬────────┘                          ──► Found? ──► YES → Return corrected\n         │                                        NO     ──► Not found\n         ▼\n    Guidance JSON updated\n```",
-  "keywords": ["verifyMemberLine", "VerificationResult", "line number verification", "stale reference detection", "declaration pattern matching", "AI coding assistant metadata", "zig source analysis", "refactoring safety"],
+  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms"],
   "used_by": ["src/guidance/json_store.zig", "src/guidance/staged.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "VerificationResult",
       "match_hash": "6877bfc585bf63b1d23da0f0153cdbb01176635331ffb16f55873e2034b25df0",
       "signature": "keyword_struct VerificationResult { ... }",
-      "comment": "Result of verifying a member's line number against the source file.",
       "is_pub": true,
       "members": [
         {
@@ -44,7 +41,6 @@
         { "name": "member", "type": "types.Member" }
       ],
       "returns": "VerificationResult",
-      "comment": "Verify that `member.line` points to the member's declaration in `source`.\nWhen the recorded line is stale, the file is searched for the correct line.\n\n`source` must be the full contents of the source file (not null-terminated).",
       "is_pub": true,
       "line": 27
     },
@@ -60,7 +56,6 @@
         { "name": "member_type", "type": "types.MemberType" }
       ],
       "returns": "bool",
-      "comment": "Return true when the 1-based `line_no` in `source` contains a declaration\nfor `name` of the given `member_type`.",
       "is_pub": false,
       "line": 52
     },
@@ -75,7 +70,6 @@
         { "name": "member_type", "type": "types.MemberType" }
       ],
       "returns": "bool",
-      "comment": "Return true when `line` contains a declaration pattern for `name`.",
       "is_pub": false,
       "line": 63
     },
@@ -89,7 +83,6 @@
         { "name": "word", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true when `line` contains `word` as a whole word (surrounded by\nnon-alphanumeric/underscore characters or at the line boundaries).",
       "is_pub": false,
       "line": 105
     },
@@ -102,7 +95,6 @@
         { "name": "c", "type": "u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a byte is a valid identifier character in Zig.",
       "is_pub": false,
       "line": 119
     },
@@ -118,7 +110,6 @@
         { "name": "member_type", "type": "types.MemberType" }
       ],
       "returns": "?VerificationResult",
-      "comment": "Search `source` line-by-line for a declaration matching `name`/`member_type`.\nReturns a `VerificationResult` with `corrected_line` set, or null if not found.",
       "is_pub": false,
       "line": 125
     },

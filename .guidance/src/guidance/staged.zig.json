@@ -4,9 +4,6 @@
     "source": "src/guidance/staged.zig",
     "language": "zig"
   },
-  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output",
-  "detail": "# Module: src/guidance/staged.zig\n\n## Purpose and Architecture\n\nThis module implements a **staged explain pipeline** for the `guidance explain` subcommand in an AI coding assistant. It orchestrates a hybrid search approach that combines vector/hybrid database search with keyword matching to retrieve relevant documentation and code snippets for explaining programming concepts.\n\n### Pipeline Flow\n1. **Search Stage**: Queries the guidance database using `executeStagedWithAliasesOriginal()` which performs:\n   - Vector similarity search (via lance_db_mod)\n   - Keyword-based matching\n   - Semantic alias expansion for query understanding\n   \n2. **Collection Stage**: Groups ~25 results into structured `Stage` objects with deduplication to avoid redundant entries\n\n3. **Expansion Stage**: Processes cross-references using `expandFollowUps()` to include related skills and see_also references\n\n4. **Rendering Stage**: Formats the collected stages into human-readable markdown output via `formatStaged()`\n\n### Key Abstractions\n\n- **`types.Stage`**: Core data structure representing a single stage entry, containing:\n  - `.kind`: Type of content (currently `.prose`)\n  - `.content`: The actual documentation or code excerpt\n  - `.source`: Source file path\n  - `.line`: Line number for context\n\n- **`GuidanceDb.SearchResult`**: Database query result with fields like `node_type`, `comment`, `detail`, and metadata\n\n- **`SemanticAliases`**: Query expansion mechanism for handling synonyms and related terms\n\n### Public API Overview\n\n#### Search & Collection Functions\n| Function | Purpose |\n|----------|---------|\n| `executeStaged()` | Main entry point; delegates to full alias-aware version |\n| `executeStagedWithAliases()` | Search with semantic alias expansion |\n| `executeStagedWithAliasesOriginal()` | Full control: separate original query for deterministic matching |\n\n#### Follow-up Expansion\n- **`expandFollowUps()`**: Processes cross-references (see_also, skill references) to build additional stages from guidance JSON files\n\n#### Formatting & Rendering\n- **`formatStaged()`**: Primary rendering function; converts `[]Stage` to markdown with optional query summary and follow-up keywords\n- **`extractSourceExcerpt()` / `extractExcerptFromSource()`**: Retrieves relevant code snippets around specified lines\n- **`buildMetadataStage()`**: Creates metadata entries from JSON documentation\n\n#### Data Loading Helpers\n- **`loadModuleComment()`**: Extracts module-level documentation\n- **`loadSkillNamesFromJson()`**: Loads skill index from JSON\n- **`parseSkillDocContent()`**: Parses skill documentation content\n- **`loadSkillExcerpt()`**: Retrieves code excerpts for specific skills\n\n### Usage Patterns\n\n```zig\n// Basic usage: search and collect stages\nconst allocator = std.heap.GeneralPurposeAllocator(.{}){};\ndefer allocator.deinit();\n\nvar db = GuidanceDb.init(...);\nconst query = \"how to implement recursive algorithms\";\nconst stages = try executeStaged(allocator, &db, query, workspace);\n\n// Process stages through pipeline\nconst formatted = formatStaged(allocator, query, stages, null, null);\n\n// Cleanup (stages owned by caller)\ntypes.freeStages(allocator, stages.items);\n```\n\n### Implementation Details\n\n**Deduplication Strategy**: Uses `std.StringHashMapUnmanaged` with composite keys:\n- Module detail: `{source}\\x00detail`\n- Member comments: `{source}\\x00{name}`\n\n**Memory Management**: \n- Results are cleaned up via `defer` blocks and `errdefer` handlers\n- Stage slices are explicitly freed using `types.freeStages()` before allocator.deinit()\n\n**Query Limits**: Configurable limits ensure performance:\n- Top 15 search results processed\n- Maximum 5 module detail entries (requires ≥50 chars)\n- Maximum 10 member comment entries (requires ≥10 chars)\n\n### Design Patterns\n\n1. **Pipeline Pattern**: Clear separation of concerns across search → collect → expand → format stages\n2. **Hybrid Search Architecture**: Combines semantic vector search with keyword matching for robust results\n3. **Lazy Loading**: Data loaded on-demand from guidance JSON files during follow-up expansion\n4. **Immutable Query Parameters**: Original query preserved separately for deterministic matching and reproducibility\n\nThe module emphasizes modularity, allowing individual pipeline stages to be tested independently while maintaining a cohesive explain workflow.",
-  "keywords": ["executeStaged", "executeStagedWithAliases", "expandFollowUps", "formatStaged", "extractSourceExcerpt", "buildMetadataStage", "staged pipeline", "hybrid search", "vector search", "semantic aliases"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
@@ -21,9 +18,8 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Collect all stages for a query by searching the vector/keyword database",
       "is_pub": true,
-      "line": 27
+      "line": 28
     },
     {
       "type": "fn_decl",
@@ -38,9 +34,8 @@
         { "name": "aliases", "type": "?lance_db_mod.SemanticAliases" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Collect stages with optional semantic alias expansion.",
       "is_pub": true,
-      "line": 37
+      "line": 38
     },
     {
       "type": "fn_decl",
@@ -56,9 +51,8 @@
         { "name": "aliases", "type": "?lance_db_mod.SemanticAliases" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Collect stages with separate original query for deterministic matching.",
       "is_pub": true,
-      "line": 48
+      "line": 49
     },
     {
       "type": "fn_decl",
@@ -77,9 +71,8 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Follow metadata breadcrumbs: used_by paths and skill refs found in the top",
       "is_pub": true,
-      "line": 264
+      "line": 274
     },
     {
       "type": "fn_decl",
@@ -95,9 +88,37 @@
         { "name": "followup_keywords", "type": "?[]const []const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Format a []Stage slice into clean markdown output.",
       "is_pub": true,
-      "line": 356
+      "line": 366
+    },
+    {
+      "type": "fn_decl",
+      "name": "extractSourceExcerptVerified",
+      "match_hash": "4588b8a0af0726e3d71f61dafe34df2526a3ecc41f0aeea5bab8f749a8cac571",
+      "signature": "fn extractSourceExcerptVerified(allocator: std.mem.Allocator, workspace: []const u8, rel_source: []const u8, start_line: u32, node_type: []const u8, member_name: ?[]const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "rel_source", "type": "[]const u8" },
+        { "name": "start_line", "type": "u32" },
+        { "name": "node_type", "type": "[]const u8" },
+        { "name": "member_name", "type": "?[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": true,
+      "line": 528
+    },
+    {
+      "type": "fn_private",
+      "name": "memberTypeFromNodeType",
+      "match_hash": "02842473bc4649d0533b819de5534f5b6f228826ee25b7b89c8c2663a725db2b",
+      "signature": "fn memberTypeFromNodeType(node_type: []const u8) -> types.MemberType",
+      "params": [
+        { "name": "node_type", "type": "[]const u8" }
+      ],
+      "returns": "types.MemberType",
+      "is_pub": false,
+      "line": 566
     },
     {
       "type": "fn_decl",
@@ -112,9 +133,8 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Load source file and extract an excerpt starting at `start_line` (1-based).",
       "is_pub": true,
-      "line": 519
+      "line": 584
     },
     {
       "type": "fn_decl",
@@ -128,9 +148,8 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Extract a complete logical unit (function/struct/etc) starting at `start_line` (1-based).",
       "is_pub": true,
-      "line": 541
+      "line": 606
     },
     {
       "type": "fn_private",
@@ -143,9 +162,8 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "?types.Stage",
-      "comment": "Build a metadata Stage from a guidance JSON file.",
       "is_pub": false,
-      "line": 558
+      "line": 623
     },
     {
       "type": "fn_private",
@@ -157,9 +175,8 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Load just the module-level comment from a guidance JSON file.",
       "is_pub": false,
-      "line": 674
+      "line": 739
     },
     {
       "type": "fn_private",
@@ -171,9 +188,8 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Load skill names (short names like \"zig-current\") from a guidance JSON file.",
       "is_pub": false,
-      "line": 685
+      "line": 750
     },
     {
       "type": "fn_decl",
@@ -185,9 +201,8 @@
         { "name": "content", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Parse the first description / first paragraph from the content of a SKILL.md file.",
       "is_pub": true,
-      "line": 728
+      "line": 793
     },
     {
       "type": "fn_decl",
@@ -200,9 +215,8 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Load the first paragraph / description from a SKILL.md file.",
       "is_pub": true,
-      "line": 759
+      "line": 824
     }
   ]
 }

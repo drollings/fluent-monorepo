@@ -4,9 +4,7 @@
     "source": "src/reflection/permissions.zig",
     "language": "zig"
   },
-  "comment": "Defines role-based permissions for Coral Context reflection, mapping six roles to read/write/derive capabilities using a compact bit pattern.",
-  "detail": "# Coral Context Permission System Module\n\n## Module Purpose and Architecture\n\nThis module implements a role-based access control (RBAC) system specifically designed for the Coral Context reflection framework—a game engine or world simulation platform. The architecture follows a minimalist, performance-first approach using Zig's native types to minimize runtime overhead during permission checks.\n\nThe system is built around two core abstractions: **Roles** and **Permissions**. Roles represent user classifications (from player-level access to administrative privileges), while Permissions define what operations each role can perform on various data structures. The design prioritizes compile-time safety and zero-cost abstraction through packed bit patterns.\n\n## Key Abstractions and Relationships\n\n### Role Enum\nThe `Role` enum defines six hierarchical access levels:\n- **Coder**: Full engine-level access\n- **Creator**: Content creation privileges  \n- **Staff**: Administrative oversight\n- **World**: World management capabilities\n- **Script**: Script execution permissions\n- **Player**: Standard user access\n\nThese roles map directly to the original worldcore C++ permission model, ensuring compatibility with existing systems.\n\n### RolePermissions Struct\nThe `RolePermissions` struct is a 18-bit packed structure containing three operation types (read, write, derive) for each of the six roles. This compact representation enables:\n- Single bitwise AND operations for capability queries\n- Minimal memory footprint (~2 bytes)\n- Cache-friendly access patterns\n\n## Public API and Usage Patterns\n\n### Query Methods\nThree public methods provide role-specific capability checks:\n```zig\nperm.canRead(Role.player)      // Check read access\nperm.canWrite(Role.staff)      // Check write access  \nperm.canDerive(Role.coder)     // Check derivation rights\n```\n\n### Preset Permissions\nFour constant permission sets serve as common use cases:\n- `perm_all`: Maximum access for open configuration data\n- `perm_coder`: Engine-internal field protection (coder-only)\n- `perm_staff`: Balanced administrative permissions\n- `perm_public_read`: Read-open, write-restricted public data\n\n## Important Implementation Details\n\nThe module uses **packed structs** to guarantee exact memory layout without padding. The 18-bit permission word fits within a u32 with room for future expansion while maintaining single-instruction query performance. All methods use exhaustive switch statements for guaranteed coverage and potential compile-time optimization.\n\nThe `derive` operation represents meta-permission—ability to grant or modify permissions of other roles, critical for administrative functions without direct data access.\n\n## Design Patterns\n\n1. **Domain Model Pattern**: Clear separation between identity (Role) and capability (Permissions)\n2. **Immutable Value Objects**: Permission structs are value types, not references\n3. **Factory/Builder Pattern**: Preset constants as reusable permission templates\n4. **Enum Composition**: Role enum composed of simple u3 values for fast comparison",
-  "keywords": ["RolePermissions", "RBAC", "Coral Context", "packed struct", "access control", "derive operations", "worldcore compatibility", "game engine permissions", "Zig enums", "immutable value objects"],
+  "keywords": ["Role-based permissions", "Zig module", "Coral Context", "permission system", "role abstraction", "bitmasking", "access control", "enum", "struct", "API design"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/typed.zig"],
   "members": [
     {
@@ -14,7 +12,6 @@
       "name": "Role",
       "match_hash": "636ad8ae77ed4bbd2baecf67711260be55d2deabedbdf763cb1954eb5e1e17bd",
       "signature": "keyword_enum Role { ... }",
-      "comment": "The six access roles mirroring the original worldcore C++ permission model.",
       "is_pub": true,
       "members": [
         {
@@ -61,7 +58,6 @@
       "name": "RolePermissions",
       "match_hash": "3bad71ad1cc494287bd5fed2502c327d93b4b98b2fec67cfc3d1b4d716f7beec",
       "signature": "keyword_struct RolePermissions { ... }",
-      "comment": "18-bit packed permission word: 6 roles × 3 operations.",
       "is_pub": true,
       "members": [
         {

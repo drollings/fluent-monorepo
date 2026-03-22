@@ -4,17 +4,14 @@
     "source": "src/guidance/enhancer.zig",
     "language": "zig"
   },
-  "comment": "Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.",
-  "detail": "# src/guidance/enhancer.zig — AI Docstring Enhancer Module\n\n## Module Purpose and Architecture\n\nThis module implements an LLM-powered docstring enhancement system for Zig, mirroring Python's guidance library architecture. It provides intelligent generation of function descriptions, struct documentation, and file-level comments by querying a configured language model endpoint. The design prioritizes memory safety through explicit ownership tracking and allocator management.\n\nThe architecture follows a client-wraper pattern where `Enhancer` orchestrates LLM interactions while maintaining configuration ownership. Results are returned via the `EnrichmentResult` struct, which uses heap allocation for generated content to ensure caller responsibility for resource cleanup.\n\n## Key Abstractions and Relationships\n\n### Core Structures\n- **Enhancer**: The main orchestrator that owns the LLM client, configuration, and URL string. Initializes with a config object, dupe's the API URL to prevent dangling references to temporary memory, and manages all lifecycle operations.\n\n- **EnrichmentResult**: A value-returning struct containing:\n  - `comment`: Generated description text (caller-owned)\n  - `tags`: Array of extracted hashtags (caller-owned)\n  - Both require explicit deallocation via the `deinit()` method\n\n### Relationships\nThe module depends on external `llm.LlmClient` and `llm.LlmConfig` types. It transforms these into owned resources through initialization, ensuring safe cleanup even if temporary memory was used during config parsing.\n\n## Public API and Usage Patterns\n\n### Initialization Pattern\n```zig\nconst enhancer = try Enhancer.init(allocator, config);\ndefer enhancer.deinit();\n```\n\nThe `init()` method requires an allocator and config object. It handles URL ownership transfer internally to prevent memory leaks from temporary allocations in config parsing.\n\n### Enhancement Workflow\n1. Call `enhanceFunction()` with function metadata (name, signature, existing doc, module context)\n2. Receive `EnrichmentResult` with generated content\n3. Use content immediately or store for later processing\n4. Call `deinit()` on result when done to free allocated memory\n\n### Availability Check\nBefore enhancement operations, verify endpoint reachability with `available()` method. This prevents unnecessary LLM calls when the service is unreachable.\n\n## Important Implementation Details\n\n### Memory Management\n- All generated strings are heap-allocated and require explicit freeing\n- The module dupe's API URLs to prevent dangling pointers to temporary memory\n- Defer blocks in public methods ensure cleanup even on early returns\n\n### Configuration Handling\nThe `isThinkingModel()` method determines appropriate token limits—thinking models receive 4000 tokens for chain-of-thought processing, while standard models use 1000 tokens.\n\n### Error Handling\nThe API falls back to duplicating existing documentation when the LLM is unavailable or produces hallucinated responses containing terms absent from source code. This ensures graceful degradation without data corruption.\n\n## Design Patterns Used\n\n1. **Factory Pattern**: `init()` method encapsulates complex initialization logic including config transformation and client creation.\n\n2. **RAII-style Resource Management**: Explicit `deinit()` methods for both `Enhancer` and `EnrichmentResult` ensure deterministic cleanup.\n\n3. **Option Types**: Nullable fields (`?[]const u8`) represent optional values while maintaining zero-cost semantics when unused.\n\n4. **Guard Against Hallucination**: The system rejects responses containing terms not found in source code, preventing AI-generated misinformation.\n\n5. **Ownership Transfer**: Internal dupe operations transfer ownership of critical strings from config to the enhancer's lifetime.",
-  "keywords": ["Enhancer", "EnrichmentResult", "docstring enhancement", "LLM integration", "AI documentation", "guidance library mirror", "Zig module metadata", "hallucination guard", "token management", "API URL ownership"],
-  "used_by": ["src/guidance/main.zig", "src/guidance/sync.zig"],
+  "keywords": ["Zig enhancement", "LLM integration", "documentation generation", "code comments", "API documentation"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "struct",
       "name": "EnrichmentResult",
       "match_hash": "d35c65f8ec8e88f88680e840bb6680d69c0901dd806dfb074b0b7db05aff807d",
       "signature": "keyword_struct EnrichmentResult { ... }",
-      "comment": "Result returned by each enhancement call.",
       "is_pub": true,
       "members": [
         {
@@ -38,7 +35,6 @@
       "name": "Enhancer",
       "match_hash": "17d942f761bded4ea862dfba9425bd588903c8234e2deca689984b858729d758",
       "signature": "keyword_struct Enhancer { ... }",
-      "comment": "Manages LLM enhancement structures with configurable token limits and context-aware enrichment.",
       "is_pub": true,
       "members": [
         {
@@ -75,7 +71,6 @@
             { "name": "self", "type": "*Enhancer" }
           ],
           "returns": "bool",
-          "comment": "Check whether the LLM endpoint is reachable.",
           "is_pub": true,
           "line": 72
         }
@@ -89,7 +84,6 @@
             { "name": "base_tokens", "type": "usize" }
           ],
           "returns": "usize",
-          "comment": "Get appropriate max_tokens for this model.",
           "is_pub": false,
           "line": 78
         }
@@ -106,7 +100,6 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
-          "comment": "Generate a description for a Zig function / method.",
           "is_pub": true,
           "line": 94
         }
@@ -124,7 +117,6 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
-          "comment": "Generate a description for a Zig struct / enum / union.",
           "is_pub": true,
           "line": 108
         }
@@ -140,7 +132,6 @@
             { "name": "source_preview", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Generate a one-line file-level description (≤200 chars) for STRUCTURE.md.",
           "is_pub": true,
           "line": 123
         }
@@ -194,7 +185,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Extract #hashtags from a \"Tags: #a #b\" line at the end of the response.",
           "is_pub": false,
           "line": 241
         }
@@ -208,7 +198,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Remove the trailing \"Tags: #a #b\" line from text.",
           "is_pub": false,
           "line": 272
         }
@@ -275,7 +264,6 @@
             { "name": "existing_comment", "type": "?[]const u8" }
           ],
           "returns": "ModuleDetailResult",
-          "comment": "Generate comprehensive module documentation using the thinking model.",
           "is_pub": true,
           "line": 442
         }
@@ -337,7 +325,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "?usize",
-      "comment": "Finds the last position of a needle substring within a haystack, returning its index.",
       "is_pub": false,
       "line": 611
     },

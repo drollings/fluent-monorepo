@@ -4,10 +4,8 @@
     "source": "src/common/str.zig",
     "language": "zig"
   },
-  "comment": "Provides utility functions to detect code identifiers, test paths, and extract skill names from Zig AST paths.",
-  "detail": "# Module: src/common/str.zig\n\n## Purpose and Architecture\n\nThis module provides generic string classification and inspection utilities for the AI coding assistant. It operates purely on `[]const u8` slices with zero external dependencies beyond Zig's standard library, making it highly portable and suitable for reuse in any tool requiring lightweight text analysis.\n\nThe architecture follows a functional programming paradigm—pure functions with no side effects, returning boolean flags or string slices without allocation (except where explicitly documented). This enables efficient integration into performance-critical paths like AST traversal and dependency graph construction.\n\n## Key Abstractions\n\n**Identifier Classification**: The `looksLikeIdentifier` function implements heuristic-based detection for code identifiers versus plain English words. It identifies three naming conventions:\n- Snake case (underscore presence)\n- Camel/Pascal case (uppercase after first character)\n- This prevents false positives during deterministic AST name lookups\n\n**Test Path Recognition**: The `isTestPath` function recognizes test files across Unix and Windows path separators, supporting multiple naming patterns (`_test`, `test_`, `tests`) and directory conventions (`/test/`, `/tests/`).\n\n**Skill Name Extraction**: The `skillNameFromRef` function parses JSON skill reference paths to extract meaningful skill identifiers from structured data like `.skills/gof-patterns/SKILL.md`.\n\n## Public API\n\n| Function | Description |\n|----------|-------------|\n| `looksLikeIdentifier` | Heuristic check for code identifier patterns |\n| `isTestPath` | Test file naming convention detection |\n| `skillNameFromRef` | Extract skill name from JSON ref paths |\n| `containsWord` | Whole-word case-insensitive search with boundary detection |\n| `containsAny` | Any-of keywords matching (case-insensitive substring) |\n| `containsAnyWord` | Any-of whole-word matching |\n| `hasExtension` | Check against multiple file extensions |\n| `isPathToken` | Path token validation with extension filtering |\n| `containsIgnoreCase` | Simple case-insensitive substring search |\n| `langFromPath` | Language detection from file path |\n| `dupeStrings` | Deduplication of string slice arrays |\n\n## Usage Patterns\n\n1. **AST Filtering**: Filter AST nodes by identifier type during deterministic lookup phases to avoid matching common words like \"search\" or \"work\" as code names.\n\n2. **Dependency Scanning**: Identify and exclude test files from reverse-dependency scans using `isTestPath`.\n\n3. **Skill Indexing**: Extract skill identifiers from structured JSON paths for knowledge base organization.\n\n4. **Text Search**: Perform whole-word matching in documentation or source comments with proper boundary detection.\n\n## Implementation Details\n\n- All string operations are zero-copy where possible, returning slices into original data\n- Case-insensitive comparisons use `std.ascii.eqlIgnoreCase` for efficiency\n- Word boundaries are defined as non-alphanumeric characters or string endpoints\n- Path operations leverage `std.fs.path` for cross-platform compatibility\n- The module includes both substring and whole-word search variants to support different matching strictness levels\n\n## Design Patterns\n\n1. **Heuristic Classification**: Pattern-based detection without rigid rules, allowing flexibility in naming conventions\n2. **Case-Insensitive Matching**: Consistent text comparison regardless of case\n3. **Boundary Detection**: Proper word boundary recognition for accurate whole-word matching\n4. **Path-Agnostic Design**: Works with both Unix and Windows path separators transparently",
-  "keywords": ["looksLikeIdentifier", "isTestPath", "skillNameFromRef", "containsWord", "string classification", "AST filtering", "test path detection", "heuristic matching", "case-insensitive search", "boundary detection"],
-  "used_by": ["src/common/llm.zig"],
+  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms", "### <comment>", "</comment>", "### <keywords>", "Utility", "string analysis"],
+  "used_by": ["src/common/llm.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -18,7 +16,6 @@
         { "name": "token", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `token` looks like a code identifier rather than a plain",
       "is_pub": true,
       "line": 17
     },
@@ -31,7 +28,6 @@
         { "name": "rel_path", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `rel_path` matches common test file naming conventions.",
       "is_pub": true,
       "line": 39
     },
@@ -44,7 +40,6 @@
         { "name": "ref", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Extract a short skill name from a JSON skill ref path.",
       "is_pub": true,
       "line": 62
     },
@@ -58,7 +53,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `needle` appears in `haystack` as a whole-word match",
       "is_pub": true,
       "line": 78
     },
@@ -72,7 +66,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `source` contains ANY of the given `keywords`",
       "is_pub": true,
       "line": 93
     },
@@ -86,7 +79,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `source` contains ANY of the given `keywords` as whole",
       "is_pub": true,
       "line": 102
     },
@@ -100,7 +92,6 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `s` ends with one of the given `extensions`.",
       "is_pub": true,
       "line": 113
     },
@@ -114,7 +105,6 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `s` looks like a path-like token: it is at least 3 chars",
       "is_pub": true,
       "line": 124
     },
@@ -128,7 +118,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `needle` appears anywhere in `haystack` (case-insensitive).",
       "is_pub": true,
       "line": 134
     },
@@ -141,7 +130,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Map a file path to a fenced-code-block language identifier.",
       "is_pub": true,
       "line": 151
     },
@@ -155,7 +143,6 @@
         { "name": "strs", "type": "[]const []const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Deep-copy a slice of strings — each element is individually owned.",
       "is_pub": true,
       "line": 169
     },

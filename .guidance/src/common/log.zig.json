@@ -4,16 +4,12 @@
     "source": "src/common/log.zig",
     "language": "zig"
   },
-  "comment": "Defines logging configuration, formatting, and file handling for a Zig application with color support.",
-  "detail": "## Module Purpose and Architecture\n\nThis module implements a comprehensive logging system for Zig applications, providing structured logging with multiple levels, configurable output formats, color terminal support, and optional file persistence. The architecture follows a clean separation between configuration, the logger state machine, and output handling.\n\n### Key Abstractions and Relationships\n\nThe module centers around three main abstractions:\n- **Level**: An enum defining log severity (debug, info, warn, err) with built-in methods for color codes and text prefixes\n- **LogConfig**: A runtime configuration struct controlling filtering, formatting, and output destinations\n- **Logger**: The primary interface managing state, allocation lifecycle, and actual logging operations\n\nThese components relate hierarchically: Logger holds a LogConfig instance and manages output streams (stdout and optional file). The global_logger variable implements a singleton pattern for application-wide access.\n\n### Public API and Usage Patterns\n\nThe module exposes several usage patterns:\n1. **Direct instantiation**: `init(allocator, config)` creates a logger with full control\n2. **Convenience methods**: `.debug()`, `.info()`, `.warn()`, `.err()` provide typed logging\n3. **Global access**: `setGlobal()`, `getGlobal()`, `logGlobal()` offer singleton-style convenience\n4. **Setup helper**: `setupLogging()` provides a factory function for common configurations\n\n### Important Implementation Details\n\n- Log filtering occurs at the Level enum comparison level, checking if log level meets minimum threshold\n- Output formatting uses fixed buffer streams to ensure safe string formatting before writing\n- Color codes are ANSI sequences embedded directly in output strings\n- Timestamp generation calculates epoch-based dates using std.time.epoch utilities\n- File logging appends to existing files when file_path is configured\n- All I/O operations use catch blocks for graceful error handling\n\n### Design Patterns Used\n\n1. **Singleton Pattern**: Global logger via `global_logger` variable for application-wide access\n2. **Builder/Configuration Pattern**: LogConfig struct with sensible defaults and extensible options\n3. **Factory Pattern**: Logger init method handles allocation and optional file creation\n4. **Resource Management Pattern**: Explicit deinit method ensures proper cleanup of allocated memory and file handles\n5. **Template Method Pattern**: Convenience methods (debug/info/warn/err) delegate to core log implementation\n\nThe module prioritizes performance through minimal allocations (fixed buffer streams), safe error handling with catch blocks, and flexible output destinations suitable for both development debugging and production monitoring.",
-  "keywords": ["Logger", "LogConfig", "Level enum", "color logging", "timestamp formatting", "file logging", "singleton pattern", "resource management", "ANSI colors", "global logger"],
   "members": [
     {
       "type": "enum",
       "name": "Level",
       "match_hash": "8902a0b88a5bb181526ca9c0a430e584b5f34aaf57642ae53e67e7b4585041a5",
       "signature": "keyword_enum Level { ... }",
-      "comment": "Defines a level-based enum with fixed-size buffers, managing ownership and providing color/prefix methods.",
       "is_pub": true,
       "members": [
         {
@@ -72,7 +68,6 @@
       "name": "LogConfig",
       "match_hash": "8efa4f61d255c04c059b8bc166826b4119d3f72390952b8cc8ca45f39a11e033",
       "signature": "keyword_struct LogConfig { ... }",
-      "comment": "Manages configuration settings for logging; owned by the module; ensures consistent initialization and cleanup.",
       "is_pub": true,
       "line": 29
     },
@@ -81,7 +76,6 @@
       "name": "Logger",
       "match_hash": "2255b71d304e6cf503de74744c3267b57e6dafbbfe4c6aef9971f9f6e631e1d4",
       "signature": "keyword_struct Logger { ... }",
-      "comment": "Logger manages logging operations with ownership transfer; provides init/deinit and multiple log levels.",
       "is_pub": true,
       "members": [
         {
@@ -192,7 +186,6 @@
         { "name": "logger", "type": "*Logger" }
       ],
       "returns": "void",
-      "comment": "Updates global logging configuration by setting a logger instance.",
       "is_pub": true,
       "line": 138
     },
@@ -202,7 +195,6 @@
       "match_hash": "66b72130b212891ba3fdd0f6386c2c17f24fa26b7aca19ea50748f9ed1e8af18",
       "signature": "fn getGlobal() -> ?*Logger",
       "returns": "?*Logger",
-      "comment": "Retrieves a global logger instance from the system.",
       "is_pub": true,
       "line": 142
     },
@@ -217,7 +209,6 @@
         { "name": "args" }
       ],
       "returns": "void",
-      "comment": "Logs a message with specified level and format, returning void.",
       "is_pub": true,
       "line": 146
     },
@@ -234,7 +225,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "*Logger",
-      "comment": "Initializes logging configuration with allocator, verbosity, quiet settings, and optional log file paths.",
       "is_pub": true,
       "line": 152
     },

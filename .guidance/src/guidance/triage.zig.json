@@ -4,9 +4,6 @@
     "source": "src/guidance/triage.zig",
     "language": "zig"
   },
-  "comment": "Generates TRIAGE.md from TODO.md using lifecycle detection, risk assessment, and checklist steps.",
-  "detail": "# Triage Module Documentation\n\n## Overview\n\nThis module implements a triage subcommand that automatically generates TRIAGE.md documentation from TODO.md work items, mirroring Python's `cmd_triage()` functionality in guidance.py. It provides deterministic risk assessment, lifecycle state tracking, and structured analysis for AI-assisted code review workflows.\n\n## Architecture\n\nThe module follows a **state machine pattern** through its LIFECYCLE enum, progressing items from \"TODO\" → \"TRIAGE\" → \"WORK\" → \"COMPLETE\" → \"COMMITTED\". Each state transition is tracked via markdown files in the work item directory structure.\n\n### Key Abstractions\n\n1. **LIFECYCLE State Machine**: A fixed sequence of 5 states that governs work item progression, with `getLifecycleState()` detecting current position by checking for existing state marker files.\n\n2. **TriageResult Struct**: Encapsulates the output path for generated TRIAGE.md, providing a simple return type for triage operations.\n\n3. **Risk Classification System**: A three-tier deterministic assessment (Low/Medium/High) based on content analysis and affected file count, ensuring reproducible results across runs.\n\n4. **File Path Extractor**: Identifies affected files through two complementary mechanisms:\n   - Backtick-quoted paths (e.g., `` `src/main.zig` ``)\n   - Prefix-based scanning for common project directories (src/, bin/, test/, etc.)\n\n## Public API\n\n| Function | Purpose | Usage Pattern |\n|----------|---------|---------------|\n| `getLifecycleState()` | Detects current lifecycle position | Called with allocator and work directory path; returns string state or \"TODO\" if none found |\n| `assessRisk()` | Classifies change risk level | Takes content and affected count; returns formatted risk string |\n| `findAffectedFiles()` | Extracts path tokens from markdown | Returns owned slice of paths requiring manual memory management |\n\n### Usage Example\n\n```zig\nconst result = getLifecycleState(allocator, work_dir);\nconst risk = assessRisk(todo_content, affected_count);\nconst files = try findAffectedFiles(allocator, content, project_root);\ndefer {\n    for (files) |f| allocator.free(f);\n    files.deinit(allocator);\n};\n```\n\n## Implementation Details\n\n### Lifecycle Detection Algorithm\nThe `getLifecycleState()` function walks the LIFECYCLE array in reverse order, constructing potential state paths and checking file existence via `std.fs.accessAbsolute()`. This ensures backward compatibility—if a work item has been partially processed, it correctly identifies the current state.\n\n### Risk Assessment Logic\nRisk is assessed through cascading conditions:\n1. **High**: Keywords \"delete\", \"remove \", or \"breaking\" indicate destructive operations\n2. **Medium**: Keywords \"refactor\", \"rename\", \"migration\" OR affected_count > 5 (wide scope)\n3. **Low**: Default for targeted changes\n\nThis deterministic approach ensures consistent triage results regardless of LLM variability.\n\n### Memory Safety\nThe module employs rigorous memory management:\n- `errdefer` blocks in `findAffectedFiles()` guarantee cleanup on early returns\n- Each returned path requires explicit freeing by the caller\n- State paths are freed immediately after access via `defer`\n\n## Design Patterns\n\n1. **Command Pattern**: The triage functionality encapsulates a complete workflow (detection → assessment → recommendation) as a discrete command.\n\n2. **Rule-Based Classification**: Risk assessment uses keyword matching with priority ordering, avoiding probabilistic models for deterministic outcomes.\n\n3. **Parser/Extractor Pattern**: `findAffectedFiles()` combines regex-like backtick parsing with prefix-based heuristics for robust path detection.\n\n4. **State Machine Pattern**: Lifecycle progression provides clear boundaries between work phases and enables automated state transitions.",
-  "keywords": ["getLifecycleState", "assessRisk", "findAffectedFiles", "TriageResult", "LIFECYCLE", "risk assessment", "lifecycle state machine", "backtick path extraction", "deterministic classification", "DEFAULT_STEPS checklist"],
   "members": [
     {
       "type": "fn_decl",
@@ -18,7 +15,6 @@
         { "name": "work_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Return the current lifecycle state of a work item directory.",
       "is_pub": true,
       "line": 22
     },
@@ -32,7 +28,6 @@
         { "name": "affected_count", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Assess risk level deterministically from content and file count.",
       "is_pub": true,
       "line": 37
     },
@@ -47,7 +42,6 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Extract path-like tokens from content matching common project directories.",
       "is_pub": true,
       "line": 66
     },
@@ -60,7 +54,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given byte slice represents a valid path token, returning true or false.",
       "is_pub": false,
       "line": 136
     },
@@ -76,7 +69,6 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Add path to list if not a duplicate. Verifies existence in project_root.",
       "is_pub": false,
       "line": 142
     },

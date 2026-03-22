@@ -4,11 +4,8 @@
     "source": "src/wasm/wasm.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns, gof-patterns] Implements secure sandboxed WebAssembly execution using dynamic loading, zero-copy IPC, and host integration for Extism.",
-  "detail": "# Module: src/wasm/wasm.zig — WebAssembly Sandboxing with Extism\n\n## Overview and Purpose\n\nThis module implements secure, sandboxed execution of dynamically loaded WebAssembly modules using the Extism runtime. It replaces hardcoded, statically linked Zig function pointers with a flexible architecture that allows AI tools to be executed as isolated WASM plugins. The system enables zero-copy binary IPC between host processes and WASM sandboxes, supporting dynamic tool lifecycle management for LLM-to-WASM pipelines.\n\n## Architecture\n\nThe module follows a layered architecture:\n\n**Layer 1 - Binary IPC Protocol**: Defines flat binary structures for communication between host and WASM modules. Uses alignment (1) throughout for efficient zero-copy transfers.\n\n**Layer 2 - Extism Integration**: Provides C-API bindings to the Extism runtime, exposing plugin management, function invocation, and value type handling.\n\n**Layer 3 - Host Function Registry**: Allows WASM modules to call back into host code through registered callbacks (`hostGetNodeLod1`, `hostGetNeighbors`).\n\n**Layer 4 - Execution Pipeline**: Orchestrates target execution within the DAG (Directed Acyclic Graph), managing context nodes and library state.\n\n## Key Abstractions\n\n| Structure | Purpose |\n|-----------|---------|\n| `BinaryExecutionRequest` | Request payload with flags (VERBOSE, DRY_RUN, FORCE) |\n| `BinaryExecutionResult` | Response containing success status, output, and provides bitset |\n| `HostFunctionRegistry` | Registry for WASM modules to access host services |\n| `ExtismPlugin/Function` | Runtime handles for loaded WASM code |\n\n## Public API\n\n**Re-exported Schema Types:**\n- `BINARY_SCHEMA_VERSION`, `BINARY_MAGIC` — Protocol identifiers\n- `PayloadType`, `BinaryHeader`, `BinaryContextNode` — IPC message formats\n\n**Execution Request/Result:**\n```zig\nconst request = BinaryExecutionRequest{\n    .header = .{ .magic = BINARY_MAGIC },\n    .target_id = target_id,\n    .input_offset = input_ptr.addressOf(),\n    .input_len = input_len,\n    .flags = .VERBOSE,\n};\n\nconst result = runWasmTarget(allocator, &target, node, registry);\nif (result.success) {\n    const bitset = result.getProvidesBitSet(allocator, payload);\n}\n```\n\n**Host Function Registration:**\n```zig\nfn hostGetNodeLod1(plugin: ?*anyopaque, inputs: [*]const ExtismVal, ...) -> void;\nfn hostGetNeighbors(plugin: ?*anyopaque, inputs: [*]const ExtismVal, ...) -> void;\n```\n\n## Implementation Details\n\n**BitSet Reconstruction**: The `getProvidesBitSet()` function reconstructs a `DynamicBitSetUnmanaged` from 64-bit word arrays stored in the result payload. Each word represents multiple bits (width of usize), enabling efficient sparse set operations for dependency tracking.\n\n**Zero-Copy IPC**: Binary structures use minimal headers with offset/length fields, allowing direct memory mapping between host and WASM without intermediate serialization.\n\n**Schema Versioning**: The re-exported schema types ensure backward compatibility across module versions while maintaining strict wire format contracts.\n\n## Design Patterns\n\n1. **Plugin Architecture**: WASM modules load as isolated plugins with controlled I/O through host functions\n2. **Registry Pattern**: Host function registry provides extensibility for tool-specific callbacks\n3. **Zero-Copy Communication**: Flat binary IPC minimizes memory allocations during high-frequency calls\n4. **Sandboxed Execution**: Extism runtime enforces security boundaries around each plugin\n\n## Usage Patterns\n\nThe primary workflow involves: (1) loading a WASM manifest, (2) registering host functions via `HostFunctionRegistry`, (3) creating plugins with `createPluginWithHostFunctions()`, and (4) executing targets through `runWasmTarget()` which returns structured results including dependency information.",
-  "keywords": ["BinaryExecutionRequest", "BinaryExecutionResult", "ExtismPlugin", "HostFunctionRegistry", "hostGetNodeLod1", "hostGetNeighbors", "WebAssembly sandboxing", "zero-copy IPC", "Extism runtime", "dynamic plugin loading"],
+  "keywords": ["WebAssembly", "Zig", "sandboxing", "dynamic loading", "execution pipeline", "Extism", "binary IPC", "LLM integration", "secure execution", "tool lifecycle"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" },
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
@@ -17,7 +14,6 @@
       "name": "BinaryExecutionRequest",
       "match_hash": "f3ab3a52c0c4e7e653f76815775376c8d9d1c200ac1db36d242918e1160e8122",
       "signature": "keyword_struct BinaryExecutionRequest { ... }",
-      "comment": "Execution request sent to WASM tool.",
       "is_pub": true,
       "line": 40
     },
@@ -26,7 +22,6 @@
       "name": "BinaryExecutionResult",
       "match_hash": "0d90c6316e82792af2283c401f4d5264cc93305d9554bf81b237e9b5f67486e6",
       "signature": "keyword_struct BinaryExecutionResult { ... }",
-      "comment": "Execution result returned from WASM tool.",
       "is_pub": true,
       "members": [
         {
@@ -40,7 +35,6 @@
             { "name": "payload", "type": "[]const u8" }
           ],
           "returns": "std.bit_set.DynamicBitSetUnmanaged",
-          "comment": "Reconstruct the provides bitset from the trailing word array.",
           "is_pub": true,
           "line": 71
         }
@@ -52,7 +46,6 @@
       "name": "ExtismValType",
       "match_hash": "53202749e587cfcd17cdecc29d93a2ce8c5e269704a1a7b516c15187c56c3871",
       "signature": "keyword_enum ExtismValType { ... }",
-      "comment": "Extism value type for host functions.",
       "is_pub": true,
       "members": [
         {
@@ -117,7 +110,6 @@
       "name": "extism",
       "match_hash": "a1472bbf5cb23b4a382779bb403e0c1880ab31da5e0b54e2901b003fef9d52db",
       "signature": "keyword_struct extism { ... }",
-      "comment": "Extism C-API function declarations.",
       "is_pub": true,
       "line": 129
     },
@@ -126,7 +118,6 @@
       "name": "WasmManifest",
       "match_hash": "0a51e5e2e3d08d708a91ecbdc78c64a43adb7d975fe8895b547fb788d9cd3013",
       "signature": "keyword_struct WasmManifest { ... }",
-      "comment": "Manifest for WASM plugin configuration.",
       "is_pub": true,
       "members": [
         {
@@ -149,7 +140,6 @@
       "name": "WasmPlugin",
       "match_hash": "769c20072dcd8c9df9e5d2071448b152df12fc6be132b0f3291bcb00d899af17",
       "signature": "keyword_struct WasmPlugin { ... }",
-      "comment": "WASM Plugin wrapper with lifecycle management.",
       "is_pub": true,
       "members": [
         {
@@ -262,7 +252,6 @@
         { "name": "user_data", "type": "?*anyopaque" }
       ],
       "returns": "void",
-      "comment": "Host function: Get node LOD1 summary by ID.",
       "is_pub": true,
       "line": 316
     },
@@ -280,7 +269,6 @@
         { "name": "user_data", "type": "?*anyopaque" }
       ],
       "returns": "void",
-      "comment": "Host function: Get neighbor node IDs for a given node.",
       "is_pub": true,
       "line": 351
     },
@@ -289,7 +277,6 @@
       "name": "HostFunctionRegistry",
       "match_hash": "9c3a668e513307aacada98dbecbff8389f208c990b9c523f144ae35d72479e1e",
       "signature": "keyword_struct HostFunctionRegistry { ... }",
-      "comment": "Host function registry for controlled I/O.",
       "is_pub": true,
       "members": [
         {
@@ -326,7 +313,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Register the standard host functions for Coral Context.",
           "is_pub": true,
           "line": 425
         }
@@ -339,7 +325,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "[]ExtismFunction",
-          "comment": "Get function array for plugin creation.",
           "is_pub": true,
           "line": 454
         }
@@ -351,7 +336,6 @@
       "name": "WasmExecutionResult",
       "match_hash": "22aac9110d1076b6825ea3c5c63eca139d55fc1bf9c11b2e959fd5823f3d8044",
       "signature": "keyword_struct WasmExecutionResult { ... }",
-      "comment": "Result of executing a WASM-backed Target.",
       "is_pub": true,
       "members": [
         {
@@ -382,7 +366,6 @@
         { "name": "host_registry", "type": "?*HostFunctionRegistry" }
       ],
       "returns": "WasmExecutionResult",
-      "comment": "Execute a WASM-backed Target against a ContextNode input.",
       "is_pub": true,
       "line": 484
     },
@@ -397,7 +380,6 @@
         { "name": "registry", "type": "*HostFunctionRegistry" }
       ],
       "returns": "WasmPlugin",
-      "comment": "Create plugin with host functions from the registry wired in.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -409,7 +391,6 @@
       "name": "ToolCompilerConfig",
       "match_hash": "53887d99f8d259d5f740eac7e7c48f55f64574e6efd1e8fb67252f4aacf703b1",
       "signature": "keyword_struct ToolCompilerConfig { ... }",
-      "comment": "Tool compiler configuration.",
       "is_pub": true,
       "line": 601
     },
@@ -418,7 +399,6 @@
       "name": "WasmLanguage",
       "match_hash": "4f51b07f310ed775820f2ad804311833d43285c8cc50d4f2e80d62c1b948bf0a",
       "signature": "keyword_enum WasmLanguage { ... }",
-      "comment": "Supported WASM source languages.",
       "is_pub": true,
       "members": [
         {
@@ -471,7 +451,6 @@
       "name": "ToolGenerator",
       "match_hash": "0347ffbc5ddd918e9309e02610a04a0b495c70c40ba90f2ea5dc03c026e43eb9",
       "signature": "keyword_struct ToolGenerator { ... }",
-      "comment": "Dynamic tool generator - compiles source code to WASM.",
       "is_pub": true,
       "members": [
         {
@@ -511,7 +490,6 @@
             { "name": "compiler_argv", "type": "[]const []const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Shared implementation: write `source` to a temp file, run `compiler_argv`,",
           "is_pub": false,
           "line": 654
         }
@@ -525,7 +503,6 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Compile Zig source to WASM (wasm32-freestanding, ReleaseSmal).",
           "is_pub": true,
           "line": 677
         }
@@ -539,7 +516,6 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Compile AssemblyScript source to WASM.",
           "is_pub": true,
           "line": 692
         }
@@ -554,7 +530,6 @@
             { "name": "test_input", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Verify a WASM tool by running test input.",
           "is_pub": true,
           "line": 710
         }
@@ -569,7 +544,6 @@
             { "name": "language", "type": "WasmLanguage" }
           ],
           "returns": "[]const u8",
-          "comment": "Generate WASM tool from LLM prompt response.",
           "is_pub": true,
           "line": 722
         }
@@ -581,7 +555,6 @@
       "name": "WasmToolCache",
       "match_hash": "55e610634a1035a522ae3b22279a485a576a42974b66e43ff532d5364ff3db32",
       "signature": "keyword_struct WasmToolCache { ... }",
-      "comment": "WASM tool cache — stores compiled tools in memory and SQLite.",
       "is_pub": true,
       "members": [
         {
