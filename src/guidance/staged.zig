@@ -633,7 +633,7 @@ fn buildMetadataStage(
                     else => "",
                 };
                 if (ref.len == 0) continue;
-                // Extract skill name from path: ".skills/foo/SKILL.md" → "foo".
+                // Extract skill name from path: "skills/foo/SKILL.md" → "foo".
                 const skill_name = llm.skillNameFromRef(ref);
                 if (skill_name.len == 0) continue;
                 if (i > 0) try mw.writeAll(", ");

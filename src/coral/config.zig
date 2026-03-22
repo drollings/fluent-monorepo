@@ -1,8 +1,8 @@
 /// Coral project configuration loader.
 ///
 /// Resolves paths for the guidance system using a two-level fallback chain:
-///   1. {cwd}/.ast-guidance/ast-guidance-config.json  (project-local)
-///   2. ~/.config/ast-guidance/ast-guidance-config.json  (user global)
+///   1. {cwd}/.guidance/ast-guidance-config.json  (project-local)
+///   2. ~/.config/guidance/guidance-config.json  (user global)
 ///   3. Built-in defaults
 ///
 /// All path fields in ProjectConfig are pre-computed absolute paths so callers
@@ -14,7 +14,7 @@ const builtin = @import("builtin");
 // Defaults
 // ---------------------------------------------------------------------------
 
-pub const DEFAULT_GUIDANCE_DIR = ".ast-guidance";
+pub const DEFAULT_GUIDANCE_DIR = ".guidance";
 pub const DEFAULT_SRC_DIR = "src";
 pub const DEFAULT_MODEL = "code:latest";
 pub const DEFAULT_API_URL = "http://localhost:11434/v1/chat/completions";
@@ -51,7 +51,7 @@ pub const YAGO_TYPE_WHITELIST = [_][]const u8{
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
-    /// Absolute path to the guidance root (e.g. /project/.ast-guidance).
+    /// Absolute path to the guidance root (e.g. /project/.guidance).
     guidance_root: []const u8,
 
     /// Absolute path to the guidance JSON source tree
@@ -61,10 +61,10 @@ pub const ProjectConfig = struct {
     /// This field stores guidance_root for that formula (callers append the rel path).
     json_base: []const u8,
 
-    /// Absolute path to the skills directory ({guidance_root}/.skills).
+    /// Absolute path to the skills directory ({guidance_root}/skills).
     skills_dir: []const u8,
 
-    /// Absolute path to the inbox directory ({guidance_root}/.doc/inbox).
+    /// Absolute path to the inbox directory ({guidance_root}/inbox).
     inbox_dir: []const u8,
 
     /// Source directories to search, relative to the project root.
@@ -236,10 +236,10 @@ fn buildFromParts(
     const json_base = try allocator.dupe(u8, guidance_root);
     errdefer allocator.free(json_base);
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_root, ".skills" });
+    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_root, "skills" });
     errdefer allocator.free(skills_dir);
 
-    const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, ".doc", "inbox" });
+    const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, "inbox" });
     errdefer allocator.free(inbox_dir);
 
     return .{

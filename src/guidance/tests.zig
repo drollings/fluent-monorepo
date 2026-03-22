@@ -1229,12 +1229,12 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
     try std.testing.expectEqualStrings(cfg.guidance_root, cfg.json_base);
 
     // skills_dir = {guidance_root}/.skills
-    const expected_skills = try std.fs.path.join(allocator, &.{ expected_root, ".skills" });
+    const expected_skills = try std.fs.path.join(allocator, &.{ expected_root, "skills" });
     defer allocator.free(expected_skills);
     try std.testing.expectEqualStrings(expected_skills, cfg.skills_dir);
 
-    // inbox_dir = {guidance_root}/.doc/inbox
-    const expected_inbox = try std.fs.path.join(allocator, &.{ expected_root, ".doc", "inbox" });
+    // inbox_dir = {guidance_root}/inbox
+    const expected_inbox = try std.fs.path.join(allocator, &.{ expected_root, "inbox" });
     defer allocator.free(expected_inbox);
     try std.testing.expectEqualStrings(expected_inbox, cfg.inbox_dir);
 

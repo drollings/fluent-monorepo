@@ -74,10 +74,10 @@ pub const ProjectConfig = struct {
     /// ({guidance_root}/src/<path>.json).
     json_base: []const u8,
 
-    /// Absolute path to the skills directory ({guidance_root}/.skills).
+    /// Absolute path to the skills directory ({guidance_root}/skills).
     skills_dir: []const u8,
 
-    /// Absolute path to the inbox directory ({guidance_root}/.doc/inbox).
+    /// Absolute path to the inbox directory ({guidance_root}/inbox).
     inbox_dir: []const u8,
 
     /// Relative path to the guidance database file from workspace root.
@@ -820,10 +820,10 @@ fn buildFromParts(
     const json_base = try allocator.dupe(u8, guidance_root);
     errdefer allocator.free(json_base);
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_root, ".skills" });
+    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_root, "skills" });
     errdefer allocator.free(skills_dir);
 
-    const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, ".doc", "inbox" });
+    const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, "inbox" });
     errdefer allocator.free(inbox_dir);
 
     const db_path = try allocator.dupe(u8, db_path_rel);

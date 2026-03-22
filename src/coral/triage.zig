@@ -1,6 +1,6 @@
 /// Triage subcommand: generate TRIAGE.md from a TODO.md work item.
 ///
-/// Given .ast-guidance/.todo/<item>/TODO.md, produces a TRIAGE.md with:
+/// Given .guidance/.todo/<item>/TODO.md, produces a TRIAGE.md with:
 ///   - Affected files (detected by regex + backtick paths)
 ///   - Risk assessment (deterministic)
 ///   - Recommended steps (LLM or fallback checklist)

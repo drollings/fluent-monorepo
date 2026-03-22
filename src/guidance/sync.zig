@@ -561,8 +561,8 @@ pub const SyncProcessor = struct {
             skills.deinit(self.allocator);
         }
 
-        const domain_ref = ".skills/domain-patterns/SKILL.md";
-        const gof_ref = ".skills/gof-patterns/SKILL.md";
+        const domain_ref = "skills/domain-patterns/SKILL.md";
+        const gof_ref = "skills/gof-patterns/SKILL.md";
 
         // Start from existing skills so manual additions are preserved.
         if (existing_doc) |ed| {
@@ -634,7 +634,7 @@ pub const SyncProcessor = struct {
             return try self.allocator.dupe(u8, bare);
         }
 
-        // Extract skill names from refs like ".skills/gof-patterns/SKILL.md"
+        // Extract skill names from refs like "skills/gof-patterns/SKILL.md"
         // or short refs like "zig-current".
         var buf: std.ArrayList(u8) = .{};
         errdefer buf.deinit(self.allocator);

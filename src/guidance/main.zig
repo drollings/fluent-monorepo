@@ -2495,7 +2495,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
         };
         if (ref.len == 0) continue;
         // Derive skill name: last path component before SKILL.md.
-        // e.g. ".skills/gof-patterns/SKILL.md" → "gof-patterns"
+        // e.g. "skills/gof-patterns/SKILL.md" → "gof-patterns"
         const skill_name = llm.skillNameFromRef(ref);
         if (skill_name.len == 0) continue;
         out.appendSlice(allocator, skill_name) catch continue;
@@ -2545,7 +2545,7 @@ fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[
 }
 
 /// Load the first paragraph (or `description:` front-matter value) of a SKILL.md.
-/// Searches `<guidance_dir>/.skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.
+/// Searches `<guidance_dir>/skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.
 /// Returns an owned allocation or null if not found.
 fn loadSkillPara(
     allocator: std.mem.Allocator,
@@ -2555,7 +2555,7 @@ fn loadSkillPara(
 ) ?[]const u8 {
     const SearchPath = struct { base: []const u8, rel: []const u8 };
     const paths = [_]SearchPath{
-        .{ .base = guidance_dir, .rel = ".skills" },
+        .{ .base = guidance_dir, .rel = "skills" },
         .{ .base = cwd, .rel = "doc/skills" },
     };
     for (paths) |sp| {
@@ -2777,7 +2777,7 @@ fn cmdExplainStaged(
     fast_model_ref: []const u8,
     ea: ExplainArgs,
 ) !void {
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, ".skills" });
+    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
     defer allocator.free(skills_dir);
 
     var aliases_opt: ?lance_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);

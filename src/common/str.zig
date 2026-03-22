@@ -54,8 +54,8 @@ pub fn isTestPath(rel_path: []const u8) bool {
 /// Extract a short skill name from a JSON skill ref path.
 ///
 /// Examples:
-///   ".skills/gof-patterns/SKILL.md"  → "gof-patterns"
-///   ".skills/zig-current/SKILL.md"   → "zig-current"
+///   "skills/gof-patterns/SKILL.md"  → "gof-patterns"
+///   "skills/zig-current/SKILL.md"   → "zig-current"
 ///   "gof-patterns"                   → "gof-patterns"  (bare name, returned as-is)
 ///
 /// Returns a slice into the original `ref` — no allocation.

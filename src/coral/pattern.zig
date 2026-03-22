@@ -36,7 +36,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Ring Buffer"),
             .type = .Domain,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/domain_patterns/SKILL.md#ring-buffer"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/domain_patterns/SKILL.md#ring-buffer"),
         });
     }
 
@@ -44,7 +44,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "State Persistence"),
             .type = .Domain,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/domain_patterns/SKILL.md#state-persistence"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/domain_patterns/SKILL.md#state-persistence"),
         });
     }
 
@@ -54,7 +54,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Factory (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#factory"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#factory"),
         });
     }
 
@@ -62,7 +62,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Singleton (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#singleton"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#singleton"),
         });
     }
 
@@ -70,7 +70,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Builder (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#builder"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#builder"),
         });
     }
 
@@ -80,7 +80,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Adapter (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#adapter"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#adapter"),
         });
     }
 
@@ -88,7 +88,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Decorator (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#decorator"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#decorator"),
         });
     }
 
@@ -96,7 +96,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Proxy (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#proxy"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#proxy"),
         });
     }
 
@@ -106,7 +106,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Strategy (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#strategy"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#strategy"),
         });
     }
 
@@ -114,7 +114,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Observer (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#observer"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#observer"),
         });
     }
 
@@ -122,7 +122,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
         try patterns.append(allocator, .{
             .name = try allocator.dupe(u8, "Template Method (GoF)"),
             .type = .GoF,
-            .ref = try allocator.dupe(u8, ".ast-guidance/.skills/gof-patterns/SKILL.md#template-method"),
+            .ref = try allocator.dupe(u8, ".guidance/skills/gof-patterns/SKILL.md#template-method"),
         });
     }
 

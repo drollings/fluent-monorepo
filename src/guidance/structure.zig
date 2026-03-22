@@ -422,15 +422,15 @@ const HEADER =
     \\## **Attention**: Skills needed to understand files
     \\
     \\Skills are referenced per-file in comments below.  The lookup path for the skills is: 
-    \\`{guidance_dir}/.skills/{skill}/SKILL.md`
+    \\`{guidance_dir}/skills/{skill}/SKILL.md`
     \\
     \\So if you find a file you're looking for named file.zig:
     \\`file.zig      # [zig-current, gof-patterns] Summary of files' contents` , 
     \\Then you you must read
     \\
     \\```
-    \\{guidance_dir}/.skills/zig-current/SKILL.md
-    \\{guidance_dir}/.skills/gof-patterns/SKILL.md
+    \\{guidance_dir}/skills/zig-current/SKILL.md
+    \\{guidance_dir}/skills/gof-patterns/SKILL.md
     \\```
     \\
     \\---
