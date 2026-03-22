@@ -1,0 +1,253 @@
+{
+  "meta": {
+    "module": "src.coral.mcp",
+    "source": "src/coral/mcp.zig",
+    "language": "zig"
+  },
+  "comment": "Implements JSON-RPC 2.0 over STDIO for Coral MCP, handling routing, responses, and arena-based execution.",
+  "detail": "# Coral MCP Server Module\n\n## Module Purpose and Architecture\n\nThe Coral MCP (Model Context Protocol) server module implements a JSON-RPC 2.0 over STDIO transport layer for AI coding assistants. It serves as an interface between LLM-based coding tools (Claude Code, NullClaw, Cursor) and the Coral database system, enabling intelligent query routing through a tiered caching architecture (L1 memory → L4 KNN → L5 LLM).\n\nThe module follows a perimeter-parsing design philosophy: JSON parsing occurs only at the entry/exit boundaries, while all internal request routing uses the `QueueReactor` directly for zero-copy efficiency. This minimizes allocation overhead during high-frequency query processing.\n\n## Key Abstractions and Relationships\n\n- **McpServer**: The central orchestrator that manages the reactor loop, handles I/O framing (Content-Length headers), and coordinates request-response cycles\n- **ToolDef**: Defines MCP tool specifications including name, description, and input schema for discoverability by clients\n- **JsonRpcRequest**: Minimal wrapper around JSON-RPC 2.0 envelope containing method and parameters\n- **QueueReactor**: Internal routing mechanism that processes requests without external JSON parsing overhead\n\nThe `McpServer` owns an arena allocator scoped to each request cycle, ensuring memory isolation between concurrent operations while avoiding the caller's heap for temporary data structures.\n\n## Public API and Usage Patterns\n\n### Structs\n```zig\nToolDef          // MCP tool definition with schema\nJsonRpcRequest   // JSON-RPC envelope\nMcpServer        // Server orchestrator with serve() entry point\nServerInfo       // Metadata (name, version)\n```\n\n### Functions\n```zig\nparseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest\nwriteJsonEscaped(writer, s: []const u8) -> void\nserve(self: *McpServer, reader: *std.Io.Reader, writer: *std.Io.Writer) !void\n```\n\n**Usage Pattern**: Initialize `McpServer` with an allocator and reactor pointer, then call `serve()` with STDIO streams. The server reads Content-Length framed messages until EOF, parses requests using `parseJsonRpc`, routes through the reactor, and writes responses via `writeJsonEscaped`.\n\n## Important Implementation Details\n\n1. **Arena Allocation Strategy**: Each request receives its own arena (`ArenaAllocator`), with only serialized responses escaping to the caller's allocator. This prevents memory fragmentation and enables predictable garbage collection behavior.\n\n2. **Header Parsing**: The `serve()` function reads header lines until a blank line, extracting `Content-Length:` to determine body size. Lines are trimmed of `\\r\\n` and whitespace before parsing.\n\n3. **Tool Registry**: Three tools are registered:\n   - `coral_query`: Routes queries through tiered caching\n   - `coral_insert_node`: Adds ContextNodes to the database\n   - `coral_explain`: Returns BFS neighbors as LOD-packed context\n\n## Design Patterns Used\n\n- **Perimeter Parsing**: Minimal JSON parsing at boundaries only\n- **Arena Allocation Per Request**: Isolated memory lifecycle per operation\n- **Singleton Tool Registry**: Immutable `TOOLS` array for tool definitions\n- **I/O Framing Protocol**: Content-Length delimited message transport\n- **Reactor Pattern**: Non-blocking request routing via QueueReactor",
+  "keywords": ["McpServer", "parseJsonRpc", "coral_query", "QueueReactor", "JSON-RPC 2.0", "STDIO transport", "arena allocator", "MCP server", "Coral database", "tiered caching"],
+  "used_by": ["src/coral/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ToolDef",
+      "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
+      "signature": "keyword_struct ToolDef { ... }",
+      "comment": "Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.",
+      "is_pub": true,
+      "line": 21
+    },
+    {
+      "type": "struct",
+      "name": "JsonRpcRequest",
+      "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
+      "signature": "keyword_struct JsonRpcRequest { ... }",
+      "comment": "Represents a JSON-RPC request structure with fixed-size buffers; managed via ownership model; key invariant is data integrity.",
+      "is_pub": false,
+      "line": 55
+    },
+    {
+      "type": "struct",
+      "name": "McpServer",
+      "match_hash": "e6043e4781e4ac55df457ded001af893105e13c89e925e9a61066b1ab680245a",
+      "signature": "keyword_struct McpServer { ... }",
+      "comment": "Manages server state and request handling; owns buffers, not shared; requires careful memory management.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "serve",
+          "match_hash": "443e491ffd1557f07ddc7085c62cdeabf7cb41910f854d8d6bf3f4c928f1dec1",
+          "signature": "fn serve(self: *McpServer, reader: *std.Io.Reader, writer: *std.Io.Writer) -> void",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "reader", "type": "*std.Io.Reader" },
+            { "name": "writer", "type": "*std.Io.Writer" }
+          ],
+          "returns": "void",
+          "comment": "Serve requests from reader, writing responses to writer.",
+          "is_pub": true,
+          "line": 78
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "handleRequest",
+          "match_hash": "80c4b8760e6b07cd87d34c1ca057b7572795bfa86d25fc9845b4d6af1d270e4c",
+          "signature": "fn handleRequest(self: *McpServer, raw_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "raw_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "comment": "Handle a single JSON-RPC request.",
+          "is_pub": true,
+          "line": 122
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "dispatch",
+          "match_hash": "5100c6977d712144e98eff0260bbbc863dd4d0b7f2d5a4dbf961d2eedc790b45",
+          "signature": "fn dispatch(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 141
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleInitialize",
+          "match_hash": "ae6270a448351f9aba1392771ee6bb49d97c4d99d7fbd007ef041b3f1a311ac3",
+          "signature": "fn handleInitialize(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 154
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleToolsList",
+          "match_hash": "e7e41b3318f222ae55985b1bf405ef40af5f5e58f2761f0e5358a469d6e57f57",
+          "signature": "fn handleToolsList(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 169
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleToolsCall",
+          "match_hash": "137febeba3ab2c1edac76ca91324b811e99d10e51e021703c3c1445db8a603aa",
+          "signature": "fn handleToolsCall(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 193
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "toolCoralQuery",
+          "match_hash": "1b4b2fe581b67ae47a0c08ded6ff22af8f7247f02068e3921a18b8a4cef4468b",
+          "signature": "fn toolCoralQuery(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" },
+            { "name": "args", "type": "std.json.ObjectMap" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 227
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "toolCoralInsertNode",
+          "match_hash": "97ab32862b504ce0128c571794cf46c7aadf710f037795404c46b017bdd86d9f",
+          "signature": "fn toolCoralInsertNode(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" },
+            { "name": "args", "type": "std.json.ObjectMap" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 255
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "toolCoralExplain",
+          "match_hash": "ce5d72151990d7de8b81dfc891fcc74e5b4776c93959222c4ab0e8b085d3c181",
+          "signature": "fn toolCoralExplain(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "a", "type": "std.mem.Allocator" },
+            { "name": "req", "type": "JsonRpcRequest" },
+            { "name": "args", "type": "std.json.ObjectMap" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 294
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "errorResponse",
+          "match_hash": "05c74c7a681c58023d43b454b1617b5fe11d770afd99a167540975e0c86ca6c0",
+          "signature": "fn errorResponse(self: *McpServer, id: ?std.json.Value, code: i32, message: []const u8, err: anyerror) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*McpServer" },
+            { "name": "id", "type": "?std.json.Value" },
+            { "name": "code", "type": "i32" },
+            { "name": "message", "type": "[]const u8" },
+            { "name": "err", "type": "anyerror" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 366
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "idToJson",
+          "match_hash": "e76b709694d30d4a2e59e50d958e3cc633abacb055e82a4578b81666fbaabbe8",
+          "signature": "fn idToJson(allocator: std.mem.Allocator, id: ?std.json.Value) -> []const u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "id", "type": "?std.json.Value" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 380
+        }
+      ],
+      "line": 66
+    },
+    {
+      "type": "fn_private",
+      "name": "parseJsonRpc",
+      "match_hash": "3d37f747bfee38de24999c9f9494df5af5e9a99587a518cdce03ba0da3133baf",
+      "signature": "fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "raw", "type": "[]const u8" }
+      ],
+      "returns": "JsonRpcRequest",
+      "comment": "Converts a raw C string into a JsonRpcRequest object using the provided allocator.",
+      "is_pub": false,
+      "line": 392
+    },
+    {
+      "type": "fn_private",
+      "name": "writeJsonEscaped",
+      "match_hash": "8d6cb81056a6d69a7f9221cdea605965277527ebe8f956b32e1b6469c174560a",
+      "signature": "fn writeJsonEscaped(writer, s: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Write `s` to `writer` with JSON string escaping (no surrounding quotes).",
+      "is_pub": false,
+      "line": 417
+    },
+    {
+      "type": "test_decl",
+      "name": "McpServer: handleRequest initialize",
+      "is_pub": false,
+      "line": 437
+    },
+    {
+      "type": "test_decl",
+      "name": "McpServer: handleRequest tools/list",
+      "is_pub": false,
+      "line": 462
+    },
+    {
+      "type": "test_decl",
+      "name": "McpServer: tools/call coral_query routes to L5",
+      "is_pub": false,
+      "line": 488
+    },
+    {
+      "type": "test_decl",
+      "name": "McpServer: unknown method returns error -32601",
+      "is_pub": false,
+      "line": 515
+    }
+  ]
+}

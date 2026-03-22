@@ -54,7 +54,7 @@
       "name": "IngestionWarningKind",
       "match_hash": "ef0a0c240e9e67a8ae9b33828fc572e44f6f7c1480761311210925f8102dda74",
       "signature": "keyword_enum IngestionWarningKind { ... }",
-      "comment": "Tracks ingestion events with a fixed-size buffer; managed by the owner; not thread-safe.",
+      "comment": "Tracks ingestion events with a fixed-size buffer; managed by the owner; ensures consistent state across operations.",
       "is_pub": true,
       "members": [
         {

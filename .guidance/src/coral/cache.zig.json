@@ -4,14 +4,18 @@
     "source": "src/coral/cache.zig",
     "language": "zig"
   },
-  "comment": "Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.",
+  "comment": "[gof-patterns] Implements a 5-tier cache hierarchy routing system with L1 to L5 performance tiers and associated algorithms.",
   "detail": "# Cache Module Documentation\n\n## Module Purpose and Architecture\n\nThis module implements a 5-tier cache hierarchy for query routing in an AI coding assistant system. The architecture follows a progressive refinement model where queries attempt faster, more specific caches first before falling back to slower but more comprehensive methods:\n\n- **L1 (Memory Cache)**: <10ms latency - Exact query hash lookup returning pre-rendered ContextNodes\n- **L2 (Workflow Cache)**: <50ms latency - Pre-compiled WASM tools via Extism\n- **L3 (Graph Traversal)**: <200ms latency - CozoDB Datalog queries\n- **L4 (Semantic Search)**: <500ms latency - KNN similarity search via embeddings\n- **L5 (LLM Fallback)**: >1s latency - External HTTP MCP call for complex reasoning\n\nThe system prioritizes query performance by caching results at multiple levels of abstraction, from exact matches to semantic approximations.\n\n## Key Abstractions and Relationships\n\n### Core Types\n\n**`CacheTier`** - Enum defining the five cache tiers with priority ordering (lower tier numbers = faster access). This serves as the primary abstraction for routing decisions.\n\n**`RoutingResult`** - Composite result struct containing:\n- `nodes`: Pre-rendered ContextNodes from database\n- `tool_result`: Binary tool execution output from WASM modules\n- `llm_response`: Text responses from external LLM services\n- `tier_used`: Which cache tier was successfully queried\n- `latency_ms`: Performance metric for routing optimization\n\n**`L1Cache`** - In-memory hash map cache with custom memory management. Unlike standard containers, it provides:\n- Ownership tracking via `dupeRoutingResult()` that deep-copies all heap allocations\n- Explicit deallocation via `freeRoutingResult()` that recursively frees nested data structures\n- Safe iteration and cleanup through proper iterator handling\n\n### Inter-Module Dependencies\n\nThe module integrates with four key subsystems:\n- **db_mod**: Provides ContextNode, Library, and hydration pipeline abstractions\n- **wasm_mod**: WASM tool execution via Extism runtime\n- **schema.zig**: Database schema definitions for query structures\n- **hashutil**: Query hashing utilities for consistent cache keys\n\n## Public API and Usage Patterns\n\n### Initialization Pattern\n```zig\nconst allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);\ndefer allocator.deinit();\n\nvar l1_cache = L1Cache.init(allocator.allocator());\ndefer l1_cache.deinit();\n```\n\n### Query Flow\n1. Compute query hash using `hashutil` utilities\n2. Attempt L1 cache lookup via `.get(query_hash)`\n3. On miss, cascade through L2-L5 tiers (external modules)\n4. Store result with `.put(query_hash, result)` for future queries\n5. Use `RoutingResult.tier_used` to optimize future routing decisions\n\n### Memory Safety Guarantees\nThe module implements strict ownership semantics:\n- All heap allocations are tracked in the cache structure\n- `dupeRoutingResult()` performs deep copies of all nested data\n- `freeRoutingResult()` recursively deallocates LOD arrays, strings, and nodes\n- Iterator-based cleanup ensures no memory leaks during deinitialization\n\n## Important Implementation Details\n\n### Nested Data Structure Handling\nContextNode contains Level-of-Detail (LOD) arrays that require special attention:\n```zig\nfor (result.nodes) |n| {\n    for (n.lod) |l| allocator.free(l);  // Free each LOD string\n}\nallocator.free(result.nodes);         // Free nodes array\n```\n\n### String Hash Map Configuration\nL1Cache uses `std.StringHashMap` with default settings optimized for:\n- O(1) average lookup time\n- Automatic collision handling\n- Memory-efficient key storage via owned keys\n\n### Latency Tracking\nThe `latency_ms` field enables adaptive routing by recording actual query times, allowing the system to learn which tiers perform best under different workloads.\n\n## Design Patterns\n\n1. **Tiered Fallback**: Progressive refinement from exact matches to semantic approximations\n2. **Cache-Aside**: External modules populate cache on miss rather than pre-warming\n3. **Custom Allocator Wrappers**: Encapsulates deep-copy semantics for complex nested structures\n4. **Dependency Injection**: Module dependencies injected via `@import` chains at compile time\n5. **Iterator-Based Cleanup**: Ensures safe, complete resource deallocation even with partial state",
   "keywords": ["CacheTier", "RoutingResult", "L1Cache", "QueueReactor", "tiered caching", "WASM tools", "ContextNodes", "CozoDB", "semantic search", "KNN embeddings"],
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/coral/main.zig", "src/coral/mcp.zig"],
   "members": [
     {
       "type": "enum",
       "name": "CacheTier",
-      "match_hash": "ac04b94acd5bc2a7e81de28600a2637dc2d6a095aa2ec87f48bc80150cee6021",
+      "match_hash": "2ee80326d2e14d4cda90f086ed56116c4e5ae736db1b9b043ef63c404ed5de0e",
       "signature": "keyword_enum CacheTier { ... }",
       "comment": "Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.",
       "is_pub": true,
@@ -20,34 +24,41 @@
           "type": "enum_field",
           "name": "l1_memory",
           "is_pub": false,
-          "line": 21
+          "line": 26
         }
     ,    {
           "type": "enum_field",
           "name": "l2_workflow",
           "is_pub": false,
-          "line": 22
+          "line": 27
         }
     ,    {
           "type": "enum_field",
           "name": "l3_graph",
           "is_pub": false,
-          "line": 23
+          "line": 28
         }
     ,    {
           "type": "enum_field",
           "name": "l4_semantic",
           "is_pub": false,
-          "line": 24
+          "line": 29
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "l4_5_decompose",
+          "comment": "P6.2 — Local model decomposition: query split into sub-tasks then re-routed.",
+          "is_pub": false,
+          "line": 31
         }
     ,    {
           "type": "enum_field",
           "name": "l5_llm",
           "is_pub": false,
-          "line": 25
+          "line": 32
         }
       ],
-      "line": 20
+      "line": 25
     },
     {
       "type": "struct",
@@ -56,7 +67,7 @@
       "signature": "keyword_struct RoutingResult { ... }",
       "comment": "Manages routing result structures with fixed-size buffers; owned by the module; ensures consistent state across operations.",
       "is_pub": true,
-      "line": 28
+      "line": 35
     },
     {
       "type": "struct",
@@ -76,7 +87,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 40
+          "line": 47
         }
     ,    {
           "type": "fn_decl",
@@ -88,7 +99,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 47
+          "line": 54
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +112,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": true,
-          "line": 56
+          "line": 63
         }
     ,    {
           "type": "fn_decl",
@@ -115,7 +126,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 60
+          "line": 67
         }
     ,    {
           "type": "fn_private",
@@ -128,7 +139,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 66
+          "line": 73
         }
     ,    {
           "type": "fn_private",
@@ -141,17 +152,134 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 81
+          "line": 88
         }
       ],
-      "line": 36
+      "line": 43
+    },
+    {
+      "type": "struct",
+      "name": "QueueReactorBuilder",
+      "match_hash": "6e750a6f613e10a32b4222a971748316adc2566fd504f0cb9fea974e43cd28e8",
+      "signature": "keyword_struct QueueReactorBuilder { ... }",
+      "comment": "Manages queue reactor initialization and configuration; owns allocator, provides thread-safe operations.",
+      "patterns": [
+        { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
+      ],
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "8120441e6919fdf170458a88d2b4188a99e0269468f2338fd46f805674b028c5",
+          "signature": "fn init(allocator: std.mem.Allocator) -> QueueReactorBuilder",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "QueueReactorBuilder",
+          "is_pub": true,
+          "line": 133
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "library",
+          "match_hash": "42f93eddcbc57e4bf614c5e8aa87ea8e5c75bbe64e695bcd27f78d104edbb302",
+          "signature": "fn library(self: *@This(), lib: *Library) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "lib", "type": "*Library" }
+          ],
+          "returns": "*@This()",
+          "is_pub": true,
+          "line": 137
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "embedder",
+          "match_hash": "1a693cf1bbf9c9249f8a63259e64637fa5b748d91164aa27ec2b976476e30fc1",
+          "signature": "fn embedder(self: *@This(), emb: EmbeddingProvider) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "emb", "type": "EmbeddingProvider" }
+          ],
+          "returns": "*@This()",
+          "is_pub": true,
+          "line": 142
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "knnK",
+          "match_hash": "16650a623e4fbb58c3e979c8587e55d52585176609e9d57092aacccb50d05c7b",
+          "signature": "fn knnK(self: *@This(), k: usize) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "k", "type": "usize" }
+          ],
+          "returns": "*@This()",
+          "is_pub": true,
+          "line": 147
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "l4Threshold",
+          "match_hash": "1dd9f1b79f12a74bdfafd7490396da1aa4b90cd30ca7ad355927200ebacb1fa0",
+          "signature": "fn l4Threshold(self: *@This(), t: f32) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "t", "type": "f32" }
+          ],
+          "returns": "*@This()",
+          "is_pub": true,
+          "line": 152
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "l3MaxDepth",
+          "match_hash": "9ebbbd3667c65afbb84ad1da17847ade74b9c5c337410581c6eb111f5d4023dc",
+          "signature": "fn l3MaxDepth(self: *@This(), d: u8) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "d", "type": "u8" }
+          ],
+          "returns": "*@This()",
+          "is_pub": true,
+          "line": 157
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "decomposerConfig",
+          "match_hash": "3cbdb0ac0f898447a4c0c63142b54dca74fded46b664a4071c85e0b3b663c857",
+          "signature": "fn decomposerConfig(self: *@This(), cfg: DecomposerConfig) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "cfg", "type": "DecomposerConfig" }
+          ],
+          "returns": "*@This()",
+          "comment": "Enable L4.5 local decomposition with the supplied LLM config.",
+          "is_pub": true,
+          "line": 163
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "build",
+          "match_hash": "d8ffd0dc5072bdc8e05f6dac42eab3d235f9f7046d7b29cf4b624b050a93f8cb",
+          "signature": "fn build(self: *@This()) -> QueueReactor",
+          "params": [
+            { "name": "self", "type": "*@This()" }
+          ],
+          "returns": "QueueReactor",
+          "is_pub": true,
+          "line": 168
+        }
+      ],
+      "line": 123
     },
     {
       "type": "struct",
       "name": "QueueReactor",
-      "match_hash": "faa488adbc65c3d75d488c4eb8c935744bc04209ecf422eb3f4318ad3f192613",
+      "match_hash": "ab9941da4b42c44fcbe612d70b0d103d847ff156a70ea2f63a6f1b6adbf64b31",
       "signature": "keyword_struct QueueReactor { ... }",
-      "comment": "Manages queue operations with routing and context handling; owns allocator and library; immutable query handling.",
+      "comment": "Manages routing and context nodes for queue operations; owns allocator and library; thread-safe design.",
       "is_pub": true,
       "members": [
         {
@@ -166,7 +294,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 120
+          "line": 206
         }
     ,    {
           "type": "fn_decl",
@@ -178,34 +306,34 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 129
+          "line": 215
         }
     ,    {
           "type": "fn_decl",
           "name": "route",
-          "match_hash": "1e4c05a8bdb6bf4782f0ae404f9b7bb578475397b115c594c5d2ef4049f8fbfd",
-          "signature": "fn route(self: *Self, query: []const u8) -> RoutingResult",
+          "match_hash": "54d4af0d5b5597e3ad51410039c6be97c3a56e99980d57064d7e195c41da37ef",
+          "signature": "fn route(self: *Self, query: []const u8) -> anyerror!RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "query", "type": "[]const u8" }
           ],
-          "returns": "RoutingResult",
+          "returns": "anyerror!RoutingResult",
           "comment": "Route a query through the L1-L5 hierarchy.",
           "is_pub": true,
-          "line": 134
+          "line": 220
         }
     ,    {
           "type": "fn_private",
           "name": "findWasmTool",
-          "match_hash": "a6587408e97ba04640f85034ee477521a673cad45635ae5607883745687e27d0",
-          "signature": "fn findWasmTool(self: *Self, query: []const u8) -> ?[]const u8",
+          "match_hash": "d465ed2b162593f9aea19577420011e8884b84990d35f4bf9c2b68997cb1cfee",
+          "signature": "fn findWasmTool(self: *Self, query: []const u8) -> ?WasmTool",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "query", "type": "[]const u8" }
           ],
-          "returns": "?[]const u8",
+          "returns": "?WasmTool",
           "is_pub": false,
-          "line": 182
+          "line": 296
         }
     ,    {
           "type": "fn_private",
@@ -218,7 +346,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 188
+          "line": 306
         }
     ,    {
           "type": "fn_private",
@@ -231,7 +359,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 195
+          "line": 339
         }
     ,    {
           "type": "fn_private",
@@ -244,7 +372,22 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 202
+          "line": 372
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "localDecompose",
+          "match_hash": "4fec0bed821990e9b59d676602dc8efd1c08b0bf82cbfa4b7af5e18baa24042e",
+          "signature": "fn localDecompose(self: *Self, query: []const u8, depth: u8) -> ?[]ContextNode",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const u8" },
+            { "name": "depth", "type": "u8" }
+          ],
+          "returns": "?[]ContextNode",
+          "comment": "Decompose `query` into sub-tasks via local LLM and route each recursively.",
+          "is_pub": false,
+          "line": 394
         }
     ,    {
           "type": "fn_decl",
@@ -259,7 +402,7 @@
           "returns": "void",
           "comment": "Cache a successful routing result in L1.",
           "is_pub": true,
-          "line": 218
+          "line": 437
         }
     ,    {
           "type": "fn_private",
@@ -272,28 +415,72 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 224
+          "line": 443
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "persistSolution",
+          "match_hash": "0012fa4d0b04622e4c86c3d337e4f702450c215ff740405cbf03a1925a0344c9",
+          "signature": "fn persistSolution(self: *Self, query: []const u8, result: RoutingResult) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const u8" },
+            { "name": "result", "type": "RoutingResult" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 456
         }
       ],
-      "line": 112
+      "line": 187
     },
     {
       "type": "test_decl",
       "name": "L1Cache: put and get",
       "is_pub": false,
-      "line": 235
+      "line": 501
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L1 cache hit",
       "is_pub": false,
-      "line": 254
+      "line": 520
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L5 fallback",
       "is_pub": false,
-      "line": 283
+      "line": 549
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactorBuilder: builds with library",
+      "is_pub": false,
+      "line": 567
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactorBuilder: error when library missing",
+      "is_pub": false,
+      "line": 585
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactor: work queue fields exist",
+      "is_pub": false,
+      "line": 595
+    },
+    {
+      "type": "test_decl",
+      "name": "Library.findNodeByName: finds by lod4",
+      "is_pub": false,
+      "line": 614
+    },
+    {
+      "type": "test_decl",
+      "name": "Library.traverseFrom: returns root node",
+      "is_pub": false,
+      "line": 635
     }
   ]
 }

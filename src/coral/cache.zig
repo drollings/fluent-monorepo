@@ -414,7 +414,10 @@ pub const QueueReactor = struct {
                 // Deduplicate by node id.
                 var found = false;
                 for (merged.items) |existing| {
-                    if (existing.id == node.id) { found = true; break; }
+                    if (existing.id == node.id) {
+                        found = true;
+                        break;
+                    }
                 }
                 if (!found) try merged.append(self.allocator, node);
             }

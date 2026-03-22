@@ -7,6 +7,7 @@
   "comment": "Transforms RDF triples into ContextNodes and edges for CozoDB, routing properties via YAGO schema and accumulating nodes in memory.",
   "detail": "# Triple → ContextNode Mapper Module\n\n## Purpose and Architecture\n\nThis module transforms RDF triples into CozoDB-compatible ContextNodes and edges, implementing a batch-processing pipeline that accumulates graph data in memory before database insertion. It leverages the YAGO ontology schema to intelligently route different property types to appropriate LOD (Linked Open Data) levels, enabling hierarchical knowledge representation with varying detail granularity.\n\nThe architecture follows a producer-consumer pattern: `TripleMapper` processes incoming triples as they arrive from an RDF parser, while pending data structures accumulate state until `flush()` performs batch CozoDB insertion via the Library interface.\n\n## Key Abstractions and Relationships\n\n**PendingNode**: An in-memory accumulator that collects property values for a single entity before flush. It maintains:\n- A unique identifier (i64)\n- Multiple LOD-level string collections using ArrayLists\n- Type node IDs for classification\n- Full memory management via Zig's allocator abstraction\n\n**PendingEdge**: Represents directed relationships between entities, storing source/target IDs and the predicate IRI as an owned string slice.\n\n**PendingContradiction**: Detects conflicting literal values for the same subject-predicate combination, preserving both values for later resolution or confidence scoring.\n\nThe relationship flow is: Triple → PendingNode/PendingEdge accumulation → FlushResult → CozoDB ContextNodes\n\n## Public API and Usage Patterns\n\n**Structs (keyword_struct)**:\n- `PendingNode` - Accumulates node data; convert via `toContextNode()` before flush\n- `PendingEdge` - Directed edge representation with owned predicate string\n- `PendingContradiction` - Tracks value conflicts for quality metrics\n- `TripleMapper` - Main mapper orchestrator (batch processing)\n- `FlushResult` - Contains CozoDB insertion outcomes\n\n**Functions**:\n- `shouldUseLang()` - Language preference matching utility for multilingual content\n\n**Typical Usage Pattern**:\n```zig\nvar mapper = TripleMapper.init(allocator);\nwhile (triple_iter.next()) |triple| {\n    mapper.processTriple(triple);\n}\nconst result = mapper.flush(); // Batch CozoDB insertion\nmapper.deinit();\n```\n\n## Important Implementation Details\n\n1. **LOD Level Routing**: Properties are categorized by LOD level:\n   - `lod0_full` (rdfs:comment): Complete entity descriptions\n   - `lod1_summary` (schema:description): Concise summaries  \n   - `lod4_name` (rdfs:label/skos:prefLabel): Canonical names\n\n2. **Memory Ownership**: All string data uses Zig's allocator with explicit `dupe()` calls, ensuring proper ownership semantics and preventing dangling references.\n\n3. **Time Stamping**: Each ContextNode captures `valid_from` as creation timestamp and `valid_to` as null (open-ended), enabling temporal query capabilities.\n\n4. **Contradiction Handling**: Conflicting values are tracked separately rather than immediately rejected, supporting confidence scoring in downstream processing.\n\n5. **Type Inference**: `rdf:type` triples trigger entity type classification with relation-based ContextNode creation.\n\n## Design Patterns\n\n- **Batch Accumulator Pattern**: Pending structures collect data before expensive I/O operations\n- **Builder Pattern**: PendingNode progressively builds complete entities from partial triples\n- **Router Pattern**: YAGO schema routes properties to appropriate LOD levels\n- **Observer Pattern**: FlushResult notifies callers of insertion outcomes for error handling",
   "keywords": ["PendingNode", "TripleMapper", "CozoDB", "LOD routing", "RDF transformer", "PendingEdge", "YAGO ontology", "batch processing", "ContextNode mapper", "data normalization"],
+  "used_by": ["src/ontology/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -27,7 +28,7 @@
           ],
           "returns": "PendingNode",
           "is_pub": true,
-          "line": 42
+          "line": 43
         }
     ,    {
           "type": "fn_decl",
@@ -39,7 +40,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 55
+          "line": 56
         }
     ,    {
           "type": "fn_decl",
@@ -53,19 +54,19 @@
           "returns": "ContextNode",
           "comment": "Convert to ContextNode (caller owns returned strings).",
           "is_pub": true,
-          "line": 63
+          "line": 64
         }
       ],
-      "line": 36
+      "line": 37
     },
     {
       "type": "struct",
       "name": "PendingEdge",
       "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
       "signature": "keyword_struct PendingEdge { ... }",
-      "comment": "Represents a pending edge in the graph; managed by owner; key invariant is its pending state.",
+      "comment": "Represents a pending edge in the graph; managed by the owner; key invariant is its pending state.",
       "is_pub": true,
-      "line": 88
+      "line": 89
     },
     {
       "type": "struct",
@@ -74,7 +75,7 @@
       "signature": "keyword_struct PendingContradiction { ... }",
       "comment": "Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with strict ownership and invariants.",
       "is_pub": true,
-      "line": 98
+      "line": 99
     },
     {
       "type": "struct",
@@ -95,7 +96,7 @@
           ],
           "returns": "TripleMapper",
           "is_pub": true,
-          "line": 127
+          "line": 128
         }
     ,    {
           "type": "fn_decl",
@@ -107,7 +108,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 138
+          "line": 139
         }
     ,    {
           "type": "fn_decl",
@@ -121,7 +122,7 @@
           "returns": "void",
           "comment": "Process one RDF triple. Accumulates nodes/edges in memory.",
           "is_pub": true,
-          "line": 157
+          "line": 158
         }
     ,    {
           "type": "fn_decl",
@@ -133,9 +134,9 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "FlushResult",
-          "comment": "Flush all accumulated nodes and edges to CozoDB via Library.",
+          "comment": "Flush all accumulated nodes and edges to SQLite via Library.",
           "is_pub": true,
-          "line": 218
+          "line": 219
         }
     ,    {
           "type": "fn_private",
@@ -153,7 +154,7 @@
           "returns": "void",
           "comment": "If the node already has a non-empty value at lod_index that differs from",
           "is_pub": false,
-          "line": 273
+          "line": 274
         }
     ,    {
           "type": "fn_private",
@@ -166,7 +167,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 304
+          "line": 305
         }
     ,    {
           "type": "fn_private",
@@ -179,7 +180,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 316
+          "line": 317
         }
     ,    {
           "type": "fn_private",
@@ -192,7 +193,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 324
+          "line": 325
         }
     ,    {
           "type": "fn_private",
@@ -206,19 +207,19 @@
           ],
           "returns": "*PendingNode",
           "is_pub": false,
-          "line": 333
+          "line": 334
         }
       ],
-      "line": 116
+      "line": 117
     },
     {
       "type": "struct",
       "name": "FlushResult",
       "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
       "signature": "keyword_struct FlushResult { ... }",
-      "comment": "Manages flush operations with fixed-size buffers; ensures single ownership and deterministic cleanup.",
+      "comment": "Manages flush operations with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
-      "line": 348
+      "line": 349
     },
     {
       "type": "fn_private",
@@ -232,55 +233,55 @@
       "returns": "bool",
       "comment": "Checks if the actual and preferred language slices match, returning true if they align.",
       "is_pub": false,
-      "line": 354
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "mapper: entity from rdf:type triple",
       "is_pub": false,
-      "line": 366
+      "line": 367
     },
     {
       "type": "test_decl",
       "name": "mapper: label routes to lod[4]",
       "is_pub": false,
-      "line": 380
+      "line": 381
     },
     {
       "type": "test_decl",
       "name": "mapper: comment routes to lod[0]",
       "is_pub": false,
-      "line": 397
+      "line": 398
     },
     {
       "type": "test_decl",
       "name": "mapper: object property creates edge",
       "is_pub": false,
-      "line": 414
+      "line": 415
     },
     {
       "type": "test_decl",
       "name": "mapper: multiple triples for same entity",
       "is_pub": false,
-      "line": 434
+      "line": 435
     },
     {
       "type": "test_decl",
       "name": "mapper: contradiction detection for duplicate label",
       "is_pub": false,
-      "line": 454
+      "line": 455
     },
     {
       "type": "test_decl",
       "name": "mapper: no contradiction for identical label",
       "is_pub": false,
-      "line": 479
+      "line": 480
     },
     {
       "type": "test_decl",
       "name": "mapper: pending node to ContextNode",
       "is_pub": false,
-      "line": 496
+      "line": 497
     }
   ]
 }

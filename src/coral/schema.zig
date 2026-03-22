@@ -11,7 +11,6 @@
 /// §2.8 — approval_workflow: human-in-the-loop review state
 /// §2.9 — contradictions: conflicting statements about a subject
 /// §2.10 — entity_types: rdf:type assertions from YAGO ingestion
-
 pub const LOD_COUNT: usize = 6;
 
 // ---------------------------------------------------------------------------

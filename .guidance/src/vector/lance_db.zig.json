@@ -82,6 +82,88 @@
     },
     {
       "type": "struct",
+      "name": "DbSyncBuilder",
+      "match_hash": "5e28158afbe53175ad89ebc818c54e5a825db5cb15f551e58728817e665ec970",
+      "signature": "keyword_struct DbSyncBuilder { ... }",
+      "comment": "Manages database sync operations with allocator, guidance, and embedding; owns sync state; mutable methods for integration.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "a5849cc17027bf9f59d7a7205c6aca1371b56e58e83395ef90b7a2d8ed53f9cd",
+          "signature": "fn init(allocator: std.mem.Allocator, guidance_dir: []const u8, db_path: []const u8, embedder: vector.EmbeddingProvider) -> DbSyncBuilder",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "guidance_dir", "type": "[]const u8" },
+            { "name": "db_path", "type": "[]const u8" },
+            { "name": "embedder", "type": "vector.EmbeddingProvider" }
+          ],
+          "returns": "DbSyncBuilder",
+          "comment": "Create a builder bound to the required arguments.",
+          "is_pub": true,
+          "line": 244
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withCapabilities",
+          "match_hash": "7d785059a2531c0c64aaf45dacdc88d8513179e3fff5142121e63a75f9f0df07",
+          "signature": "fn withCapabilities(self: DbSyncBuilder, dir: []const u8) -> DbSyncBuilder",
+          "params": [
+            { "name": "self", "type": "DbSyncBuilder" },
+            { "name": "dir", "type": "[]const u8" }
+          ],
+          "returns": "DbSyncBuilder",
+          "comment": "Set the directory to scan for CAPABILITY.md files.",
+          "is_pub": true,
+          "line": 259
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withAliases",
+          "match_hash": "7cbbf39839b0a2d0183bc388e9bd439b12af53def716b695ecc72fe6e147f026",
+          "signature": "fn withAliases(self: DbSyncBuilder, aliases: SemanticAliases) -> DbSyncBuilder",
+          "params": [
+            { "name": "self", "type": "DbSyncBuilder" },
+            { "name": "aliases", "type": "SemanticAliases" }
+          ],
+          "returns": "DbSyncBuilder",
+          "comment": "Attach pre-loaded semantic aliases for embedding-based query steering.",
+          "is_pub": true,
+          "line": 266
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "cacheLimit",
+          "match_hash": "07b550fa57c2978cc6fd1586929fb20c01b7e0450c39d40bed1243bcd28e298f",
+          "signature": "fn cacheLimit(self: DbSyncBuilder, limit: u32) -> DbSyncBuilder",
+          "params": [
+            { "name": "self", "type": "DbSyncBuilder" },
+            { "name": "limit", "type": "u32" }
+          ],
+          "returns": "DbSyncBuilder",
+          "comment": "Maximum entries in the embedding cache (0 = unlimited).",
+          "is_pub": true,
+          "line": 273
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "sync",
+          "match_hash": "e25530d2c298cb8530086ee91de29dd2fd2a685db9ad5367f2344621a9d5973c",
+          "signature": "fn sync(self: DbSyncBuilder) -> void",
+          "params": [
+            { "name": "self", "type": "DbSyncBuilder" }
+          ],
+          "returns": "void",
+          "comment": "Execute the sync.  Terminal method — equivalent to calling syncDatabase directly.",
+          "is_pub": true,
+          "line": 280
+        }
+      ],
+      "line": 234
+    },
+    {
+      "type": "struct",
       "name": "GuidanceDb",
       "match_hash": "7dc084a760ee2754fdd13090f9db84d9ba8bc3872994662d98085f522ec9d7fc",
       "signature": "keyword_struct GuidanceDb { ... }",
@@ -100,7 +182,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 235
+          "line": 305
         }
     ,    {
           "type": "fn_decl",
@@ -112,7 +194,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 259
+          "line": 329
         }
     ,    {
           "type": "fn_private",
@@ -124,7 +206,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 268
+          "line": 338
         }
     ,    {
           "type": "fn_private",
@@ -136,7 +218,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 284
+          "line": 354
         }
     ,    {
           "type": "fn_decl",
@@ -151,7 +233,7 @@
           "returns": "void",
           "comment": "Walk `src_dir_path` and upsert stale JSON files, embedding each node.",
           "is_pub": true,
-          "line": 490
+          "line": 560
         }
     ,    {
           "type": "fn_decl",
@@ -166,7 +248,7 @@
           "returns": "void",
           "comment": "Walk `cap_dir` for `CAPABILITY.md` files and upsert them into the",
           "is_pub": true,
-          "line": 541
+          "line": 611
         }
     ,    {
           "type": "fn_private",
@@ -182,7 +264,7 @@
           "returns": "void",
           "comment": "Parse a CAPABILITY.md file and upsert it into the capabilities table.",
           "is_pub": false,
-          "line": 595
+          "line": 665
         }
     ,    {
           "type": "fn_private",
@@ -196,7 +278,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 664
+          "line": 734
         }
     ,    {
           "type": "fn_private",
@@ -211,7 +293,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 678
+          "line": 748
         }
     ,    {
           "type": "fn_private",
@@ -224,7 +306,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 696
+          "line": 766
         }
     ,    {
           "type": "fn_private",
@@ -238,7 +320,7 @@
           "returns": "[]u8",
           "comment": "Convert a dotted module path to human-readable prose.",
           "is_pub": false,
-          "line": 713
+          "line": 783
         }
     ,    {
           "type": "fn_private",
@@ -251,7 +333,7 @@
           "returns": "[]const u8",
           "comment": "Map node_type to a plain English noun for prose embedding.",
           "is_pub": false,
-          "line": 739
+          "line": 809
         }
     ,    {
           "type": "fn_private",
@@ -265,7 +347,7 @@
           "returns": "?[]u8",
           "comment": "Extract parameter names from a signature string, stripping types.",
           "is_pub": false,
-          "line": 755
+          "line": 825
         }
     ,    {
           "type": "fn_private",
@@ -284,7 +366,7 @@
           "returns": "[]const u8",
           "comment": "Build rich prose embedding text for an AST node.",
           "is_pub": false,
-          "line": 806
+          "line": 876
         }
     ,    {
           "type": "fn_private",
@@ -298,7 +380,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 875
+          "line": 945
         }
     ,    {
           "type": "fn_private",
@@ -313,7 +395,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 906
+          "line": 976
         }
     ,    {
           "type": "fn_private",
@@ -327,7 +409,7 @@
           "returns": "void",
           "comment": "Trim embedding cache to keep at most `limit` entries.",
           "is_pub": false,
-          "line": 929
+          "line": 999
         }
     ,    {
           "type": "fn_private",
@@ -342,7 +424,7 @@
           "returns": "?[]f32",
           "comment": "Get embedding for text, using cache. Returns null-length slice for noop.",
           "is_pub": false,
-          "line": 964
+          "line": 1034
         }
     ,    {
           "type": "fn_private",
@@ -358,7 +440,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1007
+          "line": 1077
         }
     ,    {
           "type": "fn_private",
@@ -375,7 +457,7 @@
           "returns": "void",
           "comment": "Sync keywords for a module: embed each keyword and link to module.",
           "is_pub": false,
-          "line": 1093
+          "line": 1163
         }
     ,    {
           "type": "fn_private",
@@ -392,7 +474,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1144
+          "line": 1214
         }
     ,    {
           "type": "fn_decl",
@@ -405,7 +487,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1234
+          "line": 1304
         }
     ,    {
           "type": "fn_decl",
@@ -422,7 +504,7 @@
           "returns": "[]SearchResult",
           "comment": "Search with optional semantic alias expansion (alias → expanded tokens).",
           "is_pub": true,
-          "line": 1253
+          "line": 1323
         }
     ,    {
           "type": "fn_decl",
@@ -440,7 +522,7 @@
           "returns": "[]SearchResult",
           "comment": "Search with separate original query for deterministic matching.",
           "is_pub": true,
-          "line": 1264
+          "line": 1334
         }
     ,    {
           "type": "fn_decl",
@@ -455,7 +537,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1378
+          "line": 1448
         }
     ,    {
           "type": "fn_decl",
@@ -472,7 +554,7 @@
           "returns": "[]SearchResult",
           "comment": "Search with separate original query for deterministic matching.",
           "is_pub": true,
-          "line": 1391
+          "line": 1461
         }
     ,    {
           "type": "fn_private",
@@ -488,7 +570,7 @@
           "returns": "[]SearchResult",
           "comment": "Find exact case-sensitive name match in AST.",
           "is_pub": false,
-          "line": 1460
+          "line": 1530
         }
     ,    {
           "type": "fn_decl",
@@ -504,7 +586,7 @@
           "returns": "[]SearchResult",
           "comment": "Vector-only cosine similarity search.",
           "is_pub": true,
-          "line": 1498
+          "line": 1568
         }
     ,    {
           "type": "fn_decl",
@@ -520,7 +602,7 @@
           "returns": "[]SearchResult",
           "comment": "Keyword search: multi-token LIKE over name, comment, module, signature.",
           "is_pub": true,
-          "line": 1584
+          "line": 1654
         }
     ,    {
           "type": "fn_private",
@@ -537,7 +619,7 @@
           "returns": "[]SearchResult",
           "comment": "Hybrid search: fuse vector and keyword results.",
           "is_pub": false,
-          "line": 1700
+          "line": 1770
         }
     ,    {
           "type": "fn_private",
@@ -553,7 +635,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 1773
+          "line": 1843
         }
     ,    {
           "type": "fn_private",
@@ -567,7 +649,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 1796
+          "line": 1866
         }
     ,    {
           "type": "fn_private",
@@ -580,7 +662,7 @@
           "returns": "void",
           "comment": "Adjust scores based on node_type and presence of documentation.",
           "is_pub": false,
-          "line": 1822
+          "line": 1892
         }
     ,    {
           "type": "fn_private",
@@ -594,7 +676,7 @@
           "returns": "SearchResult",
           "comment": "Read columns 0..10: file_path, source, module, node_type, name, signature,",
           "is_pub": false,
-          "line": 1856
+          "line": 1926
         }
     ,    {
           "type": "fn_private",
@@ -607,7 +689,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1883
+          "line": 1953
         }
     ,    {
           "type": "fn_private",
@@ -620,7 +702,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1893
+          "line": 1963
         }
     ,    {
           "type": "fn_decl",
@@ -636,7 +718,7 @@
           "returns": "void",
           "comment": "Store an embedding for a semantic alias key.",
           "is_pub": true,
-          "line": 1904
+          "line": 1974
         }
     ,    {
           "type": "fn_decl",
@@ -653,7 +735,7 @@
           "returns": "[]const []const u8",
           "comment": "Find semantic alias keys whose embeddings are similar to the query embedding.",
           "is_pub": true,
-          "line": 1929
+          "line": 1999
         }
     ,    {
           "type": "fn_decl",
@@ -668,7 +750,7 @@
           "returns": "void",
           "comment": "Sync semantic alias embeddings from the aliases file.",
           "is_pub": true,
-          "line": 2001
+          "line": 2071
         }
     ,    {
           "type": "fn_decl",
@@ -684,7 +766,7 @@
           "returns": "void",
           "comment": "Store a keyword with its embedding. Idempotent (INSERT OR REPLACE).",
           "is_pub": true,
-          "line": 2032
+          "line": 2102
         }
     ,    {
           "type": "fn_decl",
@@ -700,7 +782,7 @@
           "returns": "void",
           "comment": "Link a keyword to a module. Idempotent (PRIMARY KEY).",
           "is_pub": true,
-          "line": 2055
+          "line": 2125
         }
     ,    {
           "type": "fn_decl",
@@ -717,7 +799,7 @@
           "returns": "[]KeywordMatch",
           "comment": "Find keywords similar to query embedding (vector search on keyword_index).",
           "is_pub": true,
-          "line": 2075
+          "line": 2145
         }
     ,    {
           "type": "fn_decl",
@@ -732,7 +814,7 @@
           "returns": "[]ModuleMatch",
           "comment": "Find module IDs for a set of keywords.",
           "is_pub": true,
-          "line": 2142
+          "line": 2212
         }
     ,    {
           "type": "fn_decl",
@@ -747,7 +829,7 @@
           "returns": "?[]const u8",
           "comment": "Fetch module detail by ID.",
           "is_pub": true,
-          "line": 2185
+          "line": 2255
         }
     ,    {
           "type": "fn_decl",
@@ -763,7 +845,7 @@
           "returns": "void",
           "comment": "Update module detail and comment by ID.",
           "is_pub": true,
-          "line": 2207
+          "line": 2277
         }
     ,    {
           "type": "fn_decl",
@@ -777,7 +859,7 @@
           "returns": "void",
           "comment": "Delete all keyword links for a module (before re-syncing).",
           "is_pub": true,
-          "line": 2226
+          "line": 2296
         }
     ,    {
           "type": "fn_decl",
@@ -793,7 +875,7 @@
           "returns": "[]SearchResult",
           "comment": "Keyword-based search: query → keyword match → module lookup.",
           "is_pub": true,
-          "line": 2238
+          "line": 2308
         }
     ,    {
           "type": "fn_decl",
@@ -806,7 +888,7 @@
           "returns": "?EmbeddingStats",
           "comment": "Get embedding statistics from the database.",
           "is_pub": true,
-          "line": 2300
+          "line": 2370
         }
     ,    {
           "type": "fn_decl",
@@ -819,7 +901,7 @@
           ],
           "returns": "[]AliasEmbeddingEntry",
           "is_pub": true,
-          "line": 2350
+          "line": 2420
         }
     ,    {
           "type": "fn_decl",
@@ -832,7 +914,7 @@
           ],
           "returns": "[]KeywordEmbeddingEntry",
           "is_pub": true,
-          "line": 2375
+          "line": 2445
         }
     ,    {
           "type": "fn_decl",
@@ -845,7 +927,7 @@
           ],
           "returns": "[]EmbeddingCacheEntry",
           "is_pub": true,
-          "line": 2400
+          "line": 2470
         }
     ,    {
           "type": "fn_decl",
@@ -858,19 +940,19 @@
           ],
           "returns": "[]AstNodeEmbeddingEntry",
           "is_pub": true,
-          "line": 2425
+          "line": 2495
         }
       ],
-      "line": 227
+      "line": 297
     },
     {
       "type": "struct",
       "name": "ParsedMember",
       "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
       "signature": "keyword_struct ParsedMember { ... }",
-      "comment": "Represents parsed member data with ownership and invariants; managed via parsing pipeline.",
+      "comment": "Represents parsed member data structures; managed by owner; key invariant is integrity of parsed content.",
       "is_pub": false,
-      "line": 2458
+      "line": 2528
     },
     {
       "type": "struct",
@@ -879,7 +961,7 @@
       "signature": "keyword_struct ParsedDoc { ... }",
       "comment": "Represents parsed document data with ownership and invariants; managed via parsing lifecycle.",
       "is_pub": false,
-      "line": 2466
+      "line": 2536
     },
     {
       "type": "fn_private",
@@ -893,7 +975,7 @@
       "returns": "ParsedDoc",
       "comment": "Converts a JSON string into a ParsedDoc object using the provided arena and data.",
       "is_pub": false,
-      "line": 2478
+      "line": 2548
     },
     {
       "type": "fn_private",
@@ -904,9 +986,9 @@
         { "name": "item", "type": "std.json.Value" }
       ],
       "returns": "ParsedMember",
-      "comment": "Converts a JSON value to a ParsedMember, handling nulls and errors gracefully.",
+      "comment": "Converts a JSON value to a ParsedMember, handling nulls and errors.",
       "is_pub": false,
-      "line": 2594
+      "line": 2664
     },
     {
       "type": "fn_private",
@@ -920,7 +1002,7 @@
       "returns": "[]u8",
       "comment": "Serializes a list of memory items into a compact byte array using the provided allocator.",
       "is_pub": false,
-      "line": 2636
+      "line": 2706
     },
     {
       "type": "fn_private",
@@ -935,7 +1017,7 @@
       "returns": "[][]const u8",
       "comment": "Converts a SQLite statement result into a slice of byte slices for column parsing.",
       "is_pub": false,
-      "line": 2656
+      "line": 2726
     },
     {
       "type": "fn_private",
@@ -950,7 +1032,7 @@
       "returns": "[]u8",
       "comment": "Converts a SQLite column value to a Zig byte slice, handling conversion and allocation.",
       "is_pub": false,
-      "line": 2679
+      "line": 2749
     },
     {
       "type": "fn_private",
@@ -965,7 +1047,7 @@
       "returns": "?[]u8",
       "comment": "Converts a null-terminated C string into a Zig array of u8 values.",
       "is_pub": false,
-      "line": 2686
+      "line": 2756
     },
     {
       "type": "fn_private",
@@ -982,55 +1064,73 @@
       "returns": "void",
       "comment": "Handles SQLite errors by logging details and returning an error code.",
       "is_pub": false,
-      "line": 2694
+      "line": 2764
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 2710
+      "line": 2780
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 2734
+      "line": 2804
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 2784
+      "line": 2854
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 2825
+      "line": 2895
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText prose format",
       "is_pub": false,
-      "line": 2873
+      "line": 2943
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 2897
+      "line": 2967
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 2913
+      "line": 2983
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 2921
+      "line": 2991
+    },
+    {
+      "type": "test_decl",
+      "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
+      "is_pub": false,
+      "line": 3006
+    },
+    {
+      "type": "test_decl",
+      "name": "DbSyncBuilder fluent setters return updated values",
+      "is_pub": false,
+      "line": 3024
+    },
+    {
+      "type": "test_decl",
+      "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
+      "is_pub": false,
+      "line": 3044
     }
   ]
 }

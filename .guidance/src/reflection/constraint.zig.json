@@ -1,0 +1,66 @@
+{
+  "meta": {
+    "module": "src.reflection.constraint",
+    "source": "src/reflection/constraint.zig",
+    "language": "zig"
+  },
+  "comment": "Defines a type-safe vtable for constraint values with optional advanced features like context, release, and conversion.",
+  "detail": "## Module Purpose and Architecture\n\nThis module implements a type-erased constraint system using virtual tables (vtables) to enable runtime polymorphic behavior for parsing and serializing field values across different types. The architecture follows the vtable pattern where each type T has exactly one static `ConstraintVTable` instance, with accessors holding only a pointer reference—minimizing per-field memory overhead to a single pointer.\n\nThe system separates concerns between core functionality (string-based set/get operations) and extended features (context management, memory release, binary serialization). This separation allows basic constraints to remain lightweight while enabling advanced capabilities when needed.\n\n## Key Abstractions and Relationships\n\n**ConstraintVTable**: The central abstraction containing function pointers for all operations:\n- `setFn` / `getFn`: Core string-based parsing and serialization\n- Extended optional functions: `context`, `releaseFn`, `convertFn`, `setCtxFn`, `getCtxFn`, `setBinaryFn`, `getBinaryFn`\n\n**Constraint(T)**: A type-safe factory function that generates the appropriate vtable for a specific type T. This ensures compile-time correctness while enabling runtime dispatch.\n\n**Helper Functions**:\n- `constraintSet`: Public API for setting field values via string input\n- `constraintGet`: Public API for serializing field values to strings\n\n## Public API and Usage Patterns\n\nThe public API follows a consistent pattern:\n1. Generate vtable: `const vtable = Constraint(MyType)`\n2. Store pointer in field (type-erased)\n3. Call operations through vtable with allocator and typed pointer\n\nUsage typically involves:\n```zig\n// Type-safe setup\nconst vtable = Constraint(MyType);\n\n// Runtime dispatch via pointer\nvtable.setFn(allocator, ptr, input);\nconst output = vtable.getFn(allocator, ptr);\n```\n\n## Important Implementation Details\n\n1. **Memory Management**: All string-based operations require an allocator because string/slice fields may need to allocate new memory to avoid dangling pointers. The `releaseFn` provides cleanup for heap-allocated data before overwrites.\n\n2. **Context Parameterization**: Optional context pointer enables parameterized vtables (e.g., BitSetConstraint storing a StringInterner). Context-aware functions (`setCtxFn`, `getCtxFn`) allow these constraints to access their stored context during operations.\n\n3. **Binary Serialization**: The `setBinaryFn` and `getBinaryFn` provide constraint-specific binary formats, enabling efficient storage of complex structures like bitsets (length-prefixed arrays) or strings (length prefix + UTF-8 bytes).\n\n4. **Cross-Module Compatibility**: The `convertFn` enables DAG duck-typing across module boundaries by matching capability names between different StringInterners, crucial for serialization compatibility.\n\n## Design Patterns Used\n\n1. **Type Erasure**: Vtables provide runtime polymorphism without requiring inheritance hierarchies\n2. **Strategy Pattern**: Function pointers encapsulate interchangeable algorithms\n3. **Optional/Nullable Fields**: Extends basic functionality with minimal overhead\n4. **Context-Aware Dispatch**: Enables parameterized behavior while maintaining type safety\n5. **Double-Dispatch via Context**: `setCtxFn` and `getCtxFn` receive the vtable itself, allowing runtime-parameterized constraints to access their context during operations",
+  "keywords": ["ConstraintVTable", "Constraint", "constraintSet", "constraintGet", "type-erasure", "vtable pattern", "binary serialization", "context-aware dispatch", "memory release", "bitset conversion"],
+  "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/typed.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ConstraintVTable",
+      "match_hash": "5e4fd855fd21d5eae2f8804363a409d58d600c291b95dd5e469b31883b89ed13",
+      "signature": "keyword_struct ConstraintVTable { ... }",
+      "comment": "Type-erased vtable for parsing a string into a field value and serialising",
+      "is_pub": true,
+      "line": 15
+    },
+    {
+      "type": "fn_decl",
+      "name": "Constraint",
+      "match_hash": "bd6bd77f9257ffe9957dae3cb57cc21455cdae3762192fccc6dff55cba306c5b",
+      "signature": "fn Constraint(T: type) -> ConstraintVTable",
+      "params": [
+        { "name": "T", "type": "type" }
+      ],
+      "returns": "ConstraintVTable",
+      "comment": "Build a static ConstraintVTable for type T.",
+      "is_pub": true,
+      "line": 90
+    },
+    {
+      "type": "fn_decl",
+      "name": "constraintSet",
+      "match_hash": "305f3b61cc9d0a58fa60c036922e58fe93c753d4936e89db91071576ac3f7b6d",
+      "signature": "fn constraintSet(T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) -> anyerror!void",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "typed_ptr", "type": "*T" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "anyerror!void",
+      "comment": "Validates and sets constraints for a Zig type with allocator and input data.",
+      "is_pub": true,
+      "line": 137
+    },
+    {
+      "type": "fn_decl",
+      "name": "constraintGet",
+      "match_hash": "f6fa78a4c4c214eb4dcfcd52f7b93e52d177831b05677478b6190867095069fc",
+      "signature": "fn constraintGet(T: type, allocator: std.mem.Allocator, typed_ptr: *const T) -> anyerror![]const u8",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "typed_ptr", "type": "*const T" }
+      ],
+      "returns": "anyerror![]const u8",
+      "comment": "Retrieves a value from a typed pointer using reflection, returning any error if invalid.",
+      "is_pub": true,
+      "line": 199
+    }
+  ]
+}

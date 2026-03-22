@@ -7,6 +7,7 @@
   "comment": "Defines inference engine stub for RDFS/OWL, handling transitive rules and materialization stubs.",
   "detail": "## Module Purpose and Architecture\n\nThe `inference.zig` module provides a foundational interface for an ontology-based inference engine designed to support RDFS (RDF Schema) and OWL (Web Ontology Language) reasoning capabilities. Currently implemented as a stub, it establishes the architectural patterns and data structures necessary for future full implementation of semantic inference operations.\n\nThe architecture follows a clean separation of concerns:\n- **Rule Definition Layer**: Abstracts different types of inference rules through the `RuleType` enum\n- **Engine Core Layer**: Manages rule storage and execution via `InferenceEngine`\n- **I/O Integration Layer**: Interfaces with RDF parsing (`parser.zig`) and database persistence (CozoDB)\n\nThe module is designed to be extended with forward-chaining inference algorithms that process triples through defined rules to derive new knowledge.\n\n## Key Abstractions and Relationships\n\n### RuleType Enum\nDefines four categories of RDFS/OWL inference rules:\n- `subclass_transitivity`: If A ⊆ B and B ⊆ C, then A ⊆ C\n- `subproperty_transitivity`: Similar transitive reasoning for properties\n- `domain_range`: Infers type constraints from relationship domains and ranges\n- `inverse_of`: Handles bidirectional edges through owl:inverseOf predicates\n\n### InferenceRule Struct\nRepresents a single rule configuration with:\n- `rule_type`: Categorizes the inference operation\n- `trigger_predicate`: The specific RDF predicate that activates the rule (e.g., \"rdfs:subClassOf\")\n\n### InferenceEngine Struct\nThe central orchestration component managing:\n- Memory allocation via `std.mem.Allocator`\n- Dynamic rule collection through `std.ArrayList(InferenceRule)`\n- Triple processing pipeline for inference operations\n\n## Public API and Usage Patterns\n\n```zig\nvar engine = InferenceEngine.init(allocator);\ndefer engine.deinit();\n\n// Configure rules\ntry engine.addRule(.{\n    .rule_type = .subclass_transitivity,\n    .trigger_predicate = \"http://www.w3.org/2000/01/rdf-schema#subClassOf\",\n});\n\n// Execute inference\nconst inferred = try engine.infer(inputTriples);\n\n// Persist results\ntry engine.materialize();\n```\n\n## Important Implementation Details\n\n- **Memory Management**: Uses Zig's allocator pattern with explicit `init()` and `deinit()` lifecycle methods\n- **Current Behavior**: Both `infer()` and `materialize()` are stubs returning empty/no-op respectively\n- **Rule Storage**: Rules are stored in a dynamically growing ArrayList, allowing runtime configuration\n- **Type Safety**: Strongly-typed enum ensures only valid rule types can be instantiated\n\n## Design Patterns\n\n1. **Factory Pattern**: `init()` function creates properly initialized engine instances\n2. **Resource Management**: Explicit deinitialization prevents memory leaks through defer patterns\n3. **Configuration Builder**: Sequential `addRule()` calls build custom inference pipelines\n4. **Stub/Placeholder Pattern**: Provides interface stability while deferring complex implementation\n\nThe module is architected for extensibility, with clear interfaces that can be implemented once the core RDFS/OWL algorithms are developed.",
   "keywords": ["InferenceEngine", "RuleType", "RDFS", "OWL", "ontology inference", "forward-chaining", "triple processing", "semantic reasoning", "CozoDB", "stub implementation"],
+  "used_by": ["src/ontology/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -48,7 +49,7 @@
       "name": "InferenceEngine",
       "match_hash": "e041047b304df9640feaa8b00589fd7a49d19ac589d4cdada71dd3588eace69a",
       "signature": "keyword_struct InferenceEngine { ... }",
-      "comment": "Manages inference engine state with allocation, rule management, and triple processing; owns inference operations; requires proper allocation handling.",
+      "comment": "Manages inference engine state with allocation, rule management, and triple processing; owns inference operations; no external dependencies.",
       "is_pub": true,
       "members": [
         {
@@ -112,7 +113,7 @@
             { "name": "self", "type": "*InferenceEngine" }
           ],
           "returns": "void",
-          "comment": "Persist inferred edges to CozoDB.",
+          "comment": "Persist inferred edges to SQLite via Library.",
           "is_pub": true,
           "line": 59
         }

@@ -57,7 +57,7 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the provided LLM input is overly generic by analyzing its structure and content.",
+      "comment": "Checks if the provided LLM input is overly generic, returning true if it lacks specificity.",
       "is_pub": false,
       "line": 74
     },

@@ -114,9 +114,9 @@ pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8
 /// preamble / meta-commentary rather than a usable doc comment.
 /// Adding a new pattern is a single-line change here; no if-chain to edit.
 const llm_preamble_patterns = [_][]const u8{
-    "here's a",    "here is a",    "i'll ",       "to summarize",
-    "okay,",       "ok,",          "we need ",    "let's think",
-    "let's craft", "let's count",  "let me think", "i need to ",
+    "here's a",    "here is a",   "i'll ",        "to summarize",
+    "okay,",       "ok,",         "we need ",     "let's think",
+    "let's craft", "let's count", "let me think", "i need to ",
 };
 
 /// Return true when an LLM response is malformed or unusable as a comment.

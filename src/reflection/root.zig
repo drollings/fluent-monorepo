@@ -14,7 +14,6 @@
 ///   @import("reflection").Constraint(T)
 ///   @import("reflection").perm_all
 ///   @import("reflection").Editable(T)
-
 pub const constraint = @import("constraint.zig");
 pub const accessor = @import("accessor.zig");
 pub const permissions = @import("permissions.zig");

@@ -16,7 +16,7 @@
       "returns": "void",
       "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 11
+      "line": 18
     },
     {
       "type": "fn_private",
@@ -29,13 +29,13 @@
       "returns": "void",
       "comment": "Prints help information using the provided writer object.",
       "is_pub": false,
-      "line": 154
+      "line": 239
     },
     {
       "type": "test_decl",
-      "name": "simple imports",
+      "name": "coral: core module imports compile",
       "is_pub": false,
-      "line": 187
+      "line": 278
     }
   ]
 }

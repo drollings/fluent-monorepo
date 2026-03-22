@@ -4,10 +4,12 @@
     "source": "src/guidance/config.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across project and user levels.",
-  "detail": "",
+  "comment": "[gof-patterns, gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across project and user levels.",
+  "detail": "# Guidance Configuration Module\n\n## Module Purpose and Architecture\n\nThis module implements a robust configuration loading system for the guidance AI coding assistant. It provides a two-level fallback chain for resolving configuration paths: project-local settings (`.guidance/`) take precedence over user-global settings (`~/.config/guidance/`), with built-in defaults as the final fallback. The architecture prioritizes convenience by pre-computing absolute paths within `ProjectConfig`, eliminating the need for callers to perform additional memory allocations when deriving working directories.\n\n## Key Abstractions and Relationships\n\n**Provider**: Represents an external AI service provider (e.g., Ollama, OpenAI). Each provider has a name, base URL, and chat endpoint configuration. The module supports multiple providers through a `[]const Provider` slice in `ProjectConfig`.\n\n**LintCommand**: Defines per-file-extension test commands using argv arrays with `{file}` substitution for the file extension. This enables automated testing of code modifications against specific file types.\n\n**ProjectConfig**: The central configuration structure containing all resolved paths and settings:\n- Directory paths (guidance root, JSON base, skills, inbox, capabilities)\n- Database path relative to workspace root\n- Embedding configuration (provider, model name, vector dimensions)\n- Source directories for semantic search indexing\n- Model configurations (default, fast, thinking)\n- Command definitions (test, lint, format)\n\n## Public API and Usage Patterns\n\nThe primary entry point is `loadConfig(allocator, cwd)` which automatically resolves the appropriate configuration file through the fallback chain. For programmatic construction, `buildDefault()` provides a complete default configuration, while `buildFromParts()` allows granular assembly from individual components. Helper functions like `parseCommandsObject()` enable JSON parsing of command definitions directly within the configuration loading pipeline.\n\n## Important Implementation Details\n\n1. **Memory Ownership**: All string fields in `ProjectConfig` are owned by the struct itself. Callers must invoke `deinit()` on the entire config to properly free allocated memory, preventing leaks in long-running applications.\n\n2. **Path Resolution**: The module pre-computes absolute paths during configuration loading, ensuring all callers receive ready-to-use directory references without additional computation.\n\n3. **Embedding Flexibility**: Supports multiple embedding providers with configurable models and dimensions (0 indicates provider default), enabling integration with various semantic search backends.\n\n4. **Capabilities Indexing**: The capabilities directory contains subdirectories with `CAPABILITY.md` files that are indexed into LanceDB for efficient semantic search during code assistance operations.\n\n## Design Patterns\n\n- **Fallback Chain Pattern**: Three-tier resolution (project → user → defaults) ensures graceful degradation\n- **Builder Pattern**: `buildFromParts()` allows incremental configuration assembly\n- **Value Object**: `ProjectConfig` encapsulates related state with explicit lifecycle management\n- **Configuration Schema**: Separation of defaults, user overrides, and project-specific settings",
+  "keywords": ["loadConfig", "ProjectConfig", "Provider", "LintCommand", "buildFromParts", "embedding_provider", "capabilities_dir", "semantic_search", "fallback_chain", "precomputed_paths"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" },
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "used_by": ["src/guidance/main.zig"],
   "members": [
@@ -260,7 +262,7 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Attempts to load a file into a project configuration, returning the loaded settings or an error.",
+      "comment": "Attempts to load a file into a project configuration, returning a ProjectConfig or error.",
       "is_pub": false,
       "line": 492
     },
@@ -303,7 +305,7 @@
         { "name": "embedding_cache_limit", "type": "u32" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Constructs a project configuration from Zig source parts using allocator and path data.",
+      "comment": "Constructs a project configuration from Zig source parts using allocator, paths, and model settings.",
       "is_pub": false,
       "line": 792
     },

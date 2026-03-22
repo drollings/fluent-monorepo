@@ -7,7 +7,23 @@
   "comment": " common — Shared utilities and LLM client for guidance, vector, and coral.\n\n This file is the module root for the `common` build module.\n It re-exports from sub-modules so consumers can write\n `@import(\"common\").LlmClient` etc. without knowing the source file.\n\n Sub-modules:\n   src/llm/root.zig       — LlmClient, LlmConfig, LlmError (pure HTTP, no str deps)\n   src/common/embeddings  — EmbeddingProvider, Ollama/OpenAI clients, factory\n   src/common/args        — CommonArgs, parseCommonArgs\n   src/common/io          — WriterState, ReaderState, path helpers\n   src/common/source      — NodeType, extractExcerpt, extractSimpleExcerpt\n   src/common/hash        — sha256Hex, contentHashWithModel, blake3, etc.\n   src/common/json        — jsonStringifyAlloc, jsonWriteEscaped, parseJsonFile\n   src/common/str         — containsIgnoreCase, looksLikeIdentifier, etc.\n   src/common/url         — isLocalHost, validateHttpsOrLocalHttp",
   "detail": "# src/common/llm.zig — AI Assistant Common Utilities Module\n\n## Module Purpose and Architecture\n\nThis module serves as a centralized utility hub for an AI coding assistant, aggregating functionality from multiple sub-modules while providing LLM-specific configuration and processing capabilities. The architecture follows a **module federation pattern**, where `llm.zig` acts as both a re-export gateway and a domain-specific extension point.\n\nThe module imports and re-exports utilities from four specialized modules:\n- `hash.zig`: Cryptographic hashing (SHA-256, BLAKE3) for content fingerprinting\n- `json.zig`: JSON serialization and parsing utilities\n- `str.zig`: String analysis and pattern matching functions\n- `url.zig`: URL validation and host detection\n\nAdditionally, it defines its own LLM-specific abstractions including configuration management and error handling tailored to AI model interactions.\n\n## Key Abstractions and Relationships\n\n**LlmConfig**: The central configuration struct for LLM API connections. It manages:\n- API endpoint URLs and model identifiers\n- The `think` parameter controlling reasoning behavior in Ollama-compatible models\n- Timeout settings and debug logging flags\n\nThe `isThinkingModel()` method provides a clean interface to check if thinking is explicitly enabled, while `extractModelName()` parses provider:model:name references into usable model names.\n\n**LlmError**: A domain-specific error set covering connection issues, parsing failures, and resource constraints (OutOfMemory), ensuring callers can handle LLM-specific failure modes appropriately.\n\n**Re-exported Types**: The module exposes common types from sub-modules including `WriterState`, `ReaderState`, and `NodeType` for cross-module compatibility.\n\n## Public API and Usage Patterns\n\n### Configuration Management\n```zig\nconst config = LlmConfig{\n    .api_url = \"http://localhost:11434\",\n    .model = \"qwen2.5-coder\",\n    .think = true,  // Enable reasoning for Ollama thinking models\n    .timeout_ms = 30000,\n};\n```\n\n### Error Handling Pattern\nThe `LlmError` error set enables specific handling:\n```zig\ndefer catch (try llmCall()) {\n    switch (error) {\n        LlmError.ConnectionFailed => retryWithBackoff(),\n        LlmError.OutOfMemory => suggestSmallerBatch(),\n        else => logAndExit(error),\n    }\n}\n```\n\n### Import Pattern\nThe module enables clean imports from the root:\n```zig\nconst common = @import(\"common.zig\");\nconst hash = common.sha256Hex;  // Re-exported utility\nconst config = common.LlmConfig{...};  // Domain type\n```\n\n## Important Implementation Details\n\n1. **Ollama Thinking Parameter**: The `think` field uses nullable bool (`?bool`) semantics:\n   - `null`: No thinking parameter sent (default behavior)\n   - `true`: Explicitly enables reasoning for thinking-capable models\n   - `false`: Suppresses thinking even if the model supports it\n\n2. **Model Reference Parsing**: The `extractModelName()` function handles both simple names and provider-qualified references like \"ollama:qwen2.5-coder\", returning only the model name portion.\n\n3. **Default Values**: Configurable defaults include 10-second timeout and debug mode disabled, allowing override without boilerplate.\n\n4. **Path Resolution Utilities**: Re-exported functions like `makePathAbsolute()`, `resolvePath()`, and `stripPathPrefix()` provide consistent path handling across the codebase.\n\n## Design Patterns Used\n\n- **Module Federation/Re-export Pattern**: Centralizes utility access from multiple sub-modules\n- **Configuration Object Pattern**: Encapsulates LLM connection settings with validation\n- **Error Set Pattern**: Domain-specific error types for better exception handling\n- **Utility Library Pattern**: Collections of small, reusable functions (string analysis, hash utilities)",
   "keywords": ["LlmConfig", "sha256Hex", "blake3Hash", "LlmError", "Ollama thinking model", "module re-export", "JSON serialization", "string pattern matching", "URL validation", "content fingerprinting"],
+  "used_by": ["src/common/root.zig"],
   "members": [
+    {
+      "type": "fn_private",
+      "name": "stripTagBlock",
+      "match_hash": "3e57dd9f7bb11d845bb2dd7293d6f7c8416d8db7f55d5b0797886249fd4589bb",
+      "signature": "fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) -> []const u8",
+      "params": [
+        { "name": "text", "type": "[]const u8" },
+        { "name": "open", "type": "[]const u8" },
+        { "name": "close", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Strip a matched open/close tag pair from `text`.",
+      "is_pub": false,
+      "line": 63
+    },
     {
       "type": "fn_decl",
       "name": "stripThinkBlock",
@@ -19,7 +35,7 @@
       "returns": "[]const u8",
       "comment": "Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.",
       "is_pub": true,
-      "line": 41
+      "line": 77
     },
     {
       "type": "fn_decl",
@@ -33,7 +49,7 @@
       "returns": "[]const u8",
       "comment": "Strip LLM reasoning preamble from the start of a response.",
       "is_pub": true,
-      "line": 74
+      "line": 86
     },
     {
       "type": "fn_decl",
@@ -46,7 +62,7 @@
       "returns": "bool",
       "comment": "Return true when an LLM response is malformed or unusable as a comment.",
       "is_pub": true,
-      "line": 103
+      "line": 124
     },
     {
       "type": "fn_private",
@@ -59,7 +75,7 @@
       "returns": "bool",
       "comment": "Checks if a Zig string ends with a null byte, returning true if so.",
       "is_pub": false,
-      "line": 131
+      "line": 141
     },
     {
       "type": "fn_private",
@@ -70,9 +86,9 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches.",
+      "comment": "Checks if a Zig structure represents a valid self-referential LLM model instance.",
       "is_pub": false,
-      "line": 144
+      "line": 154
     },
     {
       "type": "fn_private",
@@ -85,7 +101,7 @@
       "returns": "bool",
       "comment": "Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.",
       "is_pub": false,
-      "line": 156
+      "line": 166
     },
     {
       "type": "fn_decl",
@@ -98,103 +114,103 @@
       "returns": "?[]const u8",
       "comment": "Extract the content of the first <comment>...</comment> tag in an LLM response.",
       "is_pub": true,
-      "line": 172
+      "line": 182
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 249
+      "line": 259
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 260
+      "line": 270
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 264
+      "line": 274
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 268
+      "line": 278
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 284
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 289
+      "line": 299
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 294
+      "line": 304
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 298
+      "line": 308
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 304
+      "line": 314
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 310
+      "line": 320
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 317
+      "line": 327
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 323
+      "line": 333
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 330
+      "line": 340
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 337
+      "line": 347
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 342
+      "line": 352
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: chain-of-thought before tag is ignored",
       "is_pub": false,
-      "line": 346
+      "line": 356
     }
   ]
 }

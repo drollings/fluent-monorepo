@@ -4,11 +4,12 @@
     "source": "src/guidance/main.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns]  guidance — AST-guided LanceDB vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — LanceDB database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n   guidance deps     [options]   Generate Makefile .depend file",
+  "comment": "[gof-patterns, gof-patterns]  guidance — AST-guided LanceDB vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — LanceDB database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n   guidance deps     [options]   Generate Makefile .depend file",
   "detail": "# Guidance Module: AST-Guided LanceDB Vector Search Database Generator\n\n## Module Purpose and Architecture\n\nGuidance is a command-line utility that bridges Zig source code analysis with vector search capabilities for AI-powered code understanding. It transforms Zig projects into structured, queryable knowledge bases by generating two primary outputs:\n\n1. **Per-file JSON metadata** (`.guidance/src/**/*.json`) - A structured mirror of code organization and semantic information\n2. **LanceDB database** (`.guidance.db`) - An optimized vector index consumed by NullClaw's explain tool for AI-assisted code navigation and reasoning\n\nThe architecture follows a layered design pattern:\n- **Parser Layer**: AST parsing via `ast_parser.zig` extracts syntactic structure\n- **Metadata Layer**: Type definitions in `types.zig` define the schema for structured data\n- **Vector Layer**: `vector.zig` handles LanceDB integration and hybrid search (vector + keyword)\n- **Analysis Layer**: Git diff processing, commit analysis, and change tracking\n- **Integration Layer**: LLM filters, enhancers, and plugin systems enable AI reasoning\n\n## Key Abstractions and Relationships\n\n| Component | Purpose | Dependencies |\n|-----------|---------|--------------|\n| `GuidanceDb` | LanceDB hybrid search container | `lance_db_mod` |\n| `SearchResult` | Query result type with metadata | `GuidanceDb` |\n| `Command` enum | CLI command dispatcher | Internal |\n| `llm_filter_mod` | LLM-based content filtering | External AI services |\n| `plugin_registry` | Extensible functionality hooks | Plugin ecosystem |\n\nThe module uses a **pipeline pattern** where data flows from raw source → AST parsing → structured extraction → vector indexing → AI query processing. The **command dispatcher pattern** handles CLI operations with extensible subcommands.\n\n## Public API and Usage Patterns\n\n### Core Commands\n```bash\nguidance gen       # Generate JSON + compile .guidance.db\nguidance status    # Report generation status\nguidance clean     # Remove generated artifacts\nguidance structure # Update STRUCTURE.md from guidance JSON\nguidance deps      # Generate Makefile .depend file\n```\n\n### API Surface\n- **Entry Point**: `main()` - CLI command dispatcher with argument parsing\n- **Configuration**: Global `verbose_mode` flag via `--verbose/--debug` flags\n- **Data Structures**: \n  - `GuidanceDb` - Vector database wrapper\n  - `SearchResult` - Query result container\n  - `CommitMemberInfo` - Git change tracking structure\n\n### Usage Patterns\n1. **Indexing Workflow**: Parse → Extract metadata → Generate JSON → Build LanceDB index\n2. **Query Workflow**: Hybrid search combining vector similarity with keyword matching\n3. **Git Integration**: Analyze staged/unstaged changes for incremental updates\n\n## Important Implementation Details\n\n- **Memory Management**: Uses `GeneralPurposeAllocator` with proper defer cleanup\n- **Logging**: Custom log implementation that filters debug output based on verbose flag\n- **Version Control**: Tracks version \"0.1.0\" and supports commit operations\n- **Plugin Architecture**: Extensible via `plugin_mod` and `plugin_registry` for custom analyzers\n\n## Design Patterns Used\n\n1. **Factory Pattern**: Command dispatching with enum-based routing\n2. **Pipeline Pattern**: Sequential data transformation stages\n3. **Decorator Pattern**: LLM filters wrapping base search results\n4. **Repository Pattern**: Structured metadata storage abstraction\n5. **Observer Pattern**: Plugin registry for event-driven extensibility\n\nThe module emphasizes **modularity** through separate imports (`types`, `ast_parser`, `sync_mod`) and **extensibility** via plugin systems, making it adaptable to different AI workflows and codebases.",
   "keywords": ["GuidanceDb", "LanceDB", "hybrid search", "AST parser", "vector indexing", "git diff analysis", "structured metadata", "command dispatcher", "plugin registry", "LLM integration"],
   "skills": [
-    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+    { "ref": ".skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" },
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "members": [
     {
@@ -16,7 +17,7 @@
       "name": "Command",
       "match_hash": "78370312f4c91136f2be7127048c2e038917cd0b925d2b792bd4a355f84f06a6",
       "signature": "keyword_enum Command { ... }",
-      "comment": "Manages command execution with fixed-size buffers; owned by the system; ensures safe initialization/deinit.",
+      "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent command behavior and ownership.",
       "is_pub": false,
       "members": [
         {
@@ -104,7 +105,7 @@
       "match_hash": "6b8ba952646097fbecbc003f01b45005eca1fa9666fdce94af0c795c0af2ddde",
       "signature": "fn printHelp() -> void",
       "returns": "void",
-      "comment": "Displays usage instructions for the Zig library.",
+      "comment": "Displays usage instructions for the Zig library's help system.",
       "is_pub": false,
       "line": 126
     },
@@ -113,7 +114,7 @@
       "name": "InitArgs",
       "match_hash": "0160b4cb9c32cc9317f5c8846e6b92c22b2eb5a324a9ef40e26d0aaaefdfc55e",
       "signature": "keyword_struct InitArgs { ... }",
-      "comment": "Defines initialization arguments with strict ownership; ensures fixed-size buffers are managed safely.",
+      "comment": "Manages initialization arguments with strict ownership; ensures valid structure for Zig code generation.",
       "is_pub": false,
       "members": [
         {
@@ -156,7 +157,7 @@
         { "name": "staged", "type": "bool" }
       ],
       "returns": "[]u8",
-      "comment": "Compares two directories, returning differences in a Zig slice.",
+      "comment": "Compares two directories, returning differences in a Zig array.",
       "is_pub": false,
       "line": 346
     },
@@ -331,7 +332,7 @@
         { "name": "msg", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Converts a C string to a Zig-safe array for commit messages.",
+      "comment": "Converts a C string to a Zig-safe temporary message slice.",
       "is_pub": false,
       "line": 707
     },
@@ -368,7 +369,7 @@
       "name": "GenArgs",
       "match_hash": "b83d643627c0c1caae00ff648b46eb498e4b7a8c7ea8b6e1f8b75efb59a2ba52",
       "signature": "keyword_struct GenArgs { ... }",
-      "comment": "Defines a struct for parsing GenArgs with strict ownership and invariants; manages parsing errors.",
+      "comment": "Defines a struct for parsing GenArgs with strict ownership and invariants; manages parsing logic internally.",
       "is_pub": false,
       "members": [
         {
@@ -541,7 +542,7 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Cleans up memory by allocating and returning a cleaned Zig slice.",
+      "comment": "Cleans up memory by allocating and freeing resources using the provided allocator.",
       "is_pub": false,
       "line": 1648
     },
@@ -1086,7 +1087,7 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[][2]u32",
-      "comment": "Converts a C string slice into a list of two 32-bit unsigned integers representing public range ranges.",
+      "comment": "Converts a C string into a slice of two u32 values representing public range ranges.",
       "is_pub": true,
       "line": 3241
     },
@@ -1144,7 +1145,7 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
-      "comment": "Splits a diff array by file-pub key, returning an allocated slice.",
+      "comment": "Splits a diff array by file pub metadata and writes results to an allocated list.",
       "is_pub": true,
       "line": 3257
     },
@@ -1275,7 +1276,7 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Displays allocated memory in a Zig program by converting allocator data to a Zig slice.",
+      "comment": "Displays allocated memory in a Zig program by allocating and returning a pointer.",
       "is_pub": false,
       "line": 3297
     },

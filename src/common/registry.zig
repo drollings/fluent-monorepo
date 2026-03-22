@@ -490,7 +490,7 @@ test "TargetBuilder: depends and provides interned correctly" {
     defer registry.deinit();
 
     var b2 = registry.target("compile", .command);
-    try b2.depends(&.{"source.c", "header.h"}).provides(&.{"object.o"}).register();
+    try b2.depends(&.{ "source.c", "header.h" }).provides(&.{"object.o"}).register();
 
     const t = registry.get("compile");
     try testing.expect(t != null);

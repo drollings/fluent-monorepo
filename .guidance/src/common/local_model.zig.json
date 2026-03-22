@@ -1,0 +1,157 @@
+{
+  "meta": {
+    "module": "src.common.local_model",
+    "source": "src/common/local_model.zig",
+    "language": "zig"
+  },
+  "comment": "Handles LLM task decomposition, parses JSON arrays, manages sub-task lists with fallbacks.",
+  "detail": "# Local LLM Task Decomposition Module\n\n## Module Purpose and Architecture\n\nThis module implements **LocalDecomposer**, a task decomposition engine that leverages local language models to break complex queries into ordered, simpler sub-tasks. It's designed for AI coding assistants that need to route work through multiple processing steps efficiently.\n\nThe architecture follows a clean separation of concerns:\n- **Configuration** (`DecomposerConfig`): Centralized settings for LLM endpoints, model parameters, and operational limits\n- **Execution Engine** (`LocalDecomposer`): Orchestrates the decomposition pipeline with error handling\n- **Helper Utilities**: Specialized functions for text processing, validation, and parsing\n\n## Key Abstractions and Relationships\n\n| Component | Purpose | Dependencies |\n|-----------|---------|--------------|\n| `DecomposerConfig` | Configuration container | `LlmConfig`, `std.mem.Allocator` |\n| `LocalDecomposer` | Main decomposer struct | `DecomposerConfig`, `LlmClient` |\n| `stripThinkBlock()` | Removes model thinking artifacts | `std.mem` |\n| `isMalformedJsonArray()` | Validates JSON response format | - |\n| `parseJsonArray()` | Converts JSON string to task list | `std.json` |\n\n## Public API and Usage Patterns\n\n### Initialization Pattern\n```zig\nconst config = DecomposerConfig{\n    .llm = my_llm_config,\n    .max_subtasks = 5,\n    .max_depth = 2,\n};\nconst decomposer = LocalDecomposer.init(allocator, config);\n```\n\n### Decomposition Pattern\n```zig\nconst tasks = try decomposer.decompose(arena, \"complex query\");\n// `tasks` is a slice of []const u8 strings\nfor (tasks) |task| {\n    // Route each sub-task to appropriate handler\n}\n```\n\n### API Summary\n- **Structs**: `DecomposerConfig`, `LocalDecomposer`\n- **Functions**: `stripThinkBlock()`, `isMalformedJsonArray()`, `parseJsonArray()`\n\n## Important Implementation Details\n\n**Arena Allocation Contract**: All returned strings and slices are allocated from the caller-supplied arena. The caller is responsible for the entire arena lifetime—this enables efficient batch processing without repeated allocations.\n\n**Fallback Mechanism**: The module guarantees resilience by returning a single-element task slice containing the original query whenever LLM calls fail or responses are malformed. This ensures callers always have at least one workable item to process.\n\n**Error Handling Strategy**: Uses guard clauses extensively—early returns on errors prevent error propagation chains and keep code paths clear.\n\n## Design Patterns Used\n\n1. **Resilience Pattern**: Always has a fallback path; never fails completely\n2. **Arena Allocation Pattern**: Efficient memory management with clear ownership contracts\n3. **Single Responsibility Principle**: Each function handles one specific concern\n4. **Guard Clause Pattern**: Early returns for error conditions\n5. **Builder/Factory Pattern**: `init()` creates properly configured instances",
+  "keywords": ["LocalDecomposer", "task decomposition", "LLM orchestration", "arena allocation", "JSON parsing", "fallback mechanism", "sub-task routing", "std.mem.Allocator", "resilience pattern", "prompt engineering"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "DecomposerConfig",
+      "match_hash": "65886122986a46e3edb305166f69bc3fe99e5ff578454776c53c8f465eb7f1b9",
+      "signature": "keyword_struct DecomposerConfig { ... }",
+      "comment": "Manages decomposer configuration with fixed buffers; owned by the module; ensures consistent state across initialization.",
+      "is_pub": true,
+      "line": 21
+    },
+    {
+      "type": "struct",
+      "name": "LocalDecomposer",
+      "match_hash": "92e53c4a8935a29a2d42e9bf2963651af9a584a0977fd7c533ebd940b9fbeebf",
+      "signature": "keyword_struct LocalDecomposer { ... }",
+      "comment": "Manages memory pools for local decomposers, owns allocator, and ensures efficient task decomposition.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "b00cb8083b8c9720328eaedcc0d42bef8873af5a4e894d2d24befbac983145e2",
+          "signature": "fn init(allocator: std.mem.Allocator, config: DecomposerConfig) -> LocalDecomposer",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "DecomposerConfig" }
+          ],
+          "returns": "LocalDecomposer",
+          "is_pub": true,
+          "line": 38
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "decompose",
+          "match_hash": "1d3ea74925354942524aa317342dde8a76a94d191b398442218d7d21b9b731ab",
+          "signature": "fn decompose(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*LocalDecomposer" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "task", "type": "[]const u8" }
+          ],
+          "returns": "[][]const u8",
+          "comment": "Decompose `task` into an ordered list of sub-task strings.",
+          "is_pub": true,
+          "line": 47
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "fallback",
+          "match_hash": "1a3cd18f9992e884fe0bc6271164f431243a349cbab60fda3a648341833fda69",
+          "signature": "fn fallback(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*LocalDecomposer" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "task", "type": "[]const u8" }
+          ],
+          "returns": "[][]const u8",
+          "is_pub": false,
+          "line": 77
+        }
+      ],
+      "line": 34
+    },
+    {
+      "type": "fn_private",
+      "name": "stripThinkBlock",
+      "match_hash": "95c3b4915ceed297ceb2683ca261b7b201bd6e0717c5b83f76be630db83fb69c",
+      "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
+      "params": [
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Strip <think>...</think> blocks (identical to common/llm.zig version but",
+      "is_pub": false,
+      "line": 91
+    },
+    {
+      "type": "fn_private",
+      "name": "isMalformedJsonArray",
+      "match_hash": "6759176124dc7a99d5f681c7450d393b79c7daa1cecf345c6caf2f7b3b7c91cb",
+      "signature": "fn isMalformedJsonArray(text: []const u8) -> bool",
+      "params": [
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Return true if `text` does not look like a JSON array.",
+      "is_pub": false,
+      "line": 104
+    },
+    {
+      "type": "fn_private",
+      "name": "parseJsonArray",
+      "match_hash": "5918c0f7c8139afba3b2438505090d219514e94312d9b060ff5af4226d708b1a",
+      "signature": "fn parseJsonArray(arena: std.mem.Allocator, text: []const u8, limit: usize) -> [][]const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "text", "type": "[]const u8" },
+        { "name": "limit", "type": "usize" }
+      ],
+      "returns": "[][]const u8",
+      "comment": "Parse a JSON array of strings from `text` into `arena`-allocated slice.",
+      "is_pub": false,
+      "line": 114
+    },
+    {
+      "type": "test_decl",
+      "name": "isMalformedJsonArray: rejects non-arrays",
+      "is_pub": false,
+      "line": 143
+    },
+    {
+      "type": "test_decl",
+      "name": "isMalformedJsonArray: accepts well-formed arrays",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "stripThinkBlock: removes think tags",
+      "is_pub": false,
+      "line": 155
+    },
+    {
+      "type": "test_decl",
+      "name": "stripThinkBlock: no think block passes through",
+      "is_pub": false,
+      "line": 161
+    },
+    {
+      "type": "test_decl",
+      "name": "parseJsonArray: parses simple array",
+      "is_pub": false,
+      "line": 166
+    },
+    {
+      "type": "test_decl",
+      "name": "parseJsonArray: respects limit",
+      "is_pub": false,
+      "line": 176
+    },
+    {
+      "type": "test_decl",
+      "name": "LocalDecomposer.fallback returns single task",
+      "is_pub": false,
+      "line": 184
+    }
+  ]
+}

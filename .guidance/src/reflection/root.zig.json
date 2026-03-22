@@ -1,0 +1,305 @@
+{
+  "meta": {
+    "module": "src.reflection.root",
+    "source": "src/reflection/root.zig",
+    "language": "zig"
+  },
+  "comment": "This file exports core reflection utilities for validation, access control, and type handling in the Coral codebase.",
+  "detail": "# Coral Reflection Module Architecture\n\n## Purpose and Architecture\n\nThe `src/reflection/root.zig` module serves as the central entry point for Coral's field-level reflection, validation, access control, and type handling infrastructure. It acts as a modular federation that exposes six specialized sub-modules while maintaining a flat, backward-compatible API surface.\n\n### Architectural Design\n\n**Modular Federation Pattern**: The module imports six specialized sub-modules:\n- `constraint.zig` — Constraint system with VTable-based validation\n- `accessor.zig` — Field access and editing abstractions\n- `permissions.zig` — Role-based access control\n- `typed.zig` — Type-safe accessor operations\n- `binary.zig` — Binary field codec for serialization\n- `enum_registry.zig` — Enum management system\n\n**Flat API Surface**: Through public re-exports, the module exposes a unified namespace that preserves backward-compatible call sites from the original `src/common/reflection.zig`, allowing gradual migration while maintaining API stability.\n\n### Key Abstractions and Relationships\n\n1. **Constraint System**: The `ConstraintVTable` provides polymorphic validation through virtual method dispatch. `Constraint(T)` wraps types with constraint metadata, while `constraintSet/Get` utilities manage constraint composition.\n\n2. **Accessor Layer**: `Editable(T)` and `DynamicEditable` define how fields are accessed and modified. `FieldMeta` carries schema information including ownership modes (`OwnershipMode`) and type tags (`TypeTag`).\n\n3. **Permissions Model**: A role-based system where `Role` defines permissions via `RolePermissions`. Predefined roles include `perm_coder`, `perm_staff`, and `perm_public_read`.\n\n4. **Typed Operations**: The `TypedAccessorTable(T)` provides type-indexed access patterns, with `ValidationError` capturing type-mismatch failures during validation.\n\n5. **Binary Codec**: `BinaryFieldCodec` enables efficient field serialization through the reflection layer.\n\n### Public API and Usage Patterns\n\n```zig\n// Import the root module for all reflection utilities\nconst reflection = @import(\"reflection.zig\");\n\n// Use flat re-exports for constraint-based validation\nconst Constraint = reflection.Constraint;\nconst perm_coder = reflection.perm_coder;\n\n// Access field metadata through Editable types\nconst Editable = reflection.Editable;\n```\n\n**Common Patterns**:\n- **Validation Chains**: Compose constraints using `constraintSet` then apply via `Constraint(T)`\n- **Field Access**: Use `Accessor` or `TypedAccessor` for type-safe field retrieval\n- **Permission Checks**: Verify access via `RolePermissions.perm_*` constants\n\n### Implementation Details\n\n- The module uses Zig's `@import()` for sub-module federation, enabling clean dependency resolution\n- Flat re-exports are declared as `pub const` to maintain namespace cleanliness while preserving API compatibility\n- Type-level abstractions leverage Zig's generic capabilities (`Constraint(T)`, `Editable(T)`)\n\n### Design Patterns\n\n1. **Module Federation**: Clean separation of concerns across specialized sub-modules\n2. **Flat API with Re-exports**: Unified public surface with internal modularity\n3. **VTable-based Polymorphism**: Efficient constraint dispatch through virtual methods\n4. **Type-Level Abstraction**: Generic constraints and accessors for compile-time safety",
+  "keywords": ["Constraint", "Accessor", "Editable", "FieldMeta", "RolePermissions", "BinaryFieldCodec", "ConstraintVTable", "TypedAccessor", "perm_coder", "Coral Reflection"],
+  "used_by": ["src/vector/lance_db.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "TestConfig",
+      "match_hash": "2bdee22dcce48dbc7f389cfbdc91fad1e2b259a68ac8fefa94889f44ea293a44",
+      "signature": "keyword_struct TestConfig { ... }",
+      "comment": "Represents configuration settings with strict ownership and invariants; managed via reflection.",
+      "is_pub": false,
+      "line": 71
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get integer",
+      "is_pub": false,
+      "line": 78
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get float",
+      "is_pub": false,
+      "line": 87
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: set and get bool",
+      "is_pub": false,
+      "line": 96
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: field not found",
+      "is_pub": false,
+      "line": 105
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: zero-size mixin",
+      "is_pub": false,
+      "line": 111
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: setFast and getFast",
+      "is_pub": false,
+      "line": 115
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: string field set and get",
+      "is_pub": false,
+      "line": 130
+    },
+    {
+      "type": "enum",
+      "name": "Status",
+      "match_hash": "5e17af7d2b56b085692e0c26090e7c90fc9a441428abdee948cfda088bb47bbf",
+      "signature": "keyword_enum Status { ... }",
+      "comment": "Defines a status enum with compile-time checks; owned by the module; ensures invariant values are fixed.",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "pending",
+          "is_pub": false,
+          "line": 146
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "active",
+          "is_pub": false,
+          "line": 146
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "done",
+          "is_pub": false,
+          "line": 146
+        }
+      ],
+      "line": 146
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: enum field set and get",
+      "is_pub": false,
+      "line": 153
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: enum invalid value propagates error",
+      "is_pub": false,
+      "line": 162
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: optional null",
+      "is_pub": false,
+      "line": 175
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: optional value",
+      "is_pub": false,
+      "line": 181
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: array set and get",
+      "is_pub": false,
+      "line": 195
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: vector set and get",
+      "is_pub": false,
+      "line": 213
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: basic set and get",
+      "is_pub": false,
+      "line": 225
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: role-based permission",
+      "is_pub": false,
+      "line": 251
+    },
+    {
+      "type": "test_decl",
+      "name": "RolePermissions: packed struct size",
+      "is_pub": false,
+      "line": 267
+    },
+    {
+      "type": "test_decl",
+      "name": "RolePermissions: canRead and canWrite methods",
+      "is_pub": false,
+      "line": 271
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: access denied on read",
+      "is_pub": false,
+      "line": 279
+    },
+    {
+      "type": "struct",
+      "name": "TestSchema",
+      "match_hash": "cb9e97a8a8c42ec45990b5c1797d1c4e9b35b5d9a4afb39eec667244a10e6b9a",
+      "signature": "keyword_struct TestSchema { ... }",
+      "comment": "Defines a schema for field description with ownership and invariants; provides metadata via describeField.",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "describeField",
+          "match_hash": "cbc9e8d816917833ee7e1100796852365ab59a72ab048b3e073d17f7ce1aba65",
+          "signature": "fn describeField(name: []const u8) -> FieldMeta",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "FieldMeta",
+          "is_pub": true,
+          "line": 300
+        }
+      ],
+      "line": 293
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: describeSchema generates JSON",
+      "is_pub": false,
+      "line": 326
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: fieldNames returns all fields",
+      "is_pub": false,
+      "line": 338
+    },
+    {
+      "type": "test_decl",
+      "name": "Editable: getFieldMeta returns metadata",
+      "is_pub": false,
+      "line": 344
+    },
+    {
+      "type": "test_decl",
+      "name": "DynamicEditable: describeSchema generates JSON",
+      "is_pub": false,
+      "line": 352
+    },
+    {
+      "type": "struct",
+      "name": "TestConfigTyped",
+      "match_hash": "372df65bb4ea2bfc65f1032c206794b734a4b6a775d2135546dc3254938f4e47",
+      "signature": "keyword_struct TestConfigTyped { ... }",
+      "comment": "Defines a typed configuration struct for test settings, managed via reflection, with strict ownership and invariants.",
+      "is_pub": false,
+      "line": 389
+    },
+    {
+      "type": "test_decl",
+      "name": "TypeId from type",
+      "is_pub": false,
+      "line": 398
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedAccessorTable field count",
+      "is_pub": false,
+      "line": 408
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedAccessorTable field index lookup",
+      "is_pub": false,
+      "line": 413
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedAccessorTable set and get field",
+      "is_pub": false,
+      "line": 419
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedAccessorTable compile-time type checking",
+      "is_pub": false,
+      "line": 430
+    },
+    {
+      "type": "test_decl",
+      "name": "BinaryFieldCodec encode/decode integer",
+      "is_pub": false,
+      "line": 438
+    },
+    {
+      "type": "test_decl",
+      "name": "BinaryFieldCodec encode/decode bool",
+      "is_pub": false,
+      "line": 452
+    },
+    {
+      "type": "test_decl",
+      "name": "BinaryFieldCodec encode/decode enum",
+      "is_pub": false,
+      "line": 466
+    },
+    {
+      "type": "test_decl",
+      "name": "BinaryFieldCodec wire size",
+      "is_pub": false,
+      "line": 480
+    },
+    {
+      "type": "test_decl",
+      "name": "EnumRegistry register and lookup",
+      "is_pub": false,
+      "line": 488
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedAccessor validateRange",
+      "is_pub": false,
+      "line": 504
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedEditable set and get typed",
+      "is_pub": false,
+      "line": 524
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedEditable out of range validation",
+      "is_pub": false,
+      "line": 576
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedEditable string path still works",
+      "is_pub": false,
+      "line": 605
+    },
+    {
+      "type": "test_decl",
+      "name": "TypedEditable type mismatch error",
+      "is_pub": false,
+      "line": 633
+    }
+  ]
+}

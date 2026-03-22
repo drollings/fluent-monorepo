@@ -126,7 +126,10 @@ pub const BatchIngestor = struct {
         var triples_in_batch: usize = 0;
         while (true) {
             const triple_opt = p.next() catch |err| {
-                if (self.config.skip_errors) { stats.errors_skipped += 1; continue; }
+                if (self.config.skip_errors) {
+                    stats.errors_skipped += 1;
+                    continue;
+                }
                 return err;
             };
             const triple = triple_opt orelse break;

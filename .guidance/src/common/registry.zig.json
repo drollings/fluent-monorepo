@@ -7,7 +7,7 @@
   "comment": "Manages Zig target registry with allocator, interners, targets, bit index mapping, and provider lists.",
   "detail": "# TargetRegistry Module Documentation\n\n## Module Purpose and Architecture\n\nThe `TargetRegistry` module implements a high-performance registry system for managing Zig compilation targets within an AI coding assistant context. It provides efficient lookups, indexing, and relationship tracking between targets based on multiple criteria including names, bit indices, and feature providers.\n\n### Architecture Overview\n\nThe registry employs a multi-indexed storage architecture:\n- **Primary Index**: `std.StringHashMapUnmanaged` maps target names to target pointers\n- **Secondary Index**: `std.AutoHashMapUnmanaged(usize, *Target)` enables O(1) lookup by bit_index\n- **Provider Map**: `std.AutoHashMapUnmanaged(usize, std.ArrayListUnmanaged(*Target))` maintains bidirectional relationships between feature indices and providing targets\n\nThis design prioritizes query performance over memory efficiency, using unmanaged containers to avoid automatic deallocation overhead in hot paths.\n\n## Key Abstractions and Relationships\n\n**TargetRegistry** acts as the central coordinator:\n- Holds an allocator for memory operations\n- Maintains a StringInterner instance for canonicalizing target names\n- Stores three separate indexes with cross-references between them\n\nThe **Provider Map** enables feature dependency resolution, allowing queries like \"which targets provide feature X\" without requiring each target to maintain its own reverse lookup.\n\n## Public API and Usage Patterns\n\n### Initialization Lifecycle\n```zig\nconst registry = TargetRegistry.init(allocator, interner);\n// ... populate with add() calls\nregistry.deinit(); // manual cleanup required\n```\n\n### Primary Operations\n- **Registration**: `add()` stores targets with automatic index updates\n- **Retrieval**: `get()` by name, `getByBitIndex()` by numeric identifier\n- **Querying**: `listNames()` returns sorted names, `count()` for cardinality\n- **Filtering**: `essentialTargets()` and `abstractTargets()` extract subsets based on target flags\n\n### Provider Queries\nThe provider system supports two access patterns:\n```zig\n// Direct bit index lookup\ngetProviders(bit_index)\n\n// Name-based provider resolution via interner\ngetProvidersForName(name)\n```\n\n## Important Implementation Details\n\n1. **Manual Memory Management**: All HashMaps use `.Unmanaged` variants, requiring explicit `deinit()` calls to prevent leaks. The `deinit()` function properly cascades cleanup through all containers.\n\n2. **Provider Map Update Strategy**: The `updateProviderMap()` function uses `getOrPut()` with early returns on allocation failures, ensuring partial updates don't leave the registry in an inconsistent state.\n\n3. **Name Sorting**: `listNames()` employs an errdefer pattern with `names.deinit(allocator)` to guarantee cleanup even if sorting fails mid-operation.\n\n4. **Bit Index Semantics**: The bit_index appears to be a compact integer representation, possibly encoding target properties or platform identifiers for efficient comparison and grouping.\n\n## Design Patterns\n\n- **Registry Pattern**: Centralizes entity management with multiple access paths\n- **Composite Indexing**: Maintains redundant indexes for different query types\n- **Provider/Consumer Pattern**: Targets can provide features consumed by other components\n- **Interner Pattern**: StringInterner deduplicates target names at the registry level",
   "keywords": ["TargetRegistry", "Target", "bit_index", "provider_map", "StringInterner", "HashMapUnmanaged", "registry pattern", "feature dependencies", "compilation targets", "Zig modules"],
-  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/coral/common/context.zig", "src/coral/common/json_parser.zig", "src/coral/common/repl.zig", "src/coral/common/resolver.zig"],
+  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -32,21 +32,21 @@
         { "name": "self", "type": "*TargetRegistry" }
       ],
       "returns": "void",
-      "comment": "Releases resources by cleaning up the registry instance.",
+      "comment": "Cleans up resources by releasing the registry instance.",
       "is_pub": true,
       "line": 24
     },
     {
       "type": "fn_decl",
       "name": "add",
-      "match_hash": "5753d8eddc799f70421fdb13b7977ad48512bbca724cf42910457ba8f69b0dfe",
-      "signature": "fn add(self: *TargetRegistry, target: *Target) -> void",
+      "match_hash": "37859e3df234d0e7163e99cd6395d0dfb5d74c983dcb7d854eb007a20183e4ae",
+      "signature": "fn add(self: *TargetRegistry, tgt: *Target) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
-        { "name": "target", "type": "*Target" }
+        { "name": "tgt", "type": "*Target" }
       ],
       "returns": "void",
-      "comment": "Adds a target to the registry, updating its associated data structure.",
+      "comment": "Adds a target registry entry to the registry.",
       "is_pub": true,
       "line": 40
     },
@@ -60,7 +60,7 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?*Target",
-      "comment": "Retrieves a target registry entry by name, returning a pointer to its registry data.",
+      "comment": "Retrieves a registry entry by name, returning a pointer to the target registry.",
       "is_pub": true,
       "line": 46
     },
@@ -109,14 +109,14 @@
     {
       "type": "fn_private",
       "name": "updateProviderMap",
-      "match_hash": "db3fa1460f8d56368b9863b5b2144d6526f30b9b1424e43dfe579d3ee4aca4a3",
-      "signature": "fn updateProviderMap(self: *TargetRegistry, target: *Target) -> void",
+      "match_hash": "93b1f0e7a24645153ed576e1c0d8c28a6876c5426880fdb24d60b3be884ba851",
+      "signature": "fn updateProviderMap(self: *TargetRegistry, tgt: *Target) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
-        { "name": "target", "type": "*Target" }
+        { "name": "tgt", "type": "*Target" }
       ],
       "returns": "void",
-      "comment": "Updates the provider map with the provided target, modifying the registry accordingly.",
+      "comment": "Updates the provider map with the given target registry and target values.",
       "is_pub": false,
       "line": 79
     },
@@ -130,7 +130,7 @@
         { "name": "bit_index", "type": "usize" }
       ],
       "returns": "?[]*Target",
-      "comment": "Retrieves provider addresses for a specified registry bit index.",
+      "comment": "Retrieves provider addresses at the specified registry bit index.",
       "is_pub": true,
       "line": 90
     },
@@ -157,7 +157,7 @@
         { "name": "self", "type": "*const TargetRegistry" }
       ],
       "returns": "usize",
-      "comment": "Counts registry entries and returns the total count.",
+      "comment": "Counts registry entries; returns the number of valid targets.",
       "is_pub": true,
       "line": 102
     },
@@ -190,64 +190,228 @@
       "line": 120
     },
     {
+      "type": "struct",
+      "name": "TargetBuilder",
+      "match_hash": "eabdc6a9e0e29aceefc9b0cc886c6fa5dab79bbc2a8fc30552739892ee335fc0",
+      "signature": "keyword_struct TargetBuilder { ... }",
+      "comment": "Manages registry operations for Zig targets, providing access to target builders with ownership and invariants on state.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "depends",
+          "match_hash": "dabad4ae5f4c1dd9359a3bc97248a9ea54d9ddb891b186d88b851d6bf659f495",
+          "signature": "fn depends(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" },
+            { "name": "names", "type": "[]const []const u8" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Set the dependency list (interned bit-set).",
+          "is_pub": true,
+          "line": 163
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "provides",
+          "match_hash": "5b8360b2b6289472f374077a4fa78c6bdd1de4ac7080a7734b51626adee1ce9f",
+          "signature": "fn provides(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" },
+            { "name": "names", "type": "[]const []const u8" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Set the provides list (interned bit-set).",
+          "is_pub": true,
+          "line": 172
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "command",
+          "match_hash": "12fdb8b079594bc127e5ac89bdf3992f5639eaedb7da2b0523ff2af6d73e40ab",
+          "signature": "fn command(self: *TargetBuilder, cmd: []const u8) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" },
+            { "name": "cmd", "type": "[]const u8" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Append a shell command string (allocator-owned copy).",
+          "is_pub": true,
+          "line": 181
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "essential",
+          "match_hash": "36e5ee39fcdb5662d0c2da79ec6fc4e7324dbb442aa12e5f7108b09b195b2274",
+          "signature": "fn essential(self: *TargetBuilder) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Mark this target as essential (must succeed for the build to pass).",
+          "is_pub": true,
+          "line": 195
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "exists",
+          "match_hash": "8f79094d1fe2212de63b62f47fd68b928800cfc992f2d3a0275034f6eb8b899a",
+          "signature": "fn exists(self: *TargetBuilder, path: []const u8) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Set the `exists` path guard (target is skipped when the file exists).",
+          "is_pub": true,
+          "line": 201
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "id",
+          "match_hash": "778289342dd52cd53645693b42a90c2ab8b93ca207a971b2ec7fa2ac33b0c0c9",
+          "signature": "fn id(self: *TargetBuilder, node_id: i64) -> *TargetBuilder",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" },
+            { "name": "node_id", "type": "i64" }
+          ],
+          "returns": "*TargetBuilder",
+          "comment": "Set the LanceDB/node id (optional; 0 if not set).",
+          "is_pub": true,
+          "line": 213
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "register",
+          "match_hash": "97e2f2f88d6b35c928cef0f26f4c422d2156ffbc2552efce9ba693f6b83121ab",
+          "signature": "fn register(self: *TargetBuilder) -> void",
+          "params": [
+            { "name": "self", "type": "*TargetBuilder" }
+          ],
+          "returns": "void",
+          "comment": "Commit the target to the registry.",
+          "is_pub": true,
+          "line": 222
+        }
+      ],
+      "line": 153
+    },
+    {
+      "type": "fn_decl",
+      "name": "target",
+      "match_hash": "585bb7b5e41af86cc82ac5e1e61e369618333a9ef30deaba1201fa10e7b43b38",
+      "signature": "fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) -> TargetBuilder",
+      "params": [
+        { "name": "self", "type": "*TargetRegistry" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "target_type", "type": "TargetType" }
+      ],
+      "returns": "TargetBuilder",
+      "comment": "Return a fluent TargetBuilder for adding a new target to this registry.",
+      "is_pub": true,
+      "line": 246
+    },
+    {
       "type": "test_decl",
       "name": "TargetRegistry basic operations",
       "is_pub": false,
-      "line": 136
+      "line": 261
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry GPA no leaks",
       "is_pub": false,
-      "line": 152
+      "line": 277
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex returns the correct target",
       "is_pub": false,
-      "line": 180
+      "line": 305
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex for unknown index returns null",
       "is_pub": false,
-      "line": 196
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: remove drops the target",
       "is_pub": false,
-      "line": 205
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: listNames returns sorted names",
       "is_pub": false,
-      "line": 230
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: essentialTargets returns only essential ones",
       "is_pub": false,
-      "line": 256
+      "line": 381
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: abstractTargets returns only abstract ones",
       "is_pub": false,
-      "line": 278
+      "line": 403
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getProviders and getProvidersForName",
       "is_pub": false,
-      "line": 301
+      "line": 426
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: get returns null for unknown name",
       "is_pub": false,
-      "line": 332
+      "line": 457
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: basic fluent registration",
+      "is_pub": false,
+      "line": 470
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: depends and provides interned correctly",
+      "is_pub": false,
+      "line": 486
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: feature parity with imperative style",
+      "is_pub": false,
+      "line": 501
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: multiple commands accumulate",
+      "is_pub": false,
+      "line": 541
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: id field set via fluent",
+      "is_pub": false,
+      "line": 556
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: GPA no leaks — happy path",
+      "is_pub": false,
+      "line": 568
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetBuilder: integrates with DependencyResolver end-to-end",
+      "is_pub": false,
+      "line": 588
     }
   ]
 }

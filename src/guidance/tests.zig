@@ -521,16 +521,16 @@ test "loadSkillPara extracts first paragraph from SKILL.md" {
     const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
     defer allocator.free(tmp_path);
 
-    // loadSkillPara looks for SKILL.md in {guidance_dir}/.skills/{name}/SKILL.md
+    // loadSkillPara looks for SKILL.md in {guidance_dir}/skills/{name}/SKILL.md
     // or {cwd}/doc/skills/{name}/SKILL.md
-    // Create .skills/test-skill/SKILL.md under the guidance_dir
-    try tmp.dir.makePath(".skills/test-skill");
+    // Create skills/test-skill/SKILL.md under the guidance_dir
+    try tmp.dir.makePath("skills/test-skill");
     const skill_content = "This is the first paragraph.\n\nThis is the second paragraph.";
-    const skill_file = try tmp.dir.createFile(".skills/test-skill/SKILL.md", .{});
+    const skill_file = try tmp.dir.createFile("skills/test-skill/SKILL.md", .{});
     try skill_file.writeAll(skill_content);
     skill_file.close();
 
-    // The guidance_dir should be where .skills/ is located (tmp_path itself in this case)
+    // The guidance_dir should be where skills/ is located (tmp_path itself in this case)
     const result = main.loadSkillParaPub(allocator, tmp_path, tmp_path, "test-skill");
     try std.testing.expect(result != null);
     defer allocator.free(result.?);

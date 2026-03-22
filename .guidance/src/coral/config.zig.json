@@ -27,10 +27,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 57
+          "line": 80
         }
       ],
-      "line": 28
+      "line": 51
     },
     {
       "type": "fn_decl",
@@ -44,7 +44,7 @@
       "returns": "ProjectConfig",
       "comment": "Load project configuration with the two-level fallback chain.",
       "is_pub": true,
-      "line": 75
+      "line": 98
     },
     {
       "type": "fn_private",
@@ -59,7 +59,7 @@
       "returns": "ProjectConfig",
       "comment": "Attempt to load and parse a config file.  Returns error on any failure so",
       "is_pub": false,
-      "line": 109
+      "line": 132
     },
     {
       "type": "fn_private",
@@ -73,7 +73,7 @@
       "returns": "ProjectConfig",
       "comment": "Constructs a default project configuration from an allocator and CWD input.",
       "is_pub": false,
-      "line": 185
+      "line": 208
     },
     {
       "type": "fn_private",
@@ -91,7 +91,7 @@
       "returns": "ProjectConfig",
       "comment": "Constructs a project configuration from Zig source parts using allocator, paths, and model data.",
       "is_pub": false,
-      "line": 198
+      "line": 221
     }
   ]
 }
