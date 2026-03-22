@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const hash = @import("hash.zig");
 const llm = @import("common");
+const line_verify = @import("line_verify.zig");
 
 pub const JsonStore = struct {
     allocator: std.mem.Allocator,
@@ -500,8 +501,9 @@ pub const JsonStore = struct {
             if (existing.match_hash) |ex_hash| {
                 if (std.mem.eql(u8, src_hash, ex_hash)) {
                     // Hash unchanged — check whether line number shifted (e.g. comment added above).
-                    // merged already holds source.line via dupeMember; just flag the write.
+                    // merged already holds source.line (from AST) via dupeMember; just flag the write.
                     if (source.line != existing.line) {
+                        result.lines_corrected += 1;
                         result.members_updated += 1;
                         result.has_changes = true;
                     }
@@ -592,5 +594,7 @@ pub const MergeResult = struct {
     /// Members whose hash changed and had a stored comment that is now stale
     /// (blanked so AI infill can regenerate).
     members_stale: usize = 0,
+    /// Members whose line number changed (stale JSON line corrected from AST).
+    lines_corrected: usize = 0,
     has_changes: bool = false,
 };

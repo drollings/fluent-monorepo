@@ -55,6 +55,9 @@ const llm_filter_mod = @import("llm_filter.zig");
 const synthesize_mod = @import("synthesize.zig");
 const marker_mod = @import("marker.zig");
 const provider_mod = @import("provider_discovery.zig");
+const comment_sync_mod = @import("comment_sync.zig");
+const json_store_mod = @import("json_store.zig");
+const comment_inserter_mod = @import("comment_inserter.zig");
 
 pub const version = "0.1.0";
 
@@ -70,6 +73,8 @@ const Command = enum {
     check,
     show,
     @"test",
+    @"sync-comments",
+    @"migrate-comments",
 };
 
 pub fn main() !void {
@@ -120,6 +125,8 @@ pub fn main() !void {
         .check => try cmdCheck(allocator, args[2..]),
         .show => try cmdShow(allocator, args[2..]),
         .@"test" => try cmdTest(allocator, args[2..]),
+        .@"sync-comments" => try cmdSyncComments(allocator, args[2..]),
+        .@"migrate-comments" => try cmdMigrateComments(allocator, args[2..]),
     }
 }
 
@@ -145,10 +152,12 @@ fn printHelp() !void {
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  deps       Generate Makefile .depend file from Zig imports
         \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
-        \\  check      Run full RALPH loop (test → lint → fmt → guidance → structure)
-        \\  commit     Generate AI commit message from staged diff + guidance
-        \\  show       Show vector embeddings from .guidance.db (Markdown)
-        \\  test       Benchmark explain queries against module-level comments
+        \\  check           Run full RALPH loop (test → lint → fmt → guidance → structure)
+        \\  commit          Generate AI commit message from staged diff + guidance
+        \\  show            Show vector embeddings from .guidance.db (Markdown)
+        \\  test            Benchmark explain queries against module-level comments
+        \\  sync-comments   Insert/update /// doc comments in Zig source files
+        \\  migrate-comments Migrate JSON comment fields to source /// comments
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
@@ -940,6 +949,10 @@ const GenArgs = struct {
     /// True when -m was explicitly passed on the CLI, overriding config slots.
     model_override: bool = false,
     regen_comments: bool = false,
+    /// Run CommentSyncProcessor before JSON generation to insert/update source comments.
+    sync_comments: bool = false,
+    /// Generate //! file headers for files that lack them (used with --sync-comments).
+    sync_headers: bool = false,
     /// Set false via --no-db to skip database generation.
     compile_db: bool = true,
     /// Re-process all files even when guidance JSON is fresh.
@@ -989,6 +1002,10 @@ const GenArgs = struct {
                 ga.verbose = true;
             } else if (std.mem.eql(u8, arg, "--regen")) {
                 ga.regen_comments = true;
+            } else if (std.mem.eql(u8, arg, "--sync-comments")) {
+                ga.sync_comments = true;
+            } else if (std.mem.eql(u8, arg, "--sync-headers")) {
+                ga.sync_headers = true;
             } else if (std.mem.eql(u8, arg, "--no-db")) {
                 ga.compile_db = false;
             } else if (std.mem.eql(u8, arg, "--force")) {
@@ -1312,6 +1329,45 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     var cfg = config_mod.loadConfig(allocator, paths.workspace) catch
         try config_mod.loadConfig(allocator, cwd);
     defer cfg.deinit();
+
+    // ── Optional comment sync pre-pass ────────────────────────────────────────
+    // When --sync-comments is passed, run CommentSyncProcessor over the target
+    // file(s) before JSON generation.  This inserts/updates /// doc comments in
+    // source files so they are captured in the subsequent JSON sync pass.
+    if (ga.sync_comments) {
+        var csp = comment_sync_mod.CommentSyncProcessor.init(
+            allocator,
+            paths.workspace,
+            paths.json_dir,
+            ga.verbose,
+            ga.dry_run,
+        );
+        csp.generate_headers = ga.sync_headers;
+
+        if (ga.file) |file_arg| {
+            const src_abs = try llm.resolvePath(allocator, paths.workspace, file_arg);
+            defer allocator.free(src_abs);
+            _ = csp.processFile(src_abs) catch |err| {
+                if (ga.verbose) std.debug.print("[sync-comments] {s}: {s}\n", .{ src_abs, @errorName(err) });
+            };
+        } else {
+            const src_scan_dir = try std.fs.path.join(allocator, &.{ paths.workspace, "src" });
+            defer allocator.free(src_scan_dir);
+            var dir = std.fs.openDirAbsolute(src_scan_dir, .{ .iterate = true }) catch null;
+            if (dir) |*d| {
+                defer d.close();
+                var walker = try d.walk(allocator);
+                defer walker.deinit();
+                while (try walker.next()) |entry| {
+                    if (entry.kind != .file) continue;
+                    if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+                    const abs = try std.fs.path.join(allocator, &.{ src_scan_dir, entry.path });
+                    defer allocator.free(abs);
+                    _ = csp.processFile(abs) catch continue;
+                }
+            }
+        }
+    }
 
     var processor = sync_mod.SyncProcessor.init(
         allocator,
@@ -3827,4 +3883,294 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
     }
 
     return queries.toOwnedSlice(allocator);
+}
+
+// =============================================================================
+// sync-comments — insert/update /// doc comments in source files
+// =============================================================================
+
+fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var workspace: ?[]const u8 = null;
+    var guidance_dir: ?[]const u8 = null;
+    var single_file: ?[]const u8 = null;
+    var dry_run = false;
+    var debug_mode = false;
+    var gen_headers = false;
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --workspace requires a value\n", .{});
+                return;
+            }
+            workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--guidance-dir")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --guidance-dir requires a value\n", .{});
+                return;
+            }
+            guidance_dir = args[i];
+        } else if (std.mem.eql(u8, arg, "--file")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --file requires a value\n", .{});
+                return;
+            }
+            single_file = args[i];
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            dry_run = true;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+            debug_mode = true;
+        } else if (std.mem.eql(u8, arg, "--headers")) {
+            gen_headers = true;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const ws = try llm.resolvePath(allocator, cwd, workspace orelse cwd);
+    defer allocator.free(ws);
+
+    const gdir = try llm.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    defer allocator.free(gdir);
+
+    const src_json_dir = try std.fs.path.join(allocator, &.{ gdir, "src" });
+    defer allocator.free(src_json_dir);
+
+    var processor = comment_sync_mod.CommentSyncProcessor.init(allocator, ws, src_json_dir, debug_mode, dry_run);
+    processor.generate_headers = gen_headers;
+
+    var total_added: usize = 0;
+    var total_regen: usize = 0;
+    var total_files: usize = 0;
+
+    if (single_file) |fp| {
+        const abs_fp = try llm.resolvePath(allocator, cwd, fp);
+        defer allocator.free(abs_fp);
+
+        const r = processor.processFile(abs_fp) catch |err| {
+            std.debug.print("error processing {s}: {s}\n", .{ fp, @errorName(err) });
+            return;
+        };
+        total_added += r.comments_added;
+        total_regen += r.comments_regenerated;
+        total_files += 1;
+        if (r.has_changes) {
+            const action = if (dry_run) "[dry-run] " else "";
+            std.debug.print("{s}{s}: +{} comments, {} regenerated{s}\n", .{
+                action,
+                fp,
+                r.comments_added,
+                r.comments_regenerated,
+                if (r.header_added) ", header added" else "",
+            });
+        }
+    } else {
+        // Scan all .zig files under workspace/src.
+        const src_dir_path = try std.fs.path.join(allocator, &.{ ws, "src" });
+        defer allocator.free(src_dir_path);
+
+        var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch {
+            std.debug.print("error: cannot open src dir: {s}\n", .{src_dir_path});
+            return;
+        };
+        defer src_dir.close();
+
+        var walker = try src_dir.walk(allocator);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
+
+            const abs_path = try std.fs.path.join(allocator, &.{ src_dir_path, entry.path });
+            defer allocator.free(abs_path);
+
+            const r = processor.processFile(abs_path) catch continue;
+            total_added += r.comments_added;
+            total_regen += r.comments_regenerated;
+            total_files += 1;
+
+            if (r.has_changes and debug_mode) {
+                std.debug.print("  {s}: +{} comments, {} regenerated\n", .{
+                    entry.path,
+                    r.comments_added,
+                    r.comments_regenerated,
+                });
+            }
+        }
+    }
+
+    const action = if (dry_run) "Would add" else "Added";
+    std.debug.print("{s} {} comment(s) across {} file(s); {} regenerated.\n", .{
+        action,
+        total_added,
+        total_files,
+        total_regen,
+    });
+}
+
+// =============================================================================
+// migrate-comments — migrate JSON comment fields to source /// comments
+// =============================================================================
+
+fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var workspace: ?[]const u8 = null;
+    var guidance_dir: ?[]const u8 = null;
+    var dry_run = false;
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --workspace requires a value\n", .{});
+                return;
+            }
+            workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--guidance-dir")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("error: --guidance-dir requires a value\n", .{});
+                return;
+            }
+            guidance_dir = args[i];
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            dry_run = true;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const ws = try llm.resolvePath(allocator, cwd, workspace orelse cwd);
+    defer allocator.free(ws);
+
+    const gdir = try llm.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    defer allocator.free(gdir);
+
+    const src_json_dir = try std.fs.path.join(allocator, &.{ gdir, "src" });
+    defer allocator.free(src_json_dir);
+
+    var store = json_store_mod.JsonStore.init(allocator);
+
+    var json_dir = std.fs.openDirAbsolute(src_json_dir, .{ .iterate = true }) catch {
+        std.debug.print("error: cannot open guidance src dir: {s}\n", .{src_json_dir});
+        return;
+    };
+    defer json_dir.close();
+
+    var walker = try json_dir.walk(allocator);
+    defer walker.deinit();
+
+    var migrated_files: usize = 0;
+    var migrated_members: usize = 0;
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
+
+        const json_path = try std.fs.path.join(allocator, &.{ src_json_dir, entry.path });
+        defer allocator.free(json_path);
+
+        const doc = (try store.loadGuidance(json_path)) orelse continue;
+        defer store.freeGuidanceDoc(doc);
+
+        // Only process Zig files.
+        if (!std.mem.endsWith(u8, doc.meta.source, ".zig")) continue;
+
+        const abs_source = try std.fs.path.join(allocator, &.{ ws, doc.meta.source });
+        defer allocator.free(abs_source);
+
+        // Check if source file exists.
+        std.fs.accessAbsolute(abs_source, .{}) catch continue;
+
+        // For each member that has a JSON comment but lacks a source comment,
+        // insert the JSON comment into the source file.
+        const processor = comment_sync_mod.CommentSyncProcessor.init(
+            allocator,
+            ws,
+            src_json_dir,
+            false,
+            dry_run,
+        );
+
+        const source = llm.readFileAlloc(allocator, abs_source, 10 * 1024 * 1024) orelse continue;
+        defer allocator.free(source);
+
+        var source_changed = false;
+        var current_source: []const u8 = try allocator.dupe(u8, source);
+        defer allocator.free(current_source);
+
+        // Process in reverse line order to preserve positions.
+        const sorted_members = blk: {
+            const m = try allocator.dupe(types.Member, doc.members);
+            std.mem.sort(types.Member, m, {}, struct {
+                fn gt(_: void, a: types.Member, b: types.Member) bool {
+                    return (a.line orelse 0) > (b.line orelse 0);
+                }
+            }.gt);
+            break :blk m;
+        };
+        defer allocator.free(sorted_members);
+
+        for (sorted_members) |member| {
+            const decl_line = member.line orelse continue;
+            const json_comment = member.comment orelse continue;
+            if (json_comment.len == 0) continue;
+
+            // Check if source already has a comment at this line.
+            const existing = try comment_inserter_mod.extractCommentAtLine(
+                allocator,
+                current_source,
+                decl_line,
+            );
+            if (existing != null) {
+                allocator.free(existing.?);
+                continue; // Source already has a comment — don't overwrite.
+            }
+
+            if (!dry_run) {
+                const ins = try comment_inserter_mod.insertComment(
+                    allocator,
+                    current_source,
+                    decl_line,
+                    json_comment,
+                );
+                if (ins.changed) {
+                    allocator.free(current_source);
+                    current_source = ins.new_source;
+                    allocator.free(ins.line_adjustments);
+                    source_changed = true;
+                } else {
+                    ins.deinit(allocator);
+                }
+            }
+            migrated_members += 1;
+        }
+
+        _ = processor; // used for type context only
+
+        if (source_changed) {
+            const file = try std.fs.createFileAbsolute(abs_source, .{ .truncate = true });
+            defer file.close();
+            try file.writeAll(current_source);
+            migrated_files += 1;
+        } else if (dry_run and migrated_members > 0) {
+            migrated_files += 1;
+        }
+    }
+
+    const action = if (dry_run) "Would migrate" else "Migrated";
+    std.debug.print("{s} {} comment(s) from JSON to source in {} file(s).\n", .{
+        action,
+        migrated_members,
+        migrated_files,
+    });
 }

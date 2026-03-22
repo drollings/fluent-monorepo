@@ -11,6 +11,7 @@ const std = @import("std");
 const lance_db_mod = @import("vector");
 const types = @import("types.zig");
 const llm = @import("common");
+const line_verify = @import("line_verify.zig");
 
 const GuidanceDb = lance_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -159,7 +160,16 @@ pub fn executeStagedWithAliasesOriginal(
         // Exact match: show only this code snippet
         const line = exact_match_line orelse 1;
         const node_type = exact_match_node_type orelse "fn_decl";
-        const excerpt = extractSourceExcerpt(allocator, workspace, src, line, node_type) catch &.{};
+        // Use the matched result name for line number verification.
+        const matched_name: ?[]const u8 = blk: {
+            for (results) |r| {
+                if (r.line == exact_match_line and std.mem.eql(u8, r.source, src)) {
+                    break :blk r.name;
+                }
+            }
+            break :blk null;
+        };
+        const excerpt = extractSourceExcerptVerified(allocator, workspace, src, line, node_type, matched_name) catch &.{};
         if (excerpt.len > 0) {
             try stages.append(allocator, .{
                 .kind = .code,
@@ -181,7 +191,7 @@ pub fn executeStagedWithAliasesOriginal(
 
             try seen_code_files.put(allocator, r.source, {});
 
-            const excerpt = extractSourceExcerpt(allocator, workspace, r.source, line, r.node_type) catch continue;
+            const excerpt = extractSourceExcerptVerified(allocator, workspace, r.source, line, r.node_type, r.name) catch continue;
             if (excerpt.len == 0) {
                 allocator.free(excerpt);
                 continue;
@@ -510,6 +520,61 @@ pub fn formatStaged(
 // ---------------------------------------------------------------------------
 // Source excerpt extraction
 // ---------------------------------------------------------------------------
+
+/// Like `extractSourceExcerpt` but verifies (and corrects) the line number
+/// before extracting, using `member_name` to locate the declaration.
+/// Logs a debug warning when the line number was stale.
+/// `member_name` may be null; in that case no verification is performed.
+pub fn extractSourceExcerptVerified(
+    allocator: std.mem.Allocator,
+    workspace: []const u8,
+    rel_source: []const u8,
+    start_line: u32,
+    node_type: []const u8,
+    member_name: ?[]const u8,
+) ![]u8 {
+    const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
+    defer allocator.free(abs_path);
+
+    const src = llm.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
+        return allocator.dupe(u8, "");
+    defer allocator.free(src);
+
+    var effective_line = start_line;
+
+    if (member_name) |name| {
+        const member_type = memberTypeFromNodeType(node_type);
+        const member = types.Member{
+            .type = member_type,
+            .name = name,
+            .line = start_line,
+        };
+        const vr = try line_verify.verifyMemberLine(allocator, src, member);
+        defer vr.deinit(allocator);
+        if (!vr.verified) {
+            if (vr.corrected_line) |cl| {
+                std.log.debug("[staged] stale line for {s}:{s} — was {}, corrected to {}", .{ rel_source, name, start_line, cl });
+                effective_line = cl;
+            }
+        }
+    }
+
+    return extractExcerptFromSource(allocator, src, effective_line, node_type);
+}
+
+/// Map a node_type string (as stored in the DB) to the corresponding MemberType.
+fn memberTypeFromNodeType(node_type: []const u8) types.MemberType {
+    if (std.mem.eql(u8, node_type, "fn_decl")) return .fn_decl;
+    if (std.mem.eql(u8, node_type, "fn_private")) return .fn_private;
+    if (std.mem.eql(u8, node_type, "method")) return .method;
+    if (std.mem.eql(u8, node_type, "method_private")) return .method_private;
+    if (std.mem.eql(u8, node_type, "struct")) return .@"struct";
+    if (std.mem.eql(u8, node_type, "enum")) return .@"enum";
+    if (std.mem.eql(u8, node_type, "union")) return .@"union";
+    if (std.mem.eql(u8, node_type, "test_decl")) return .test_decl;
+    if (std.mem.eql(u8, node_type, "enum_field")) return .enum_field;
+    return .fn_decl; // fallback
+}
 
 /// Load source file and extract an excerpt starting at `start_line` (1-based).
 /// Extracts complete functions/structs by tracking brace depth.

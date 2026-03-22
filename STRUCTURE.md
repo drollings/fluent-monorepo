@@ -178,12 +178,19 @@ Then you you must read
 │   │   │   ├── markdown_plugin.zig                              # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   └── zig_plugin.zig                                   # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   ├── ast_parser.zig                                         # Parses Zig AST, extracts member signatures, and manages memory for the parser.
+│   │   ├── comment_cache.zig
+│   │   ├── comment_checker.zig
+│   │   ├── comment_inserter.zig
+│   │   ├── comment_parser.zig
+│   │   ├── comment_sync.zig
 │   │   ├── config.zig                                             # [gof-patterns, gof-patterns] Defines configuration paths for guidance system using precomputed absolute routes across...
 │   │   ├── deps.zig                                               # Extracts dependency information from Zig source files, building a map of module paths and their imports.
 │   │   ├── enhancer.zig                                           # Zig enhancement enhancer for generating concise docstrings via LLM, optimizing comments and tags.
 │   │   ├── git.zig                                                # Manages Gitignore patterns, loads from files, and handles exclusions for Zig projects.
 │   │   ├── hash.zig                                               # Implements SHA-256 hashing and struct hashing utilities for Zig code, generating hex digests and ensuring determinist...
+│   │   ├── header_generator.zig
 │   │   ├── json_store.zig                                         # Manages Zig guidance parsing, stores content, and tracks leaked prompts for cleanup.
+│   │   ├── line_verify.zig
 │   │   ├── llm_filter.zig                                         # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │   │   ├── main.zig                                               # [gof-patterns, gof-patterns]  guidance — AST-guided LanceDB vector search database generator.
 │   │   ├── marker.zig                                             # Mtime-based change detection for guidance's incremental RALPH loop.
@@ -252,5 +259,7 @@ Then you you must read
 ├── TEST_EXPLAIN_PROMPT.md
 ├── TODO.md
 ├── TODO_GUIDANCE_SECONDBRAIN.md
-└── TODO_GUIDANCE_SECONDBRAIN_CHECKLIST.md
+├── TODO_GUIDANCE_SECONDBRAIN_CHECKLIST.md
+├── TODO_NEW_COMMENTS.md
+└── TODO_NEW_COMMENTS_CHECKLIST.md
 ```

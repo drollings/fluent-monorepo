@@ -8,6 +8,17 @@ const main = @import("main.zig");
 const sync_mod = @import("sync.zig");
 const config_mod = @import("config.zig");
 
+// Pull in inline tests from new source-code-first comment management modules.
+comptime {
+    _ = @import("line_verify.zig");
+    _ = @import("comment_parser.zig");
+    _ = @import("comment_inserter.zig");
+    _ = @import("comment_checker.zig");
+    _ = @import("header_generator.zig");
+    _ = @import("comment_sync.zig");
+    _ = @import("comment_cache.zig");
+}
+
 // ---------------------------------------------------------------------------
 // parseHunkRanges
 // ---------------------------------------------------------------------------

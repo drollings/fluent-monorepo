@@ -5,6 +5,7 @@ const json_store = @import("json_store.zig");
 const hash = @import("hash.zig");
 const enhancer_mod = @import("enhancer.zig");
 const llm = @import("common");
+const comment_parser = @import("comment_parser.zig");
 
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
@@ -121,6 +122,20 @@ pub const SyncProcessor = struct {
 
         if (self.debug and merge_result.members_stale > 0) {
             std.debug.print("[sync] {s}: {} stale comment(s) cleared (hash changed)\n", .{ filepath, merge_result.members_stale });
+        }
+        if (self.debug and merge_result.lines_corrected > 0) {
+            std.debug.print("[sync] {s}: {} line number(s) corrected from AST\n", .{ filepath, merge_result.lines_corrected });
+        }
+
+        // Validate source comments for well-formedness (debug mode only).
+        if (self.debug) {
+            for (merge_result.members) |m| {
+                if (m.comment) |c| {
+                    if (!comment_parser.isWellFormedComment(c, "")) {
+                        std.debug.print("[sync] {s}: member '{s}' has malformed comment\n", .{ filepath, m.name });
+                    }
+                }
+            }
         }
 
         // --- AI Enhancement: member-level comments ---

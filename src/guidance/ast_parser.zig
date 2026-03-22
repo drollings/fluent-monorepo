@@ -83,7 +83,7 @@ pub const AstParser = struct {
         const match_hash = try hash.apiHash(self.allocator, name, params, return_type);
         errdefer self.allocator.free(match_hash);
 
-        const comment = try self.extractDocstring(node_idx);
+        const comment = try self.extractFullDocstring(node_idx);
 
         const patterns_detected = try pattern.detectPatterns(self.allocator, &self.tree, fn_proto);
 
@@ -162,7 +162,7 @@ pub const AstParser = struct {
 
         // The "///" doc comment is written before "pub const Foo = struct {",
         // i.e. before the var_decl node, not before the container body (init_node).
-        const comment = try self.extractDocstring(var_decl_node);
+        const comment = try self.extractFullDocstring(var_decl_node);
 
         var nested_members: std.ArrayList(types.Member) = .{};
         errdefer nested_members.deinit(self.allocator);
@@ -179,7 +179,7 @@ pub const AstParser = struct {
                 // Enum field: a bare identifier (e.g. `mem`, `sqlite`, `rocksdb`)
                 const main_tok = self.tree.nodeMainToken(member_node);
                 const field_name = self.tree.tokenSlice(main_tok);
-                const field_comment = try self.extractDocstring(member_node);
+                const field_comment = try self.extractFullDocstring(member_node);
                 const field_line: u32 = @intCast(self.tree.tokenLocation(0, main_tok).line + 1);
                 try nested_members.append(self.allocator, types.Member{
                     .type = .enum_field,
@@ -327,6 +327,56 @@ pub const AstParser = struct {
         else
             after_slashes;
         return try self.allocator.dupe(u8, line);
+    }
+
+    /// Extract the full multi-line doc comment block above a declaration.
+    /// Returns an owned slice with all `///` lines joined by newlines, or null
+    /// when no doc comment exists above the node.
+    pub fn extractFullDocstring(self: *AstParser, node_idx: std.zig.Ast.Node.Index) !?[]const u8 {
+        const first_token = self.tree.firstToken(node_idx);
+        const token_tags = self.tree.tokens.items(.tag);
+
+        // Collect consecutive doc_comment tokens preceding this node.
+        var doc_toks: std.ArrayList(std.zig.Ast.TokenIndex) = .{};
+        defer doc_toks.deinit(self.allocator);
+
+        var tok = first_token;
+        while (tok > 0) {
+            tok -= 1;
+            if (token_tags[tok] == .doc_comment) {
+                try doc_toks.append(self.allocator, tok);
+            } else if (token_tags[tok] != .invalid and token_tags[tok] != .container_doc_comment) {
+                break;
+            }
+        }
+
+        if (doc_toks.items.len == 0) return null;
+
+        // Tokens were collected closest-first; reverse to get top-to-bottom order.
+        std.mem.reverse(std.zig.Ast.TokenIndex, doc_toks.items);
+
+        var result: std.ArrayList(u8) = .{};
+        errdefer result.deinit(self.allocator);
+
+        for (doc_toks.items, 0..) |t, i| {
+            const slice = self.tree.tokenSlice(t);
+            const after_slashes = if (slice.len > 3) slice[3..] else "";
+            const text = if (after_slashes.len > 0 and after_slashes[0] == ' ')
+                after_slashes[1..]
+            else
+                after_slashes;
+            if (i > 0) try result.append(self.allocator, '\n');
+            try result.appendSlice(self.allocator, text);
+        }
+
+        return @as(?[]const u8, try result.toOwnedSlice(self.allocator));
+    }
+
+    /// Extract module-level `//!` comments as a single block.
+    /// Returns an owned slice with all lines joined by newlines, or null when
+    /// no module doc comment exists.
+    pub fn extractFullModuleDoc(self: *AstParser) !?[]const u8 {
+        return self.extractModuleDoc();
     }
 
     pub fn extractModuleDoc(self: *AstParser) !?[]const u8 {
