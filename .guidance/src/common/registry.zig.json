@@ -17,7 +17,6 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "TargetRegistry",
-      "comment": "Initializes the registry with an allocator and interners, returning a target registry instance.",
       "is_pub": true,
       "line": 15
     },
@@ -30,7 +29,6 @@
         { "name": "self", "type": "*TargetRegistry" }
       ],
       "returns": "void",
-      "comment": "Cleans up resources by releasing the registry instance.",
       "is_pub": true,
       "line": 26
     },
@@ -44,7 +42,6 @@
         { "name": "tgt", "type": "*Target" }
       ],
       "returns": "void",
-      "comment": "Adds a target registry entry to the registry.",
       "is_pub": true,
       "line": 43
     },
@@ -58,7 +55,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?*Target",
-      "comment": "Retrieves a target registry entry by name, returning a pointer to its registry data.",
       "is_pub": true,
       "line": 50
     },
@@ -72,7 +68,6 @@
         { "name": "idx", "type": "usize" }
       ],
       "returns": "?*Target",
-      "comment": "Retrieves a target registry entry by its bit index, returning a pointer to the matching record.",
       "is_pub": true,
       "line": 55
     },
@@ -86,7 +81,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Removes a registry entry by name, returning void and no error on success.",
       "is_pub": true,
       "line": 60
     },
@@ -100,7 +94,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[][]const u8",
-      "comment": "Converts a registry string into a slice of byte slices, returning an array of arrays of u8.",
       "is_pub": true,
       "line": 68
     },
@@ -127,7 +120,6 @@
         { "name": "bit_index", "type": "usize" }
       ],
       "returns": "?[]*Target",
-      "comment": "Retrieves provider addresses for a specified registry bit index.",
       "is_pub": true,
       "line": 98
     },
@@ -141,7 +133,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?[]*Target",
-      "comment": "Retrieves registry providers matching the given name, returning their addresses.",
       "is_pub": true,
       "line": 106
     },
@@ -154,7 +145,6 @@
         { "name": "self", "type": "*const TargetRegistry" }
       ],
       "returns": "usize",
-      "comment": "Counts registry entries; returns the number of valid targets.",
       "is_pub": true,
       "line": 112
     },
@@ -168,7 +158,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]*Target",
-      "comment": "Retrieves essential target registry entries with allocator support.",
       "is_pub": true,
       "line": 117
     },
@@ -182,7 +171,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]*Target",
-      "comment": "Converts a TargetRegistry reference into a slice of Target objects.",
       "is_pub": true,
       "line": 132
     },
@@ -191,7 +179,6 @@
       "name": "TargetBuilder",
       "match_hash": "eabdc6a9e0e29aceefc9b0cc886c6fa5dab79bbc2a8fc30552739892ee335fc0",
       "signature": "keyword_struct TargetBuilder { ... }",
-      "comment": "Manages registry targets with ownership and invariants; ensures stable access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -204,7 +191,6 @@
             { "name": "names", "type": "[]const []const u8" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Set the dependency list (interned bit-set).",
           "is_pub": true,
           "line": 176
         }
@@ -218,7 +204,6 @@
             { "name": "names", "type": "[]const []const u8" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Set the provides list (interned bit-set).",
           "is_pub": true,
           "line": 185
         }
@@ -232,7 +217,6 @@
             { "name": "cmd", "type": "[]const u8" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Append a shell command string (allocator-owned copy).",
           "is_pub": true,
           "line": 194
         }
@@ -245,7 +229,6 @@
             { "name": "self", "type": "*TargetBuilder" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Mark this target as essential (must succeed for the build to pass).",
           "is_pub": true,
           "line": 208
         }
@@ -259,7 +242,6 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Set the `exists` path guard (target is skipped when the file exists).",
           "is_pub": true,
           "line": 214
         }
@@ -273,7 +255,6 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "*TargetBuilder",
-          "comment": "Set the LanceDB/node id (optional; 0 if not set).",
           "is_pub": true,
           "line": 226
         }
@@ -286,7 +267,6 @@
             { "name": "self", "type": "*TargetBuilder" }
           ],
           "returns": "void",
-          "comment": "Commit the target to the registry.\n\nOn success the registry owns the Target.\nOn any accumulated error the Target is freed and the error is returned.",
           "is_pub": true,
           "line": 235
         }
@@ -304,7 +284,6 @@
         { "name": "target_type", "type": "TargetType" }
       ],
       "returns": "TargetBuilder",
-      "comment": "Return a fluent TargetBuilder for adding a new target to this registry.\n\nErrors during Target allocation are deferred to `register()` so the entire\nchain can be expressed as a single `try` expression:\n\n  try registry.target(\"build\", .file)\n      .depends(&.{\"compile\"})\n      .register();",
       "is_pub": true,
       "line": 259
     },

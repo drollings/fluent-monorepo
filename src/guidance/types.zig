@@ -306,7 +306,8 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
         }
         try writer.writeAll("  ],\n");
     }
-    try writer.print("  \"is_pub\": {},\n", .{member.is_pub});
+    const is_pub_has_more = member.members.len > 0 or member.line != null;
+    try writer.print("  \"is_pub\": {}{s}\n", .{ member.is_pub, if (is_pub_has_more) "," else "" });
 
     if (member.members.len > 0) {
         try writer.writeAll("  \"members\": [\n");
@@ -383,7 +384,12 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     try writer.writeAll("    \"language\": \"");
     try writeEscapedValue(writer, doc.meta.language);
     try writer.writeAll("\"\n");
-    try writer.writeAll("  },\n");
+    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0;
+    if (meta_has_more) {
+        try writer.writeAll("  },\n");
+    } else {
+        try writer.writeAll("  }\n");
+    }
 
     if (doc.comment) |d| {
         try writer.writeAll("  \"comment\": \"");
@@ -506,15 +512,206 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     return list.toOwnedSlice(allocator);
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
+test "FileType.fromExtension: zig extension maps to source" {
+    try std.testing.expectEqual(FileType.source, FileType.fromExtension(".zig"));
+}
 
+test "FileType.fromExtension: py extension maps to source" {
+    try std.testing.expectEqual(FileType.source, FileType.fromExtension(".py"));
+}
 
+test "FileType.fromExtension: md extension maps to markdown" {
+    try std.testing.expectEqual(FileType.markdown, FileType.fromExtension(".md"));
+}
 
+test "FileType.fromExtension: json extension maps to config" {
+    try std.testing.expectEqual(FileType.config, FileType.fromExtension(".json"));
+}
 
+test "FileType.fromExtension: txt extension maps to unknown" {
+    try std.testing.expectEqual(FileType.unknown, FileType.fromExtension(".txt"));
+}
 
+test "FileType.fromExtension: case insensitive ZIG maps to source" {
+    try std.testing.expectEqual(FileType.source, FileType.fromExtension(".ZIG"));
+}
 
+test "FileType.toStr: source round-trip" {
+    try std.testing.expectEqualStrings("source", FileType.source.toStr());
+}
 
+test "FileType.toStr: markdown round-trip" {
+    try std.testing.expectEqualStrings("markdown", FileType.markdown.toStr());
+}
 
+test "FileType.toStr: config round-trip" {
+    try std.testing.expectEqualStrings("config", FileType.config.toStr());
+}
 
+test "FileType.toStr: unknown round-trip" {
+    try std.testing.expectEqualStrings("unknown", FileType.unknown.toStr());
+}
 
+test "freeStages: no leak on empty slice" {
+    const allocator = std.testing.allocator;
+    const empty: []const Stage = &.{};
+    freeStages(allocator, empty);
+}
 
+test "freeStages: frees all stage content" {
+    const allocator = std.testing.allocator;
+    var stages = try allocator.alloc(Stage, 2);
+    stages[0] = .{
+        .kind = .prose,
+        .content = try allocator.dupe(u8, "content one"),
+        .source = try allocator.dupe(u8, "src/foo.zig"),
+    };
+    stages[1] = .{
+        .kind = .code,
+        .content = try allocator.dupe(u8, "content two"),
+        .source = try allocator.dupe(u8, "src/bar.zig"),
+        .line = 42,
+    };
+    freeStages(allocator, stages);
+    allocator.free(stages);
+}
+
+test "jsonifyMember: minimal fn_decl contains expected JSON fields" {
+    const allocator = std.testing.allocator;
+    const member = Member{
+        .type = .fn_decl,
+        .name = "myFunc",
+        .is_pub = true,
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"type\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"fn_decl\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"name\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"myFunc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"is_pub\"") != null);
+    // Validate as JSON
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyMember: special chars are escaped in name" {
+    const allocator = std.testing.allocator;
+    const member = Member{
+        .type = .fn_decl,
+        .name = "say\"hello\\world\nnew",
+        .is_pub = false,
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    try std.testing.expect(std.mem.indexOf(u8, j, "\\\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\\\\") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\\n") != null);
+    // Validate as JSON
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyMember: with line field included" {
+    const allocator = std.testing.allocator;
+    const member = Member{
+        .type = .fn_decl,
+        .name = "lineFunc",
+        .is_pub = true,
+        .line = 42,
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"line\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "42") != null);
+    // Validate as JSON
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyMember: with params" {
+    const allocator = std.testing.allocator;
+    const params = [_]Param{
+        .{ .name = "alloc", .type = "std.mem.Allocator" },
+        .{ .name = "val", .type = "u32", .default = "0" },
+    };
+    const member = Member{
+        .type = .fn_decl,
+        .name = "withParams",
+        .is_pub = true,
+        .params = &params,
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"params\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"alloc\"") != null);
+    // Validate as JSON
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyMember: no trailing comma when no members and no line" {
+    const allocator = std.testing.allocator;
+    const member = Member{
+        .type = .fn_decl,
+        .name = "bare",
+        .is_pub = false,
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    // Must parse as valid JSON (no trailing comma)
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyGuidanceDoc: minimal doc with just meta" {
+    const allocator = std.testing.allocator;
+    const doc = GuidanceDoc{
+        .meta = .{
+            .module = "mymod",
+            .source = "src/mymod.zig",
+        },
+    };
+    const json = try jsonifyGuidanceDoc(allocator, doc);
+    defer allocator.free(json);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"meta\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"mymod\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"src/mymod.zig\"") != null);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyGuidanceDoc: doc with comment and keywords" {
+    const allocator = std.testing.allocator;
+    const kws = [_][]const u8{ "alpha", "beta" };
+    const doc = GuidanceDoc{
+        .meta = .{
+            .module = "things",
+            .source = "src/things.zig",
+        },
+        .comment = "Does things.",
+        .keywords = &kws,
+    };
+    const json = try jsonifyGuidanceDoc(allocator, doc);
+    defer allocator.free(json);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"comment\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "Does things.") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"keywords\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"alpha\"") != null);
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
+    defer parsed.deinit();
+}

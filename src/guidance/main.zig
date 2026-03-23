@@ -1,8 +1,8 @@
-//! guidance — AST-guided LanceDB vector search database generator.
+//! guidance — AST-guided SQLite vector search database generator.
 //!
 //! Produces:
 //!   .guidance/src/**/*.json  — Per-file structured metadata mirror
-//!   .guidance.db              — LanceDB database consumed by NullClaw's explain tool
+//!   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool
 //!
 //! Usage:
 //!   guidance gen      [options]   Generate JSON + compile .guidance.db
@@ -41,7 +41,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Canonical search result type — LanceDB hybrid search (vector + keyword).
+/// Canonical search result type — hybrid search (vector + keyword).
 const GuidanceDb = lance_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const freeSearchResult = GuidanceDb.freeSearchResult;
@@ -58,10 +58,12 @@ const provider_mod = @import("provider_discovery.zig");
 const comment_sync_mod = @import("comment_sync.zig");
 const json_store_mod = @import("json_store.zig");
 const comment_inserter_mod = @import("comment_inserter.zig");
+const scrub_mod = @import("scrub.zig");
+const todo_mod = @import("todo.zig");
 
 pub const version = "0.1.0";
 
-/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior and ownership model.
+/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
 const Command = enum {
     init,
     gen,
@@ -76,6 +78,10 @@ const Command = enum {
     @"test",
     @"sync-comments",
     @"migrate-comments",
+    @"map-capabilities",
+    scrub,
+    todo,
+    diary,
 };
 
 /// Starts the Zig program execution by defining the entry point.
@@ -132,6 +138,10 @@ pub fn main() !void {
         .@"test" => cmdTest(allocator, args[2..]),
         .@"sync-comments" => cmdSyncComments(allocator, args[2..]),
         .@"migrate-comments" => cmdMigrateComments(allocator, args[2..]),
+        .@"map-capabilities" => cmdMapCapabilities(allocator, args[2..]),
+        .scrub => cmdScrub(allocator, args[2..]),
+        .todo => cmdTodo(allocator, args[2..]),
+        .diary => cmdDiary(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
@@ -145,7 +155,7 @@ fn printHelp() !void {
     const stdout = ws.writer();
 
     try stdout.writeAll(
-        \\guidance v0.1.0 — AST-guided LanceDB vector search database generator
+        \\guidance v0.1.0 — AST-guided SQLite vector search database generator
         \\
         \\Produces .guidiance/src/**/*.json and .guidance.db for NullClaw.
         \\
@@ -165,8 +175,12 @@ fn printHelp() !void {
         \\  commit          Generate AI commit message from staged diff + guidance
         \\  show            Show vector embeddings from .guidance.db (Markdown)
         \\  test            Benchmark explain queries against module-level comments
-        \\  sync-comments   Insert/update /// doc comments in Zig source files
+        \\  sync-comments    Insert/update /// doc comments in Zig source files
         \\  migrate-comments Migrate JSON comment fields to source /// comments
+        \\  map-capabilities Regenerate capability-mapping.json from CAPABILITY.md files
+        \\  scrub            Blank synthetic LLM-generated comments in guidance JSON files
+        \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
+        \\  diary            Append a timestamped entry to the current work item DIARY.md
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
@@ -177,7 +191,7 @@ fn printHelp() !void {
         \\  --scan DIR            Process all source files under DIR
         \\  -w, --workspace DIR   Source root directory (default: current directory)
         \\  --guidance-dir DIR    Guidance directory (default: .guidance)
-        \\  -o, --db PATH         LanceDB database path (default: .guidance.db)
+        \\  -o, --db PATH         SQLite database path (default: .guidance.db)
         \\  --no-db               Skip database compilation step
         \\  --regen               LLM-regenerate all comments
         \\  --timeout N           Sleep N seconds after each file (default: 20, set to 0 to disable)
@@ -909,11 +923,56 @@ fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
+    // Check CHECKLIST.md for incomplete items before committing.
+    const todo_dir = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, "todo" });
+    defer allocator.free(todo_dir);
+
+    const cl_status = try todo_mod.queryChecklistStatus(allocator, todo_dir);
+    defer if (cl_status.item_dir) |d| allocator.free(d);
+    if (cl_status.incomplete > 0) {
+        std.debug.print(
+            "Warning: {d}/{d} checklist items incomplete in current work item.\n",
+            .{ cl_status.incomplete, cl_status.total },
+        );
+    }
+
     var commit_child = std.process.Child.init(&.{ "git", "commit", "-m", final_msg }, allocator);
     commit_child.cwd = cwd;
     const commit_result = try commit_child.spawnAndWait();
     if (commit_result == .Exited and commit_result.Exited == 0) {
         std.debug.print("Committed successfully.\n", .{});
+
+        // Write COMMITTED.md if there is an active work item.
+        if (cl_status.item_dir) |item_dir| {
+            // Get commit hash.
+            const hash: []const u8 = blk: {
+                var hash_child = std.process.Child.init(&.{ "git", "rev-parse", "HEAD" }, allocator);
+                hash_child.stdout_behavior = .Pipe;
+                hash_child.stderr_behavior = .Ignore;
+                hash_child.cwd = cwd;
+                hash_child.spawn() catch break :blk "";
+                const out = hash_child.stdout.?.readToEndAlloc(allocator, 256) catch break :blk "";
+                _ = hash_child.wait() catch {};
+                break :blk std.mem.trim(u8, out, " \t\r\n");
+            };
+            defer if (hash.len > 0) allocator.free(hash);
+
+            // First line of commit message is the summary.
+            const summary = blk: {
+                const nl = std.mem.indexOfScalar(u8, final_msg, '\n') orelse final_msg.len;
+                break :blk final_msg[0..nl];
+            };
+
+            todo_mod.writeCommittedMd(
+                allocator,
+                item_dir,
+                hash,
+                summary,
+                changed_files.items,
+            ) catch |err| {
+                std.debug.print("Warning: could not write COMMITTED.md: {}\n", .{err});
+            };
+        }
     } else {
         std.debug.print("git commit failed.\n", .{});
     }
@@ -1048,7 +1107,7 @@ const GenArgs = struct {
                 std.mem.eql(u8, arg, "--lance") or
                 std.mem.startsWith(u8, arg, "--db-type="))
             {
-                // Accepted but ignored — LanceDB is always used.
+                // Accepted but ignored — SQLite is always used.
             } else if (std.mem.eql(u8, arg, "--guidance-db")) {
                 // Alias for -o when used with old scripts.
                 i += 1;
@@ -1081,7 +1140,7 @@ const ResolvedGenPaths = struct {
 };
 
 /// Resolve workspace, json_dir, and db_path (→ .guidance.db) to absolute
-/// paths.  db_path is the LanceDB vector database; it defaults to the value
+/// paths.  db_path is the SQLite vector database; it defaults to the value
 /// in guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
     const workspace = try llm.resolvePath(allocator, cwd, ga.workspace orelse cwd);
@@ -1365,7 +1424,7 @@ fn guidanceDbIsUpToDate(
     return true;
 }
 
-/// Sync .guidance.db (LanceDB-style vector database).
+/// Sync .guidance.db (SQLite vector database with in-process cosine similarity).
 /// Creates an embedding provider from config and calls lance_db.syncDatabase.
 /// Failures are logged as warnings but do not abort the gen pipeline.
 fn syncGuidanceDb(
@@ -2478,7 +2537,7 @@ fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
             std.mem.eql(u8, arg, "--lance") or
             std.mem.startsWith(u8, arg, "--db-type="))
         {
-            // Accepted but ignored — LanceDB is always used.
+            // Accepted but ignored — SQLite is always used.
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             ea.query_str = arg;
         }
@@ -3198,6 +3257,237 @@ pub fn guidanceJsonPath(
         break :blk if (stripped.len > 0 and stripped[0] == '/') stripped[1..] else stripped;
     } else src_abs;
     return std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ json_dir, rel });
+}
+
+// ---------------------------------------------------------------------------
+// map-capabilities — regenerate capability-mapping.json from CAPABILITY.md files
+// ---------------------------------------------------------------------------
+
+/// Map CAPABILITY.md files to source files by analysing AST JSON content.
+/// Updates .guidance/capability-mapping.json with fresh keyword and source mappings.
+/// Preserves the "mapping" (file→capability) section; regenerates "capability_keywords".
+///
+/// Usage: guidance map-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run]
+fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    var workspace: ?[]const u8 = null;
+    var dry_run = false;
+    var i: usize = 0;
+
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            guidance_dir_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--workspace") or std.mem.eql(u8, arg, "-w")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            dry_run = true;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const ws = workspace orelse cwd;
+    const guidance_abs = try llm.resolvePath(allocator, ws, guidance_dir_arg);
+    defer allocator.free(guidance_abs);
+
+    const cap_dir = try std.fs.path.join(allocator, &.{ guidance_abs, "capabilities" });
+    defer allocator.free(cap_dir);
+
+    const mapping_path = try std.fs.path.join(allocator, &.{ guidance_abs, "capability-mapping.json" });
+    defer allocator.free(mapping_path);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const fa = arena.allocator();
+
+    // ------------------------------------------------------------------
+    // Step 1: Walk capabilities dir, extract keywords from each CAPABILITY.md.
+    // ------------------------------------------------------------------
+    var new_cap_keywords: std.StringHashMapUnmanaged([]const []const u8) = .{};
+    defer new_cap_keywords.deinit(fa);
+
+    var cap_d = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
+        std.debug.print("map-capabilities: cannot open {s}: {s}\n", .{ cap_dir, @errorName(err) });
+        return;
+    };
+    defer cap_d.close();
+
+    var walker = try cap_d.walk(fa);
+    defer walker.deinit();
+
+    var cap_count: usize = 0;
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, "CAPABILITY.md")) continue;
+
+        const abs_path = try std.fmt.allocPrint(fa, "{s}/{s}", .{ cap_dir, entry.path });
+        const content = std.fs.cwd().readFileAlloc(fa, abs_path, 512 * 1024) catch continue;
+
+        // Extract capability name from frontmatter.
+        var cap_name: []const u8 = std.fs.path.basename(std.fs.path.dirname(abs_path) orelse abs_path);
+        var body: []const u8 = content;
+        if (std.mem.startsWith(u8, content, "---")) {
+            const end = std.mem.indexOf(u8, content[3..], "\n---") orelse 0;
+            if (end > 0) {
+                body = content[end + 7 ..];
+                var fm_it = std.mem.splitScalar(u8, content[3 .. end + 3], '\n');
+                while (fm_it.next()) |line| {
+                    const trimmed = std.mem.trim(u8, line, " \r");
+                    if (std.mem.startsWith(u8, trimmed, "name:")) {
+                        cap_name = std.mem.trim(u8, trimmed["name:".len..], " ");
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Extract code-fence identifiers: backtick-delimited tokens that look like
+        // Zig/Python identifiers (camelCase, PascalCase, snake_case, no punctuation).
+        var kw_set: std.StringHashMapUnmanaged(void) = .{};
+        defer kw_set.deinit(fa);
+
+        // Scan backtick spans and identifier-like tokens from the body.
+        var tok_it = std.mem.tokenizeAny(u8, body, " \t\n\r`()[]{}:,;\"'");
+        while (tok_it.next()) |tok| {
+            if (tok.len < 2 or tok.len > 80) continue;
+            if (!isCapabilityKeywordToken(tok)) continue;
+            if (!kw_set.contains(tok)) {
+                try kw_set.put(fa, try fa.dupe(u8, tok), {});
+            }
+        }
+
+        var kw_list: std.ArrayList([]const u8) = .{};
+        var kwit = kw_set.keyIterator();
+        while (kwit.next()) |k| {
+            try kw_list.append(fa, k.*);
+        }
+
+        try new_cap_keywords.put(fa, try fa.dupe(u8, cap_name), try kw_list.toOwnedSlice(fa));
+        cap_count += 1;
+    }
+
+    // ------------------------------------------------------------------
+    // Step 2: Load existing mapping to preserve "mapping" section.
+    //         Merge: keep existing capability_keywords, add new capabilities.
+    // ------------------------------------------------------------------
+    var existing_mapping: std.StringHashMapUnmanaged(std.json.Value) = .{};
+    defer existing_mapping.deinit(fa);
+
+    var existing_cap_keywords: std.StringHashMapUnmanaged(std.json.Value) = .{};
+    defer existing_cap_keywords.deinit(fa);
+
+    const existing_content = std.fs.cwd().readFileAlloc(fa, mapping_path, 2 * 1024 * 1024) catch null;
+    if (existing_content) |ec| {
+        if (std.json.parseFromSlice(std.json.Value, fa, ec, .{ .ignore_unknown_fields = true })) |parsed| {
+            defer parsed.deinit();
+            if (parsed.value == .object) {
+                // Preserve existing "mapping" section as-is.
+                if (parsed.value.object.get("mapping")) |m| {
+                    if (m == .object) {
+                        var mit = m.object.iterator();
+                        while (mit.next()) |mentry| {
+                            try existing_mapping.put(fa, mentry.key_ptr.*, mentry.value_ptr.*);
+                        }
+                    }
+                }
+                // Preserve existing capability_keywords (hand-crafted).
+                if (parsed.value.object.get("capability_keywords")) |ck| {
+                    if (ck == .object) {
+                        var ckit = ck.object.iterator();
+                        while (ckit.next()) |ckentry| {
+                            try existing_cap_keywords.put(fa, ckentry.key_ptr.*, ckentry.value_ptr.*);
+                        }
+                    }
+                }
+            }
+        } else |_| {
+            std.debug.print("map-capabilities: cannot parse existing {s}, preserving\n", .{mapping_path});
+        }
+    }
+
+    // Merge: for capabilities without existing keywords, use extracted ones.
+    var it = new_cap_keywords.iterator();
+    while (it.next()) |entry| {
+        const cap_name = entry.key_ptr.*;
+        if (!existing_cap_keywords.contains(cap_name)) {
+            // Build a json array from the extracted keyword list.
+            var arr = std.json.Array.init(fa);
+            for (entry.value_ptr.*) |kw| {
+                try arr.append(.{ .string = kw });
+            }
+            try existing_cap_keywords.put(fa, cap_name, .{ .array = arr });
+            std.debug.print("map-capabilities: added keywords for new capability '{s}'\n", .{cap_name});
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Step 3: Build output JSON object and write.
+    // ------------------------------------------------------------------
+    var mapping_obj_out = std.json.ObjectMap.init(fa);
+    var file_to_caps_obj = std.json.ObjectMap.init(fa);
+    {
+        var mit = existing_mapping.iterator();
+        while (mit.next()) |mentry| {
+            try file_to_caps_obj.put(mentry.key_ptr.*, mentry.value_ptr.*);
+        }
+    }
+    var cap_kw_obj = std.json.ObjectMap.init(fa);
+    {
+        var ckit = existing_cap_keywords.iterator();
+        while (ckit.next()) |ckentry| {
+            try cap_kw_obj.put(ckentry.key_ptr.*, ckentry.value_ptr.*);
+        }
+    }
+    try mapping_obj_out.put("mapping", .{ .object = file_to_caps_obj });
+    try mapping_obj_out.put("capability_keywords", .{ .object = cap_kw_obj });
+
+    const json_out = try llm.jsonStringifyAlloc(fa, std.json.Value{ .object = mapping_obj_out });
+
+    if (dry_run) {
+        std.debug.print("map-capabilities (dry-run): would write {d} bytes to {s}\n", .{ json_out.len, mapping_path });
+        return;
+    }
+
+    const file = try std.fs.cwd().createFile(mapping_path, .{});
+    defer file.close();
+    var wbuf: [8192]u8 = undefined;
+    var fw = file.writer(&wbuf);
+    try fw.interface.writeAll(json_out);
+    try fw.interface.flush();
+
+    std.debug.print("map-capabilities: wrote {s} ({d} capabilities)\n", .{ mapping_path, cap_count });
+}
+
+/// Return true if `tok` is a plausible Zig/Python identifier keyword.
+/// Accepts: camelCase, PascalCase, snake_case, dotted.paths, but not
+/// punctuation-heavy strings or all-lowercase common words.
+fn isCapabilityKeywordToken(tok: []const u8) bool {
+    // Must start with an ASCII letter or underscore.
+    if (tok.len == 0) return false;
+    if (!std.ascii.isAlphabetic(tok[0]) and tok[0] != '_') return false;
+
+    var has_upper = false;
+    var has_underscore = false;
+    var has_dot = false;
+
+    for (tok) |ch| {
+        if (std.ascii.isUpper(ch)) has_upper = true;
+        if (ch == '_') has_underscore = true;
+        if (ch == '.') has_dot = true;
+        // Reject if contains non-identifier characters (except _ and .).
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_' and ch != '.') return false;
+    }
+
+    // Accept: camelCase/PascalCase (has uppercase), snake_case (has underscore),
+    // dotted paths (has dot), or short known identifiers (len >= 4).
+    return has_upper or has_underscore or has_dot or tok.len >= 4;
 }
 
 /// Run an arbitrary command (full argv, no template substitution).
@@ -4401,3 +4691,237 @@ fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) !v
         migrated_files,
     });
 }
+
+// ---------------------------------------------------------------------------
+// scrub — blank synthetic LLM-generated comments in guidance JSON files
+// ---------------------------------------------------------------------------
+
+/// Walk .guidance/src/**/*.json and blank any synthetic comments in-place.
+/// Usage: guidance scrub [--guidance-dir DIR] [--dry-run]
+fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var dry_run = false;
+    var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--dry-run")) {
+            dry_run = true;
+        } else if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
+            i += 1;
+            if (i < args.len) guidance_dir_arg = args[i];
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const src_json_dir = try std.fs.path.join(allocator, &.{ cwd, guidance_dir_arg, "src" });
+    defer allocator.free(src_json_dir);
+
+    var json_dir = std.fs.openDirAbsolute(src_json_dir, .{ .iterate = true }) catch {
+        std.debug.print("scrub: cannot open {s}\n", .{src_json_dir});
+        return;
+    };
+    defer json_dir.close();
+
+    var walker = try json_dir.walk(allocator);
+    defer walker.deinit();
+
+    var total_files: usize = 0;
+    var scrubbed_files: usize = 0;
+    var total_blanked: usize = 0;
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
+
+        const json_path = try std.fs.path.join(allocator, &.{ src_json_dir, entry.path });
+        defer allocator.free(json_path);
+
+        total_files += 1;
+
+        // Load raw bytes.
+        const file = std.fs.openFileAbsolute(json_path, .{}) catch continue;
+        const raw = file.readToEndAlloc(allocator, 4 * 1024 * 1024) catch {
+            file.close();
+            continue;
+        };
+        file.close();
+        defer allocator.free(raw);
+
+        // Parse JSON.
+        var parsed = std.json.parseFromSlice(std.json.Value, allocator, raw, .{}) catch continue;
+        defer parsed.deinit();
+
+        // Count comments before scrubbing for reporting.
+        const blanked_before = total_blanked;
+        _ = blanked_before;
+
+        // Scrub synthetic comments.
+        var file_blanked: usize = 0;
+        if (parsed.value == .object) {
+            file_blanked += scrubCount(&parsed.value);
+        }
+
+        if (file_blanked == 0) continue;
+        total_blanked += file_blanked;
+        scrubbed_files += 1;
+
+        if (dry_run) {
+            std.debug.print("scrub (dry-run): would blank {d} comment(s) in {s}\n", .{ file_blanked, entry.path });
+            continue;
+        }
+
+        // Serialize and write back.
+        var buf: std.io.Writer.Allocating = .init(allocator);
+        defer buf.deinit();
+        try std.json.Stringify.value(parsed.value, .{ .whitespace = .indent_2 }, &buf.writer);
+        try buf.writer.writeByte('\n');
+
+        const wfile = try std.fs.createFileAbsolute(json_path, .{ .truncate = true });
+        defer wfile.close();
+        try wfile.writeAll(buf.written());
+
+        std.debug.print("scrub: blanked {d} comment(s) in {s}\n", .{ file_blanked, entry.path });
+    }
+
+    std.debug.print("scrub: {d} files checked, {d} modified, {d} comments blanked{s}\n", .{
+        total_files,
+        scrubbed_files,
+        total_blanked,
+        if (dry_run) " (dry-run)" else "",
+    });
+}
+
+/// Count and scrub synthetic comments in a Value tree; returns count blanked.
+fn scrubCount(value: *std.json.Value) usize {
+    if (value.* != .object) return 0;
+    var count: usize = 0;
+    const obj = &value.object;
+
+    if (obj.getPtr("comment")) |cv| {
+        if (cv.* == .string and cv.string.len > 0 and scrub_mod.isSyntheticComment(cv.string)) {
+            cv.* = .{ .string = "" };
+            count += 1;
+        }
+    }
+    if (obj.getPtr("members")) |mv| {
+        if (mv.* == .array) {
+            for (mv.array.items) |*member| {
+                count += scrubCount(member);
+            }
+        }
+    }
+    return count;
+}
+
+// ---------------------------------------------------------------------------
+// todo — work item lifecycle
+// ---------------------------------------------------------------------------
+
+/// Dispatch to todo subcommands.
+/// Usage: guidance todo <new|triage|checklist|status|list|abandon> [args...]
+fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const guidance_dir = config_mod.DEFAULT_GUIDANCE_DIR;
+    const todo_dir = try std.fs.path.join(allocator, &.{ cwd, guidance_dir, "todo" });
+    defer allocator.free(todo_dir);
+
+    // Load config for LLM access.
+    var api_url: []const u8 = config_mod.DEFAULT_API_URL;
+    var model_thinking: []const u8 = "";
+    var model_fast: []const u8 = "";
+
+    if (config_mod.loadConfig(allocator, cwd)) |cfg_val| {
+        var cfg = cfg_val;
+        defer cfg.deinit();
+        const parsed = config_mod.ProjectConfig.parseModelRef(cfg.model_thinking);
+        if (parsed) |p| {
+            if (cfg.getProvider(p.provider)) |provider| {
+                api_url = try allocator.dupe(u8, try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint }));
+            }
+        }
+        model_thinking = try allocator.dupe(u8, cfg.model_thinking);
+        model_fast = try allocator.dupe(u8, cfg.model_fast);
+    } else |_| {}
+    defer if (model_thinking.len > 0) allocator.free(model_thinking);
+    defer if (model_fast.len > 0) allocator.free(model_fast);
+    defer if (!std.mem.eql(u8, api_url, config_mod.DEFAULT_API_URL)) allocator.free(api_url);
+
+    if (args.len == 0) {
+        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon>\n", .{});
+        return;
+    }
+
+    const subcmd = args[0];
+    const sub_args = args[1..];
+
+    if (std.mem.eql(u8, subcmd, "new")) {
+        const description = if (sub_args.len > 0) sub_args[0] else "";
+        return todo_mod.cmdTodoNew(allocator, description, todo_dir);
+    } else if (std.mem.eql(u8, subcmd, "triage")) {
+        const thinking_model = if (model_thinking.len > 0) model_thinking else model_fast;
+        return todo_mod.cmdTodoTriage(allocator, todo_dir, api_url, thinking_model);
+    } else if (std.mem.eql(u8, subcmd, "checklist")) {
+        const fast_model = if (model_fast.len > 0) model_fast else model_thinking;
+        return todo_mod.cmdTodoChecklist(allocator, todo_dir, api_url, fast_model);
+    } else if (std.mem.eql(u8, subcmd, "status")) {
+        return todo_mod.cmdTodoStatus(allocator, todo_dir);
+    } else if (std.mem.eql(u8, subcmd, "list")) {
+        return todo_mod.cmdTodoList(allocator, todo_dir);
+    } else if (std.mem.eql(u8, subcmd, "abandon")) {
+        return todo_mod.cmdTodoAbandon(allocator, todo_dir);
+    } else {
+        std.debug.print("Unknown todo subcommand: {s}\n", .{subcmd});
+        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon>\n", .{});
+    }
+}
+
+// ---------------------------------------------------------------------------
+// diary — append timestamped entry to current work item DIARY.md
+// ---------------------------------------------------------------------------
+
+/// Append a timestamped entry to the current work item's DIARY.md.
+/// Usage: guidance diary "<message>"
+fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len == 0) {
+        std.debug.print("Usage: guidance diary \"<message>\"\n", .{});
+        return;
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const todo_dir = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, "todo" });
+    defer allocator.free(todo_dir);
+
+    // Collect message from remaining args (join with space).
+    var msg_buf: std.ArrayList(u8) = .{};
+    defer msg_buf.deinit(allocator);
+    for (args, 0..) |a, idx| {
+        if (idx > 0) try msg_buf.append(allocator, ' ');
+        try msg_buf.appendSlice(allocator, a);
+    }
+
+    // Get author from git config.
+    var author: []const u8 = "unknown";
+    const git_author = blk: {
+        var child = std.process.Child.init(&.{ "git", "config", "user.name" }, allocator);
+        child.stdout_behavior = .Pipe;
+        child.stderr_behavior = .Ignore;
+        child.cwd = cwd;
+        child.spawn() catch break :blk null;
+        const out = child.stdout.?.readToEndAlloc(allocator, 256) catch break :blk null;
+        _ = child.wait() catch {};
+        break :blk std.mem.trim(u8, out, " \t\r\n");
+    };
+    defer if (git_author) |a| allocator.free(a);
+    if (git_author) |a| if (a.len > 0) {
+        author = a;
+    };
+
+    return todo_mod.cmdDiaryEntry(allocator, msg_buf.items, todo_dir, author);
+}
+

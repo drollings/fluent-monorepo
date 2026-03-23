@@ -152,10 +152,8 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 # ── Binary ───────────────────────────────────────────────────────────────────
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
-	$(Q)echo "Building guidance..."
-	$(Q)zig build --summary failures
-	$(Q)zig build test --summary all
-	zig build guidance
+	$(Q)echo "Building guidance binary..."
+	zig build guidance --summary all
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install

@@ -222,7 +222,7 @@ pub const TargetBuilder = struct {
         return self;
     }
 
-    /// Set the LanceDB/node id (optional; 0 if not set).
+    /// Set the SQLite node id (optional; 0 if not set).
     pub fn id(self: *TargetBuilder, node_id: i64) *TargetBuilder {
         if (self.target) |t| t.id = node_id;
         return self;
@@ -630,16 +630,3 @@ test "TargetBuilder: integrates with DependencyResolver end-to-end" {
     }
     try testing.expect(base_pos < top_pos);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

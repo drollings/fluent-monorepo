@@ -395,6 +395,40 @@ pub fn hostGetNeighbors(
     outputs[0] = .{ .t = .ptr, .v = ptr };
 }
 
+/// Host function: Insert a directed edge between two nodes.
+/// Input: (from_id: i64, to_id: i64)
+/// Output: (status: i64) — 0 on success, 1 on error.
+pub fn hostInsertEdge(
+    plugin: ?*anyopaque,
+    inputs: [*]const ExtismVal,
+    n_inputs: u64,
+    outputs: [*]ExtismVal,
+    n_outputs: u64,
+    user_data: ?*anyopaque,
+) callconv(.C) void {
+    _ = plugin;
+    _ = n_outputs;
+    const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
+        return;
+    };
+
+    if (n_inputs < 2) {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
+        return;
+    }
+
+    const from_id: i64 = @bitCast(inputs[0].v);
+    const to_id: i64 = @bitCast(inputs[1].v);
+
+    ctx.library.insertNeighborOf(from_id, to_id, 0.0, .neighbor_of) catch {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
+        return;
+    };
+
+    outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 0)) };
+}
+
 /// Host function registry for controlled I/O.
 pub const HostFunctionRegistry = struct {
     const Self = @This();
@@ -448,6 +482,19 @@ pub const HostFunctionRegistry = struct {
             null,
         );
         try self.functions.append(self.allocator, fn_neighbors);
+
+        // insert_edge(from_id: i64, to_id: i64) -> i64 (0=ok, 1=err)
+        const fn_insert_edge = extism.extism_function_new(
+            "insert_edge",
+            &[_]ExtismValType{ .i64, .i64 },
+            2,
+            &[_]ExtismValType{.i64},
+            1,
+            hostInsertEdge,
+            @ptrCast(&self.context),
+            null,
+        );
+        try self.functions.append(self.allocator, fn_insert_edge);
     }
 
     /// Get function array for plugin creation.
@@ -1016,3 +1063,48 @@ test "WasmToolCache: GPA no leaks across put and deinit" {
     try testing.expectEqual(.ok, gpa.deinit());
 }
 
+test "BinaryContextNode: all-empty LODs produce zero payload size beyond header" {
+    // A node with no content in any LOD slot should still serialise without panic.
+    var node = try ContextNode.init(0x42, "", "", testing.allocator);
+    defer node.free(testing.allocator);
+
+    var buffer: [4096]u8 = undefined;
+    const bin = BinaryContextNode.init(&node, &buffer);
+
+    // All four lod_lengths must be zero when no LODs are set.
+    for (bin.lod_lengths) |l| {
+        try testing.expectEqual(@as(u32, 0), l);
+    }
+    try testing.expect(bin.header.validate());
+}
+
+test "BinaryContextNode: large LOD0 round-trips without truncation" {
+    // Simulate a 2 KB embedding/content blob to verify no off-by-one in sizing.
+    var content_buf: [2048]u8 = undefined;
+    @memset(&content_buf, 'A');
+
+    var node = try ContextNode.init(0x99, "large_node", &content_buf, testing.allocator);
+    defer node.free(testing.allocator);
+
+    var buffer: [8192]u8 = undefined;
+    const bin = BinaryContextNode.init(&node, &buffer);
+
+    try testing.expectEqual(@as(u32, 2048), bin.lod_lengths[0]);
+    try testing.expectEqualSlices(u8, &content_buf, bin.getLod(&buffer, 0));
+    try testing.expect(bin.header.validate());
+}
+
+test "BinaryContextNode: multiple non-empty LODs round-trip" {
+    var node = try ContextNode.init(0x77, "multi_lod", "LOD0 full content", testing.allocator);
+    defer node.free(testing.allocator);
+    node.setLod(1, "LOD1 summary");
+    node.setLod(2, "LOD2 short");
+
+    var buffer: [4096]u8 = undefined;
+    const bin = BinaryContextNode.init(&node, &buffer);
+
+    try testing.expectEqualStrings("LOD0 full content", bin.getLod(&buffer, 0));
+    try testing.expectEqualStrings("LOD1 summary", bin.getLod(&buffer, 1));
+    try testing.expectEqualStrings("LOD2 short", bin.getLod(&buffer, 2));
+    try testing.expectEqual(@as(u32, 0), bin.lod_lengths[3]); // LOD3 never set
+}

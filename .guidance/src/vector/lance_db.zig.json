@@ -23,7 +23,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 62
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -37,10 +37,10 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 73
+          "line": 79
         }
       ],
-      "line": 58
+      "line": 64
     },
     {
       "type": "fn_decl",
@@ -53,7 +53,7 @@
       ],
       "returns": "?SemanticAliases",
       "is_pub": true,
-      "line": 125
+      "line": 131
     },
     {
       "type": "fn_decl",
@@ -71,7 +71,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 185
+      "line": 191
     },
     {
       "type": "struct",
@@ -93,7 +93,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 240
+          "line": 253
         }
     ,    {
           "type": "fn_decl",
@@ -106,7 +106,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 255
+          "line": 268
         }
     ,    {
           "type": "fn_decl",
@@ -119,7 +119,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 262
+          "line": 275
         }
     ,    {
           "type": "fn_decl",
@@ -132,7 +132,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 269
+          "line": 282
         }
     ,    {
           "type": "fn_decl",
@@ -144,10 +144,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 276
+          "line": 289
         }
       ],
-      "line": 230
+      "line": 243
     },
     {
       "type": "struct",
@@ -168,7 +168,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 302
+          "line": 315
         }
     ,    {
           "type": "fn_decl",
@@ -180,7 +180,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 326
+          "line": 339
         }
     ,    {
           "type": "fn_private",
@@ -192,7 +192,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 335
+          "line": 348
         }
     ,    {
           "type": "fn_private",
@@ -204,7 +204,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 351
+          "line": 364
         }
     ,    {
           "type": "fn_decl",
@@ -218,36 +218,84 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 557
+          "line": 594
         }
     ,    {
           "type": "fn_decl",
           "name": "syncCapabilities",
-          "match_hash": "7f3f7d08ccd07567877b61927b5fea49a668e03777b305a3848de5ecff7e5aef",
-          "signature": "fn syncCapabilities(self: *Self, allocator: std.mem.Allocator, cap_dir: []const u8) -> void",
+          "match_hash": "cce55e6e0cedbf366228ba795f292e5ebe2cb10543aa2e4bcd674ad0956c7923",
+          "signature": "fn syncCapabilities(self: *Self, allocator: std.mem.Allocator, cap_dir: []const u8, mapping_path: ?[]const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "cap_dir", "type": "[]const u8" }
+            { "name": "cap_dir", "type": "[]const u8" },
+            { "name": "mapping_path", "type": "?[]const u8" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 613
+          "line": 653
         }
     ,    {
           "type": "fn_private",
           "name": "indexCapability",
-          "match_hash": "6b6c41368e0c76fff5e70028cb79e19ab66b7c2846e10fd30ae47763d31bc9e0",
-          "signature": "fn indexCapability(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) -> void",
+          "match_hash": "197a0d4c0364e73fea9a11c8982c6e81e2b9aa4199db7dac248e8ac0a0fdca0d",
+          "signature": "fn indexCapability(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64, keywords: []const []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "file_path", "type": "[]const u8" },
-            { "name": "mtime", "type": "i64" }
+            { "name": "mtime", "type": "i64" },
+            { "name": "keywords", "type": "[]const []const u8" }
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 667
+          "line": 732
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "syncCapabilityKeywords",
+          "match_hash": "c29f58c580618d9c0d590aba33cdbfeef10ad11dc9da8b3bbe32518fd57f3ae4",
+          "signature": "fn syncCapabilityKeywords(self: *Self, allocator: std.mem.Allocator, mapping_path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "mapping_path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 837
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findCapabilityKeywordsForQuery",
+          "match_hash": "23c872be2c34ea2067e3ae931eb3659754a51ce15918dc05b0f77ac2d201b6f0",
+          "signature": "fn findCapabilityKeywordsForQuery(self: *Self, allocator: std.mem.Allocator, query_embedding: []const f32, threshold: f32, max_capabilities: usize) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_embedding", "type": "[]const f32" },
+            { "name": "threshold", "type": "f32" },
+            { "name": "max_capabilities", "type": "usize" }
+          ],
+          "returns": "[][]const u8",
+          "is_pub": true,
+          "line": 880
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findMatchedCapabilityNamesForQuery",
+          "match_hash": "242329bd29695d9d0bbc211219bb38a839425ecfb0468e75a2aa6bd724a39024",
+          "signature": "fn findMatchedCapabilityNamesForQuery(self: *Self, allocator: std.mem.Allocator, query_text: []const u8, threshold: f32, max_capabilities: usize) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "query_text", "type": "[]const u8" },
+            { "name": "threshold", "type": "f32" },
+            { "name": "max_capabilities", "type": "usize" }
+          ],
+          "returns": "[][]const u8",
+          "is_pub": true,
+          "line": 990
         }
     ,    {
           "type": "fn_private",
@@ -261,7 +309,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 736
+          "line": 1058
         }
     ,    {
           "type": "fn_private",
@@ -277,7 +325,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 750
+          "line": 1072
         }
     ,    {
           "type": "fn_private",
@@ -290,7 +338,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 777
+          "line": 1099
         }
     ,    {
           "type": "fn_private",
@@ -303,7 +351,7 @@
           ],
           "returns": "[]u8",
           "is_pub": false,
-          "line": 794
+          "line": 1116
         }
     ,    {
           "type": "fn_private",
@@ -315,7 +363,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 820
+          "line": 1142
         }
     ,    {
           "type": "fn_private",
@@ -328,7 +376,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 836
+          "line": 1158
         }
     ,    {
           "type": "fn_private",
@@ -346,7 +394,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 887
+          "line": 1209
         }
     ,    {
           "type": "fn_private",
@@ -360,7 +408,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 956
+          "line": 1278
         }
     ,    {
           "type": "fn_private",
@@ -375,7 +423,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 987
+          "line": 1309
         }
     ,    {
           "type": "fn_private",
@@ -388,7 +436,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1010
+          "line": 1332
         }
     ,    {
           "type": "fn_private",
@@ -402,7 +450,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1045
+          "line": 1367
         }
     ,    {
           "type": "fn_private",
@@ -415,7 +463,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1090
+          "line": 1412
         }
     ,    {
           "type": "fn_private",
@@ -429,7 +477,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1121
+          "line": 1443
         }
     ,    {
           "type": "fn_private",
@@ -446,7 +494,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1159
+          "line": 1481
         }
     ,    {
           "type": "fn_private",
@@ -462,7 +510,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1254
+          "line": 1576
         }
     ,    {
           "type": "fn_private",
@@ -480,7 +528,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1305
+          "line": 1627
         }
     ,    {
           "type": "fn_decl",
@@ -493,7 +541,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1404
+          "line": 1726
         }
     ,    {
           "type": "fn_decl",
@@ -509,7 +557,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1423
+          "line": 1745
         }
     ,    {
           "type": "fn_decl",
@@ -526,7 +574,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1434
+          "line": 1756
         }
     ,    {
           "type": "fn_decl",
@@ -541,7 +589,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1548
+          "line": 1883
         }
     ,    {
           "type": "fn_decl",
@@ -557,7 +605,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1561
+          "line": 1896
         }
     ,    {
           "type": "fn_private",
@@ -572,7 +620,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 1630
+          "line": 1965
         }
     ,    {
           "type": "fn_decl",
@@ -587,7 +635,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1668
+          "line": 2003
         }
     ,    {
           "type": "fn_decl",
@@ -602,7 +650,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1754
+          "line": 2089
         }
     ,    {
           "type": "fn_private",
@@ -618,7 +666,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 1870
+          "line": 2205
         }
     ,    {
           "type": "fn_private",
@@ -634,7 +682,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 1943
+          "line": 2278
         }
     ,    {
           "type": "fn_private",
@@ -648,7 +696,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 1966
+          "line": 2301
         }
     ,    {
           "type": "fn_private",
@@ -660,7 +708,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1992
+          "line": 2327
         }
     ,    {
           "type": "fn_private",
@@ -673,7 +721,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 2026
+          "line": 2361
         }
     ,    {
           "type": "fn_private",
@@ -686,7 +734,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2053
+          "line": 2388
         }
     ,    {
           "type": "fn_private",
@@ -699,7 +747,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2063
+          "line": 2398
         }
     ,    {
           "type": "fn_decl",
@@ -714,7 +762,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2074
+          "line": 2409
         }
     ,    {
           "type": "fn_decl",
@@ -730,7 +778,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 2099
+          "line": 2434
         }
     ,    {
           "type": "fn_decl",
@@ -744,7 +792,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2171
+          "line": 2506
         }
     ,    {
           "type": "fn_decl",
@@ -759,7 +807,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2215
+          "line": 2550
         }
     ,    {
           "type": "fn_decl",
@@ -774,7 +822,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2238
+          "line": 2573
         }
     ,    {
           "type": "fn_decl",
@@ -790,7 +838,7 @@
           ],
           "returns": "[]KeywordMatch",
           "is_pub": true,
-          "line": 2258
+          "line": 2593
         }
     ,    {
           "type": "fn_decl",
@@ -804,7 +852,7 @@
           ],
           "returns": "[]ModuleMatch",
           "is_pub": true,
-          "line": 2325
+          "line": 2660
         }
     ,    {
           "type": "fn_decl",
@@ -818,7 +866,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 2368
+          "line": 2703
         }
     ,    {
           "type": "fn_decl",
@@ -833,7 +881,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2390
+          "line": 2725
         }
     ,    {
           "type": "fn_decl",
@@ -846,7 +894,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2409
+          "line": 2744
         }
     ,    {
           "type": "fn_decl",
@@ -861,7 +909,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2421
+          "line": 2756
         }
     ,    {
           "type": "fn_decl",
@@ -873,7 +921,7 @@
           ],
           "returns": "?EmbeddingStats",
           "is_pub": true,
-          "line": 2483
+          "line": 2818
         }
     ,    {
           "type": "fn_decl",
@@ -886,7 +934,7 @@
           ],
           "returns": "[]AliasEmbeddingEntry",
           "is_pub": true,
-          "line": 2533
+          "line": 2868
         }
     ,    {
           "type": "fn_decl",
@@ -899,7 +947,7 @@
           ],
           "returns": "[]KeywordEmbeddingEntry",
           "is_pub": true,
-          "line": 2558
+          "line": 2893
         }
     ,    {
           "type": "fn_decl",
@@ -912,7 +960,7 @@
           ],
           "returns": "[]EmbeddingCacheEntry",
           "is_pub": true,
-          "line": 2583
+          "line": 2918
         }
     ,    {
           "type": "fn_decl",
@@ -925,10 +973,10 @@
           ],
           "returns": "[]AstNodeEmbeddingEntry",
           "is_pub": true,
-          "line": 2608
+          "line": 2943
         }
       ],
-      "line": 294
+      "line": 307
     },
     {
       "type": "struct",
@@ -936,7 +984,7 @@
       "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
       "signature": "keyword_struct ParsedMember { ... }",
       "is_pub": false,
-      "line": 2642
+      "line": 2977
     },
     {
       "type": "struct",
@@ -944,7 +992,33 @@
       "match_hash": "a1b877e8d81db260185f98dfbe8b981183c9e06f76858f4204f4c6c12b724adf",
       "signature": "keyword_struct ParsedDoc { ... }",
       "is_pub": false,
-      "line": 2651
+      "line": 2986
+    },
+    {
+      "type": "fn_private",
+      "name": "capabilityNameFromPath",
+      "match_hash": "9401ca66f669f9a4657e2cb1dd0118852cf85f3d46c3e6fa22447763a93c5489",
+      "signature": "fn capabilityNameFromPath(file_path: []const u8) -> []const u8",
+      "params": [
+        { "name": "file_path", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": false,
+      "line": 3004
+    },
+    {
+      "type": "fn_private",
+      "name": "loadCapabilityKeywordsMap",
+      "match_hash": "c9daf7328806d28794c78c1926909fbf8a366b2d9373adafbe1898847144c878",
+      "signature": "fn loadCapabilityKeywordsMap(alloc: std.mem.Allocator, mapping_path: []const u8, map: *std.StringHashMapUnmanaged([]const []const u8)) -> void",
+      "params": [
+        { "name": "alloc", "type": "std.mem.Allocator" },
+        { "name": "mapping_path", "type": "[]const u8" },
+        { "name": "map", "type": "*std.StringHashMapUnmanaged([]const []const u8)" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 3012
     },
     {
       "type": "fn_private",
@@ -957,7 +1031,7 @@
       ],
       "returns": "ParsedDoc",
       "is_pub": false,
-      "line": 2663
+      "line": 3043
     },
     {
       "type": "fn_private",
@@ -969,7 +1043,7 @@
       ],
       "returns": "ParsedMember",
       "is_pub": false,
-      "line": 2779
+      "line": 3159
     },
     {
       "type": "fn_private",
@@ -982,7 +1056,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 2821
+      "line": 3201
     },
     {
       "type": "fn_private",
@@ -996,7 +1070,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2841
+      "line": 3221
     },
     {
       "type": "fn_private",
@@ -1010,7 +1084,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 2864
+      "line": 3244
     },
     {
       "type": "fn_private",
@@ -1024,7 +1098,7 @@
       ],
       "returns": "?[]u8",
       "is_pub": false,
-      "line": 2871
+      "line": 3251
     },
     {
       "type": "fn_private",
@@ -1040,73 +1114,73 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2879
+      "line": 3259
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 2895
+      "line": 3275
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 2919
+      "line": 3299
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 2969
+      "line": 3349
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 3010
+      "line": 3390
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText prose format",
       "is_pub": false,
-      "line": 3058
+      "line": 3438
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 3082
+      "line": 3462
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 3098
+      "line": 3478
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 3106
+      "line": 3486
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
       "is_pub": false,
-      "line": 3121
+      "line": 3501
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder fluent setters return updated values",
       "is_pub": false,
-      "line": 3139
+      "line": 3519
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
       "is_pub": false,
-      "line": 3159
+      "line": 3539
     }
   ]
 }

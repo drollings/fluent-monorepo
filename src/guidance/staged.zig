@@ -61,6 +61,13 @@ pub fn executeStagedWithAliasesOriginal(
         allocator.free(results);
     }
 
+    // ── Capability routing: which capabilities influenced the search ──────────
+    const matched_cap_names = db.findMatchedCapabilityNamesForQuery(allocator, query, 0.45, 3) catch &[_][]const u8{};
+    defer {
+        for (matched_cap_names) |n| allocator.free(n);
+        allocator.free(matched_cap_names);
+    }
+
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
         types.freeStages(allocator, stages.items);
@@ -261,6 +268,24 @@ pub fn executeStagedWithAliasesOriginal(
         }
     }
 
+    // ── Matched-Capabilities metadata stage ───────────────────────────────────
+    // Emit a metadata stage recording which capabilities routed this query,
+    // so formatStaged() can render a "Matched Capabilities" line.
+    if (matched_cap_names.len > 0) {
+        var buf: std.ArrayList(u8) = .{};
+        defer buf.deinit(allocator);
+        try buf.appendSlice(allocator, "matched_capabilities: ");
+        for (matched_cap_names, 0..) |name, i| {
+            if (i > 0) try buf.appendSlice(allocator, ", ");
+            try buf.appendSlice(allocator, name);
+        }
+        try stages.append(allocator, .{
+            .kind = .metadata,
+            .content = try buf.toOwnedSlice(allocator),
+            .source = try allocator.dupe(u8, "capability-routing"),
+        });
+    }
+
     return stages.toOwnedSlice(allocator);
 }
 
@@ -440,9 +465,13 @@ pub fn formatStaged(
     defer seen_skills_ref.deinit(allocator);
     var seen_caps_ref: std.StringHashMapUnmanaged(void) = .{};
     defer seen_caps_ref.deinit(allocator);
+    var seen_matched_caps: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_matched_caps.deinit(allocator);
 
     var all_capabilities: std.ArrayList(u8) = .{};
     defer all_capabilities.deinit(allocator);
+    var all_matched_caps: std.ArrayList(u8) = .{};
+    defer all_matched_caps.deinit(allocator);
 
     for (stages) |s| {
         if (s.kind != .metadata) continue;
@@ -489,15 +518,26 @@ pub fn formatStaged(
                     if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, ", ");
                     try all_capabilities.appendSlice(allocator, p);
                 }
+            } else if (std.mem.startsWith(u8, line, "matched_capabilities: ")) {
+                const v = line["matched_capabilities: ".len..];
+                var parts = std.mem.splitSequence(u8, v, ", ");
+                while (parts.next()) |part| {
+                    const p = std.mem.trim(u8, part, " \t");
+                    if (p.len == 0 or seen_matched_caps.contains(p)) continue;
+                    try seen_matched_caps.put(allocator, p, {});
+                    if (all_matched_caps.items.len > 0) try all_matched_caps.appendSlice(allocator, ", ");
+                    try all_matched_caps.appendSlice(allocator, p);
+                }
             }
         }
     }
 
-    if (all_keywords.items.len > 0 or all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0) {
+    if (all_keywords.items.len > 0 or all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0 or all_matched_caps.items.len > 0) {
         if (!ref_header_written) {
             try w.writeAll("## References\n\n");
             ref_header_written = true;
         }
+        if (all_matched_caps.items.len > 0) try w.print("- **Matched Capabilities**: {s}\n", .{all_matched_caps.items});
         if (all_keywords.items.len > 0) try w.print("- **See Also**: {s}\n", .{all_keywords.items});
         if (all_see_also.items.len > 0) try w.print("- **Used in files**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
@@ -840,3 +880,133 @@ pub fn loadSkillExcerpt(
 // ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+test "formatStaged: empty stages output contains header and separator" {
+    const allocator = std.testing.allocator;
+    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "# Explain: myquery") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "---") != null);
+}
+
+test "formatStaged: code stage with line emits source path and line number" {
+    const allocator = std.testing.allocator;
+    const stages = [_]types.Stage{.{
+        .kind = .code,
+        .content = "pub fn foo() void {}\n",
+        .source = "src/foo.zig",
+        .line = 10,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "src/foo.zig:10") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "pub fn foo()") != null);
+}
+
+test "formatStaged: code stage without line still emits code block" {
+    const allocator = std.testing.allocator;
+    const stages = [_]types.Stage{.{
+        .kind = .code,
+        .content = "const x = 1;\n",
+        .source = "src/bar.zig",
+        .line = null,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "src/bar.zig") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "const x = 1;") != null);
+}
+
+test "formatStaged: summary appears before separator" {
+    const allocator = std.testing.allocator;
+    const result = try formatStaged(allocator, "q", &.{}, "This is the summary.", "/workspace", null);
+    defer allocator.free(result);
+    const sum_pos = std.mem.indexOf(u8, result, "This is the summary.");
+    const sep_pos = std.mem.indexOf(u8, result, "---");
+    try std.testing.expect(sum_pos != null);
+    try std.testing.expect(sep_pos != null);
+    try std.testing.expect(sum_pos.? < sep_pos.?);
+}
+
+test "formatStaged: followup keywords produce Suggested Queries section" {
+    const allocator = std.testing.allocator;
+    const kws = [_][]const u8{ "alpha search", "beta filter" };
+    const result = try formatStaged(allocator, "q", &.{}, null, "/workspace", &kws);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "## Suggested Queries") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "alpha search") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "beta filter") != null);
+}
+
+test "formatStaged: skill_doc stage produces Knowledge Base section" {
+    const allocator = std.testing.allocator;
+    const stages = [_]types.Stage{.{
+        .kind = .skill_doc,
+        .content = "This skill teaches you X.",
+        .source = "zig-current",
+        .line = null,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "## Knowledge Base") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "zig-current") != null);
+}
+
+test "formatStaged: metadata stage with keywords prefix produces References section" {
+    const allocator = std.testing.allocator;
+    const stages = [_]types.Stage{.{
+        .kind = .metadata,
+        .content = "keywords: vtable, allocator, arena",
+        .source = "src/types.zig",
+        .line = null,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "## References") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "vtable") != null);
+}
+
+test "parseSkillDocContent: YAML front matter with description returns description" {
+    const allocator = std.testing.allocator;
+    const content =
+        \\---
+        \\title: My Skill
+        \\description: Teaches you how to use vtables.
+        \\---
+        \\
+        \\Body paragraph here.
+    ;
+    const result = try parseSkillDocContent(allocator, content);
+    defer if (result) |r| allocator.free(r);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("Teaches you how to use vtables.", result.?);
+}
+
+test "parseSkillDocContent: YAML front matter without description returns first non-empty body line" {
+    const allocator = std.testing.allocator;
+    const content =
+        \\---
+        \\title: My Skill
+        \\author: someone
+        \\---
+        \\
+        \\First real paragraph.
+    ;
+    const result = try parseSkillDocContent(allocator, content);
+    defer if (result) |r| allocator.free(r);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("First real paragraph.", result.?);
+}
+
+test "parseSkillDocContent: no front matter returns first paragraph up to blank line" {
+    const allocator = std.testing.allocator;
+    const content = "First paragraph text.\n\nSecond paragraph here.";
+    const result = try parseSkillDocContent(allocator, content);
+    defer if (result) |r| allocator.free(r);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("First paragraph text.", result.?);
+}

@@ -98,7 +98,7 @@ pub const ProjectConfig = struct {
 
     /// Absolute path to the capabilities tree ({guidance_root}/capabilities by default).
     /// Each subdirectory may contain a CAPABILITY.md file that is indexed
-    /// into the LanceDB capabilities table for semantic search.
+    /// into the SQLite capabilities table for semantic search.
     capabilities_dir: []const u8,
 
     /// Source directories to search, relative to the project root.
@@ -414,7 +414,7 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
     try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
     try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
     try w.writeAll(
-        \\- `.guidance.db` — LanceDB vector search database
+        \\- `.guidance.db` — SQLite vector search database
         \\- `STRUCTURE.md` — Project structure documentation (auto-generated)
         \\
         \\## RALPH Loop
@@ -960,4 +960,3 @@ test "isThinkingModelRef: bare model ref (no provider prefix) — not treated as
     // match "deepseek-r1:7b", so this correctly returns false.
     try std.testing.expect(!cfg.isThinkingModelRef("deepseek-r1:7b"));
 }
-

@@ -1,6 +1,6 @@
 # guidance
 
-A Zig-native, deterministic AST-guided LanceDB vector search database generator for
+A Zig-native, deterministic AST-guided SQLite vector search database generator for
 AI-assisted codebase navigation. It analyzes source files (Zig, Python) via AST,
 generates structured JSON metadata in `.guidance/src/`, and compiles them
 into `.guidance.db` for fast, token-efficient `make explain` queries — optimized
@@ -147,8 +147,9 @@ completion.  This achieves thread safety without a borrow checker.
   numbers, and comments with zero ambiguity.
 - **Incremental sync**: SHA-256 `match_hash` comparison enables skip-if-unchanged
   behavior — only regenerate descriptions when the API contract changes.
-- **LanceDB vector search**: Compiles all guidance JSON into `.guidance.db` with
-  hybrid vector + keyword search for sub-100ms lookups across 1000+ modules.
+- **SQLite vector search**: Compiles all guidance JSON into `.guidance.db` with
+  in-process cosine similarity + keyword search for sub-100ms lookups across 1000+ modules.
+  Capability embeddings route natural-language queries to AST-level keyword searches.
 - **Semantic aliases**: Natural language queries like "database" expand to
   `GuidanceDb`, `syncDatabase`, `searchWithAliases` — bridging terminology gaps.
 - **Skill attachment**: Pattern detection (GoF, domain) auto-adds skill references

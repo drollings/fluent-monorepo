@@ -1,0 +1,143 @@
+{
+  "meta": {
+    "module": "src.guidance.scrub",
+    "source": "src/guidance/scrub.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/coral/main.zig", "src/guidance/main.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "isSyntheticComment",
+      "match_hash": "c77d79df2f20ec26deb56d66af4e13ef54eda66e7941b9b53a563e649b86efc0",
+      "signature": "fn isSyntheticComment(comment: []const u8) -> bool",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 12
+    },
+    {
+      "type": "fn_private",
+      "name": "endsWithIncomplete",
+      "match_hash": "4d4e401fe2ac3194c31cea08547691d5d5a87dd2394082562ad2800d49bf413b",
+      "signature": "fn endsWithIncomplete(s: []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 78
+    },
+    {
+      "type": "fn_private",
+      "name": "hasNumericTypeRef",
+      "match_hash": "37b84feab81c00171179748d250e0a1b5ab2b2b6086816114bbb788b09b0e571",
+      "signature": "fn hasNumericTypeRef(s: []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 92
+    },
+    {
+      "type": "fn_decl",
+      "name": "containsIgnoreCase",
+      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
+      "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 109
+    },
+    {
+      "type": "fn_decl",
+      "name": "scrubJsonValue",
+      "match_hash": "a07d2510cc914218efb8e77b5d7224f6767d5505b1c156cb371d49e7c2877e0d",
+      "signature": "fn scrubJsonValue(value: *std.json.Value) -> bool",
+      "params": [
+        { "name": "value", "type": "*std.json.Value" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 121
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: empty and whitespace",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: bracket-only skill tag",
+      "is_pub": false,
+      "line": 156
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: LLM thinking markers",
+      "is_pub": false,
+      "line": 162
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: ends with question mark",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: dangling preposition",
+      "is_pub": false,
+      "line": 176
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: hedged opening",
+      "is_pub": false,
+      "line": 183
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: directive leakage",
+      "is_pub": false,
+      "line": 190
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: numeric type ref noise",
+      "is_pub": false,
+      "line": 198
+    },
+    {
+      "type": "test_decl",
+      "name": "isSyntheticComment: real comments pass",
+      "is_pub": false,
+      "line": 204
+    },
+    {
+      "type": "test_decl",
+      "name": "scrubJsonValue: blanks synthetic module comment",
+      "is_pub": false,
+      "line": 213
+    },
+    {
+      "type": "test_decl",
+      "name": "scrubJsonValue: blanks synthetic member comment",
+      "is_pub": false,
+      "line": 227
+    },
+    {
+      "type": "test_decl",
+      "name": "scrubJsonValue: preserves real comment",
+      "is_pub": false,
+      "line": 242
+    }
+  ]
+}

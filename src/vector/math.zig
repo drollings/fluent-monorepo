@@ -1,6 +1,6 @@
 //! Vector operations — cosine similarity, normalization, hybrid merge.
 //!
-//! Used by guidance's LanceDB-style vector search backend.
+//! Used by guidance's SQLite vector search backend.
 
 const std = @import("std");
 
@@ -218,4 +218,3 @@ test "hybrid merge respects limit" {
     defer std.testing.allocator.free(merged);
     try std.testing.expectEqual(@as(usize, 5), merged.len);
 }
-

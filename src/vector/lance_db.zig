@@ -1,4 +1,4 @@
-//! guidance LanceDB-style vector search database.
+//! guidance SQLite vector search database (cosine similarity via BLOB storage).
 //!
 //! Produces `.guidance.db` — a SQLite database with vector embeddings for
 //! semantic (cosine similarity) search, powering the `explain` subcommand.
@@ -51,6 +51,12 @@ pub const KeywordMatch = struct {
 /// A module match result from keyword-to-module lookup.
 pub const ModuleMatch = struct {
     module_id: i64,
+    relevance: f32,
+};
+
+/// A keyword associated with a capability (from capability_keywords table).
+pub const CapabilityKeyword = struct {
+    keyword: []const u8,
     relevance: f32,
 };
 
@@ -199,9 +205,16 @@ pub fn syncDatabase(
 
     try db.syncFromDir(allocator, src_dir_path);
 
+    // Resolve capability-mapping.json path (lives alongside guidance_dir)
+    const mapping_path = try std.fmt.allocPrint(allocator, "{s}/capability-mapping.json", .{guidance_dir});
+    defer allocator.free(mapping_path);
+
     if (capabilities_dir) |cap_dir| {
-        db.syncCapabilities(allocator, cap_dir) catch |err| {
+        db.syncCapabilities(allocator, cap_dir, mapping_path) catch |err| {
             log.warn("capabilities sync failed: {s}", .{@errorName(err)});
+        };
+        db.syncCapabilityKeywords(allocator, mapping_path) catch |err| {
+            log.warn("capability_keywords sync failed: {s}", .{@errorName(err)});
         };
     }
 
@@ -524,6 +537,30 @@ pub const GuidanceDb = struct {
             if (detail_err) |msg| c.sqlite3_free(msg);
         }
 
+        // ── Step 2g: capability_keywords table ──
+        // Maps capability names to AST-level keywords for query-guided keyword search.
+        // Natural-language queries match capability embeddings; keywords are then used
+        // for direct SQL LIKE searches on enriched AST records.
+        {
+            const ck_sql =
+                \\CREATE TABLE IF NOT EXISTS capability_keywords (
+                \\  capability_name TEXT NOT NULL,
+                \\  keyword         TEXT NOT NULL,
+                \\  relevance       REAL DEFAULT 1.0,
+                \\  PRIMARY KEY (capability_name, keyword)
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_ck_cap ON capability_keywords(capability_name);
+                \\CREATE INDEX IF NOT EXISTS idx_ck_kw  ON capability_keywords(keyword);
+            ;
+            var ck_err: [*c]u8 = null;
+            const ck_rc = c.sqlite3_exec(self.db, ck_sql, null, null, &ck_err);
+            if (ck_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE capability_keywords", ck_rc, ck_err, self.db);
+                if (ck_err) |msg| c.sqlite3_free(msg);
+                return error.MigrationFailed;
+            }
+        }
+
         // ── Step 3: conditional index on embedding (requires column to exist) ──
         {
             var err_msg: [*c]u8 = null;
@@ -610,7 +647,15 @@ pub const GuidanceDb = struct {
     /// Walk `cap_dir` for `CAPABILITY.md` files and upsert them into the
     /// `capabilities` table.  Each capability is embedded as a single row
     /// using the frontmatter name + description + first 500 chars of content.
-    pub fn syncCapabilities(self: *Self, allocator: std.mem.Allocator, cap_dir: []const u8) !void {
+    /// Sync CAPABILITY.md files from cap_dir into the capabilities table.
+    /// mapping_path: optional path to capability-mapping.json; when provided, keywords
+    /// are injected into the embedding text so natural-language queries route to them.
+    pub fn syncCapabilities(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        cap_dir: []const u8,
+        mapping_path: ?[]const u8,
+    ) !void {
         var dir = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
                 log.info("capabilities dir not found: {s}", .{cap_dir});
@@ -619,6 +664,20 @@ pub const GuidanceDb = struct {
             return err;
         };
         defer dir.close();
+
+        // Pre-load capability keywords from mapping file for embedding enrichment.
+        // This is a best-effort load — missing file is not an error.
+        var mapping_arena = std.heap.ArenaAllocator.init(allocator);
+        defer mapping_arena.deinit();
+        const mapping_alloc = mapping_arena.allocator();
+
+        // Map: capability_name → [][]const u8 of keywords (owned by mapping_arena).
+        var kw_map: std.StringHashMapUnmanaged([]const []const u8) = .{};
+        defer kw_map.deinit(mapping_alloc);
+
+        if (mapping_path) |mp| {
+            loadCapabilityKeywordsMap(mapping_alloc, mp, &kw_map) catch {};
+        }
 
         var walker = try dir.walk(allocator);
         defer walker.deinit();
@@ -653,7 +712,11 @@ pub const GuidanceDb = struct {
             defer arena.deinit();
             const fa = arena.allocator();
 
-            self.indexCapability(fa, abs_path, mtime_sec) catch |err| {
+            // Derive capability name from directory stem for keyword lookup.
+            const cap_name = capabilityNameFromPath(abs_path);
+            const keywords: []const []const u8 = kw_map.get(cap_name) orelse &[_][]const u8{};
+
+            self.indexCapability(fa, abs_path, mtime_sec, keywords) catch |err| {
                 log.warn("indexCapability({s}): {s}", .{ abs_path, @errorName(err) });
                 continue;
             };
@@ -664,12 +727,20 @@ pub const GuidanceDb = struct {
     }
 
     /// Parse a CAPABILITY.md file and upsert it into the capabilities table.
-    fn indexCapability(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64) !void {
+    /// keywords: AST-level search terms from capability-mapping.json; injected into
+    /// the embedding text so NL queries route to the right keyword searches.
+    fn indexCapability(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        file_path: []const u8,
+        mtime: i64,
+        keywords: []const []const u8,
+    ) !void {
         const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 512 * 1024);
         defer allocator.free(content);
 
         // Parse YAML-ish frontmatter: ---\nname: ...\ndescription: ...\n---
-        var name: []const u8 = std.fs.path.stem(std.fs.path.dirname(file_path) orelse file_path);
+        var name: []const u8 = capabilityNameFromPath(file_path);
         var description: []const u8 = "";
         var body: []const u8 = content;
 
@@ -690,13 +761,41 @@ pub const GuidanceDb = struct {
             }
         }
 
-        // Build embedding text: description + first 500 chars of body
-        const body_excerpt = body[0..@min(500, body.len)];
-        const emb_text = try std.fmt.allocPrint(
-            allocator,
-            "capability {s}: {s}. {s}",
-            .{ name, description, body_excerpt },
-        );
+        // Build query-oriented embedding text.
+        // The embedding represents *the kinds of NL queries* that should match this
+        // capability, so that query → capability match → capability keywords → SQL search.
+        // Format: description. NL question variants. AST-level search terms.
+        var emb_buf: std.ArrayList(u8) = .{};
+        defer emb_buf.deinit(allocator);
+
+        try emb_buf.appendSlice(allocator, description);
+        if (description.len > 0) try emb_buf.appendSlice(allocator, ". ");
+        try emb_buf.appendSlice(allocator, "How does ");
+        try emb_buf.appendSlice(allocator, name);
+        try emb_buf.appendSlice(allocator, " work? What is ");
+        try emb_buf.appendSlice(allocator, name);
+        try emb_buf.appendSlice(allocator, "? Understanding ");
+        try emb_buf.appendSlice(allocator, name);
+        try emb_buf.appendSlice(allocator, " implementation.");
+
+        // Append keywords so both identifier and prose forms match.
+        if (keywords.len > 0) {
+            try emb_buf.appendSlice(allocator, " Search terms: ");
+            for (keywords, 0..) |kw, i| {
+                if (i > 0) try emb_buf.appendSlice(allocator, ", ");
+                try emb_buf.appendSlice(allocator, kw);
+            }
+            try emb_buf.append(allocator, '.');
+        }
+
+        // Append a short excerpt of the body for extra semantic signal.
+        const body_excerpt = body[0..@min(300, body.len)];
+        if (body_excerpt.len > 0) {
+            try emb_buf.append(allocator, ' ');
+            try emb_buf.appendSlice(allocator, body_excerpt);
+        }
+
+        const emb_text = try emb_buf.toOwnedSlice(allocator);
         defer allocator.free(emb_text);
 
         const emb = try self.getOrComputeEmbedding(allocator, emb_text);
@@ -729,6 +828,229 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_text(stmt, 7, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    // ── Capability-keyword methods ─────────────────────────────────
+
+    /// Sync capability_keywords table from capability-mapping.json.
+    /// Idempotent: existing rows are skipped via INSERT OR IGNORE.
+    pub fn syncCapabilityKeywords(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        mapping_path: []const u8,
+    ) !void {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const fa = arena.allocator();
+
+        var kw_map: std.StringHashMapUnmanaged([]const []const u8) = .{};
+        defer kw_map.deinit(fa);
+
+        loadCapabilityKeywordsMap(fa, mapping_path, &kw_map) catch return;
+
+        const sql = "INSERT OR IGNORE INTO capability_keywords(capability_name, keyword, relevance) VALUES (?1, ?2, ?3)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var inserted: usize = 0;
+        var it = kw_map.iterator();
+        while (it.next()) |entry| {
+            const cap_name = entry.key_ptr.*;
+            const keywords = entry.value_ptr.*;
+            for (keywords) |kw| {
+                _ = c.sqlite3_reset(stmt);
+                _ = c.sqlite3_bind_text(stmt, 1, cap_name.ptr, @intCast(cap_name.len), SQLITE_STATIC);
+                _ = c.sqlite3_bind_text(stmt, 2, kw.ptr, @intCast(kw.len), SQLITE_STATIC);
+                _ = c.sqlite3_bind_double(stmt, 3, 1.0);
+                _ = c.sqlite3_step(stmt);
+                inserted += 1;
+            }
+        }
+
+        if (inserted > 0) log.info("capability_keywords synced: {d} rows", .{inserted});
+    }
+
+    /// Find AST-level keywords associated with capabilities that are semantically
+    /// similar to `query_embedding`.  Returns an owned, deduplicated slice of
+    /// keyword strings (caller must free each string and the slice).
+    ///
+    /// Threshold: capabilities with cosine similarity below `threshold` are skipped.
+    /// max_capabilities: how many top capabilities to query (default: 3).
+    pub fn findCapabilityKeywordsForQuery(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_embedding: []const f32,
+        threshold: f32,
+        max_capabilities: usize,
+    ) ![][]const u8 {
+        // Step 1: scan capabilities table for similar embeddings.
+        const cap_sql = "SELECT name, embedding FROM capabilities WHERE embedding IS NOT NULL";
+        var cap_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, cap_sql, -1, &cap_stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc([]const u8, 0);
+        }
+        defer _ = c.sqlite3_finalize(cap_stmt);
+
+        const ScoredCap = struct { name: []const u8, score: f32 };
+        var scored: std.ArrayList(ScoredCap) = .{};
+        errdefer {
+            for (scored.items) |sc| allocator.free(sc.name);
+            scored.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(cap_stmt) == c.SQLITE_ROW) {
+            const cap_name = try dupeCol(cap_stmt.?, 0, allocator);
+            const emb_blob = c.sqlite3_column_blob(cap_stmt.?, 1);
+            const emb_len: usize = @intCast(c.sqlite3_column_bytes(cap_stmt.?, 1));
+            if (emb_blob == null or emb_len == 0) {
+                allocator.free(cap_name);
+                continue;
+            }
+            const bytes: []const u8 = @as([*]const u8, @ptrCast(emb_blob))[0..emb_len];
+            const stored_emb = vector.bytesToVec(allocator, bytes) catch {
+                allocator.free(cap_name);
+                continue;
+            };
+            defer allocator.free(stored_emb);
+
+            const sim = vector.cosineSimilarity(query_embedding, stored_emb);
+            if (sim >= threshold) {
+                try scored.append(allocator, .{ .name = cap_name, .score = sim });
+            } else {
+                allocator.free(cap_name);
+            }
+        }
+
+        // Sort by score descending and take top N.
+        std.sort.block(ScoredCap, scored.items, {}, struct {
+            fn lessThan(_: void, a: ScoredCap, b: ScoredCap) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
+
+        const take = @min(max_capabilities, scored.items.len);
+
+        // Step 2: for each matched capability, fetch its keywords.
+        var seen: std.StringHashMapUnmanaged(void) = .{};
+        defer {
+            var sit = seen.keyIterator();
+            while (sit.next()) |k| allocator.free(k.*);
+            seen.deinit(allocator);
+        }
+
+        var keywords: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (keywords.items) |kw| allocator.free(kw);
+            keywords.deinit(allocator);
+        }
+
+        const kw_sql = "SELECT keyword FROM capability_keywords WHERE capability_name = ?1 ORDER BY relevance DESC";
+        var kw_stmt: ?*c.sqlite3_stmt = null;
+        _ = c.sqlite3_prepare_v2(self.db, kw_sql, -1, &kw_stmt, null);
+        defer {
+            if (kw_stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+
+        for (0..take) |i| {
+            const cap_name = scored.items[i].name;
+            if (kw_stmt) |s| {
+                _ = c.sqlite3_reset(s);
+                _ = c.sqlite3_bind_text(s, 1, cap_name.ptr, @intCast(cap_name.len), SQLITE_STATIC);
+                while (c.sqlite3_step(s) == c.SQLITE_ROW) {
+                    const kw = try dupeCol(s, 0, allocator);
+                    if (seen.contains(kw)) {
+                        allocator.free(kw);
+                        continue;
+                    }
+                    const kw_lower = try std.ascii.allocLowerString(allocator, kw);
+                    allocator.free(kw);
+                    if (seen.contains(kw_lower)) {
+                        allocator.free(kw_lower);
+                        continue;
+                    }
+                    try seen.put(allocator, try allocator.dupe(u8, kw_lower), {});
+                    try keywords.append(allocator, kw_lower);
+                }
+            }
+        }
+
+        // Free unused capability names.
+        for (take..scored.items.len) |i| allocator.free(scored.items[i].name);
+        for (0..take) |i| allocator.free(scored.items[i].name);
+        scored.deinit(allocator);
+
+        return keywords.toOwnedSlice(allocator);
+    }
+
+    /// Return the names of capabilities that matched the query above threshold.
+    /// The query text is embedded (cached) and cosine-compared to capabilities.embedding.
+    /// Caller owns the returned slice and each name string; free with allocator.
+    /// Returns an empty slice when no embedder is configured or no capabilities match.
+    pub fn findMatchedCapabilityNamesForQuery(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        threshold: f32,
+        max_capabilities: usize,
+    ) ![][]const u8 {
+        const query_emb = try self.getOrComputeEmbedding(allocator, query_text);
+        defer if (query_emb) |e| allocator.free(e);
+        const emb = query_emb orelse return allocator.alloc([]const u8, 0);
+
+        const sql = "SELECT name, embedding FROM capabilities WHERE embedding IS NOT NULL";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc([]const u8, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        const ScoredCap = struct { name: []const u8, score: f32 };
+        var scored: std.ArrayList(ScoredCap) = .{};
+        defer {
+            for (scored.items) |sc| allocator.free(sc.name);
+            scored.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const cap_name = try dupeCol(stmt.?, 0, allocator);
+            const emb_blob = c.sqlite3_column_blob(stmt.?, 1);
+            const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 1));
+            if (emb_blob == null or emb_len == 0) {
+                allocator.free(cap_name);
+                continue;
+            }
+            const bytes: []const u8 = @as([*]const u8, @ptrCast(emb_blob))[0..emb_len];
+            const stored_emb = vector.bytesToVec(allocator, bytes) catch {
+                allocator.free(cap_name);
+                continue;
+            };
+            defer allocator.free(stored_emb);
+
+            const sim = vector.cosineSimilarity(emb, stored_emb);
+            if (sim >= threshold) {
+                try scored.append(allocator, .{ .name = cap_name, .score = sim });
+            } else {
+                allocator.free(cap_name);
+            }
+        }
+
+        std.sort.block(ScoredCap, scored.items, {}, struct {
+            fn lessThan(_: void, a: ScoredCap, b: ScoredCap) bool {
+                return a.score > b.score;
+            }
+        }.lessThan);
+
+        const take = @min(max_capabilities, scored.items.len);
+        var names: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (names.items) |n| allocator.free(n);
+            names.deinit(allocator);
+        }
+        for (0..take) |i| {
+            try names.append(allocator, try allocator.dupe(u8, scored.items[i].name));
+        }
+        return names.toOwnedSlice(allocator);
     }
 
     // ── Per-file helpers ───────────────────────────────────────────
@@ -1453,7 +1775,7 @@ pub const GuidanceDb = struct {
         defer if (query_emb) |e| allocator.free(e);
 
         if (query_emb) |emb| {
-            // Find similar alias keys using cosine similarity
+            // Phase 1a: Embedding-based alias key matching — expand query tokens.
             const similar_keys = self.findSimilarAliasKeys(allocator, emb, 0.75, 3) catch &[_][]const u8{};
             defer {
                 for (similar_keys) |k| allocator.free(k);
@@ -1473,6 +1795,19 @@ pub const GuidanceDb = struct {
                         }
                     }
                 }
+            }
+
+            // Phase 1b: Capability-guided keyword expansion.
+            // Match query embedding against capability embeddings; inject their
+            // AST-level keywords into the search expansion so that NL queries
+            // route to the correct identifiers in the enriched AST records.
+            const cap_keywords = self.findCapabilityKeywordsForQuery(allocator, emb, 0.45, 3) catch &[_][]const u8{};
+            defer {
+                for (cap_keywords) |kw| allocator.free(kw);
+                allocator.free(cap_keywords);
+            }
+            for (cap_keywords) |kw| {
+                try embedding_expansion.append(allocator, try allocator.dupe(u8, kw));
             }
         }
 
@@ -2659,6 +2994,51 @@ const ParsedDoc = struct {
     file_hash: ?[]const u8,
     members: []ParsedMember,
 };
+
+// ---------------------------------------------------------------------------
+// Capability helpers — module-level (no GuidanceDb state required)
+// ---------------------------------------------------------------------------
+
+/// Extract the capability name from an absolute CAPABILITY.md path.
+/// Example: ".guidance/capabilities/vector-search/CAPABILITY.md" → "vector-search"
+fn capabilityNameFromPath(file_path: []const u8) []const u8 {
+    const dir = std.fs.path.dirname(file_path) orelse return file_path;
+    return std.fs.path.basename(dir);
+}
+
+/// Load capability_keywords section from capability-mapping.json into map.
+/// All map keys and values are allocated on `alloc`.
+/// JSON structure: { "capability_keywords": { "cap-name": ["kw1","kw2",...] } }
+fn loadCapabilityKeywordsMap(
+    alloc: std.mem.Allocator,
+    mapping_path: []const u8,
+    map: *std.StringHashMapUnmanaged([]const []const u8),
+) !void {
+    const content = std.fs.cwd().readFileAlloc(alloc, mapping_path, 512 * 1024) catch return;
+
+    const Value = std.json.Value;
+    var parsed = try std.json.parseFromSlice(Value, alloc, content, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+
+    if (parsed.value != .object) return;
+    const ck_val = parsed.value.object.get("capability_keywords") orelse return;
+    if (ck_val != .object) return;
+
+    var it = ck_val.object.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* != .array) continue;
+        const arr = entry.value_ptr.*.array.items;
+
+        var kws: std.ArrayList([]const u8) = .{};
+        for (arr) |item| {
+            if (item == .string) {
+                try kws.append(alloc, try alloc.dupe(u8, item.string));
+            }
+        }
+        const key = try alloc.dupe(u8, entry.key_ptr.*);
+        try map.put(alloc, key, try kws.toOwnedSlice(alloc));
+    }
+}
 
 fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc {
     const Value = std.json.Value;

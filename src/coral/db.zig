@@ -2,7 +2,7 @@
 ///
 /// SQLite backend storing the LOD text pyramid, float embeddings, and graph
 /// edges using standard SQL and a recursive CTE for BFS graph traversal.
-/// Semantic search uses LanceDB-style cosine similarity over stored embeddings.
+/// Semantic search uses in-process cosine similarity over stored embeddings.
 ///
 /// Architecture:
 ///   §3.1 ContextNode — the universal semantic entity with LOD text pyramid

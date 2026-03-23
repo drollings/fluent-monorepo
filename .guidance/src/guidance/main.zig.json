@@ -11,90 +11,115 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "79a84de878011206b1588f74b4b7302ecff5de0e0368547925f543ae822bbbd0",
+      "match_hash": "a96cc6dfeb17808831d1342c6efe3dc448ff7ae5c02d70658ef6deda9a975691",
       "signature": "keyword_enum Command { ... }",
+      "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 66
+          "line": 68
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 67
+          "line": 69
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 68
+          "line": 70
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 69
+          "line": 71
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 70
+          "line": 72
         }
     ,    {
           "type": "enum_field",
           "name": "deps",
           "is_pub": false,
-          "line": 71
+          "line": 73
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 72
+          "line": 74
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 73
+          "line": 75
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 74
+          "line": 76
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 75
+          "line": 77
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 76
+          "line": 78
         }
     ,    {
           "type": "enum_field",
           "name": "@\"sync-comments\"",
           "is_pub": false,
-          "line": 77
+          "line": 79
         }
     ,    {
           "type": "enum_field",
           "name": "@\"migrate-comments\"",
           "is_pub": false,
-          "line": 78
+          "line": 80
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"map-capabilities\"",
+          "is_pub": false,
+          "line": 81
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "scrub",
+          "is_pub": false,
+          "line": 82
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "todo",
+          "is_pub": false,
+          "line": 83
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "diary",
+          "is_pub": false,
+          "line": 84
         }
       ],
-      "line": 65
+      "line": 67
     },
     {
       "type": "fn_decl",
@@ -102,8 +127,9 @@
       "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
       "signature": "fn main() -> void",
       "returns": "void",
+      "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 82
+      "line": 88
     },
     {
       "type": "fn_private",
@@ -112,13 +138,14 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 142
+      "line": 152
     },
     {
       "type": "struct",
       "name": "InitArgs",
       "match_hash": "0160b4cb9c32cc9317f5c8846e6b92c22b2eb5a324a9ef40e26d0aaaefdfc55e",
       "signature": "keyword_struct InitArgs { ... }",
+      "comment": "Manages initialization arguments for Zig's guidance system, owns state, ensures invariant correctness.",
       "is_pub": false,
       "members": [
         {
@@ -131,10 +158,10 @@
           ],
           "returns": "error{MissingValue}!InitArgs",
           "is_pub": false,
-          "line": 242
+          "line": 256
         }
       ],
-      "line": 238
+      "line": 252
     },
     {
       "type": "fn_private",
@@ -147,7 +174,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 261
+      "line": 275
     },
     {
       "type": "fn_private",
@@ -161,7 +188,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 365
+      "line": 379
     },
     {
       "type": "fn_private",
@@ -174,8 +201,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
+      "comment": "Split a unified diff into per-file chunks starting at each \"diff --git\" header.",
       "is_pub": false,
-      "line": 382
+      "line": 396
     },
     {
       "type": "fn_private",
@@ -186,8 +214,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extract the file path from \"diff --git a/<path> b/<path>\".",
       "is_pub": false,
-      "line": 398
+      "line": 412
     },
     {
       "type": "fn_private",
@@ -199,8 +228,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true for auto-generated guidance JSON files (not real code changes).\nUses guidance_dir (e.g. \".guidance\") to identify which paths to ignore.",
       "is_pub": false,
-      "line": 410
+      "line": 424
     },
     {
       "type": "fn_private",
@@ -212,14 +242,16 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[][2]u32",
+      "comment": "Parse `@@ -X,Y +A,B @@` hunk headers; returns owned [start, end) pairs in new-file coords.",
       "is_pub": false,
-      "line": 418
+      "line": 432
     },
     {
       "type": "struct",
       "name": "CommitMemberInfo",
       "match_hash": "6019dd5770b81fce562320627ed1bfaa2a1e0fe0f263c0416bae3310c49c08a6",
       "signature": "keyword_struct CommitMemberInfo { ... }",
+      "comment": "Tracks commit member metadata; managed by owner; ensures consistent state across operations.",
       "is_pub": false,
       "members": [
         {
@@ -233,10 +265,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 446
+          "line": 460
         }
       ],
-      "line": 440
+      "line": 454
     },
     {
       "type": "fn_private",
@@ -247,8 +279,9 @@
         { "name": "obj", "type": "std.json.ObjectMap" }
       ],
       "returns": "?u32",
+      "comment": "Extract a ?u32 line number from a JSON member object value (.line field).",
       "is_pub": false,
-      "line": 454
+      "line": 468
     },
     {
       "type": "fn_private",
@@ -261,8 +294,9 @@
         { "name": "context", "type": "u32" }
       ],
       "returns": "bool",
+      "comment": "Return true when `line` falls within any hunk range expanded by `context`.",
       "is_pub": false,
-      "line": 464
+      "line": 478
     },
     {
       "type": "fn_private",
@@ -277,8 +311,9 @@
         { "name": "out", "type": "*std.ArrayList(CommitMemberInfo)" }
       ],
       "returns": "void",
+      "comment": "Append a CommitMemberInfo to `out` when the JSON member object is valid and\nits line falls within `hunk_ranges` (or when hunk_ranges is empty).",
       "is_pub": false,
-      "line": 475
+      "line": 489
     },
     {
       "type": "fn_private",
@@ -292,8 +327,9 @@
         { "name": "hunk_ranges", "type": "[]const [2]u32" }
       ],
       "returns": "[]CommitMemberInfo",
+      "comment": "Load guidance JSON for rel_path and return members whose lines overlap hunk_ranges.",
       "is_pub": false,
-      "line": 502
+      "line": 516
     },
     {
       "type": "fn_private",
@@ -312,7 +348,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 541
+      "line": 555
     },
     {
       "type": "fn_private",
@@ -325,7 +361,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 727
+      "line": 741
     },
     {
       "type": "fn_private",
@@ -338,7 +374,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 737
+      "line": 751
     },
     {
       "type": "fn_private",
@@ -350,14 +386,16 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Read `models.commit` or `models.default` from guidance-config.json.\nReturns an owned slice; caller must free. Returns error when absent.",
       "is_pub": false,
-      "line": 924
+      "line": 983
     },
     {
       "type": "struct",
       "name": "GenArgs",
       "match_hash": "c76590c0b51a9616b54a84155ec5f9344dfdcb534d8c71ba31a7dd639912884d",
       "signature": "keyword_struct GenArgs { ... }",
+      "comment": "Manages configuration parameters for Zig compilation; owns struct state; mutable during compilation.",
       "is_pub": false,
       "members": [
         {
@@ -369,17 +407,19 @@
             { "name": "args", "type": "[]const []const u8" }
           ],
           "returns": "error{MissingValue}!GenArgs",
+          "comment": "Parse gen subcommand arguments. Returns error.MissingValue when a\nflag-with-value is the last argument (fail fast; do not silently drop).",
           "is_pub": false,
-          "line": 988
+          "line": 1047
         }
       ],
-      "line": 947
+      "line": 1006
     },
     {
       "type": "struct",
       "name": "ResolvedGenPaths",
       "match_hash": "a50226053159b5dd8d0fa5f1f7003b8ded8c16f9c7c06fb69319fe233edfbf32",
       "signature": "keyword_struct ResolvedGenPaths { ... }",
+      "comment": "Resolved absolute paths for a gen run. All fields are owned; call deinit().",
       "is_pub": false,
       "members": [
         {
@@ -393,10 +433,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1076
+          "line": 1135
         }
       ],
-      "line": 1071
+      "line": 1130
     },
     {
       "type": "fn_private",
@@ -409,8 +449,9 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "ResolvedGenPaths",
+      "comment": "Resolve workspace, json_dir, and db_path (→ .guidance.db) to absolute\npaths.  db_path is the SQLite vector database; it defaults to the value\nin guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.",
       "is_pub": false,
-      "line": 1086
+      "line": 1145
     },
     {
       "type": "fn_private",
@@ -424,8 +465,9 @@
         { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Wire up the LLM enhancer on a `CommentSyncProcessor`.\n\nAllocates an `Enhancer` on the heap (required because `CommentSyncProcessor`\nholds a `?*Enhancer` pointer).  The returned pointer must be freed with\n`teardownCspEnhancer` after the processor is done.",
       "is_pub": false,
-      "line": 1102
+      "line": 1161
     },
     {
       "type": "fn_private",
@@ -437,8 +479,9 @@
         { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Release the heap-allocated enhancer previously set by `setupCspEnhancer`.",
       "is_pub": false,
-      "line": 1158
+      "line": 1217
     },
     {
       "type": "fn_private",
@@ -452,8 +495,9 @@
         { "name": "processor", "type": "*sync_mod.SyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Wire up the LLM enhancer for automatic comment generation.\nModel selection: fast slot (if set) > default slot.\nUses resolveLlmConfigForThinking to ensure thinking models use /api/chat endpoint.\nLogs a warning and leaves processor.enhancer null if initialisation fails.",
       "is_pub": false,
-      "line": 1170
+      "line": 1229
     },
     {
       "type": "fn_private",
@@ -467,8 +511,9 @@
         { "name": "paths", "type": "ResolvedGenPaths" }
       ],
       "returns": "usize",
+      "comment": "Dispatch to single-file, explicit-scan, or full-workspace processing.\nFails fast and propagates the first error encountered.\nReturns the count of source files processed.",
       "is_pub": false,
-      "line": 1265
+      "line": 1324
     },
     {
       "type": "fn_private",
@@ -482,8 +527,9 @@
         { "name": "capabilities_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Returns true when `db_path` is newer than every dependency that `syncGuidanceDb`\nconsumes:\n  • every .json file under `json_dir/src/`\n  • `json_dir/semantic-aliases.json`\n  • `json_dir/capability-mapping.json`\n  • `json_dir/guidance-config.json`\n  • every file under `capabilities_dir` (when non-null)\n\nReturns false (→ sync needed) when the db is absent or any dep is newer.",
       "is_pub": false,
-      "line": 1310
+      "line": 1369
     },
     {
       "type": "fn_private",
@@ -498,8 +544,9 @@
         { "name": "verbose", "type": "bool" }
       ],
       "returns": "void",
+      "comment": "Sync .guidance.db (SQLite vector database with in-process cosine similarity).\nCreates an embedding provider from config and calls lance_db.syncDatabase.\nFailures are logged as warnings but do not abort the gen pipeline.",
       "is_pub": false,
-      "line": 1371
+      "line": 1430
     },
     {
       "type": "fn_private",
@@ -511,8 +558,9 @@
         { "name": "verbose", "type": "bool" }
       ],
       "returns": "void",
+      "comment": "Extract keywords from all guidance JSON files, rank by frequency, and generate\noptimized semantic aliases using LLM consolidation.\nNOTE: This preserves existing semantic-aliases.json if it exists.",
       "is_pub": false,
-      "line": 1434
+      "line": 1493
     },
     {
       "type": "fn_private",
@@ -525,7 +573,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1455
+      "line": 1514
     },
     {
       "type": "fn_private",
@@ -537,8 +585,9 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "void",
+      "comment": "Core gen implementation shared by `gen` and `check`.\n\nPipeline (per source file):\n  incremental check → test (once/language) → lint → fmt → guidance → touch JSON\n\nIncremental detection is always active: a file is skipped when its guidance\nJSON is at least as new as the source.  Pass `ga.force = true` to override.\nThe guidance JSON is always touched after successful processing so its mtime\nacts as the universal \"all phases passed\" marker across all languages.",
       "is_pub": false,
-      "line": 1472
+      "line": 1531
     },
     {
       "type": "fn_private",
@@ -551,7 +600,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1779
+      "line": 1838
     },
     {
       "type": "fn_private",
@@ -564,7 +613,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1860
+      "line": 1919
     },
     {
       "type": "fn_private",
@@ -577,7 +626,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1907
+      "line": 1966
     },
     {
       "type": "fn_private",
@@ -590,23 +639,25 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1939
+      "line": 1998
     },
     {
       "type": "struct",
       "name": "ExcerptEntry",
       "match_hash": "5dfacfdcd3c37ae2c97ab657ba39170612792e61a68e3af15ebf04c763eea4e4",
       "signature": "keyword_struct ExcerptEntry { ... }",
+      "comment": "Manages structured excerpt data with fixed-size buffers; owned by the module; ensures consistent state across operations.",
       "is_pub": false,
-      "line": 1964
+      "line": 2023
     },
     {
       "type": "struct",
       "name": "FileMatchItem",
       "match_hash": "23f4c35f666d8d1733d5bc6bd1a46ae8a310ee4ba0e02e7348956137e83daef3",
       "signature": "keyword_struct FileMatchItem { ... }",
+      "comment": "Manages file match items with ownership and invariants; ensures consistent state across operations.",
       "is_pub": false,
-      "line": 1971
+      "line": 2030
     },
     {
       "type": "fn_private",
@@ -618,11 +669,12 @@
         { "name": "cfg", "type": "*const config_mod.ProjectConfig" }
       ],
       "returns": "vector_mod.EmbeddingProvider",
+      "comment": "Create an embedding provider, falling back to NoopEmbedding when the\nconfigured provider fails to initialise.  The caller must call\n`embedder.deinit()` when done.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 1980
+      "line": 2039
     },
     {
       "type": "fn_private",
@@ -633,11 +685,12 @@
         { "name": "ea", "type": "ExplainArgs" }
       ],
       "returns": "llm.LlmConfig",
+      "comment": "Construct an LlmConfig from the parsed ExplainArgs.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 1998
+      "line": 2057
     },
     {
       "type": "fn_private",
@@ -651,44 +704,50 @@
         { "name": "explicit_api_url", "type": "?[]const u8" }
       ],
       "returns": "struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 }",
+      "comment": "Central control point for LLM configuration with thinking model support.\n\nIf model matches the thinking slot:\n  - Force Ollama /api/chat endpoint (required for think parameter)\n  - Set think = true\n\nReturns owned memory in resolved_url (caller must free).",
       "is_pub": false,
-      "line": 2009
+      "line": 2068
     },
     {
       "type": "enum",
       "name": "FilterMode",
       "match_hash": "b6e7f3c92b9a8ceefd9472c0ec9d6e132e54976671b224277d1288a7fb25a4f4",
       "signature": "keyword_enum FilterMode { ... }",
+      "comment": "Dispatch to single-file, explicit-scan, or full-workspace processing.\nWhether LLM relevance filtering should be applied on the staged path.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "auto",
+          "comment": "Auto-detect: apply LLM filter only for long queries (5+ words).",
           "is_pub": false,
-          "line": 2096
+          "line": 2155
         }
     ,    {
           "type": "enum_field",
           "name": "force",
+          "comment": "Always apply LLM filter (even for short queries).",
           "is_pub": false,
-          "line": 2098
+          "line": 2157
         }
     ,    {
           "type": "enum_field",
           "name": "skip",
+          "comment": "Never apply LLM filter (always fast path).",
           "is_pub": false,
-          "line": 2100
+          "line": 2159
         }
       ],
-      "line": 2094
+      "line": 2153
     },
     {
       "type": "struct",
       "name": "ExplainArgs",
       "match_hash": "d3681f77b57a6fa7eaa5b64d18ded251dc6ea83988c596902518a93d8f1406d6",
       "signature": "keyword_struct ExplainArgs { ... }",
+      "comment": "Describes argument handling in ExplainArgs, managing ownership and invariants for structured input.",
       "is_pub": false,
-      "line": 2104
+      "line": 2163
     },
     {
       "type": "fn_private",
@@ -699,8 +758,9 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when the query is \"short\" (fast path, no LLM filter).\nShort queries: 2 or fewer words, AND not ending with \"?\", AND not starting\nwith question words (if, how, where, when, does, why, what).",
       "is_pub": false,
-      "line": 2125
+      "line": 2184
     },
     {
       "type": "fn_private",
@@ -714,8 +774,9 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]SkillExcerpt",
+      "comment": "Phase A: Load skill excerpts for the top search result's JSON guidance file.\nReturns owned slice; caller must free each `.name` and `.excerpt`, then free the slice.",
       "is_pub": false,
-      "line": 2161
+      "line": 2220
     },
     {
       "type": "fn_private",
@@ -729,8 +790,9 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]ExcerptEntry",
+      "comment": "Phase B: Collect up to 3 source excerpts, preferring exact-name matches.\nReturns owned slice; caller must free each `.label` and `.code`, then free the slice.",
       "is_pub": false,
-      "line": 2199
+      "line": 2258
     },
     {
       "type": "fn_private",
@@ -744,8 +806,9 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]FileMatchItem",
+      "comment": "Phase C: Grep top result files for search-term matches.\nReturns owned slice; caller must free each `.lines`, then free the slice.",
       "is_pub": false,
-      "line": 2264
+      "line": 2323
     },
     {
       "type": "fn_private",
@@ -763,8 +826,9 @@
         { "name": "file_matches", "type": "[]const FileMatchItem" }
       ],
       "returns": "void",
+      "comment": "Phase E: Render the legacy explain output to stdout.",
       "is_pub": false,
-      "line": 2304
+      "line": 2363
     },
     {
       "type": "fn_private",
@@ -777,7 +841,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2414
+      "line": 2473
     },
     {
       "type": "fn_private",
@@ -789,8 +853,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Load `used_by` array from a guidance JSON file.\nReturns an owned slice of owned strings, or null on failure / empty.",
       "is_pub": false,
-      "line": 2659
+      "line": 2718
     },
     {
       "type": "fn_private",
@@ -802,8 +867,9 @@
         { "name": "terms", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `name` (case-insensitive) exactly equals any search term.",
       "is_pub": false,
-      "line": 2679
+      "line": 2738
     },
     {
       "type": "fn_private",
@@ -815,8 +881,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Load skills listed in a guidance JSON file as a newline-separated string.\nReturns an owned allocation or null if the file is absent or has no skills.",
       "is_pub": false,
-      "line": 2692
+      "line": 2751
     },
     {
       "type": "fn_private",
@@ -828,8 +895,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Load public non-test member names from a guidance JSON file.\nReturns an owned slice of owned strings, or null on failure.",
       "is_pub": false,
-      "line": 2728
+      "line": 2787
     },
     {
       "type": "fn_private",
@@ -843,8 +911,9 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Load the first paragraph (or `description:` front-matter value) of a SKILL.md.\nSearches `<guidance_dir>/skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.\nReturns an owned allocation or null if not found.",
       "is_pub": false,
-      "line": 2765
+      "line": 2824
     },
     {
       "type": "fn_private",
@@ -858,8 +927,9 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extract the source block starting at `start_line` (1-based).\nStops at the next col-0 top-level declaration or after MAX_LINES, whichever\ncomes first.  Then prunes trailing blank and comment-only lines.\nReturns an owned allocation; caller must free.",
       "is_pub": false,
-      "line": 2792
+      "line": 2851
     },
     {
       "type": "fn_private",
@@ -873,8 +943,9 @@
         { "name": "max_results", "type": "usize" }
       ],
       "returns": "[]usize",
+      "comment": "Grep a file for search terms (case-insensitive substring, skipping comment lines).\nReturns owned slice of matching line numbers (caller frees).",
       "is_pub": false,
-      "line": 2804
+      "line": 2863
     },
     {
       "type": "fn_private",
@@ -890,8 +961,9 @@
         { "name": "excerpts_in", "type": "[]const ExcerptEntry" }
       ],
       "returns": "?[]const u8",
+      "comment": "Build LLM synthesis: skill context + member index + excerpts → prompt → summary.\nStrips \"absence\" sentences.  Returns owned string or null on failure.",
       "is_pub": false,
-      "line": 2838
+      "line": 2897
     },
     {
       "type": "fn_private",
@@ -903,8 +975,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "?lance_db_mod.SemanticAliases",
+      "comment": "Load semantic aliases from the guidance directory.",
       "is_pub": false,
-      "line": 2934
+      "line": 2993
     },
     {
       "type": "fn_private",
@@ -917,8 +990,9 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Extract key technical terms from a long query using LLM.\nReturns owned slice of owned strings. Caller must free.",
       "is_pub": false,
-      "line": 2942
+      "line": 3001
     },
     {
       "type": "fn_private",
@@ -936,8 +1010,9 @@
         { "name": "ea", "type": "ExplainArgs" }
       ],
       "returns": "void",
+      "comment": "Full staged explain pipeline.  Called when `--staged` is active (default).\n\nPipeline:\n  Short query (≤3 words) or --no-llm or --filter=skip:\n    executeStaged() → formatStaged() → output\n  Long query (4+ words) with LLM:\n    executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output",
       "is_pub": false,
-      "line": 2985
+      "line": 3044
     },
     {
       "type": "fn_private",
@@ -953,8 +1028,9 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Write formatted staged output to stdout and flush.",
       "is_pub": false,
-      "line": 3168
+      "line": 3227
     },
     {
       "type": "fn_decl",
@@ -968,8 +1044,36 @@
         { "name": "src_abs", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extracts a JSON path from a Zig source file using an allocator and workspace parameters.",
       "is_pub": true,
-      "line": 3190
+      "line": 3249
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdMapCapabilities",
+      "match_hash": "81974bad8a210e497cfb836ef0fc15de1be601597a03238cc3a2376eb9283489",
+      "signature": "fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Map CAPABILITY.md files to source files by analysing AST JSON content.\nUpdates .guidance/capability-mapping.json with fresh keyword and source mappings.\nPreserves the \"mapping\" (file→capability) section; regenerates \"capability_keywords\".\n\nUsage: guidance map-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run]",
+      "is_pub": false,
+      "line": 3271
+    },
+    {
+      "type": "fn_private",
+      "name": "isCapabilityKeywordToken",
+      "match_hash": "aa337edc5674c996b574d340870e7b0f973889af37109c2fc45e3c26e5e01086",
+      "signature": "fn isCapabilityKeywordToken(tok: []const u8) -> bool",
+      "params": [
+        { "name": "tok", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Return true if `tok` is a plausible Zig/Python identifier keyword.\nAccepts: camelCase, PascalCase, snake_case, dotted.paths, but not\npunctuation-heavy strings or all-lowercase common words.",
+      "is_pub": false,
+      "line": 3471
     },
     {
       "type": "fn_private",
@@ -981,8 +1085,9 @@
         { "name": "argv", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Run an arbitrary command (full argv, no template substitution).\nReturns true on exit code 0.",
       "is_pub": false,
-      "line": 3205
+      "line": 3495
     },
     {
       "type": "fn_private",
@@ -995,8 +1100,9 @@
         { "name": "file_path", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Substitute `{file}` tokens in `argv_template` with `file_path`, then run\nthe resulting command via `runCommand`.\n\nReturns true on exit code 0, false otherwise.",
       "is_pub": false,
-      "line": 3219
+      "line": 3509
     },
     {
       "type": "fn_private",
@@ -1009,8 +1115,9 @@
         { "name": "exts", "type": "[]const []const u8" }
       ],
       "returns": "[][]const u8",
+      "comment": "Walk `dir_abs` recursively and collect all files whose extension matches\nany member of `exts` (e.g. `.{\".zig\"}`).\nReturns an owned slice of owned absolute paths; caller must free each and\nthen the slice.",
       "is_pub": false,
-      "line": 3236
+      "line": 3526
     },
     {
       "type": "fn_private",
@@ -1025,8 +1132,9 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "bool",
+      "comment": "Run the per-file pipeline for one built-in source file:\n  1. lint  (if configured and not skip_lint)\n  2. fmt   (if configured and not skip_fmt)\n  3. guidance  (AST → JSON via SyncProcessor)\n  4. touch JSON  (always — makes JSON mtime the universal \"all phases passed\" marker)\n\nFormatting runs AFTER lint so that:\n  - Semantic lint errors are caught before any file modification.\n  - The formatter normalises whitespace before the AST is parsed, ensuring\n    line numbers in the JSON are stable and accurate.\n\nReturns false when lint fails (caller should abort the batch).",
       "is_pub": false,
-      "line": 3279
+      "line": 3569
     },
     {
       "type": "fn_private",
@@ -1044,8 +1152,9 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "void",
+      "comment": "Run the full built-in pipeline over a set of source files that share the\nsame language group:\n  1. Test suite (once, if any file is stale relative to the test marker)\n  2. Per-file: lint → fmt → guidance → touch JSON\n\n`language` is a short tag (e.g. \"zig\") used for the test marker path.\n`stale_files` are the files that need processing (source newer than JSON).\n`all_files` are ALL source files for this language (used for test marker check).\n`guidance_root` is the absolute path to the guidance directory (e.g. .guidance).",
       "is_pub": false,
-      "line": 3342
+      "line": 3632
     },
     {
       "type": "fn_private",
@@ -1057,8 +1166,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance check` runs the complete RALPH loop:\n  test → lint → fmt → guidance (all languages) → structure → db\n\nIt is the recommended entry point for pre-commit hooks and CI.\nIncremental detection is always active: only stale files are processed.",
       "is_pub": false,
-      "line": 3407
+      "line": 3697
     },
     {
       "type": "fn_decl",
@@ -1070,8 +1180,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[][2]u32",
+      "comment": "Converts a C string into a slice of two u32 values representing public range ranges.",
       "is_pub": true,
-      "line": 3464
+      "line": 3754
     },
     {
       "type": "fn_decl",
@@ -1085,8 +1196,9 @@
         { "name": "hunk_ranges", "type": "[]const [2]u32" }
       ],
       "returns": "[]CommitMemberInfo",
+      "comment": "Loads updated member information from a Zig file using an allocator and return a slice of member details.",
       "is_pub": true,
-      "line": 3469
+      "line": 3759
     },
     {
       "type": "fn_decl",
@@ -1098,8 +1210,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a chunk should be ignored based on guidance data.",
       "is_pub": true,
-      "line": 3474
+      "line": 3764
     },
     {
       "type": "fn_decl",
@@ -1110,8 +1223,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Converts a byte slice into a public file path string.",
       "is_pub": true,
-      "line": 3479
+      "line": 3769
     },
     {
       "type": "fn_decl",
@@ -1124,8 +1238,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
+      "comment": "Splits a diff array by file-pub key, returning an allocated slice.",
       "is_pub": true,
-      "line": 3484
+      "line": 3774
     },
     {
       "type": "fn_decl",
@@ -1137,8 +1252,9 @@
         { "name": "terms", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a list of name bytes exactly matches a list of term bytes, returning true or false.",
       "is_pub": true,
-      "line": 3489
+      "line": 3779
     },
     {
       "type": "fn_decl",
@@ -1150,8 +1266,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Loads skill data from a JSON path into a Zig array of bytes.",
       "is_pub": true,
-      "line": 3494
+      "line": 3784
     },
     {
       "type": "fn_decl",
@@ -1163,8 +1280,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Loads used data from a JSON path into a Zig array of arrays of bytes.",
       "is_pub": true,
-      "line": 3499
+      "line": 3789
     },
     {
       "type": "fn_decl",
@@ -1176,8 +1294,9 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Loads public member names from a JSON path into a Zig array of arrays.",
       "is_pub": true,
-      "line": 3504
+      "line": 3794
     },
     {
       "type": "fn_decl",
@@ -1191,8 +1310,9 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Loads a skill parameter pack into a Zig slice, handling allocation and data parsing.",
       "is_pub": true,
-      "line": 3509
+      "line": 3799
     },
     {
       "type": "fn_decl",
@@ -1206,8 +1326,9 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extracts and explains a specified excerpt from a Zig source file, returning its contents.",
       "is_pub": true,
-      "line": 3514
+      "line": 3804
     },
     {
       "type": "fn_decl",
@@ -1221,8 +1342,9 @@
         { "name": "max_results", "type": "usize" }
       ],
       "returns": "[]usize",
+      "comment": "Analyzes a file path and returns matching result indices.",
       "is_pub": true,
-      "line": 3519
+      "line": 3809
     },
     {
       "type": "fn_decl",
@@ -1233,8 +1355,9 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a query string is short enough for a public query, returning true or false.",
       "is_pub": true,
-      "line": 3524
+      "line": 3814
     },
     {
       "type": "fn_private",
@@ -1247,15 +1370,16 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3532
+      "line": 3822
     },
     {
       "type": "struct",
       "name": "TestQuery",
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
+      "comment": "Represents a query structure for testing; managed centrally, immutable by default.",
       "is_pub": false,
-      "line": 3644
+      "line": 3934
     },
     {
       "type": "fn_private",
@@ -1268,7 +1392,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3652
+      "line": 3942
     },
     {
       "type": "fn_private",
@@ -1279,8 +1403,9 @@
         { "name": "line", "type": "[]const u8" }
       ],
       "returns": "?u8",
+      "comment": "Parse a 0-10 score from an LLM evaluation response line of the form:\n\"Label: <digits>[/10]\" — also handles markdown decorations like \"**\", \"-\".\nReturns null when no score digit can be extracted after the first colon.",
       "is_pub": false,
-      "line": 3987
+      "line": 4277
     },
     {
       "type": "fn_private",
@@ -1292,8 +1417,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "[]TestQuery",
+      "comment": "Generate test queries from module-level comments in guidance JSON files.",
       "is_pub": false,
-      "line": 4001
+      "line": 4291
     },
     {
       "type": "fn_private",
@@ -1306,7 +1432,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 4079
+      "line": 4369
     },
     {
       "type": "fn_private",
@@ -1319,7 +1445,62 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 4249
+      "line": 4539
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdScrub",
+      "match_hash": "e0474c2e9be37c217431cc84279c2821c457c832037241c94f60511d638a6769",
+      "signature": "fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Walk .guidance/src/**/*.json and blank any synthetic comments in-place.\nUsage: guidance scrub [--guidance-dir DIR] [--dry-run]",
+      "is_pub": false,
+      "line": 4701
+    },
+    {
+      "type": "fn_private",
+      "name": "scrubCount",
+      "match_hash": "e9f9089fa7ed51517f244ba5d690364683ad30ad937fc9506a238b1085f7786a",
+      "signature": "fn scrubCount(value: *std.json.Value) -> usize",
+      "params": [
+        { "name": "value", "type": "*std.json.Value" }
+      ],
+      "returns": "usize",
+      "comment": "Count and scrub synthetic comments in a Value tree; returns count blanked.",
+      "is_pub": false,
+      "line": 4797
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdTodo",
+      "match_hash": "4df5f69ded4008c52e9b96601bb67f7a2564874d1334c4fb118f2e8f2839828a",
+      "signature": "fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Dispatch to todo subcommands.\nUsage: guidance todo <new|triage|checklist|status|list|abandon> [args...]",
+      "is_pub": false,
+      "line": 4824
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdDiary",
+      "match_hash": "f0763cb6fb2391953d50caee9329b7c68436fe05ccc13704d46cdbbe9ab84cb8",
+      "signature": "fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "Append a timestamped entry to the current work item's DIARY.md.\nUsage: guidance diary \"<message>\"",
+      "is_pub": false,
+      "line": 4888
     }
   ]
 }
