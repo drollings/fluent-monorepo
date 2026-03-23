@@ -39,50 +39,6 @@ Then you you must read
 │   └── guidance-py
 ├── doc
 │   ├── coral
-│   │   ├── Legacy
-│   │   │   ├── CoralContext
-│   │   │   │   ├── CoralContext_Zig_BinaryBlock.md
-│   │   │   │   ├── CoralContext_Zig_ContextNode_Embedding.md
-│   │   │   │   ├── CoralContext_Zig_DatasetIngestion.md
-│   │   │   │   ├── CoralContext_Zig_LEANN.md
-│   │   │   │   ├── CoralContext_Zig_Legacy1.md
-│   │   │   │   ├── CoralContext_Zig_Milestone1.md
-│   │   │   │   ├── CoralContext_Zig_Milestone2.md
-│   │   │   │   ├── CoralContext_Zig_Milestone3.md
-│   │   │   │   ├── CoralContext_Zig_Milestone4.md
-│   │   │   │   ├── CoralContext_Zig_Milestone5.md
-│   │   │   │   ├── CoralContext_Zig_ToolCategories.md
-│   │   │   │   └── CoralContext_Zig_ToolDevelopment.md
-│   │   │   ├── coral-context-implementation-stages-python.md
-│   │   │   ├── coral-context-overview-2026.md
-│   │   │   ├── Gemini3-PriorSpecsAdapted.md
-│   │   │   ├── legacy-aliases.json
-│   │   │   ├── MAKEFILE_GUIDANCE.md
-│   │   │   ├── REPORT_WORLDCORE.md
-│   │   │   ├── ROADMAP_EXPLAIN_ENHANCE.md
-│   │   │   ├── ROADMAP_EXPLAIN_ENHANCE_CHECKLIST.md
-│   │   │   ├── ROADMAP_NEW_EXPLAIN.md
-│   │   │   ├── ROADMAP_NEW_EXPLAIN_CHECKLIST.md
-│   │   │   ├── TEST_EXPLAIN.md
-│   │   │   ├── TEST_EXPLAIN_RESULTS.md
-│   │   │   ├── TODO_COMMON.md
-│   │   │   ├── TODO_CONCISION.md
-│   │   │   ├── TODO_CONCISION_CHECKLIST.md
-│   │   │   ├── TODO_EXPLORE.md
-│   │   │   ├── TODO_EXPLORE_CHECKLIST.md
-│   │   │   ├── TODO_REFLECTION.md
-│   │   │   ├── TODO_YAGO.md
-│   │   │   ├── TODO_YAGO_CHECKLIST.md
-│   │   │   ├── unifiedprompt2.md
-│   │   │   ├── YAGO-to-property.md
-│   │   │   └── zig-reflection.md
-│   │   ├── proposals
-│   │   │   ├── CORAL_CONTEXT_BITOPS.md
-│   │   │   ├── CORAL_CONTEXT_DECORATORS.md
-│   │   │   ├── CORAL_CONTEXT_DYAMAKE.md
-│   │   │   ├── CORAL_CONTEXT_FLUENT.md
-│   │   │   ├── CORAL_CONTEXT_REASONING.md
-│   │   │   └── VOICE_NOTE_CORAL.md
 │   │   ├── CHANGELOG.md
 │   │   ├── DETAILS.md
 │   │   ├── OVERVIEW.md
@@ -242,9 +198,6 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
-├── GEMINI_FLUENT_WVR_STANDARD_ADDITIONS.md
-├── GLM_FLUENT_GUIDANCE_ASSESSMENT.md
-├── GLM_REVIEW_FLUENT_WVR_STANDARD_ADDITIONS.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
@@ -253,13 +206,5 @@ Then you you must read
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
-├── ROADMAP_MONOREPO_MARCH.md
-├── ROADMAP_MONOREPO_MARCH_CHECKLIST.md
-├── STRUCTURE.md
-├── TEST_EXPLAIN_PROMPT.md
-├── TODO.md
-├── TODO_GUIDANCE_SECONDBRAIN.md
-├── TODO_GUIDANCE_SECONDBRAIN_CHECKLIST.md
-├── TODO_NEW_COMMENTS.md
-└── TODO_NEW_COMMENTS_CHECKLIST.md
+└── STRUCTURE.md
 ```

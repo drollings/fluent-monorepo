@@ -19,7 +19,126 @@ into Zig with ease of extensibility into other languages.
 
 It is released under a dual GPL/Commercial license. See below.
 
-## What it does
+## The starting point: deterministic-first AI-enhanced code navigation
+
+This codebase is a monorepo that begins with `guidance`, its own lightweight
+tool for human or AI code navigation and subagent workflows.
+
+Typical agentic codebases outsource code navigation to external tools.  This
+one builds it in, with the AST as the authority and the LLM as an optional
+enhancement.  Starting with `guidance`, it differs from typical agentic
+AI-native codebases in several fundamental ways:
+
+1. Determinism-First Philosophy
+- AST parsing produces ground truth; LLM enhancement is strictly additive, never authoritative
+- The .guidance/src/*.json files are canonical—everything else (STRUCTURE.md, query results) is derived
+- Typical AI-native codebases treat LLM output as primary; here it's cached metadata
+2. Documentation as Cached Computation
+- Uses match_hash (SHA-256 of signatures) for surgical incremental updates
+- LLM-generated comments are stored, validated, and scrubbed for quality
+- Typical: LLM re-generates context each session; here: idempotent, reusable artifacts
+3. Human-in-the-Loop by Design
+- RALPH loop: Discover → Understand → Decide → Implement → Verify
+- Agent must read source files, validate skill applicability before acting
+- Typical: agents act autonomously; here: structured handoffs with verification gates
+4. Inbox Pattern for Knowledge Capture
+- .guidance/.doc/inbox/ captures insights as they emerge during development
+- Knowledge flows from unstructured bullets → structured skills
+- Typical: knowledge lost between sessions; here: accumulated and upcycled
+5. Skill-Based Context Linking
+- Files reference skills (e.g., gof-patterns, zig-current) that must be read
+- Pattern detection auto-attaches relevant skill references
+- Typical: agent guesses patterns; here: explicit skill declarations
+6. Multi-Modal Query System
+- guidance explain combines AST data, cached comments, inbox bullets, and optional LLM synthesis
+- Short queries (≤4 words) use fast path without LLM; longer queries invoke LLM filtering
+- Typical: single-mode search; here: hybrid keyword + semantic + structured
+
+## How This Codebase Differs from a Typical Agentic AI-Native Codebase
+
+Most agentic codebases are Python glue layers over LLM APIs, with
+determinism as an afterthought.  This codebase treats the LLM as a fallback
+compiler for unstructured data, and builds deterministic, auditable,
+edge-deployable intelligence in systems-level Zig — with the codebase
+navigation infrastructure itself treated as a first-class component of the
+AI development loop.
+
+The extended codebase beyond `guidance` is built on these patterns:
+
+1. Deterministic-First, LLM-Last Execution Model
+
+A typical agentic stack (LangChain, AutoGPT, CrewAI) routes every query through an LLM for reasoning. Coral Context
+inverts this completely:
+
+Typical:  Query → LLM → Response         (always probabilistic, always expensive)
+
+Coral:    Query → DAG bitmask resolution  (sub-100ms, zero cost)
+               ↓ (miss) Local small model  (hybrid)
+               ↓ (miss) Frontier LLM       (last resort, result cached as a new DAG node)
+
+The expensive probabilistic step becomes a one-time cost. Each novel solution compiles into a permanent DAG
+capability.
+
+2. Written in Zig, Not Python
+
+Most agentic frameworks are Python. Zig is a systems language with:
+- No garbage collector, no runtime, explicit arena allocation
+- Sub-50MB binary, <500MB RAM — targets Raspberry Pi
+- Zero-cost abstractions, @popCount-accelerated bitmask matching
+
+This is a fundamental architectural constraint that shapes every subsystem.
+
+3. No External Vector DB
+
+Inspired by NullClaw, guidance and Coral Context eschew Pinecone, Chroma, or
+Weaviate.  They embed f32 vectors as SQLite BLOBs and computes cosine
+similarity in-process in Zig.  The entire knowledge base is a single
+vendored SQLite file — no separate server, no network hop.
+
+4. Bitwise DAG Traversal Replaces Prompt Engineering
+
+Capabilities are DynamicBitSet trait masks.  Dependency resolution is
+hardware-accelerated @popCount over bitmask intersection — Kahn's algorithm,
+not a chain-of-thought prompt.  The logic is encoded explicitly in the
+graph, not inferred from an LLM every time.
+
+5. WASM Sandboxing for LLM-Generated Tools
+
+Dynamically generated tools (including those emitted by a frontier LLM)
+compile to WebAssembly and run inside Extism sandboxes.  IPC across the
+boundary is binary-only (extern struct align(1), FlatBuffers-style offsets)
+— JSON parsing is explicitly forbidden inside the perimeter.  This prevents
+injection attacks and memory leaks from untrusted code.
+
+6. Reflection Layer as Single Schema Source of Truth
+
+All access paths — TUI editor, WASM binary IPC, SQLite hydration, role-based
+permission enforcement — derive from one comptime-generated Accessor table.
+There is no schema drift possible between serialization formats because they
+are all the same table.
+
+7. LOD Context Packing Instead of Naive Context Stuffing
+
+ContextNodes exist at six detail levels (full text → 800-char summary →
+240-char brief → 80-char snippet → name → keywords).  Context windows are
+packed by graph distance: closer nodes get higher LOD, distant nodes get
+snippets.  This replaces the common approach of shoving raw chunks into a
+context window.
+
+8. Neurosymbolic Ontology (YAGO 4.5)
+
+The type hierarchy enables duck-typing for capabilities: a tool built for
+"Person" automatically works for "Scientist" through subsumption inference.
+This is symbolic AI layered under the neural component — not just
+retrieval-augmented generation.
+
+9. Actor-Model Concurrency with Arena Isolation
+
+The QueueReactor pattern: each task gets its own ArenaAllocator.  No shared
+mutable state, no data races, no GC.  The arena is freed atomically on task
+completion.  This achieves thread safety without a borrow checker.
+
+---
 
 ### Core Pipeline
 
