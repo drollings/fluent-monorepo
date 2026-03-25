@@ -23,6 +23,13 @@ const vector_mod = @import("vector");
 /// Global verbose flag - controls debug log output
 var verbose_mode: bool = false;
 
+/// Print a step-progress line to stdout unconditionally (visible without --verbose).
+fn stepPrint(comptime fmt: []const u8, args: anytype) void {
+    var buf: [512]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    std.fs.File.stdout().writeAll(msg) catch {};
+}
+
 /// Custom log implementation - filters debug messages based on verbose flag
 pub const std_options: std.Options = .{
     .logFn = struct {
@@ -1458,9 +1465,8 @@ fn syncGuidanceDb(
     };
     defer embedder.deinit();
 
-    if (verbose) {
-        std.debug.print("gen: syncing guidance.db to {s} (embedder={s})\n", .{ guidance_db_path, embedder.getName() });
-    }
+    stepPrint("gen: guidance.db ({s})\n", .{embedder.getName()});
+    if (verbose) std.debug.print("gen: syncing guidance.db to {s}\n", .{guidance_db_path});
 
     // cfg.capabilities_dir is now an absolute path (resolved in config loader).
     const cap_dir_abs: ?[]const u8 = blk: {
@@ -1733,12 +1739,10 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
 
         if (stale.items.len > 0) {
-            if (ga.verbose) std.debug.print("gen: {d}/{d} built-in file(s) stale\n", .{
-                stale.items.len, all_builtin.items.len,
-            });
+            stepPrint("gen: {d}/{d} zig files stale\n", .{ stale.items.len, all_builtin.items.len });
             try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga);
         } else {
-            if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{all_builtin.items.len});
+            stepPrint("gen: all {d} zig files up to date\n", .{all_builtin.items.len});
         }
     }
 
@@ -3658,7 +3662,7 @@ fn runBuiltinLanguagePipeline(
             if (can_skip) {
                 if (ga.verbose) std.debug.print("test:     {s} skipped (test_passed marker is fresh)\n", .{language});
             } else {
-                if (ga.verbose) std.debug.print("test:     {s} ({d} file(s) changed)\n", .{ language, stale_files.len });
+                stepPrint("test: {s} ({d} changed)\n", .{ language, stale_files.len });
                 const ok = try runCommand(allocator, argv);
                 if (!ok) {
                     std.debug.print("error: test suite failed for language '{s}'\n", .{language});
@@ -3668,7 +3672,7 @@ fn runBuiltinLanguagePipeline(
                 marker_mod.touchTestMarker(marker_path) catch |err| {
                     std.debug.print("warning: could not create test_passed marker: {s}\n", .{@errorName(err)});
                 };
-                if (ga.verbose) std.debug.print("test:     passed\n", .{});
+                stepPrint("test: passed\n", .{});
             }
         } else {
             if (ga.verbose) std.debug.print("test:     skipped (no test command for {s})\n", .{language});
@@ -3740,10 +3744,10 @@ fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
         gen.generate() catch |err| {
             std.debug.print("warning: structure update failed: {s}\n", .{@errorName(err)});
         };
-        if (ga.verbose) std.debug.print("check:    STRUCTURE.md updated\n", .{});
+        stepPrint("check: STRUCTURE.md\n", .{});
     }
 
-    if (ga.verbose) std.debug.print("check:    done\n", .{});
+    stepPrint("check: done\n", .{});
 }
 
 // =============================================================================
@@ -4924,4 +4928,3 @@ fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     return todo_mod.cmdDiaryEntry(allocator, msg_buf.items, todo_dir, author);
 }
-

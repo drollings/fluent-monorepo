@@ -100,6 +100,10 @@ pub const jsonWriteEscaped = json_mod.writeEscaped;
 pub const jsonAppendEscaped = json_mod.appendEscaped;
 pub const parseJsonFile = json_mod.parseJsonFile;
 
+// ── Shared string ─────────────────────────────────────────────────────────────
+/// Reference-counted immutable string.  Use SharedString.Ref as the handle.
+pub const SharedString = @import("shared_string.zig").SharedString;
+
 // ── String utilities ──────────────────────────────────────────────────────────
 pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
 pub const isTestPath = str_mod.isTestPath;

@@ -75,9 +75,7 @@ pub const L1Cache = struct {
 
     fn freeRoutingResult(allocator: std.mem.Allocator, result: *RoutingResult) void {
         if (result.nodes.len > 0) {
-            for (result.nodes) |n| {
-                for (n.lod) |l| allocator.free(l);
-            }
+            for (result.nodes) |*n| @constCast(n).free(allocator);
             allocator.free(result.nodes);
         }
         if (result.tool_result.len > 0) {
@@ -93,11 +91,7 @@ pub const L1Cache = struct {
         if (result.nodes.len > 0) {
             const nodes_copy = try allocator.alloc(ContextNode, result.nodes.len);
             for (result.nodes, 0..) |n, i| {
-                var copy = n;
-                for (n.lod, 0..) |l, j| {
-                    copy.lod[j] = try allocator.dupe(u8, l);
-                }
-                nodes_copy[i] = copy;
+                nodes_copy[i] = try n.clone(allocator);
             }
             nodes = nodes_copy;
         }
@@ -319,20 +313,12 @@ pub const QueueReactor = struct {
         const nodes = try self.library.traverseFrom(graph_arena.allocator(), maybe_id.?, self.l3_max_depth);
         if (nodes.len == 0) return null;
 
-        // Copy nodes out of the arena into self.allocator so caller can own them
+        // Copy nodes out of the arena into self.allocator so caller can own them.
+        // clone() shares lod[0] via SharedString ref and dupes owned lod[1..5].
         const owned = try self.allocator.alloc(ContextNode, nodes.len);
         errdefer self.allocator.free(owned);
         for (nodes, 0..) |src_node, i| {
-            var copy = src_node;
-            // Re-dupe each owned LOD string from the arena into self.allocator
-            copy.lod_owned = 0;
-            for (src_node.lod, 0..) |lod_str, j| {
-                if (src_node.lod_owned & (@as(u8, 1) << @intCast(j)) != 0) {
-                    copy.lod[j] = try self.allocator.dupe(u8, lod_str);
-                    copy.lod_owned |= @as(u8, 1) << @intCast(j);
-                }
-            }
-            owned[i] = copy;
+            owned[i] = try src_node.clone(self.allocator);
         }
         return owned;
     }
@@ -476,19 +462,13 @@ pub const QueueReactor = struct {
         @memcpy(&id_bytes, hash_bytes[0..8]);
         const solution_id: i64 = @bitCast(id_bytes);
 
-        const node = try ContextNode.init(
+        var node = try ContextNode.init(
             solution_id,
             query,
             summary_buf.items,
             self.allocator,
         );
-        defer {
-            // ContextNode.init allocates lod[0] and lod[4] (lod_owned bitmask).
-            const n = node;
-            for (0..n.lod.len) |i| {
-                if ((n.lod_owned >> @intCast(i)) & 1 != 0) self.allocator.free(n.lod[i]);
-            }
-        }
+        defer node.free(self.allocator);
 
         // Best-effort insert — ignore duplicate key errors.
         self.library.insertNode(node) catch |err| {
@@ -658,8 +638,3 @@ test "Library.traverseFrom: returns root node" {
     try testing.expect(nodes.len >= 1);
     try testing.expectEqual(@as(i64, 7), nodes[0].id);
 }
-
-
-
-
-

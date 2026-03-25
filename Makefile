@@ -184,10 +184,6 @@ fmt: ## Format all Zig source files
 .PHONY: guidance
 guidance: $(TARGET_BIN) ## Build guidance binary
 
-.PHONY: test
-test: ## Run all Zig unit tests
-	$(Q)zig build test --summary all
-
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md ## Run all Zig unit tests
 

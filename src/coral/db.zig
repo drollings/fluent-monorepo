@@ -22,6 +22,7 @@
 const std = @import("std");
 pub const schema = @import("schema.zig");
 const reflection = @import("common").reflection;
+pub const SharedString = @import("common").SharedString;
 
 const c = @cImport({
     @cInclude("sqlite3.h");
@@ -40,17 +41,14 @@ pub const NodeId = i64;
 // §3.1 ContextNode — universal semantic entity
 // ---------------------------------------------------------------------------
 
-/// ContextNode — the universal semantic data structure.
-/// lod[0]: full description (max detail)
-/// lod[1]: summary (condensed but comprehensive)
-/// lod[2]: brief (concise key points)
-/// lod[3]: tiny (single sentence or key phrase)
-/// lod[4]: name (entity name or identifier)
-/// lod[5]: minimal (abbreviation or alias)
+/// Manages context nodes for Zig's database layer, owns state, ensures consistent initialization/deinit, not thread-safe.
 pub const ContextNode = struct {
     id: i64,
+    /// Ref-counted backing store for lod[0].  Non-null for nodes created via
+    /// init() or fetched from the DB.  lod_owned bit 0 must always be clear.
+    source: ?SharedString.Ref = null,
     lod: [schema.LOD_COUNT][]const u8,
-    /// Bitmask: bit i is set when lod[i] is allocator-owned (must be freed).
+    /// Bitmask: bit i set → lod[i] is allocator-owned.  Bit 0 always clear.
     lod_owned: u8 = 0,
     embedding: []const f32,
     valid_from: f64,
@@ -58,23 +56,25 @@ pub const ContextNode = struct {
     confidence: i32,
     provenance_id: i32,
 
-    /// Initialise with allocator-owned copies of `full_text` (lod0) and `name`
-    /// (lod4).  All other LOD slots are empty string literals (not allocated).
+    /// Create a new ContextNode with lod[0] = full_text (SharedString) and
+    /// lod[4] = name (allocator-owned copy).  All other LOD slots are "".
     pub fn init(id: i64, name: []const u8, full_text: []const u8, allocator: std.mem.Allocator) !ContextNode {
-        var node = ContextNode{
+        const src = try SharedString.Ref.init(allocator, full_text);
+        errdefer src.deinit(allocator);
+        const name_copy = try allocator.dupe(u8, name);
+        errdefer allocator.free(name_copy);
+
+        return ContextNode{
             .id = id,
-            .lod = [_][]const u8{ "", "", "", "", "", "" },
+            .source = src,
+            .lod = [_][]const u8{ src.slice(), "", "", "", name_copy, "" },
+            .lod_owned = 1 << 4, // only lod[4] (name) is allocator-owned
             .embedding = &[_]f32{},
             .valid_from = @floatFromInt(std.time.timestamp()),
             .valid_to = null,
             .confidence = 0,
             .provenance_id = 0,
         };
-        node.lod[0] = try allocator.dupe(u8, full_text);
-        errdefer allocator.free(node.lod[0]);
-        node.lod[4] = try allocator.dupe(u8, name);
-        node.lod_owned = (1 << 0) | (1 << 4);
-        return node;
     }
 
     pub fn getLod(self: *const ContextNode, level: u3) []const u8 {
@@ -82,12 +82,55 @@ pub const ContextNode = struct {
         return self.lod[level];
     }
 
+    /// Set LOD level 1–5.  Level 0 is read-only here; use setSource() instead.
     pub fn setLod(self: *ContextNode, level: u3, value: []const u8) void {
-        if (level < schema.LOD_COUNT) self.lod[level] = value;
+        if (level == 0 or level >= schema.LOD_COUNT) return;
+        self.lod[level] = value;
     }
 
-    /// Free allocator-owned LOD strings tracked by `lod_owned`.
+    /// Replace the shared source text (lod[0]).  Releases the old SharedString.
+    pub fn setSource(self: *ContextNode, allocator: std.mem.Allocator, text: []const u8) !void {
+        const new_src = try SharedString.Ref.init(allocator, text);
+        if (self.source) |old| old.deinit(allocator);
+        self.source = new_src;
+        self.lod[0] = new_src.slice();
+    }
+
+    /// Deep-copy this node.  lod[0] is shared via clone() (no byte copy);
+    /// lod[1..5] slots marked in lod_owned are duped into `allocator`.
+    pub fn clone(self: *const ContextNode, allocator: std.mem.Allocator) !ContextNode {
+        var copy = self.*;
+        copy.lod_owned = 0;
+
+        // lod[0]: clone the SharedString ref or dupe the raw slice.
+        if (self.source) |src| {
+            copy.source = src.clone();
+            copy.lod[0] = copy.source.?.slice();
+        } else if (self.lod_owned & 1 != 0) {
+            copy.lod[0] = try allocator.dupe(u8, self.lod[0]);
+            copy.lod_owned |= 1;
+        }
+
+        // lod[1..5]: dupe allocator-owned slots.
+        for (1..schema.LOD_COUNT) |i| {
+            if (self.lod_owned & (@as(u8, 1) << @intCast(i)) != 0) {
+                copy.lod[i] = try allocator.dupe(u8, self.lod[i]);
+                copy.lod_owned |= @as(u8, 1) << @intCast(i);
+            }
+        }
+
+        return copy;
+    }
+
+    /// Release all owned resources.  Safe to call multiple times.
     pub fn free(self: *ContextNode, allocator: std.mem.Allocator) void {
+        // lod[0]: release via SharedString ref.
+        if (self.source) |src| {
+            src.deinit(allocator);
+            self.source = null;
+            self.lod[0] = "";
+        }
+        // lod[1..5]: free allocator-owned slots (bit 0 must always be clear).
         for (&self.lod, 0..) |*slot, i| {
             if (self.lod_owned & (@as(u8, 1) << @intCast(i)) != 0) {
                 allocator.free(slot.*);
@@ -322,10 +365,21 @@ pub const Library = struct {
             .provenance_id = @intCast(c.sqlite3_column_int(stmt, 10)),
         };
 
-        inline for (0..schema.LOD_COUNT) |i| {
+        // lod[0]: wrap in a SharedString so callers can share without copying.
+        {
+            const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 0);
+            const col_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+            const s = if (ptr != null) ptr[0..col_len] else "";
+            const src = try SharedString.Ref.init(self.allocator, s);
+            node.source = src;
+            node.lod[0] = src.slice();
+            // bit 0 stays clear — lod[0] lifetime managed by source.
+        }
+        // lod[1..5]: allocator-owned copies.
+        inline for (1..schema.LOD_COUNT) |i| {
             const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, @intCast(i));
-            const len: usize = @intCast(c.sqlite3_column_bytes(stmt, @intCast(i)));
-            const s = if (ptr != null) ptr[0..len] else "";
+            const col_len: usize = @intCast(c.sqlite3_column_bytes(stmt, @intCast(i)));
+            const s = if (ptr != null) ptr[0..col_len] else "";
             node.lod[i] = try self.allocator.dupe(u8, s);
             node.lod_owned |= @as(u8, 1) << @intCast(i);
         }
@@ -1380,3 +1434,4 @@ test "Library: concurrent insert+read, 4 threads" {
     // If we reach here without panic, the test passes.
     try testing.expect(true);
 }
+

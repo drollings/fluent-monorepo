@@ -1,5 +1,6 @@
 const std = @import("std");
 const reflection = @import("common").reflection;
+const SharedString = @import("common").SharedString;
 const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const schema = coral_db.schema;
@@ -106,7 +107,14 @@ pub const BinaryContextNode = extern struct {
             .confidence = bin.confidence,
             .provenance_id = bin.provenance_id,
         };
-        for (0..schema.LOD_COUNT) |i| {
+        // lod[0]: wrap in a SharedString so the round-tripped node follows
+        // the same ownership model as nodes created via ContextNode.init().
+        const lod0_slice = bin.getLod(buffer, 0);
+        const src = try SharedString.Ref.init(allocator, lod0_slice);
+        node.source = src;
+        node.lod[0] = src.slice();
+        // lod[1..5]: allocator-owned copies (bit 0 stays clear).
+        for (1..schema.LOD_COUNT) |i| {
             const lod_slice = bin.getLod(buffer, @intCast(i));
             if (lod_slice.len > 0) {
                 node.lod[i] = try allocator.dupe(u8, lod_slice);
@@ -181,8 +189,11 @@ pub const ContextNodeSchema = struct {
             .offset = @offsetOf(ContextNode, "lod") + 0 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod0,
+            // lod[0] is owned by the SharedString ref (node.source), not by the
+            // allocator directly.  Mark borrowed so the reflection layer does not
+            // attempt to free it on write.  Use node.setSource() for mutation.
             .type_tag = .string_owned,
-            .ownership = .owned,
+            .ownership = .borrowed,
             .binary_size = 0,
         };
         self.accessors[2] = .{
@@ -426,7 +437,3 @@ test "ContextNodeSchema: access denied on protected field" {
     const result = view.set("id", "99", .player);
     try testing.expectError(error.AccessDenied, result);
 }
-
-
-
-
