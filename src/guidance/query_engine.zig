@@ -1,0 +1,1841 @@
+//! query_engine.zig — explain, staged, show, test, check commands.
+//!
+//! Extracted from main.zig (M1.6) to keep individual file sizes navigable.
+//! All public functions are called from main.zig's command dispatch switch.
+
+const std = @import("std");
+const types = @import("types.zig");
+const ast_parser = @import("ast_parser.zig");
+const lance_db_mod = @import("vector");
+const vector_mod = @import("vector");
+const common = @import("common");
+const enhancer_mod = @import("enhancer.zig");
+const config_mod = @import("config.zig");
+const plugin_mod = @import("plugin.zig");
+const plugin_registry = @import("plugin_registry.zig");
+const staged_mod = @import("staged.zig");
+const llm_filter_mod = @import("llm_filter.zig");
+const synthesize_mod = @import("synthesize.zig");
+const marker_mod = @import("marker.zig");
+const provider_mod = @import("provider_discovery.zig");
+const json_store_mod = @import("json_store.zig");
+const sync_mod = @import("sync.zig");
+const llm = @import("common");
+const GuidanceDb = lance_db_mod.GuidanceDb;
+const SearchResult = GuidanceDb.SearchResult;
+const freeSearchResult = GuidanceDb.freeSearchResult;
+const stepPrint = types.stepPrint;
+
+// =============================================================================
+// explain — shared types
+// =============================================================================
+
+const SkillExcerpt = struct { name: []const u8, excerpt: []const u8 };
+/// Manages structured excerpt data with fixed-size buffers; owned by the module; ensures consistent state across operations.
+const ExcerptEntry = struct {
+    file_path: []const u8, // borrowed from SearchResult
+    label: []const u8, // owned: "src/foo.zig:42"
+    code: []const u8, // owned: pruned source block
+    lang: []const u8, // borrowed constant
+};
+/// Manages file match items with ownership and invariants; ensures consistent state across operations.
+const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
+
+// =============================================================================
+// explain — small path/config helpers
+// =============================================================================
+
+/// Create an embedding provider, falling back to NoopEmbedding when the
+/// configured provider fails to initialise.  The caller must call
+/// `embedder.deinit()` when done.
+fn createEmbedderWithFallback(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+) !vector_mod.EmbeddingProvider {
+    return vector_mod.createEmbeddingProvider(
+        allocator,
+        cfg.embedding_provider,
+        null,
+        cfg.embedding_model,
+        cfg.embedding_dims,
+    ) catch {
+        var noop = try allocator.create(vector_mod.NoopEmbedding);
+        noop.* = .{ .allocator = allocator };
+        return noop.provider();
+    };
+}
+
+/// Construct an LlmConfig from the parsed ExplainArgs.
+fn makeLlmConfig(ea: ExplainArgs) llm.LlmConfig {
+    return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.verbose };
+}
+
+/// Central control point for LLM configuration with thinking model support.
+///
+/// If model matches the thinking slot:
+///   - Force Ollama /api/chat endpoint (required for think parameter)
+///   - Set think = true
+///
+/// Returns owned memory in resolved_url (caller must free).
+pub fn resolveLlmConfigForThinking(
+    allocator: std.mem.Allocator,
+    cfg: *const config_mod.ProjectConfig,
+    model_ref: []const u8,
+    explicit_api_url: ?[]const u8,
+) !struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 } {
+    const is_thinking_slot = cfg.isThinkingModelRef(model_ref);
+
+    // Use explicit API URL if provided
+    if (explicit_api_url) |url| {
+        return .{
+            .api_url = url,
+            .model = model_ref,
+            .think = if (is_thinking_slot) true else null,
+            .resolved_url = null,
+        };
+    }
+
+    // Thinking model: must use Ollama /api/chat endpoint
+    if (is_thinking_slot) {
+        // Get ollama provider (uses /api/chat)
+        if (cfg.getProvider("ollama")) |ollama| {
+            const url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ ollama.base_url, ollama.chat_endpoint });
+            return .{
+                .api_url = url,
+                .model = model_ref,
+                .think = true,
+                .resolved_url = url,
+            };
+        }
+        // No ollama provider: construct URL with /api/chat endpoint
+        const parsed = config_mod.ProjectConfig.parseModelRef(model_ref) orelse {
+            // Fallback to localhost
+            const url = try allocator.dupe(u8, "http://localhost:11434/api/chat");
+            return .{ .api_url = url, .model = model_ref, .think = true, .resolved_url = url };
+        };
+        if (cfg.getProvider(parsed.provider)) |provider| {
+            // Use provider's base_url with /api/chat
+            const scheme_end = std.mem.indexOf(u8, provider.base_url, "://") orelse 0;
+            const host_start: usize = if (scheme_end > 0) scheme_end + 3 else 0;
+            const path_start = std.mem.indexOfScalarPos(u8, provider.base_url, host_start, '/') orelse provider.base_url.len;
+            const base = provider.base_url[0..path_start];
+            const url = try std.fmt.allocPrint(allocator, "{s}/api/chat", .{base});
+            return .{
+                .api_url = url,
+                .model = model_ref,
+                .think = true,
+                .resolved_url = url,
+            };
+        }
+        // Final fallback
+        const url = try allocator.dupe(u8, "http://localhost:11434/api/chat");
+        return .{ .api_url = url, .model = model_ref, .think = true, .resolved_url = url };
+    }
+
+    // Non-thinking model: use configured provider
+    const parsed = config_mod.ProjectConfig.parseModelRef(model_ref) orelse {
+        return .{
+            .api_url = config_mod.DEFAULT_API_URL,
+            .model = model_ref,
+            .think = null,
+            .resolved_url = null,
+        };
+    };
+
+    const provider = cfg.getProvider(parsed.provider) orelse {
+        return .{
+            .api_url = config_mod.DEFAULT_API_URL,
+            .model = model_ref,
+            .think = null,
+            .resolved_url = null,
+        };
+    };
+
+    const url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint });
+    return .{
+        .api_url = url,
+        .model = model_ref,
+        .think = null,
+        .resolved_url = url,
+    };
+}
+
+/// Dispatch to single-file, explicit-scan, or full-workspace processing.
+/// Whether LLM relevance filtering should be applied on the staged path.
+const FilterMode = enum {
+    /// Auto-detect: apply LLM filter only for long queries (5+ words).
+    auto,
+    /// Always apply LLM filter (even for short queries).
+    force,
+    /// Never apply LLM filter (always fast path).
+    skip,
+};
+
+/// Describes argument handling in ExplainArgs, managing ownership and invariants for structured input.
+const ExplainArgs = struct {
+    query_str: ?[]const u8 = null,
+    limit: usize = 10,
+    /// Path to .guidance.db. Defaults to config db_path or DEFAULT_GUIDANCE_DB_PATH.
+    db_path: ?[]const u8 = null,
+    workspace: ?[]const u8 = null,
+    guidance: ?[]const u8 = null,
+    api_url: []const u8 = config_mod.DEFAULT_API_URL,
+    model: []const u8 = config_mod.DEFAULT_MODEL,
+    /// Skip LLM synthesis; emit structural output only.
+    no_llm: bool = false,
+    verbose: bool = false,
+    /// Use new staged pipeline (default: true).  --staged=false → legacy path.
+    staged: bool = true,
+    /// LLM relevance filtering mode.
+    filter: FilterMode = .auto,
+};
+
+/// Return true when the query is "short" (fast path, no LLM filter).
+/// Short queries: 2 or fewer words, AND not ending with "?", AND not starting
+/// with question words (if, how, where, when, does, why, what).
+fn isShortQuery(query: []const u8) bool {
+    const trimmed = std.mem.trim(u8, query, " \t\n\r");
+    if (trimmed.len == 0) return true;
+
+    // Question mark at end triggers LLM filter
+    if (trimmed[trimmed.len - 1] == '?') return false;
+
+    // Check for question word prefixes (case-insensitive, with trailing space)
+    const question_prefixes = [_][]const u8{ "if ", "how ", "where ", "when ", "does ", "why ", "what " };
+    for (question_prefixes) |prefix| {
+        if (trimmed.len >= prefix.len) {
+            const candidate = trimmed[0..prefix.len];
+            var i: usize = 0;
+            while (i < prefix.len) : (i += 1) {
+                if (std.ascii.toLower(candidate[i]) != std.ascii.toLower(prefix[i])) break;
+            }
+            if (i == prefix.len) return false;
+        }
+    }
+
+    // Word count: 2 or fewer = short (no LLM filter)
+    var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
+    var count: usize = 0;
+    while (tok.next()) |_| {
+        count += 1;
+        if (count > 2) return false;
+    }
+    return true;
+}
+
+// =============================================================================
+// explain — phase helpers
+// =============================================================================
+
+/// Phase A: Load skill excerpts for the top search result's JSON guidance file.
+/// Returns owned slice; caller must free each `.name` and `.excerpt`, then free the slice.
+fn collectSkillExcerpts(
+    allocator: std.mem.Allocator,
+    top_json_path: []const u8,
+    guidance_dir: []const u8,
+    workspace: []const u8,
+) ![]SkillExcerpt {
+    var out: std.ArrayList(SkillExcerpt) = .{};
+    errdefer {
+        for (out.items) |se| {
+            allocator.free(se.name);
+            allocator.free(se.excerpt);
+        }
+        out.deinit(allocator);
+    }
+
+    const skills_str = loadSkillsFromJson(allocator, top_json_path) orelse return out.toOwnedSlice(allocator);
+    defer allocator.free(skills_str);
+
+    var seen: std.StringHashMapUnmanaged(void) = .{};
+    defer seen.deinit(allocator);
+
+    var sp = std.mem.splitScalar(u8, skills_str, '\n');
+    while (sp.next()) |raw| {
+        const name = std.mem.trim(u8, raw, " \t\r");
+        if (name.len == 0 or seen.contains(name)) continue;
+        try seen.put(allocator, name, {});
+        if (loadSkillPara(allocator, guidance_dir, workspace, name)) |para| {
+            try out.append(allocator, .{
+                .name = try allocator.dupe(u8, name),
+                .excerpt = para,
+            });
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase B: Collect up to 3 source excerpts, preferring exact-name matches.
+/// Returns owned slice; caller must free each `.label` and `.code`, then free the slice.
+fn collectSourceExcerpts(
+    allocator: std.mem.Allocator,
+    results: []const SearchResult,
+    search_terms: []const []const u8,
+    workspace: []const u8,
+) ![]ExcerptEntry {
+    var out: std.ArrayList(ExcerptEntry) = .{};
+    errdefer {
+        for (out.items) |e| {
+            allocator.free(e.label);
+            allocator.free(e.code);
+        }
+        out.deinit(allocator);
+    }
+
+    // Re-sort: exact-name-match first, then non-test, then score.
+    var sorted: std.ArrayList(SearchResult) = .{};
+    defer sorted.deinit(allocator);
+    for (results) |r| try sorted.append(allocator, r);
+    std.sort.insertion(SearchResult, sorted.items, search_terms, struct {
+        fn lessThan(terms: []const []const u8, a: SearchResult, b: SearchResult) bool {
+            const a_exact = isExactNameMatch(a.name, terms);
+            const b_exact = isExactNameMatch(b.name, terms);
+            if (a_exact != b_exact) return a_exact;
+            const a_test = std.mem.eql(u8, a.node_type, "test_decl");
+            const b_test = std.mem.eql(u8, b.node_type, "test_decl");
+            if (a_test != b_test) return !a_test;
+            return a.score > b.score;
+        }
+    }.lessThan);
+
+    var seen_files: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_files.deinit(allocator);
+
+    for (sorted.items) |r| {
+        if (out.items.len >= 3) break;
+        if (r.source.len == 0 or seen_files.contains(r.source)) continue;
+        const start_line = r.line orelse continue;
+
+        const src_abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
+        defer allocator.free(src_abs);
+
+        const src_opt: ?[]const u8 = blk: {
+            const f = std.fs.openFileAbsolute(src_abs, .{}) catch break :blk null;
+            defer f.close();
+            break :blk f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch null;
+        };
+        const src = src_opt orelse continue;
+        defer allocator.free(src);
+
+        const code = try explainExtractExcerpt(allocator, src, start_line, r.node_type);
+        if (code.len == 0) {
+            allocator.free(code);
+            continue;
+        }
+        const lang = llm.langFromPath(r.source);
+        const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
+        try out.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
+        try seen_files.put(allocator, r.source, {});
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase C: Grep top result files for search-term matches.
+/// Returns owned slice; caller must free each `.lines`, then free the slice.
+fn grepTopFiles(
+    allocator: std.mem.Allocator,
+    results: []const SearchResult,
+    search_terms: []const []const u8,
+    workspace: []const u8,
+) ![]FileMatchItem {
+    var out: std.ArrayList(FileMatchItem) = .{};
+    errdefer {
+        for (out.items) |fm| allocator.free(fm.lines);
+        out.deinit(allocator);
+    }
+
+    var seen: std.StringHashMapUnmanaged(void) = .{};
+    defer seen.deinit(allocator);
+
+    for (results[0..@min(5, results.len)]) |r| {
+        if (r.source.len == 0 or seen.contains(r.source)) continue;
+        try seen.put(allocator, r.source, {});
+
+        const abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
+        defer allocator.free(abs);
+
+        const matches = try explainGrepFile(allocator, abs, search_terms, 10);
+        if (matches.len > 0) {
+            try out.append(allocator, .{ .path = r.source, .count = matches.len, .lines = matches });
+        } else {
+            allocator.free(matches);
+        }
+    }
+
+    std.sort.insertion(FileMatchItem, out.items, {}, struct {
+        fn less(_: void, a: FileMatchItem, b: FileMatchItem) bool {
+            return a.count > b.count;
+        }
+    }.less);
+
+    return out.toOwnedSlice(allocator);
+}
+
+/// Phase E: Render the legacy explain output to stdout.
+fn renderExplainOutput(
+    allocator: std.mem.Allocator,
+    query_text: []const u8,
+    results: []const SearchResult,
+    search_terms: []const []const u8,
+    ai_summary: ?[]const u8,
+    skill_excerpts: []const SkillExcerpt,
+    excerpts: []const ExcerptEntry,
+    file_matches: []const FileMatchItem,
+) !void {
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    try stdout.print("# Explain: {s}\n\n", .{query_text});
+
+    if (ai_summary) |s| {
+        const trimmed_s = std.mem.trim(u8, s, " \t\n\r");
+        if (trimmed_s.len > 0) try stdout.print("{s}\n\n", .{trimmed_s});
+    }
+
+    try stdout.print("---\n", .{});
+    try stdout.print("**Source**: `{s}`\n", .{results[0].source});
+
+    for (skill_excerpts[0..@min(2, skill_excerpts.len)]) |se| {
+        const first_nl = std.mem.indexOfScalar(u8, se.excerpt, '\n') orelse se.excerpt.len;
+        try stdout.print("**Pattern**: `{s}` — {s}\n", .{ se.name, se.excerpt[0..@min(first_nl, 120)] });
+    }
+    try stdout.print("\n", .{});
+
+    for (excerpts) |e| {
+        try stdout.print("```{s}\n// {s}\n{s}\n```\n\n", .{ e.lang, e.label, e.code });
+    }
+
+    // Keywords: public non-test members from primary source JSON, excluding search terms.
+    {
+        var kw_buf: std.ArrayList(u8) = .{};
+        defer kw_buf.deinit(allocator);
+        var kw_count: usize = 0;
+
+        if (loadPublicMemberNames(allocator, results[0].file_path)) |names| {
+            defer {
+                for (names) |n| allocator.free(n);
+                allocator.free(names);
+            }
+            for (names) |mname| {
+                if (kw_count >= 8) break;
+                const mname_lower = try std.ascii.allocLowerString(allocator, mname);
+                defer allocator.free(mname_lower);
+                const is_term = for (search_terms) |term| {
+                    if (std.mem.eql(u8, mname_lower, term)) break true;
+                } else false;
+                if (is_term) continue;
+                if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
+                try kw_buf.writer(allocator).print("`{s}`", .{mname});
+                kw_count += 1;
+            }
+        }
+        if (kw_count > 0) try stdout.print("**See Also**: {s}\n\n", .{kw_buf.items});
+    }
+
+    // See also: used_by from top result + secondary file paths.
+    {
+        var see_buf: std.ArrayList(u8) = .{};
+        defer see_buf.deinit(allocator);
+        var see_count: usize = 0;
+
+        var ub_from_json: ?[][]const u8 = null;
+        defer if (ub_from_json) |ub| {
+            for (ub) |s| allocator.free(s);
+            allocator.free(ub);
+        };
+        const top_used_by: [][]const u8 = if (results[0].used_by.len > 0)
+            results[0].used_by
+        else blk: {
+            ub_from_json = loadUsedByFromJson(allocator, results[0].file_path);
+            break :blk ub_from_json orelse &.{};
+        };
+
+        for (top_used_by[0..@min(4, top_used_by.len)]) |ub| {
+            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
+            try see_buf.writer(allocator).print("`{s}`", .{ub});
+            see_count += 1;
+        }
+        for (results[1..@min(results.len, 6)]) |r| {
+            if (see_count >= 6) break;
+            if (r.source.len == 0 or std.mem.eql(u8, r.source, results[0].source)) continue;
+            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
+            try see_buf.writer(allocator).print("`{s}`", .{r.source});
+            see_count += 1;
+        }
+        if (see_count > 0) try stdout.print("**See also**: {s}\n\n", .{see_buf.items});
+    }
+
+    if (file_matches.len > 0) {
+        try stdout.print("### Files with most matches\n\n", .{});
+        for (file_matches[0..@min(3, file_matches.len)]) |fm| {
+            try stdout.print("- `{s}` ({d} matches): lines ", .{ fm.path, fm.count });
+            for (fm.lines[0..@min(10, fm.lines.len)], 0..) |ln, li| {
+                if (li > 0) try stdout.print(", ", .{});
+                try stdout.print("{d}", .{ln});
+            }
+            try stdout.print("\n", .{});
+        }
+        try stdout.print("\n", .{});
+    }
+
+    try stdout.flush();
+}
+
+pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var ea: ExplainArgs = .{};
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --limit requires a value\n", .{});
+                return;
+            }
+            ea.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
+        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --db requires a value\n", .{});
+                return;
+            }
+            ea.db_path = args[i];
+        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --workspace requires a value\n", .{});
+                return;
+            }
+            ea.workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--api-url")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --api-url requires a value\n", .{});
+                return;
+            }
+            ea.api_url = args[i];
+        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --model requires a value\n", .{});
+                return;
+            }
+            ea.model = args[i];
+        } else if (std.mem.eql(u8, arg, "--no-llm")) {
+            ea.no_llm = true;
+        } else if (std.mem.eql(u8, arg, "--guidance")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --guidance requires a value\n", .{});
+                return;
+            }
+            ea.guidance = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--staged=")) {
+            ea.staged = !std.mem.eql(u8, arg["--staged=".len..], "false");
+        } else if (std.mem.eql(u8, arg, "--staged")) {
+            ea.staged = true;
+        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
+            ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
+        } else if (std.mem.eql(u8, arg, "--guidance-db")) {
+            // Alias for -o / --db for backward compatibility.
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --guidance-db requires a value\n", .{});
+                return;
+            }
+            ea.db_path = args[i];
+        } else if (std.mem.eql(u8, arg, "--db-type=lance") or
+            std.mem.eql(u8, arg, "--lance") or
+            std.mem.startsWith(u8, arg, "--db-type="))
+        {
+            // Accepted but ignored — SQLite is always used.
+        } else if (!std.mem.startsWith(u8, arg, "-")) {
+            ea.query_str = arg;
+        }
+    }
+
+    const query_text = ea.query_str orelse {
+        std.debug.print("Error: query string required\n", .{});
+        return;
+    };
+
+    // ── Resolve paths ─────────────────────────────────────────────────────────
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const workspace = if (ea.workspace) |w|
+        try llm.resolvePath(allocator, cwd, w)
+    else
+        try allocator.dupe(u8, cwd);
+    defer allocator.free(workspace);
+
+    // Load config for embedding provider and db path defaults.
+    const cfg = config_mod.loadConfig(allocator, workspace) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const db_path = try llm.resolvePath(
+        allocator,
+        workspace,
+        ea.db_path orelse cfg.db_path,
+    );
+    defer allocator.free(db_path);
+
+    const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
+    defer allocator.free(guidance_dir);
+
+    // ── Open .guidance.db ─────────────────────────────────────────────────────
+    std.fs.accessAbsolute(db_path, .{}) catch {
+        std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
+        std.debug.print("Run 'guidance gen' to generate it.\n", .{});
+        return;
+    };
+
+    const embedder = try createEmbedderWithFallback(allocator, &cfg);
+    defer embedder.deinit();
+
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
+        std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
+        return;
+    };
+    defer db.deinit();
+
+    // ── Staged pipeline (default) ──────────────────────────────────────────────
+    if (ea.staged) {
+        staged_path: {
+            // Resolve LLM config with thinking model support
+            var resolved_url_to_free: ?[]const u8 = null;
+            defer if (resolved_url_to_free) |url| allocator.free(url);
+
+            const model = if (std.mem.eql(u8, ea.model, config_mod.DEFAULT_MODEL))
+                cfg.model_default
+            else
+                ea.model;
+
+            const llm_config = blk: {
+                const resolved = resolveLlmConfigForThinking(
+                    allocator,
+                    &cfg,
+                    model,
+                    if (std.mem.eql(u8, ea.api_url, config_mod.DEFAULT_API_URL)) null else ea.api_url,
+                ) catch {
+                    // Fallback to direct args
+                    break :blk llm.LlmConfig{
+                        .api_url = ea.api_url,
+                        .model = ea.model,
+                        .debug = ea.verbose,
+                    };
+                };
+                resolved_url_to_free = resolved.resolved_url;
+                break :blk llm.LlmConfig{
+                    .api_url = resolved.api_url,
+                    .model = resolved.model,
+                    .think = resolved.think,
+                    .debug = ea.verbose,
+                };
+            };
+
+            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, llm_config, cfg.infillModel(), ea) catch |err| {
+                if (ea.verbose) std.debug.print("staged explain failed ({s}), falling back to legacy\n", .{@errorName(err)});
+                break :staged_path;
+            };
+            return;
+        }
+    }
+
+    // ── Legacy path (--staged=false) ──────────────────────────────────────────
+    const results = db.search(allocator, query_text, ea.limit) catch |err| {
+        std.debug.print("Search failed: {s}\n", .{@errorName(err)});
+        return;
+    };
+    defer {
+        for (results) |r| freeSearchResult(allocator, r);
+        allocator.free(results);
+    }
+
+    if (results.len == 0) {
+        const lower_q = try std.ascii.allocLowerString(allocator, query_text);
+        defer allocator.free(lower_q);
+        std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, query_text });
+        std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
+        std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
+        return;
+    }
+
+    // Build normalised search terms (lowercase tokens).
+    var search_terms: std.ArrayList([]const u8) = .{};
+    defer {
+        for (search_terms.items) |t| allocator.free(t);
+        search_terms.deinit(allocator);
+    }
+    {
+        var tok = std.mem.tokenizeAny(u8, query_text, " \t_");
+        while (tok.next()) |word| {
+            try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, word));
+        }
+        if (search_terms.items.len == 0)
+            try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, query_text));
+    }
+
+    // ── Phase A: Skill excerpts ───────────────────────────────────────────────
+    const skill_excerpts = try collectSkillExcerpts(allocator, results[0].file_path, guidance_dir, workspace);
+    defer {
+        for (skill_excerpts) |se| {
+            allocator.free(se.name);
+            allocator.free(se.excerpt);
+        }
+        allocator.free(skill_excerpts);
+    }
+
+    // ── Phase B: Source excerpts ──────────────────────────────────────────────
+    const excerpts = try collectSourceExcerpts(allocator, results, search_terms.items, workspace);
+    defer {
+        for (excerpts) |e| {
+            allocator.free(e.label);
+            allocator.free(e.code);
+        }
+        allocator.free(excerpts);
+    }
+
+    // ── Phase C: Grep top files ───────────────────────────────────────────────
+    const file_matches = try grepTopFiles(allocator, results, search_terms.items, workspace);
+    defer {
+        for (file_matches) |fm| allocator.free(fm.lines);
+        allocator.free(file_matches);
+    }
+
+    // ── Phase D: LLM synthesis ────────────────────────────────────────────────
+    var ai_summary: ?[]const u8 = null;
+    defer if (ai_summary) |s| allocator.free(s);
+
+    if (!ea.no_llm) {
+        var client_opt: ?llm.LlmClient = llm.LlmClient.init(allocator, makeLlmConfig(ea)) catch null;
+        defer if (client_opt) |*c| c.deinit();
+        if (client_opt) |*client| {
+            ai_summary = buildLlmSummary(allocator, client, query_text, results, skill_excerpts, excerpts) catch null;
+        }
+    }
+
+    // ── Phase E: Render output ────────────────────────────────────────────────
+    try renderExplainOutput(allocator, query_text, results, search_terms.items, ai_summary, skill_excerpts, excerpts, file_matches);
+}
+
+// ---------------------------------------------------------------------------
+// explain helpers
+// ---------------------------------------------------------------------------
+
+/// Load `used_by` array from a guidance JSON file.
+/// Returns an owned slice of owned strings, or null on failure / empty.
+fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    defer parsed.deinit();
+
+    const ub_val = parsed.value.object.get("used_by") orelse return null;
+    if (ub_val != .array) return null;
+
+    var out: std.ArrayList([]const u8) = .{};
+    for (ub_val.array.items) |item| {
+        if (item != .string) continue;
+        out.append(allocator, allocator.dupe(u8, item.string) catch continue) catch continue;
+    }
+    if (out.items.len == 0) {
+        out.deinit(allocator);
+        return null;
+    }
+    return out.toOwnedSlice(allocator) catch null;
+}
+
+/// Return true when `name` (case-insensitive) exactly equals any search term.
+fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
+    // Fast path — avoid allocation for short names.
+    var buf: [128]u8 = undefined;
+    if (name.len > buf.len) return false;
+    const lower = std.ascii.lowerString(buf[0..name.len], name);
+    for (terms) |term| {
+        if (std.mem.eql(u8, lower, term)) return true;
+    }
+    return false;
+}
+
+/// Load skills listed in a guidance JSON file as a newline-separated string.
+/// Returns an owned allocation or null if the file is absent or has no skills.
+fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    defer parsed.deinit();
+
+    const skills_val = parsed.value.object.get("skills") orelse return null;
+    if (skills_val != .array) return null;
+
+    var out: std.ArrayList(u8) = .{};
+    for (skills_val.array.items) |item| {
+        // skills[] entries may be strings or objects with a "ref" field.
+        const ref: []const u8 = switch (item) {
+            .string => |s| s,
+            .object => blk: {
+                const rv = item.object.get("ref") orelse break :blk "";
+                if (rv != .string) break :blk "";
+                break :blk rv.string;
+            },
+            else => "",
+        };
+        if (ref.len == 0) continue;
+        // Derive skill name: last path component before SKILL.md.
+        // e.g. "skills/gof-patterns/SKILL.md" → "gof-patterns"
+        const skill_name = llm.skillNameFromRef(ref);
+        if (skill_name.len == 0) continue;
+        out.appendSlice(allocator, skill_name) catch continue;
+        out.append(allocator, '\n') catch continue;
+    }
+    if (out.items.len == 0) {
+        out.deinit(allocator);
+        return null;
+    }
+    return out.toOwnedSlice(allocator) catch null;
+}
+
+/// Load public non-test member names from a guidance JSON file.
+/// Returns an owned slice of owned strings, or null on failure.
+fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    defer parsed.deinit();
+
+    const members_val = parsed.value.object.get("members") orelse return null;
+    if (members_val != .array) return null;
+
+    var out: std.ArrayList([]const u8) = .{};
+    for (members_val.array.items) |item| {
+        if (item != .object) continue;
+        // Skip non-public members.
+        const is_pub: bool = blk: {
+            const pv = item.object.get("is_pub") orelse break :blk false;
+            if (pv != .bool) break :blk false;
+            break :blk pv.bool;
+        };
+        if (!is_pub) continue;
+        // Skip test declarations.
+        const type_v = item.object.get("type") orelse continue;
+        if (type_v != .string) continue;
+        if (std.mem.eql(u8, type_v.string, "test_decl")) continue;
+        // Get name.
+        const name_v = item.object.get("name") orelse continue;
+        if (name_v != .string) continue;
+        if (name_v.string.len == 0) continue;
+        out.append(allocator, allocator.dupe(u8, name_v.string) catch continue) catch continue;
+    }
+    if (out.items.len == 0) {
+        out.deinit(allocator);
+        return null;
+    }
+    return out.toOwnedSlice(allocator) catch null;
+}
+
+/// Load the first paragraph (or `description:` front-matter value) of a SKILL.md.
+/// Searches `<guidance_dir>/skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.
+/// Returns an owned allocation or null if not found.
+fn loadSkillPara(
+    allocator: std.mem.Allocator,
+    guidance_dir: []const u8,
+    cwd: []const u8,
+    skill_name: []const u8,
+) ?[]const u8 {
+    const SearchPath = struct { base: []const u8, rel: []const u8 };
+    const paths = [_]SearchPath{
+        .{ .base = guidance_dir, .rel = "skills" },
+        .{ .base = cwd, .rel = "doc/skills" },
+    };
+    for (paths) |sp| {
+        const path = std.fs.path.join(allocator, &.{ sp.base, sp.rel, skill_name, "SKILL.md" }) catch continue;
+        defer allocator.free(path);
+        const sf = std.fs.openFileAbsolute(path, .{}) catch continue;
+        defer sf.close();
+        const content = sf.readToEndAlloc(allocator, 512 * 1024) catch continue;
+        defer allocator.free(content);
+        if (staged_mod.parseSkillDocContent(allocator, content) catch null) |doc| return doc;
+    }
+    return null;
+}
+
+/// Extract the source block starting at `start_line` (1-based).
+/// Stops at the next col-0 top-level declaration or after MAX_LINES, whichever
+/// comes first.  Then prunes trailing blank and comment-only lines.
+/// Returns an owned allocation; caller must free.
+fn explainExtractExcerpt(
+    allocator: std.mem.Allocator,
+    src: []const u8,
+    start_line: u32,
+    node_type: []const u8,
+) ![]const u8 {
+    const node_type_enum = llm.NodeType.fromString(node_type);
+    return llm.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
+}
+
+/// Grep a file for search terms (case-insensitive substring, skipping comment lines).
+/// Returns owned slice of matching line numbers (caller frees).
+fn explainGrepFile(
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    terms: []const []const u8,
+    max_results: usize,
+) ![]usize {
+    const f = std.fs.openFileAbsolute(file_path, .{}) catch return &.{};
+    defer f.close();
+    const content = f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return &.{};
+    defer allocator.free(content);
+
+    var line_numbers: std.ArrayList(usize) = .{};
+    errdefer line_numbers.deinit(allocator);
+    var it = std.mem.splitScalar(u8, content, '\n');
+    var line_no: usize = 0;
+    while (it.next()) |line| {
+        line_no += 1;
+        if (line_numbers.items.len >= max_results) break;
+        const trimmed = std.mem.trimLeft(u8, line, " \t");
+        if (std.mem.startsWith(u8, trimmed, "//") or std.mem.startsWith(u8, trimmed, "#")) continue;
+        const lower = try std.ascii.allocLowerString(allocator, line);
+        defer allocator.free(lower);
+        for (terms) |term| {
+            if (std.mem.indexOf(u8, lower, term) != null) {
+                try line_numbers.append(allocator, line_no);
+                break;
+            }
+        }
+    }
+    return line_numbers.toOwnedSlice(allocator);
+}
+
+/// Build LLM synthesis: skill context + member index + excerpts → prompt → summary.
+/// Strips "absence" sentences.  Returns owned string or null on failure.
+fn buildLlmSummary(
+    allocator: std.mem.Allocator,
+    client: *llm.LlmClient,
+    query_text: []const u8,
+    results: []const SearchResult,
+    skill_excerpts_in: []const SkillExcerpt,
+    excerpts_in: []const ExcerptEntry,
+) !?[]const u8 {
+    var kb: std.ArrayList(u8) = .{};
+    defer kb.deinit(allocator);
+    const kbw = kb.writer(allocator);
+
+    // 1. Skill context first.
+    if (skill_excerpts_in.len > 0) {
+        try kbw.writeAll("=== Skill patterns ===\n");
+        for (skill_excerpts_in[0..@min(2, skill_excerpts_in.len)]) |se| {
+            try kbw.print("{s}: {s}\n\n", .{ se.name, se.excerpt });
+        }
+    }
+
+    // 2. Module sections.
+    var seen_files: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_files.deinit(allocator);
+    for (results[0..@min(5, results.len)]) |r| {
+        const src_key = if (r.source.len > 0) r.source else r.file_path;
+        if (seen_files.contains(src_key)) {
+            // Just add the member line.
+            try kbw.print("  {s} (line {?})", .{ r.name, r.line });
+            if (r.signature) |sig| try kbw.print(": {s}", .{sig});
+            if (r.comment) |cm| {
+                const nl = std.mem.indexOfScalar(u8, cm, '\n') orelse cm.len;
+                try kbw.print(" — {s}", .{cm[0..@min(nl, 120)]});
+            }
+            try kbw.print("\n", .{});
+            continue;
+        }
+        try seen_files.put(allocator, src_key, {});
+        try kbw.print("=== {s} ===\n", .{src_key});
+        if (r.comment) |cm| {
+            const nl = std.mem.indexOfScalar(u8, cm, '\n') orelse cm.len;
+            try kbw.print("{s}\n", .{cm[0..nl]});
+        }
+        if (r.used_by.len > 0) {
+            try kbw.writeAll("Used by: ");
+            for (r.used_by, 0..) |ub, ui| {
+                if (ui > 0) try kbw.writeAll(", ");
+                try kbw.writeAll(ub);
+            }
+            try kbw.writeByte('\n');
+        }
+        try kbw.print("\nMember: {s} (line {?})", .{ r.name, r.line });
+        if (r.signature) |sig| try kbw.print(": {s}", .{sig});
+        try kbw.writeByte('\n');
+    }
+
+    // 3. Source excerpts.
+    for (excerpts_in[0..@min(2, excerpts_in.len)]) |e| {
+        try kbw.print("\nSource excerpt ({s}):\n{s}\n\n", .{ e.label, e.code });
+    }
+
+    // 4. Build skill-name string for the instruction.
+    var skill_names_buf: std.ArrayList(u8) = .{};
+    defer skill_names_buf.deinit(allocator);
+    for (skill_excerpts_in, 0..) |se, si| {
+        if (si > 0) try skill_names_buf.appendSlice(allocator, ", ");
+        try skill_names_buf.appendSlice(allocator, se.name);
+    }
+    const skill_instruction: []const u8 = if (skill_names_buf.items.len > 0)
+        try std.fmt.allocPrint(allocator, "SKILL PATTERNS APPLIED: {s}\nThe code implements these patterns — name them in your summary.\n", .{skill_names_buf.items})
+    else
+        try allocator.dupe(u8, "");
+    defer allocator.free(skill_instruction);
+
+    const prompt = try std.fmt.allocPrint(
+        allocator,
+        "You are a code navigation assistant for a Zig/Python codebase. Be precise and terse.\n{s}\nSummarise '{s}': what it is, what design pattern it implements (if any), key members/functions with line numbers, and who calls it. 3-5 sentences. Use only facts from KNOWLEDGE. STRICT RULE: Never write sentences about absence.\n\nKNOWLEDGE:\n{s}\n\nReturn only the summary.",
+        .{ skill_instruction, query_text, kb.items },
+    );
+    defer allocator.free(prompt);
+
+    const raw = (client.complete(prompt, 1500, 0.15, null) catch null) orelse return null;
+    defer allocator.free(raw);
+
+    const cleaned = try synthesize_mod.stripAbsenceSentences(allocator, llm.stripThinkBlock(raw));
+    defer allocator.free(cleaned);
+
+    const trimmed = std.mem.trim(u8, cleaned, " \t\n\r");
+    if (trimmed.len == 0) return null;
+    return try allocator.dupe(u8, trimmed);
+}
+
+// =============================================================================
+// Staged explain implementation  (M3/M5-M9)
+// =============================================================================
+
+/// Load semantic aliases from the guidance directory.
+fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?lance_db_mod.SemanticAliases {
+    const alias_path = std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" }) catch return null;
+    defer allocator.free(alias_path);
+    return lance_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
+}
+
+/// Extract key technical terms from a long query using LLM.
+/// Returns owned slice of owned strings. Caller must free.
+fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) !?[][]const u8 {
+    const prompt = try std.fmt.allocPrint(allocator,
+        \\Extract 3-5 key technical terms from this query. Return only a comma-separated list, no other text.
+        \\Query: {s}
+        \\
+    , .{query});
+    defer allocator.free(prompt);
+
+    const response_opt = client.complete(prompt, 50, 0.0, null) catch return null;
+    const response = response_opt orelse return null;
+    defer allocator.free(response);
+
+    const stripped = llm.stripThinkBlock(response);
+    const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
+    if (trimmed.len == 0) return null;
+
+    var terms: std.ArrayList([]const u8) = .{};
+    errdefer {
+        for (terms.items) |t| allocator.free(t);
+        terms.deinit(allocator);
+    }
+
+    var it = std.mem.splitAny(u8, trimmed, ",\n");
+    var count: usize = 0;
+    while (it.next()) |term| {
+        if (count >= 4) break;
+        const t = std.mem.trim(u8, term, " \t\n\r\"");
+        if (t.len == 0) continue;
+        try terms.append(allocator, try allocator.dupe(u8, t));
+        count += 1;
+    }
+
+    if (terms.items.len == 0) return null;
+    return try terms.toOwnedSlice(allocator);
+}
+
+/// Full staged explain pipeline.  Called when `--staged` is active (default).
+///
+/// Pipeline:
+///   Short query (≤3 words) or --no-llm or --filter=skip:
+///     executeStaged() → formatStaged() → output
+///   Long query (4+ words) with LLM:
+///     executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output
+fn cmdExplainStaged(
+    allocator: std.mem.Allocator,
+    db: *GuidanceDb,
+    query_text: []const u8,
+    workspace: []const u8,
+    guidance_dir: []const u8,
+    llm_config: llm.LlmConfig,
+    fast_model_ref: []const u8,
+    ea: ExplainArgs,
+) !void {
+    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
+    defer allocator.free(skills_dir);
+
+    var aliases_opt: ?lance_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
+    defer if (aliases_opt) |*a| a.deinit();
+
+    // use_llm: always on unless --no-llm is specified
+    // use_filter: depends on --filter mode (auto enables filter for long queries only)
+    const use_llm = !ea.no_llm;
+    const use_filter = !ea.no_llm and switch (ea.filter) {
+        .skip => false,
+        .force => true,
+        .auto => !isShortQuery(query_text),
+    };
+
+    // Create the LLM client for filtering (default model)
+    var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch |err| blk: {
+        if (ea.verbose) std.debug.print("DEBUG: LLM client init failed: {}\n", .{err});
+        break :blk null;
+    } else null;
+    defer if (client_opt) |*c| c.deinit();
+
+    // Create separate client for synthesis (fast model)
+    var fast_client_opt: ?llm.LlmClient = null;
+    defer if (fast_client_opt) |*c| c.deinit();
+
+    if (use_llm and fast_model_ref.len > 0) {
+        const fast_config = llm.LlmConfig{
+            .api_url = llm_config.api_url,
+            .model = fast_model_ref,
+            .think = null, // fast model never uses thinking
+            .debug = ea.verbose,
+        };
+        fast_client_opt = llm.LlmClient.init(allocator, fast_config) catch null;
+    }
+
+    if (ea.verbose) {
+        if (client_opt) |_| {
+            std.debug.print("DEBUG: LLM client initialized - api_url: {s}, model: {s}, think: {?}\n", .{ llm_config.api_url, llm_config.model, llm_config.think });
+        } else {
+            std.debug.print("DEBUG: LLM client is null, synthesis will be skipped\n", .{});
+        }
+        if (fast_client_opt) |_| {
+            std.debug.print("DEBUG: Fast client initialized - model: {s}\n", .{fast_model_ref});
+        }
+    }
+
+    // For long queries, extract key terms to improve search recall.
+    var expanded_query: ?[]const u8 = null;
+    defer if (expanded_query) |q| allocator.free(q);
+
+    if (use_filter) {
+        if (client_opt) |*client| {
+            if (llmExtractKeyTerms(allocator, client, query_text) catch null) |terms| {
+                defer {
+                    for (terms) |t| allocator.free(t);
+                    allocator.free(terms);
+                }
+                var buf: std.ArrayList(u8) = .{};
+                defer buf.deinit(allocator);
+                try buf.appendSlice(allocator, query_text);
+                for (terms) |t| {
+                    try buf.append(allocator, ' ');
+                    try buf.appendSlice(allocator, t);
+                }
+                expanded_query = try buf.toOwnedSlice(allocator);
+            }
+        }
+    }
+
+    const effective_query = expanded_query orelse query_text;
+
+    // Pass original query for deterministic matching, effective query for vector search
+    const stages_raw = try staged_mod.executeStagedWithAliasesOriginal(allocator, db, effective_query, query_text, workspace, aliases_opt);
+    defer {
+        types.freeStages(allocator, stages_raw);
+        allocator.free(stages_raw);
+    }
+
+    if (stages_raw.len == 0) {
+        const lower_q = try std.ascii.allocLowerString(allocator, effective_query);
+        defer allocator.free(lower_q);
+        std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, effective_query });
+        std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
+        std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
+        return;
+    }
+
+    // ── Fast path: no LLM ─────────────────────────────────────────────────────
+    if (!use_llm or client_opt == null) {
+        if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
+        return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace);
+    }
+
+    // ── LLM path ─────────────────────────────────────────────────────────────
+    const client = &client_opt.?;
+
+    // M6: LLM relevance filter (only when filter mode enables it).
+    const stages_filtered: ?[]types.Stage = if (use_filter) llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
+        if (ea.verbose) std.debug.print("llm_filter failed, using unfiltered stages\n", .{});
+        break :blk null;
+    } else null;
+    defer if (stages_filtered) |sf| {
+        types.freeStages(allocator, sf);
+        allocator.free(sf);
+    };
+
+    const working_stages: []const types.Stage = stages_filtered orelse stages_raw;
+
+    // M7: Follow-up expansion — re-search to gather used_by for expansion inputs.
+    const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
+    defer {
+        for (expansion_results) |r| freeSearchResult(allocator, r);
+        allocator.free(expansion_results);
+    }
+
+    var fp_list: std.ArrayList([]const u8) = .{};
+    defer fp_list.deinit(allocator);
+    var src_list: std.ArrayList([]const u8) = .{};
+    defer src_list.deinit(allocator);
+    var ub_list: std.ArrayList([]const []const u8) = .{};
+    defer ub_list.deinit(allocator);
+    for (expansion_results) |r| {
+        try fp_list.append(allocator, r.file_path);
+        try src_list.append(allocator, r.source);
+        try ub_list.append(allocator, r.used_by);
+    }
+
+    var existing_srcs: std.ArrayList([]const u8) = .{};
+    defer existing_srcs.deinit(allocator);
+    for (working_stages) |s| {
+        if (s.kind == .code or s.kind == .prose) try existing_srcs.append(allocator, s.source);
+    }
+
+    const extra_stages: ?[]types.Stage = staged_mod.expandFollowUps(
+        allocator,
+        fp_list.items,
+        src_list.items,
+        ub_list.items,
+        workspace,
+        guidance_dir,
+        skills_dir,
+        existing_srcs.items,
+        6,
+    ) catch null;
+    defer if (extra_stages) |es| {
+        types.freeStages(allocator, es);
+        allocator.free(es);
+    };
+
+    // Combine working + extra stages (borrows — no new string copies).
+    var combined: std.ArrayList(types.Stage) = .{};
+    defer combined.deinit(allocator); // only frees the ArrayList spine; strings owned by above slices
+    for (working_stages) |s| try combined.append(allocator, s);
+    if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
+
+    // M8: LLM synthesis (use fast model if available, else default).
+    const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
+    const synth_result = synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
+        return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace);
+    };
+    defer {
+        if (synth_result.summary) |s| allocator.free(s);
+        if (synth_result.followup_keywords) |kw| {
+            for (kw) |k| allocator.free(k);
+            allocator.free(kw);
+        }
+    }
+
+    return emitStagedOutput(allocator, query_text, combined.items, synth_result.summary, synth_result.followup_keywords, workspace);
+}
+
+/// Write formatted staged output to stdout and flush.
+fn emitStagedOutput(
+    allocator: std.mem.Allocator,
+    query_text: []const u8,
+    stages: []const types.Stage,
+    summary: ?[]const u8,
+    followup_keywords: ?[]const []const u8,
+    workspace: []const u8,
+) !void {
+    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace, followup_keywords);
+    defer allocator.free(output);
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+    try stdout.writeAll(output);
+    try stdout.flush();
+}
+/// Checks if a list of name bytes exactly matches a list of term bytes, returning true or false.
+pub fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) bool {
+    return isExactNameMatch(name, terms);
+}
+
+/// Loads skill data from a JSON path into a Zig array of bytes.
+pub fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
+    return loadSkillsFromJson(allocator, json_path);
+}
+
+/// Loads used data from a JSON path into a Zig array of arrays of bytes.
+pub fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    return loadUsedByFromJson(allocator, json_path);
+}
+
+/// Loads public member names from a JSON path into a Zig array of arrays.
+pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
+    return loadPublicMemberNames(allocator, json_path);
+}
+
+/// Loads a skill parameter pack into a Zig slice, handling allocation and data parsing.
+pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
+    return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
+}
+
+/// Extracts and explains a specified excerpt from a Zig source file, returning its contents.
+pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
+    return explainExtractExcerpt(allocator, src, start_line, node_type);
+}
+
+/// Analyzes a file path and returns matching result indices.
+pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) ![]usize {
+    return explainGrepFile(allocator, file_path, terms, max_results);
+}
+
+/// Checks if a query string is short enough for a public query, returning true or false.
+pub fn isShortQueryPub(query: []const u8) bool {
+    return isShortQuery(query);
+}
+
+// =============================================================================
+// show command
+// =============================================================================
+
+pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var db_path_arg: ?[]const u8 = null;
+    var filter: ?[]const u8 = null;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+            i += 1;
+            if (i >= args.len) return;
+            db_path_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--filter")) {
+            i += 1;
+            if (i >= args.len) return;
+            filter = args[i];
+        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
+            filter = arg["--filter=".len..];
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    defer allocator.free(db_path);
+
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    var noop: vector_mod.NoopEmbedding = .{};
+    var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch |err| {
+        try stdout.print("Error: could not open db {s}: {}\n", .{ db_path, err });
+        return;
+    };
+    defer db.deinit();
+
+    const do_alias = filter == null or std.mem.eql(u8, filter.?, "alias") or std.mem.eql(u8, filter.?, "all");
+    const do_keywords = filter == null or std.mem.eql(u8, filter.?, "keywords") or std.mem.eql(u8, filter.?, "all");
+    const do_ast = filter == null or std.mem.eql(u8, filter.?, "ast") or std.mem.eql(u8, filter.?, "all");
+
+    try stdout.print("# Vector Embeddings in {s}\n\n", .{db_path});
+
+    if (do_alias) {
+        const aliases = db.getAllAliasEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading alias embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (aliases) |a| {
+                allocator.free(a.key);
+                allocator.free(a.model);
+            }
+            allocator.free(aliases);
+        }
+        try stdout.print("## Alias Embeddings ({d})\n\n", .{aliases.len});
+        try stdout.print("| Key | Model |\n|-----|-------|\n", .{});
+        for (aliases) |a| {
+            try stdout.print("| `{s}` | {s} |\n", .{ a.key, a.model });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    if (do_keywords) {
+        const keywords = db.getAllKeywordEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading keyword embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (keywords) |k| {
+                allocator.free(k.keyword);
+                allocator.free(k.model);
+            }
+            allocator.free(keywords);
+        }
+        try stdout.print("## Keyword Embeddings ({d})\n\n", .{keywords.len});
+        try stdout.print("| Keyword | Model |\n|---------|-------|\n", .{});
+        for (keywords) |k| {
+            try stdout.print("| `{s}` | {s} |\n", .{ k.keyword, k.model });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    if (do_ast) {
+        const ast = db.getAllAstNodeEmbeddings(allocator) catch |err| {
+            try stdout.print("Error reading AST node embeddings: {}\n", .{err});
+            return;
+        };
+        defer {
+            for (ast) |a| {
+                allocator.free(a.name);
+                allocator.free(a.node_type);
+                allocator.free(a.module);
+            }
+            allocator.free(ast);
+        }
+        try stdout.print("## AST Node Embeddings ({d})\n\n", .{ast.len});
+        try stdout.print("| Module | Name | Type |\n|--------|------|------|\n", .{});
+        for (ast) |a| {
+            try stdout.print("| {s} | `{s}` | {s} |\n", .{ a.module, a.name, a.node_type });
+        }
+        try stdout.print("\n", .{});
+    }
+
+    try stdout.print("---\n*Use `--filter=alias|keywords|ast|all` to show specific groups*\n", .{});
+    try stdout.flush();
+}
+
+// =============================================================================
+// test command
+// =============================================================================
+
+/// Represents a query structure for testing; managed centrally, immutable by default.
+const TestQuery = struct {
+    query: []const u8,
+    accuracy: u8 = 0,
+    relevance: u8 = 0,
+    completeness: u8 = 0,
+    observations: []const u8 = "",
+};
+
+pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var no_llm = false;
+    var db_path: ?[]const u8 = null;
+    var workspace: ?[]const u8 = null;
+    var guidance_dir: ?[]const u8 = null;
+    var api_url: ?[]const u8 = null;
+    var model: ?[]const u8 = null;
+    var single_query: ?[]const u8 = null;
+
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--no-llm")) {
+            no_llm = true;
+        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --db requires a value\n", .{});
+                return;
+            }
+            db_path = args[i];
+        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --workspace requires a value\n", .{});
+                return;
+            }
+            workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--guidance")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --guidance requires a value\n", .{});
+                return;
+            }
+            guidance_dir = args[i];
+        } else if (std.mem.eql(u8, arg, "--api-url")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --api-url requires a value\n", .{});
+                return;
+            }
+            api_url = args[i];
+        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --model requires a value\n", .{});
+                return;
+            }
+            model = args[i];
+        } else if (!std.mem.startsWith(u8, arg, "-")) {
+            // First non-flag argument is the query
+            single_query = arg;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const ws = if (workspace) |w|
+        try llm.resolvePath(allocator, cwd, w)
+    else
+        try allocator.dupe(u8, cwd);
+    defer allocator.free(ws);
+
+    const cfg = config_mod.loadConfig(allocator, ws) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const db = db_path orelse cfg.db_path;
+    const db_abs = try llm.resolvePath(allocator, ws, db);
+    defer allocator.free(db_abs);
+
+    const gdir = guidance_dir orelse cfg.guidance_dir;
+    const gdir_abs = try llm.resolvePath(allocator, ws, gdir);
+    defer allocator.free(gdir_abs);
+
+    // Initialize LLM client for evaluation (when not --no-llm)
+    var llm_client_opt: ?llm.LlmClient = null;
+    var resolved_url_buf: ?[]const u8 = null;
+    defer if (resolved_url_buf) |buf| allocator.free(buf);
+
+    if (!no_llm) {
+        const model_ref = model orelse cfg.model_default;
+
+        // Use centralized helper for thinking model support
+        const resolved = resolveLlmConfigForThinking(
+            allocator,
+            &cfg,
+            model_ref,
+            api_url,
+        ) catch {
+            // Fallback to defaults
+            const fallback_config: llm.LlmConfig = .{
+                .api_url = api_url orelse config_mod.DEFAULT_API_URL,
+                .model = model_ref,
+                .think = null,
+            };
+            llm_client_opt = llm.LlmClient.init(allocator, fallback_config) catch null;
+            return;
+        };
+        resolved_url_buf = resolved.resolved_url;
+        const llm_config: llm.LlmConfig = .{
+            .api_url = resolved.api_url,
+            .model = resolved.model,
+            .think = resolved.think,
+        };
+        llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
+    }
+    defer if (llm_client_opt) |*c| c.deinit();
+
+    // Load module-level comments to generate hypothetical queries, or use single query
+    const queries = if (single_query) |sq| blk: {
+        var single: std.ArrayList(TestQuery) = .{};
+        try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
+        break :blk try single.toOwnedSlice(allocator);
+    } else try generateTestQueries(allocator, gdir_abs);
+    defer {
+        for (queries) |q| {
+            allocator.free(q.query);
+            if (q.observations.len > 0) allocator.free(q.observations);
+        }
+        allocator.free(queries);
+    }
+
+    std.debug.print("# Explain Benchmark Results\n\n", .{});
+    std.debug.print("Testing {d} queries (LLM evaluation: {s})\n\n", .{ queries.len, if (llm_client_opt != null) "enabled" else "disabled" });
+
+    var total_acc: u32 = 0;
+    var total_rel: u32 = 0;
+    var total_cmpl: u32 = 0;
+    var excellent_count: usize = 0;
+    var good_count: usize = 0;
+    var weak_count: usize = 0;
+
+    // Run each query
+    for (queries) |tq| {
+        std.debug.print("## Query: `{s}`\n\n", .{tq.query});
+
+        // Run explain
+        var ea: ExplainArgs = .{ .no_llm = no_llm, .limit = 10 };
+        if (db_path) |p| ea.db_path = p;
+        if (workspace) |w| ea.workspace = w;
+        if (guidance_dir) |g| ea.guidance = g;
+
+        const query_text = try allocator.dupe(u8, tq.query);
+        defer allocator.free(query_text);
+
+        // Capture results via internal search
+        const results = results_blk: {
+            const embedder = try createEmbedderWithFallback(allocator, &cfg);
+            defer embedder.deinit();
+
+            var gdb = GuidanceDb.init(allocator, db_abs, embedder) catch |err| {
+                std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
+                return;
+            };
+            defer gdb.deinit();
+
+            const aliases_path = try std.fs.path.join(allocator, &.{ gdir_abs, "semantic-aliases.json" });
+            defer allocator.free(aliases_path);
+
+            var aliases_opt = lance_db_mod.loadSemanticAliases(allocator, aliases_path) catch null;
+            defer if (aliases_opt) |*a| a.deinit();
+
+            const search_aliases = if (aliases_opt) |a| a else null;
+            break :results_blk try gdb.searchWithAliases(allocator, query_text, 10, search_aliases);
+        };
+        defer {
+            for (results) |r| freeSearchResult(allocator, r);
+            allocator.free(results);
+        }
+
+        // Score results using LLM evaluation when available
+        var acc: ?u8 = null;
+        var rel: ?u8 = null;
+        var cmpl: ?u8 = null;
+        var obs_buf: [512]u8 = undefined;
+        var obs_len: usize = 0;
+        var llm_evaluated = false;
+
+        if (llm_client_opt) |*client| {
+            // Build results summary for LLM evaluation
+            var results_buf: std.ArrayList(u8) = .{};
+            defer results_buf.deinit(allocator);
+            const rw = results_buf.writer(allocator);
+            try rw.print("Query: \"{s}\"\n\n", .{query_text});
+            if (results.len > 0) {
+                try rw.print("Found {d} results:\n\n", .{results.len});
+                for (results[0..@min(5, results.len)]) |r| {
+                    try rw.print("- {s} ({s})\n", .{ r.name, r.node_type });
+                    if (r.comment) |c| {
+                        const ctrimmed = std.mem.trim(u8, c, " \t\n\r");
+                        if (ctrimmed.len > 0) {
+                            const first_line = std.mem.indexOfScalar(u8, ctrimmed, '\n') orelse ctrimmed.len;
+                            try rw.print("  Description: {s}\n", .{ctrimmed[0..@min(first_line, 100)]});
+                        }
+                    }
+                }
+            } else {
+                try rw.print("No results found.\n", .{});
+            }
+
+            const eval_prompt = try std.fmt.allocPrint(allocator,
+                \\You are a code search evaluation assistant. Evaluate search results for a codebase query.
+                \\
+                \\{s}
+                \\
+                \\Evaluate on these dimensions (0-10):
+                \\- Accuracy: Do results match the query intent?
+                \\- Relevance: Is the best result ranked first?
+                \\- Completeness: Are key relevant items found?
+                \\
+                \\Be strict but fair. Good results should score 7-10. Poor matches should score 0-4.
+                \\For no results, score 0 for all dimensions unless the query is for non-existent code.
+                \\
+                \\Respond EXACTLY in this format (no other text):
+                \\Accuracy: <0-10>
+                \\Relevance: <0-10>
+                \\Completeness: <0-10>
+                \\Observation: <one sentence>
+            , .{results_buf.items});
+            defer allocator.free(eval_prompt);
+
+            const response_opt = client.complete(eval_prompt, 400, 0.1, null) catch |err| blk: {
+                std.debug.print("Warning: LLM complete() failed: {s}\n", .{@errorName(err)});
+                break :blk null;
+            };
+            if (response_opt) |response| {
+                defer allocator.free(response);
+                const stripped = llm.stripThinkBlock(response);
+
+                // Parse scores from response
+                var lines = std.mem.splitScalar(u8, stripped, '\n');
+                while (lines.next()) |line| {
+                    const trimmed = std.mem.trim(u8, line, "\t\r");
+
+                    // Check for score lines like "### Accuracy: 8/10", "Accuracy: 8", "- **Accuracy:** 8/10"
+                    if (std.mem.indexOf(u8, trimmed, "Accuracy") != null) {
+                        if (acc == null) acc = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Relevance") != null) {
+                        if (rel == null) rel = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Completeness") != null) {
+                        if (cmpl == null) cmpl = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Observation")) |_| {
+                        if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
+                            var obs_start = colon + 1;
+                            while (obs_start < trimmed.len and (trimmed[obs_start] == ' ' or trimmed[obs_start] == '*')) {
+                                obs_start += 1;
+                            }
+                            const obs_text = trimmed[obs_start..];
+                            obs_len = @min(obs_text.len, obs_buf.len - 1);
+                            @memcpy(obs_buf[0..obs_len], obs_text[0..obs_len]);
+                            obs_buf[obs_len] = 0;
+                        }
+                    }
+                }
+                llm_evaluated = (acc != null and rel != null and cmpl != null);
+            }
+        }
+
+        // If LLM evaluation failed, use "-" for scores
+        const eval_status = if (llm_evaluated) "LLM" else "FALLBACK";
+
+        // Get actual values for display (use "-" if not evaluated)
+        const acc_val = acc orelse 0;
+        const rel_val = rel orelse 0;
+        const cmpl_val = cmpl orelse 0;
+        const acc_display = if (acc) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(acc_display);
+        const rel_display = if (rel) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(rel_display);
+        const cmpl_display = if (cmpl) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(cmpl_display);
+
+        // Only count toward statistics if actually evaluated
+        if (llm_evaluated) {
+            total_acc += acc_val;
+            total_rel += rel_val;
+            total_cmpl += cmpl_val;
+
+            if (acc_val >= 9) {
+                excellent_count += 1;
+            } else if (acc_val >= 7) {
+                good_count += 1;
+            } else {
+                weak_count += 1;
+            }
+        }
+
+        std.debug.print("| Metric | Score |\n", .{});
+        std.debug.print("|--------|-------|\n", .{});
+        std.debug.print("| Accuracy | {s}/10 |\n", .{acc_display});
+        std.debug.print("| Relevance | {s}/10 |\n", .{rel_display});
+        std.debug.print("| Completeness | {s}/10 |\n", .{cmpl_display});
+        std.debug.print("| Results | {d} |\n", .{results.len});
+        std.debug.print("| Evaluation | {s} |\n\n", .{eval_status});
+
+        // Show top 3 results
+        std.debug.print("**Top Results:**\n", .{});
+        for (results[0..@min(3, results.len)]) |r| {
+            std.debug.print("- `{s}` ({s}:{s})\n", .{ r.name, r.module, r.node_type });
+        }
+        if (obs_len > 0) {
+            std.debug.print("\n**Observation:** {s}\n", .{obs_buf[0..obs_len]});
+        }
+        std.debug.print("\n---\n\n", .{});
+    }
+
+    // Summary
+    const n = queries.len;
+    const evaluated_count = excellent_count + good_count + weak_count;
+    if (n > 0) {
+        std.debug.print("# Summary Statistics\n\n", .{});
+        std.debug.print("| Metric | Value |\n", .{});
+        std.debug.print("|--------|-------|\n", .{});
+        std.debug.print("| **Total Queries** | {d} |\n", .{n});
+        std.debug.print("| **LLM Evaluated** | {d} |\n", .{evaluated_count});
+        if (evaluated_count > 0) {
+            std.debug.print("| **Average Accuracy** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_acc)) / @as(f32, @floatFromInt(evaluated_count))});
+            std.debug.print("| **Average Relevance** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_rel)) / @as(f32, @floatFromInt(evaluated_count))});
+            std.debug.print("| **Average Completeness** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_cmpl)) / @as(f32, @floatFromInt(evaluated_count))});
+        } else {
+            std.debug.print("| **Average Accuracy** | -/10 |\n", .{});
+            std.debug.print("| **Average Relevance** | -/10 |\n", .{});
+            std.debug.print("| **Average Completeness** | -/10 |\n", .{});
+        }
+        std.debug.print("| **Excellent (9-10)** | {d}/{d} ({d}%) |\n", .{ excellent_count, evaluated_count, if (evaluated_count > 0) @as(usize, @intFromFloat(@as(f32, @floatFromInt(excellent_count)) / @as(f32, @floatFromInt(evaluated_count)) * 100)) else 0 });
+        std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, evaluated_count });
+        std.debug.print("| **Weak (<7)** | {d}/{d} |\n", .{ weak_count, evaluated_count });
+    }
+}
+
+/// Parse a 0-10 score from an LLM evaluation response line of the form:
+/// "Label: <digits>[/10]" — also handles markdown decorations like "**", "-".
+/// Returns null when no score digit can be extracted after the first colon.
+fn parseScoreFromLine(line: []const u8) ?u8 {
+    const colon = std.mem.indexOfScalar(u8, line, ':') orelse return null;
+    var i = colon + 1;
+    // Skip spaces and markdown decoration (* -)
+    while (i < line.len and (line[i] == ' ' or line[i] == '*' or line[i] == '-')) i += 1;
+    // Collect consecutive ASCII digits
+    const start = i;
+    while (i < line.len and line[i] >= '0' and line[i] <= '9') i += 1;
+    if (i == start) return null;
+    const v = std.fmt.parseInt(u8, line[start..i], 10) catch return null;
+    return @min(10, v);
+}
+
+/// Generate test queries from module-level comments in guidance JSON files.
+fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
+    var queries: std.ArrayList(TestQuery) = .{};
+    errdefer {
+        for (queries.items) |q| {
+            allocator.free(q.query);
+            if (q.observations.len > 0) allocator.free(q.observations);
+        }
+        queries.deinit(allocator);
+    }
+
+    // Scan .guidance/src/**/*.json for module-level comments
+    const src_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "src" });
+    defer allocator.free(src_dir);
+
+    var dir = std.fs.cwd().openDir(src_dir, .{ .iterate = true }) catch |err| {
+        std.debug.print("Warning: cannot open guidance src dir: {s}\n", .{@errorName(err)});
+        return queries.toOwnedSlice(allocator);
+    };
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
+
+        const json_path = try std.fs.path.join(allocator, &.{ src_dir, entry.path });
+        defer allocator.free(json_path);
+
+        const file = std.fs.cwd().openFile(json_path, .{}) catch continue;
+        defer file.close();
+
+        const content = file.readToEndAlloc(allocator, 1024 * 1024) catch continue;
+        defer allocator.free(content);
+
+        var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch continue;
+        defer parsed.deinit();
+
+        if (parsed.value != .object) continue;
+        const root = parsed.value.object;
+
+        // Get module-level comment
+        const comment_val = root.get("comment") orelse continue;
+        if (comment_val != .string) continue;
+        const comment = comment_val.string;
+        if (comment.len < 20) continue;
+
+        // Get module name
+        const meta_val = root.get("meta") orelse continue;
+        if (meta_val != .object) continue;
+        const module_val = meta_val.object.get("module") orelse continue;
+        if (module_val != .string) continue;
+        const module = module_val.string;
+
+        // Extract module basename (last component)
+        const module_basename = std.mem.lastIndexOfScalar(u8, module, '.');
+        const basename = if (module_basename) |idx| module[idx + 1 ..] else module;
+
+        // Generate simple query from module name
+        const query1 = try std.fmt.allocPrint(allocator, "{s}", .{basename});
+        try queries.append(allocator, .{ .query = query1 });
+
+        // Generate question-style query
+        const query2 = try std.fmt.allocPrint(allocator, "How does {s} work?", .{basename});
+        try queries.append(allocator, .{ .query = query2 });
+
+        // Limit to 20 queries
+        if (queries.items.len >= 20) break;
+    }
+
+    return queries.toOwnedSlice(allocator);
+}
+

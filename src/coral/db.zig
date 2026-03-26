@@ -267,7 +267,7 @@ pub const Library = struct {
     // ------------------------------------------------------------------
 
     /// Run a single SQL statement (no params, no result rows).
-    fn exec(self: *Self, sql: []const u8) !void {
+    pub fn exec(self: *Self, sql: []const u8) !void {
         const sql_z = try self.allocator.dupeZ(u8, sql);
         defer self.allocator.free(sql_z);
         const rc = c.sqlite3_exec(self.db, sql_z.ptr, null, null, null);
@@ -608,6 +608,14 @@ pub const Library = struct {
         return nodes.toOwnedSlice(arena);
     }
 
+    /// Return the total number of rows in context_nodes.
+    pub fn countNodes(self: *Self) !usize {
+        const stmt = try self.prepare("SELECT COUNT(*) FROM context_nodes");
+        defer _ = c.sqlite3_finalize(stmt);
+        if (!try step(stmt)) return 0;
+        return @intCast(c.sqlite3_column_int64(stmt, 0));
+    }
+
     /// Look up a node id by exact lod4 (name) match.
     /// Returns null if not found.
     pub fn findNodeByName(self: *Self, name: []const u8) !?i64 {
@@ -617,6 +625,117 @@ pub const Library = struct {
         _ = c.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), SQLITE_STATIC);
         if (!try step(stmt)) return null;
         return c.sqlite3_column_int64(stmt, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Keyword + Hybrid search (M2.4)
+    // ------------------------------------------------------------------
+
+    /// Keyword search: LIKE match on lod4 (name) or lod0 (description).
+    /// Returns allocator-owned []ContextNode ordered name-matches first.
+    /// Caller frees: `for (nodes) |*n| n.free(allocator); allocator.free(nodes);`
+    pub fn keywordSearch(self: *Self, allocator: std.mem.Allocator, query: []const u8, limit: usize) ![]ContextNode {
+        const pattern = try std.fmt.allocPrint(allocator, "%{s}%", .{query});
+        defer allocator.free(pattern);
+
+        const sql =
+            \\SELECT DISTINCT id FROM context_nodes
+            \\WHERE lod4 LIKE ?1 OR lod0 LIKE ?1
+            \\ORDER BY CASE WHEN lod4 LIKE ?1 THEN 0 ELSE 1 END
+            \\LIMIT ?2
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_text(stmt, 1, pattern.ptr, @intCast(pattern.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
+
+        var ids: std.ArrayListUnmanaged(i64) = .{};
+        defer ids.deinit(allocator);
+        while (try step(stmt)) {
+            try ids.append(allocator, c.sqlite3_column_int64(stmt, 0));
+        }
+
+        var nodes: std.ArrayListUnmanaged(ContextNode) = .{};
+        errdefer {
+            for (nodes.items) |*n| n.free(allocator);
+            nodes.deinit(allocator);
+        }
+        for (ids.items) |id| {
+            if (try self.fetchNode(id)) |node| {
+                try nodes.append(allocator, node);
+            }
+        }
+        return nodes.toOwnedSlice(allocator);
+    }
+
+    /// Hybrid search: 0.65 × vector + 0.35 × keyword, returning up to `limit` nodes.
+    /// `threshold` is the minimum vector cosine similarity (0–1) to include a node.
+    /// Falls back to keyword-only if query_embedding is empty.
+    /// Returns allocator-owned []ContextNode sorted by descending hybrid score.
+    pub fn hybridSearch(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query: []const u8,
+        query_embedding: []const f32,
+        limit: usize,
+        threshold: f32,
+    ) ![]ContextNode {
+        const ScoreEntry = struct { id: i64, score: f32 };
+
+        var scores: std.AutoHashMapUnmanaged(i64, f32) = .{};
+        defer scores.deinit(allocator);
+
+        // Vector component
+        if (query_embedding.len > 0) {
+            const vec_hits = try self.knnSearch(allocator, query_embedding, limit * 2);
+            defer allocator.free(vec_hits);
+            for (vec_hits) |hit| {
+                const vec_sim: f32 = @max(0.0, 1.0 - @min(1.0, hit.distance));
+                if (vec_sim < threshold) continue;
+                try scores.put(allocator, hit.id, 0.65 * vec_sim);
+            }
+        }
+
+        // Keyword component
+        const kw_nodes = try self.keywordSearch(allocator, query, limit * 2);
+        defer {
+            for (kw_nodes) |*n| @constCast(n).free(allocator);
+            allocator.free(kw_nodes);
+        }
+        for (kw_nodes, 0..) |node, rank| {
+            const kw_score: f32 = @max(0.1, 1.0 - @as(f32, @floatFromInt(rank)) * 0.05);
+            const prev = scores.get(node.id) orelse 0.0;
+            try scores.put(allocator, node.id, prev + 0.35 * kw_score);
+        }
+
+        if (scores.count() == 0) return allocator.alloc(ContextNode, 0);
+
+        // Sort by score descending
+        var sorted: std.ArrayListUnmanaged(ScoreEntry) = .{};
+        defer sorted.deinit(allocator);
+        var it = scores.iterator();
+        while (it.next()) |entry| {
+            try sorted.append(allocator, .{ .id = entry.key_ptr.*, .score = entry.value_ptr.* });
+        }
+        std.mem.sort(ScoreEntry, sorted.items, {}, struct {
+            fn lt(_: void, a: ScoreEntry, b: ScoreEntry) bool {
+                return a.score > b.score;
+            }
+        }.lt);
+
+        // Fetch ContextNodes for top results
+        var result: std.ArrayListUnmanaged(ContextNode) = .{};
+        errdefer {
+            for (result.items) |*n| n.free(allocator);
+            result.deinit(allocator);
+        }
+        const take = @min(limit, sorted.items.len);
+        for (sorted.items[0..take]) |entry| {
+            if (try self.fetchNode(entry.id)) |node| {
+                try result.append(allocator, node);
+            }
+        }
+        return result.toOwnedSlice(allocator);
     }
 
     // ------------------------------------------------------------------
@@ -1389,6 +1508,115 @@ test "Library: BFS distance via ContextPacker.getNodesByDistance" {
     try testing.expectEqual(@as(u32, 0), nodes[0].graph_distance);
     try testing.expectEqual(@as(u32, 1), nodes[1].graph_distance);
     try testing.expectEqual(@as(u32, 2), nodes[2].graph_distance);
+}
+
+test "ContextPacker: BFS distance → LOD assignment → token-budget downgrade" {
+    // M3.4 integration test: inserts a star graph (center + 5 leaves connected via
+    // neighbor_of), then packs from the center node.
+    //
+    // Expectations:
+    //   - Center (distance 0) → lod[0] (full text, longest)
+    //   - Distance-1 nodes   → lod[1] (summary, shorter)
+    //   - Token budget cuts off if total would overflow
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    // Insert center node (id=100)
+    const full_text = "This is the full LOD-0 description of the center node. " ** 4; // ~224 chars
+    var center = try ContextNode.init(100, "center_node", full_text, allocator);
+    defer center.free(allocator);
+    center.lod[1] = try allocator.dupe(u8, "Center summary.");
+    center.lod[2] = try allocator.dupe(u8, "Center brief.");
+    center.lod[3] = try allocator.dupe(u8, "Center snippet.");
+    // lod[4] already set to "center_node" by init(); do not replace to avoid leak.
+    center.lod_owned |= 0b001110; // mark lod[1..3] as allocator-owned (bit 4 already set by init)
+    try lib.insertNode(center);
+
+    // Insert 5 leaf nodes (ids 101-105), connect each to center via neighbor_of
+    var leaf_id: i64 = 101;
+    while (leaf_id <= 105) : (leaf_id += 1) {
+        const leaf_name = try std.fmt.allocPrint(allocator, "leaf_{d}", .{leaf_id});
+        defer allocator.free(leaf_name);
+        const leaf_desc = try std.fmt.allocPrint(allocator, "Leaf node {d} description text.", .{leaf_id});
+        defer allocator.free(leaf_desc);
+        var leaf = try ContextNode.init(leaf_id, leaf_name, leaf_desc, allocator);
+        defer leaf.free(allocator);
+        try lib.insertNode(leaf);
+        try lib.insertNeighborOf(100, leaf_id, 0.9, .neighbor_of);
+    }
+
+    // Pack with generous budget — should include center + all leaves.
+    {
+        var packer = lib.createContextPacker(8192);
+        const ctx_text = try packer.pack(100);
+        defer allocator.free(ctx_text);
+        try testing.expect(ctx_text.len > 0);
+        // Center node's full text should appear (LOD-0, distance 0)
+        try testing.expect(std.mem.indexOf(u8, ctx_text, "This is the full") != null);
+    }
+
+    // Pack with tiny budget — only the center node's name fits.
+    {
+        var packer = lib.createContextPacker(10);
+        const ctx_small = try packer.pack(100);
+        defer allocator.free(ctx_small);
+        // Budget exhausted quickly; result may be empty or very short
+        try testing.expect(ctx_small.len <= 100); // definitely under-budget
+    }
+}
+
+test "Library: hybridSearch returns nodes matching keyword" {
+    // M2.4 integration test
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    var node = try ContextNode.init(200, "hybrid_target", "This node has a unique keyword frobnicate.", allocator);
+    defer node.free(allocator);
+    try lib.insertNode(node);
+
+    // Keyword-only path (empty embedding → falls back to keyword)
+    const results = try lib.hybridSearch(allocator, "frobnicate", &[_]f32{}, 5, 0.0);
+    defer {
+        for (results) |*n| @constCast(n).free(allocator);
+        allocator.free(results);
+    }
+    try testing.expect(results.len >= 1);
+    var found = false;
+    for (results) |n| {
+        if (n.id == 200) { found = true; break; }
+    }
+    try testing.expect(found);
+}
+
+test "Library: keywordSearch finds name and description matches" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    var n1 = try ContextNode.init(201, "unicorn_entity", "A magical horse.", allocator);
+    defer n1.free(allocator);
+    var n2 = try ContextNode.init(202, "other_thing", "Contains the word unicorn in description.", allocator);
+    defer n2.free(allocator);
+    try lib.insertNode(n1);
+    try lib.insertNode(n2);
+
+    const results = try lib.keywordSearch(allocator, "unicorn", 10);
+    defer {
+        for (results) |*n| @constCast(n).free(allocator);
+        allocator.free(results);
+    }
+    try testing.expect(results.len >= 2);
 }
 
 test "Library: concurrent insert+read, 4 threads" {

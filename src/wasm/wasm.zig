@@ -15,6 +15,7 @@
 ///   - Extism runtime (libextism) - linked via build.zig
 ///   - Library from coral/db.zig (SQLite backend)
 const std = @import("std");
+const builtin = @import("builtin");
 const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const Library = coral_db.Library;
@@ -626,6 +627,26 @@ fn createPluginWithHostFunctions(
         .manifest = manifest,
         .arena = arena,
     };
+}
+
+/// Execute a WASM binary with a plain string query as input.
+/// Calls the exported "run" function and returns the allocator-owned output.
+/// Used by QueueReactor L2 routing.  Returns error if Extism runtime is
+/// unavailable or the WASM invocation fails.
+///
+/// In test builds this function returns `error.WasmRuntimeNotAvailable`
+/// immediately so that test binaries do not require libextism to be linked.
+pub fn executeWasmQuery(
+    allocator: std.mem.Allocator,
+    wasm_bytes: []const u8,
+    query: []const u8,
+) ![]const u8 {
+    if (comptime builtin.is_test) return error.WasmRuntimeNotAvailable;
+    const manifest = WasmManifest.init(wasm_bytes);
+    var plugin = try WasmPlugin.init(allocator, manifest);
+    defer plugin.deinit();
+    const raw = try plugin.call("run", query);
+    return allocator.dupe(u8, raw);
 }
 
 // ---------------------------------------------------------------------------

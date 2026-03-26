@@ -39,6 +39,11 @@ pub const TargetKind = enum {
     command,
 };
 
+/// Handler function type for ingestion targets.
+/// Uses an opaque context pointer to keep targets.zig free of Library/BatchConfig dependencies.
+/// The executor casts the context to its concrete ExecutionContext.
+pub const HandlerFn = *const fn (allocator: std.mem.Allocator, ctx: *anyopaque) anyerror!void;
+
 /// Defines a target definition with fixed-size buffers; managed via ownership model; ensures correct initialization/deinit state.
 pub const TargetDef = struct {
     name: []const u8,
@@ -47,6 +52,8 @@ pub const TargetDef = struct {
     /// Names of targets this one depends on.
     depends: []const []const u8,
     description: []const u8,
+    /// Handler function — null for phony targets or unimplemented stages.
+    handler: ?HandlerFn = null,
 };
 
 const download_deps = [_][]const u8{};

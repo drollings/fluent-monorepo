@@ -167,6 +167,25 @@ pub fn superclassChain(iri: []const u8, out: [][]const u8) usize {
     return count;
 }
 
+/// Returns true when `child_iri` is `parent_iri` or a (transitive) subclass of it.
+/// Walks the static `superclass` chain in ALL_CLASSES.
+///
+/// Example: `isSubclassOf(NS_SCHEMA ++ "Scientist", NS_SCHEMA ++ "Person")` → true
+///
+/// Used in QueueReactor capability matching: if a tool requires "Person" and
+/// the query entity is a "Scientist", the tool matches via subsumption.
+pub fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) bool {
+    if (std.mem.eql(u8, child_iri, parent_iri)) return true;
+    var current: ?[]const u8 = child_iri;
+    while (current) |cur| {
+        const cls = lookupClass(cur) orelse break;
+        const superclass = cls.superclass orelse break;
+        if (std.mem.eql(u8, superclass, parent_iri)) return true;
+        current = superclass;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // YAGO 4.5 property registry (core subset)
 // ---------------------------------------------------------------------------
@@ -352,3 +371,20 @@ test "transitive property subClassOf" {
 
 
 
+
+test "isSubclassOf: identity" {
+    try testing.expect(isSubclassOf(NS_SCHEMA ++ "Person", NS_SCHEMA ++ "Person"));
+}
+
+test "isSubclassOf: direct subclass" {
+    // Schema:Person has superclass yago:Entity
+    try testing.expect(isSubclassOf(NS_SCHEMA ++ "Person", NS_YAGO ++ "Entity"));
+}
+
+test "isSubclassOf: unrelated classes" {
+    try testing.expect(!isSubclassOf(NS_SCHEMA ++ "Person", NS_SCHEMA ++ "Product"));
+}
+
+test "isSubclassOf: unknown child IRI" {
+    try testing.expect(!isSubclassOf("http://unknown/Foo", NS_YAGO ++ "Entity"));
+}

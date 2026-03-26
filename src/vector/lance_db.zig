@@ -21,6 +21,7 @@
 const std = @import("std");
 const vector = @import("root.zig");
 const common = @import("common");
+const simhash = @import("simhash.zig");
 const log = std.log.scoped(.guidance_db);
 
 pub const c = @cImport({
@@ -31,6 +32,10 @@ pub const SQLITE_STATIC: c.sqlite3_destructor_type = null;
 const BUSY_TIMEOUT_MS: c_int = 5000;
 
 pub const SCHEMA_VERSION: u32 = 2;
+
+/// Minimum cosine similarity to include a result from vectorSearch().
+/// Below this threshold the match is semantic noise for 384-dim embeddings.
+pub const MIN_VECTOR_THRESHOLD: f32 = 0.28;
 
 // ---------------------------------------------------------------------------
 // Semantic aliases for query expansion
@@ -223,6 +228,11 @@ pub fn syncDatabase(
             log.warn("alias embeddings sync failed: {s}", .{@errorName(err)});
         };
     }
+
+    // Recompute IDF weights so rare keywords score higher than common ones.
+    _ = db.rebuildKeywordIdf() catch |err| {
+        log.warn("rebuildKeywordIdf failed: {s}", .{@errorName(err)});
+    };
 
     // Trim embedding cache to configured limit
     db.trimCache(cache_limit);
@@ -578,7 +588,27 @@ pub const GuidanceDb = struct {
             if (err_msg) |msg| c.sqlite3_free(msg);
         }
 
-        // ── Step 4: schema version ──
+        // ── Step 4: simhash_index table ──
+        // Cascade-deletes keep the index consistent when ast_nodes rows are removed.
+        {
+            var err_msg: [*c]u8 = null;
+            const sh_sql =
+                \\CREATE TABLE IF NOT EXISTS simhash_index (
+                \\    node_id  INTEGER NOT NULL PRIMARY KEY,
+                \\    simhash  INTEGER NOT NULL,
+                \\    FOREIGN KEY (node_id) REFERENCES ast_nodes(id) ON DELETE CASCADE
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_sh ON simhash_index(simhash);
+            ;
+            const rc = c.sqlite3_exec(self.db, sh_sql, null, null, &err_msg);
+            if (rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE simhash_index", rc, err_msg, self.db);
+                if (err_msg) |msg| c.sqlite3_free(msg);
+                // Non-fatal: SimHash is a performance hint only.
+            }
+        }
+
+        // ── Step 5: schema version ──
         const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(self.db, ver_sql, -1, &stmt, null) == c.SQLITE_OK) {
@@ -1107,6 +1137,102 @@ pub const GuidanceDb = struct {
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
     }
 
+    // ── SimHash index ──────────────────────────────────────────────
+
+    /// Upsert a SimHash entry for a node with an embedding.
+    /// Called after each INSERT INTO ast_nodes when an embedding was computed.
+    fn upsertSimhash(self: *Self, node_id: i64, h: u64) void {
+        const sql = "INSERT OR REPLACE INTO simhash_index(node_id, simhash) VALUES(?1, ?2)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, @bitCast(h));
+        _ = c.sqlite3_step(stmt);
+    }
+
+    /// Return candidate node IDs whose SimHash is within max_hamming bits of query_hash.
+    ///
+    /// This is the hot path: loads 8 bytes per node (versus 4 × DIMS bytes per embedding),
+    /// filters by Hamming distance (single XOR + popcount instruction), and returns only
+    /// the candidates that warrant a full cosine evaluation.
+    fn getSimhashCandidates(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_hash: u64,
+        max_hamming: u7,
+    ) ![]i64 {
+        const sql = "SELECT node_id, simhash FROM simhash_index";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(i64, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var candidates: std.ArrayList(i64) = .{};
+        errdefer candidates.deinit(allocator);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const h: u64 = @bitCast(c.sqlite3_column_int64(stmt, 1));
+            if (simhash.hammingDistance(h, query_hash) <= max_hamming) {
+                try candidates.append(allocator, node_id);
+            }
+        }
+        return candidates.toOwnedSlice(allocator);
+    }
+
+    /// Fetch the embedding BLOB for a single node by its SQLite row id.
+    /// Returns null when the node has no embedding.  Caller frees the slice.
+    fn getEmbeddingById(self: *Self, allocator: std.mem.Allocator, node_id: i64) !?[]f32 {
+        const sql = "SELECT embedding FROM ast_nodes WHERE id = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return null;
+        const emb_raw = c.sqlite3_column_blob(stmt, 0);
+        const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+        if (emb_raw == null or emb_len == 0) return null;
+        const emb_bytes: []const u8 = @as([*]const u8, @ptrCast(emb_raw))[0..emb_len];
+        return try vector.bytesToVec(allocator, emb_bytes);
+    }
+
+    /// Rebuild the entire simhash_index from the current ast_nodes embeddings.
+    /// Safe to run at any time — clears and repopulates the table.
+    /// Call after a full sync to ensure the index is current.
+    pub fn rebuildSimhashIndex(self: *Self, allocator: std.mem.Allocator) !usize {
+        // Clear existing index.
+        _ = self.execSimpleNoErr("DELETE FROM simhash_index");
+
+        const sql =
+            "SELECT id, embedding FROM ast_nodes " ++
+            "WHERE embedding IS NOT NULL AND node_type != 'test_decl'";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return error.PrepareFailed;
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var count: usize = 0;
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const emb_raw = c.sqlite3_column_blob(stmt, 1);
+            const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+            if (emb_raw == null or emb_len == 0) continue;
+
+            const emb_bytes: []const u8 = @as([*]const u8, @ptrCast(emb_raw))[0..emb_len];
+            const emb = vector.bytesToVec(allocator, emb_bytes) catch continue;
+            defer allocator.free(emb);
+
+            const h = simhash.simhash(emb);
+            self.upsertSimhash(node_id, h);
+            count += 1;
+        }
+        log.info("simhash_index rebuilt: {d} entries", .{count});
+        return count;
+    }
+
     // ── Embedding text builder ─────────────────────────────────────
 
     /// Convert a dotted module path to human-readable prose.
@@ -1206,6 +1332,10 @@ pub const GuidanceDb = struct {
     /// `parent_comment` is the top-level module doc comment — including it in
     /// member embeddings means queries about the module's purpose also surface
     /// individual functions, not just the module row.
+    ///
+    /// Format: descriptor-bag "name · module · type · comment_nouns · params · context"
+    /// Uses `·` (U+00B7) as separator — rare in code, clear to sentence-transformers.
+    /// Boilerplate prefixes are stripped from comments before embedding.
     fn buildEmbeddingText(
         allocator: std.mem.Allocator,
         module: []const u8,
@@ -1224,27 +1354,29 @@ pub const GuidanceDb = struct {
         errdefer buf.deinit(allocator);
 
         if (std.mem.eql(u8, node_type, "module")) {
-            // Module row: "<prose> module: <comment>"
+            // Module: "<prose> · module · <stripped_comment>"
             try buf.appendSlice(allocator, prose_module);
-            try buf.appendSlice(allocator, " module");
+            try buf.appendSlice(allocator, " · module");
             if (comment) |cm| {
-                if (cm.len > 0) {
-                    try buf.appendSlice(allocator, ": ");
-                    try buf.appendSlice(allocator, cm);
+                const stripped = common.stripBoilerplate(cm);
+                if (stripped.len > 0) {
+                    try buf.appendSlice(allocator, " · ");
+                    try buf.appendSlice(allocator, stripped);
                 }
             }
         } else {
-            // Member row: "<prose> — <noun> <name>: <comment>. Parameters: <params>."
-            try buf.appendSlice(allocator, prose_module);
-            try buf.appendSlice(allocator, " — ");
-            try buf.appendSlice(allocator, noun);
-            try buf.append(allocator, ' ');
+            // Member: "<name> · <prose> · <noun> · <stripped_comment> · <params> · <context>"
             try buf.appendSlice(allocator, name);
+            try buf.appendSlice(allocator, " · ");
+            try buf.appendSlice(allocator, prose_module);
+            try buf.appendSlice(allocator, " · ");
+            try buf.appendSlice(allocator, noun);
 
             if (comment) |cm| {
-                if (cm.len > 0) {
-                    try buf.appendSlice(allocator, ": ");
-                    try buf.appendSlice(allocator, cm);
+                const stripped = common.stripBoilerplate(cm);
+                if (stripped.len > 0) {
+                    try buf.appendSlice(allocator, " · ");
+                    try buf.appendSlice(allocator, stripped);
                 }
             }
 
@@ -1253,19 +1385,20 @@ pub const GuidanceDb = struct {
                 if (try extractParamNames(allocator, sig)) |params| {
                     defer allocator.free(params);
                     if (params.len > 0) {
-                        try buf.appendSlice(allocator, ". Parameters: ");
+                        try buf.appendSlice(allocator, " · ");
                         try buf.appendSlice(allocator, params);
-                        try buf.append(allocator, '.');
                     }
                 }
             }
 
-            // Inject parent module context — helps queries about module purpose
-            // find individual members even when they lack their own comment
+            // Parent module context — helps queries find members via module purpose
             if (parent_comment) |pc| {
                 if (pc.len > 0 and pc.len < 200) {
-                    try buf.appendSlice(allocator, " Context: ");
-                    try buf.appendSlice(allocator, pc);
+                    const stripped_pc = common.stripBoilerplate(pc);
+                    if (stripped_pc.len > 0) {
+                        try buf.appendSlice(allocator, " · ");
+                        try buf.appendSlice(allocator, stripped_pc);
+                    }
                 }
             }
         }
@@ -1647,8 +1780,11 @@ pub const GuidanceDb = struct {
             std.mem.eql(u8, m.node_type, "enum") or
             std.mem.eql(u8, m.node_type, "fn_decl");
 
-        // Skip embedding for: tests, members without comments, nested members without module context
-        const should_embed = !is_test and (has_comment or (is_top_level and has_module_context));
+        // Skip noisy comments: auto-generated tables, hex dumps, numeric arrays.
+        const comment_is_noisy = if (effective_comment) |cm| common.isNoisyComment(cm) else false;
+
+        // Skip embedding for: tests, members without comments, nested members without module context, noisy
+        const should_embed = !is_test and !comment_is_noisy and (has_comment or (is_top_level and has_module_context));
 
         const emb: ?[]f32 = if (should_embed) blk: {
             const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, effective_comment, m.signature, doc.module_comment);
@@ -1704,6 +1840,13 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_text(stmt, 13, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+
+        // Index the embedding in the SimHash table for ANN pre-filtering.
+        if (emb) |e| {
+            const node_id = c.sqlite3_last_insert_rowid(self.db);
+            const h = simhash.simhash(e);
+            self.upsertSimhash(node_id, h);
+        }
     }
 
     // ── Search ─────────────────────────────────────────────────────
@@ -1903,62 +2046,164 @@ pub const GuidanceDb = struct {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
-        // ── Phase 1: Deterministic name match (case-sensitive AST lookup) ─────────────────────
-        // Use ORIGINAL query for exact name matching, not the expanded query.
-        // Only match tokens that look like identifiers (camelCase, PascalCase, snake_case)
-        // to avoid matching common words like "search" or "work".
-        const orig_trimmed = std.mem.trim(u8, original_query, " \t\n\r");
-        var query_tokens: std.ArrayList([]const u8) = .{};
-        defer {
-            for (query_tokens.items) |t| allocator.free(t);
-            query_tokens.deinit(allocator);
-        }
-        {
-            var tok_it = std.mem.tokenizeAny(u8, orig_trimmed, " \t\n\r_-");
-            while (tok_it.next()) |tok| {
-                if (tok.len >= 2 and looksLikeIdentifier(tok)) {
-                    try query_tokens.append(allocator, try allocator.dupe(u8, tok));
+        // ── Phases 1-3: Primary search (labeled block collects result) ─────────
+        const primary: []SearchResult = primary: {
+            // Phase 1: Deterministic name match (case-sensitive AST lookup).
+            // Use ORIGINAL query so expanded tokens don't pollute exact matching.
+            const orig_trimmed = std.mem.trim(u8, original_query, " \t\n\r");
+            var query_tokens: std.ArrayList([]const u8) = .{};
+            defer {
+                for (query_tokens.items) |t| allocator.free(t);
+                query_tokens.deinit(allocator);
+            }
+            {
+                var tok_it = std.mem.tokenizeAny(u8, orig_trimmed, " \t\n\r_-");
+                while (tok_it.next()) |tok| {
+                    if (tok.len >= 2 and looksLikeIdentifier(tok)) {
+                        try query_tokens.append(allocator, try allocator.dupe(u8, tok));
+                    }
                 }
             }
-        }
-
-        // Check each token for exact AST name match (case-sensitive)
-        for (query_tokens.items) |token| {
-            const exact_match = self.findExactNameMatch(allocator, token, limit) catch continue;
-            if (exact_match.len > 0) {
-                log.debug("deterministic name match for token '{s}' in query '{s}'", .{ token, orig_trimmed });
-                return exact_match;
-            }
-        }
-
-        // ── Phase 2: Keyword vector search (semantic index, case-insensitive) ─────────────────────
-        // Build query embedding for semantic search (use full query_text, not original)
-        const query_emb = try self.getOrComputeEmbedding(allocator, trimmed);
-        defer if (query_emb) |e| allocator.free(e);
-
-        if (query_emb) |_| {
-            if (self.keywordIndexSearch(allocator, trimmed, limit)) |kw_results| {
-                if (kw_results.len > 0) {
-                    log.debug("keyword vector search found {d} results for '{s}'", .{ kw_results.len, trimmed });
-                    return kw_results;
+            for (query_tokens.items) |token| {
+                const exact_match = self.findExactNameMatch(allocator, token, limit) catch continue;
+                if (exact_match.len > 0) {
+                    log.debug("deterministic name match for token '{s}' in query '{s}'", .{ token, orig_trimmed });
+                    break :primary exact_match;
                 }
-            } else |_| {
-                // Keyword search failed, fall through to hybrid search
             }
+
+            // Phase 2: Keyword vector search (semantic index, case-insensitive).
+            // Strip NL interrogative prefix before embedding.
+            const embed_query = stripNlPrefix(trimmed);
+            const query_emb = try self.getOrComputeEmbedding(allocator, embed_query);
+            defer if (query_emb) |e| allocator.free(e);
+
+            if (query_emb) |_| {
+                if (self.keywordIndexSearch(allocator, embed_query, limit)) |kw_results| {
+                    if (kw_results.len > 0) {
+                        log.debug("keyword vector search found {d} results for '{s}'", .{ kw_results.len, embed_query });
+                        break :primary kw_results;
+                    }
+                } else |_| {}
+            }
+
+            // Phase 3: Hybrid search (vector + keyword LIKE).
+            const has_embeddings = query_emb != null and query_emb.?.len > 0;
+            break :primary if (has_embeddings)
+                try self.hybridSearch(allocator, embed_query, query_emb.?, limit)
+            else
+                try self.keywordSearch(allocator, embed_query, limit);
+        };
+
+        // ── Phase 4: One-hop see-also expansion ──────────────────────────────────
+        // When top result has sufficient confidence and there is room in the limit,
+        // append module rows from the top result's `used_by` edge list.
+        if (primary.len == 0 or primary.len >= limit) return primary;
+
+        const extras = self.seeAlsoExpand(allocator, primary, limit - primary.len) catch return primary;
+        if (extras.len == 0) {
+            allocator.free(extras);
+            return primary;
         }
 
-        // ── Phase 3: Hybrid search (vector + keyword LIKE) ─────────────────────
-        const has_embeddings = query_emb != null and query_emb.?.len > 0;
-
-        if (has_embeddings) {
-            return self.hybridSearch(allocator, trimmed, query_emb.?, limit);
-        } else {
-            return self.keywordSearch(allocator, trimmed, limit);
-        }
+        // Merge: allocate a flat slice and memcpy both halves.
+        // allocator.free on a SearchResult slice only frees the backing array,
+        // not the strings inside — ownership of those transfers to `merged`.
+        const merged = allocator.alloc(SearchResult, primary.len + extras.len) catch {
+            for (extras) |r| GuidanceDb.freeSearchResult(allocator, r);
+            allocator.free(extras);
+            return primary;
+        };
+        @memcpy(merged[0..primary.len], primary);
+        allocator.free(primary);
+        @memcpy(merged[primary.len..], extras);
+        allocator.free(extras);
+        return merged;
     }
 
     /// Delegates to src/common/str.looksLikeIdentifier.
     const looksLikeIdentifier = common.looksLikeIdentifier;
+    /// Delegates to src/common/str.stripNlPrefix.
+    const stripNlPrefix = common.stripNlPrefix;
+
+    /// One-hop "see also" expansion: given primary results, fetch the module rows
+    /// of modules that the top result's module lists in its `used_by` field.
+    ///
+    /// Returns an owned slice of additional SearchResult items.  Each result's
+    /// score is `top_score × SEE_ALSO_DECAY`.  Deduplicates against `primary`.
+    /// Returns an empty slice (not an error) on any lookup failure.
+    fn seeAlsoExpand(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        primary: []const SearchResult,
+        limit: usize,
+    ) ![]SearchResult {
+        if (primary.len == 0 or limit == 0) return allocator.alloc(SearchResult, 0);
+
+        const SEE_ALSO_DECAY: f32 = 0.6;
+        const top = primary[0];
+        const top_score: f32 = @floatCast(top.score);
+
+        // Only expand when top result has meaningful similarity
+        if (top_score < 0.40) return allocator.alloc(SearchResult, 0);
+
+        // 1. Fetch the used_by JSON array for the top result's module node
+        const ub_sql = "SELECT used_by FROM ast_nodes WHERE module = ?1 AND node_type = 'module' LIMIT 1";
+        var ub_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, ub_sql, -1, &ub_stmt, null) != c.SQLITE_OK)
+            return allocator.alloc(SearchResult, 0);
+        defer _ = c.sqlite3_finalize(ub_stmt);
+
+        _ = c.sqlite3_bind_text(ub_stmt, 1, top.module.ptr, @intCast(top.module.len), SQLITE_STATIC);
+        if (c.sqlite3_step(ub_stmt) != c.SQLITE_ROW) return allocator.alloc(SearchResult, 0);
+
+        const ub = try parseUsedByCol(ub_stmt.?, 0, allocator);
+        defer {
+            for (ub) |m| allocator.free(m);
+            allocator.free(ub);
+        }
+        if (ub.len == 0) return allocator.alloc(SearchResult, 0);
+
+        // 2. Build set of already-returned modules for deduplication
+        var seen: std.StringHashMapUnmanaged(void) = .{};
+        defer seen.deinit(allocator);
+        for (primary) |r| {
+            try seen.put(allocator, r.module, {});
+        }
+
+        // 3. For each referenced module, fetch its module row
+        const mod_sql = "SELECT file_path, source, module, node_type, name, signature, " ++
+            "       comment, line, used_by, language, detail " ++
+            "FROM ast_nodes WHERE module = ?1 AND node_type = 'module' LIMIT 1";
+        var mod_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, mod_sql, -1, &mod_stmt, null) != c.SQLITE_OK)
+            return allocator.alloc(SearchResult, 0);
+        defer _ = c.sqlite3_finalize(mod_stmt);
+
+        var extras: std.ArrayList(SearchResult) = .{};
+        errdefer {
+            for (extras.items) |r| GuidanceDb.freeSearchResult(allocator, r);
+            extras.deinit(allocator);
+        }
+
+        for (ub) |mod_name| {
+            if (extras.items.len >= limit) break;
+            if (seen.contains(mod_name)) continue;
+
+            _ = c.sqlite3_reset(mod_stmt);
+            _ = c.sqlite3_bind_text(mod_stmt, 1, mod_name.ptr, @intCast(mod_name.len), SQLITE_STATIC);
+            if (c.sqlite3_step(mod_stmt) != c.SQLITE_ROW) continue;
+
+            var r = try readRowResult(mod_stmt.?, allocator);
+            r.score = top_score * SEE_ALSO_DECAY;
+            try extras.append(allocator, r);
+            try seen.put(allocator, r.module, {});
+
+        }
+
+        log.debug("seeAlsoExpand: added {d} see-also results for module '{s}'", .{ extras.items.len, top.module });
+        return extras.toOwnedSlice(allocator);
+    }
 
     /// Find exact case-sensitive name match in AST.
     /// Returns results if the name exists in the database.
@@ -2006,43 +2251,56 @@ pub const GuidanceDb = struct {
         query_embedding: []const f32,
         limit: usize,
     ) ![]SearchResult {
-        // idx_gdb_has_emb covers `embedding IS NOT NULL`.
-        // Excluding test_decl saves ~10-15% of the scan and avoids polluting
-        // results with test implementation details.
-        const sql =
-            "SELECT id, file_path, source, module, node_type, name, signature," ++
-            "       comment, line, used_by, language, embedding " ++
-            "FROM ast_nodes " ++
-            "WHERE embedding IS NOT NULL AND node_type != 'test_decl' " ++
-            "ORDER BY last_modified DESC " ++
-            "LIMIT 2000";
-
-        var stmt: ?*c.sqlite3_stmt = null;
-        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
-            return allocator.alloc(SearchResult, 0);
-        }
-        defer _ = c.sqlite3_finalize(stmt);
-
         // ScoredRow: holds id + score, then we resolve later
         const ScoredRow = struct {
             id: i64,
             score: f32,
         };
-        var scored: std.ArrayList(ScoredRow) = .empty;
+        var scored: std.ArrayList(ScoredRow) = .{};
         defer scored.deinit(allocator);
 
-        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
-            const id = c.sqlite3_column_int64(stmt, 0);
-            const emb_raw = c.sqlite3_column_blob(stmt, 11);
-            const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 11));
-            if (emb_raw == null or emb_len == 0) continue;
+        // ── SimHash pre-filter (fast path when index is populated) ──────────
+        // Compute the query's SimHash and find candidates within maxHamming bits.
+        // Falls back to linear scan when the simhash_index is empty (first sync).
+        const q_hash = simhash.simhash(query_embedding);
+        const max_h = simhash.maxHamming(MIN_VECTOR_THRESHOLD);
+        const candidates = self.getSimhashCandidates(allocator, q_hash, max_h) catch &[_]i64{};
+        defer if (candidates.len > 0) allocator.free(candidates);
 
-            const emb_bytes: []const u8 = @as([*]const u8, @ptrCast(emb_raw))[0..emb_len];
-            const emb = vector.bytesToVec(allocator, emb_bytes) catch continue;
-            defer allocator.free(emb);
+        if (candidates.len > 0) {
+            // Fast path: full cosine only on SimHash candidates (typically < 500 of 50K).
+            for (candidates) |node_id| {
+                const emb = self.getEmbeddingById(allocator, node_id) catch continue orelse continue;
+                defer allocator.free(emb);
+                const sim = vector.cosineSimilarity(query_embedding, emb);
+                if (sim < MIN_VECTOR_THRESHOLD) continue;
+                try scored.append(allocator, .{ .id = node_id, .score = sim });
+            }
+        } else {
+            // Slow path: linear scan of all embeddings (used before simhash_index is built).
+            // idx_gdb_has_emb covers `embedding IS NOT NULL`.
+            // Excluding test_decl saves ~10-15% of the scan.
+            const sql =
+                "SELECT id, embedding FROM ast_nodes " ++
+                "WHERE embedding IS NOT NULL AND node_type != 'test_decl' " ++
+                "ORDER BY last_modified DESC LIMIT 2000";
 
-            const sim = vector.cosineSimilarity(query_embedding, emb);
-            try scored.append(allocator, .{ .id = id, .score = sim });
+            var stmt: ?*c.sqlite3_stmt = null;
+            if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) == c.SQLITE_OK) {
+                defer _ = c.sqlite3_finalize(stmt);
+                while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+                    const id = c.sqlite3_column_int64(stmt, 0);
+                    const emb_raw = c.sqlite3_column_blob(stmt, 1);
+                    const emb_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+                    if (emb_raw == null or emb_len == 0) continue;
+                    const emb_bytes: []const u8 = @as([*]const u8, @ptrCast(emb_raw))[0..emb_len];
+                    const emb = vector.bytesToVec(allocator, emb_bytes) catch continue;
+                    defer allocator.free(emb);
+                    const sim = vector.cosineSimilarity(query_embedding, emb);
+                    if (sim < MIN_VECTOR_THRESHOLD) continue;
+                    try scored.append(allocator, .{ .id = id, .score = sim });
+                }
+            }
         }
 
         // Sort by score descending
@@ -2051,6 +2309,28 @@ pub const GuidanceDb = struct {
                 return a.score > b.score;
             }
         }.lt);
+
+        // Adaptive threshold: discard results that are far below the top score.
+        // Formula: max(0.25, 0.75 × top_score).
+        // Example: top=0.80 → cutoff=0.60 (drops marginal results).
+        //          top=0.30 → cutoff=0.25 (nearly no pruning for weak top results).
+        if (scored.items.len > 0) {
+            const adaptive_cutoff: f32 = @max(0.25, 0.75 * scored.items[0].score);
+            // scored is sorted descending; find the first item below cutoff.
+            var keep: usize = scored.items.len;
+            for (scored.items, 0..) |sr, i| {
+                if (sr.score < adaptive_cutoff) {
+                    keep = i;
+                    break;
+                }
+            }
+            if (keep < scored.items.len) {
+                log.debug("adaptive threshold {d:.3} pruned {d} → {d} candidates", .{
+                    adaptive_cutoff, scored.items.len, keep,
+                });
+                scored.items.len = keep;
+            }
+        }
 
         // Fetch full records for top results
         const fetch_count = @min(limit * 2, scored.items.len);
@@ -2738,6 +3018,65 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_int64(stmt, 3, module_id);
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+    }
+
+    /// Recompute IDF weights for all keyword → module links.
+    ///
+    /// IDF(kw) = log₂(total_modules / df) + 1, where df = count of distinct modules
+    /// that share this keyword.  Rare keywords (small df) get higher relevance;
+    /// keywords present in every module approach 1.0.
+    ///
+    /// Called once after a full sync pass so weights stay current across incremental
+    /// syncs where individual modules are updated independently.
+    fn rebuildKeywordIdf(self: *Self) !usize {
+        // 1. Total module count
+        const total_modules: i64 = blk: {
+            var cnt_stmt: ?*c.sqlite3_stmt = null;
+            if (c.sqlite3_prepare_v2(self.db, "SELECT COUNT(*) FROM ast_nodes WHERE node_type = 'module'", -1, &cnt_stmt, null) != c.SQLITE_OK)
+                return error.PrepareFailed;
+            defer _ = c.sqlite3_finalize(cnt_stmt);
+            break :blk if (c.sqlite3_step(cnt_stmt) == c.SQLITE_ROW) c.sqlite3_column_int64(cnt_stmt, 0) else 0;
+        };
+        if (total_modules == 0) return 0;
+
+        // 2. Iterate (keyword, df) and update each row in the same pass.
+        //    kw_ptr is valid until the next sqlite3_step on sel_stmt; upd_stmt
+        //    is stepped before we advance sel_stmt, so the pointer stays alive.
+        const sel_sql = "SELECT keyword, COUNT(DISTINCT module_id) FROM keyword_modules GROUP BY keyword";
+        var sel_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sel_sql, -1, &sel_stmt, null) != c.SQLITE_OK)
+            return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(sel_stmt);
+
+        const upd_sql = "UPDATE keyword_modules SET relevance = ?1 WHERE keyword = ?2";
+        var upd_stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, upd_sql, -1, &upd_stmt, null) != c.SQLITE_OK)
+            return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(upd_stmt);
+
+        var updated: usize = 0;
+        const n: f32 = @floatFromInt(total_modules);
+
+        while (c.sqlite3_step(sel_stmt) == c.SQLITE_ROW) {
+            const kw_ptr = c.sqlite3_column_text(sel_stmt, 0);
+            const kw_len: usize = @intCast(c.sqlite3_column_bytes(sel_stmt, 0));
+            if (kw_ptr == null or kw_len == 0) continue;
+
+            const df: i64 = c.sqlite3_column_int64(sel_stmt, 1);
+            if (df <= 0) continue;
+
+            // IDF ≥ 1.0 always (log₂ of ratio ≥ 1 when df ≤ n)
+            const idf: f32 = @max(1.0, std.math.log2(n / @as(f32, @floatFromInt(df))) + 1.0);
+
+            _ = c.sqlite3_reset(upd_stmt);
+            _ = c.sqlite3_bind_double(upd_stmt, 1, @floatCast(idf));
+            _ = c.sqlite3_bind_text(upd_stmt, 2, kw_ptr, @intCast(kw_len), SQLITE_STATIC);
+            _ = c.sqlite3_step(upd_stmt);
+            updated += 1;
+        }
+
+        log.debug("rebuildKeywordIdf: updated {d} keyword weights (N={d})", .{ updated, total_modules });
+        return updated;
     }
 
     /// Delete all keyword links for a module (before re-syncing).
@@ -3435,7 +3774,7 @@ test "GuidanceDb skips unchanged files" {
     }
 }
 
-test "buildEmbeddingText prose format" {
+test "buildEmbeddingText descriptor-bag format" {
     const allocator = std.testing.allocator;
     // Member with comment, signature, and parent module context
     const text = try GuidanceDb.buildEmbeddingText(
@@ -3448,10 +3787,13 @@ test "buildEmbeddingText prose format" {
         "guidance database module.",
     );
     defer allocator.free(text);
-    // Should be prose, not dotted-path
-    try std.testing.expect(std.mem.indexOf(u8, text, "function syncDatabase") != null);
+    // Descriptor-bag: name is the first token
+    try std.testing.expect(std.mem.startsWith(u8, text, "syncDatabase · "));
+    // Type noun is present as a bag token
+    try std.testing.expect(std.mem.indexOf(u8, text, "function") != null);
+    // Comment is embedded
     try std.testing.expect(std.mem.indexOf(u8, text, "Synchronises the SQLite database") != null);
-    // Parameter names extracted (not full types)
+    // Parameter names extracted (not full types); allocator is filtered out
     try std.testing.expect(std.mem.indexOf(u8, text, "guidance_dir") != null);
     // No raw type annotations in params section
     try std.testing.expect(std.mem.indexOf(u8, text, "std.mem.Allocator") == null);

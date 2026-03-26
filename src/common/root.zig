@@ -116,6 +116,10 @@ pub const hasExtension = str_mod.hasExtension;
 pub const isPathToken = str_mod.isPathToken;
 pub const langFromPath = str_mod.langFromPath;
 pub const dupeStrings = str_mod.dupeStrings;
+pub const stripNlPrefix = str_mod.stripNlPrefix;
+pub const STOP_WORDS = str_mod.STOP_WORDS;
+pub const stripBoilerplate = str_mod.stripBoilerplate;
+pub const isNoisyComment = str_mod.isNoisyComment;
 
 // ── URL utilities ─────────────────────────────────────────────────────────────
 pub const isLocalHost = url_mod.isLocalHost;

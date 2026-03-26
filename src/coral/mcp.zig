@@ -9,10 +9,36 @@
 const std = @import("std");
 const coral_db = @import("coral_db");
 const cache = @import("cache.zig");
+const common = @import("common");
+const reflection = common.reflection;
 
 const Library = coral_db.Library;
 const ContextNode = coral_db.ContextNode;
+const ContextPacker = coral_db.ContextPacker;
 const QueueReactor = cache.QueueReactor;
+
+// ---------------------------------------------------------------------------
+// MCP tool parameter structs (M2.6)
+// Enables Editable(T).describeSchema() to generate JSON Schema at runtime,
+// replacing the hardcoded input_schema strings.
+// ---------------------------------------------------------------------------
+
+const CoralQueryParams = struct {
+    query: []const u8,
+    pub const editable: reflection.Editable(@This()) = .{};
+};
+
+const InsertNodeParams = struct {
+    name: []const u8,
+    description: []const u8,
+    pub const editable: reflection.Editable(@This()) = .{};
+};
+
+const ExplainParams = struct {
+    name: []const u8,
+    max_tokens: i64 = 4096,
+    pub const editable: reflection.Editable(@This()) = .{};
+};
 
 // ---------------------------------------------------------------------------
 // Tool definitions (P4.2)
@@ -170,7 +196,6 @@ pub const McpServer = struct {
     }
 
     fn handleToolsList(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) ![]const u8 {
-        _ = a;
         var buf: std.ArrayList(u8) = .{};
         defer buf.deinit(self.allocator);
         const w = buf.writer(self.allocator);
@@ -178,15 +203,28 @@ pub const McpServer = struct {
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
 
+        // Generate schemas from Editable(T) — one allocation per schema, freed at end.
+        const query_schema = try reflection.Editable(CoralQueryParams).describeSchema(a);
+        const insert_schema = try reflection.Editable(InsertNodeParams).describeSchema(a);
+        const explain_schema = try reflection.Editable(ExplainParams).describeSchema(a);
+
         try w.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"tools":[
         , .{id_str});
 
-        for (TOOLS, 0..) |tool, i| {
+        const tool_defs = [_]struct { name: []const u8, description: []const u8, schema: []const u8 }{
+            .{ .name = "coral_query", .description = TOOLS[0].description, .schema = query_schema },
+            .{ .name = "coral_insert_node", .description = TOOLS[1].description, .schema = insert_schema },
+            .{ .name = "coral_explain", .description = TOOLS[2].description, .schema = explain_schema },
+        };
+
+        for (tool_defs, 0..) |td, i| {
             if (i > 0) try w.writeByte(',');
             try w.print(
-                \\{{"name":"{s}","description":"{s}","inputSchema":{s}}}
-            , .{ tool.name, tool.description, tool.input_schema });
+                \\{{"name":"{s}","description":"{s}","inputSchema":
+            , .{ td.name, td.description });
+            try w.writeAll(td.schema);
+            try w.writeByte('}');
         }
 
         try w.writeAll("]}}}");
@@ -301,14 +339,14 @@ pub const McpServer = struct {
             else => return self.errorResponse(req.id, -32602, "Invalid name type", error.InvalidName),
         };
 
-        const max_depth: u8 = blk: {
-            if (args.get("max_depth")) |dv| {
-                break :blk switch (dv) {
-                    .integer => |n| @intCast(@min(255, n)),
-                    else => 3,
+        const token_budget: usize = blk: {
+            if (args.get("max_tokens")) |tv| {
+                break :blk switch (tv) {
+                    .integer => |n| @intCast(@max(256, n)),
+                    else => 4096,
                 };
             }
-            break :blk 3;
+            break :blk 4096;
         };
 
         const maybe_id = self.reactor.library.findNodeByName(name) catch |err| {
@@ -328,8 +366,10 @@ pub const McpServer = struct {
             return buf.toOwnedSlice(self.allocator);
         }
 
-        const nodes = self.reactor.library.traverseFrom(a, maybe_id.?, max_depth) catch |err| {
-            return self.errorResponse(req.id, -32603, "traverseFrom failed", err);
+        // Use ContextPacker for LOD-aware token-budget packing.
+        var packer = ContextPacker.init(a, self.reactor.library, token_budget);
+        const packed_text = packer.pack(maybe_id.?) catch |err| {
+            return self.errorResponse(req.id, -32603, "ContextPacker failed", err);
         };
 
         var buf: std.ArrayList(u8) = .{};
@@ -337,28 +377,10 @@ pub const McpServer = struct {
         const w = buf.writer(self.allocator);
 
         try w.print(
-            \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":{{"node_count":{d},"nodes":[
-        , .{ id_str, nodes.len });
-
-        for (nodes, 0..) |node, i| {
-            if (i > 0) try w.writeByte(',');
-            // Escape the lod4 (name) and lod0 (description) for JSON output
-            const node_name = node.lod[4];
-            const node_desc = node.lod[0];
-            try w.print(
-                \\{{"id":{d},"name":"
-            , .{node.id});
-            try writeJsonEscaped(w, node_name);
-            try w.writeAll(
-                \\","description":"
-            );
-            try writeJsonEscaped(w, node_desc);
-            try w.writeAll(
-                \\"}}
-            );
-        }
-
-        try w.writeAll("]}}}]}}}");
+            \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"
+        , .{id_str});
+        try writeJsonEscaped(w, packed_text);
+        try w.writeAll("\"}}]}}}");
         return buf.toOwnedSlice(self.allocator);
     }
 

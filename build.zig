@@ -375,6 +375,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "local_model", .module = local_model_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
@@ -394,6 +395,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
@@ -446,11 +448,40 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
     coral_main_tests.linkLibC();
     coral_main_tests.linkSystemLibrary("sqlite3");
+
+    // -- Coral DAG executor tests (M3.3) --
+    const coral_executor_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/executor.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "coral_db", .module = coral_db_module },
+            },
+        }),
+    });
+    coral_executor_tests.linkLibC();
+    coral_executor_tests.linkSystemLibrary("sqlite3");
+
+    // -- Coral frontier tests (M6) --
+    const coral_frontier_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/frontier.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "coral_db", .module = coral_db_module },
+            },
+        }),
+    });
+    coral_frontier_tests.linkLibC();
+    coral_frontier_tests.linkSystemLibrary("sqlite3");
 
     // -------------------------------------------------------------------------
     // Wire all test runs
@@ -474,4 +505,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(coral_mcp_tests).step);
     test_step.dependOn(&b.addRunArtifact(wasm_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_main_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_executor_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_frontier_tests).step);
 }

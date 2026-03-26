@@ -173,6 +173,118 @@ pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]
 }
 
 // =============================================================================
+// Embedding text preprocessing — strip boilerplate from doc comments
+// =============================================================================
+
+/// Common boilerplate prefixes in auto-generated or template doc comments.
+/// Stripping these before embedding improves discriminative signal: the
+/// remaining domain nouns and action verbs cluster more tightly in the
+/// embedding space than generic management/ownership language.
+const STRIP_PREFIXES = [_][]const u8{
+    "Returns the ",    "Return the ",    "Returns a ",    "Returns an ",
+    "Initializes the ", "Initialize the ", "Initialize ",
+    "Creates a ",      "Create a ",      "Creates an ",   "Create an ",
+    "Checks if ",      "Check if ",
+    "Verifies that ",  "Verify that ",
+    "Ensures that ",   "Ensure that ",
+    "Manages ",        "Represents ",    "Defines ",
+    "Caller must ",    "Caller should ", "The caller ",
+    "Not thread-safe", "Thread-safe",
+};
+
+/// Strip a leading boilerplate phrase from a doc comment before embedding.
+///
+/// Comparison is case-sensitive (preserving the original case).  Returns a
+/// slice into `comment` — no allocation.  Returns `comment` unchanged when
+/// no prefix matches.
+///
+/// Examples:
+///   "Returns the node if it exists" → "node if it exists"
+///   "Manages X with fixed-size buffers" → "X with fixed-size buffers"
+///   "cosine similarity · top-k" → "cosine similarity · top-k" (unchanged)
+pub fn stripBoilerplate(comment: []const u8) []const u8 {
+    const trimmed = std.mem.trimLeft(u8, comment, " \t");
+    for (STRIP_PREFIXES) |pfx| {
+        if (std.mem.startsWith(u8, trimmed, pfx)) {
+            return trimmed[pfx.len..];
+        }
+    }
+    return trimmed;
+}
+
+/// Return true when a doc comment is predominantly numeric or punctuation
+/// noise (auto-generated tables, hex dumps, lookup arrays).
+///
+/// Threshold: >50% of non-whitespace characters are digits or ASCII
+/// punctuation — equivalent to bloop's `is_noisy()` heuristic.
+pub fn isNoisyComment(comment: []const u8) bool {
+    if (comment.len < 10) return true; // too short to be meaningful
+    var non_ws: usize = 0;
+    var noisy: usize = 0;
+    for (comment) |ch| {
+        if (!std.ascii.isWhitespace(ch)) {
+            non_ws += 1;
+            if (std.ascii.isDigit(ch) or (!std.ascii.isAlphanumeric(ch) and !std.ascii.isWhitespace(ch))) noisy += 1;
+        }
+    }
+    return non_ws > 0 and (noisy * 100 / non_ws) > 50;
+}
+
+// =============================================================================
+// NL query normalization — strip interrogative prefixes and stop words
+// =============================================================================
+
+/// Common English filler words that add no semantic signal when embedding.
+/// Stored as a comptime perfect hash — zero runtime overhead.
+pub const STOP_WORDS = std.StaticStringMap(void).initComptime(.{
+    .{ "the", {} }, .{ "a", {} }, .{ "an", {} },
+    .{ "in", {} }, .{ "on", {} }, .{ "at", {} }, .{ "to", {} },
+    .{ "of", {} }, .{ "for", {} }, .{ "with", {} }, .{ "by", {} },
+    .{ "is", {} }, .{ "are", {} }, .{ "was", {} }, .{ "be", {} },
+    .{ "do", {} }, .{ "does", {} }, .{ "did", {} }, .{ "done", {} },
+    .{ "work", {} }, .{ "works", {} }, .{ "get", {} }, .{ "use", {} },
+});
+
+/// Natural-language interrogative prefixes to strip before embedding a query.
+/// Stripping these improves cosine similarity against descriptor-format entries.
+const NL_PREFIXES = [_][]const u8{
+    "what is ",    "what are ",   "what does ",  "what's ",
+    "where is ",   "where are ",  "where does ", "where can i find ",
+    "how does ",   "how do ",     "how can i ",  "how to ",
+    "why does ",   "why is ",     "why are ",
+    "when does ",  "when is ",
+    "which ",      "who ",        "whose ",
+    "can you explain ", "explain ", "describe ", "tell me about ",
+    "show me ",    "find ",       "search for ", "look for ",
+    "i need ",     "i want ",     "help me ",
+};
+
+/// Strip a leading NL interrogative prefix from a query string.
+/// The original query is used for Phase 1 deterministic matching; the
+/// stripped form is used for Phase 2-3 embedding-based search.
+///
+/// Comparison is case-insensitive.  Returns a slice into `query` — no
+/// allocation.  If no prefix matches, returns `query` unchanged.
+///
+/// Examples:
+///   "how does vectorSearch work?" → "vectorSearch work?"
+///   "what is the threshold?"      → "the threshold?"
+///   "looksLikeIdentifier"         → "looksLikeIdentifier"  (unchanged)
+pub fn stripNlPrefix(query: []const u8) []const u8 {
+    // Lowercase a buffer large enough for the longest prefix we check.
+    const MAX_PREFIX_LEN = 30;
+    var buf: [MAX_PREFIX_LEN]u8 = undefined;
+    const check_len = @min(query.len, MAX_PREFIX_LEN);
+    const lower = std.ascii.lowerString(buf[0..check_len], query[0..check_len]);
+    for (NL_PREFIXES) |prefix| {
+        if (prefix.len <= check_len and std.mem.startsWith(u8, lower, prefix)) {
+            return query[prefix.len..];
+        }
+    }
+    return query;
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -265,5 +377,57 @@ test "looksLikeIdentifier rejects plain words" {
     try std.testing.expect(!looksLikeIdentifier("work"));
     try std.testing.expect(!looksLikeIdentifier("how"));
     try std.testing.expect(!looksLikeIdentifier("a")); // too short
+}
+
+test "stripNlPrefix removes interrogative prefix" {
+    try std.testing.expectEqualStrings("vectorSearch work?", stripNlPrefix("how does vectorSearch work?"));
+    try std.testing.expectEqualStrings("the threshold?", stripNlPrefix("what is the threshold?"));
+    try std.testing.expectEqualStrings("cosine similarity", stripNlPrefix("explain cosine similarity"));
+    try std.testing.expectEqualStrings("BFS traversal", stripNlPrefix("where is BFS traversal"));
+    try std.testing.expectEqualStrings("the config", stripNlPrefix("find the config"));
+}
+
+test "stripNlPrefix leaves identifiers unchanged" {
+    try std.testing.expectEqualStrings("looksLikeIdentifier", stripNlPrefix("looksLikeIdentifier"));
+    try std.testing.expectEqualStrings("vectorSearch", stripNlPrefix("vectorSearch"));
+    try std.testing.expectEqualStrings("cosine similarity score", stripNlPrefix("cosine similarity score"));
+}
+
+test "stripNlPrefix is case-insensitive on prefix" {
+    try std.testing.expectEqualStrings("SQLite search", stripNlPrefix("How does SQLite search"));
+    try std.testing.expectEqualStrings("the config", stripNlPrefix("WHERE IS the config"));
+}
+
+test "stripBoilerplate removes leading phrase" {
+    try std.testing.expectEqualStrings("node if it exists", stripBoilerplate("Returns the node if it exists"));
+    try std.testing.expectEqualStrings("X with fixed-size buffers", stripBoilerplate("Manages X with fixed-size buffers"));
+    try std.testing.expectEqualStrings("the schema init", stripBoilerplate("Initializes the schema init"));
+    try std.testing.expectEqualStrings("cosine similarity · top-k", stripBoilerplate("cosine similarity · top-k"));
+}
+
+test "stripBoilerplate trims leading whitespace" {
+    try std.testing.expectEqualStrings("entry", stripBoilerplate("  Creates a entry"));
+}
+
+test "isNoisyComment: short comment is noisy" {
+    try std.testing.expect(isNoisyComment("x"));
+    try std.testing.expect(isNoisyComment("ab"));
+}
+
+test "isNoisyComment: hex dump is noisy" {
+    try std.testing.expect(isNoisyComment("0xDEADBEEF, 0xCAFEBABE, 0x12345678, 0x87654321"));
+}
+
+test "isNoisyComment: prose is not noisy" {
+    try std.testing.expect(!isNoisyComment("Cosine similarity search over stored embeddings"));
+    try std.testing.expect(!isNoisyComment("BFS graph traversal for context packing"));
+}
+
+test "STOP_WORDS contains expected words" {
+    try std.testing.expect(STOP_WORDS.has("the"));
+    try std.testing.expect(STOP_WORDS.has("is"));
+    try std.testing.expect(STOP_WORDS.has("does"));
+    try std.testing.expect(!STOP_WORDS.has("cosine"));
+    try std.testing.expect(!STOP_WORDS.has("search"));
 }
 

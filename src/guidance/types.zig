@@ -231,6 +231,13 @@ pub const SyncResult = struct {
     has_changes: bool = false,
 };
 
+/// Print a step-progress line to stdout unconditionally (visible without --verbose).
+pub fn stepPrint(comptime fmt: []const u8, args: anytype) void {
+    var buf: [512]u8 = undefined;
+    const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
+    std.fs.File.stdout().writeAll(msg) catch {};
+}
+
 /// Serialize `value` to pretty-printed JSON.  Delegates to src/common/json.zig.
 pub const jsonStringifyAlloc = common.jsonStringifyAlloc;
 
