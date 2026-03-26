@@ -32,7 +32,7 @@ pub const DecomposerConfig = struct {
 // LocalDecomposer
 // ---------------------------------------------------------------------------
 
-/// Manages local model state with fixed buffers; owned by the local context; ensures consistent invariants.
+/// Breaks a complex query into sub-queries using a local (Ollama-compatible) LLM; used as the L4.5 tier.
 pub const LocalDecomposer = struct {
     allocator: std.mem.Allocator,
     config: DecomposerConfig,

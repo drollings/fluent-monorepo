@@ -36,7 +36,7 @@ pub const EnrichmentResult = struct {
     }
 };
 
-/// Manages static configuration structures; owned by the module; ensures consistent initialization state.
+/// LLM-backed comment/keyword enricher: wraps an LlmClient and drives the infill pipeline for guidance JSON.
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,

@@ -4,7 +4,7 @@ const hash = @import("hash.zig");
 const llm = @import("common");
 const line_verify = @import("line_verify.zig");
 
-/// Manages JSON data storage with fixed-size buffers; owned by the module; ensures consistent access patterns.
+/// Reads, writes, and validates guidance JSON files; owns the leak-prompt detection flag per load call.
 pub const JsonStore = struct {
     allocator: std.mem.Allocator,
     debug: bool = false,

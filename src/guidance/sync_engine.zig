@@ -237,7 +237,7 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
-/// Tracks commit member metadata; managed by owner; ensures consistent state across operations.
+/// Snapshot of a member's name, line, comment, and signature at the point a commit is prepared.
 const CommitMemberInfo = struct {
     name: []const u8, // owned
     line: ?u32,

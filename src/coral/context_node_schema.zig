@@ -8,7 +8,7 @@ const schema = coral_db.schema;
 pub const BINARY_SCHEMA_VERSION: u32 = 1;
 pub const BINARY_MAGIC: [4]u8 = .{ 'C', 'C', 'N', 'D' };
 
-/// Defines a payload type with enum-based payload definitions, managed by owner; ensures fixed-size buffers and clear ownership model.
+/// Binary IPC payload tag discriminating the message type in the CCND wire format.
 pub const PayloadType = enum(u32) {
     context_node = 1,
     execution_request = 2,
@@ -125,7 +125,7 @@ pub const BinaryContextNode = extern struct {
     }
 };
 
-/// Defines a schema for context nodes with ownership and invariants; manages fixed buffers and lifecycle.
+/// Reflection-based schema for ContextNode: holds the 11 field accessors used by MCP tool-schema generation and validation.
 pub const ContextNodeSchema = struct {
     const Self = @This();
     const ACCESSOR_COUNT = 11;

@@ -20,7 +20,7 @@ pub const Command = struct {
     examples: []const u8 = "",
 };
 
-/// Manages command registrations with a centralized structure; owned by the CLI; ensures unique key storage.
+/// Maps command names to their handlers; used by App to dispatch argv[1] at startup.
 pub const CommandRegistry = struct {
     commands: std.StringHashMapUnmanaged(Command),
     allocator: std.mem.Allocator,
@@ -60,7 +60,7 @@ pub const CommandRegistry = struct {
     }
 };
 
-/// Manages application state with a singleton pattern; ensures single ownership and controlled lifecycle.
+/// Top-level CLI entry point: name, description, version string, and a CommandRegistry for subcommand dispatch.
 pub const App = struct {
     name: []const u8,
     description: []const u8,

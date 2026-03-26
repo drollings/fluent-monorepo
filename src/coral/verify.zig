@@ -10,7 +10,7 @@ const TripleMapper = mapper_mod.TripleMapper;
 // Report types
 // ---------------------------------------------------------------------------
 
-/// Represents an ingestion error during data handling; manages fixed-size buffers with strict ownership and invariants.
+/// Categories of hard errors that halt ingestion and must be reported to the caller.
 pub const IngestionErrorKind = enum {
     count_mismatch,
     orphan_node,
@@ -19,7 +19,7 @@ pub const IngestionErrorKind = enum {
     dangling_blank_node,
 };
 
-/// Tracks ingestion events with a fixed-size buffer; managed by the owner; not thread-safe.
+/// Non-fatal anomalies that are logged but do not stop the ingestion run.
 pub const IngestionWarningKind = enum {
     no_type,
     no_description,

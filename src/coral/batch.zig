@@ -34,7 +34,7 @@ pub const ProgressCallback = *const fn (triples_processed: usize, nodes_created:
 // Ingestion statistics
 // ---------------------------------------------------------------------------
 
-/// Tracks ingestion statistics with a fixed-size buffer pool; managed centrally; not thread-safe.
+/// Running counters for one ingestion pass; zeroed at the start of each batch run.
 pub const IngestStats = struct {
     triples_processed: usize = 0,
     nodes_created: usize = 0,

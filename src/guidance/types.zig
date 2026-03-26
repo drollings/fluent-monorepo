@@ -45,7 +45,7 @@ pub const FileType = enum {
     }
 };
 
-/// Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.
+/// Classifies a declaration extracted from an AST node (function, struct, enum, test, etc.).
 pub const MemberType = enum {
     fn_decl,
     fn_private,
@@ -64,21 +64,21 @@ pub const PatternType = enum {
     GoF,
 };
 
-/// Defines a pattern for structured data handling, managing ownership and invariants in Zig code.
+/// Named design pattern (GoF or domain) attached to a Member for discovery.
 pub const Pattern = struct {
     name: []const u8,
     type: PatternType,
     ref: ?[]const u8 = null,
 };
 
-/// Defines a parameter struct for configuration; managed by owner; immutable once initialized.
+/// One parameter of a function declaration: name, optional type annotation, and optional default value.
 pub const Param = struct {
     name: []const u8,
     type: ?[]const u8 = null,
     default: ?[]const u8 = null,
 };
 
-/// Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
+/// One extracted declaration from a source file: kind, name, signature, doc comment, and nested members.
 pub const Member = struct {
     type: MemberType,
     name: []const u8,
@@ -108,7 +108,7 @@ pub const Skill = struct {
     context: ?[]const u8 = null,
 };
 
-/// Defines a metadata structure for configuration; owned by the project; ensures consistent initialization and invariants.
+/// Source-file identity: module name, relative path, and language tag stored in every guidance JSON.
 pub const Meta = struct {
     module: []const u8,
     source: []const u8,
@@ -147,7 +147,7 @@ pub const FileMatch = struct {
     line_context: []const u8 = "",
 };
 
-/// Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.
+/// Lightweight summary of a guidance JSON returned by a search hit: path, comment, and skill/tag lists.
 pub const GuidanceInfo = struct {
     path: []const u8,
     comment: []const u8 = "",
@@ -168,7 +168,7 @@ pub const ASTAnalysis = struct {
     signature_preview: []const u8 = "",
 };
 
-/// Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.
+/// Aggregated output of the explain pipeline: matched files, guidance info, AST analysis, and LLM summary.
 pub const QueryResult = struct {
     query: []const u8,
     file_matches: []const FileMatch = &.{},
@@ -222,7 +222,7 @@ pub fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) void {
     for (stages) |s| freeStage(allocator, s);
 }
 
-/// Manages synchronization state with fixed buffers; owned by the caller; ensures consistent access.
+/// Per-file outcome of a guidance sync pass: counts of members added, updated, and removed.
 pub const SyncResult = struct {
     filepath: []const u8,
     members_added: usize = 0,

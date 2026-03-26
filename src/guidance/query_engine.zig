@@ -31,7 +31,7 @@ const stepPrint = types.stepPrint;
 // =============================================================================
 
 const SkillExcerpt = struct { name: []const u8, excerpt: []const u8 };
-/// Manages structured excerpt data with fixed-size buffers; owned by the module; ensures consistent state across operations.
+/// A pruned source block shown below a search result: owns `label` and `code`, borrows `file_path` and `lang`.
 const ExcerptEntry = struct {
     file_path: []const u8, // borrowed from SearchResult
     label: []const u8, // owned: "src/foo.zig:42"
@@ -1407,7 +1407,7 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // test command
 // =============================================================================
 
-/// Represents a query structure for testing; managed centrally, immutable by default.
+/// A scored test query used in the explain accuracy test suite.
 const TestQuery = struct {
     query: []const u8,
     accuracy: u8 = 0,

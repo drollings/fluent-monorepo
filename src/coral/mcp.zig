@@ -44,7 +44,7 @@ const ExplainParams = struct {
 // Tool definitions (P4.2)
 // ---------------------------------------------------------------------------
 
-/// Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.
+/// MCP tool descriptor: name, human-readable description, and JSON Schema for the input object.
 pub const ToolDef = struct {
     name: []const u8,
     description: []const u8,
@@ -79,7 +79,7 @@ pub const TOOLS = [_]ToolDef{
 // JSON-RPC primitives
 // ---------------------------------------------------------------------------
 
-/// Defines a JSON-RPC request structure for communication; managed by owner; requires valid payloads.
+/// Incoming JSON-RPC 2.0 request frame; `id` is null for notifications.
 const JsonRpcRequest = struct {
     jsonrpc: []const u8 = "2.0",
     id: ?std.json.Value = null,

@@ -26,7 +26,7 @@ const HydrationPipeline = coral_db.HydrationPipeline;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = hashutil.EmbeddingProvider;
 
-/// Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.
+/// Identifies which routing tier resolved a query; numeric value matches tier latency ordering (L1=fastest).
 pub const CacheTier = enum(u8) {
     l1_memory = 1,
     l2_workflow = 2,
@@ -209,7 +209,7 @@ pub const QueueReactorBuilder = struct {
 // QueueReactor — 5-tier cache router
 // ---------------------------------------------------------------------------
 
-/// Manages asynchronous queue operations with fixed-size buffers; owned by the system; ensures data integrity during transitions.
+/// Routes queries through the L1→L5 tier hierarchy; owns the L1 cache and, when configured, a thread pool and frontier LLM config.
 pub const QueueReactor = struct {
     const Self = @This();
 

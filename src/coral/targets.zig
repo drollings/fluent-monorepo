@@ -44,7 +44,7 @@ pub const TargetKind = enum {
 /// The executor casts the context to its concrete ExecutionContext.
 pub const HandlerFn = *const fn (allocator: std.mem.Allocator, ctx: *anyopaque) anyerror!void;
 
-/// Defines a target definition with fixed-size buffers; managed via ownership model; ensures correct initialization/deinit state.
+/// DAG node for the ingestion pipeline: name, kind, dependency list, and optional handler function.
 pub const TargetDef = struct {
     name: []const u8,
     kind: TargetKind,

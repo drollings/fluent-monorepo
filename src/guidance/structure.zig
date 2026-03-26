@@ -21,7 +21,7 @@ const TreeEntry = union(enum) {
     file: FileEntry,
 };
 
-/// Manages file entry metadata; owned by the module; ensures consistent access patterns.
+/// One node in the directory tree being rendered: tree-art prefix, basename, and full absolute path.
 const FileEntry = struct {
     /// The tree prefix string (e.g. "│   ├── ").
     prefix: []const u8,

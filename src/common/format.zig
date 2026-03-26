@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.
+/// One column in a rendered ASCII table: header label, JSON key for row lookup, display width, and alignment.
 pub const Column = struct {
     header: []const u8,
     key: []const u8,
@@ -8,7 +8,7 @@ pub const Column = struct {
     align_left: bool = true,
 };
 
-/// Defines a table structure for structured data; owned by the module; maintains invariant schema integrity.
+/// ASCII table renderer: takes a column schema and a slice of JSON rows, prints to stdout.
 pub const Table = struct {
     columns: []const Column,
     rows: []const std.json.Value,

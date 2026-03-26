@@ -17,7 +17,7 @@ const IngestStats = batch_mod.IngestStats;
 // Ingestion status
 // ---------------------------------------------------------------------------
 
-/// Tracks ingestion status with fixed buffers; managed by owner; ensures consistent state across operations.
+/// Lifecycle state of a single ingestion job, stored in the checkpoint record.
 pub const IngestStatus = enum {
     not_started,
     in_progress,
@@ -29,7 +29,7 @@ pub const IngestStatus = enum {
 // Checkpoint — persists ingestion progress
 // ---------------------------------------------------------------------------
 
-/// Manages checkpoint state with fixed-size buffers; owned by the client; ensures consistent initialization and deinitialization.
+/// Persisted ingestion resume point: source path, byte offset, and status written after each batch flush.
 pub const Checkpoint = struct {
     checkpoint_id: []const u8, // owned
     source: []const u8, // owned
