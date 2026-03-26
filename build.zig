@@ -266,7 +266,7 @@ pub fn build(b: *std.Build) void {
 
     const lance_db_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/vector/lance_db.zig"),
+            .root_source_file = b.path("src/vector/vector_db.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
