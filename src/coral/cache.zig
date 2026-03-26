@@ -209,7 +209,7 @@ pub const QueueReactorBuilder = struct {
 // QueueReactor — 5-tier cache router
 // ---------------------------------------------------------------------------
 
-/// Routes queries through the L1→L5 tier hierarchy; owns the L1 cache and, when configured, a thread pool and frontier LLM config.
+/// Manages asynchronous queue operations with fixed-size buffers; owned by the system; ensures data integrity during transitions.
 pub const QueueReactor = struct {
     const Self = @This();
 
@@ -440,8 +440,13 @@ pub const QueueReactor = struct {
             return null;
         }
 
-        // Execute via Extism (requires libextism at runtime; returns null if unavailable).
-        const output = wasm_mod.executeWasmQuery(self.allocator, wasm_bytes, query) catch return null;
+        // Execute via Extism with Library host functions (requires libextism at runtime).
+        // R2: use HostFunctionRegistry so WASM tools can call get_node_lod1,
+        // get_neighbors, and insert_edge against the live Library.
+        var host_reg = wasm_mod.HostFunctionRegistry.init(self.allocator, self.library);
+        defer host_reg.deinit();
+        host_reg.registerStandard() catch {};
+        const output = wasm_mod.executeWasmQueryWithHosts(self.allocator, wasm_bytes, query, &host_reg) catch return null;
         return output;
     }
 
@@ -550,7 +555,15 @@ pub const QueueReactor = struct {
         }
         defer if (prompt_owned) self.allocator.free(prompt);
 
-        return self.callFrontierLlm(cfg, prompt);
+        const maybe_result = try self.callFrontierLlm(cfg, prompt);
+        // R4: Index the validated LLM solution so future semantically-similar queries
+        // resolve via L4 KNN (<200ms) rather than triggering another frontier call.
+        if (maybe_result) |result| {
+            if (result.llm_response.len > 0) {
+                frontier.indexSolution(self.allocator, self.library, query, result.llm_response) catch {};
+            }
+        }
+        return maybe_result;
     }
 
     fn callFrontierLlm(self: *Self, cfg: LlmConfig, prompt: []const u8) !?RoutingResult {
@@ -971,3 +984,5 @@ test "M5: concurrent writes via thread pool do not deadlock" {
     const count = lib.countNodes() catch 0;
     try testing.expect(count > 0);
 }
+
+

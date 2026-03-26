@@ -86,7 +86,7 @@ pub const PendingNode = struct {
 // Pending edge — directed edge between two node IDs
 // ---------------------------------------------------------------------------
 
-/// Represents a pending edge in the graph; managed by owner; key invariant is its pending state.
+/// A directed graph edge pending insertion: from/to node IDs and an owned copy of the predicate IRI.
 pub const PendingEdge = struct {
     from_id: i64,
     to_id: i64,
@@ -97,7 +97,7 @@ pub const PendingEdge = struct {
 // Pending contradiction — conflicting literal values for same subject+predicate
 // ---------------------------------------------------------------------------
 
-/// Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with ownership and invariants.
+/// Two conflicting literal values for the same subject+predicate, detected during mapping.
 pub const PendingContradiction = struct {
     subject_id: i64,
     predicate: []const u8, // owned copy of predicate IRI
@@ -116,7 +116,7 @@ pub const MappingConfig = struct {
     scope: []const u8 = "default",
 };
 
-/// Handles mapping between Zig keywords and structures, manages ownership and invariants.
+/// Accumulates RDF triples in memory and batch-inserts them to SQLite via `flush()`.
 pub const TripleMapper = struct {
     allocator: std.mem.Allocator,
     config: MappingConfig,
@@ -520,7 +520,3 @@ test "mapper: pending node to ContextNode" {
     }
     try testing.expectEqualStrings("Bob", cn.lod[4]);
 }
-
-
-
-

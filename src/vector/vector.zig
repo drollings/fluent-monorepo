@@ -2198,7 +2198,6 @@ pub const GuidanceDb = struct {
             r.score = top_score * SEE_ALSO_DECAY;
             try extras.append(allocator, r);
             try seen.put(allocator, r.module, {});
-
         }
 
         log.debug("seeAlsoExpand: added {d} see-also results for module '{s}'", .{ extras.items.len, top.module });

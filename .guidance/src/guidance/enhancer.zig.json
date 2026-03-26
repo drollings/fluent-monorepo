@@ -5,14 +5,13 @@
     "language": "zig"
   },
   "keywords": ["Zig enhancement", "LLM integration", "documentation generation", "code comments", "API documentation"],
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
       "name": "EnrichmentResult",
       "match_hash": "d35c65f8ec8e88f88680e840bb6680d69c0901dd806dfb074b0b7db05aff807d",
       "signature": "keyword_struct EnrichmentResult { ... }",
-      "comment": "Result returned by each enhancement call.",
       "is_pub": true,
       "members": [
         {
@@ -36,7 +35,6 @@
       "name": "Enhancer",
       "match_hash": "17d942f761bded4ea862dfba9425bd588903c8234e2deca689984b858729d758",
       "signature": "keyword_struct Enhancer { ... }",
-      "comment": "Manages static configuration structures; owned by the module; ensures consistent initialization state.",
       "is_pub": true,
       "members": [
         {
@@ -73,7 +71,6 @@
             { "name": "self", "type": "*Enhancer" }
           ],
           "returns": "bool",
-          "comment": "Check whether the LLM endpoint is reachable.",
           "is_pub": true,
           "line": 73
         }
@@ -87,7 +84,6 @@
             { "name": "base_tokens", "type": "usize" }
           ],
           "returns": "usize",
-          "comment": "Get appropriate max_tokens for this model.\nThinking models need more tokens for chain-of-thought.",
           "is_pub": false,
           "line": 79
         }
@@ -104,7 +100,6 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
-          "comment": "Generate a description for a Zig function / method.\n\nReturns an EnrichmentResult owned by the caller.\nFalls back to `existing_doc` (duped) if the LLM is unavailable or\nproduces a hallucinated response.",
           "is_pub": true,
           "line": 95
         }
@@ -122,7 +117,6 @@
             { "name": "module_context", "type": "[]const u8" }
           ],
           "returns": "EnrichmentResult",
-          "comment": "Generate a description for a Zig struct / enum / union.",
           "is_pub": true,
           "line": 109
         }
@@ -138,7 +132,6 @@
             { "name": "source_preview", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Generate a one-line file-level description (≤200 chars) for STRUCTURE.md.",
           "is_pub": true,
           "line": 124
         }
@@ -192,7 +185,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Extract #hashtags from a \"Tags: #a #b\" line at the end of the response.",
           "is_pub": false,
           "line": 242
         }
@@ -206,7 +198,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Remove the trailing \"Tags: #a #b\" line from text.",
           "is_pub": false,
           "line": 273
         }
@@ -273,7 +264,6 @@
             { "name": "existing_comment", "type": "?[]const u8" }
           ],
           "returns": "ModuleDetailResult",
-          "comment": "Generate comprehensive module documentation using the thinking model.\nInput: source code, member signatures, capabilities, skills.\nOutput: detail (<800 words), keywords (5-10), comment (≤200 chars).",
           "is_pub": true,
           "line": 443
         }

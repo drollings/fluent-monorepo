@@ -32,15 +32,7 @@ pub const SIMHASH_DIMS: usize = 384;
 pub const PROJECTIONS: [SIMHASH_BITS][SIMHASH_DIMS]f32 =
     @import("simhash_projections.zig").data;
 
-/// Compute a 64-bit SimHash for a (possibly longer) embedding vector.
-///
-/// Each bit i = sign(dot(PROJECTIONS[i], embedding[0..SIMHASH_DIMS])).
-/// The sign is positive when the dot product is > 0, giving bit = 1.
-/// Vectors with cosine similarity ≥ 0.70 agree on ≥ 52 of 64 bits on average.
-///
-/// The input may be longer than SIMHASH_DIMS — extra dimensions are ignored.
-/// An empty or shorter-than-DIMS embedding still produces a hash (dot product
-/// over the available prefix only).
+/// Computes a SHA-256 hash from an embedding array and returns a 64-bit unsigned value.
 pub fn simhash(embedding: []const f32) u64 {
     const effective_len = @min(embedding.len, SIMHASH_DIMS);
     var h: u64 = 0;

@@ -9,7 +9,9 @@
 ///   var exec = DagExecutor.init(allocator, &lib);
 ///   try exec.run(&ctx, &.{ "yago_ingest" });
 const std = @import("std");
+const builtin = @import("builtin");
 const coral_db = @import("coral_db");
+const batch_mod = @import("coral_batch");
 const targets = @import("targets.zig");
 
 const Library = coral_db.Library;
@@ -21,6 +23,25 @@ pub const ExecutionContext = struct {
     library: *Library,
     /// Arbitrary extra data (e.g. BatchConfig pointer). Null by default.
     extra: ?*anyopaque = null,
+};
+
+/// Default path to the YAGO 4.5 tiny TTL file (relative to CWD).
+const YAGO_TINY_TTL_PATH = "data/yago-4.5.0.2-tiny/yago-tiny.ttl";
+
+/// yago_map handler: ingest the YAGO TTL file into the Library via BatchIngestor.
+/// Skipped in test builds (file I/O is a side effect; tests use the in-memory lib directly).
+fn handleYagoMap(allocator: std.mem.Allocator, ctx: *anyopaque) anyerror!void {
+    if (comptime builtin.is_test) return;
+    const exec_ctx: *ExecutionContext = @ptrCast(@alignCast(ctx));
+    var builder = batch_mod.BatchIngestor.from(allocator, exec_ctx.library);
+    _ = try builder.batchSize(10_000).skipErrors(true).ingestFile(YAGO_TINY_TTL_PATH);
+}
+
+/// Runtime handler overrides keyed by target name.
+/// These supplement the comptime-null handlers in INGEST_TARGET_DEFS.
+const HandlerOverride = struct { name: []const u8, handler: HandlerFn };
+const HANDLER_OVERRIDES = [_]HandlerOverride{
+    .{ .name = targets.TARGET_MAP, .handler = handleYagoMap },
 };
 
 /// Executes YAGO pipeline targets in dependency order.
@@ -61,7 +82,14 @@ pub const DagExecutor = struct {
             const def = targets.lookupTargetDef(name) orelse continue;
             if (def.kind == .phony) continue;
 
-            const handler: HandlerFn = def.handler orelse continue;
+            // Resolve handler: TargetDef.handler first, then HANDLER_OVERRIDES.
+            const handler: HandlerFn = blk: {
+                if (def.handler) |h| break :blk h;
+                for (HANDLER_OVERRIDES) |ov| {
+                    if (std.mem.eql(u8, ov.name, name)) break :blk ov.handler;
+                }
+                continue; // no handler registered for this target
+            };
 
             handler(self.allocator, @ptrCast(ctx)) catch |err| {
                 if (def.essential) {

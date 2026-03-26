@@ -16,6 +16,8 @@
 ///   - Library from coral/db.zig (SQLite backend)
 const std = @import("std");
 const builtin = @import("builtin");
+const options = @import("options");
+const have_extism = options.have_extism;
 const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const Library = coral_db.Library;
@@ -124,10 +126,46 @@ pub const HostFn = *const fn (
     outputs: [*]ExtismVal,
     n_outputs: u64,
     user_data: ?*anyopaque,
-) callconv(.C) void;
+) callconv(std.builtin.CallingConvention.c) void;
 
 /// Extism C-API function declarations.
-pub const extism = struct {
+/// In test builds or when `have_extism` is false (no libextism installed), all
+/// symbols are stubbed so the binary links without libextism.  Build with
+/// `-Dextism=true` to enable real Extism WASM execution.
+pub const extism = if (builtin.is_test or !have_extism) struct {
+    pub fn extism_plugin_new(_: [*]const u8, _: ExtismSize, _: ?[*]const ?*anyopaque, _: u64, _: u32) ExtismPlugin {
+        return null;
+    }
+    pub fn extism_plugin_free(_: ExtismPlugin) void {}
+    pub fn extism_plugin_call(_: ExtismPlugin, _: [*:0]const u8, _: [*]const u8, _: ExtismSize) i32 {
+        return -1;
+    }
+    pub fn extism_plugin_output(_: ExtismPlugin, _: *ExtismSize) ?[*]const u8 {
+        return null;
+    }
+    pub fn extism_plugin_error(_: ExtismPlugin, _: *ExtismSize) ?[*]const u8 {
+        return null;
+    }
+    pub fn extism_plugin_memory(_: ExtismPlugin) ?[*]u8 {
+        return null;
+    }
+    pub fn extism_plugin_memory_length(_: ExtismPlugin, _: u64) u64 {
+        return 0;
+    }
+    pub fn extism_alloc(_: ExtismPlugin, _: u64) u64 {
+        return 0;
+    }
+    pub fn extism_store(_: ExtismPlugin, _: u64, _: [*]const u8, _: u64) void {}
+    pub fn extism_load(_: ExtismPlugin, _: u64, _: [*]u8, _: u64) void {}
+    pub fn extism_free(_: ExtismPlugin, _: u64) void {}
+    pub fn extism_length(_: ExtismPlugin, _: u64) u64 {
+        return 0;
+    }
+    pub fn extism_function_new(_: [*:0]const u8, _: [*]const ExtismValType, _: u64, _: [*]const ExtismValType, _: u64, _: HostFn, _: ?*anyopaque, _: ?*const fn (?*anyopaque) callconv(std.builtin.CallingConvention.c) void) ExtismFunction {
+        return null;
+    }
+    pub fn extism_function_free(_: ExtismFunction) void {}
+} else struct {
     pub extern "extism" fn extism_plugin_new(
         wasm: [*]const u8,
         wasm_size: ExtismSize,
@@ -201,7 +239,7 @@ pub const extism = struct {
         n_outputs: u64,
         func: HostFn,
         user_data: ?*anyopaque,
-        free_user_data: ?*const fn (?*anyopaque) callconv(.C) void,
+        free_user_data: ?*const fn (?*anyopaque) callconv(std.builtin.CallingConvention.c) void,
     ) ExtismFunction;
 
     pub extern "extism" fn extism_function_free(func: ExtismFunction) void;
@@ -321,7 +359,7 @@ pub fn hostGetNodeLod1(
     outputs: [*]ExtismVal,
     n_outputs: u64,
     user_data: ?*anyopaque,
-) callconv(.C) void {
+) callconv(std.builtin.CallingConvention.c) void {
     _ = n_outputs;
     const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse return;
 
@@ -333,7 +371,11 @@ pub fn hostGetNodeLod1(
     const node_id: i64 = @bitCast(inputs[0].v);
 
     // Fetch node from SQLite via Library
-    const node = ctx.library.fetchNode(node_id) catch {
+    const node_opt = ctx.library.fetchNode(node_id) catch {
+        outputs[0] = .{ .t = .ptr, .v = 0 };
+        return;
+    };
+    const node = node_opt orelse {
         outputs[0] = .{ .t = .ptr, .v = 0 };
         return;
     };
@@ -356,7 +398,7 @@ pub fn hostGetNeighbors(
     outputs: [*]ExtismVal,
     n_outputs: u64,
     user_data: ?*anyopaque,
-) callconv(.C) void {
+) callconv(std.builtin.CallingConvention.c) void {
     _ = n_outputs;
     const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse return;
 
@@ -406,7 +448,7 @@ pub fn hostInsertEdge(
     outputs: [*]ExtismVal,
     n_outputs: u64,
     user_data: ?*anyopaque,
-) callconv(.C) void {
+) callconv(std.builtin.CallingConvention.c) void {
     _ = plugin;
     _ = n_outputs;
     const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse {
@@ -641,9 +683,28 @@ pub fn executeWasmQuery(
     wasm_bytes: []const u8,
     query: []const u8,
 ) ![]const u8 {
-    if (comptime builtin.is_test) return error.WasmRuntimeNotAvailable;
+    if (comptime builtin.is_test or !have_extism) return error.WasmRuntimeNotAvailable;
     const manifest = WasmManifest.init(wasm_bytes);
     var plugin = try WasmPlugin.init(allocator, manifest);
+    defer plugin.deinit();
+    const raw = try plugin.call("run", query);
+    return allocator.dupe(u8, raw);
+}
+
+/// Execute a WASM module with Library host functions wired in via a HostFunctionRegistry.
+/// Identical to executeWasmQuery but creates the plugin with host functions so that
+/// WASM tools can call get_node_lod1, get_neighbors, and insert_edge.
+///
+/// Used by QueueReactor L2 routing (R2).
+pub fn executeWasmQueryWithHosts(
+    allocator: std.mem.Allocator,
+    wasm_bytes: []const u8,
+    query: []const u8,
+    registry: *HostFunctionRegistry,
+) ![]const u8 {
+    if (comptime builtin.is_test or !have_extism) return error.WasmRuntimeNotAvailable;
+    const manifest = WasmManifest.init(wasm_bytes);
+    var plugin = try createPluginWithHostFunctions(allocator, manifest, registry);
     defer plugin.deinit();
     const raw = try plugin.call("run", query);
     return allocator.dupe(u8, raw);

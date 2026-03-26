@@ -268,6 +268,71 @@ pub fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) 
 }
 
 // ---------------------------------------------------------------------------
+// Capability-distance resolver — R1
+// ---------------------------------------------------------------------------
+//
+// Finds the best-matching Target for a given capability requirement mask.
+// Distance = popCount(needed & ~provides): the number of required capabilities
+// NOT covered by the candidate target's provides bitset.
+// Distance 0 = exact match; returned immediately.
+// Returns null if the registry is empty or all targets have distance MaxInt.
+
+/// Compute popCount(needed & ~provides): unmet capability count.
+///
+/// Iterates over set bits in `needed` and counts those not present in
+/// `provides`.  No temporary allocations required.
+fn capabilityDistance(
+    allocator: std.mem.Allocator,
+    needed: *const std.bit_set.DynamicBitSetUnmanaged,
+    provides: *const std.bit_set.DynamicBitSetUnmanaged,
+) !usize {
+    _ = allocator; // no temporary allocations needed
+    if (needed.bit_length == 0) return 0;
+
+    var unmet: usize = 0;
+    var iter = needed.iterator(.{});
+    while (iter.next()) |bit| {
+        if (bit >= provides.bit_length or !provides.isSet(bit)) {
+            unmet += 1;
+        }
+    }
+    return unmet;
+}
+
+/// Find the Target that best satisfies `needed` by bitwise popCount distance.
+///
+/// Returns an exact match (distance=0) immediately when found.
+/// Returns the closest partial match otherwise.
+/// Returns null when the registry is empty or no target has any provides bits.
+///
+/// `allocator` is used only for temporary bit-set arithmetic; no allocations
+/// escape this function.
+pub fn resolveByCapability(
+    self: *const TargetRegistry,
+    allocator: std.mem.Allocator,
+    needed: *const std.bit_set.DynamicBitSetUnmanaged,
+) !?*Target {
+    if (needed.bit_length == 0 or needed.count() == 0) return null;
+
+    var best: ?*Target = null;
+    var best_dist: usize = std.math.maxInt(usize);
+
+    var iter = self.targets.valueIterator();
+    while (iter.next()) |t_ptr| {
+        const t = t_ptr.*;
+        if (t.provides.count() == 0) continue;
+
+        const dist = try capabilityDistance(allocator, needed, &t.provides);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best = t;
+            if (dist == 0) return t; // exact match — no need to check further
+        }
+    }
+    return best;
+}
+
+// ---------------------------------------------------------------------------
 
 const testing = std.testing;
 
@@ -629,4 +694,61 @@ test "TargetBuilder: integrates with DependencyResolver end-to-end" {
         if (std.mem.eql(u8, t.name, "top")) top_pos = i;
     }
     try testing.expect(base_pos < top_pos);
+}
+
+test "resolveByCapability: exact match returns target" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    var builder = registry.target("provider", .command);
+    try builder.provides(&.{ "cap_a", "cap_b" }).register();
+
+    // Build a needed bitset that exactly matches "cap_a" + "cap_b"
+    var needed = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(testing.allocator, interner.count());
+    defer needed.deinit(testing.allocator);
+    needed.set(interner.getIndex("cap_a").?);
+    needed.set(interner.getIndex("cap_b").?);
+
+    const result = try registry.resolveByCapability(testing.allocator, &needed);
+    try testing.expect(result != null);
+    try testing.expectEqualStrings("provider", result.?.name);
+}
+
+test "resolveByCapability: empty registry returns null" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    _ = try interner.intern("cap_x");
+    var needed = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(testing.allocator, interner.count());
+    defer needed.deinit(testing.allocator);
+    needed.set(0);
+
+    const result = try registry.resolveByCapability(testing.allocator, &needed);
+    try testing.expect(result == null);
+}
+
+test "resolveByCapability: closest partial match returned" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    // t1 provides only cap_a; t2 provides cap_a + cap_b
+    var b1 = registry.target("partial", .command);
+    try b1.provides(&.{"cap_a"}).register();
+    var b2 = registry.target("full", .command);
+    try b2.provides(&.{ "cap_a", "cap_b" }).register();
+
+    var needed = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(testing.allocator, interner.count());
+    defer needed.deinit(testing.allocator);
+    needed.set(interner.getIndex("cap_a").?);
+    needed.set(interner.getIndex("cap_b").?);
+
+    const result = try registry.resolveByCapability(testing.allocator, &needed);
+    try testing.expect(result != null);
+    try testing.expectEqualStrings("full", result.?.name);
 }

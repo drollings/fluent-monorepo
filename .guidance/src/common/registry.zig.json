@@ -288,106 +288,152 @@
       "line": 259
     },
     {
+      "type": "fn_private",
+      "name": "capabilityDistance",
+      "match_hash": "7e8b1f73d97f2a2265f6561e510208c6cc69bc03c062254ca7d54ea1c438fbf3",
+      "signature": "fn capabilityDistance(allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, provides: *const std.bit_set.DynamicBitSetUnmanaged) -> usize",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
+        { "name": "provides", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "usize",
+      "is_pub": false,
+      "line": 284
+    },
+    {
+      "type": "fn_decl",
+      "name": "resolveByCapability",
+      "match_hash": "82f3d3a420ab3dc6e876f5dc8203ef6b70b1e6f8360790671c5be7026c2a49c3",
+      "signature": "fn resolveByCapability(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged) -> ?*Target",
+      "params": [
+        { "name": "self", "type": "*const TargetRegistry" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
+      ],
+      "returns": "?*Target",
+      "is_pub": true,
+      "line": 310
+    },
+    {
       "type": "test_decl",
       "name": "TargetRegistry basic operations",
       "is_pub": false,
-      "line": 274
+      "line": 339
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry GPA no leaks",
       "is_pub": false,
-      "line": 290
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex returns the correct target",
       "is_pub": false,
-      "line": 318
+      "line": 383
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex for unknown index returns null",
       "is_pub": false,
-      "line": 334
+      "line": 399
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: remove drops the target",
       "is_pub": false,
-      "line": 343
+      "line": 408
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: listNames returns sorted names",
       "is_pub": false,
-      "line": 368
+      "line": 433
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: essentialTargets returns only essential ones",
       "is_pub": false,
-      "line": 394
+      "line": 459
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: abstractTargets returns only abstract ones",
       "is_pub": false,
-      "line": 416
+      "line": 481
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getProviders and getProvidersForName",
       "is_pub": false,
-      "line": 439
+      "line": 504
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: get returns null for unknown name",
       "is_pub": false,
-      "line": 470
+      "line": 535
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: basic fluent registration",
       "is_pub": false,
-      "line": 483
+      "line": 548
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: depends and provides interned correctly",
       "is_pub": false,
-      "line": 499
+      "line": 564
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: feature parity with imperative style",
       "is_pub": false,
-      "line": 514
+      "line": 579
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: multiple commands accumulate",
       "is_pub": false,
-      "line": 554
+      "line": 619
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: id field set via fluent",
       "is_pub": false,
-      "line": 569
+      "line": 634
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: GPA no leaks — happy path",
       "is_pub": false,
-      "line": 581
+      "line": 646
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: integrates with DependencyResolver end-to-end",
       "is_pub": false,
-      "line": 601
+      "line": 666
+    },
+    {
+      "type": "test_decl",
+      "name": "resolveByCapability: exact match returns target",
+      "is_pub": false,
+      "line": 699
+    },
+    {
+      "type": "test_decl",
+      "name": "resolveByCapability: empty registry returns null",
+      "is_pub": false,
+      "line": 719
+    },
+    {
+      "type": "test_decl",
+      "name": "resolveByCapability: closest partial match returned",
+      "is_pub": false,
+      "line": 734
     }
   ]
 }

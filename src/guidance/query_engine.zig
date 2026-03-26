@@ -482,6 +482,7 @@ fn renderExplainOutput(
     try stdout.flush();
 }
 
+/// Processes a Zig command string, validating arguments and preparing output.
 pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var ea: ExplainArgs = .{};
     var i: usize = 0;
@@ -1296,6 +1297,7 @@ pub fn isShortQueryPub(query: []const u8) bool {
 // show command
 // =============================================================================
 
+/// Displays a specified query result using the allocator and argument list.
 pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var db_path_arg: ?[]const u8 = null;
     var filter: ?[]const u8 = null;
@@ -1416,6 +1418,7 @@ const TestQuery = struct {
     observations: []const u8 = "",
 };
 
+/// Validates command arguments and processes them in the Zig engine.
 pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var no_llm = false;
     var db_path: ?[]const u8 = null;
@@ -1838,4 +1841,3 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
 
     return queries.toOwnedSlice(allocator);
 }
-

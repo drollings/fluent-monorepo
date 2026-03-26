@@ -600,5 +600,3 @@ pub const MergeResult = struct {
     lines_corrected: usize = 0,
     has_changes: bool = false,
 };
-
-

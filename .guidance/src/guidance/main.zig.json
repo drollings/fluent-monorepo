@@ -9,129 +9,117 @@
   ],
   "members": [
     {
-      "type": "fn_private",
-      "name": "stepPrint",
-      "match_hash": "57b5a35bdde4fc3d956262379dc8fc4730808f5aaddcaa8b4cc1dc67b3d2b3bc",
-      "signature": "fn stepPrint(fmt: []const u8, args) -> void",
-      "params": [
-        { "name": "fmt", "type": "[]const u8" },
-        { "name": "args" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 27
-    },
-    {
       "type": "enum",
       "name": "Command",
       "match_hash": "a96cc6dfeb17808831d1342c6efe3dc448ff7ae5c02d70658ef6deda9a975691",
       "signature": "keyword_enum Command { ... }",
+      "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 75
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 76
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 77
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 78
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 79
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "deps",
           "is_pub": false,
-          "line": 80
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 81
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 82
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 83
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 84
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 85
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "@\"sync-comments\"",
           "is_pub": false,
-          "line": 86
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "@\"migrate-comments\"",
           "is_pub": false,
-          "line": 87
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "@\"map-capabilities\"",
           "is_pub": false,
-          "line": 88
+          "line": 59
         }
     ,    {
           "type": "enum_field",
           "name": "scrub",
           "is_pub": false,
-          "line": 89
+          "line": 60
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 90
+          "line": 61
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 91
+          "line": 62
         }
       ],
-      "line": 74
+      "line": 45
     },
     {
       "type": "fn_decl",
@@ -139,8 +127,9 @@
       "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
       "signature": "fn main() -> void",
       "returns": "void",
+      "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 95
+      "line": 66
     },
     {
       "type": "fn_private",
@@ -149,459 +138,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 159
-    },
-    {
-      "type": "struct",
-      "name": "InitArgs",
-      "match_hash": "0160b4cb9c32cc9317f5c8846e6b92c22b2eb5a324a9ef40e26d0aaaefdfc55e",
-      "signature": "keyword_struct InitArgs { ... }",
-      "is_pub": false,
-      "members": [
-        {
-          "type": "fn_private",
-          "name": "parse",
-          "match_hash": "d74c512a43d9f684e6ded80a465ff8c3a015d5a6bf7e15cf0f1db14b1c6c0fa1",
-          "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!InitArgs",
-          "params": [
-            { "name": "args", "type": "[]const []const u8" }
-          ],
-          "returns": "error{MissingValue}!InitArgs",
-          "is_pub": false,
-          "line": 263
-        }
-      ],
-      "line": 259
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdInit",
-      "match_hash": "013ac002b98ecd63f213045bfa9cc7a8591ed9131e7ebbdb866d8727159aee16",
-      "signature": "fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 282
-    },
-    {
-      "type": "fn_private",
-      "name": "gitDiff",
-      "match_hash": "f7daaa717baab373ee4811d9bcd5fa5be3ec7098300c6b00905d76a77806a1a5",
-      "signature": "fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cwd", "type": "[]const u8" },
-        { "name": "staged", "type": "bool" }
-      ],
-      "returns": "[]u8",
-      "is_pub": false,
-      "line": 386
-    },
-    {
-      "type": "fn_private",
-      "name": "splitDiffByFile",
-      "match_hash": "ddd664bc1e8c40711bc194d383817ecb475f931e3bf4a3fbe4cb6384d05e413b",
-      "signature": "fn splitDiffByFile(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "out", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 403
-    },
-    {
-      "type": "fn_private",
-      "name": "chunkFilePath",
-      "match_hash": "39248ac34b6782cc5591766c56a71dbed452ffa5144727f9211e6446ba4148fa",
-      "signature": "fn chunkFilePath(chunk: []const u8) -> []const u8",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": false,
-      "line": 419
-    },
-    {
-      "type": "fn_private",
-      "name": "chunkIsExplainGenJson",
-      "match_hash": "f9049a93bad7551de61ee3d048a514b7a3c303354c502c8359e8eb578797f68e",
-      "signature": "fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) -> bool",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 431
-    },
-    {
-      "type": "fn_private",
-      "name": "parseHunkRanges",
-      "match_hash": "043a4711d602994c84cf80601bd5259aa67c5514d36b629c642002db8149d6e7",
-      "signature": "fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) -> [][2]u32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "chunk", "type": "[]const u8" }
-      ],
-      "returns": "[][2]u32",
-      "is_pub": false,
-      "line": 439
-    },
-    {
-      "type": "struct",
-      "name": "CommitMemberInfo",
-      "match_hash": "6019dd5770b81fce562320627ed1bfaa2a1e0fe0f263c0416bae3310c49c08a6",
-      "signature": "keyword_struct CommitMemberInfo { ... }",
-      "is_pub": false,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "deinit",
-          "match_hash": "042783b2c7d1799953f4e60a7a88a2547ce835045b075796b877679379a8ca0d",
-          "signature": "fn deinit(self: CommitMemberInfo, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "CommitMemberInfo" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
-          "returns": "void",
-          "is_pub": true,
-          "line": 467
-        }
-      ],
-      "line": 461
-    },
-    {
-      "type": "fn_private",
-      "name": "memberLineNum",
-      "match_hash": "711192274b261d0eb403a2569b3d2b77c7da17db889ff99ac77857dd32d713f3",
-      "signature": "fn memberLineNum(obj: std.json.ObjectMap) -> ?u32",
-      "params": [
-        { "name": "obj", "type": "std.json.ObjectMap" }
-      ],
-      "returns": "?u32",
-      "is_pub": false,
-      "line": 475
-    },
-    {
-      "type": "fn_private",
-      "name": "lineInRanges",
-      "match_hash": "6c6546f3359a39aec799fe1d149299703aebe5016c15d028f77697df8c918fee",
-      "signature": "fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) -> bool",
-      "params": [
-        { "name": "line", "type": "u32" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" },
-        { "name": "context", "type": "u32" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 485
-    },
-    {
-      "type": "fn_private",
-      "name": "appendMemberIfInRange",
-      "match_hash": "ffb2954ecb59b0242deb44d868f318b69e29bce74faad0d2deada69aeeca5efa",
-      "signature": "fn appendMemberIfInRange(allocator: std.mem.Allocator, member: std.json.Value, hunk_ranges: []const [2]u32, context: u32, out: *std.ArrayList(CommitMemberInfo)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "member", "type": "std.json.Value" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" },
-        { "name": "context", "type": "u32" },
-        { "name": "out", "type": "*std.ArrayList(CommitMemberInfo)" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 496
-    },
-    {
-      "type": "fn_private",
-      "name": "loadChangedMembers",
-      "match_hash": "bf108ce8e330598adf5e1436f8a053bbe69cc97e5f3b4759dc55e4261a4a129e",
-      "signature": "fn loadChangedMembers(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "rel_path", "type": "[]const u8" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" }
-      ],
-      "returns": "[]CommitMemberInfo",
-      "is_pub": false,
-      "line": 523
-    },
-    {
-      "type": "fn_private",
-      "name": "generateCommitMessage",
-      "match_hash": "137d7180ccc4d09b6ad26f8197ff3b7c5206137bf23fde0ec44ba389b99881a3",
-      "signature": "fn generateCommitMessage(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_dir: []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "changed_files", "type": "[]const []const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "api_url", "type": "[]const u8" },
-        { "name": "model", "type": "[]const u8" },
-        { "name": "debug", "type": "bool" }
-      ],
-      "returns": "[]u8",
-      "is_pub": false,
-      "line": 562
-    },
-    {
-      "type": "fn_private",
-      "name": "writeTmpCommitMsg",
-      "match_hash": "1cb02367971e603a40d939e715883c96b1c5c368cdcf7fdb477301b00e76fee1",
-      "signature": "fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "msg", "type": "[]const u8" }
-      ],
-      "returns": "[]u8",
-      "is_pub": false,
-      "line": 748
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdCommit",
-      "match_hash": "5c061e6303cffe22101b8f53a1b5a7c2c2e2e4ac95f101e8d73d8339e89ac704",
-      "signature": "fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 758
-    },
-    {
-      "type": "fn_private",
-      "name": "loadCommitModelFromConfig",
-      "match_hash": "f846a71c4a28ec8e67d7c230c13f1435c4957bc70fbcf25f262495838ffee7cb",
-      "signature": "fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cwd", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": false,
-      "line": 990
-    },
-    {
-      "type": "struct",
-      "name": "GenArgs",
-      "match_hash": "c76590c0b51a9616b54a84155ec5f9344dfdcb534d8c71ba31a7dd639912884d",
-      "signature": "keyword_struct GenArgs { ... }",
-      "is_pub": false,
-      "members": [
-        {
-          "type": "fn_private",
-          "name": "parse",
-          "match_hash": "d3bd8e7e6231c7f37529384eba17fbdd0dfafa921f50cae98a53b64cd80bbba9",
-          "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!GenArgs",
-          "params": [
-            { "name": "args", "type": "[]const []const u8" }
-          ],
-          "returns": "error{MissingValue}!GenArgs",
-          "is_pub": false,
-          "line": 1054
-        }
-      ],
-      "line": 1013
-    },
-    {
-      "type": "struct",
-      "name": "ResolvedGenPaths",
-      "match_hash": "a50226053159b5dd8d0fa5f1f7003b8ded8c16f9c7c06fb69319fe233edfbf32",
-      "signature": "keyword_struct ResolvedGenPaths { ... }",
-      "is_pub": false,
-      "members": [
-        {
-          "type": "fn_private",
-          "name": "deinit",
-          "match_hash": "00d86dcf040811f35ee0676da48d09faaec24c07f240d4dc3dc5b32488650415",
-          "signature": "fn deinit(self: *@This(), allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
-          "returns": "void",
-          "is_pub": false,
-          "line": 1142
-        }
-      ],
-      "line": 1137
-    },
-    {
-      "type": "fn_private",
-      "name": "resolveGenPaths",
-      "match_hash": "07080788f25090bfa7cba50c49b249ceebba213020b0cef61a51dfbc91570f35",
-      "signature": "fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) -> ResolvedGenPaths",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cwd", "type": "[]const u8" }
-      ],
-      "returns": "ResolvedGenPaths",
-      "is_pub": false,
-      "line": 1152
-    },
-    {
-      "type": "fn_private",
-      "name": "setupCspEnhancer",
-      "match_hash": "77a90e9d49568bd6f4c7e158653e8e7e0fca8d6cfabc1831fc07bacf62648d03",
-      "signature": "fn setupCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1168
-    },
-    {
-      "type": "fn_private",
-      "name": "teardownCspEnhancer",
-      "match_hash": "acc3b7d93489a19c0c0354a3f963992aec7230dd0a62252d0446e5282fef44eb",
-      "signature": "fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1224
-    },
-    {
-      "type": "fn_private",
-      "name": "setupEnhancer",
-      "match_hash": "120ad3213ee0ca15377ce81747328459437122858694d62791cca8a7866d982d",
-      "signature": "fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1236
-    },
-    {
-      "type": "fn_private",
-      "name": "processFiles",
-      "match_hash": "f4dbcc455e29a45fe550b21d46362125c1a10c0c3d16929b9e6fceddca225baf",
-      "signature": "fn processFiles(allocator: std.mem.Allocator, processor: *sync_mod.SyncProcessor, ga: GenArgs, paths: ResolvedGenPaths) -> usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "paths", "type": "ResolvedGenPaths" }
-      ],
-      "returns": "usize",
-      "is_pub": false,
-      "line": 1331
-    },
-    {
-      "type": "fn_private",
-      "name": "guidanceDbIsUpToDate",
-      "match_hash": "6c9bfc592617668bbbfeb142627b2e5b5bfec4d77f3be197f2f6cfb9978f22ea",
-      "signature": "fn guidanceDbIsUpToDate(allocator: std.mem.Allocator, db_path: []const u8, json_dir: []const u8, capabilities_dir: []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db_path", "type": "[]const u8" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "capabilities_dir", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 1376
-    },
-    {
-      "type": "fn_private",
-      "name": "syncGuidanceDb",
-      "match_hash": "f1b738d56a790ce7de0fdeb5f569cb70b434980a82875ab67f9541a56fd4aa6d",
-      "signature": "fn syncGuidanceDb(allocator: std.mem.Allocator, json_dir: []const u8, guidance_db_path: []const u8, cfg: *const config_mod.ProjectConfig, verbose: bool) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "guidance_db_path", "type": "[]const u8" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "verbose", "type": "bool" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1437
-    },
-    {
-      "type": "fn_private",
-      "name": "generateSemanticAliases",
-      "match_hash": "cb6ff7c1ef8d3db0c34ab64b2be64c601e8633258b3f369f885d29ccaee8b83e",
-      "signature": "fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) -> void",
-      "params": [
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "verbose", "type": "bool" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1499
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdGen",
-      "match_hash": "c804a181469e902480f87de434549a1630737d4783b9457d5498f0967d120be8",
-      "signature": "fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1520
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdGenImpl",
-      "match_hash": "7959c2f366bbaf35e310748c0047c958e359076664e7db2017621b80254b70ed",
-      "signature": "fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1537
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdStatus",
-      "match_hash": "e229101fd38d0485a2504f714f608d04729408c3ab9db69e8b12809de49db189",
-      "signature": "fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1842
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdClean",
-      "match_hash": "e09bde7a88b330a6e2079fd9354a333f8eba320f5bbb14fc831a9fd1ce74a87b",
-      "signature": "fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 1923
+      "line": 130
     },
     {
       "type": "fn_private",
@@ -614,7 +151,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1970
+      "line": 229
     },
     {
       "type": "fn_private",
@@ -627,812 +164,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2002
-    },
-    {
-      "type": "struct",
-      "name": "ExcerptEntry",
-      "match_hash": "5dfacfdcd3c37ae2c97ab657ba39170612792e61a68e3af15ebf04c763eea4e4",
-      "signature": "keyword_struct ExcerptEntry { ... }",
-      "is_pub": false,
-      "line": 2027
-    },
-    {
-      "type": "struct",
-      "name": "FileMatchItem",
-      "match_hash": "23f4c35f666d8d1733d5bc6bd1a46ae8a310ee4ba0e02e7348956137e83daef3",
-      "signature": "keyword_struct FileMatchItem { ... }",
-      "is_pub": false,
-      "line": 2034
-    },
-    {
-      "type": "fn_private",
-      "name": "createEmbedderWithFallback",
-      "match_hash": "e6b9288c75e43c1b1ad216d1ac1faaaddbc5e564b0083dd2925e451e768371aa",
-      "signature": "fn createEmbedderWithFallback(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig) -> vector_mod.EmbeddingProvider",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" }
-      ],
-      "returns": "vector_mod.EmbeddingProvider",
-      "patterns": [
-        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
-      ],
-      "is_pub": false,
-      "line": 2043
-    },
-    {
-      "type": "fn_private",
-      "name": "makeLlmConfig",
-      "match_hash": "f69029cd151cd6be38cec83d4b85c20a733ccd0e06685a7b302d622076320285",
-      "signature": "fn makeLlmConfig(ea: ExplainArgs) -> llm.LlmConfig",
-      "params": [
-        { "name": "ea", "type": "ExplainArgs" }
-      ],
-      "returns": "llm.LlmConfig",
-      "patterns": [
-        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
-      ],
-      "is_pub": false,
-      "line": 2061
-    },
-    {
-      "type": "fn_private",
-      "name": "resolveLlmConfigForThinking",
-      "match_hash": "4acc60b962dd14ea1fb34d4707dbd8115579d20ae27b9e4a34c290535fc7b082",
-      "signature": "fn resolveLlmConfigForThinking(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, model_ref: []const u8, explicit_api_url: ?[]const u8) -> struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 }",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "model_ref", "type": "[]const u8" },
-        { "name": "explicit_api_url", "type": "?[]const u8" }
-      ],
-      "returns": "struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 }",
-      "is_pub": false,
-      "line": 2072
-    },
-    {
-      "type": "enum",
-      "name": "FilterMode",
-      "match_hash": "b6e7f3c92b9a8ceefd9472c0ec9d6e132e54976671b224277d1288a7fb25a4f4",
-      "signature": "keyword_enum FilterMode { ... }",
-      "is_pub": false,
-      "members": [
-        {
-          "type": "enum_field",
-          "name": "auto",
-          "is_pub": false,
-          "line": 2159
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "force",
-          "is_pub": false,
-          "line": 2161
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "skip",
-          "is_pub": false,
-          "line": 2163
-        }
-      ],
-      "line": 2157
-    },
-    {
-      "type": "struct",
-      "name": "ExplainArgs",
-      "match_hash": "d3681f77b57a6fa7eaa5b64d18ded251dc6ea83988c596902518a93d8f1406d6",
-      "signature": "keyword_struct ExplainArgs { ... }",
-      "is_pub": false,
-      "line": 2167
-    },
-    {
-      "type": "fn_private",
-      "name": "isShortQuery",
-      "match_hash": "738288e22354c1741e7a41d591883375f3c73f0c3102bfad0920f76af4b2fc41",
-      "signature": "fn isShortQuery(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 2188
-    },
-    {
-      "type": "fn_private",
-      "name": "collectSkillExcerpts",
-      "match_hash": "7adda5543e85e295f161a03cb09e5f53ef1c33e1139e8c2d9adea95afdbe0ee5",
-      "signature": "fn collectSkillExcerpts(allocator: std.mem.Allocator, top_json_path: []const u8, guidance_dir: []const u8, workspace: []const u8) -> []SkillExcerpt",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "top_json_path", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
-      "returns": "[]SkillExcerpt",
-      "is_pub": false,
-      "line": 2224
-    },
-    {
-      "type": "fn_private",
-      "name": "collectSourceExcerpts",
-      "match_hash": "9c8efc322d436e019761c3329fe21df736a3a52b4474dbe32c4d93647cb1996b",
-      "signature": "fn collectSourceExcerpts(allocator: std.mem.Allocator, results: []const SearchResult, search_terms: []const []const u8, workspace: []const u8) -> []ExcerptEntry",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "results", "type": "[]const SearchResult" },
-        { "name": "search_terms", "type": "[]const []const u8" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
-      "returns": "[]ExcerptEntry",
-      "is_pub": false,
-      "line": 2262
-    },
-    {
-      "type": "fn_private",
-      "name": "grepTopFiles",
-      "match_hash": "274cca616eb8766aaaed2aa1d0ade546ebf3a4cefa22dc01943e3d1d9ee3b297",
-      "signature": "fn grepTopFiles(allocator: std.mem.Allocator, results: []const SearchResult, search_terms: []const []const u8, workspace: []const u8) -> []FileMatchItem",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "results", "type": "[]const SearchResult" },
-        { "name": "search_terms", "type": "[]const []const u8" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
-      "returns": "[]FileMatchItem",
-      "is_pub": false,
-      "line": 2327
-    },
-    {
-      "type": "fn_private",
-      "name": "renderExplainOutput",
-      "match_hash": "69d0e1f5c4df9940ebf6664503a39815a3c2a2658151e807608ee2bf76cc2479",
-      "signature": "fn renderExplainOutput(allocator: std.mem.Allocator, query_text: []const u8, results: []const SearchResult, search_terms: []const []const u8, ai_summary: ?[]const u8, skill_excerpts: []const SkillExcerpt, excerpts: []const ExcerptEntry, file_matches: []const FileMatchItem) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "results", "type": "[]const SearchResult" },
-        { "name": "search_terms", "type": "[]const []const u8" },
-        { "name": "ai_summary", "type": "?[]const u8" },
-        { "name": "skill_excerpts", "type": "[]const SkillExcerpt" },
-        { "name": "excerpts", "type": "[]const ExcerptEntry" },
-        { "name": "file_matches", "type": "[]const FileMatchItem" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 2367
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdExplain",
-      "match_hash": "1481b095fd0fbf9c9ce33bd761e5dfa74aad7046c44283b4bb0f6ccdf7a85bde",
-      "signature": "fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 2477
-    },
-    {
-      "type": "fn_private",
-      "name": "loadUsedByFromJson",
-      "match_hash": "1ae518195db73733e27116bd676079aa93b1eb2cd3261cc160e92538f4c7c2a0",
-      "signature": "fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) -> ?[][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[][]const u8",
-      "is_pub": false,
-      "line": 2722
-    },
-    {
-      "type": "fn_private",
-      "name": "isExactNameMatch",
-      "match_hash": "eb28e3747669297948649ee1c1c572666ff84a63cb67d32ad021da3298a7a7a2",
-      "signature": "fn isExactNameMatch(name: []const u8, terms: []const []const u8) -> bool",
-      "params": [
-        { "name": "name", "type": "[]const u8" },
-        { "name": "terms", "type": "[]const []const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 2742
-    },
-    {
-      "type": "fn_private",
-      "name": "loadSkillsFromJson",
-      "match_hash": "75840486ee71acc7fa49d25830aca6eff8a2fd475f01ff018d583d6b38b00074",
-      "signature": "fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[]const u8",
-      "is_pub": false,
-      "line": 2755
-    },
-    {
-      "type": "fn_private",
-      "name": "loadPublicMemberNames",
-      "match_hash": "33b0bb290b50fc88dab576b0f96d5bc25032f4b32c297ae0cd1c4d24d655b70d",
-      "signature": "fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) -> ?[][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[][]const u8",
-      "is_pub": false,
-      "line": 2791
-    },
-    {
-      "type": "fn_private",
-      "name": "loadSkillPara",
-      "match_hash": "737ee36314bc12ab38816dc93902dee708dab07e52c47e3882a23d26a8e586b6",
-      "signature": "fn loadSkillPara(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "cwd", "type": "[]const u8" },
-        { "name": "skill_name", "type": "[]const u8" }
-      ],
-      "returns": "?[]const u8",
-      "is_pub": false,
-      "line": 2828
-    },
-    {
-      "type": "fn_private",
-      "name": "explainExtractExcerpt",
-      "match_hash": "3920bb4ccebd266394e9f4c4dde49351d6109a26d5325f23e99c87a81b91384e",
-      "signature": "fn explainExtractExcerpt(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "src", "type": "[]const u8" },
-        { "name": "start_line", "type": "u32" },
-        { "name": "node_type", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": false,
-      "line": 2855
-    },
-    {
-      "type": "fn_private",
-      "name": "explainGrepFile",
-      "match_hash": "ea22d6692d70a6a4b410f6f7a7ff05d3e8e4f1f0fd98cf95bdca26cfd0925a39",
-      "signature": "fn explainGrepFile(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) -> []usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "file_path", "type": "[]const u8" },
-        { "name": "terms", "type": "[]const []const u8" },
-        { "name": "max_results", "type": "usize" }
-      ],
-      "returns": "[]usize",
-      "is_pub": false,
-      "line": 2867
-    },
-    {
-      "type": "fn_private",
-      "name": "buildLlmSummary",
-      "match_hash": "0e192104a159f621235113e23055839279771edcc635e23187a99352997edcca",
-      "signature": "fn buildLlmSummary(allocator: std.mem.Allocator, client: *llm.LlmClient, query_text: []const u8, results: []const SearchResult, skill_excerpts_in: []const SkillExcerpt, excerpts_in: []const ExcerptEntry) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "client", "type": "*llm.LlmClient" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "results", "type": "[]const SearchResult" },
-        { "name": "skill_excerpts_in", "type": "[]const SkillExcerpt" },
-        { "name": "excerpts_in", "type": "[]const ExcerptEntry" }
-      ],
-      "returns": "?[]const u8",
-      "is_pub": false,
-      "line": 2901
-    },
-    {
-      "type": "fn_private",
-      "name": "loadAliases",
-      "match_hash": "338663b389db9cf362981416c9e71bc5a2d018aa794320fff46b9cad3cb06130",
-      "signature": "fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) -> ?lance_db_mod.SemanticAliases",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
-      "returns": "?lance_db_mod.SemanticAliases",
-      "is_pub": false,
-      "line": 2997
-    },
-    {
-      "type": "fn_private",
-      "name": "llmExtractKeyTerms",
-      "match_hash": "5f5900ee28e26b0441f9377cf429031f7f778bf0dbfeb53511bfc27b8d0db82a",
-      "signature": "fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) -> ?[][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "client", "type": "*llm.LlmClient" },
-        { "name": "query", "type": "[]const u8" }
-      ],
-      "returns": "?[][]const u8",
-      "is_pub": false,
-      "line": 3005
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdExplainStaged",
-      "match_hash": "0dcd505a1e9e481c803537c6c1c0a63535cb31d0ee466c7874a38bc6f87baf43",
-      "signature": "fn cmdExplainStaged(allocator: std.mem.Allocator, db: *GuidanceDb, query_text: []const u8, workspace: []const u8, guidance_dir: []const u8, llm_config: llm.LlmConfig, fast_model_ref: []const u8, ea: ExplainArgs) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "llm_config", "type": "llm.LlmConfig" },
-        { "name": "fast_model_ref", "type": "[]const u8" },
-        { "name": "ea", "type": "ExplainArgs" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3048
-    },
-    {
-      "type": "fn_private",
-      "name": "emitStagedOutput",
-      "match_hash": "2acf6458bcf590126aa8039b87140bba13c5e3a1bb68c86c684a686557603893",
-      "signature": "fn emitStagedOutput(allocator: std.mem.Allocator, query_text: []const u8, stages: []const types.Stage, summary: ?[]const u8, followup_keywords: ?[]const []const u8, workspace: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types.Stage" },
-        { "name": "summary", "type": "?[]const u8" },
-        { "name": "followup_keywords", "type": "?[]const []const u8" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3231
-    },
-    {
-      "type": "fn_decl",
-      "name": "guidanceJsonPath",
-      "match_hash": "85ae11a26a82032d655505e79d23b140b3967ba263b2efafe7e9458277e96ba7",
-      "signature": "fn guidanceJsonPath(allocator: std.mem.Allocator, workspace: []const u8, json_dir: []const u8, src_abs: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "src_abs", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": true,
-      "line": 3253
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdMapCapabilities",
-      "match_hash": "81974bad8a210e497cfb836ef0fc15de1be601597a03238cc3a2376eb9283489",
-      "signature": "fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3275
-    },
-    {
-      "type": "fn_private",
-      "name": "isCapabilityKeywordToken",
-      "match_hash": "aa337edc5674c996b574d340870e7b0f973889af37109c2fc45e3c26e5e01086",
-      "signature": "fn isCapabilityKeywordToken(tok: []const u8) -> bool",
-      "params": [
-        { "name": "tok", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 3475
-    },
-    {
-      "type": "fn_private",
-      "name": "runCommand",
-      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
-      "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "argv", "type": "[]const []const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 3499
-    },
-    {
-      "type": "fn_private",
-      "name": "runPhaseCommand",
-      "match_hash": "db25d3eed9e616d739efcbb121c4b8dc3e99101aad2233f95e7093f40aa76778",
-      "signature": "fn runPhaseCommand(allocator: std.mem.Allocator, argv_template: []const []const u8, file_path: []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "argv_template", "type": "[]const []const u8" },
-        { "name": "file_path", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 3513
-    },
-    {
-      "type": "fn_private",
-      "name": "collectFilesWithExts",
-      "match_hash": "f3c9cbed1e148f37491c740fa237689ae1175cff9b9073fa8e05ffea9601bbc3",
-      "signature": "fn collectFilesWithExts(allocator: std.mem.Allocator, dir_abs: []const u8, exts: []const []const u8) -> [][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "dir_abs", "type": "[]const u8" },
-        { "name": "exts", "type": "[]const []const u8" }
-      ],
-      "returns": "[][]const u8",
-      "is_pub": false,
-      "line": 3530
-    },
-    {
-      "type": "fn_private",
-      "name": "runBuiltinFilePipeline",
-      "match_hash": "a008481a47162108616256bb51946e1d84f0ceaee2381965b7ae8e56a570ca04",
-      "signature": "fn runBuiltinFilePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, src_abs: []const u8, ga: GenArgs) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "src_abs", "type": "[]const u8" },
-        { "name": "ga", "type": "GenArgs" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 3573
-    },
-    {
-      "type": "fn_private",
-      "name": "runBuiltinLanguagePipeline",
-      "match_hash": "2b7a0cd08ab8917871e6dabef9af13c3fb0f6d9875ae96fd5cd38a1710af2b70",
-      "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "language", "type": "[]const u8" },
-        { "name": "stale_files", "type": "[]const []const u8" },
-        { "name": "all_files", "type": "[]const []const u8" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "ga", "type": "GenArgs" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3636
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdCheck",
-      "match_hash": "f0ac2bee77107b1f1ad5e823f0d27d0e31bfe867d9c495f04d476a9aecd53839",
-      "signature": "fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3701
-    },
-    {
-      "type": "fn_decl",
-      "name": "parseHunkRangesPub",
-      "match_hash": "bfcd78f146390ba27b671ff6b96dd2ce39bf7d64e4de449efb8370bbd4e83f99",
-      "signature": "fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) -> [][2]u32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "chunk", "type": "[]const u8" }
-      ],
-      "returns": "[][2]u32",
-      "is_pub": true,
-      "line": 3758
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadChangedMembersPub",
-      "match_hash": "c1f862f15709622d7401df2febe47dd8ae5b8bf039fde614457f9d79c667de88",
-      "signature": "fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "rel_path", "type": "[]const u8" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" }
-      ],
-      "returns": "[]CommitMemberInfo",
-      "is_pub": true,
-      "line": 3763
-    },
-    {
-      "type": "fn_decl",
-      "name": "chunkIsIgnoredPub",
-      "match_hash": "cab0bb84013ca986daef8929c18a462404c72c21956ed8064efe203b5ff28ad3",
-      "signature": "fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) -> bool",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": true,
-      "line": 3768
-    },
-    {
-      "type": "fn_decl",
-      "name": "chunkFilePathPub",
-      "match_hash": "b36b2bdb56d51fbd58b789a4697a0e1908bf3e4999040239552e41796cfa4d5a",
-      "signature": "fn chunkFilePathPub(chunk: []const u8) -> []const u8",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": true,
-      "line": 3773
-    },
-    {
-      "type": "fn_decl",
-      "name": "splitDiffByFilePub",
-      "match_hash": "d072ca8ccfb1a0d91106496f203f642009e6d5508394f2b2620f6d46351fb8f8",
-      "signature": "fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "out", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
-      "returns": "void",
-      "is_pub": true,
-      "line": 3778
-    },
-    {
-      "type": "fn_decl",
-      "name": "isExactNameMatchPub",
-      "match_hash": "764d28889bed5d558b646943a9419172c689b811d116b1cf8f8a23d04385b2d1",
-      "signature": "fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) -> bool",
-      "params": [
-        { "name": "name", "type": "[]const u8" },
-        { "name": "terms", "type": "[]const []const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": true,
-      "line": 3783
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadSkillsFromJsonPub",
-      "match_hash": "7ad563a7546af4fb731b6dd157e55e7ecf7895e6b1378b6f697f7872b7d3e198",
-      "signature": "fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[]const u8",
-      "is_pub": true,
-      "line": 3788
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadUsedByFromJsonPub",
-      "match_hash": "1407f2ff96641462d49c8442886409b436d877e2b5e1c092dd23fdc61faec674",
-      "signature": "fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) -> ?[][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[][]const u8",
-      "is_pub": true,
-      "line": 3793
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadPublicMemberNamesPub",
-      "match_hash": "d9dbfae38d7814d7c18aeca275ce9c5fd2c67a8a00bde4873a9bcc9d8fbfbfc9",
-      "signature": "fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) -> ?[][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "?[][]const u8",
-      "is_pub": true,
-      "line": 3798
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadSkillParaPub",
-      "match_hash": "69e8c19f2b146b3408abe04d9d27bb03db5400ce28a95bf23212b1bf0e19ebd6",
-      "signature": "fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "cwd", "type": "[]const u8" },
-        { "name": "skill_name", "type": "[]const u8" }
-      ],
-      "returns": "?[]const u8",
-      "is_pub": true,
-      "line": 3803
-    },
-    {
-      "type": "fn_decl",
-      "name": "explainExtractExcerptPub",
-      "match_hash": "0e2de037f16e2db0b6c8ac5bea5dcbbf2ee090e8396afab244cc556bf864109c",
-      "signature": "fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "src", "type": "[]const u8" },
-        { "name": "start_line", "type": "u32" },
-        { "name": "node_type", "type": "[]const u8" }
-      ],
-      "returns": "[]const u8",
-      "is_pub": true,
-      "line": 3808
-    },
-    {
-      "type": "fn_decl",
-      "name": "explainGrepFilePub",
-      "match_hash": "8c2e2badf9358c4812a2709f741221d230579febf7590522515d59160f0a238a",
-      "signature": "fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) -> []usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "file_path", "type": "[]const u8" },
-        { "name": "terms", "type": "[]const []const u8" },
-        { "name": "max_results", "type": "usize" }
-      ],
-      "returns": "[]usize",
-      "is_pub": true,
-      "line": 3813
-    },
-    {
-      "type": "fn_decl",
-      "name": "isShortQueryPub",
-      "match_hash": "b3d58afb48804b477491943d24c0d42fb8d4cb3e52778fcc1600ec30452407cb",
-      "signature": "fn isShortQueryPub(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": true,
-      "line": 3818
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdShow",
-      "match_hash": "94cbd03213b9f0d04ffa165455c3f9baf4a21050a4189b9647f157ff2b7306c9",
-      "signature": "fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3826
-    },
-    {
-      "type": "struct",
-      "name": "TestQuery",
-      "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
-      "signature": "keyword_struct TestQuery { ... }",
-      "is_pub": false,
-      "line": 3938
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdTest",
-      "match_hash": "3bad47d8b8f7eab63124672fa46b01b0b74a88b3a4698906c614d6a293e44038",
-      "signature": "fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 3946
-    },
-    {
-      "type": "fn_private",
-      "name": "parseScoreFromLine",
-      "match_hash": "511e1ac4d8d208e4c8548af2cd2e75c7474f83a040c17c7977f258933b300baf",
-      "signature": "fn parseScoreFromLine(line: []const u8) -> ?u8",
-      "params": [
-        { "name": "line", "type": "[]const u8" }
-      ],
-      "returns": "?u8",
-      "is_pub": false,
-      "line": 4281
-    },
-    {
-      "type": "fn_private",
-      "name": "generateTestQueries",
-      "match_hash": "9b3d1e7d1261ac25513a0d2d8fee3414fd416d1e6d5f4b25e7bddb417d9148fd",
-      "signature": "fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
-      "returns": "[]TestQuery",
-      "is_pub": false,
-      "line": 4295
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdSyncComments",
-      "match_hash": "284760802c500679ced658ce8a3b7e7466da09aca6400c208b1a05d617cae450",
-      "signature": "fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 4373
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdMigrateComments",
-      "match_hash": "b87871750be96814f7f89a39aef41dc13bcbff86c40feed487e5e35560936d71",
-      "signature": "fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 4543
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdScrub",
-      "match_hash": "e0474c2e9be37c217431cc84279c2821c457c832037241c94f60511d638a6769",
-      "signature": "fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 4705
-    },
-    {
-      "type": "fn_private",
-      "name": "scrubCount",
-      "match_hash": "e9f9089fa7ed51517f244ba5d690364683ad30ad937fc9506a238b1085f7786a",
-      "signature": "fn scrubCount(value: *std.json.Value) -> usize",
-      "params": [
-        { "name": "value", "type": "*std.json.Value" }
-      ],
-      "returns": "usize",
-      "is_pub": false,
-      "line": 4801
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdTodo",
-      "match_hash": "4df5f69ded4008c52e9b96601bb67f7a2564874d1334c4fb118f2e8f2839828a",
-      "signature": "fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 4828
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdDiary",
-      "match_hash": "f0763cb6fb2391953d50caee9329b7c68436fe05ccc13704d46cdbbe9ab84cb8",
-      "signature": "fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 4892
+      "line": 261
     }
   ]
 }

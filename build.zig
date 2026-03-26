@@ -122,6 +122,10 @@ pub fn build(b: *std.Build) void {
     });
 
     // `wasm` — Extism WASM sandboxing + binary IPC.
+    // Build with `-Dextism=true` when libextism is installed to enable real WASM execution.
+    const have_extism = b.option(bool, "extism", "Enable Extism WASM runtime (requires libextism)") orelse false;
+    const wasm_options = b.addOptions();
+    wasm_options.addOption(bool, "have_extism", have_extism);
     const wasm_module = b.createModule(.{
         .root_source_file = b.path("src/wasm/wasm.zig"),
         .target = target,
@@ -130,6 +134,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "common", .module = common_module },
             .{ .name = "coral_db", .module = coral_db_module },
             .{ .name = "coral_schema", .module = coral_schema_module },
+            .{ .name = "options", .module = wasm_options.createModule() },
         },
     });
 
@@ -181,11 +186,13 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
     coral_exe.linkLibC();
     coral_exe.linkSystemLibrary("sqlite3");
+    if (have_extism) coral_exe.linkSystemLibrary("extism");
     b.installArtifact(coral_exe);
     coral_exe.step.dependOn(&guidance_exe.step);
 
@@ -463,6 +470,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "coral_batch", .module = coral_batch_module },
             },
         }),
     });

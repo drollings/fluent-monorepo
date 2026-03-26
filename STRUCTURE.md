@@ -37,6 +37,9 @@ Then you you must read
 .
 ├── bin
 │   └── guidance-py
+├── data
+│   └── yago-4.5.0.2-tiny
+│       └── yago-tiny.ttl
 ├── doc
 │   ├── coral
 │   │   ├── Legacy
@@ -166,6 +169,8 @@ Then you you must read
 │   │   ├── config.zig
 │   │   ├── context_node_schema.zig
 │   │   ├── db.zig
+│   │   ├── executor.zig
+│   │   ├── frontier.zig
 │   │   ├── main.zig
 │   │   ├── mcp.zig
 │   │   ├── pattern.zig
@@ -199,10 +204,12 @@ Then you you must read
 │   │   ├── plugin.zig
 │   │   ├── plugin_registry.zig
 │   │   ├── provider_discovery.zig
+│   │   ├── query_engine.zig
 │   │   ├── scrub.zig
 │   │   ├── staged.zig
 │   │   ├── structure.zig
 │   │   ├── sync.zig
+│   │   ├── sync_engine.zig
 │   │   ├── synthesize.zig
 │   │   ├── tests.zig
 │   │   ├── todo.zig
@@ -233,9 +240,13 @@ Then you you must read
 │   ├── vector
 │   │   ├── lance_db.zig
 │   │   ├── math.zig
-│   │   └── root.zig
+│   │   ├── root.zig
+│   │   ├── simhash.zig
+│   │   └── simhash_projections.zig
 │   └── wasm
 │       └── wasm.zig
+├── tools
+│   └── gen_simhash_projections.py
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c
@@ -255,7 +266,12 @@ Then you you must read
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
+├── RECOMMENDATIONS_SEARCH_20260325.md
 ├── requirements.txt
+├── REVIEW_20260325.md
+├── REVIEW_20260326.md
+├── ROADMAP_COMPLETION.md
+├── ROADMAP_COMPLETION_CHECKLIST.md
 ├── ROADMAP_MONOREPO_MARCH.md
 ├── ROADMAP_MONOREPO_MARCH_CHECKLIST.md
 ├── STRUCTURE.md

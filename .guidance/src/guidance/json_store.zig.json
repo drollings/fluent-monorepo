@@ -4,14 +4,13 @@
     "source": "src/guidance/json_store.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig", "src/guidance/structure.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/structure.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
       "name": "JsonStore",
       "match_hash": "3f34465f5f4a2dcc3dcf8c2ed5ed82d029ab59c7ef7240583dfb5e1d78378df6",
       "signature": "keyword_struct JsonStore { ... }",
-      "comment": "Manages JSON data storage with fixed-size buffers; owned by the module; ensures consistent access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -74,7 +73,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Returns true when a stored comment is a leaked LLM reasoning preamble rather\nthan real documentation.  Such comments should be treated as absent so the\nPython AI infill phase can regenerate them with a proper answer.",
           "is_pub": false,
           "line": 162
         }
@@ -115,7 +113,6 @@
             { "name": "m", "type": "types.Member" }
           ],
           "returns": "types.Member",
-          "comment": "Deep-copy a single Member; every string field is independently owned.",
           "is_pub": true,
           "line": 330
         }
@@ -142,7 +139,6 @@
             { "name": "strs", "type": "[]const []const u8" }
           ],
           "returns": "[][]const u8",
-          "comment": "Deep-copy a string slice.  Delegates to the generic helper in\nsrc/common/str.zig so callers continue to work without change.",
           "is_pub": true,
           "line": 379
         }
@@ -169,7 +165,6 @@
             { "name": "skills", "type": "[]const types.Skill" }
           ],
           "returns": "[]types.Skill",
-          "comment": "Deep-copy a slice of Skills.",
           "is_pub": true,
           "line": 396
         }
@@ -196,7 +191,6 @@
             { "name": "doc", "type": "types.GuidanceDoc" }
           ],
           "returns": "void",
-          "comment": "Free all heap memory owned by a GuidanceDoc.",
           "is_pub": true,
           "line": 431
         }
@@ -239,7 +233,6 @@
       "name": "MergeResult",
       "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
-      "comment": "Represents the outcome of a merge operation, managing ownership and invariants for safe state transitions.",
       "is_pub": true,
       "line": 591
     }

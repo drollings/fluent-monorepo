@@ -12,7 +12,6 @@
       "name": "PendingNode",
       "match_hash": "68275999eaa85cc31b5000c7d8ebd4be0398afbafc9ed2eb3ca18dddd2ec0e50",
       "signature": "keyword_struct PendingNode { ... }",
-      "comment": "In-memory representation of a node being built from triples.",
       "is_pub": true,
       "members": [
         {
@@ -50,7 +49,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
-          "comment": "Convert to ContextNode (caller owns returned strings).",
           "is_pub": true,
           "line": 64
         }
@@ -62,7 +60,6 @@
       "name": "PendingEdge",
       "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
       "signature": "keyword_struct PendingEdge { ... }",
-      "comment": "Represents a pending edge in the graph; managed by owner; key invariant is its pending state.",
       "is_pub": true,
       "line": 90
     },
@@ -71,7 +68,6 @@
       "name": "PendingContradiction",
       "match_hash": "0abd7979f8fc6b42320521af20b9c6cdccc551a84e197ba4488186e9d33a23a1",
       "signature": "keyword_struct PendingContradiction { ... }",
-      "comment": "Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with ownership and invariants.",
       "is_pub": true,
       "line": 101
     },
@@ -80,7 +76,6 @@
       "name": "TripleMapper",
       "match_hash": "9c2805b3b1e99fd1f7502b85cb17ee6edec7263ffe2e9d3108d333ba7e0f0de6",
       "signature": "keyword_struct TripleMapper { ... }",
-      "comment": "Handles mapping between Zig keywords and structures, manages ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -118,7 +113,6 @@
             { "name": "triple", "type": "Triple" }
           ],
           "returns": "void",
-          "comment": "Process one RDF triple. Accumulates nodes/edges in memory.",
           "is_pub": true,
           "line": 161
         }
@@ -132,7 +126,6 @@
             { "name": "library", "type": "*Library" }
           ],
           "returns": "FlushResult",
-          "comment": "Flush all accumulated nodes and edges to SQLite via Library.",
           "is_pub": true,
           "line": 222
         }
@@ -150,7 +143,6 @@
             { "name": "new_value", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "If the node already has a non-empty value at lod_index that differs from\nnew_value, record a PendingContradiction.",
           "is_pub": false,
           "line": 277
         }
@@ -215,7 +207,6 @@
       "name": "FlushResult",
       "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
       "signature": "keyword_struct FlushResult { ... }",
-      "comment": "Manages flush operations with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": true,
       "line": 353
     },

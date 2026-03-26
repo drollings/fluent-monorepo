@@ -12,7 +12,6 @@
       "name": "OntologyClass",
       "match_hash": "948f8186746d05df605c18bfc3d3be269a3aeafaa238fe1294e57b2b3172cfb0",
       "signature": "keyword_struct OntologyClass { ... }",
-      "comment": "Represents a fixed-size buffer pool with ownership and lifecycle management; key invariants include size and allocation limits.",
       "is_pub": true,
       "line": 30
     },
@@ -21,7 +20,6 @@
       "name": "PropertyRange",
       "match_hash": "6be8bb6a15ebe0f53adcdda6f962468cf5c04106978311cfe077d43159cb2bb8",
       "signature": "keyword_enum PropertyRange { ... }",
-      "comment": "Defines a range of property values with fixed bounds; managed centrally; ensures consistent invariants.",
       "is_pub": true,
       "members": [
         {
@@ -80,7 +78,6 @@
       "name": "OntologyProperty",
       "match_hash": "265b817001c1a1cdb915f5be472ed9a6141967a41e10a132b7e9edbb405daec5",
       "signature": "keyword_struct OntologyProperty { ... }",
-      "comment": "Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
       "line": 53
     },
@@ -93,7 +90,6 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyClass",
-      "comment": "Look up a class by IRI. Returns null if unknown.",
       "is_pub": true,
       "line": 148
     },
@@ -107,9 +103,21 @@
         { "name": "out", "type": "[][]const u8" }
       ],
       "returns": "usize",
-      "comment": "Collect superclass chain for a given class IRI (including self).\nOut slice must have enough capacity. Returns number written.",
       "is_pub": true,
       "line": 157
+    },
+    {
+      "type": "fn_decl",
+      "name": "isSubclassOf",
+      "match_hash": "92cb617957ab94fa85802858db2276ad7904ff774bd6d8fb393a10fcb018d88f",
+      "signature": "fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) -> bool",
+      "params": [
+        { "name": "child_iri", "type": "[]const u8" },
+        { "name": "parent_iri", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 177
     },
     {
       "type": "fn_decl",
@@ -120,51 +128,74 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "?*const OntologyProperty",
-      "comment": "Look up a property by IRI.",
       "is_pub": true,
-      "line": 299
+      "line": 318
     },
     {
       "type": "test_decl",
       "name": "class lookup by IRI",
       "is_pub": false,
-      "line": 312
+      "line": 331
     },
     {
       "type": "test_decl",
       "name": "class lookup unknown IRI returns null",
       "is_pub": false,
-      "line": 318
+      "line": 337
     },
     {
       "type": "test_decl",
       "name": "property lookup by IRI",
       "is_pub": false,
-      "line": 322
+      "line": 341
     },
     {
       "type": "test_decl",
       "name": "property lookup rdf:type",
       "is_pub": false,
-      "line": 328
+      "line": 347
     },
     {
       "type": "test_decl",
       "name": "superclass chain for Person",
       "is_pub": false,
-      "line": 334
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "domain validation on hasGender",
       "is_pub": false,
-      "line": 342
+      "line": 361
     },
     {
       "type": "test_decl",
       "name": "transitive property subClassOf",
       "is_pub": false,
-      "line": 348
+      "line": 367
+    },
+    {
+      "type": "test_decl",
+      "name": "isSubclassOf: identity",
+      "is_pub": false,
+      "line": 372
+    },
+    {
+      "type": "test_decl",
+      "name": "isSubclassOf: direct subclass",
+      "is_pub": false,
+      "line": 376
+    },
+    {
+      "type": "test_decl",
+      "name": "isSubclassOf: unrelated classes",
+      "is_pub": false,
+      "line": 381
+    },
+    {
+      "type": "test_decl",
+      "name": "isSubclassOf: unknown child IRI",
+      "is_pub": false,
+      "line": 385
     }
   ]
 }

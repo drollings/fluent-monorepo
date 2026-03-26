@@ -59,6 +59,7 @@ const InitArgs = struct {
     }
 };
 
+/// Initializes the sync engine with allocator and command arguments, preparing for Zig command execution.
 pub fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const ia = InitArgs.parse(args) catch |err| {
         std.debug.print("error: init flag missing value ({s})\n", .{@errorName(err)});
@@ -535,6 +536,7 @@ fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     return path;
 }
 
+/// Handles command execution with allocator and arguments, returning void.
 pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var dry_run = false;
     var debug = false;
@@ -1297,6 +1299,7 @@ fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) !void {
     if (verbose) std.debug.print("semantic-aliases: using existing {s}\n", .{aliases_path});
 }
 
+/// Generates a Zig command string using provided allocator and arguments.
 pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const ga = GenArgs.parse(args) catch |err| {
         std.debug.print("error: gen flag missing value ({s})\n", .{@errorName(err)});
@@ -1619,6 +1622,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 // status
 // =============================================================================
 
+/// Validates and processes Zig command arguments, returning a status update.
 pub fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var db_path_arg: ?[]const u8 = null;
@@ -1700,6 +1704,7 @@ pub fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // clean
 // =============================================================================
 
+/// Cleans up memory by allocating and returning a cleaned Zig allocation.
 pub fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var db_path_arg: ?[]const u8 = null;
@@ -2191,6 +2196,7 @@ fn runBuiltinLanguagePipeline(
 // sync-comments — insert/update /// doc comments in source files
 // =============================================================================
 
+/// Processes a Zig source file to extract and return sync-comment data.
 pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var workspace: ?[]const u8 = null;
     var guidance_dir: ?[]const u8 = null;
@@ -2361,6 +2367,7 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
 // migrate-comments — migrate JSON comment fields to source /// comments
 // =============================================================================
 
+/// Processes and migrates comment data during sync operations.
 pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var workspace: ?[]const u8 = null;
     var guidance_dir: ?[]const u8 = null;
@@ -2812,22 +2819,27 @@ pub fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // Public wrappers for testing (commit helpers)
 // =============================================================================
 
+/// Converts a null-terminated string into a slice of u32 values representing hunk ranges.
 pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return parseHunkRanges(allocator, chunk);
 }
 
+/// Loads changed member information from a Zig file using allocator, guidance root, relative paths, and hunk ranges.
 pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) ![]CommitMemberInfo {
     return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
 }
 
+/// Checks if a chunk should be ignored based on guidance data.
 pub fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) bool {
     return chunkIsExplainGenJson(chunk, guidance_dir);
 }
 
+/// Converts a chunk of bytes into a public file path string.
 pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
     return chunkFilePath(chunk);
 }
 
+/// Splits a diff array by file pub key, returning an allocated slice of bytes.
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }

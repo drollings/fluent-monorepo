@@ -693,4 +693,3 @@ test "lastIndexOf basic" {
     try std.testing.expectEqual(@as(?usize, 6), lastIndexOf("hello tags: #a", "tags:"));
     try std.testing.expectEqual(@as(?usize, null), lastIndexOf("no match", "tags:"));
 }
-

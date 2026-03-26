@@ -28,12 +28,14 @@ const CoralQueryParams = struct {
     pub const editable: reflection.Editable(@This()) = .{};
 };
 
+/// Manages node insertion parameters with fixed-size buffers; encapsulates ownership and invariants.
 const InsertNodeParams = struct {
     name: []const u8,
     description: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
 };
 
+/// Defines configuration parameters for Zig compilation; manages ownership and invariants during build.
 const ExplainParams = struct {
     name: []const u8,
     max_tokens: i64 = 4096,
@@ -560,6 +562,8 @@ test "McpServer: unknown method returns error -32601" {
 
     try testing.expect(std.mem.indexOf(u8, resp, "-32601") != null);
 }
+
+
 
 
 

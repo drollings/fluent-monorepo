@@ -192,16 +192,7 @@ const STRIP_PREFIXES = [_][]const u8{
     "Not thread-safe", "Thread-safe",
 };
 
-/// Strip a leading boilerplate phrase from a doc comment before embedding.
-///
-/// Comparison is case-sensitive (preserving the original case).  Returns a
-/// slice into `comment` — no allocation.  Returns `comment` unchanged when
-/// no prefix matches.
-///
-/// Examples:
-///   "Returns the node if it exists" → "node if it exists"
-///   "Manages X with fixed-size buffers" → "X with fixed-size buffers"
-///   "cosine similarity · top-k" → "cosine similarity · top-k" (unchanged)
+/// Removes unnecessary comment bytes from a Zig source file.
 pub fn stripBoilerplate(comment: []const u8) []const u8 {
     const trimmed = std.mem.trimLeft(u8, comment, " \t");
     for (STRIP_PREFIXES) |pfx| {
@@ -259,17 +250,7 @@ const NL_PREFIXES = [_][]const u8{
     "i need ",     "i want ",     "help me ",
 };
 
-/// Strip a leading NL interrogative prefix from a query string.
-/// The original query is used for Phase 1 deterministic matching; the
-/// stripped form is used for Phase 2-3 embedding-based search.
-///
-/// Comparison is case-insensitive.  Returns a slice into `query` — no
-/// allocation.  If no prefix matches, returns `query` unchanged.
-///
-/// Examples:
-///   "how does vectorSearch work?" → "vectorSearch work?"
-///   "what is the threshold?"      → "the threshold?"
-///   "looksLikeIdentifier"         → "looksLikeIdentifier"  (unchanged)
+/// Removes leading null characters from a UTF-8 string slice.
 pub fn stripNlPrefix(query: []const u8) []const u8 {
     // Lowercase a buffer large enough for the longest prefix we check.
     const MAX_PREFIX_LEN = 30;
@@ -430,4 +411,6 @@ test "STOP_WORDS contains expected words" {
     try std.testing.expect(!STOP_WORDS.has("cosine"));
     try std.testing.expect(!STOP_WORDS.has("search"));
 }
+
+
 

@@ -4,14 +4,13 @@
     "source": "src/guidance/structure.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/main.zig"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
       "name": "FileEntry",
       "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
       "signature": "keyword_struct FileEntry { ... }",
-      "comment": "Manages file entry metadata; owned by the module; ensures consistent access patterns.",
       "is_pub": false,
       "line": 25
     },
@@ -20,7 +19,6 @@
       "name": "StructureGenerator",
       "match_hash": "53c3ce1f50f740dd1b57459c9b834ecdbae7efbf707da3e958474cbf1621b06c",
       "signature": "keyword_struct StructureGenerator { ... }",
-      "comment": "Manages structure generation with ownership and invariants; ensures safe initialization/deinit.",
       "is_pub": true,
       "members": [
         {
@@ -59,7 +57,6 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "void",
-          "comment": "Generate (or regenerate) STRUCTURE.md in `project_root`.",
           "is_pub": true,
           "line": 66
         }
@@ -102,7 +99,6 @@
             { "name": "old_comments", "type": "std.StringHashMapUnmanaged([]const u8)" }
           ],
           "returns": "?[]const u8",
-          "comment": "Look up the comment for a file entry.\nPriority: guidance JSON documentation → old STRUCTURE.md comment → null.",
           "is_pub": false,
           "line": 187
         }
@@ -116,7 +112,6 @@
             { "name": "rel_path", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Load the guidance JSON for `rel_path` and return the first line of `comment`.\nReturns null if no guidance file exists or the field is empty.",
           "is_pub": false,
           "line": 204
         }
@@ -129,7 +124,6 @@
             { "name": "self", "type": "*StructureGenerator" }
           ],
           "returns": "std.StringHashMapUnmanaged([]const u8)",
-          "comment": "Extract `filename → comment` from the existing STRUCTURE.md fenced block.\nPattern: `[tree-chars] filename  # comment`",
           "is_pub": false,
           "line": 235
         }
@@ -170,7 +164,6 @@
       "name": "ChildEntry",
       "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
       "signature": "keyword_struct ChildEntry { ... }",
-      "comment": "Manages child entry structures with ownership and invariants; ensures safe access patterns.",
       "is_pub": false,
       "line": 367
     },
@@ -197,7 +190,6 @@
         { "name": "line", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Extract the filename from a tree line like \"│   ├── main.zig\".\nReturns a slice into the input — not heap-allocated.",
       "is_pub": false,
       "line": 382
     }

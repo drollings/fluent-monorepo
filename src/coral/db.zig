@@ -141,6 +141,62 @@ pub const ContextNode = struct {
     }
 };
 
+// ---------------------------------------------------------------------------
+// §3.1a LOD generation — deterministic sentence-boundary truncation (R3)
+// ---------------------------------------------------------------------------
+//
+// Generates LOD levels 1-3 from a full text (lod[0]) using deterministic
+// sentence-boundary truncation.  No LLM required; produces sub-millisecond
+// summaries suitable for edge deployment.
+//
+// Target sizes: lod1 ≈ 800 chars, lod2 ≈ 240 chars, lod3 ≈ 80 chars.
+// The algorithm truncates at the last sentence boundary (`. `, `! `, `? `,
+// `.\n`) within the budget.  If no sentence boundary exists within 80% of
+// the budget it falls back to word-boundary truncation.
+
+/// Generate a truncated summary of `text` at `max_chars`, cutting at the
+/// nearest sentence boundary.  Returns an allocator-owned string.
+pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
+    if (text.len <= max_chars) return allocator.dupe(u8, text);
+
+    const window = text[0..max_chars];
+    // Search backwards for a sentence-end token.
+    var i: usize = max_chars;
+    while (i > max_chars / 2) : (i -= 1) {
+        const ch = window[i - 1];
+        const next = if (i < max_chars) window[i] else ' ';
+        if ((ch == '.' or ch == '!' or ch == '?') and (next == ' ' or next == '\n')) {
+            return allocator.dupe(u8, text[0..i]);
+        }
+    }
+    // Fallback: word boundary
+    i = max_chars;
+    while (i > max_chars / 2) : (i -= 1) {
+        if (window[i - 1] == ' ') {
+            return allocator.dupe(u8, std.mem.trimRight(u8, text[0 .. i - 1], " \t"));
+        }
+    }
+    // Hard cut if no boundary found.
+    return allocator.dupe(u8, text[0..max_chars]);
+}
+
+/// Generate LOD levels 1-3 from `full_text` by deterministic truncation.
+///
+/// Returns an array of 6 slices; slots 0, 4, 5 are empty strings (callers
+/// fill them separately).  Slots 1-3 are allocator-owned and must be freed.
+/// The `lod_owned` bitmask for the returned values is 0b00001110 (bits 1-3).
+pub fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) ![schema.LOD_COUNT][]const u8 {
+    var result = [_][]const u8{ "", "", "", "", "", "" };
+    if (full_text.len == 0) return result;
+
+    result[1] = try truncateAtSentence(allocator, full_text, 800);
+    errdefer allocator.free(result[1]);
+    result[2] = try truncateAtSentence(allocator, full_text, 240);
+    errdefer allocator.free(result[2]);
+    result[3] = try truncateAtSentence(allocator, full_text, 80);
+    return result;
+}
+
 /// KnnHit — result from in-Zig cosine similarity search.
 pub const KnnHit = struct {
     id: i64,
@@ -1591,7 +1647,10 @@ test "Library: hybridSearch returns nodes matching keyword" {
     try testing.expect(results.len >= 1);
     var found = false;
     for (results) |n| {
-        if (n.id == 200) { found = true; break; }
+        if (n.id == 200) {
+            found = true;
+            break;
+        }
     }
     try testing.expect(found);
 }
@@ -1662,4 +1721,3 @@ test "Library: concurrent insert+read, 4 threads" {
     // If we reach here without panic, the test passes.
     try testing.expect(true);
 }
-

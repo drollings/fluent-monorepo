@@ -26,7 +26,7 @@ pub const YAGO_VERSION = "4.5";
 // Ontology class
 // ---------------------------------------------------------------------------
 
-/// Represents a fixed-size buffer pool with ownership and lifecycle management; key invariants include size and allocation limits.
+/// A YAGO 4.5 ontology class: IRI, human-readable label, optional superclass, and associated property IRIs.
 pub const OntologyClass = struct {
     iri: []const u8,
     label: []const u8,
@@ -37,7 +37,7 @@ pub const OntologyClass = struct {
 // ---------------------------------------------------------------------------
 // Property range types
 // ---------------------------------------------------------------------------
-/// Defines a range of property values with fixed bounds; managed centrally; ensures consistent invariants.
+/// Value-range classification for an ontology property.
 pub const PropertyRange = enum {
     iri, // object property (points to another entity)
     string, // plain string literal
@@ -49,7 +49,7 @@ pub const PropertyRange = enum {
     any, // unconstrained
 };
 
-/// Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
+/// A YAGO 4.5 property descriptor: IRI, label, optional domain class, value range, and logical flags.
 pub const OntologyProperty = struct {
     iri: []const u8,
     label: []const u8,
@@ -368,9 +368,6 @@ test "transitive property subClassOf" {
     const prop = lookupProperty(NS_RDFS ++ "subClassOf");
     try testing.expect(prop.?.transitive);
 }
-
-
-
 
 test "isSubclassOf: identity" {
     try testing.expect(isSubclassOf(NS_SCHEMA ++ "Person", NS_SCHEMA ++ "Person"));

@@ -19,35 +19,35 @@
           "type": "enum_field",
           "name": "subclass_transitivity",
           "is_pub": false,
-          "line": 17
+          "line": 24
         }
     ,    {
           "type": "enum_field",
           "name": "subproperty_transitivity",
           "is_pub": false,
-          "line": 18
+          "line": 25
         }
     ,    {
           "type": "enum_field",
           "name": "domain_range",
           "is_pub": false,
-          "line": 19
+          "line": 26
         }
     ,    {
           "type": "enum_field",
           "name": "inverse_of",
           "is_pub": false,
-          "line": 20
+          "line": 27
         }
       ],
-      "line": 16
+      "line": 23
     },
     {
       "type": "struct",
       "name": "InferenceEngine",
       "match_hash": "e041047b304df9640feaa8b00589fd7a49d19ac589d4cdada71dd3588eace69a",
       "signature": "keyword_struct InferenceEngine { ... }",
-      "comment": "Manages inference logic with a structured keyword structure, owns inference operations, and ensures consistent state across runs.",
+      "comment": "Ontology inference engine.\n\nCall `addRule` to register rules, then `infer(triples)` to materialise\nderived triples.  The engine is stateless between `infer` calls.",
       "is_pub": true,
       "members": [
         {
@@ -60,7 +60,7 @@
           ],
           "returns": "InferenceEngine",
           "is_pub": true,
-          "line": 34
+          "line": 44
         }
     ,    {
           "type": "fn_decl",
@@ -72,7 +72,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 41
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
@@ -86,7 +86,7 @@
           "returns": "void",
           "comment": "Add a rule for future use.",
           "is_pub": true,
-          "line": 46
+          "line": 55
         }
     ,    {
           "type": "fn_decl",
@@ -98,9 +98,9 @@
             { "name": "triples", "type": "[]const Triple" }
           ],
           "returns": "[]Triple",
-          "comment": "Return inferred triples from the given input.\nSTUB: always returns empty slice.\nTODO: Implement RDFS/OWL forward-chaining inference.",
+          "comment": "Materialise derived triples from `input` for all registered rules.\n\nReturns a caller-owned slice.  Each Triple in the slice owns its\nsubject/predicate/object strings (allocated from `self.allocator`).\nFree with: for (result) |t| t.deinit(allocator); allocator.free(result);",
           "is_pub": true,
-          "line": 53
+          "line": 64
         }
     ,    {
           "type": "fn_decl",
@@ -111,30 +111,117 @@
             { "name": "self", "type": "*InferenceEngine" }
           ],
           "returns": "void",
-          "comment": "Persist inferred edges to SQLite via Library.\nSTUB: no-op.",
+          "comment": "Persist inferred edges to SQLite via Library.\nCurrently a no-op stub (see materializeInto for the Library variant).",
           "is_pub": true,
-          "line": 61
+          "line": 85
         }
       ],
-      "line": 30
+      "line": 40
+    },
+    {
+      "type": "fn_private",
+      "name": "inferSubclassTransitivity",
+      "match_hash": "11b8ec032ad16117705d7b30463370ba656f2ed3ecf46c448bfb208902df037f",
+      "signature": "fn inferSubclassTransitivity(allocator: std.mem.Allocator, base: []const Triple, derived: *std.ArrayList(Triple), predicate_iri: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "base", "type": "[]const Triple" },
+        { "name": "derived", "type": "*std.ArrayList(Triple)" },
+        { "name": "predicate_iri", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Build the transitive closure of `rdfs:subClassOf` edges using iterative\nforward chaining.  New triples are appended to `derived`.\n\nAlgorithm: repeat until no new triples are produced.\n  For each triple (A, subClassOf, B) and (B, subClassOf, C):\n    if (A, subClassOf, C) not already in known set → emit it.",
+      "is_pub": false,
+      "line": 100
+    },
+    {
+      "type": "fn_private",
+      "name": "isSubclassOf",
+      "match_hash": "c3979c35dc8cbf51fa66bbf323dc490a775b2c71614b9873828eea18e0de9606",
+      "signature": "fn isSubclassOf(t: Triple, predicate_iri: []const u8) -> bool",
+      "params": [
+        { "name": "t", "type": "Triple" },
+        { "name": "predicate_iri", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 166
+    },
+    {
+      "type": "fn_private",
+      "name": "tripleSubjectIri",
+      "match_hash": "b733d58b469ae564decff01ea83de79b1ab76fcfd08710b519b9103b0af1b540",
+      "signature": "fn tripleSubjectIri(t: Triple) -> ?[]const u8",
+      "params": [
+        { "name": "t", "type": "Triple" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "fn_private",
+      "name": "tripleObjectIri",
+      "match_hash": "fffd2025318946cfd13b3714f026242e985bb77f2c16c628717240218b4170c6",
+      "signature": "fn tripleObjectIri(t: Triple) -> ?[]const u8",
+      "params": [
+        { "name": "t", "type": "Triple" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 177
+    },
+    {
+      "type": "fn_private",
+      "name": "buildSubclassTriple",
+      "match_hash": "cd218933851284623fb815759cdd749b93a12a6137b9e0979a17469d0c996887",
+      "signature": "fn buildSubclassTriple(allocator: std.mem.Allocator, subject_iri: []const u8, predicate_iri: []const u8, object_iri: []const u8) -> Triple",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "subject_iri", "type": "[]const u8" },
+        { "name": "predicate_iri", "type": "[]const u8" },
+        { "name": "object_iri", "type": "[]const u8" }
+      ],
+      "returns": "Triple",
+      "comment": "Allocate a new Triple with owned IRI strings.",
+      "is_pub": false,
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "inference stub returns empty triples",
       "is_pub": false,
-      "line": 72
+      "line": 211
     },
     {
       "type": "test_decl",
       "name": "inference stub materialize is no-op",
       "is_pub": false,
-      "line": 79
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "inference rule addition",
       "is_pub": false,
-      "line": 85
+      "line": 225
+    },
+    {
+      "type": "test_decl",
+      "name": "subClassOf transitivity: A→B, B→C gives A→C",
+      "is_pub": false,
+      "line": 236
+    },
+    {
+      "type": "test_decl",
+      "name": "subClassOf transitivity: longer chain A→B→C→D",
+      "is_pub": false,
+      "line": 259
+    },
+    {
+      "type": "test_decl",
+      "name": "subClassOf transitivity: no new edges when already transitive",
+      "is_pub": false,
+      "line": 281
     }
   ]
 }

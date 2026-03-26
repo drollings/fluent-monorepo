@@ -11,7 +11,6 @@
       "name": "Command",
       "match_hash": "776647c3f6074d99e3e546d1338dfc717ac16ae4f5bc87d225568f08eebbdfa5",
       "signature": "keyword_struct Command { ... }",
-      "comment": "Manages command execution logic, owns CLI workflow; ensures consistent initialization and cleanup.",
       "is_pub": true,
       "line": 15
     },
@@ -20,7 +19,6 @@
       "name": "CommandRegistry",
       "match_hash": "b5a00690333c0c6e0c0ea861ea923f882c3ffe38504c3e04cfe1e0281b7e33a9",
       "signature": "keyword_struct CommandRegistry { ... }",
-      "comment": "Manages command registrations with a centralized structure; owned by the CLI; ensures unique key storage.",
       "is_pub": true,
       "members": [
         {
@@ -94,7 +92,6 @@
       "name": "App",
       "match_hash": "a8920214baab9e6804684f11177e8d8b11b9b4f89a2a3ae7cb24cc730cee8839",
       "signature": "keyword_struct App { ... }",
-      "comment": "Manages application state with a singleton pattern; ensures single ownership and controlled lifecycle.",
       "is_pub": true,
       "members": [
         {

@@ -15,60 +15,64 @@
       "name": "CacheTier",
       "match_hash": "2ee80326d2e14d4cda90f086ed56116c4e5ae736db1b9b043ef63c404ed5de0e",
       "signature": "keyword_enum CacheTier { ... }",
+      "comment": "Identifies which routing tier resolved a query; numeric value matches tier latency ordering (L1=fastest).",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "l1_memory",
           "is_pub": false,
-          "line": 27
+          "line": 31
         }
     ,    {
           "type": "enum_field",
           "name": "l2_workflow",
           "is_pub": false,
-          "line": 28
+          "line": 32
         }
     ,    {
           "type": "enum_field",
           "name": "l3_graph",
           "is_pub": false,
-          "line": 29
+          "line": 33
         }
     ,    {
           "type": "enum_field",
           "name": "l4_semantic",
           "is_pub": false,
-          "line": 30
+          "line": 34
         }
     ,    {
           "type": "enum_field",
           "name": "l4_5_decompose",
+          "comment": "P6.2 — Local model decomposition: query split into sub-tasks then re-routed.",
           "is_pub": false,
-          "line": 32
+          "line": 36
         }
     ,    {
           "type": "enum_field",
           "name": "l5_llm",
           "is_pub": false,
-          "line": 33
+          "line": 37
         }
       ],
-      "line": 26
+      "line": 30
     },
     {
       "type": "struct",
       "name": "RoutingResult",
       "match_hash": "9b535d00a3c6018e6fc792300c3d96697b113c6eeafac16989ab740a843a940a",
       "signature": "keyword_struct RoutingResult { ... }",
+      "comment": "Manages routing result structures with fixed-size buffers; owned by the module; ensures consistent state across operations.",
       "is_pub": true,
-      "line": 37
+      "line": 41
     },
     {
       "type": "struct",
       "name": "L1Cache",
       "match_hash": "43ad3d400ceade64154bee12e803b63fb52e05df1fe1f16036eaa414a75f21f8",
       "signature": "keyword_struct L1Cache { ... }",
+      "comment": "Manages low-latency cache operations with fixed-size buffers; owned by the system; ensures consistent key-value storage.",
       "is_pub": true,
       "members": [
         {
@@ -81,7 +85,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 50
+          "line": 54
         }
     ,    {
           "type": "fn_decl",
@@ -93,7 +97,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 57
+          "line": 61
         }
     ,    {
           "type": "fn_decl",
@@ -106,7 +110,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": true,
-          "line": 66
+          "line": 70
         }
     ,    {
           "type": "fn_decl",
@@ -120,7 +124,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 70
+          "line": 74
         }
     ,    {
           "type": "fn_private",
@@ -133,7 +137,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 76
+          "line": 80
         }
     ,    {
           "type": "fn_private",
@@ -146,16 +150,17 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 89
+          "line": 93
         }
       ],
-      "line": 46
+      "line": 50
     },
     {
       "type": "struct",
       "name": "QueueReactorBuilder",
-      "match_hash": "6e750a6f613e10a32b4222a971748316adc2566fd504f0cb9fea974e43cd28e8",
+      "match_hash": "75b6e86fc0a72fdeb0b5ec5ce94337620758825c472bf49d1ca6e731bbf6427d",
       "signature": "keyword_struct QueueReactorBuilder { ... }",
+      "comment": "Manages queue reactor construction with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
       ],
@@ -171,7 +176,7 @@
           ],
           "returns": "QueueReactorBuilder",
           "is_pub": true,
-          "line": 131
+          "line": 137
         }
     ,    {
           "type": "fn_decl",
@@ -184,7 +189,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 135
+          "line": 141
         }
     ,    {
           "type": "fn_decl",
@@ -197,7 +202,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 140
+          "line": 146
         }
     ,    {
           "type": "fn_decl",
@@ -210,7 +215,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 145
+          "line": 151
         }
     ,    {
           "type": "fn_decl",
@@ -223,7 +228,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 150
+          "line": 156
         }
     ,    {
           "type": "fn_decl",
@@ -236,7 +241,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 155
+          "line": 161
         }
     ,    {
           "type": "fn_decl",
@@ -248,8 +253,37 @@
             { "name": "cfg", "type": "DecomposerConfig" }
           ],
           "returns": "*@This()",
+          "comment": "Enable L4.5 local decomposition with the supplied LLM config.",
           "is_pub": true,
-          "line": 161
+          "line": 167
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "threadCount",
+          "match_hash": "6bb97113c22f23210dbc20fa7dd78a3afc6a28a99aad757eb4c1246be536a422",
+          "signature": "fn threadCount(self: *@This(), n: u32) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "n", "type": "u32" }
+          ],
+          "returns": "*@This()",
+          "comment": "Enable async routing via a thread pool with `n` worker threads.\nPass 0 to use the default (number of logical CPUs).",
+          "is_pub": true,
+          "line": 174
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "frontierCfg",
+          "match_hash": "1072f68a92d550ee255d46d369b793094d14d3711ac32bd6ba704f801fd8ccad",
+          "signature": "fn frontierCfg(self: *@This(), cfg: LlmConfig) -> *@This()",
+          "params": [
+            { "name": "self", "type": "*@This()" },
+            { "name": "cfg", "type": "LlmConfig" }
+          ],
+          "returns": "*@This()",
+          "comment": "Enable L5 frontier LLM routing with the supplied config.",
+          "is_pub": true,
+          "line": 180
         }
     ,    {
           "type": "fn_decl",
@@ -261,16 +295,17 @@
           ],
           "returns": "QueueReactor",
           "is_pub": true,
-          "line": 166
+          "line": 185
         }
       ],
-      "line": 121
+      "line": 125
     },
     {
       "type": "struct",
       "name": "QueueReactor",
-      "match_hash": "ab9941da4b42c44fcbe612d70b0d103d847ff156a70ea2f63a6f1b6adbf64b31",
+      "match_hash": "db652831919d69cb01c9da88363a46e1360af7fb9bddaa43718bc3ab0ff82dc5",
       "signature": "keyword_struct QueueReactor { ... }",
+      "comment": "Manages asynchronous queue operations with fixed-size buffers; owned by the system; ensures data integrity during transitions.",
       "is_pub": true,
       "members": [
         {
@@ -285,7 +320,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 205
+          "line": 236
         }
     ,    {
           "type": "fn_decl",
@@ -297,7 +332,34 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 214
+          "line": 245
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "submitAsync",
+          "match_hash": "eb4ccc807ac61c1352156978cc47748a13641cde005b2a58ed1c5bb7a279c734",
+          "signature": "fn submitAsync(self: *Self, query: []const u8) -> *Task",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const u8" }
+          ],
+          "returns": "*Task",
+          "comment": "Submit `query` as an async routing task on the thread pool.\nReturns a heap-allocated Task; caller must call `task.arena.deinit()` after\ninspecting the result.  Falls back to synchronous execution if no thread pool.",
+          "is_pub": true,
+          "line": 276
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "routeTask",
+          "match_hash": "423459b6cd2a2aa9e5442e91dce0991794cc12103a8b24e1c9e13e35dbd551ca",
+          "signature": "fn routeTask(self: *Self, task: *Task) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "task", "type": "*Task" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 304
         }
     ,    {
           "type": "fn_decl",
@@ -309,8 +371,9 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "anyerror!RoutingResult",
+          "comment": "Route a query through the L1-L5 hierarchy.",
           "is_pub": true,
-          "line": 219
+          "line": 319
         }
     ,    {
           "type": "fn_private",
@@ -322,8 +385,23 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "?WasmTool",
+          "comment": "Return the first tested + non-empty WASM tool from the pre-loaded slice.\nFull trait-matching via popCount bitsets is deferred to M5+.",
           "is_pub": false,
-          "line": 295
+          "line": 414
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "routeL2Wasm",
+          "match_hash": "d03a4fc55c392577ac59b2c073d57c67c05d78ed65263872e2e9baba0bdb33f0",
+          "signature": "fn routeL2Wasm(self: *Self, query: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Decode a WasmTool's base64 bytes and call its \"run\" entry-point with\n`query` as input.  Returns the raw output (allocator-owned) or null on\nany failure (no tool found, decode error, Extism runtime unavailable).",
+          "is_pub": false,
+          "line": 425
         }
     ,    {
           "type": "fn_private",
@@ -336,7 +414,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 305
+          "line": 457
         }
     ,    {
           "type": "fn_private",
@@ -349,7 +427,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 330
+          "line": 482
         }
     ,    {
           "type": "fn_private",
@@ -362,7 +440,35 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 363
+          "line": 515
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "routeL5Frontier",
+          "match_hash": "886b6d23c2ee9ae59a6f7ec45945c6ffdeb4b8d921fb7126c0fb0d96492d7e32",
+          "signature": "fn routeL5Frontier(self: *Self, query: []const u8) -> ?RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const u8" }
+          ],
+          "returns": "?RoutingResult",
+          "comment": "Call the frontier LLM with a minimized context prompt.\nReturns null when frontier_cfg is not set or the LLM call fails.\nOn success, returns a RoutingResult with llm_response set (allocator-owned).",
+          "is_pub": false,
+          "line": 534
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "callFrontierLlm",
+          "match_hash": "9f4107d9f3efe19436c0910f2e59c149f06aa38f0133709cd1beeae1e02df65c",
+          "signature": "fn callFrontierLlm(self: *Self, cfg: LlmConfig, prompt: []const u8) -> ?RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "cfg", "type": "LlmConfig" },
+            { "name": "prompt", "type": "[]const u8" }
+          ],
+          "returns": "?RoutingResult",
+          "is_pub": false,
+          "line": 569
         }
     ,    {
           "type": "fn_private",
@@ -375,8 +481,9 @@
             { "name": "depth", "type": "u8" }
           ],
           "returns": "?[]ContextNode",
+          "comment": "Decompose `query` into sub-tasks via local LLM and route each recursively.\nReturns merged nodes slice (owned by self.allocator) or null on failure.\n`depth` guards against unbounded recursion; max_depth comes from DecomposerConfig.",
           "is_pub": false,
-          "line": 385
+          "line": 597
         }
     ,    {
           "type": "fn_decl",
@@ -389,8 +496,9 @@
             { "name": "result", "type": "RoutingResult" }
           ],
           "returns": "void",
+          "comment": "Cache a successful routing result in L1.",
           "is_pub": true,
-          "line": 428
+          "line": 640
         }
     ,    {
           "type": "fn_private",
@@ -403,7 +511,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 434
+          "line": 646
         }
     ,    {
           "type": "fn_private",
@@ -417,58 +525,88 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 447
+          "line": 659
         }
       ],
-      "line": 186
+      "line": 213
     },
     {
       "type": "test_decl",
       "name": "L1Cache: put and get",
       "is_pub": false,
-      "line": 486
+      "line": 709
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L1 cache hit",
       "is_pub": false,
-      "line": 505
+      "line": 728
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L5 fallback",
       "is_pub": false,
-      "line": 534
+      "line": 757
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: builds with library",
       "is_pub": false,
-      "line": 552
+      "line": 775
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: error when library missing",
       "is_pub": false,
-      "line": 570
+      "line": 793
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: work queue fields exist",
       "is_pub": false,
-      "line": 580
+      "line": 803
     },
     {
       "type": "test_decl",
       "name": "Library.findNodeByName: finds by lod4",
       "is_pub": false,
-      "line": 599
+      "line": 822
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactor: L2 skipped when no wasm_tools",
+      "is_pub": false,
+      "line": 843
+    },
+    {
+      "type": "test_decl",
+      "name": "findWasmTool: returns null when all tools fail test_passed check",
+      "is_pub": false,
+      "line": 860
     },
     {
       "type": "test_decl",
       "name": "Library.traverseFrom: returns root node",
       "is_pub": false,
-      "line": 620
+      "line": 880
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactor: submitAsync falls back to synchronous without thread pool",
+      "is_pub": false,
+      "line": 902
+    },
+    {
+      "type": "test_decl",
+      "name": "QueueReactorBuilder: threadCount initialises thread pool",
+      "is_pub": false,
+      "line": 924
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: concurrent writes via thread pool do not deadlock",
+      "is_pub": false,
+      "line": 940
     }
   ]
 }

@@ -15,7 +15,7 @@
       "match_hash": "f3ab3a52c0c4e7e653f76815775376c8d9d1c200ac1db36d242918e1160e8122",
       "signature": "keyword_struct BinaryExecutionRequest { ... }",
       "is_pub": true,
-      "line": 40
+      "line": 43
     },
     {
       "type": "struct",
@@ -36,10 +36,10 @@
           ],
           "returns": "std.bit_set.DynamicBitSetUnmanaged",
           "is_pub": true,
-          "line": 71
+          "line": 74
         }
       ],
-      "line": 60
+      "line": 63
     },
     {
       "type": "enum",
@@ -52,66 +52,58 @@
           "type": "enum_field",
           "name": "void",
           "is_pub": false,
-          "line": 101
+          "line": 104
         }
     ,    {
           "type": "enum_field",
           "name": "i32",
           "is_pub": false,
-          "line": 102
+          "line": 105
         }
     ,    {
           "type": "enum_field",
           "name": "i64",
           "is_pub": false,
-          "line": 103
+          "line": 106
         }
     ,    {
           "type": "enum_field",
           "name": "f32",
           "is_pub": false,
-          "line": 104
+          "line": 107
         }
     ,    {
           "type": "enum_field",
           "name": "f64",
           "is_pub": false,
-          "line": 105
+          "line": 108
         }
     ,    {
           "type": "enum_field",
           "name": "v128",
           "is_pub": false,
-          "line": 106
+          "line": 109
         }
     ,    {
           "type": "enum_field",
           "name": "funcref",
           "is_pub": false,
-          "line": 107
+          "line": 110
         }
     ,    {
           "type": "enum_field",
           "name": "externref",
           "is_pub": false,
-          "line": 108
+          "line": 111
         }
     ,    {
           "type": "enum_field",
           "name": "ptr",
           "is_pub": false,
-          "line": 109
+          "line": 112
         }
       ],
-      "line": 100
-    },
-    {
-      "type": "struct",
-      "name": "extism",
-      "match_hash": "a1472bbf5cb23b4a382779bb403e0c1880ab31da5e0b54e2901b003fef9d52db",
-      "signature": "keyword_struct extism { ... }",
-      "is_pub": true,
-      "line": 129
+      "line": 103
     },
     {
       "type": "struct",
@@ -130,10 +122,10 @@
           ],
           "returns": "WasmManifest",
           "is_pub": true,
-          "line": 218
+          "line": 257
         }
       ],
-      "line": 210
+      "line": 249
     },
     {
       "type": "struct",
@@ -153,7 +145,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 232
+          "line": 271
         }
     ,    {
           "type": "fn_decl",
@@ -165,7 +157,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 256
+          "line": 295
         }
     ,    {
           "type": "fn_decl",
@@ -179,7 +171,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 261
+          "line": 300
         }
     ,    {
           "type": "fn_decl",
@@ -192,7 +184,7 @@
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 286
+          "line": 325
         }
     ,    {
           "type": "fn_decl",
@@ -206,7 +198,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 290
+          "line": 329
         }
     ,    {
           "type": "fn_decl",
@@ -220,7 +212,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 294
+          "line": 333
         }
     ,    {
           "type": "fn_decl",
@@ -233,10 +225,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 298
+          "line": 337
         }
       ],
-      "line": 224
+      "line": 263
     },
     {
       "type": "fn_decl",
@@ -253,7 +245,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 316
+      "line": 355
     },
     {
       "type": "fn_decl",
@@ -270,7 +262,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 351
+      "line": 394
     },
     {
       "type": "fn_decl",
@@ -287,7 +279,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 401
+      "line": 444
     },
     {
       "type": "struct",
@@ -307,7 +299,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 440
+          "line": 483
         }
     ,    {
           "type": "fn_decl",
@@ -319,7 +311,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 451
+          "line": 494
         }
     ,    {
           "type": "fn_decl",
@@ -331,7 +323,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 459
+          "line": 502
         }
     ,    {
           "type": "fn_decl",
@@ -343,10 +335,10 @@
           ],
           "returns": "[]ExtismFunction",
           "is_pub": true,
-          "line": 501
+          "line": 544
         }
       ],
-      "line": 433
+      "line": 476
     },
     {
       "type": "struct",
@@ -366,10 +358,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 523
+          "line": 566
         }
       ],
-      "line": 515
+      "line": 558
     },
     {
       "type": "fn_decl",
@@ -384,7 +376,7 @@
       ],
       "returns": "WasmExecutionResult",
       "is_pub": true,
-      "line": 531
+      "line": 574
     },
     {
       "type": "fn_private",
@@ -401,7 +393,36 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 602
+      "line": 645
+    },
+    {
+      "type": "fn_decl",
+      "name": "executeWasmQuery",
+      "match_hash": "c500bc3699c0526233c0c2bdde5c24ed10eeedc841d8223036263e870bc67781",
+      "signature": "fn executeWasmQuery(allocator: std.mem.Allocator, wasm_bytes: []const u8, query: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "wasm_bytes", "type": "[]const u8" },
+        { "name": "query", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 681
+    },
+    {
+      "type": "fn_decl",
+      "name": "executeWasmQueryWithHosts",
+      "match_hash": "1b1ca4332549c4094243280d7cc932ae6d277ee2fde52e0f3d7c373da95349ca",
+      "signature": "fn executeWasmQueryWithHosts(allocator: std.mem.Allocator, wasm_bytes: []const u8, query: []const u8, registry: *HostFunctionRegistry) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "wasm_bytes", "type": "[]const u8" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "registry", "type": "*HostFunctionRegistry" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 699
     },
     {
       "type": "struct",
@@ -409,7 +430,7 @@
       "match_hash": "53887d99f8d259d5f740eac7e7c48f55f64574e6efd1e8fb67252f4aacf703b1",
       "signature": "keyword_struct ToolCompilerConfig { ... }",
       "is_pub": true,
-      "line": 636
+      "line": 718
     },
     {
       "type": "enum",
@@ -422,31 +443,31 @@
           "type": "enum_field",
           "name": "zig",
           "is_pub": false,
-          "line": 648
+          "line": 730
         }
     ,    {
           "type": "enum_field",
           "name": "rust",
           "is_pub": false,
-          "line": 649
+          "line": 731
         }
     ,    {
           "type": "enum_field",
           "name": "assemblyscript",
           "is_pub": false,
-          "line": 650
+          "line": 732
         }
     ,    {
           "type": "enum_field",
           "name": "c",
           "is_pub": false,
-          "line": 651
+          "line": 733
         }
     ,    {
           "type": "enum_field",
           "name": "go",
           "is_pub": false,
-          "line": 652
+          "line": 734
         }
     ,    {
           "type": "fn_decl",
@@ -458,10 +479,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 654
+          "line": 736
         }
       ],
-      "line": 647
+      "line": 729
     },
     {
       "type": "struct",
@@ -481,7 +502,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 673
+          "line": 755
         }
     ,    {
           "type": "fn_decl",
@@ -493,7 +514,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 681
+          "line": 763
         }
     ,    {
           "type": "fn_private",
@@ -508,7 +529,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 689
+          "line": 771
         }
     ,    {
           "type": "fn_decl",
@@ -521,7 +542,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 712
+          "line": 794
         }
     ,    {
           "type": "fn_decl",
@@ -534,7 +555,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 727
+          "line": 809
         }
     ,    {
           "type": "fn_decl",
@@ -548,7 +569,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 745
+          "line": 827
         }
     ,    {
           "type": "fn_decl",
@@ -562,10 +583,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 757
+          "line": 839
         }
       ],
-      "line": 666
+      "line": 748
     },
     {
       "type": "struct",
@@ -584,7 +605,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 773
+          "line": 855
         }
     ,    {
           "type": "fn_decl",
@@ -596,7 +617,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 780
+          "line": 862
         }
     ,    {
           "type": "fn_decl",
@@ -609,7 +630,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 789
+          "line": 871
         }
     ,    {
           "type": "fn_decl",
@@ -623,7 +644,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 793
+          "line": 875
         }
     ,    {
           "type": "fn_decl",
@@ -636,178 +657,178 @@
           ],
           "returns": "[32]u8",
           "is_pub": true,
-          "line": 808
+          "line": 890
         }
       ],
-      "line": 767
+      "line": 849
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader validation",
       "is_pub": false,
-      "line": 820
+      "line": 902
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode serialization",
       "is_pub": false,
-      "line": 829
+      "line": 911
     },
     {
       "type": "test_decl",
       "name": "PayloadType enum values",
       "is_pub": false,
-      "line": 843
+      "line": 925
     },
     {
       "type": "test_decl",
       "name": "WasmManifest defaults",
       "is_pub": false,
-      "line": 849
+      "line": 931
     },
     {
       "type": "test_decl",
       "name": "WasmLanguage extension",
       "is_pub": false,
-      "line": 856
+      "line": 938
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache put and get",
       "is_pub": false,
-      "line": 862
+      "line": 944
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache hash computation",
       "is_pub": false,
-      "line": 874
+      "line": 956
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig defaults",
       "is_pub": false,
-      "line": 887
+      "line": 969
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: editable mixin is zero size",
       "is_pub": false,
-      "line": 894
+      "line": 976
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set and get for compiler path",
       "is_pub": false,
-      "line": 898
+      "line": 980
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set of bool field",
       "is_pub": false,
-      "line": 915
+      "line": 997
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: field not found returns error",
       "is_pub": false,
-      "line": 921
+      "line": 1003
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionRequest flag values",
       "is_pub": false,
-      "line": 927
+      "line": 1009
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionResult provides words layout",
       "is_pub": false,
-      "line": 933
+      "line": 1015
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: getLod returns correct slices",
       "is_pub": false,
-      "line": 949
+      "line": 1031
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: id round-trip via getId",
       "is_pub": false,
-      "line": 960
+      "line": 1042
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: empty strings produce zero lengths",
       "is_pub": false,
-      "line": 968
+      "line": 1050
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong magic fails validate",
       "is_pub": false,
-      "line": 980
+      "line": 1062
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong version fails validate",
       "is_pub": false,
-      "line": 986
+      "line": 1068
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put then get retrieves bytes",
       "is_pub": false,
-      "line": 992
+      "line": 1074
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put collision replaces old bytes",
       "is_pub": false,
-      "line": 1004
+      "line": 1086
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: get for unknown name returns null",
       "is_pub": false,
-      "line": 1019
+      "line": 1101
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: hash is 32 bytes and deterministic",
       "is_pub": false,
-      "line": 1026
+      "line": 1108
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: different inputs produce different hashes",
       "is_pub": false,
-      "line": 1038
+      "line": 1120
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: GPA no leaks across put and deinit",
       "is_pub": false,
-      "line": 1050
+      "line": 1132
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: all-empty LODs produce zero payload size beyond header",
       "is_pub": false,
-      "line": 1066
+      "line": 1148
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: large LOD0 round-trips without truncation",
       "is_pub": false,
-      "line": 1081
+      "line": 1163
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: multiple non-empty LODs round-trip",
       "is_pub": false,
-      "line": 1097
+      "line": 1179
     }
   ]
 }

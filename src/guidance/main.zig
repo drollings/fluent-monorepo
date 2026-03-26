@@ -41,6 +41,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
+/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
 const Command = enum {
     init,
     gen,
@@ -61,6 +62,7 @@ const Command = enum {
     diary,
 };
 
+/// Starts the Zig program execution by defining the entry point.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -292,3 +294,5 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+
+

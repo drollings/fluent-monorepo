@@ -11,7 +11,6 @@
       "name": "Column",
       "match_hash": "6a25e5598da7f1f1b61d2faffc105a3e696b1ff2f044768f644f746bede2e59d",
       "signature": "keyword_struct Column { ... }",
-      "comment": "Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.",
       "is_pub": true,
       "line": 4
     },
@@ -20,7 +19,6 @@
       "name": "Table",
       "match_hash": "a11d846131facd869c28d8377d6fb057fcd945583e70cda2bb637bc7c82fe59b",
       "signature": "keyword_struct Table { ... }",
-      "comment": "Defines a table structure for structured data; owned by the module; maintains invariant schema integrity.",
       "is_pub": true,
       "members": [
         {
@@ -90,7 +88,6 @@
         { "name": "indent", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Converts a value into a formatted JSON slice using an allocator and indentation level.",
       "is_pub": true,
       "line": 124
     },
@@ -120,7 +117,6 @@
         { "name": "fieldnames", "type": "?[]const []const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Converts a CSV-formatted JSON slice into a CSV-formatted string using an allocator.",
       "is_pub": true,
       "line": 168
     },
@@ -147,7 +143,6 @@
         { "name": "buf", "type": "[]u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Converts a given byte slice into a formatted size array in Zig.",
       "is_pub": true,
       "line": 228
     },
@@ -160,7 +155,6 @@
         { "name": "size_str", "type": "[]const u8" }
       ],
       "returns": "?usize",
-      "comment": "Converts a null-terminated byte slice into a usize representing its size.",
       "is_pub": true,
       "line": 246
     },

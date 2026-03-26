@@ -156,10 +156,11 @@ pub const BatchIngestor = struct {
     }
 
     /// Ingest a Turtle file at the given path.
+    /// Supports files up to 4 GiB (limited by virtual address space on 32-bit platforms).
     pub fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) !IngestStats {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
-        const source = try file.readToEndAlloc(self.allocator, 512 * 1024 * 1024);
+        const source = try file.readToEndAlloc(self.allocator, 4 * 1024 * 1024 * 1024);
         defer self.allocator.free(source);
         return self.ingestSource(source, library);
     }
@@ -397,7 +398,3 @@ test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     try testing.expectEqual(@as(usize, 100), stats.triples_processed);
     try testing.expect(stats.nodes_created > 0);
 }
-
-
-
-
