@@ -4,5 +4,5 @@
     "source": "src/ontology/root.zig",
     "language": "zig"
   },
-  "used_by": ["src/vector/lance_db.zig"]
+  "used_by": ["src/vector/vector_db.zig"]
 }

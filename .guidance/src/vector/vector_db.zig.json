@@ -1,7 +1,7 @@
 {
   "meta": {
-    "module": "src.vector.lance_db",
-    "source": "src/vector/lance_db.zig",
+    "module": "src.vector.vector_db",
+    "source": "src/vector/vector_db.zig",
     "language": "zig"
   },
   "used_by": ["src/vector/root.zig"],

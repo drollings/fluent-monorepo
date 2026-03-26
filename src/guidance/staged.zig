@@ -8,12 +8,12 @@
 //!   formatStaged()    — render []Stage to markdown output
 
 const std = @import("std");
-const lance_db_mod = @import("vector");
+const vector_db_mod = @import("vector");
 const types = @import("types.zig");
 const llm = @import("common");
 const line_verify = @import("line_verify.zig");
 
-const GuidanceDb = lance_db_mod.GuidanceDb;
+const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 
 // ---------------------------------------------------------------------------
@@ -34,25 +34,25 @@ pub fn executeStaged(
     return executeStagedWithAliases(allocator, db, query, workspace, null);
 }
 
-/// Collect stages with optional semantic alias expansion.
+/// Executes a Zig stage with optional alias resolution, returning the processed stage.
 pub fn executeStagedWithAliases(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
     query: []const u8,
     workspace: []const u8,
-    aliases: ?lance_db_mod.SemanticAliases,
+    aliases: ?vector_db_mod.SemanticAliases,
 ) ![]types.Stage {
     return executeStagedWithAliasesOriginal(allocator, db, query, query, workspace, aliases);
 }
 
-/// Collect stages with separate original query for deterministic matching.
+/// Executes a Zig stage with original aliases, processing the provided query and returning the resulting stage.
 pub fn executeStagedWithAliasesOriginal(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
     query: []const u8,
     original_query: []const u8,
     workspace: []const u8,
-    aliases: ?lance_db_mod.SemanticAliases,
+    aliases: ?vector_db_mod.SemanticAliases,
 ) ![]types.Stage {
     // ── Vector/hybrid search with alias expansion ─────────────────────────────
     const results = try db.searchWithAliasesOriginal(allocator, query, original_query, 15, aliases);
@@ -1010,3 +1010,5 @@ test "parseSkillDocContent: no front matter returns first paragraph up to blank 
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("First paragraph text.", result.?);
 }
+
+

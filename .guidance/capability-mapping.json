@@ -10,7 +10,7 @@
     "src/guidance/plugins/markdown_plugin.zig": ["plugin-system"],
     "src/guidance/provider_discovery.zig": ["plugin-system"],
     "src/guidance/config.zig": ["config-system"],
-    "src/guidance/lance_db.zig": ["vector-search", "explain-query"],
+    "src/guidance/vector_db.zig": ["vector-search", "explain-query"],
     "src/guidance/vector/root.zig": ["vector-search"],
     "src/guidance/vector/math.zig": ["vector-search"],
     "src/guidance/vector/embeddings.zig": ["embedding-providers"],

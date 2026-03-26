@@ -6,7 +6,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const ast_parser = @import("ast_parser.zig");
-const lance_db_mod = @import("vector");
+const vector_db_mod = @import("vector");
 const vector_mod = @import("vector");
 const common = @import("common");
 const enhancer_mod = @import("enhancer.zig");
@@ -21,7 +21,7 @@ const provider_mod = @import("provider_discovery.zig");
 const json_store_mod = @import("json_store.zig");
 const sync_mod = @import("sync.zig");
 const llm = @import("common");
-const GuidanceDb = lance_db_mod.GuidanceDb;
+const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const freeSearchResult = GuidanceDb.freeSearchResult;
 const stepPrint = types.stepPrint;
@@ -1003,10 +1003,10 @@ fn buildLlmSummary(
 // =============================================================================
 
 /// Load semantic aliases from the guidance directory.
-fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?lance_db_mod.SemanticAliases {
+fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?vector_db_mod.SemanticAliases {
     const alias_path = std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" }) catch return null;
     defer allocator.free(alias_path);
-    return lance_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
+    return vector_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
 }
 
 /// Extract key technical terms from a long query using LLM.
@@ -1067,7 +1067,7 @@ fn cmdExplainStaged(
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
     defer allocator.free(skills_dir);
 
-    var aliases_opt: ?lance_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
+    var aliases_opt: ?vector_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
     defer if (aliases_opt) |*a| a.deinit();
 
     // use_llm: always on unless --no-llm is specified
@@ -1580,7 +1580,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             const aliases_path = try std.fs.path.join(allocator, &.{ gdir_abs, "semantic-aliases.json" });
             defer allocator.free(aliases_path);
 
-            var aliases_opt = lance_db_mod.loadSemanticAliases(allocator, aliases_path) catch null;
+            var aliases_opt = vector_db_mod.loadSemanticAliases(allocator, aliases_path) catch null;
             defer if (aliases_opt) |*a| a.deinit();
 
             const search_aliases = if (aliases_opt) |a| a else null;

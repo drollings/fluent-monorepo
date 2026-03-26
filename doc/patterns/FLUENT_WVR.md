@@ -137,7 +137,7 @@ pub fn target(self: *TargetRegistry, name: []const u8, tt: TargetType) TargetBui
 }
 ```
 
-### Value-copy variant: `DbSyncBuilder` in `src/vector/lance_db.zig`
+### Value-copy variant: `DbSyncBuilder` in `src/vector/vector_db.zig`
 
 When the builder holds only scalars (no mid-chain heap allocation), return `Self` by value from each setter. This avoids aliasing issues with stack-allocated builders:
 

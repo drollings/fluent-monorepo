@@ -39,10 +39,10 @@ Example: `"guidance database module — function syncDatabase: synchronises the 
 
 ## Key files
 
-- `src/vector/lance_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
+- `src/vector/vector_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
 - `src/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable (moved from `src/vector/` in P1.3)
-- `src/vector/lance_db.zig` — `SemanticAliases`, `loadSemanticAliases`, `DbSyncBuilder.withAliases`
+- `src/vector/vector_db.zig` — `SemanticAliases`, `loadSemanticAliases`, `DbSyncBuilder.withAliases`
 - `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
 
 ## Semantic alias expansion

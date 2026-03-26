@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["LLM", "Zig", "HTTP client", "error handling", "configuration", "string utilities"],
-  "used_by": ["src/vector/lance_db.zig"],
+  "used_by": ["src/vector/vector_db.zig"],
   "members": [
     {
       "type": "struct",

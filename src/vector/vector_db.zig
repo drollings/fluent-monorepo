@@ -243,7 +243,7 @@ pub fn syncDatabase(
 // ---------------------------------------------------------------------------
 //
 // Usage:
-//   try lance_db.DbSyncBuilder.init(allocator, guidance_dir, db_path, embedder)
+//   try vector_db.DbSyncBuilder.init(allocator, guidance_dir, db_path, embedder)
 //       .withCapabilities(cap_dir)   // optional
 //       .withAliases(aliases)         // optional
 //       .cacheLimit(500)              // optional (default: 0 = unlimited)

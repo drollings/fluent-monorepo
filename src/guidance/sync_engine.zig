@@ -6,7 +6,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const ast_parser = @import("ast_parser.zig");
-const lance_db_mod = @import("vector");
+const vector_db_mod = @import("vector");
 const vector_mod = @import("vector");
 const common = @import("common");
 const enhancer_mod = @import("enhancer.zig");
@@ -27,7 +27,7 @@ const structure_mod = @import("structure.zig");
 const query_engine_mod = @import("query_engine.zig");
 const deps_mod = @import("deps.zig");
 const llm = @import("common");
-const GuidanceDb = lance_db_mod.GuidanceDb;
+const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const stepPrint = types.stepPrint;
 
@@ -1214,7 +1214,7 @@ fn guidanceDbIsUpToDate(
 }
 
 /// Sync .guidance.db (SQLite vector database with in-process cosine similarity).
-/// Creates an embedding provider from config and calls lance_db.syncDatabase.
+/// Creates an embedding provider from config and calls vector_db.syncDatabase.
 /// Failures are logged as warnings but do not abort the gen pipeline.
 fn syncGuidanceDb(
     allocator: std.mem.Allocator,
@@ -1239,7 +1239,7 @@ fn syncGuidanceDb(
         var noop = allocator.create(vector_mod.NoopEmbedding) catch return;
         noop.* = .{ .allocator = allocator };
         const p = noop.provider();
-        lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null, null, cfg.embedding_cache_limit) catch |se| {
+        vector_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, p, null, null, cfg.embedding_cache_limit) catch |se| {
             std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(se)});
         };
         p.deinit();
@@ -1261,13 +1261,13 @@ fn syncGuidanceDb(
     const aliases_path = std.fs.path.join(allocator, &.{ json_dir, "semantic-aliases.json" }) catch null;
     defer if (aliases_path) |p| allocator.free(p);
 
-    var aliases: ?lance_db_mod.SemanticAliases = if (aliases_path) |path|
-        lance_db_mod.loadSemanticAliases(allocator, path) catch null
+    var aliases: ?vector_db_mod.SemanticAliases = if (aliases_path) |path|
+        vector_db_mod.loadSemanticAliases(allocator, path) catch null
     else
         null;
     defer if (aliases) |*a| a.deinit();
 
-    lance_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases, cfg.embedding_cache_limit) catch |err| {
+    vector_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases, cfg.embedding_cache_limit) catch |err| {
         std.debug.print("guidance.db: sync failed: {s}\n", .{@errorName(err)});
         return;
     };

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Reflection", "Validation", "Access Control", "Type Safety", "Coral", "Zig", "Modularity", "Security", "API", "Extensibility"],
-  "used_by": ["src/vector/lance_db.zig"],
+  "used_by": ["src/vector/vector_db.zig"],
   "members": [
     {
       "type": "struct",

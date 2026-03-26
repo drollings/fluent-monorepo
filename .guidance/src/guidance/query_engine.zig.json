@@ -314,12 +314,12 @@
       "type": "fn_private",
       "name": "loadAliases",
       "match_hash": "338663b389db9cf362981416c9e71bc5a2d018aa794320fff46b9cad3cb06130",
-      "signature": "fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) -> ?lance_db_mod.SemanticAliases",
+      "signature": "fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) -> ?vector_db_mod.SemanticAliases",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
-      "returns": "?lance_db_mod.SemanticAliases",
+      "returns": "?vector_db_mod.SemanticAliases",
       "is_pub": false,
       "line": 1006
     },

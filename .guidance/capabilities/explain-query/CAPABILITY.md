@@ -56,6 +56,6 @@ The hybrid search combines:
 
 - `src/guidance/main.zig` — `cmdExplain`, `cmdExplainStaged`, `renderExplainOutput`, `loadAliases`
 - `src/guidance/staged.zig` — `executeStaged`, `executeStagedWithAliases`, `formatStaged`
-- `src/vector/lance_db.zig` — `GuidanceDb`, `SemanticAliases`, `loadSemanticAliases`
+- `src/vector/vector_db.zig` — `GuidanceDb`, `SemanticAliases`, `loadSemanticAliases`
 - `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable

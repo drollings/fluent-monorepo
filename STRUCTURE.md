@@ -238,11 +238,11 @@ Then you you must read
 │   │   ├── root.zig
 │   │   └── typed.zig
 │   ├── vector
-│   │   ├── lance_db.zig
 │   │   ├── math.zig
 │   │   ├── root.zig
 │   │   ├── simhash.zig
-│   │   └── simhash_projections.zig
+│   │   ├── simhash_projections.zig
+│   │   └── vector_db.zig
 │   └── wasm
 │       └── wasm.zig
 ├── tools
