@@ -56,24 +56,45 @@ Then you you must read
 │   │   │   │   ├── CoralContext_Zig_Milestone5.md
 │   │   │   │   ├── CoralContext_Zig_ToolCategories.md
 │   │   │   │   └── CoralContext_Zig_ToolDevelopment.md
+│   │   │   ├── CODE_QUALITY_REVIEW.md
 │   │   │   ├── coral-context-implementation-stages-python.md
 │   │   │   ├── coral-context-overview-2026.md
 │   │   │   ├── Gemini3-PriorSpecsAdapted.md
+│   │   │   ├── GEMINI_FLUENT_WVR_STANDARD_ADDITIONS.md
+│   │   │   ├── GLM_FLUENT_GUIDANCE_ASSESSMENT.md
+│   │   │   ├── GLM_REVIEW_FLUENT_WVR_STANDARD_ADDITIONS.md
 │   │   │   ├── legacy-aliases.json
 │   │   │   ├── MAKEFILE_GUIDANCE.md
+│   │   │   ├── RECOMMENDATIONS_SEARCH_20260325.md
 │   │   │   ├── REPORT_WORLDCORE.md
+│   │   │   ├── REVIEW_20260325.md
+│   │   │   ├── REVIEW_20260326.md
+│   │   │   ├── REVIEW_20260326a.md
+│   │   │   ├── REVIEW_20260326b.md
+│   │   │   ├── ROADMAP_COMPLETION.md
+│   │   │   ├── ROADMAP_COMPLETION_CHECKLIST.md
 │   │   │   ├── ROADMAP_EXPLAIN_ENHANCE.md
 │   │   │   ├── ROADMAP_EXPLAIN_ENHANCE_CHECKLIST.md
+│   │   │   ├── ROADMAP_MONOREPO_MARCH.md
+│   │   │   ├── ROADMAP_MONOREPO_MARCH_CHECKLIST.md
 │   │   │   ├── ROADMAP_NEW_EXPLAIN.md
 │   │   │   ├── ROADMAP_NEW_EXPLAIN_CHECKLIST.md
 │   │   │   ├── TEST_EXPLAIN.md
 │   │   │   ├── TEST_EXPLAIN_RESULTS.md
+│   │   │   ├── TODO.md
+│   │   │   ├── TODO_AUDIT_REMEDY.md
+│   │   │   ├── TODO_AUDIT_REMEDY_CHECKLIST.md
 │   │   │   ├── TODO_COMMON.md
 │   │   │   ├── TODO_CONCISION.md
 │   │   │   ├── TODO_CONCISION_CHECKLIST.md
 │   │   │   ├── TODO_EXPLORE.md
 │   │   │   ├── TODO_EXPLORE_CHECKLIST.md
+│   │   │   ├── TODO_GUIDANCE_SECONDBRAIN.md
+│   │   │   ├── TODO_GUIDANCE_SECONDBRAIN_CHECKLIST.md
+│   │   │   ├── TODO_NEW_COMMENTS.md
+│   │   │   ├── TODO_NEW_COMMENTS_CHECKLIST.md
 │   │   │   ├── TODO_REFLECTION.md
+│   │   │   ├── TODO_SECURITY.md
 │   │   │   ├── TODO_YAGO.md
 │   │   │   ├── TODO_YAGO_CHECKLIST.md
 │   │   │   ├── unifiedprompt2.md
@@ -136,6 +157,11 @@ Then you you must read
 │       │   └── zig.mk
 │       ├── common.mk
 │       └── target_language.mk
+├── rag
+│   ├── TODO_20260326.md
+│   ├── TODO_20260326_CHECKLIST.md
+│   ├── TODO_20260326b.md
+│   └── TODO_20260326b_CHECKLIST.md
 ├── src
 │   ├── common
 │   │   ├── args.zig
@@ -261,10 +287,6 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
-├── CODE_QUALITY_REVIEW.md
-├── GEMINI_FLUENT_WVR_STANDARD_ADDITIONS.md
-├── GLM_FLUENT_GUIDANCE_ASSESSMENT.md
-├── GLM_REVIEW_FLUENT_WVR_STANDARD_ADDITIONS.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
@@ -272,27 +294,9 @@ Then you you must read
 ├── mise.toml
 ├── pyproject.toml
 ├── README.md
-├── RECOMMENDATIONS_SEARCH_20260325.md
 ├── requirements.txt
-├── REVIEW_20260325.md
-├── REVIEW_20260326.md
-├── REVIEW_20260326a.md
-├── REVIEW_20260326b.md
-├── ROADMAP_COMPLETION.md
-├── ROADMAP_COMPLETION_CHECKLIST.md
-├── ROADMAP_MONOREPO_MARCH.md
-├── ROADMAP_MONOREPO_MARCH_CHECKLIST.md
+├── SECURITY_REVIEW.md
 ├── STRUCTURE.md
 ├── TEST_EXPLAIN_PROMPT.md
-├── TODO.md
-├── TODO_20260326.md
-├── TODO_20260326_CHECKLIST.md
-├── TODO_20260326b.md
-├── TODO_20260326b_CHECKLIST.md
-├── TODO_AUDIT_REMEDY.md
-├── TODO_AUDIT_REMEDY_CHECKLIST.md
-├── TODO_GUIDANCE_SECONDBRAIN.md
-├── TODO_GUIDANCE_SECONDBRAIN_CHECKLIST.md
-├── TODO_NEW_COMMENTS.md
-└── TODO_NEW_COMMENTS_CHECKLIST.md
+└── TODO_MEMORY_LEAK.md
 ```

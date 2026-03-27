@@ -1,105 +1,104 @@
 {
-  "aliases": [
-    {"key": "config", "values": ["ProjectConfig", "loadConfig", "guidance-config.json", "settings"]},
-    {"key": "configuration", "values": ["ProjectConfig", "loadConfig", "guidance-config.json", "fallback chain"]},
-    {"key": "schema", "values": ["ast_nodes", "embedding_cache", "CREATE TABLE", "GuidanceDb", "sqlite"]},
-    {"key": "database", "values": ["GuidanceDb", "syncDatabase", "vectorSearch", "keywordSearch", "sqlite"]},
-    {"key": "db", "values": ["GuidanceDb", ".guidance.db", "sqlite", "ast_nodes"]},
-    {"key": "index", "values": ["syncDatabase", "embedding", "upsert", "GuidanceDb"]},
-    {"key": "search", "values": ["vectorSearch", "keywordSearch", "hybridSearch", "searchWithAliases", "cosineSimilarity"]},
+"aliases": [
+{"key": "config", "values": ["ProjectConfig", "loadConfig", "guidance-config.json", "settings"]},
+{"key": "schema", "values": ["ast_nodes", "embedding_cache", "CREATE TABLE", "GuidanceDb", "sqlite"]},
+{"key": "database", "values": ["GuidanceDb", "syncDatabase", "vectorSearch", "keywordSearch", "sqlite", "GuidanceDb.init"]},
+{"key": "search", "values": ["vectorSearch", "keywordSearch", "hybridSearch", "searchWithAliases", "cosineSimilarity", "hybridMerge"]},
 
-    {"key": "llm", "values": ["LlmClient", "complete", "isOllamaEndpoint", "ollama", "openai"]},
-    {"key": "ai", "values": ["LlmClient", "EmbeddingProvider", "complete", "ollama", "openai"]},
-    {"key": "embedding", "values": ["EmbeddingProvider", "embed", "cosineSimilarity", "nomic-embed-text", "vector"]},
+{"key": "llm", "values": ["LlmClient", "complete", "isOllamaEndpoint", "ollama", "openai"]},
+{"key": "ai", "values": ["LlmClient", "EmbeddingProvider", "complete", "ollama", "openai"]},
+{"key": "embedding", "values": ["EmbeddingProvider", "embed", "cosineSimilarity", "nomic-embed-text", "vector"]},
 
-    {"key": "pattern", "values": ["detectPatterns", "gof-patterns", "Pattern", "PatternType"]},
-    {"key": "design pattern", "values": ["detectPatterns", "gof-patterns", "Factory", "Singleton", "Builder", "Adapter", "Strategy"]},
+{"key": "pattern", "values": ["detectPatterns", "gof-patterns", "Pattern", "PatternType"]},
+{"key": "design pattern", "values": ["detectPatterns", "gof-patterns", "Factory", "Singleton", "Builder", "Adapter", "Strategy"]},
 
-    {"key": "skill", "values": ["SKILL.md", "gof-patterns", "zig-current", "skills", ".skills"]},
-    {"key": "capability", "values": ["CAPABILITY.md", "doc/capabilities", "sync-pipeline", "explain-query", "vector-search"]},
+{"key": "skill", "values": ["SKILL.md", "gof-patterns", "zig-current", "skills", ".skills"]},
+{"key": "capability", "values": ["CAPABILITY.md", "doc/capabilities", "sync-pipeline", "explain-query", "vector-search"]},
 
-    {"key": "hash", "values": ["contentHashWithModel", "match_hash", "sha256Hex", "structHash"]},
+{"key": "hash", "values": ["contentHashWithModel", "match_hash", "sha256Hex", "structHash", "blake3Hash"]},
 
-    {"key": "sync", "values": ["SyncProcessor", "syncDatabase", "processFile", "infillJson"]},
-    {"key": "synchronization", "values": ["SyncProcessor", "syncDatabase", "infillAllJson", "processFile"]},
-    {"key": "pipeline", "values": ["SyncProcessor", "staged", "executeStaged", "processFile"]},
-    {"key": "staged pipeline", "values": ["executeStaged", "expandFollowUps", "formatStaged", "Stage"]},
+{"key": "sync", "values": ["SyncProcessor", "syncDatabase", "processFile", "infillJson"]},
+{"key": "pipeline", "values": ["SyncProcessor", "staged", "executeStaged", "processFile"]},
+{"key": "staged pipeline", "values": ["executeStaged", "expandFollowUps", "formatStaged", "Stage"]},
 
-    {"key": "ast", "values": ["AstParser", "parseFile", "extractImports", "node_type", "NodeType"]},
+{"key": "ast", "values": ["AstParser", "parseFile", "extractImports", "node_type", "NodeType"]},
 
-    {"key": "query", "values": ["QueryEngine", "executeStaged", "searchWithAliases", "GuidanceDb"]},
-    {"key": "explain", "values": ["cmdExplain", "executeStaged", "GuidanceDb", "staged"]},
+{"key": "query", "values": ["QueryEngine", "executeStaged", "searchWithAliases", "GuidanceDb"]},
+{"key": "query text search", "values": ["keywordSearch", "FTS5", "LIKE", "full-text", "token", "searchWithAliases", "SearchResult"]},
+{"key": "explain", "values": ["cmdExplain", "executeStaged", "GuidanceDb", "staged"]},
 
-    {"key": "json", "values": ["JsonStore", "GuidanceDoc", "parseGuidance", "loadGuidance"]},
-    {"key": "metadata", "values": ["keywords", "used_by", "skills", "hashtags", "GuidanceDoc"]},
+{"key": "json", "values": ["JsonStore", "GuidanceDoc", "parseGuidance", "loadGuidance"]},
+{"key": "metadata", "values": ["keywords", "used_by", "skills", "hashtags", "GuidanceDoc"]},
 
-    {"key": "test", "values": ["touchTestMarker", "test_decl", "std.testing", "readInboxBulletsTest"]},
+{"key": "test", "values": ["std.testing", "expect", "tests.zig", "test \"", "try std.testing"]},
+{"key": "test infrastructure", "values": ["tests.zig", "std.testing", "expect", "test \"", "try std.testing"]},
 
-    {"key": "types", "values": ["FileType", "MemberType", "PatternType", "Stage", "types.zig"]},
+{"key": "types", "values": ["Member", "NodeType", "Stage", "MemberType", "FileType", "PatternType", "GuidanceDoc"]},
+{"key": "types data structures", "values": ["Member", "NodeType", "Stage", "MemberType", "FileType", "types.zig"]},
 
-    {"key": "error", "values": ["LlmError", "SqliteError", "error union", "try", "catch"]},
+{"key": "error", "values": ["LlmError", "SqliteError", "GuidanceError", "error!", "return error"]},
 
-    {"key": "memory", "values": ["Allocator", "GeneralPurposeAllocator", "ArenaAllocator"]},
+{"key": "memory", "values": ["Allocator", "arena", "gpa", "GeneralPurposeAllocator", "ArenaAllocator", "deinit", "alloc"]},
+{"key": "memory allocation", "values": ["Allocator", "GeneralPurposeAllocator", "ArenaAllocator", "gpa", "alloc", "deinit", "arena"]},
 
-    {"key": "gitignore", "values": ["GitignoreFilter", "shouldIgnore", "globMatch", "loadFromFile"]},
+{"key": "gitignore", "values": ["GitignoreFilter", "shouldIgnore", "globMatch", "loadFromFile", "marker.zig", "fileMtime"]},
+{"key": "gitignore filtering", "values": ["GitignoreFilter", "shouldIgnore", "globMatch", "loadFromFile", "file matching"]},
 
-    {"key": "structure", "values": ["StructureGenerator", "generate", "STRUCTURE.md", "buildTree"]},
-    {"key": "tree", "values": ["StructureGenerator", "buildTree", "TreeEntry", "directory"]},
+{"key": "structure", "values": ["StructureGenerator", "generate", "STRUCTURE.md", "buildTree"]},
+{"key": "tree", "values": ["StructureGenerator", "buildTree", "TreeEntry", "directory"]},
 
-    {"key": "dependency", "values": ["findReverseDeps", "@import", "imports", "used_by"]},
-    {"key": "import", "values": ["extractImports", "@import", "imports", "used_by"]},
+{"key": "dependency", "values": ["findReverseDeps", "@import", "imports", "used_by"]},
+{"key": "import", "values": ["extractImports", "@import", "imports", "used_by"]},
 
-    {"key": "module", "values": ["moduleToProse", "GuidanceDoc", "meta.module", "source file"]},
-    {"key": "member", "values": ["Member", "fn_decl", "struct", "enum", "method", "MemberType"]},
+{"key": "module", "values": ["moduleToProse", "GuidanceDoc", "meta.module", "source file"]},
+{"key": "member", "values": ["Member", "fn_decl", "struct", "enum", "method", "MemberType"]},
 
-    {"key": "comment", "values": ["enhanceFile", "infill", "LlmClient", "docstring", "isMalformedResponse"]},
-    {"key": "docstring", "values": ["enhanceFile", "comment", "module_comment", "infill"]},
-    {"key": "documentation", "values": ["enhanceFile", "enhanceStruct", "enhanceFunction", "infill", "SKILL.md"]},
-    {"key": "enhance", "values": ["enhanceFile", "enhanceStruct", "Enhancer", "infill"]},
+{"key": "comment", "values": ["enhanceFile", "infill", "LlmClient", "docstring", "isMalformedResponse"]},
+{"key": "docstring", "values": ["enhanceFile", "comment", "module_comment", "infill"]},
+{"key": "enhance", "values": ["enhanceFile", "enhanceStruct", "Enhancer", "infill"]},
 
-    {"key": "plugin", "values": ["LanguagePlugin", "PluginRegistry", "ZigPlugin", "MarkdownPlugin", "register"]},
+{"key": "plugin", "values": ["LanguagePlugin", "PluginRegistry", "ZigPlugin", "MarkdownPlugin", "register"]},
 
-    {"key": "provider", "values": ["EmbeddingProvider", "Provider", "createEmbeddingProvider", "OllamaEmbedding"]},
+{"key": "provider", "values": ["EmbeddingProvider", "Provider", "createEmbeddingProvider", "OllamaEmbedding"]},
 
-    {"key": "marker", "values": ["fileNeedsProcessing", "fileMtime", "touchTestMarker", "marker.zig"]},
-    {"key": "mtime", "values": ["fileMtime", "fileNeedsProcessing", "last_modified", "marker"]},
+{"key": "marker", "values": ["fileNeedsProcessing", "fileMtime", "touchTestMarker", "isHashStale", "checkCommentStaleness"]},
+{"key": "mtime", "values": ["fileMtime", "fileNeedsProcessing", "last_modified", "marker.zig"]},
 
-    {"key": "search", "values": ["cosineSimilarity", "hybridMerge", "vectorSearch", "embedding"]},
+{"key": "triage", "values": ["assessRisk", "findAffectedFiles", "getLifecycleState", "triage.zig"]},
 
-    {"key": "triage", "values": ["assessRisk", "findAffectedFiles", "getLifecycleState", "triage.zig"]},
+{"key": "cli", "values": ["CommonArgs", "parseCommonArgs", "Command", "subcommand"]},
 
-    {"key": "cli", "values": ["CommonArgs", "parseCommonArgs", "Command", "subcommand"]},
+{"key": "file type", "values": ["FileType", "fromExtension", "source", "markdown", "config"]},
+{"key": "extension", "values": ["fromExtension", "FileType", "extensions", ".zig", ".py"]},
 
-    {"key": "file type", "values": ["FileType", "fromExtension", "source", "markdown", "config"]},
-    {"key": "extension", "values": ["fromExtension", "FileType", "extensions", ".zig", ".py"]},
+{"key": "node", "values": ["NodeType", "fn_decl", "struct", "enum", "extractExcerpt"]},
 
-    {"key": "node", "values": ["NodeType", "fn_decl", "struct", "enum", "extractExcerpt"]},
+{"key": "stage", "values": ["Stage", "StageKind", "executeStaged", "formatStaged"]},
+{"key": "synthesize", "values": ["synthesize", "stripAbsenceSentences", "LlmClient", "staged"]},
 
-    {"key": "stage", "values": ["Stage", "StageKind", "executeStaged", "formatStaged"]},
-    {"key": "synthesize", "values": ["synthesize", "stripAbsenceSentences", "LlmClient", "staged"]},
+{"key": "infill", "values": ["infillJsonFile", "infillAllJson", "Enhancer", "comment"]},
+{"key": "regenerate", "values": ["processFile", "syncDatabase", "force", "--force"]},
 
-    {"key": "infill", "values": ["infillJsonFile", "infillAllJson", "Enhancer", "comment"]},
-    {"key": "regenerate", "values": ["processFile", "syncDatabase", "force", "--force"]},
+{"key": "vector", "values": ["cosineSimilarity", "hybridMerge", "vecToBytes", "bytesToVec", "embedding"]},
 
-    {"key": "vector", "values": ["cosineSimilarity", "hybridMerge", "vecToBytes", "bytesToVec", "embedding"]},
+{"key": "project", "values": ["ProjectConfig", "project_root", "workspace", "guidance-config.json"]},
 
-    {"key": "project", "values": ["ProjectConfig", "project_root", "workspace", "guidance-config.json"]},
+{"key": "mcp", "values": ["McpServer", "handleRequest", "tools/call", "tools/list", "JSON-RPC", "coral_query"]},
+{"key": "protocol", "values": ["McpServer", "JsonRpcRequest", "JSON-RPC", "handleRequest", "dispatch"]},
 
-    {"key": "make", "values": ["Makefile", "pre-commit", "gen-status", "explain", "targets"]},
-    {"key": "build", "values": ["zig build", "Makefile", "build.zig", "pre-commit"]},
-    {"key": "generate", "values": ["SyncProcessor", "processFile", "guidance gen", "syncDatabase"]},
+{"key": "binary", "values": ["BinaryContextNode", "BinaryHeader", "BinaryExecutionRequest", "writeToBuffer", "readFromBuffer"]},
+{"key": "ipc", "values": ["BinaryContextNode", "BinaryHeader", "PayloadType", "CCND", "coral_schema"]},
+{"key": "wire format", "values": ["BinaryContextNode", "BinaryHeader", "BINARY_MAGIC", "extern struct"]},
 
-    {"key": "mcp", "values": ["McpServer", "handleRequest", "tools/call", "tools/list", "JSON-RPC", "coral_query"]},
-    {"key": "protocol", "values": ["McpServer", "JsonRpcRequest", "JSON-RPC", "handleRequest", "dispatch"]},
+{"key": "simhash", "values": ["SimHash", "compute", "distance", "similar", "shingle", "near-duplicate"]},
+{"key": "deduplication", "values": ["SimHash", "distance", "similar", "Hamming", "shingle"]},
+{"key": "fingerprint", "values": ["SimHash", "compute", "hashShingle", "Wyhash", "locality-sensitive"]},
 
-    {"key": "binary", "values": ["BinaryContextNode", "BinaryHeader", "BinaryExecutionRequest", "writeToBuffer", "readFromBuffer"]},
-    {"key": "ipc", "values": ["BinaryContextNode", "BinaryHeader", "PayloadType", "CCND", "coral_schema"]},
-    {"key": "wire format", "values": ["BinaryContextNode", "BinaryHeader", "BINARY_MAGIC", "extern struct"]},
+{"key": "hybrid search", "values": ["hybridSearch", "SearchResult", "SearchConfig", "vector_weight", "keyword_weight", "GuidanceSearchMode"]},
 
-    {"key": "simhash", "values": ["SimHash", "compute", "distance", "similar", "shingle", "near-duplicate"]},
-    {"key": "deduplication", "values": ["SimHash", "distance", "similar", "Hamming", "shingle"]},
-    {"key": "fingerprint", "values": ["SimHash", "compute", "hashShingle", "Wyhash", "locality-sensitive"]},
-
-    {"key": "hybrid search", "values": ["hybridSearch", "SearchResult", "SearchConfig", "vector_weight", "keyword_weight", "GuidanceSearchMode"]}
-  ]
+{"key": "cosine similarity", "values": ["cosineSimilarity", "vecToBytes", "bytesToVec", "hybridMerge", "ScoredResult", "MIN_VECTOR_THRESHOLD"]},
+{"key": "vector search", "values": ["vectorSearch", "keywordSearch", "embedding", "cosineSimilarity", "searchWithAliases", "GuidanceDb.search"]},
+{"key": "workspace", "values": ["workspace", "Workspace", "root", "getCwdAlloc", "resolvePath", "project_root"]},
+{"key": "comment cache", "values": ["CommentSyncProcessor", "infillJsonFile", "enhanceFile", "comment_cache", "marker.zig"]}
+]
 }

@@ -224,9 +224,12 @@ pub fn syncDatabase(
     }
 
     if (aliases) |ali| {
+        std.debug.print("syncDatabase: syncing {d} semantic aliases...\n", .{ali.aliases.len});
         db.syncAliasEmbeddings(allocator, ali) catch |err| {
-            log.warn("alias embeddings sync failed: {s}", .{@errorName(err)});
+            std.debug.print("error: alias embeddings sync failed: {s}\n", .{@errorName(err)});
         };
+    } else {
+        std.debug.print("syncDatabase: no semantic aliases provided\n", .{});
     }
 
     // Recompute IDF weights so rare keywords score higher than common ones.
@@ -2788,10 +2791,18 @@ pub const GuidanceDb = struct {
         aliases: SemanticAliases,
     ) !void {
         var synced: usize = 0;
+        var failed: usize = 0;
+        var skipped: usize = 0;
         const model_name = self.embedder.getName();
+        const total = aliases.aliases.len;
+        std.debug.print("syncAliasEmbeddings: processing {d} aliases with embedder '{s}'\n", .{ total, model_name });
         for (aliases.aliases) |alias| {
             // Lowercase the key for case-insensitive embedding comparison
-            const key_lower = std.ascii.allocLowerString(allocator, alias.key) catch continue;
+            const key_lower = std.ascii.allocLowerString(allocator, alias.key) catch {
+                std.debug.print("error: failed to lowercase alias key '{s}'\n", .{alias.key});
+                failed += 1;
+                continue;
+            };
             defer allocator.free(key_lower);
 
             // Skip when this (alias_key, embedding_model) pair is already stored.
@@ -2804,23 +2815,28 @@ pub const GuidanceDb = struct {
                 _ = c.sqlite3_bind_text(chk_stmt, 2, model_name.ptr, @intCast(model_name.len), SQLITE_STATIC);
                 break :blk c.sqlite3_step(chk_stmt) == c.SQLITE_ROW and c.sqlite3_column_int(chk_stmt, 0) > 0;
             };
-            if (already_stored) continue;
+            if (already_stored) {
+                skipped += 1;
+                continue;
+            }
 
             // Embed the lowercase alias key
             const emb = self.embedder.embed(allocator, key_lower) catch |err| {
-                log.debug("failed to embed alias key '{s}': {s}", .{ alias.key, @errorName(err) });
+                std.debug.print("error: failed to embed alias key '{s}': {s}\n", .{ alias.key, @errorName(err) });
+                failed += 1;
                 continue;
             };
             defer allocator.free(emb);
 
             // Store with lowercase key for consistent lookup
             self.storeAliasEmbedding(allocator, key_lower, emb) catch |err| {
-                log.debug("failed to store alias embedding '{s}': {s}", .{ alias.key, @errorName(err) });
+                std.debug.print("error: failed to store alias embedding '{s}': {s}\n", .{ alias.key, @errorName(err) });
+                failed += 1;
                 continue;
             };
             synced += 1;
         }
-        if (synced > 0) log.info("semantic alias embeddings synced: {d}", .{synced});
+        std.debug.print("syncAliasEmbeddings: {d}/{d} synced, {d} skipped, {d} failed\n", .{ synced, total, skipped, failed });
     }
 
     // ── Keyword Index Methods ─────────────────────────────────────

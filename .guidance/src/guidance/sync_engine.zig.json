@@ -404,7 +404,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1281
+      "line": 1292
     },
     {
       "type": "fn_decl",
@@ -417,7 +417,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1303
+      "line": 1314
     },
     {
       "type": "fn_private",
@@ -430,7 +430,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1320
+      "line": 1331
     },
     {
       "type": "fn_decl",
@@ -443,7 +443,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1626
+      "line": 1637
     },
     {
       "type": "fn_decl",
@@ -456,7 +456,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1708
+      "line": 1719
     },
     {
       "type": "fn_decl",
@@ -471,7 +471,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 1756
+      "line": 1767
     },
     {
       "type": "fn_decl",
@@ -484,7 +484,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1778
+      "line": 1789
     },
     {
       "type": "fn_private",
@@ -496,7 +496,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 1978
+      "line": 1989
     },
     {
       "type": "fn_private",
@@ -509,7 +509,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2002
+      "line": 2013
     },
     {
       "type": "fn_private",
@@ -523,7 +523,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2016
+      "line": 2027
     },
     {
       "type": "fn_private",
@@ -537,7 +537,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2033
+      "line": 2044
     },
     {
       "type": "fn_private",
@@ -553,7 +553,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2076
+      "line": 2087
     },
     {
       "type": "fn_private",
@@ -572,7 +572,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2139
+      "line": 2150
     },
     {
       "type": "fn_decl",
@@ -585,7 +585,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2200
+      "line": 2211
     },
     {
       "type": "fn_decl",
@@ -598,7 +598,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2371
+      "line": 2382
     },
     {
       "type": "fn_decl",
@@ -611,7 +611,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2533
+      "line": 2544
     },
     {
       "type": "fn_private",
@@ -623,7 +623,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 2629
+      "line": 2640
     },
     {
       "type": "fn_decl",
@@ -636,7 +636,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2656
+      "line": 2667
     },
     {
       "type": "fn_decl",
@@ -649,7 +649,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2720
+      "line": 2731
     },
     {
       "type": "fn_decl",
@@ -662,7 +662,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2769
+      "line": 2780
     },
     {
       "type": "fn_decl",
@@ -675,7 +675,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 2823
+      "line": 2834
     },
     {
       "type": "fn_decl",
@@ -690,7 +690,7 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 2828
+      "line": 2839
     },
     {
       "type": "fn_decl",
@@ -703,7 +703,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 2833
+      "line": 2844
     },
     {
       "type": "fn_decl",
@@ -715,7 +715,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 2838
+      "line": 2849
     },
     {
       "type": "fn_decl",
@@ -729,7 +729,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2843
+      "line": 2854
     }
   ]
 }

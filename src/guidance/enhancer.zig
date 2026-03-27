@@ -21,6 +21,19 @@ const DEFAULT_MAX_TOKENS: usize = 1000;
 /// Max_tokens for thinking models (generous for local models).
 const THINKING_MAX_TOKENS: usize = 4000;
 
+/// Generic words that appear in many comments and should be excluded
+/// from semantic phrase extraction. These dilute embedding quality.
+const GENERIC_WORDS = std.StaticStringMap(void).initComptime(.{
+    .{ "function", {} },       .{ "functions", {} },  .{ "method", {} },     .{ "methods", {} },
+    .{ "module", {} },         .{ "modules", {} },    .{ "struct", {} },     .{ "structs", {} },
+    .{ "this", {} },           .{ "the", {} },        .{ "a", {} },          .{ "an", {} },
+    .{ "handles", {} },        .{ "manages", {} },    .{ "returns", {} },    .{ "return", {} },
+    .{ "provides", {} },       .{ "provide", {} },    .{ "implements", {} }, .{ "implementation", {} },
+    .{ "interface", {} },      .{ "utility", {} },    .{ "utilities", {} },  .{ "helper", {} },
+    .{ "helpers", {} },        .{ "generic", {} },    .{ "general", {} },    .{ "common", {} },
+    .{ "infrastructure", {} }, .{ "processing", {} }, .{ "handler", {} },    .{ "handlers", {} },
+});
+
 /// Result returned by each enhancement call.
 pub const EnrichmentResult = struct {
     /// The generated or preserved description text (≤240 chars enforced by prompt).
@@ -33,6 +46,18 @@ pub const EnrichmentResult = struct {
         if (self.comment) |d| allocator.free(d);
         for (self.tags) |t| allocator.free(t);
         allocator.free(self.tags);
+    }
+};
+
+/// Result of semantic phrase extraction.
+/// Phrases are high-value search terms extracted from a comment, suitable
+/// for embedding in place of the full comment text to reduce noise.
+pub const SemanticPhrasesResult = struct {
+    phrases: []const []const u8,
+
+    pub fn deinit(self: SemanticPhrasesResult, allocator: std.mem.Allocator) void {
+        for (self.phrases) |p| allocator.free(p);
+        allocator.free(self.phrases);
     }
 };
 
@@ -603,7 +628,206 @@ pub const Enhancer = struct {
             .comment = comment,
         };
     }
+
+    // -------------------------------------------------------------------------
+    // Semantic phrase extraction for embedding noise reduction
+    // -------------------------------------------------------------------------
+
+    /// Extract 3-5 high-value semantic phrases from a comment for embedding.
+    /// This replaces the full comment text in embeddings to reduce noise from
+    /// generic terms and boost signal from specific domain terminology.
+    ///
+    /// The LLM is asked to identify phrases that are:
+    /// - Domain-specific terminology
+    /// - API names and identifiers
+    /// - Unique compound concepts
+    ///
+    /// NOT generic boilerplate like "function", "module", "handles", "returns".
+    ///
+    /// Results are cached by content hash in embedding_cache to avoid repeated LLM calls.
+    pub fn extractSemanticPhrases(
+        self: *Enhancer,
+        name: []const u8,
+        node_type: []const u8,
+        comment: []const u8,
+        module_context: []const u8,
+    ) !SemanticPhrasesResult {
+        const stripped = llm.stripBoilerplate(comment);
+
+        // Skip trivial comments (< 15 chars after stripping)
+        if (stripped.len < 15) {
+            return .{ .phrases = try self.allocator.alloc([]const u8, 0) };
+        }
+
+        // Build prompt
+        const prompt = try self.buildPhrasesPrompt(name, node_type, stripped, module_context);
+        defer self.allocator.free(prompt);
+
+        if (self.debug) std.debug.print("[enhancer] extracting phrases for {s}\n", .{name});
+
+        // Use lower temperature for more deterministic extraction
+        const raw = self.client.complete(prompt, 400, 0.1, null) catch {
+            if (self.debug) std.debug.print("[enhancer] LLM unavailable for phrase extraction\n", .{});
+            return self.fallbackPhrases(stripped);
+        };
+        const response = raw orelse {
+            return self.fallbackPhrases(stripped);
+        };
+        defer self.allocator.free(response);
+
+        if (self.debug) std.debug.print("[enhancer] raw phrases response: {s}\n", .{response});
+
+        // Extract <phrases>...</phrases> tag
+        const tagged = extractPhrasesTag(response) orelse {
+            if (self.debug) std.debug.print("[enhancer] no <phrases> tag in response\n", .{});
+            return self.fallbackPhrases(stripped);
+        };
+
+        // Check for malformed response
+        if (llm.isMalformedResponse(tagged)) {
+            if (self.debug) std.debug.print("[enhancer] malformed phrases response: '{s}'\n", .{tagged});
+            return self.fallbackPhrases(stripped);
+        }
+
+        return self.parsePhrasesResponse(tagged);
+    }
+
+    /// Build the LLM prompt for semantic phrase extraction.
+    /// Designed to be generalizable to any codebase, not overfit to this one.
+    fn buildPhrasesPrompt(
+        self: *Enhancer,
+        name: []const u8,
+        node_type: []const u8,
+        comment: []const u8,
+        module_context: []const u8,
+    ) ![]const u8 {
+        var buf: std.ArrayList(u8) = .{};
+        const w = buf.writer(self.allocator);
+
+        try w.writeAll(
+            \\Extract 3-5 specific, searchable phrases from this code comment.
+            \\Rules:
+            \\- Focus on: domain terms, API names, unique compound concepts
+            \\- Avoid: generic words (function, module, handles, returns, utility)
+            \\- Prefer: multiword phrases over single words
+            \\- Preserve: original casing and terminology
+            \\
+        );
+
+        try w.print("Context: {s} ({s})\n", .{ module_context, node_type });
+        try w.print("Name: {s}\n", .{name});
+        try w.print("Comment: {s}\n\n", .{comment});
+
+        try w.writeAll(
+            \\<phrases>phrase1, phrase2, phrase3</phrases>
+            \\
+        );
+
+        return buf.toOwnedSlice(self.allocator);
+    }
+
+    /// Parse the LLM response for phrases.
+    /// Handles both comma-separated and newline-separated formats.
+    fn parsePhrasesResponse(self: *Enhancer, tagged: []const u8) !SemanticPhrasesResult {
+        var phrases: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (phrases.items) |p| self.allocator.free(p);
+            phrases.deinit(self.allocator);
+        }
+
+        // Split by comma or newline
+        const trimmed = std.mem.trim(u8, tagged, " \t\n\r");
+        var it = std.mem.splitAny(u8, trimmed, ",\n");
+
+        while (it.next()) |phrase| {
+            if (phrases.items.len >= 5) break; // Max 5 phrases
+
+            const p = std.mem.trim(u8, phrase, " \t\n\r");
+            if (p.len < 3) continue; // Skip too short
+            if (p.len > 60) continue; // Skip too long
+
+            // Skip if it's a generic word
+            const lower = try std.ascii.allocLowerString(self.allocator, p);
+            defer self.allocator.free(lower);
+            if (GENERIC_WORDS.has(lower)) continue;
+
+            // Skip if it starts with a generic word
+            var word_it = std.mem.splitScalar(u8, lower, ' ');
+            if (word_it.next()) |first_word| {
+                if (GENERIC_WORDS.has(first_word)) continue;
+            }
+
+            try phrases.append(self.allocator, try self.allocator.dupe(u8, p));
+        }
+
+        return .{ .phrases = try phrases.toOwnedSlice(self.allocator) };
+    }
+
+    /// Fallback: extract phrases locally without LLM.
+    /// Uses simple heuristics to identify compound terms and identifiers.
+    fn fallbackPhrases(self: *Enhancer, comment: []const u8) !SemanticPhrasesResult {
+        var phrases: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (phrases.items) |p| self.allocator.free(p);
+            phrases.deinit(self.allocator);
+        }
+
+        // Split into tokens and look for compound terms (CamelCase, snake_case)
+        var it = std.mem.splitAny(u8, comment, " \t\n\r,.");
+
+        while (it.next()) |token| {
+            if (phrases.items.len >= 5) break;
+            if (token.len < 4) continue; // Skip short tokens
+            if (token.len > 40) continue; // Skip long tokens
+
+            // Check if it looks like an identifier (CamelCase or snake_case)
+            var has_camel = false;
+            var has_snake = false;
+            for (token) |ch| {
+                if (ch == '_') has_snake = true;
+                if (std.ascii.isUpper(ch)) has_camel = true;
+            }
+
+            // Keep identifiers
+            if (has_camel or has_snake) {
+                const lower = try std.ascii.allocLowerString(self.allocator, token);
+                defer self.allocator.free(lower);
+                if (!GENERIC_WORDS.has(lower)) {
+                    try phrases.append(self.allocator, try self.allocator.dupe(u8, token));
+                }
+            }
+        }
+
+        // If no identifiers found, use the first few significant words
+        if (phrases.items.len == 0) {
+            var word_count: usize = 0;
+            var wit = std.mem.splitAny(u8, comment, " \t\n\r");
+            while (wit.next()) |word| {
+                if (word_count >= 3) break;
+                if (word.len < 4) continue;
+
+                const lower = try std.ascii.allocLowerString(self.allocator, word);
+                defer self.allocator.free(lower);
+                if (!GENERIC_WORDS.has(lower)) {
+                    try phrases.append(self.allocator, try self.allocator.dupe(u8, word));
+                    word_count += 1;
+                }
+            }
+        }
+
+        return .{ .phrases = try phrases.toOwnedSlice(self.allocator) };
+    }
 };
+
+/// Extract content between <phrases>...</phrases> tags.
+/// Returns null if tags not found or content is empty/whitespace.
+fn extractPhrasesTag(text: []const u8) ?[]const u8 {
+    const start = std.mem.indexOf(u8, text, "<phrases>") orelse return null;
+    const end = std.mem.indexOf(u8, text[start..], "</phrases>") orelse return null;
+    const content = std.mem.trim(u8, text[start + 9 .. start + end], " \t\n\r");
+    if (content.len == 0) return null;
+    return content;
+}
 
 // ---------------------------------------------------------------------------
 // Pure utilities (no allocator needed)
@@ -692,4 +916,136 @@ test "stripTagsLine removes Tags line" {
 test "lastIndexOf basic" {
     try std.testing.expectEqual(@as(?usize, 6), lastIndexOf("hello tags: #a", "tags:"));
     try std.testing.expectEqual(@as(?usize, null), lastIndexOf("no match", "tags:"));
+}
+
+test "extractPhrasesTag extracts content" {
+    const text = "Some reasoning...\n<phrases>cosine similarity, vector search, embedding</phrases>";
+    const result = extractPhrasesTag(text);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("cosine similarity, vector search, embedding", result.?);
+}
+
+test "extractPhrasesTag returns null for missing tag" {
+    try std.testing.expect(extractPhrasesTag("no tags here") == null);
+    try std.testing.expect(extractPhrasesTag("<phrases></phrases>") == null);
+    try std.testing.expect(extractPhrasesTag("<phrases>   </phrases>") == null);
+}
+
+test "extractPhrasesTag handles whitespace" {
+    const text = "<phrases>\n  phrase1, phrase2  \n</phrases>";
+    const result = extractPhrasesTag(text);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings("phrase1, phrase2", result.?);
+}
+
+test "fallbackPhrases extracts identifiers" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const comment = "Manages database connection pool using SQLiteConnection struct.";
+    const result = try e.fallbackPhrases(comment);
+    defer result.deinit(gpa.allocator());
+
+    // Should extract SQLiteConnection (CamelCase identifier)
+    var found_sqlite = false;
+    for (result.phrases) |p| {
+        if (std.mem.indexOf(u8, p, "SQLite") != null) found_sqlite = true;
+    }
+    try std.testing.expect(found_sqlite);
+}
+
+test "fallbackPhrases skips generic words" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const comment = "This function handles processing for the module.";
+    const result = try e.fallbackPhrases(comment);
+    defer result.deinit(gpa.allocator());
+
+    // All generic words should be skipped, so result should be empty
+    // or contain only non-generic content
+    for (result.phrases) |p| {
+        const lower = try std.ascii.allocLowerString(gpa.allocator(), p);
+        defer gpa.allocator().free(lower);
+        try std.testing.expect(!GENERIC_WORDS.has(lower));
+    }
+}
+
+test "parsePhrasesResponse handles comma-separated" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const tagged = "cosine similarity, vector search, embedding";
+    const result = try e.parsePhrasesResponse(tagged);
+    defer result.deinit(gpa.allocator());
+
+    try std.testing.expectEqual(@as(usize, 3), result.phrases.len);
+    try std.testing.expectEqualStrings("cosine similarity", result.phrases[0]);
+    try std.testing.expectEqualStrings("vector search", result.phrases[1]);
+    try std.testing.expectEqualStrings("embedding", result.phrases[2]);
+}
+
+test "parsePhrasesResponse handles newline-separated" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const tagged = "cosine similarity\nvector search\nembedding";
+    const result = try e.parsePhrasesResponse(tagged);
+    defer result.deinit(gpa.allocator());
+
+    try std.testing.expectEqual(@as(usize, 3), result.phrases.len);
+}
+
+test "parsePhrasesResponse limits to 5 phrases" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const tagged = "one, two, three, four, five, six, seven";
+    const result = try e.parsePhrasesResponse(tagged);
+    defer result.deinit(gpa.allocator());
+
+    try std.testing.expectEqual(@as(usize, 5), result.phrases.len);
+}
+
+test "parsePhrasesResponse skips generic words" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    var e = try Enhancer.init(gpa.allocator(), .{
+        .api_url = "http://localhost:11434/v1/chat/completions",
+        .model = "test",
+    });
+    defer e.deinit();
+
+    const tagged = "function, module, cosine similarity";
+    const result = try e.parsePhrasesResponse(tagged);
+    defer result.deinit(gpa.allocator());
+
+    // Only "cosine similarity" should survive
+    try std.testing.expectEqual(@as(usize, 1), result.phrases.len);
+    try std.testing.expectEqualStrings("cosine similarity", result.phrases[0]);
 }

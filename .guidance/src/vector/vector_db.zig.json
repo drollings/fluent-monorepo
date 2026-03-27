@@ -93,7 +93,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 263
+          "line": 266
         }
     ,    {
           "type": "fn_decl",
@@ -106,7 +106,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 278
+          "line": 281
         }
     ,    {
           "type": "fn_decl",
@@ -119,7 +119,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 285
+          "line": 288
         }
     ,    {
           "type": "fn_decl",
@@ -132,7 +132,7 @@
           ],
           "returns": "DbSyncBuilder",
           "is_pub": true,
-          "line": 292
+          "line": 295
         }
     ,    {
           "type": "fn_decl",
@@ -144,10 +144,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 299
+          "line": 302
         }
       ],
-      "line": 253
+      "line": 256
     },
     {
       "type": "struct",
@@ -168,7 +168,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 325
+          "line": 328
         }
     ,    {
           "type": "fn_decl",
@@ -180,7 +180,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 349
+          "line": 352
         }
     ,    {
           "type": "fn_private",
@@ -192,7 +192,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 358
+          "line": 361
         }
     ,    {
           "type": "fn_private",
@@ -204,7 +204,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 374
+          "line": 377
         }
     ,    {
           "type": "fn_decl",
@@ -218,7 +218,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 624
+          "line": 627
         }
     ,    {
           "type": "fn_decl",
@@ -233,7 +233,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 683
+          "line": 686
         }
     ,    {
           "type": "fn_private",
@@ -249,7 +249,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 762
+          "line": 765
         }
     ,    {
           "type": "fn_decl",
@@ -263,7 +263,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 867
+          "line": 870
         }
     ,    {
           "type": "fn_decl",
@@ -279,7 +279,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 910
+          "line": 913
         }
     ,    {
           "type": "fn_decl",
@@ -295,7 +295,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 1020
+          "line": 1023
         }
     ,    {
           "type": "fn_private",
@@ -309,7 +309,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 1088
+          "line": 1091
         }
     ,    {
           "type": "fn_private",
@@ -325,7 +325,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1102
+          "line": 1105
         }
     ,    {
           "type": "fn_private",
@@ -338,7 +338,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1129
+          "line": 1132
         }
     ,    {
           "type": "fn_private",
@@ -352,7 +352,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1144
+          "line": 1147
         }
     ,    {
           "type": "fn_private",
@@ -367,7 +367,7 @@
           ],
           "returns": "[]i64",
           "is_pub": false,
-          "line": 1159
+          "line": 1162
         }
     ,    {
           "type": "fn_private",
@@ -381,7 +381,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1187
+          "line": 1190
         }
     ,    {
           "type": "fn_decl",
@@ -394,7 +394,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 1204
+          "line": 1207
         }
     ,    {
           "type": "fn_private",
@@ -407,7 +407,7 @@
           ],
           "returns": "[]u8",
           "is_pub": false,
-          "line": 1242
+          "line": 1245
         }
     ,    {
           "type": "fn_private",
@@ -419,7 +419,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 1268
+          "line": 1271
         }
     ,    {
           "type": "fn_private",
@@ -432,7 +432,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1284
+          "line": 1287
         }
     ,    {
           "type": "fn_private",
@@ -450,7 +450,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 1339
+          "line": 1342
         }
     ,    {
           "type": "fn_private",
@@ -464,7 +464,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1411
+          "line": 1414
         }
     ,    {
           "type": "fn_private",
@@ -479,7 +479,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1442
+          "line": 1445
         }
     ,    {
           "type": "fn_private",
@@ -492,7 +492,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1465
+          "line": 1468
         }
     ,    {
           "type": "fn_private",
@@ -506,7 +506,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1500
+          "line": 1503
         }
     ,    {
           "type": "fn_private",
@@ -519,7 +519,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1545
+          "line": 1548
         }
     ,    {
           "type": "fn_private",
@@ -533,7 +533,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1576
+          "line": 1579
         }
     ,    {
           "type": "fn_private",
@@ -550,7 +550,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1614
+          "line": 1617
         }
     ,    {
           "type": "fn_private",
@@ -566,7 +566,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1709
+          "line": 1712
         }
     ,    {
           "type": "fn_private",
@@ -584,7 +584,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1760
+          "line": 1763
         }
     ,    {
           "type": "fn_decl",
@@ -597,7 +597,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1869
+          "line": 1872
         }
     ,    {
           "type": "fn_decl",
@@ -613,7 +613,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1888
+          "line": 1891
         }
     ,    {
           "type": "fn_decl",
@@ -630,7 +630,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1899
+          "line": 1902
         }
     ,    {
           "type": "fn_decl",
@@ -645,7 +645,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2026
+          "line": 2029
         }
     ,    {
           "type": "fn_decl",
@@ -661,7 +661,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2039
+          "line": 2042
         }
     ,    {
           "type": "fn_private",
@@ -676,7 +676,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2135
+          "line": 2138
         }
     ,    {
           "type": "fn_private",
@@ -691,7 +691,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2209
+          "line": 2212
         }
     ,    {
           "type": "fn_decl",
@@ -706,7 +706,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2247
+          "line": 2250
         }
     ,    {
           "type": "fn_decl",
@@ -721,7 +721,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2368
+          "line": 2371
         }
     ,    {
           "type": "fn_private",
@@ -737,7 +737,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2484
+          "line": 2487
         }
     ,    {
           "type": "fn_private",
@@ -753,7 +753,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 2557
+          "line": 2560
         }
     ,    {
           "type": "fn_private",
@@ -767,7 +767,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 2580
+          "line": 2583
         }
     ,    {
           "type": "fn_private",
@@ -779,7 +779,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2606
+          "line": 2609
         }
     ,    {
           "type": "fn_private",
@@ -792,7 +792,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 2640
+          "line": 2643
         }
     ,    {
           "type": "fn_private",
@@ -805,7 +805,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2667
+          "line": 2670
         }
     ,    {
           "type": "fn_private",
@@ -818,7 +818,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2677
+          "line": 2680
         }
     ,    {
           "type": "fn_decl",
@@ -833,7 +833,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2688
+          "line": 2691
         }
     ,    {
           "type": "fn_decl",
@@ -849,7 +849,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 2713
+          "line": 2716
         }
     ,    {
           "type": "fn_decl",
@@ -863,7 +863,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2785
+          "line": 2788
         }
     ,    {
           "type": "fn_decl",
@@ -878,7 +878,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2829
+          "line": 2845
         }
     ,    {
           "type": "fn_decl",
@@ -893,7 +893,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2852
+          "line": 2868
         }
     ,    {
           "type": "fn_decl",
@@ -909,7 +909,7 @@
           ],
           "returns": "[]KeywordMatch",
           "is_pub": true,
-          "line": 2872
+          "line": 2888
         }
     ,    {
           "type": "fn_decl",
@@ -923,7 +923,7 @@
           ],
           "returns": "[]ModuleMatch",
           "is_pub": true,
-          "line": 2939
+          "line": 2955
         }
     ,    {
           "type": "fn_decl",
@@ -937,7 +937,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 2982
+          "line": 2998
         }
     ,    {
           "type": "fn_decl",
@@ -952,7 +952,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3004
+          "line": 3020
         }
     ,    {
           "type": "fn_private",
@@ -964,7 +964,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 3030
+          "line": 3046
         }
     ,    {
           "type": "fn_decl",
@@ -977,7 +977,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3082
+          "line": 3098
         }
     ,    {
           "type": "fn_decl",
@@ -992,7 +992,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 3094
+          "line": 3110
         }
     ,    {
           "type": "fn_decl",
@@ -1004,7 +1004,7 @@
           ],
           "returns": "?EmbeddingStats",
           "is_pub": true,
-          "line": 3156
+          "line": 3172
         }
     ,    {
           "type": "fn_decl",
@@ -1017,7 +1017,7 @@
           ],
           "returns": "[]AliasEmbeddingEntry",
           "is_pub": true,
-          "line": 3206
+          "line": 3222
         }
     ,    {
           "type": "fn_decl",
@@ -1030,7 +1030,7 @@
           ],
           "returns": "[]KeywordEmbeddingEntry",
           "is_pub": true,
-          "line": 3231
+          "line": 3247
         }
     ,    {
           "type": "fn_decl",
@@ -1043,7 +1043,7 @@
           ],
           "returns": "[]EmbeddingCacheEntry",
           "is_pub": true,
-          "line": 3256
+          "line": 3272
         }
     ,    {
           "type": "fn_decl",
@@ -1056,10 +1056,10 @@
           ],
           "returns": "[]AstNodeEmbeddingEntry",
           "is_pub": true,
-          "line": 3281
+          "line": 3297
         }
       ],
-      "line": 317
+      "line": 320
     },
     {
       "type": "struct",
@@ -1067,7 +1067,7 @@
       "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
       "signature": "keyword_struct ParsedMember { ... }",
       "is_pub": false,
-      "line": 3315
+      "line": 3331
     },
     {
       "type": "struct",
@@ -1075,7 +1075,7 @@
       "match_hash": "a1b877e8d81db260185f98dfbe8b981183c9e06f76858f4204f4c6c12b724adf",
       "signature": "keyword_struct ParsedDoc { ... }",
       "is_pub": false,
-      "line": 3324
+      "line": 3340
     },
     {
       "type": "fn_private",
@@ -1087,7 +1087,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 3342
+      "line": 3358
     },
     {
       "type": "fn_private",
@@ -1101,7 +1101,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3350
+      "line": 3366
     },
     {
       "type": "fn_private",
@@ -1114,7 +1114,7 @@
       ],
       "returns": "ParsedDoc",
       "is_pub": false,
-      "line": 3381
+      "line": 3397
     },
     {
       "type": "fn_private",
@@ -1126,7 +1126,7 @@
       ],
       "returns": "ParsedMember",
       "is_pub": false,
-      "line": 3497
+      "line": 3513
     },
     {
       "type": "fn_private",
@@ -1139,7 +1139,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 3539
+      "line": 3555
     },
     {
       "type": "fn_private",
@@ -1153,7 +1153,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 3559
+      "line": 3575
     },
     {
       "type": "fn_private",
@@ -1167,7 +1167,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 3582
+      "line": 3598
     },
     {
       "type": "fn_private",
@@ -1181,7 +1181,7 @@
       ],
       "returns": "?[]u8",
       "is_pub": false,
-      "line": 3589
+      "line": 3605
     },
     {
       "type": "fn_private",
@@ -1197,73 +1197,73 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3597
+      "line": 3613
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 3613
+      "line": 3629
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 3637
+      "line": 3653
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 3687
+      "line": 3703
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 3728
+      "line": 3744
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText descriptor-bag format",
       "is_pub": false,
-      "line": 3776
+      "line": 3792
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 3803
+      "line": 3819
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 3819
+      "line": 3835
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 3827
+      "line": 3843
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
       "is_pub": false,
-      "line": 3842
+      "line": 3858
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder fluent setters return updated values",
       "is_pub": false,
-      "line": 3860
+      "line": 3876
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
       "is_pub": false,
-      "line": 3880
+      "line": 3896
     }
   ]
 }

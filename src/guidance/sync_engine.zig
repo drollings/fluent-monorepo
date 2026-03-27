@@ -1258,13 +1258,24 @@ fn syncGuidanceDb(
     defer if (cap_dir_abs) |p| allocator.free(p);
 
     // Load semantic aliases for embedding-based query steering
-    const aliases_path = std.fs.path.join(allocator, &.{ json_dir, "semantic-aliases.json" }) catch null;
-    defer if (aliases_path) |p| allocator.free(p);
+    const aliases_path = std.fs.path.join(allocator, &.{ json_dir, "semantic-aliases.json" }) catch |err| {
+        std.debug.print("warning: failed to build aliases path: {s}\n", .{@errorName(err)});
+        return;
+    };
+    defer allocator.free(aliases_path);
 
-    var aliases: ?vector_db_mod.SemanticAliases = if (aliases_path) |path|
-        vector_db_mod.loadSemanticAliases(allocator, path) catch null
-    else
-        null;
+    var aliases: ?vector_db_mod.SemanticAliases = blk: {
+        const loaded = vector_db_mod.loadSemanticAliases(allocator, aliases_path) catch |err| {
+            std.debug.print("warning: failed to load semantic aliases from {s}: {s}\n", .{ aliases_path, @errorName(err) });
+            break :blk null;
+        };
+        if (loaded) |ali| {
+            std.debug.print("semantic-aliases: loaded {d} aliases from {s}\n", .{ ali.aliases.len, aliases_path });
+            break :blk ali;
+        }
+        std.debug.print("semantic-aliases: no aliases found at {s}\n", .{aliases_path});
+        break :blk null;
+    };
     defer if (aliases) |*a| a.deinit();
 
     vector_db_mod.syncDatabase(allocator, json_dir, guidance_db_path, embedder, cap_dir_abs, aliases, cfg.embedding_cache_limit) catch |err| {

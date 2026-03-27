@@ -230,15 +230,11 @@ pub fn executeStagedWithAliasesOriginal(
     // If we have few results (< 3 code stages), follow used_by paths.
     if (stages.items.len < 5 and results.len > 0) {
         var seen_sources: std.StringHashMapUnmanaged(void) = .{};
-        defer {
-            var kit = seen_sources.keyIterator();
-            while (kit.next()) |k| allocator.free(k.*);
-            seen_sources.deinit(allocator);
-        }
+        defer seen_sources.deinit(allocator);
 
         for (stages.items) |s| {
             if (s.kind == .code or s.kind == .prose) {
-                try seen_sources.put(allocator, try allocator.dupe(u8, s.source), {});
+                seen_sources.put(allocator, s.source, {}) catch {};
             }
         }
 
@@ -254,7 +250,7 @@ pub fn executeStagedWithAliasesOriginal(
                     continue;
                 }
 
-                try seen_sources.put(allocator, try allocator.dupe(u8, ub_path), {});
+                seen_sources.put(allocator, ub_path, {}) catch {};
                 try stages.append(allocator, .{
                     .kind = .code,
                     .content = excerpt,
@@ -1010,5 +1006,3 @@ test "parseSkillDocContent: no front matter returns first paragraph up to blank 
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("First paragraph text.", result.?);
 }
-
-

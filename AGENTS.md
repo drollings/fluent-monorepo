@@ -35,7 +35,7 @@ AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
                          Follow source patterns and applicable skills only
 
 5. VERIFY (make):        make pre-commit
-                         build → test → guidance gen → lint → STRUCTURE.md
+                         build → test → lint → guidance gen → STRUCTURE.md
 ```
 
 ---
