@@ -161,8 +161,10 @@ Then you you must read
 │   │   ├── string.zig
 │   │   ├── target.zig
 │   │   ├── terminal.zig
+│   │   ├── types.zig                                              # Represents a unique node identifier; managed via ownership model; ensures stable references.
 │   │   └── url.zig                                                # url.zig — Generic URL validation helpers
 │   ├── coral
+│   │   ├── anonymize.zig                                          # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                                              # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── cache.zig                                              # cache.zig — 5-Tier Cache Hierarchy for Query Routing
 │   │   ├── cli.zig                                                # cli.zig — Ingestion CLI Command Implementation
@@ -171,6 +173,7 @@ Then you you must read
 │   │   ├── db.zig                                                 # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── executor.zig                                           # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── frontier.zig                                           # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
+│   │   ├── frontier_tool_compiler.zig                             # frontier_tool_compiler.zig — Compiles LLM-generated source into WASM tools.
 │   │   ├── main.zig
 │   │   ├── mcp.zig                                                # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── pattern.zig
@@ -206,6 +209,7 @@ Then you you must read
 │   │   ├── provider_discovery.zig                                 # External language provider discovery for guidance.
 │   │   ├── query_engine.zig                                       # query_engine.zig — explain, staged, show, test, check commands.
 │   │   ├── scrub.zig                                              # scrub.zig — Synthetic comment detection and scrubbing.
+│   │   ├── simhash.zig                                            # simhash.zig — 64-bit SimHash for near-duplicate detection.
 │   │   ├── staged.zig                                             # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                                          # STRUCTURE.md generator.
 │   │   ├── sync.zig
@@ -214,7 +218,8 @@ Then you you must read
 │   │   ├── tests.zig                                              # Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
 │   │   ├── todo.zig                                               # todo.zig — Work item lifecycle tracking for guidance.
 │   │   ├── triage.zig                                             # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
-│   │   └── types.zig
+│   │   ├── types.zig
+│   │   └── vector_db.zig                                          # vector_db.zig — Hybrid keyword + vector search for guidance generation.
 │   ├── llm
 │   │   └── root.zig                                               # llm — General-purpose LLM inference client.
 │   ├── ontology
@@ -256,6 +261,7 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
+├── CODE_QUALITY_REVIEW.md
 ├── GEMINI_FLUENT_WVR_STANDARD_ADDITIONS.md
 ├── GLM_FLUENT_GUIDANCE_ASSESSMENT.md
 ├── GLM_REVIEW_FLUENT_WVR_STANDARD_ADDITIONS.md
@@ -270,6 +276,8 @@ Then you you must read
 ├── requirements.txt
 ├── REVIEW_20260325.md
 ├── REVIEW_20260326.md
+├── REVIEW_20260326a.md
+├── REVIEW_20260326b.md
 ├── ROADMAP_COMPLETION.md
 ├── ROADMAP_COMPLETION_CHECKLIST.md
 ├── ROADMAP_MONOREPO_MARCH.md
@@ -277,6 +285,10 @@ Then you you must read
 ├── STRUCTURE.md
 ├── TEST_EXPLAIN_PROMPT.md
 ├── TODO.md
+├── TODO_20260326.md
+├── TODO_20260326_CHECKLIST.md
+├── TODO_20260326b.md
+├── TODO_20260326b_CHECKLIST.md
 ├── TODO_AUDIT_REMEDY.md
 ├── TODO_AUDIT_REMEDY_CHECKLIST.md
 ├── TODO_GUIDANCE_SECONDBRAIN.md

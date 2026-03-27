@@ -66,6 +66,21 @@
           "is_pub": false,
           "line": 105
         }
+    ,    {
+          "type": "fn_decl",
+          "name": "runParallel",
+          "match_hash": "b8ae6ec2ff8f67de2ba3c11ab434fb1de5eaf2e25a6a5b21dd2d73f4c886d3e9",
+          "signature": "fn runParallel(self: *Self, ctx: *ExecutionContext, requested_names: []const []const u8, pool: ?*std.Thread.Pool) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "ctx", "type": "*ExecutionContext" },
+            { "name": "requested_names", "type": "[]const []const u8" },
+            { "name": "pool", "type": "?*std.Thread.Pool" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 119
+        }
       ],
       "line": 48
     },
@@ -73,19 +88,19 @@
       "type": "test_decl",
       "name": "DagExecutor: init and run with no handlers (all skip)",
       "is_pub": false,
-      "line": 121
+      "line": 231
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: collectDeps includes transitive deps",
       "is_pub": false,
-      "line": 137
+      "line": 247
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: essential handler failure propagates",
       "is_pub": false,
-      "line": 158
+      "line": 268
     }
   ]
 }

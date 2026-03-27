@@ -85,7 +85,7 @@ fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
             try out.appendSlice(allocator, AnonymizationPattern.email.placeholder());
             i = end;
         } else {
-            try out.appendSlice(allocator, input[i..at + 1]);
+            try out.appendSlice(allocator, input[i .. at + 1]);
             i = at + 1;
         }
     }
@@ -115,11 +115,11 @@ fn replacePhones(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
                 try out.appendSlice(allocator, AnonymizationPattern.phone_us.placeholder());
                 i = j;
             } else {
-                try out.appendSlice(allocator, input[i..i + 1]);
+                try out.appendSlice(allocator, input[i .. i + 1]);
                 i += 1;
             }
         } else {
-            try out.appendSlice(allocator, input[i..i + 1]);
+            try out.appendSlice(allocator, input[i .. i + 1]);
             i += 1;
         }
     }
@@ -144,11 +144,11 @@ fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
                 try out.appendSlice(allocator, AnonymizationPattern.credit_card.placeholder());
                 i = j;
             } else {
-                try out.appendSlice(allocator, input[i..i + 1]);
+                try out.appendSlice(allocator, input[i .. i + 1]);
                 i += 1;
             }
         } else {
-            try out.appendSlice(allocator, input[i..i + 1]);
+            try out.appendSlice(allocator, input[i .. i + 1]);
             i += 1;
         }
     }

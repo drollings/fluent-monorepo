@@ -130,7 +130,7 @@ pub const ContextNodeSchema = struct {
     /// SQL bind indices — column order for INSERT OR REPLACE in context_nodes.
     /// Matches the column order in DDL_CONTEXT_NODES.
     pub const sql_bind_order = [_][]const u8{
-        "id", "lod0", "lod1", "lod2", "lod3", "lod4", "lod5",
+        "id",        "lod0",       "lod1",     "lod2",       "lod3",          "lod4", "lod5",
         "embedding", "valid_from", "valid_to", "confidence", "provenance_id",
     };
     const Self = @This();

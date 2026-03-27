@@ -1,0 +1,153 @@
+{
+  "meta": {
+    "module": "src.coral.anonymize",
+    "source": "src/coral/anonymize.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/coral/frontier.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "AnonymizationPattern",
+      "match_hash": "fefb7037264873aafec6157a8008bc71b3f0a623cd9fb58671b35e6e49f8e39c",
+      "signature": "keyword_enum AnonymizationPattern { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "email",
+          "is_pub": false,
+          "line": 15
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "phone_us",
+          "is_pub": false,
+          "line": 16
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "credit_card",
+          "is_pub": false,
+          "line": 17
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "placeholder",
+          "match_hash": "4aea789f50a3c879ccfb34ff7d92675fc38b6f5875f40e33734e3b0032d4bd4e",
+          "signature": "fn placeholder(self: AnonymizationPattern) -> []const u8",
+          "params": [
+            { "name": "self", "type": "AnonymizationPattern" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 19
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "fn_decl",
+      "name": "anonymizeContext",
+      "match_hash": "54cac12ad7353c9d582873a1e112d41b368eb70f113c9fbe5866ecb9b0814ca9",
+      "signature": "fn anonymizeContext(allocator: std.mem.Allocator, context: []const u8, patterns: []const AnonymizationPattern) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "context", "type": "[]const u8" },
+        { "name": "patterns", "type": "[]const AnonymizationPattern" }
+      ],
+      "returns": "[]u8",
+      "is_pub": true,
+      "line": 30
+    },
+    {
+      "type": "fn_private",
+      "name": "replacePattern",
+      "match_hash": "1c141a67a62f0521b473bcfcdaaa53943271b3be9ad660aed32d4c0f50cda39e",
+      "signature": "fn replacePattern(allocator: std.mem.Allocator, input: []const u8, pattern: AnonymizationPattern) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" },
+        { "name": "pattern", "type": "AnonymizationPattern" }
+      ],
+      "returns": "[]u8",
+      "is_pub": false,
+      "line": 46
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceEmails",
+      "match_hash": "58132a48634fc28914f1a8b07c86dbfecb273ae69b7e06ec9debd60c09b82c7f",
+      "signature": "fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": false,
+      "line": 59
+    },
+    {
+      "type": "fn_private",
+      "name": "isEmailChar",
+      "match_hash": "0d6a2214fa911d8a7def12f36bf1ce21c341dbd8bc1e493e87420e52faeec631",
+      "signature": "fn isEmailChar(ch: u8) -> bool",
+      "params": [
+        { "name": "ch", "type": "u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 95
+    },
+    {
+      "type": "fn_private",
+      "name": "replacePhones",
+      "match_hash": "ef991e2e24cc27864cc46b3d4a0c26d7e2a008a7d7505823c9dfc443f025ed0c",
+      "signature": "fn replacePhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": false,
+      "line": 100
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceCreditCards",
+      "match_hash": "000fdf74fc72a2895f0ac12fd5c4921aefedebe06a4fdeaedc9f28289100af31",
+      "signature": "fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": false,
+      "line": 130
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces email",
+      "is_pub": false,
+      "line": 163
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces US phone",
+      "is_pub": false,
+      "line": 175
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: no PII passes through unchanged",
+      "is_pub": false,
+      "line": 186
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: multiple patterns applied in order",
+      "is_pub": false,
+      "line": 198
+    }
+  ]
+}

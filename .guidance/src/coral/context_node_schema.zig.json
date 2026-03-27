@@ -188,7 +188,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 174
+          "line": 180
         }
     ,    {
           "type": "fn_decl",
@@ -201,7 +201,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 284
+          "line": 290
         }
     ,    {
           "type": "fn_decl",
@@ -215,7 +215,7 @@
           ],
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
-          "line": 288
+          "line": 294
         }
     ,    {
           "type": "fn_decl",
@@ -227,46 +227,52 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 298
+          "line": 304
         }
       ],
       "line": 129
     },
     {
       "type": "test_decl",
-      "name": "ContextNodeSchema: create and destroy",
+      "name": "ContextNodeSchema: sql_bind_order has correct length",
       "is_pub": false,
-      "line": 313
+      "line": 319
     },
     {
       "type": "test_decl",
-      "name": "ContextNodeSchema: viewOf set and get",
+      "name": "ContextNodeSchema: create and destroy",
       "is_pub": false,
       "line": 323
     },
     {
       "type": "test_decl",
+      "name": "ContextNodeSchema: viewOf set and get",
+      "is_pub": false,
+      "line": 333
+    },
+    {
+      "type": "test_decl",
       "name": "ContextNodeSchema: viewOf lod field access",
       "is_pub": false,
-      "line": 348
+      "line": 358
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: valid_to optional field",
       "is_pub": false,
-      "line": 370
+      "line": 380
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: round-trip serialization",
       "is_pub": false,
-      "line": 396
+      "line": 406
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: access denied on protected field",
       "is_pub": false,
-      "line": 424
+      "line": 434
     }
   ]
 }

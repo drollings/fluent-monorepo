@@ -9,12 +9,49 @@
   "members": [
     {
       "type": "struct",
+      "name": "CoralQueryParams",
+      "match_hash": "39519fa82b2a25c7b5b75ba6b5c14876db598b319df91df6ea50fd0d34ee270b",
+      "signature": "keyword_struct CoralQueryParams { ... }",
+      "comment": "Manages query parameters for Coral queries, owns state, ensures consistent invariants across sessions.",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "describeField",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
+          "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "reflection.FieldMeta",
+          "is_pub": true,
+          "line": 30
+        }
+      ],
+      "line": 27
+    },
+    {
+      "type": "struct",
       "name": "InsertNodeParams",
       "match_hash": "fd927d059b17d04b21ef380c35de94af89e9920270fd32c8d0790fe8a6c64a13",
       "signature": "keyword_struct InsertNodeParams { ... }",
       "comment": "Manages node insertion parameters with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": false,
-      "line": 32
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "describeField",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
+          "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "reflection.FieldMeta",
+          "is_pub": true,
+          "line": 47
+        }
+      ],
+      "line": 43
     },
     {
       "type": "struct",
@@ -23,7 +60,35 @@
       "signature": "keyword_struct ExplainParams { ... }",
       "comment": "Defines configuration parameters for Zig compilation; manages ownership and invariants during build.",
       "is_pub": false,
-      "line": 39
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "describeField",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
+          "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "reflection.FieldMeta",
+          "is_pub": true,
+          "line": 70
+        }
+      ],
+      "line": 66
+    },
+    {
+      "type": "fn_private",
+      "name": "validateRequiredFields",
+      "match_hash": "4f98115d739101e2dfece646a753839ae08265bf8de781ef83428a40db8a3c60",
+      "signature": "fn validateRequiredFields(T: type, args: std.json.ObjectMap) -> void",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "args", "type": "std.json.ObjectMap" }
+      ],
+      "returns": "void",
+      "comment": "Check that all required (identity=true) fields are present in the args map.",
+      "is_pub": false,
+      "line": 92
     },
     {
       "type": "struct",
@@ -32,7 +97,7 @@
       "signature": "keyword_struct ToolDef { ... }",
       "comment": "MCP tool descriptor: name, human-readable description, and JSON Schema for the input object.",
       "is_pub": true,
-      "line": 50
+      "line": 109
     },
     {
       "type": "struct",
@@ -41,7 +106,7 @@
       "signature": "keyword_struct JsonRpcRequest { ... }",
       "comment": "Incoming JSON-RPC 2.0 request frame; `id` is null for notifications.",
       "is_pub": false,
-      "line": 85
+      "line": 144
     },
     {
       "type": "struct",
@@ -64,7 +129,7 @@
           "returns": "void",
           "comment": "Serve requests from reader, writing responses to writer.\nReads Content-Length framed JSON-RPC messages until EOF.",
           "is_pub": true,
-          "line": 109
+          "line": 168
         }
     ,    {
           "type": "fn_decl",
@@ -78,7 +143,7 @@
           "returns": "[]const u8",
           "comment": "Handle a single JSON-RPC request.\nReturns an allocator-owned JSON response string (caller must free).\narena #5: all parse/routing scratch lives in req_arena; only the\nserialized response escapes to self.allocator.",
           "is_pub": true,
-          "line": 153
+          "line": 212
         }
     ,    {
           "type": "fn_private",
@@ -92,7 +157,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 172
+          "line": 231
         }
     ,    {
           "type": "fn_private",
@@ -106,7 +171,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 185
+          "line": 244
         }
     ,    {
           "type": "fn_private",
@@ -120,7 +185,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 200
+          "line": 259
         }
     ,    {
           "type": "fn_private",
@@ -134,7 +199,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 236
+          "line": 295
         }
     ,    {
           "type": "fn_private",
@@ -149,7 +214,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 270
+          "line": 329
         }
     ,    {
           "type": "fn_private",
@@ -164,7 +229,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 298
+          "line": 360
         }
     ,    {
           "type": "fn_private",
@@ -179,7 +244,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 337
+          "line": 402
         }
     ,    {
           "type": "fn_private",
@@ -195,7 +260,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 393
+          "line": 461
         }
     ,    {
           "type": "fn_private",
@@ -208,10 +273,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 407
+          "line": 475
         }
       ],
-      "line": 97
+      "line": 156
     },
     {
       "type": "fn_private",
@@ -224,7 +289,7 @@
       ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
-      "line": 419
+      "line": 487
     },
     {
       "type": "fn_private",
@@ -238,31 +303,37 @@
       "returns": "void",
       "comment": "Write `s` to `writer` with JSON string escaping (no surrounding quotes).",
       "is_pub": false,
-      "line": 444
+      "line": 512
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest initialize",
       "is_pub": false,
-      "line": 464
+      "line": 532
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest tools/list",
       "is_pub": false,
-      "line": 489
+      "line": 557
     },
     {
       "type": "test_decl",
       "name": "McpServer: tools/call coral_query routes to L5",
       "is_pub": false,
-      "line": 515
+      "line": 583
     },
     {
       "type": "test_decl",
       "name": "McpServer: unknown method returns error -32601",
       "is_pub": false,
-      "line": 542
+      "line": 610
+    },
+    {
+      "type": "test_decl",
+      "name": "McpServer: missing required field returns error",
+      "is_pub": false,
+      "line": 634
     }
   ]
 }

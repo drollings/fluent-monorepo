@@ -477,7 +477,7 @@ pub fn build(b: *std.Build) void {
     coral_executor_tests.linkLibC();
     coral_executor_tests.linkSystemLibrary("sqlite3");
 
-    // -- Coral frontier tests (M6) --
+    // -- Coral frontier tests (M6 / M2.4 / M4.2) --
     const coral_frontier_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/coral/frontier.zig"),
@@ -485,11 +485,33 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "wasm", .module = wasm_module },
             },
         }),
     });
     coral_frontier_tests.linkLibC();
     coral_frontier_tests.linkSystemLibrary("sqlite3");
+
+    // -- Resolver tests (M3.1 getLevels) --
+    const resolver_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/resolver.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "reflection", .module = reflection_module },
+            },
+        }),
+    });
+
+    // -- Typed ID handle tests (M6.2) --
+    const types_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/types.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
 
     // -- Guidance vector_db tests (Task 3.1) --
     const guidance_vector_db_tests = b.addTest(.{
@@ -555,4 +577,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_simhash_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_frontier_tool_compiler_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_anonymize_tests).step);
+    test_step.dependOn(&b.addRunArtifact(resolver_tests).step);
+    test_step.dependOn(&b.addRunArtifact(types_tests).step);
 }

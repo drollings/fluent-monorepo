@@ -70,7 +70,7 @@
     {
       "type": "struct",
       "name": "L1Cache",
-      "match_hash": "43ad3d400ceade64154bee12e803b63fb52e05df1fe1f16036eaa414a75f21f8",
+      "match_hash": "c35eede1265d83dbfaccdee6b264cac4f4bbfee7990f9507cb186022ba27c155",
       "signature": "keyword_struct L1Cache { ... }",
       "comment": "Manages low-latency cache operations with fixed-size buffers; owned by the system; ensures consistent key-value storage.",
       "is_pub": true,
@@ -85,7 +85,20 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 54
+          "line": 75
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "initWithCapacity",
+          "match_hash": "2510eb3298e16f2c01b34a70aa541d1c28109637d0bb31b78e9c39a214409302",
+          "signature": "fn initWithCapacity(allocator: std.mem.Allocator, max_entries: usize) -> L1Cache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "max_entries", "type": "usize" }
+          ],
+          "returns": "L1Cache",
+          "is_pub": true,
+          "line": 79
         }
     ,    {
           "type": "fn_decl",
@@ -97,7 +110,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 61
+          "line": 87
         }
     ,    {
           "type": "fn_decl",
@@ -109,8 +122,9 @@
             { "name": "query_hash", "type": "[]const u8" }
           ],
           "returns": "?RoutingResult",
+          "comment": "Look up `query_hash` and promote the entry to most-recently-used.\nReturns a copy of the RoutingResult, or null if not cached.",
           "is_pub": true,
-          "line": 70
+          "line": 101
         }
     ,    {
           "type": "fn_decl",
@@ -123,8 +137,9 @@
             { "name": "result", "type": "RoutingResult" }
           ],
           "returns": "void",
+          "comment": "Insert (or replace) `result` for `query_hash`, evicting the LRU entry\nif the cache is at `max_entries` capacity.",
           "is_pub": true,
-          "line": 74
+          "line": 113
         }
     ,    {
           "type": "fn_private",
@@ -137,7 +152,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 80
+          "line": 158
         }
     ,    {
           "type": "fn_private",
@@ -150,10 +165,10 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 93
+          "line": 171
         }
       ],
-      "line": 50
+      "line": 67
     },
     {
       "type": "struct",
@@ -176,7 +191,7 @@
           ],
           "returns": "QueueReactorBuilder",
           "is_pub": true,
-          "line": 137
+          "line": 215
         }
     ,    {
           "type": "fn_decl",
@@ -189,7 +204,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 141
+          "line": 219
         }
     ,    {
           "type": "fn_decl",
@@ -202,7 +217,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 146
+          "line": 224
         }
     ,    {
           "type": "fn_decl",
@@ -215,7 +230,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 151
+          "line": 229
         }
     ,    {
           "type": "fn_decl",
@@ -228,7 +243,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 156
+          "line": 234
         }
     ,    {
           "type": "fn_decl",
@@ -241,7 +256,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 161
+          "line": 239
         }
     ,    {
           "type": "fn_decl",
@@ -255,7 +270,7 @@
           "returns": "*@This()",
           "comment": "Enable L4.5 local decomposition with the supplied LLM config.",
           "is_pub": true,
-          "line": 167
+          "line": 245
         }
     ,    {
           "type": "fn_decl",
@@ -269,7 +284,7 @@
           "returns": "*@This()",
           "comment": "Enable async routing via a thread pool with `n` worker threads.\nPass 0 to use the default (number of logical CPUs).",
           "is_pub": true,
-          "line": 174
+          "line": 252
         }
     ,    {
           "type": "fn_decl",
@@ -283,7 +298,7 @@
           "returns": "*@This()",
           "comment": "Enable L5 frontier LLM routing with the supplied config.",
           "is_pub": true,
-          "line": 180
+          "line": 258
         }
     ,    {
           "type": "fn_decl",
@@ -295,10 +310,10 @@
           ],
           "returns": "QueueReactor",
           "is_pub": true,
-          "line": 185
+          "line": 263
         }
       ],
-      "line": 125
+      "line": 203
     },
     {
       "type": "struct",
@@ -320,7 +335,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 236
+          "line": 314
         }
     ,    {
           "type": "fn_decl",
@@ -332,7 +347,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 245
+          "line": 323
         }
     ,    {
           "type": "fn_decl",
@@ -346,7 +361,7 @@
           "returns": "*Task",
           "comment": "Submit `query` as an async routing task on the thread pool.\nReturns a heap-allocated Task; caller must call `task.arena.deinit()` after\ninspecting the result.  Falls back to synchronous execution if no thread pool.",
           "is_pub": true,
-          "line": 276
+          "line": 354
         }
     ,    {
           "type": "fn_private",
@@ -359,7 +374,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 304
+          "line": 382
         }
     ,    {
           "type": "fn_decl",
@@ -373,7 +388,7 @@
           "returns": "anyerror!RoutingResult",
           "comment": "Route a query through the L1-L5 hierarchy.",
           "is_pub": true,
-          "line": 319
+          "line": 397
         }
     ,    {
           "type": "fn_private",
@@ -387,7 +402,7 @@
           "returns": "?WasmTool",
           "comment": "Return the first tested + non-empty WASM tool from the pre-loaded slice.\nFull trait-matching via popCount bitsets is deferred to M5+.",
           "is_pub": false,
-          "line": 414
+          "line": 492
         }
     ,    {
           "type": "fn_private",
@@ -401,7 +416,7 @@
           "returns": "?[]const u8",
           "comment": "Decode a WasmTool's base64 bytes and call its \"run\" entry-point with\n`query` as input.  Returns the raw output (allocator-owned) or null on\nany failure (no tool found, decode error, Extism runtime unavailable).",
           "is_pub": false,
-          "line": 425
+          "line": 503
         }
     ,    {
           "type": "fn_private",
@@ -414,7 +429,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 457
+          "line": 535
         }
     ,    {
           "type": "fn_private",
@@ -427,7 +442,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 482
+          "line": 560
         }
     ,    {
           "type": "fn_private",
@@ -440,7 +455,7 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 515
+          "line": 593
         }
     ,    {
           "type": "fn_private",
@@ -454,7 +469,7 @@
           "returns": "?RoutingResult",
           "comment": "Call the frontier LLM with a minimized context prompt.\nReturns null when frontier_cfg is not set or the LLM call fails.\nOn success, returns a RoutingResult with llm_response set (allocator-owned).",
           "is_pub": false,
-          "line": 534
+          "line": 612
         }
     ,    {
           "type": "fn_private",
@@ -468,7 +483,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": false,
-          "line": 569
+          "line": 647
         }
     ,    {
           "type": "fn_private",
@@ -483,7 +498,7 @@
           "returns": "?[]ContextNode",
           "comment": "Decompose `query` into sub-tasks via local LLM and route each recursively.\nReturns merged nodes slice (owned by self.allocator) or null on failure.\n`depth` guards against unbounded recursion; max_depth comes from DecomposerConfig.",
           "is_pub": false,
-          "line": 597
+          "line": 675
         }
     ,    {
           "type": "fn_decl",
@@ -498,7 +513,7 @@
           "returns": "void",
           "comment": "Cache a successful routing result in L1.",
           "is_pub": true,
-          "line": 640
+          "line": 718
         }
     ,    {
           "type": "fn_private",
@@ -511,7 +526,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 646
+          "line": 724
         }
     ,    {
           "type": "fn_private",
@@ -525,88 +540,138 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 659
+          "line": 737
         }
       ],
-      "line": 213
+      "line": 291
+    },
+    {
+      "type": "struct",
+      "name": "ParallelRouter",
+      "match_hash": "c410a0893f626316ecac288ce474c518b060b506bf452fa895dae5c19aea7ab4",
+      "signature": "keyword_struct ParallelRouter { ... }",
+      "comment": "Routes a batch of queries in parallel using the reactor's thread pool.\nFalls back to sequential routing if no thread pool is configured.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "0997a7fcbc5d9a65fb647cf2c54c73e49839f3270a9f92fc6e692264312cae15",
+          "signature": "fn init(reactor: *QueueReactor) -> Self",
+          "params": [
+            { "name": "reactor", "type": "*QueueReactor" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 792
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "routeBatch",
+          "match_hash": "d4b4eecd6fa26696b7fc350674ebb49209ba305dcf378989e5a4c4b6b0f21d80",
+          "signature": "fn routeBatch(self: *Self, allocator: std.mem.Allocator, queries: []const []const u8) -> []RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "queries", "type": "[]const []const u8" }
+          ],
+          "returns": "[]RoutingResult",
+          "comment": "Route all queries in `queries` concurrently.\nReturns a slice of RoutingResults (same order as input).\nCaller must free results and each result's nodes.",
+          "is_pub": true,
+          "line": 799
+        }
+      ],
+      "line": 787
     },
     {
       "type": "test_decl",
       "name": "L1Cache: put and get",
       "is_pub": false,
-      "line": 709
+      "line": 863
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L1 cache hit",
       "is_pub": false,
-      "line": 728
+      "line": 882
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L5 fallback",
       "is_pub": false,
-      "line": 757
+      "line": 911
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: builds with library",
       "is_pub": false,
-      "line": 775
+      "line": 929
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: error when library missing",
       "is_pub": false,
-      "line": 793
+      "line": 947
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: work queue fields exist",
       "is_pub": false,
-      "line": 803
+      "line": 957
     },
     {
       "type": "test_decl",
       "name": "Library.findNodeByName: finds by lod4",
       "is_pub": false,
-      "line": 822
+      "line": 976
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L2 skipped when no wasm_tools",
       "is_pub": false,
-      "line": 843
+      "line": 997
     },
     {
       "type": "test_decl",
       "name": "findWasmTool: returns null when all tools fail test_passed check",
       "is_pub": false,
-      "line": 860
+      "line": 1014
     },
     {
       "type": "test_decl",
       "name": "Library.traverseFrom: returns root node",
       "is_pub": false,
-      "line": 880
+      "line": 1034
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: submitAsync falls back to synchronous without thread pool",
       "is_pub": false,
-      "line": 902
+      "line": 1056
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: threadCount initialises thread pool",
       "is_pub": false,
-      "line": 924
+      "line": 1078
+    },
+    {
+      "type": "test_decl",
+      "name": "L1Cache: concurrent reads are safe",
+      "is_pub": false,
+      "line": 1094
     },
     {
       "type": "test_decl",
       "name": "M5: concurrent writes via thread pool do not deadlock",
       "is_pub": false,
-      "line": 940
+      "line": 1119
+    },
+    {
+      "type": "test_decl",
+      "name": "ParallelRouter: routeBatch with empty input",
+      "is_pub": false,
+      "line": 1167
     }
   ]
 }

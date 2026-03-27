@@ -880,7 +880,7 @@ pub const WasmToolCacheEntry = struct {
     access_count: usize,
 };
 
-/// WASM tool cache — stores compiled tools in memory with TTL and LRU eviction.
+/// Manages Wasm cache structures, owns buffers, supports initialization/deinit; ensures consistent state across operations.
 pub const WasmToolCache = struct {
     const Self = @This();
     const DEFAULT_TTL_SECONDS: u64 = 3600; // 1 hour
@@ -1293,3 +1293,4 @@ test "verifyWithTests: empty test cases returns true" {
     const result = verifyWithTests(testing.allocator, &[_]u8{}, &[_]ToolTestCase{});
     try testing.expect(result);
 }
+

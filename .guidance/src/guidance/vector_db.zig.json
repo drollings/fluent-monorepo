@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "module": "src.guidance.vector_db",
+    "source": "src/guidance/vector_db.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/vector/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "SearchResult",
+      "match_hash": "c6e2ab8efb9e6be0d13933ea0b7647d3aed142ce066deb3a508c04bcef8a57cb",
+      "signature": "keyword_struct SearchResult { ... }",
+      "is_pub": true,
+      "line": 9
+    },
+    {
+      "type": "enum",
+      "name": "GuidanceSearchMode",
+      "match_hash": "db1df1a7e62cb6e75fa038559a937175c6f2181ea8c885e2d387e58e17d7df61",
+      "signature": "keyword_enum GuidanceSearchMode { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "keyword_only",
+          "is_pub": false,
+          "line": 25
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "hybrid",
+          "is_pub": false,
+          "line": 26
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "embedding_only",
+          "is_pub": false,
+          "line": 27
+        }
+      ],
+      "line": 24
+    },
+    {
+      "type": "fn_decl",
+      "name": "hybridSearch",
+      "match_hash": "b01ded4424414b55a83183fcc71b7e40bf6a53b7f60a7101cfe4b8125514e97a",
+      "signature": "fn hybridSearch(allocator: std.mem.Allocator, keyword_results: []const SearchResult, vector_results: ?[]const SearchResult, limit: usize, config: SearchConfig) -> []SearchResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "keyword_results", "type": "[]const SearchResult" },
+        { "name": "vector_results", "type": "?[]const SearchResult" },
+        { "name": "limit", "type": "usize" },
+        { "name": "config", "type": "SearchConfig" }
+      ],
+      "returns": "[]SearchResult",
+      "is_pub": true,
+      "line": 34
+    },
+    {
+      "type": "test_decl",
+      "name": "hybridSearch: keyword-only returns sorted results",
+      "is_pub": false,
+      "line": 99
+    },
+    {
+      "type": "test_decl",
+      "name": "hybridSearch: vector results boost existing keyword matches",
+      "is_pub": false,
+      "line": 115
+    },
+    {
+      "type": "test_decl",
+      "name": "hybridSearch: empty inputs return empty slice",
+      "is_pub": false,
+      "line": 135
+    }
+  ]
+}

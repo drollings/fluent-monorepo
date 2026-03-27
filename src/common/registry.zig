@@ -332,6 +332,38 @@ pub fn resolveByCapability(
     return best;
 }
 
+/// Resolves a target registry entry using capability hierarchy and bit sets, returning a pointer to the registry item.
+pub fn resolveByCapabilityWithHierarchy(
+    self: *const TargetRegistry,
+    allocator: std.mem.Allocator,
+    needed: *const std.bit_set.DynamicBitSetUnmanaged,
+    ancestor_caps: []const []const u8,
+) !?*Target {
+    // Fast path: exact or best match without hierarchy.
+    if (try self.resolveByCapability(allocator, needed)) |t| {
+        const dist = try capabilityDistance(allocator, needed, &t.provides);
+        if (dist == 0) return t; // exact match
+    }
+
+    if (ancestor_caps.len == 0) return self.resolveByCapability(allocator, needed);
+
+    // Expand needed with capabilities that map to known bit indices in this
+    // interner.  Unknown ancestor names are silently skipped.
+    var expanded = try needed.clone(allocator);
+    defer expanded.deinit(allocator);
+
+    for (ancestor_caps) |cap_name| {
+        if (self.interner.getIndex(cap_name)) |idx| {
+            if (idx >= expanded.bit_length) {
+                try expanded.resize(allocator, idx + 1, false);
+            }
+            expanded.set(idx);
+        }
+    }
+
+    return self.resolveByCapability(allocator, &expanded);
+}
+
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
@@ -752,3 +784,42 @@ test "resolveByCapability: closest partial match returned" {
     try testing.expect(result != null);
     try testing.expectEqualStrings("full", result.?.name);
 }
+
+test "resolveByCapabilityWithHierarchy: matches via ancestor capability" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    // Register a target providing "Person" capability.
+    var builder = registry.target("person_handler", .command);
+    try builder.provides(&.{"Person"}).register();
+
+    // We query with "Scientist" but the target only knows "Person".
+    // The ancestor chain includes "Person" (Scientist is-a Person).
+    _ = try interner.intern("Scientist");
+    var needed = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(testing.allocator, interner.count());
+    defer needed.deinit(testing.allocator);
+    needed.set(interner.getIndex("Scientist").?);
+
+    const ancestor_caps = &[_][]const u8{"Person"};
+    const result = try registry.resolveByCapabilityWithHierarchy(testing.allocator, &needed, ancestor_caps);
+    try testing.expect(result != null);
+    try testing.expectEqualStrings("person_handler", result.?.name);
+}
+
+test "resolveByCapabilityWithHierarchy: no ancestors returns same as resolveByCapability" {
+    var interner = StringInterner.init(testing.allocator);
+    defer interner.deinit();
+    var registry = TargetRegistry.init(testing.allocator, &interner);
+    defer registry.deinit();
+
+    _ = try interner.intern("cap_x");
+    var needed = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(testing.allocator, interner.count());
+    defer needed.deinit(testing.allocator);
+    needed.set(0);
+
+    const result = try registry.resolveByCapabilityWithHierarchy(testing.allocator, &needed, &[_][]const u8{});
+    try testing.expect(result == null); // empty registry
+}
+

@@ -32,10 +32,23 @@ const SQLITE_STATIC: c.sqlite3_destructor_type = null;
 const BUSY_TIMEOUT_MS: c_int = 5000;
 
 // ---------------------------------------------------------------------------
-// §3.5 NodeId — i64 matching SQLite INTEGER PRIMARY KEY
+// §3.5 NodeId — typed enum wrapping i64 for compile-time ID safety
 // ---------------------------------------------------------------------------
 
-pub const NodeId = i64;
+/// Typed handle for a ContextNode's primary key.
+/// Using an enum prevents accidental cross-assignment with SessionId or TargetId.
+/// Conversion: nodeIdFromInt() / nodeIdToInt()
+pub const NodeId = enum(i64) { _ };
+
+/// Cast an i64 SQLite row id to a NodeId.
+pub fn nodeIdFromInt(i: i64) NodeId {
+    return @enumFromInt(i);
+}
+
+/// Extract the underlying i64 from a NodeId for SQLite binding.
+pub fn nodeIdToInt(id: NodeId) i64 {
+    return @intFromEnum(id);
+}
 
 // ---------------------------------------------------------------------------
 // §3.1 ContextNode — universal semantic entity
@@ -239,10 +252,7 @@ pub const GraphNode = struct {
     graph_distance: u32,
 };
 
-/// WasmTool — mirror of the `wasm_tools` SQLite table.
-///
-/// `editable` gives zero-overhead reflection support for TUI/REPL field
-/// editing, config-file hydration, and DynamicEditable round-trips.
+/// Manages WasmTool functionality, owns runtime state, ensures consistent initialization; not thread-safe.
 pub const WasmTool = struct {
     id: i64 = 0,
     target_id: i64 = 0,
@@ -250,6 +260,10 @@ pub const WasmTool = struct {
     schema_hash: []const u8 = "",
     test_passed: bool = false,
     created_at: f64 = 0.0,
+    /// Optional expiry timestamp (Unix epoch seconds).  Null = never expires.
+    expires_at: ?f64 = null,
+    /// Number of times this tool has been invoked (LRU tracking).
+    access_count: i32 = 0,
     /// Zero-size reflection mixin.
     editable: reflection.Editable(@This()) = .{},
 };
@@ -358,10 +372,16 @@ pub const Library = struct {
         }
         // Initialize schema version tracking
         try self.exec(schema.DDL_SCHEMA_VERSION);
-        // Insert version row if not present
-        try self.exec(
-            \\INSERT OR IGNORE INTO schema_version (version) VALUES (0)
+        // For fresh databases, set version to SCHEMA_VERSION so migrate() is a
+        // no-op (DDL already created tables with current column set).
+        // Existing databases retain their version via INSERT OR IGNORE.
+        const sql = try std.fmt.allocPrint(
+            self.allocator,
+            "INSERT OR IGNORE INTO schema_version (version) VALUES ({d})",
+            .{schema.SCHEMA_VERSION},
         );
+        defer self.allocator.free(sql);
+        try self.exec(sql);
         self.initialized = true;
     }
 
@@ -523,8 +543,8 @@ pub const Library = struct {
         defer self.mu.unlock();
         const sql =
             \\INSERT OR REPLACE INTO wasm_tools
-            \\    (id, target_id, wasm_b64, schema_hash, test_passed, created_at)
-            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            \\    (id, target_id, wasm_b64, schema_hash, test_passed, created_at, expires_at, access_count)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         ;
         const stmt = try self.prepare(sql);
         defer _ = c.sqlite3_finalize(stmt);
@@ -535,6 +555,12 @@ pub const Library = struct {
         _ = c.sqlite3_bind_text(stmt, 4, tool.schema_hash.ptr, @intCast(tool.schema_hash.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 5, if (tool.test_passed) 1 else 0);
         _ = c.sqlite3_bind_double(stmt, 6, tool.created_at);
+        if (tool.expires_at) |exp| {
+            _ = c.sqlite3_bind_double(stmt, 7, exp);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 7);
+        }
+        _ = c.sqlite3_bind_int64(stmt, 8, tool.access_count);
 
         _ = try step(stmt);
     }
@@ -542,7 +568,7 @@ pub const Library = struct {
     /// Fetch a WasmTool by id.  Strings are allocator-owned; free with freeWasmTool().
     pub fn fetchWasmTool(self: *Self, id: i64) !?WasmTool {
         const sql =
-            \\SELECT target_id, wasm_b64, schema_hash, test_passed, created_at
+            \\SELECT target_id, wasm_b64, schema_hash, test_passed, created_at, expires_at, access_count
             \\FROM wasm_tools WHERE id = ?1
         ;
         const stmt = try self.prepare(sql);
@@ -555,6 +581,10 @@ pub const Library = struct {
         const wasm_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
         const hash_ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 2);
         const hash_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 2));
+        const expires_at: ?f64 = if (c.sqlite3_column_type(stmt, 5) == c.SQLITE_NULL)
+            null
+        else
+            c.sqlite3_column_double(stmt, 5);
 
         return WasmTool{
             .id = id,
@@ -563,6 +593,8 @@ pub const Library = struct {
             .schema_hash = try self.allocator.dupe(u8, if (hash_ptr != null) hash_ptr[0..hash_len] else ""),
             .test_passed = c.sqlite3_column_int(stmt, 3) != 0,
             .created_at = c.sqlite3_column_double(stmt, 4),
+            .expires_at = expires_at,
+            .access_count = @intCast(c.sqlite3_column_int(stmt, 6)),
         };
     }
 
@@ -570,6 +602,22 @@ pub const Library = struct {
     pub fn freeWasmTool(self: *Self, tool: WasmTool) void {
         self.allocator.free(tool.wasm_b64);
         self.allocator.free(tool.schema_hash);
+    }
+
+    /// Delete WASM tools whose `expires_at` timestamp has passed.
+    /// No-op for tools with null `expires_at`.
+    pub fn cleanupExpiredTools(self: *Self) !void {
+        const now: f64 = @floatFromInt(std.time.timestamp());
+        const sql =
+            \\DELETE FROM wasm_tools
+            \\WHERE expires_at IS NOT NULL AND expires_at < ?1
+        ;
+        self.mu.lock();
+        defer self.mu.unlock();
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_double(stmt, 1, now);
+        _ = try step(stmt);
     }
 
     // ------------------------------------------------------------------
@@ -891,6 +939,49 @@ pub const Library = struct {
         return result.toOwnedSlice(allocator);
     }
 
+    /// Return all ancestor type names (lod4 of type nodes) for `entity_id`
+    /// via the transitive type hierarchy.  Used for duck-typing capability
+    /// resolution: a tool registered for "Person" also matches "Scientist".
+    ///
+    /// Returns an allocator-owned slice of interned strings from `lod4` of
+    /// ancestor context_nodes.  Caller must free both the slice and each string.
+    pub fn getCapabilitiesForEntity(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        entity_id: i64,
+    ) ![][]const u8 {
+        const sql =
+            \\WITH RECURSIVE ancestors(id) AS (
+            \\    SELECT type_id FROM entity_types WHERE entity_id = ?1
+            \\    UNION
+            \\    SELECT et.type_id FROM entity_types et
+            \\    JOIN ancestors a ON a.id = et.entity_id
+            \\)
+            \\SELECT DISTINCT cn.lod4
+            \\FROM ancestors a
+            \\JOIN context_nodes cn ON cn.id = a.id
+            \\WHERE cn.lod4 != ''
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
+
+        var result: std.ArrayListUnmanaged([]const u8) = .{};
+        errdefer {
+            for (result.items) |s| allocator.free(s);
+            result.deinit(allocator);
+        }
+
+        while (try step(stmt)) {
+            const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 0);
+            const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+            const name = try allocator.dupe(u8, if (ptr != null) ptr[0..len] else "");
+            try result.append(allocator, name);
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
     // ------------------------------------------------------------------
     // YAGO ingestion helpers
     // ------------------------------------------------------------------
@@ -901,6 +992,59 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
         _ = c.sqlite3_bind_int64(stmt, 2, type_id);
+        _ = try step(stmt);
+    }
+
+    /// Return all predicates inherited by `entity_id` via its transitive
+    /// type hierarchy.  Uses the `property_uses` table populated during YAGO
+    /// ingestion.  Returns an allocator-owned slice; caller must free each
+    /// string and the slice itself.
+    pub fn getInheritedProperties(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        entity_id: i64,
+    ) ![][]const u8 {
+        const sql =
+            \\WITH RECURSIVE ancestors(id) AS (
+            \\    SELECT type_id FROM entity_types WHERE entity_id = ?1
+            \\    UNION
+            \\    SELECT et.type_id FROM entity_types et
+            \\    JOIN ancestors a ON a.id = et.entity_id
+            \\)
+            \\SELECT DISTINCT pu.predicate
+            \\FROM property_uses pu
+            \\JOIN ancestors a ON a.id = pu.domain_type_id
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
+
+        var result: std.ArrayListUnmanaged([]const u8) = .{};
+        errdefer {
+            for (result.items) |s| allocator.free(s);
+            result.deinit(allocator);
+        }
+
+        while (try step(stmt)) {
+            const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 0);
+            const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+            const pred = try allocator.dupe(u8, if (ptr != null) ptr[0..len] else "");
+            try result.append(allocator, pred);
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
+    /// Insert a (predicate, domain_type_id) row into property_uses.
+    /// Idempotent — uses INSERT OR IGNORE.
+    pub fn insertPropertyUse(self: *Self, predicate: []const u8, domain_type_id: i64) !void {
+        const sql =
+            \\INSERT OR IGNORE INTO property_uses (predicate, domain_type_id) VALUES (?1, ?2)
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_text(stmt, 1, predicate.ptr, @intCast(predicate.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, domain_type_id);
         _ = try step(stmt);
     }
 
@@ -1194,13 +1338,15 @@ fn testOpenLib(allocator: std.mem.Allocator) !*Library {
     return lib;
 }
 
-test "NodeId: is i64" {
-    const nid: NodeId = 42;
-    try testing.expectEqual(@as(i64, 42), nid);
-    const zero: NodeId = 0;
-    try testing.expectEqual(@as(i64, 0), zero);
-    const neg: NodeId = -1;
-    try testing.expectEqual(@as(i64, -1), neg);
+test "NodeId: round-trip through helpers" {
+    const nid = nodeIdFromInt(42);
+    try testing.expectEqual(@as(i64, 42), nodeIdToInt(nid));
+    const zero = nodeIdFromInt(0);
+    try testing.expectEqual(@as(i64, 0), nodeIdToInt(zero));
+    const neg = nodeIdFromInt(-1);
+    try testing.expectEqual(@as(i64, -1), nodeIdToInt(neg));
+    // Verify NodeId is a distinct type (not bare i64)
+    comptime try testing.expect(NodeId != i64);
 }
 
 test "ContextNode init" {
@@ -1800,7 +1946,7 @@ test "Library: getAllAncestors returns empty for unknown entity" {
     try testing.expectEqual(@as(usize, 0), ancestors.len);
 }
 
-test "Library: getSchemaVersion returns 0 before migration" {
+test "Library: getSchemaVersion returns SCHEMA_VERSION after initSchema" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
@@ -1809,11 +1955,12 @@ test "Library: getSchemaVersion returns 0 before migration" {
     defer lib.deinit();
     try lib.initSchema();
 
+    // Fresh installs are set to SCHEMA_VERSION so migrate() is a no-op.
     const v = try lib.getSchemaVersion();
-    try testing.expectEqual(@as(u32, 0), v);
+    try testing.expectEqual(schema.SCHEMA_VERSION, v);
 }
 
-test "Library: migrate advances schema version" {
+test "Library: migrate is idempotent on fresh install" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
@@ -1822,7 +1969,102 @@ test "Library: migrate advances schema version" {
     defer lib.deinit();
     try lib.initSchema();
 
+    // Fresh install starts at SCHEMA_VERSION; migrate() should be a no-op.
     try lib.migrate();
     const v = try lib.getSchemaVersion();
     try testing.expectEqual(schema.SCHEMA_VERSION, v);
 }
+
+test "Library.getCapabilitiesForEntity: returns capabilities for subtype" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    // Insert type nodes: Person (id=1), Scientist (id=2 is-a Person)
+    var person_node = try ContextNode.init(1, "Person", "A human being.", allocator);
+    defer person_node.free(allocator);
+    try lib.insertNode(person_node);
+
+    var scientist_node = try ContextNode.init(2, "Scientist", "A researcher.", allocator);
+    defer scientist_node.free(allocator);
+    try lib.insertNode(scientist_node);
+
+    // Scientist (entity 10) has type Scientist (2), which is-a Person (1).
+    try lib.insertEntityType(10, 2);
+    try lib.insertEntityType(2, 1);
+
+    const caps = try lib.getCapabilitiesForEntity(allocator, 10);
+    defer {
+        for (caps) |s| allocator.free(s);
+        allocator.free(caps);
+    }
+
+    // Should include both "Scientist" and "Person" from the type chain.
+    var found_scientist = false;
+    var found_person = false;
+    for (caps) |cap| {
+        if (std.mem.eql(u8, cap, "Scientist")) found_scientist = true;
+        if (std.mem.eql(u8, cap, "Person")) found_person = true;
+    }
+    try testing.expect(found_scientist);
+    try testing.expect(found_person);
+}
+
+test "Library.getCapabilitiesForEntity: empty for unknown entity" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    const caps = try lib.getCapabilitiesForEntity(allocator, 9999);
+    defer {
+        for (caps) |s| allocator.free(s);
+        allocator.free(caps);
+    }
+    try testing.expectEqual(@as(usize, 0), caps.len);
+}
+
+test "Library.getInheritedProperties: returns predicates via type hierarchy" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    // Person type node (id=1).
+    var person_node = try ContextNode.init(1, "Person", "A human.", allocator);
+    defer person_node.free(allocator);
+    try lib.insertNode(person_node);
+
+    // Register "name" and "birthDate" predicates on Person type.
+    try lib.insertPropertyUse("name", 1);
+    try lib.insertPropertyUse("birthDate", 1);
+
+    // Scientist (entity 20) has type Person (1).
+    try lib.insertEntityType(20, 1);
+
+    const props = try lib.getInheritedProperties(allocator, 20);
+    defer {
+        for (props) |s| allocator.free(s);
+        allocator.free(props);
+    }
+
+    var found_name = false;
+    var found_birth = false;
+    for (props) |p| {
+        if (std.mem.eql(u8, p, "name")) found_name = true;
+        if (std.mem.eql(u8, p, "birthDate")) found_birth = true;
+    }
+    try testing.expect(found_name);
+    try testing.expect(found_birth);
+}
+

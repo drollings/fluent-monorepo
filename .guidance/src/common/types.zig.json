@@ -1,0 +1,163 @@
+{
+  "meta": {
+    "module": "src.common.types",
+    "source": "src/common/types.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "NodeId",
+      "match_hash": "cf1285d8b2f6e3870ce23b57bb88ff3a0823297dcc6605152ccfd8ff96a2d04a",
+      "signature": "keyword_enum NodeId { ... }",
+      "comment": "Represents a unique node identifier; managed via ownership model; ensures stable references.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "_",
+          "is_pub": false,
+          "line": 2
+        }
+      ],
+      "line": 2
+    },
+    {
+      "type": "enum",
+      "name": "SessionId",
+      "match_hash": "0938b85de2db2df59d2034ce6022e077eaaffbd7ea740825bf235eae0f545234",
+      "signature": "keyword_enum SessionId { ... }",
+      "comment": "Uniquely identifies an agent session.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "_",
+          "is_pub": false,
+          "line": 5
+        }
+      ],
+      "line": 5
+    },
+    {
+      "type": "enum",
+      "name": "TargetId",
+      "match_hash": "ea30e6fbe3c27e832a1d49626aa2ecdc4a960ddd1c759bcb44b52e70bfaf2926",
+      "signature": "keyword_enum TargetId { ... }",
+      "comment": "Uniquely identifies a Target in the DAG registry.",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "_",
+          "is_pub": false,
+          "line": 8
+        }
+      ],
+      "line": 8
+    },
+    {
+      "type": "fn_decl",
+      "name": "nodeIdFromInt",
+      "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
+      "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
+      "returns": "NodeId",
+      "comment": "Converts an integer to a unique node identifier using Zig's type system.",
+      "is_pub": true,
+      "line": 15
+    },
+    {
+      "type": "fn_decl",
+      "name": "intFromNodeId",
+      "match_hash": "2ce2dd243b59899c2e03589e9c3c13a5b7c179e63ab07cddabf927366a571ecf",
+      "signature": "fn intFromNodeId(id: NodeId) -> i64",
+      "params": [
+        { "name": "id", "type": "NodeId" }
+      ],
+      "returns": "i64",
+      "comment": "Converts a NodeId string to its corresponding integer value.",
+      "is_pub": true,
+      "line": 20
+    },
+    {
+      "type": "fn_decl",
+      "name": "sessionIdFromInt",
+      "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
+      "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
+      "returns": "SessionId",
+      "comment": "Converts an integer to a sessionId, returning the corresponding Zig session ID.",
+      "is_pub": true,
+      "line": 25
+    },
+    {
+      "type": "fn_decl",
+      "name": "intFromSessionId",
+      "match_hash": "96e79a9b2013cc135d9df264c468d6fd4d1cafe26c3ac99265fd3d91df3cc84c",
+      "signature": "fn intFromSessionId(id: SessionId) -> i64",
+      "params": [
+        { "name": "id", "type": "SessionId" }
+      ],
+      "returns": "i64",
+      "comment": "Converts a SessionId string into its corresponding integer value.",
+      "is_pub": true,
+      "line": 30
+    },
+    {
+      "type": "fn_decl",
+      "name": "targetIdFromInt",
+      "match_hash": "45457661b9c35ca6a7d4a821da6a0417391ff2df7b283830693c21776dcbbf29",
+      "signature": "fn targetIdFromInt(i: i64) -> TargetId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
+      "returns": "TargetId",
+      "comment": "Converts an integer to its corresponding TargetId identifier.",
+      "is_pub": true,
+      "line": 35
+    },
+    {
+      "type": "fn_decl",
+      "name": "intFromTargetId",
+      "match_hash": "5fb4af2f92867f0f56a38f1c327bb990e1ae6b948c629d376a33166610e60283",
+      "signature": "fn intFromTargetId(id: TargetId) -> i64",
+      "params": [
+        { "name": "id", "type": "TargetId" }
+      ],
+      "returns": "i64",
+      "comment": "Converts a TargetId string to its corresponding integer value.",
+      "is_pub": true,
+      "line": 40
+    },
+    {
+      "type": "test_decl",
+      "name": "NodeId: round-trip through int",
+      "is_pub": false,
+      "line": 51
+    },
+    {
+      "type": "test_decl",
+      "name": "SessionId: round-trip through int",
+      "is_pub": false,
+      "line": 56
+    },
+    {
+      "type": "test_decl",
+      "name": "TargetId: round-trip through int",
+      "is_pub": false,
+      "line": 61
+    },
+    {
+      "type": "test_decl",
+      "name": "NodeId and SessionId are distinct types",
+      "is_pub": false,
+      "line": 66
+    }
+  ]
+}

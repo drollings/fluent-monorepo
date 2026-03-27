@@ -11,6 +11,7 @@
 ///   4. Final hash: bit i = 1 if counter[i] > 0, else 0
 const std = @import("std");
 
+/// Represents a hash structure for Zig, managing fixed-size buffers with ownership and invariants.
 pub const SimHash = struct {
     /// Compute a 64-bit SimHash from token shingles.
     ///

@@ -1,0 +1,87 @@
+{
+  "meta": {
+    "module": "src.coral.frontier_tool_compiler",
+    "source": "src/coral/frontier_tool_compiler.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/coral/frontier.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ExtractedCode",
+      "match_hash": "bca993c3d3e668acaeb814cceab74f17c4ffe2ab6d7f87280b5a46cfc6a15660",
+      "signature": "keyword_struct ExtractedCode { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "e2a3a459cb01d474f140fbea3127f7d117963903ba146cc9186a49d386d18889",
+          "signature": "fn deinit(self: *ExtractedCode) -> void",
+          "params": [
+            { "name": "self", "type": "*ExtractedCode" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 19
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "fn_decl",
+      "name": "extractFirstCodeBlock",
+      "match_hash": "398f3579457ceb6e1b25729e69f9ebfc78ae6c97bbe023fdf8f231eee9d41410",
+      "signature": "fn extractFirstCodeBlock(allocator: std.mem.Allocator, llm_response: []const u8) -> ?ExtractedCode",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "llm_response", "type": "[]const u8" }
+      ],
+      "returns": "?ExtractedCode",
+      "is_pub": true,
+      "line": 28
+    },
+    {
+      "type": "fn_decl",
+      "name": "validateSource",
+      "match_hash": "57727eb56d1e8c646ed1a7668eaa4a3b9914c77d3ebe2c634f496c6236e4403f",
+      "signature": "fn validateSource(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 58
+    },
+    {
+      "type": "test_decl",
+      "name": "extractFirstCodeBlock: extracts zig block",
+      "is_pub": false,
+      "line": 68
+    },
+    {
+      "type": "test_decl",
+      "name": "extractFirstCodeBlock: returns null for no code block",
+      "is_pub": false,
+      "line": 86
+    },
+    {
+      "type": "test_decl",
+      "name": "extractFirstCodeBlock: empty fence returns null",
+      "is_pub": false,
+      "line": 93
+    },
+    {
+      "type": "test_decl",
+      "name": "validateSource: empty returns false",
+      "is_pub": false,
+      "line": 104
+    },
+    {
+      "type": "test_decl",
+      "name": "validateSource: non-empty returns true",
+      "is_pub": false,
+      "line": 109
+    }
+  ]
+}

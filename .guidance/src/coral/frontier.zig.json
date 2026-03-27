@@ -23,10 +23,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 31
+          "line": 37
         }
       ],
-      "line": 22
+      "line": 27
     },
     {
       "type": "fn_decl",
@@ -42,7 +42,7 @@
       ],
       "returns": "MinimizedContext",
       "is_pub": true,
-      "line": 40
+      "line": 48
     },
     {
       "type": "fn_decl",
@@ -55,7 +55,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 73
+      "line": 92
     },
     {
       "type": "fn_decl",
@@ -67,37 +67,37 @@
       ],
       "returns": "ValidationResult",
       "is_pub": true,
-      "line": 101
+      "line": 120
     },
     {
       "type": "test_decl",
       "name": "validateSolution: empty returns invalid",
       "is_pub": false,
-      "line": 129
+      "line": 148
     },
     {
       "type": "test_decl",
       "name": "validateSolution: refusal returns invalid",
       "is_pub": false,
-      "line": 134
+      "line": 153
     },
     {
       "type": "test_decl",
       "name": "validateSolution: think block returns invalid",
       "is_pub": false,
-      "line": 139
+      "line": 158
     },
     {
       "type": "test_decl",
       "name": "validateSolution: valid prose returns valid",
       "is_pub": false,
-      "line": 144
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "buildPrompt: contains query and context",
       "is_pub": false,
-      "line": 149
+      "line": 168
     },
     {
       "type": "fn_decl",
@@ -112,19 +112,47 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 186
+      "line": 205
     },
     {
       "type": "test_decl",
       "name": "indexSolution: smoke test with in-memory library",
       "is_pub": false,
-      "line": 236
+      "line": 255
     },
     {
       "type": "test_decl",
       "name": "indexSolution: idempotent on repeated call",
       "is_pub": false,
-      "line": 246
+      "line": 265
+    },
+    {
+      "type": "fn_decl",
+      "name": "indexSolutionWithTool",
+      "match_hash": "67e6bc67baac4dd582d098c9eb620b6b40529cf09bb0c719afe3e3f3ed279fbe",
+      "signature": "fn indexSolutionWithTool(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8, generator: ?*wasm_mod.ToolGenerator) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "library", "type": "*coral_db.Library" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "response", "type": "[]const u8" },
+        { "name": "generator", "type": "?*wasm_mod.ToolGenerator" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 298
+    },
+    {
+      "type": "test_decl",
+      "name": "indexSolutionWithTool: null generator falls back to ContextNode indexing",
+      "is_pub": false,
+      "line": 360
+    },
+    {
+      "type": "test_decl",
+      "name": "indexSolutionWithTool: no code block still indexes node",
+      "is_pub": false,
+      "line": 377
     }
   ]
 }

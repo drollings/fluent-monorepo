@@ -46,16 +46,41 @@ pub const RoutingResult = struct {
     latency_ms: u64,
 };
 
+/// Default maximum number of entries in the L1 cache.
+pub const L1_DEFAULT_MAX_ENTRIES: usize = 1024;
+
+/// Intrusive LRU list node.  Heap-allocated; stores the cached key alongside
+/// the prev/next pointers so eviction can look up the matching hash entry.
+const L1LruNodeData = struct {
+    key: []const u8,
+    list_node: std.DoublyLinkedList.Node = .{},
+};
+
+/// Entry stored per cache slot: result + pointer to the LRU tracking node.
+const L1Entry = struct {
+    result: RoutingResult,
+    /// Pointer to the heap-allocated LRU node for this entry.
+    lru: *L1LruNodeData,
+};
+
 /// Manages low-latency cache operations with fixed-size buffers; owned by the system; ensures consistent key-value storage.
 pub const L1Cache = struct {
     allocator: std.mem.Allocator,
-    entries: std.StringHashMap(RoutingResult),
-    mu: std.Thread.RwLock = .{},
+    entries: std.StringHashMap(L1Entry),
+    /// LRU list: head = most recently used, tail = least recently used.
+    order: std.DoublyLinkedList = .{},
+    max_entries: usize,
+    mu: std.Thread.Mutex = .{},
 
     pub fn init(allocator: std.mem.Allocator) L1Cache {
+        return initWithCapacity(allocator, L1_DEFAULT_MAX_ENTRIES);
+    }
+
+    pub fn initWithCapacity(allocator: std.mem.Allocator, max_entries: usize) L1Cache {
         return .{
             .allocator = allocator,
-            .entries = std.StringHashMap(RoutingResult).init(allocator),
+            .entries = std.StringHashMap(L1Entry).init(allocator),
+            .max_entries = max_entries,
         };
     }
 
@@ -63,24 +88,71 @@ pub const L1Cache = struct {
         var it = self.entries.iterator();
         while (it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
-            freeRoutingResult(self.allocator, &entry.value_ptr.*);
+            freeRoutingResult(self.allocator, &entry.value_ptr.*.result);
+            self.allocator.destroy(entry.value_ptr.*.lru);
         }
         self.entries.deinit();
+        // LRU nodes were already destroyed above; just reset the list head.
+        self.order = .{};
     }
 
+    /// Look up `query_hash` and promote the entry to most-recently-used.
+    /// Returns a copy of the RoutingResult, or null if not cached.
     pub fn get(self: *L1Cache, query_hash: []const u8) ?RoutingResult {
-        self.mu.lockShared();
-        defer self.mu.unlockShared();
-        return self.entries.get(query_hash);
+        self.mu.lock();
+        defer self.mu.unlock();
+        const entry = self.entries.getPtr(query_hash) orelse return null;
+        // Promote to MRU position.
+        self.order.remove(&entry.lru.list_node);
+        self.order.prepend(&entry.lru.list_node);
+        return entry.result;
     }
 
+    /// Insert (or replace) `result` for `query_hash`, evicting the LRU entry
+    /// if the cache is at `max_entries` capacity.
     pub fn put(self: *L1Cache, query_hash: []const u8, result: RoutingResult) !void {
         const owned_key = try self.allocator.dupe(u8, query_hash);
         errdefer self.allocator.free(owned_key);
         const owned_result = try dupeRoutingResult(self.allocator, result);
+        errdefer {
+            var r = owned_result;
+            freeRoutingResult(self.allocator, &r);
+        }
+
         self.mu.lock();
         defer self.mu.unlock();
-        try self.entries.put(owned_key, owned_result);
+
+        // If key already exists, update in place and promote.
+        if (self.entries.getPtr(owned_key)) |existing| {
+            freeRoutingResult(self.allocator, &existing.result);
+            existing.result = owned_result;
+            self.order.remove(&existing.lru.list_node);
+            self.order.prepend(&existing.lru.list_node);
+            self.allocator.free(owned_key); // key already in map
+            return;
+        }
+
+        // Evict LRU entry when at capacity.
+        while (self.entries.count() >= self.max_entries) {
+            if (self.order.pop()) |list_node| {
+                const lru_data: *L1LruNodeData = @alignCast(@fieldParentPtr("list_node", list_node));
+                const lru_key = lru_data.key;
+                if (self.entries.fetchRemove(lru_key)) |kv| {
+                    var evicted = kv.value.result;
+                    freeRoutingResult(self.allocator, &evicted);
+                    self.allocator.free(lru_key);
+                }
+                self.allocator.destroy(lru_data);
+            } else break;
+        }
+
+        // Create a new LRU node for the key.
+        const lru_data = try self.allocator.create(L1LruNodeData);
+        errdefer self.allocator.destroy(lru_data);
+        lru_data.* = .{ .key = owned_key };
+        self.order.prepend(&lru_data.list_node);
+
+        try self.entries.put(owned_key, .{ .result = owned_result, .lru = lru_data });
     }
 
     fn freeRoutingResult(allocator: std.mem.Allocator, result: *RoutingResult) void {
@@ -1109,3 +1181,4 @@ test "ParallelRouter: routeBatch with empty input" {
     defer allocator.free(results);
     try testing.expectEqual(@as(usize, 0), results.len);
 }
+

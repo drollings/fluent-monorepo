@@ -23,6 +23,7 @@ const QueueReactor = cache.QueueReactor;
 // replacing the hardcoded input_schema strings.
 // ---------------------------------------------------------------------------
 
+/// Manages query parameters for Coral queries, owns state, ensures consistent invariants across sessions.
 const CoralQueryParams = struct {
     query: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
@@ -653,6 +654,7 @@ test "McpServer: missing required field returns error" {
     // Should return an error (missing required "query" field)
     try testing.expect(std.mem.indexOf(u8, resp, "error") != null);
 }
+
 
 
 

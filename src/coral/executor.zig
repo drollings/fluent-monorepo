@@ -110,6 +110,116 @@ pub const DagExecutor = struct {
             try self.collectDeps(dep, set);
         }
     }
+
+    /// Execute targets in parallel using a thread pool, respecting dependency
+    /// levels.  Targets in the same level have no inter-dependencies and run
+    /// concurrently; subsequent levels wait for all previous-level tasks.
+    ///
+    /// Falls back to sequential `run()` if `pool` is null.
+    pub fn runParallel(
+        self: *Self,
+        ctx: *ExecutionContext,
+        requested_names: []const []const u8,
+        pool: ?*std.Thread.Pool,
+    ) !void {
+        if (pool == null) {
+            return self.run(ctx, requested_names);
+        }
+
+        const order = try targets.topoSort(self.allocator);
+        defer self.allocator.free(order);
+
+        // Build the set of targets to run.
+        var to_run: std.StringHashMapUnmanaged(void) = .{};
+        defer to_run.deinit(self.allocator);
+        for (requested_names) |name| {
+            try self.collectDeps(name, &to_run);
+        }
+
+        // Assign levels: level[name] = max(level[dep]) + 1 for each dep.
+        var level_map = std.StringHashMap(usize).init(self.allocator);
+        defer level_map.deinit();
+
+        for (order) |name| {
+            if (!to_run.contains(name)) continue;
+            const def = targets.lookupTargetDef(name) orelse continue;
+            var max_dep: usize = 0;
+            for (def.depends) |dep| {
+                if (level_map.get(dep)) |dep_lv| {
+                    if (dep_lv + 1 > max_dep) max_dep = dep_lv + 1;
+                }
+            }
+            try level_map.put(name, max_dep);
+        }
+
+        // Find max level.
+        var max_level: usize = 0;
+        {
+            var it = level_map.valueIterator();
+            while (it.next()) |lv| {
+                if (lv.* > max_level) max_level = lv.*;
+            }
+        }
+
+        const Task = struct {
+            executor: *Self,
+            ctx: *ExecutionContext,
+            name: []const u8,
+            err: ?anyerror = null,
+        };
+
+        // Execute level by level; within each level run in parallel.
+        var lv: usize = 0;
+        while (lv <= max_level) : (lv += 1) {
+            // Collect targets for this level.
+            var batch = std.ArrayList([]const u8).init(self.allocator);
+            defer batch.deinit();
+            for (order) |name| {
+                if (level_map.get(name)) |target_lv| {
+                    if (target_lv == lv) try batch.append(name);
+                }
+            }
+
+            if (batch.items.len == 0) continue;
+
+            // For each name in the level, allocate a task and spawn it.
+            const tasks_mem = try self.allocator.alloc(Task, batch.items.len);
+            defer self.allocator.free(tasks_mem);
+            for (batch.items, 0..) |name, i| {
+                tasks_mem[i] = .{ .executor = self, .ctx = ctx, .name = name };
+            }
+
+            var wg = std.Thread.WaitGroup{};
+            for (tasks_mem) |*task| {
+                pool.?.spawnWg(&wg, struct {
+                    fn run(t: *Task) void {
+                        const def = targets.lookupTargetDef(t.name) orelse return;
+                        if (def.kind == .phony) return;
+                        const handler: targets.HandlerFn = blk: {
+                            if (def.handler) |h| break :blk h;
+                            for (HANDLER_OVERRIDES) |ov| {
+                                if (std.mem.eql(u8, ov.name, t.name)) break :blk ov.handler;
+                            }
+                            return;
+                        };
+                        handler(t.executor.allocator, @ptrCast(t.ctx)) catch |err| {
+                            t.err = err;
+                        };
+                    }
+                }.run, .{task});
+            }
+            pool.?.waitAndWork(&wg);
+
+            // Surface the first essential handler error.
+            for (tasks_mem) |*task| {
+                if (task.err) |err| {
+                    const def = targets.lookupTargetDef(task.name) orelse continue;
+                    if (def.essential) return err;
+                    std.log.warn("non-essential handler '{s}' failed: {s}", .{ task.name, @errorName(err) });
+                }
+            }
+        }
+    }
 };
 
 // =============================================================================

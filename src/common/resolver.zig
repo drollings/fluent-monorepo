@@ -250,6 +250,78 @@ fn collectDependenciesWithAbstracts(
     }
 }
 
+/// Manages resolved level configurations with a fixed-size buffer pool; ensures ownership and invariants are preserved.
+pub const ResolvedLevels = struct {
+    levels: []const []*Target,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *ResolvedLevels) void {
+        for (self.levels) |lvl| self.allocator.free(lvl);
+        self.allocator.free(self.levels);
+    }
+};
+
+/// Retrieves resolved levels from a dependency resolver for Zig targets.
+pub fn getLevels(
+    self: *const DependencyResolver,
+    targets: []*Target,
+) !ResolvedLevels {
+    if (targets.len == 0) {
+        return .{ .levels = &[_][]*Target{}, .allocator = self.allocator };
+    }
+
+    // Assign a level to each target: max(dep level) + 1.
+    var level_map = std.AutoHashMap(usize, usize).init(self.allocator);
+    defer level_map.deinit();
+
+    // Targets arrive in topological order; dependencies are always processed
+    // before dependents.
+    for (targets) |t| {
+        var max_dep_level: usize = 0;
+        var dep_iter = t.depends.iterator(.{});
+        while (dep_iter.next()) |dep_idx| {
+            if (level_map.get(dep_idx)) |dep_level| {
+                if (dep_level + 1 > max_dep_level) {
+                    max_dep_level = dep_level + 1;
+                }
+            }
+        }
+        try level_map.put(t.bit_index, max_dep_level);
+    }
+
+    // Find the maximum level.
+    var max_level: usize = 0;
+    {
+        var it = level_map.valueIterator();
+        while (it.next()) |lv| {
+            if (lv.* > max_level) max_level = lv.*;
+        }
+    }
+
+    // Bucket targets by level.
+    const num_levels = max_level + 1;
+    var buckets = try self.allocator.alloc(std.ArrayListUnmanaged(*Target), num_levels);
+    defer {
+        for (buckets) |*b| b.deinit(self.allocator);
+        self.allocator.free(buckets);
+    }
+    for (buckets) |*b| b.* = .{};
+
+    for (targets) |t| {
+        const lv = level_map.get(t.bit_index).?;
+        try buckets[lv].append(self.allocator, t);
+    }
+
+    // Convert buckets to owned slices.
+    const levels = try self.allocator.alloc([]*Target, num_levels);
+    errdefer self.allocator.free(levels);
+    for (buckets, 0..) |*b, i| {
+        levels[i] = try b.toOwnedSlice(self.allocator);
+    }
+
+    return .{ .levels = levels, .allocator = self.allocator };
+}
+
 /// Generates a Zig array representation of a graph visualization based on dependency data.
 pub fn visualizeGraph(
     self: *DependencyResolver,
@@ -696,5 +768,53 @@ test "DependencyResolver: GPA no leaks" {
     try testing.expectEqual(.ok, gpa.deinit());
 }
 
+
+
+
+test "getLevels: diamond DAG produces two independent levels for middle nodes" {
+    // Diamond: src <- obj_a, src <- obj_b, obj_a <- bin, obj_b <- bin
+    // Expected levels: [src], [obj_a, obj_b], [bin]
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    {
+        var interner = StringInterner.init(allocator);
+        defer interner.deinit();
+
+        var registry = TargetRegistry.init(allocator, &interner);
+        defer registry.deinit();
+
+        const ta = try allocator.create(Target);
+        ta.* = try Target.init(allocator, &interner, "src", .phony);
+        try registry.add(ta);
+
+        const tb = try allocator.create(Target);
+        tb.* = try Target.init(allocator, &interner, "obj_a", .command);
+        try tb.setDepends(allocator, &interner, &[_][]const u8{"src"});
+        try registry.add(tb);
+
+        const tc = try allocator.create(Target);
+        tc.* = try Target.init(allocator, &interner, "obj_b", .command);
+        try tc.setDepends(allocator, &interner, &[_][]const u8{"src"});
+        try registry.add(tc);
+
+        const td = try allocator.create(Target);
+        td.* = try Target.init(allocator, &interner, "bin", .command);
+        try td.setDepends(allocator, &interner, &[_][]const u8{ "obj_a", "obj_b" });
+        try registry.add(td);
+
+        var resolver = DependencyResolver.init(allocator, &registry, &interner);
+        var resolved = try resolver.resolve(&[_][]const u8{"bin"});
+        defer resolved.deinit();
+
+        var lvls = try resolver.getLevels(resolved.targets);
+        defer lvls.deinit();
+
+        try testing.expectEqual(@as(usize, 3), lvls.levels.len);
+        try testing.expectEqual(@as(usize, 1), lvls.levels[0].len); // src
+        try testing.expectEqual(@as(usize, 2), lvls.levels[1].len); // obj_a, obj_b
+        try testing.expectEqual(@as(usize, 1), lvls.levels[2].len); // bin
+    }
+    try testing.expectEqual(.ok, gpa.deinit());
+}
 
 

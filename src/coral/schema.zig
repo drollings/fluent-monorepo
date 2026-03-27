@@ -102,7 +102,9 @@ pub const DDL_WASM_TOOLS: []const u8 =
     \\    wasm_b64 TEXT NOT NULL DEFAULT '',
     \\    schema_hash TEXT NOT NULL DEFAULT '',
     \\    test_passed INTEGER NOT NULL DEFAULT 0,
-    \\    created_at REAL NOT NULL DEFAULT 0.0
+    \\    created_at REAL NOT NULL DEFAULT 0.0,
+    \\    expires_at REAL,
+    \\    access_count INTEGER NOT NULL DEFAULT 0
     \\)
 ;
 
@@ -235,13 +237,19 @@ pub const SCHEMA_DDL = [_][]const u8{
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Increment when adding migrations.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// DDL for the schema version tracking table.
 pub const DDL_SCHEMA_VERSION: []const u8 =
     \\CREATE TABLE IF NOT EXISTS schema_version (
     \\    version INTEGER NOT NULL DEFAULT 0
     \\)
+;
+
+/// Migration 2 → 3: add expires_at and access_count to wasm_tools.
+pub const MIGRATION_2_3: []const u8 =
+    \\ALTER TABLE wasm_tools ADD COLUMN expires_at REAL;
+    \\ALTER TABLE wasm_tools ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0
 ;
 
 /// Migrations applied sequentially from version 0 to SCHEMA_VERSION.
@@ -252,6 +260,8 @@ pub const MIGRATIONS = [_][]const u8{
     "",
     // 1 → 2: Add property_uses table
     DDL_PROPERTY_USES,
+    // 2 → 3: Add expires_at and access_count to wasm_tools
+    MIGRATION_2_3,
 };
 
 // ---------------------------------------------------------------------------

@@ -5,30 +5,37 @@
 ///
 /// Key exports:
 ///   MinimizedContext  — compact representation of query + nodes
-///   minimizeContext() — LOD-based context trimming to token budget
+///   minimizeContext() — LOD-based context trimming to token budget (+ PII anonymization)
 ///   buildPrompt()     — assemble the LLM prompt from minimal context
 ///   validateSolution()— check solution JSON is well-formed (perimeter check)
+///   indexSolutionWithTool() — index LLM response + attempt WASM compilation
 const std = @import("std");
 const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const ContextPacker = coral_db.ContextPacker;
 const schema = coral_db.schema;
+const anonymize_mod = @import("anonymize.zig");
+const tool_compiler = @import("frontier_tool_compiler.zig");
+const wasm_mod = @import("wasm");
 
 // ---------------------------------------------------------------------------
 // MinimizedContext
 // ---------------------------------------------------------------------------
 
 /// A compact context bundle ready for frontier LLM prompting.
+/// Both `query` and `packed_text` are allocator-owned (PII-anonymized copies).
 pub const MinimizedContext = struct {
+    /// Anonymized, allocator-owned copy of the original query.
     query: []const u8,
-    /// Packed LOD text (allocator-owned).
+    /// Packed LOD text (allocator-owned, PII-anonymized).
     packed_text: []const u8,
     /// Approximate token count (chars / 4).
     token_count: usize,
-    /// Allocator used for `packed_text`.
+    /// Allocator used for `query` and `packed_text`.
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *MinimizedContext) void {
+        self.allocator.free(self.query);
         self.allocator.free(self.packed_text);
     }
 };
@@ -37,6 +44,7 @@ pub const MinimizedContext = struct {
 ///
 /// Uses ContextPacker to select LOD levels weighted by BFS graph distance,
 /// then trims to `token_budget` tokens (rough estimate: chars / 4).
+/// Both query and packed context are PII-anonymized before returning.
 pub fn minimizeContext(
     allocator: std.mem.Allocator,
     library: *coral_db.Library,
@@ -44,13 +52,24 @@ pub fn minimizeContext(
     focal_id: i64,
     token_budget: usize,
 ) !MinimizedContext {
+    const all_patterns = &[_]anonymize_mod.AnonymizationPattern{
+        .email, .phone_us, .credit_card,
+    };
+
     var packer = library.createContextPacker(token_budget);
-    const packed_text = try packer.pack(focal_id);
-    const token_count = packed_text.len / 4;
+    const raw_packed = try packer.pack(focal_id);
+    defer allocator.free(raw_packed);
+
+    const packed_text = try anonymize_mod.anonymizeContext(allocator, raw_packed, all_patterns);
+    errdefer allocator.free(packed_text);
+
+    const anon_query = try anonymize_mod.anonymizeContext(allocator, query, all_patterns);
+    errdefer allocator.free(anon_query);
+
     return MinimizedContext{
-        .query = query,
+        .query = anon_query,
         .packed_text = packed_text,
-        .token_count = token_count,
+        .token_count = packed_text.len / 4,
         .allocator = allocator,
     };
 }
@@ -152,8 +171,8 @@ test "buildPrompt: contains query and context" {
     const a = arena.allocator();
 
     const ctx = MinimizedContext{
-        .query = "Who is Ada Lovelace?",
-        .packed_text = "Ada Lovelace was a mathematician.",
+        .query = try a.dupe(u8, "Who is Ada Lovelace?"),
+        .packed_text = try a.dupe(u8, "Ada Lovelace was a mathematician."),
         .token_count = 8,
         .allocator = a,
     };
@@ -253,4 +272,120 @@ test "indexSolution: idempotent on repeated call" {
     const r = "Same response every time.";
     try indexSolution(testing.allocator, lib, q, r);
     try indexSolution(testing.allocator, lib, q, r); // must not error
+}
+
+// ---------------------------------------------------------------------------
+// WASM tool indexing — M2.4
+// ---------------------------------------------------------------------------
+//
+// After a frontier LLM response passes validation, attempt to extract source
+// code, compile it to WASM, verify execution, and cache the compiled tool.
+// Falls back to plain ContextNode indexing if compilation is unavailable or
+// fails (e.g., no Zig compiler at runtime, AssemblyScript not installed).
+//
+// Pass a non-null `generator` to enable compilation. Pass null on edge
+// deployments where no compiler is available; the source is stored as a
+// ContextNode for deferred compilation later.
+
+/// Index a validated LLM solution, attempting WASM compilation first.
+///
+/// Workflow:
+///   1. Extract first fenced code block from `response`.
+///   2. If `generator` is provided and source is valid Zig or AS, compile to WASM.
+///   3. Verify the compiled tool runs without traps.
+///   4. Store as a WasmTool in the library's wasm_tools table.
+///   5. Fall through to plain `indexSolution` regardless of compilation outcome.
+pub fn indexSolutionWithTool(
+    allocator: std.mem.Allocator,
+    library: *coral_db.Library,
+    query: []const u8,
+    response: []const u8,
+    generator: ?*wasm_mod.ToolGenerator,
+) !void {
+    // Try to extract and compile source if a generator is available.
+    if (generator) |gen| {
+        if (try tool_compiler.extractFirstCodeBlock(allocator, response)) |block_val| {
+            var block = block_val;
+            defer block.deinit();
+
+            if (tool_compiler.validateSource(block.source)) {
+                const lang: ?wasm_mod.WasmLanguage = if (std.mem.eql(u8, block.language, "zig"))
+                    .zig
+                else if (std.mem.eql(u8, block.language, "typescript") or
+                    std.mem.eql(u8, block.language, "assemblyscript"))
+                    .assemblyscript
+                else
+                    null;
+
+                if (lang) |l| {
+                    if (gen.generateFromLLM(block.source, l)) |wasm_bytes| {
+                        defer allocator.free(wasm_bytes);
+
+                        const verified = gen.verifyTool(wasm_bytes, query) catch false;
+                        if (verified) {
+                            // Base64-encode the WASM binary for SQLite TEXT storage.
+                            const b64_len = std.base64.standard.Encoder.calcSize(wasm_bytes.len);
+                            const b64 = try allocator.alloc(u8, b64_len);
+                            defer allocator.free(b64);
+                            _ = std.base64.standard.Encoder.encode(b64, wasm_bytes);
+
+                            // Derive a stable id from the query hash.
+                            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
+                            hasher.update(query);
+                            var digest: [32]u8 = undefined;
+                            hasher.final(&digest);
+                            var id_bytes: [8]u8 = undefined;
+                            @memcpy(&id_bytes, digest[0..8]);
+                            const tool_id: i64 = @bitCast(id_bytes);
+
+                            try library.insertWasmTool(.{
+                                .id = tool_id,
+                                .target_id = 0,
+                                .wasm_b64 = b64,
+                                .schema_hash = "",
+                                .test_passed = true,
+                                .created_at = @floatFromInt(std.time.timestamp()),
+                            });
+                        }
+                    } else |_| {} // compilation failure — fall through to text indexing
+                }
+            }
+        }
+    }
+
+    // Always index as a ContextNode for L4 KNN retrieval regardless of WASM outcome.
+    try indexSolution(allocator, library, query, response);
+}
+
+test "indexSolutionWithTool: null generator falls back to ContextNode indexing" {
+    const Library = coral_db.Library;
+    var lib = try Library.init(testing.allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    try indexSolutionWithTool(
+        testing.allocator,
+        lib,
+        "What is 2 + 2?",
+        "The answer is 4.",
+        null,
+    );
+    // Verify node was indexed.
+    try testing.expect(try lib.countNodes() >= 1);
+}
+
+test "indexSolutionWithTool: no code block still indexes node" {
+    const Library = coral_db.Library;
+    var lib = try Library.init(testing.allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    try indexSolutionWithTool(
+        testing.allocator,
+        lib,
+        "Explain recursion",
+        "Recursion is when a function calls itself.",
+        null,
+    );
+    try testing.expect(try lib.countNodes() >= 1);
 }

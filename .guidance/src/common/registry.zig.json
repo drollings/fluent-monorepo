@@ -17,6 +17,7 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "TargetRegistry",
+      "comment": "Initializes the registry with an allocator and interners, returning a target registry instance.",
       "is_pub": true,
       "line": 15
     },
@@ -29,6 +30,7 @@
         { "name": "self", "type": "*TargetRegistry" }
       ],
       "returns": "void",
+      "comment": "Cleans up resources by releasing the registry instance.",
       "is_pub": true,
       "line": 26
     },
@@ -42,6 +44,7 @@
         { "name": "tgt", "type": "*Target" }
       ],
       "returns": "void",
+      "comment": "Adds a target registry entry to the registry.",
       "is_pub": true,
       "line": 43
     },
@@ -55,6 +58,7 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?*Target",
+      "comment": "Retrieves a target registry entry by name, returning a pointer to its registry data.",
       "is_pub": true,
       "line": 50
     },
@@ -68,6 +72,7 @@
         { "name": "idx", "type": "usize" }
       ],
       "returns": "?*Target",
+      "comment": "Retrieves a target registry entry by its bit index, returning a pointer to the matching record.",
       "is_pub": true,
       "line": 55
     },
@@ -81,6 +86,7 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Removes a registry entry by name, returning void and no error on success.",
       "is_pub": true,
       "line": 60
     },
@@ -94,6 +100,7 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[][]const u8",
+      "comment": "Converts a registry string into a slice of byte slices, returning an array of arrays of u8.",
       "is_pub": true,
       "line": 68
     },
@@ -120,6 +127,7 @@
         { "name": "bit_index", "type": "usize" }
       ],
       "returns": "?[]*Target",
+      "comment": "Retrieves provider addresses for a specified registry bit index.",
       "is_pub": true,
       "line": 98
     },
@@ -133,6 +141,7 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?[]*Target",
+      "comment": "Retrieves registry providers matching the given name, returning their addresses.",
       "is_pub": true,
       "line": 106
     },
@@ -145,6 +154,7 @@
         { "name": "self", "type": "*const TargetRegistry" }
       ],
       "returns": "usize",
+      "comment": "Counts registry entries; returns the number of valid targets.",
       "is_pub": true,
       "line": 112
     },
@@ -158,6 +168,7 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]*Target",
+      "comment": "Retrieves essential target registry entries with allocator support.",
       "is_pub": true,
       "line": 117
     },
@@ -171,6 +182,7 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]*Target",
+      "comment": "Converts a TargetRegistry reference into a slice of Target objects.",
       "is_pub": true,
       "line": 132
     },
@@ -179,6 +191,7 @@
       "name": "TargetBuilder",
       "match_hash": "eabdc6a9e0e29aceefc9b0cc886c6fa5dab79bbc2a8fc30552739892ee335fc0",
       "signature": "keyword_struct TargetBuilder { ... }",
+      "comment": "Manages registry targets with ownership and invariants; ensures stable access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -191,6 +204,7 @@
             { "name": "names", "type": "[]const []const u8" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Set the dependency list (interned bit-set).",
           "is_pub": true,
           "line": 176
         }
@@ -204,6 +218,7 @@
             { "name": "names", "type": "[]const []const u8" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Set the provides list (interned bit-set).",
           "is_pub": true,
           "line": 185
         }
@@ -217,6 +232,7 @@
             { "name": "cmd", "type": "[]const u8" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Append a shell command string (allocator-owned copy).",
           "is_pub": true,
           "line": 194
         }
@@ -229,6 +245,7 @@
             { "name": "self", "type": "*TargetBuilder" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Mark this target as essential (must succeed for the build to pass).",
           "is_pub": true,
           "line": 208
         }
@@ -242,6 +259,7 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Set the `exists` path guard (target is skipped when the file exists).",
           "is_pub": true,
           "line": 214
         }
@@ -255,6 +273,7 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "*TargetBuilder",
+          "comment": "Set the SQLite node id (optional; 0 if not set).",
           "is_pub": true,
           "line": 226
         }
@@ -267,6 +286,7 @@
             { "name": "self", "type": "*TargetBuilder" }
           ],
           "returns": "void",
+          "comment": "Commit the target to the registry.\n\nOn success the registry owns the Target.\nOn any accumulated error the Target is freed and the error is returned.",
           "is_pub": true,
           "line": 235
         }
@@ -284,6 +304,7 @@
         { "name": "target_type", "type": "TargetType" }
       ],
       "returns": "TargetBuilder",
+      "comment": "Return a fluent TargetBuilder for adding a new target to this registry.\n\nErrors during Target allocation are deferred to `register()` so the entire\nchain can be expressed as a single `try` expression:\n\n  try registry.target(\"build\", .file)\n      .depends(&.{\"compile\"})\n      .register();",
       "is_pub": true,
       "line": 259
     },
@@ -298,6 +319,7 @@
         { "name": "provides", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "usize",
+      "comment": "Compute popCount(needed & ~provides): unmet capability count.\n\nIterates over set bits in `needed` and counts those not present in\n`provides`.  No temporary allocations required.",
       "is_pub": false,
       "line": 284
     },
@@ -312,128 +334,157 @@
         { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "?*Target",
+      "comment": "Find the Target that best satisfies `needed` by bitwise popCount distance.\n\nReturns an exact match (distance=0) immediately when found.\nReturns the closest partial match otherwise.\nReturns null when the registry is empty or no target has any provides bits.\n\n`allocator` is used only for temporary bit-set arithmetic; no allocations\nescape this function.",
       "is_pub": true,
       "line": 310
+    },
+    {
+      "type": "fn_decl",
+      "name": "resolveByCapabilityWithHierarchy",
+      "match_hash": "003040ddbd20f9ef1bd6f797614db45da30fc08a1be7979067a21a5aedf6d775",
+      "signature": "fn resolveByCapabilityWithHierarchy(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, ancestor_caps: []const []const u8) -> ?*Target",
+      "params": [
+        { "name": "self", "type": "*const TargetRegistry" },
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
+        { "name": "ancestor_caps", "type": "[]const []const u8" }
+      ],
+      "returns": "?*Target",
+      "comment": "Resolves a target registry entry using capability hierarchy and bit sets, returning a pointer to the registry item.",
+      "is_pub": true,
+      "line": 336
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry basic operations",
       "is_pub": false,
-      "line": 339
+      "line": 371
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry GPA no leaks",
       "is_pub": false,
-      "line": 355
+      "line": 387
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex returns the correct target",
       "is_pub": false,
-      "line": 383
+      "line": 415
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex for unknown index returns null",
       "is_pub": false,
-      "line": 399
+      "line": 431
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: remove drops the target",
       "is_pub": false,
-      "line": 408
+      "line": 440
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: listNames returns sorted names",
       "is_pub": false,
-      "line": 433
+      "line": 465
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: essentialTargets returns only essential ones",
       "is_pub": false,
-      "line": 459
+      "line": 491
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: abstractTargets returns only abstract ones",
       "is_pub": false,
-      "line": 481
+      "line": 513
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getProviders and getProvidersForName",
       "is_pub": false,
-      "line": 504
+      "line": 536
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: get returns null for unknown name",
       "is_pub": false,
-      "line": 535
+      "line": 567
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: basic fluent registration",
       "is_pub": false,
-      "line": 548
+      "line": 580
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: depends and provides interned correctly",
       "is_pub": false,
-      "line": 564
+      "line": 596
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: feature parity with imperative style",
       "is_pub": false,
-      "line": 579
+      "line": 611
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: multiple commands accumulate",
       "is_pub": false,
-      "line": 619
+      "line": 651
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: id field set via fluent",
       "is_pub": false,
-      "line": 634
+      "line": 666
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: GPA no leaks — happy path",
       "is_pub": false,
-      "line": 646
+      "line": 678
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: integrates with DependencyResolver end-to-end",
       "is_pub": false,
-      "line": 666
+      "line": 698
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: exact match returns target",
       "is_pub": false,
-      "line": 699
+      "line": 731
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: empty registry returns null",
       "is_pub": false,
-      "line": 719
+      "line": 751
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: closest partial match returned",
       "is_pub": false,
-      "line": 734
+      "line": 766
+    },
+    {
+      "type": "test_decl",
+      "name": "resolveByCapabilityWithHierarchy: matches via ancestor capability",
+      "is_pub": false,
+      "line": 788
+    },
+    {
+      "type": "test_decl",
+      "name": "resolveByCapabilityWithHierarchy: no ancestors returns same as resolveByCapability",
+      "is_pub": false,
+      "line": 811
     }
   ]
 }

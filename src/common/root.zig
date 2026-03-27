@@ -124,3 +124,6 @@ pub const isNoisyComment = str_mod.isNoisyComment;
 // ── URL utilities ─────────────────────────────────────────────────────────────
 pub const isLocalHost = url_mod.isLocalHost;
 pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
+
+// ── Typed ID handles ──────────────────────────────────────────────────────────
+pub const types = @import("types.zig");
