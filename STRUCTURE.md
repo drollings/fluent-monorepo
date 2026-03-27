@@ -141,110 +141,110 @@ Then you you must read
 │   │   ├── args.zig
 │   │   ├── cli.zig
 │   │   ├── context.zig
-│   │   ├── embeddings.zig
+│   │   ├── embeddings.zig                                         # Embedding providers — convert text to vectors for semantic search.
 │   │   ├── format.zig
-│   │   ├── hash.zig
-│   │   ├── interner.zig
-│   │   ├── io.zig
-│   │   ├── json.zig
+│   │   ├── hash.zig                                               # hash.zig — Generic cryptographic hashing utilities
+│   │   ├── interner.zig                                           # interner.zig — String interning with optional bitset support.
+│   │   ├── io.zig                                                 # io.zig — Shared buffered I/O helpers
+│   │   ├── json.zig                                               # json.zig — Generic JSON serialization helpers
 │   │   ├── json_parser.zig
-│   │   ├── llm.zig
-│   │   ├── local_model.zig
+│   │   ├── llm.zig                                                # common — Shared utilities and LLM client for guidance, vector, and coral.
+│   │   ├── local_model.zig                                        # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
 │   │   ├── registry.zig
 │   │   ├── repl.zig
 │   │   ├── resolver.zig
-│   │   ├── root.zig
-│   │   ├── shared_string.zig
-│   │   ├── source.zig
-│   │   ├── str.zig
+│   │   ├── root.zig                                               # common — Module umbrella root.
+│   │   ├── shared_string.zig                                      # SharedString — heap-allocated, reference-counted, immutable string.
+│   │   ├── source.zig                                             # source.zig — Source code excerpt extraction helpers
+│   │   ├── str.zig                                                # str.zig — Generic string classification and inspection helpers
 │   │   ├── string.zig
 │   │   ├── target.zig
 │   │   ├── terminal.zig
-│   │   └── url.zig
+│   │   └── url.zig                                                # url.zig — Generic URL validation helpers
 │   ├── coral
-│   │   ├── batch.zig
-│   │   ├── cache.zig
-│   │   ├── cli.zig
-│   │   ├── config.zig
+│   │   ├── batch.zig                                              # batch.zig — Streaming Batch Ingestion Pipeline
+│   │   ├── cache.zig                                              # cache.zig — 5-Tier Cache Hierarchy for Query Routing
+│   │   ├── cli.zig                                                # cli.zig — Ingestion CLI Command Implementation
+│   │   ├── config.zig                                             # Coral project configuration loader.
 │   │   ├── context_node_schema.zig
-│   │   ├── db.zig
-│   │   ├── executor.zig
-│   │   ├── frontier.zig
+│   │   ├── db.zig                                                 # db.zig — Coral Context Database Layer (SQLite backend)
+│   │   ├── executor.zig                                           # executor.zig — DAG Executor for the YAGO ingestion pipeline.
+│   │   ├── frontier.zig                                           # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
 │   │   ├── main.zig
-│   │   ├── mcp.zig
+│   │   ├── mcp.zig                                                # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── pattern.zig
-│   │   ├── schema.zig
-│   │   ├── scrub.zig
-│   │   ├── targets.zig
-│   │   ├── triage.zig
-│   │   └── verify.zig
+│   │   ├── schema.zig                                             # schema.zig — Coral Context SQLite Schema (DDL + Queries)
+│   │   ├── scrub.zig                                              # scrub.zig — Comment quality filter for ast-guidance infill pipeline.
+│   │   ├── targets.zig                                            # targets.zig — Ingestion DAG Target Definitions
+│   │   ├── triage.zig                                             # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
+│   │   └── verify.zig                                             # verify.zig — Ingestion Verification and Integrity Checking
 │   ├── guidance
 │   │   ├── plugins
-│   │   │   ├── markdown_plugin.zig
-│   │   │   └── zig_plugin.zig
+│   │   │   ├── markdown_plugin.zig                              # MarkdownPlugin — extracts sections and metadata from Markdown files.
+│   │   │   └── zig_plugin.zig                                   # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   ├── ast_parser.zig
-│   │   ├── comment_cache.zig
-│   │   ├── comment_checker.zig
-│   │   ├── comment_inserter.zig
-│   │   ├── comment_parser.zig
-│   │   ├── comment_sync.zig
-│   │   ├── config.zig
+│   │   ├── comment_cache.zig                                      # comment_cache.zig — In-process cache for generated doc comments.
+│   │   ├── comment_checker.zig                                    # comment_checker.zig — Comment staleness detection for guidance.
+│   │   ├── comment_inserter.zig                                   # comment_inserter.zig — Insert and replace doc comments in Zig source files.
+│   │   ├── comment_parser.zig                                     # comment_parser.zig — Doc comment parsing and quality validation for guidance.
+│   │   ├── comment_sync.zig                                       # comment_sync.zig — Source-code-first comment sync workflow for guidance.
+│   │   ├── config.zig                                             # guidance project configuration loader.
 │   │   ├── deps.zig
-│   │   ├── enhancer.zig
+│   │   ├── enhancer.zig                                           # AI Docstring Enhancer for Zig guidance generation.
 │   │   ├── git.zig
 │   │   ├── hash.zig
-│   │   ├── header_generator.zig
+│   │   ├── header_generator.zig                                   # header_generator.zig — File header comment generation for guidance.
 │   │   ├── json_store.zig
-│   │   ├── line_verify.zig
-│   │   ├── llm_filter.zig
-│   │   ├── main.zig
-│   │   ├── marker.zig
+│   │   ├── line_verify.zig                                        # line_verify.zig — Declaration-level line number verification for guidance.
+│   │   ├── llm_filter.zig                                         # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
+│   │   ├── main.zig                                               # guidance — AST-guided SQLite vector search database generator.
+│   │   ├── marker.zig                                             # Mtime-based change detection for guidance's incremental RALPH loop.
 │   │   ├── pattern.zig
-│   │   ├── plugin.zig
-│   │   ├── plugin_registry.zig
-│   │   ├── provider_discovery.zig
-│   │   ├── query_engine.zig
-│   │   ├── scrub.zig
-│   │   ├── staged.zig
-│   │   ├── structure.zig
+│   │   ├── plugin.zig                                             # LanguagePlugin — interface for language-specific AST providers.
+│   │   ├── plugin_registry.zig                                    # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
+│   │   ├── provider_discovery.zig                                 # External language provider discovery for guidance.
+│   │   ├── query_engine.zig                                       # query_engine.zig — explain, staged, show, test, check commands.
+│   │   ├── scrub.zig                                              # scrub.zig — Synthetic comment detection and scrubbing.
+│   │   ├── staged.zig                                             # staged.zig — Staged explain pipeline for `guidance explain`.
+│   │   ├── structure.zig                                          # STRUCTURE.md generator.
 │   │   ├── sync.zig
-│   │   ├── sync_engine.zig
-│   │   ├── synthesize.zig
-│   │   ├── tests.zig
-│   │   ├── todo.zig
-│   │   ├── triage.zig
+│   │   ├── sync_engine.zig                                        # sync_engine.zig — init, commit, gen, status, clean, pipeline, and utility commands.
+│   │   ├── synthesize.zig                                         # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
+│   │   ├── tests.zig                                              # Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
+│   │   ├── todo.zig                                               # todo.zig — Work item lifecycle tracking for guidance.
+│   │   ├── triage.zig                                             # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
 │   │   └── types.zig
 │   ├── llm
-│   │   └── root.zig
+│   │   └── root.zig                                               # llm — General-purpose LLM inference client.
 │   ├── ontology
-│   │   ├── inference.zig
-│   │   ├── mapper.zig
-│   │   ├── migration.zig
-│   │   ├── root.zig
-│   │   └── yago.zig
+│   │   ├── inference.zig                                          # inference.zig — Ontology Inference Engine (R5)
+│   │   ├── mapper.zig                                             # mapper.zig — Triple → ContextNode Mapper
+│   │   ├── migration.zig                                          # migration.zig — Ontology Versioning and Migration
+│   │   ├── root.zig                                               # ontology/root.zig — Ontology processing module umbrella
+│   │   └── yago.zig                                               # yago.zig — YAGO 4.5 Ontology Schema Definition
 │   ├── rdf
-│   │   ├── lexer.zig
-│   │   ├── normalize.zig
-│   │   ├── nquads.zig
-│   │   ├── parser.zig
-│   │   └── root.zig
+│   │   ├── lexer.zig                                              # lexer.zig — Streaming Turtle (Terse RDF Triple Language) Lexer
+│   │   ├── normalize.zig                                          # normalize.zig — RDF Term Normalization
+│   │   ├── nquads.zig                                             # nquads.zig — N-Quads / N-Triples Parser (line-based, no prefix expansion)
+│   │   ├── parser.zig                                             # parser.zig — Streaming Recursive-Descent Turtle Parser
+│   │   └── root.zig                                               # rdf/root.zig — RDF parsing module umbrella
 │   ├── reflection
-│   │   ├── accessor.zig
-│   │   ├── binary.zig
-│   │   ├── constraint.zig
-│   │   ├── enum_registry.zig
-│   │   ├── permissions.zig
-│   │   ├── root.zig
-│   │   └── typed.zig
+│   │   ├── accessor.zig                                           # accessor.zig — Accessor, DynamicEditable, Editable(T), FieldMeta, TypeTag, OwnershipMode.
+│   │   ├── binary.zig                                             # binary.zig — BinaryFieldCodec for wire-format encoding/decoding of struct fields.
+│   │   ├── constraint.zig                                         # constraint.zig — ConstraintVTable, constraintSet, constraintGet, Constraint(T).
+│   │   ├── enum_registry.zig                                      # enum_registry.zig — EnumRegistry for runtime enum name/value lookups.
+│   │   ├── permissions.zig                                        # permissions.zig — Role-based permission system for Coral Context reflection.
+│   │   ├── root.zig                                               # reflection — Coral Context field-level reflection, validation, and permission layer.
+│   │   └── typed.zig                                              # typed.zig — TypedAccessorTable(T) and TypedEditable.
 │   ├── vector
-│   │   ├── math.zig
-│   │   ├── root.zig
-│   │   ├── simhash.zig
-│   │   ├── simhash_projections.zig
-│   │   └── vector_db.zig
+│   │   ├── math.zig                                               # Vector operations — cosine similarity, normalization, hybrid merge.
+│   │   ├── root.zig                                               # guidance vector module — cosine search, embeddings, hybrid merge.
+│   │   ├── simhash.zig                                            # simhash.zig — Charikar SimHash for approximate nearest-neighbour pre-filtering.
+│   │   ├── simhash_projections.zig                                # simhash_projections.zig — auto-generated by tools/gen_simhash_projections.py
+│   │   └── vector_db.zig                                          # guidance SQLite vector search database (cosine similarity via BLOB storage).
 │   └── wasm
-│       └── wasm.zig
+│       └── wasm.zig                                                 # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
 ├── tools
 │   └── gen_simhash_projections.py
 ├── vendor

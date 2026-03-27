@@ -183,7 +183,7 @@ pub const StructureGenerator = struct {
     // -------------------------------------------------------------------------
 
     /// Look up the comment for a file entry.
-    /// Priority: guidance JSON documentation → old STRUCTURE.md comment → null.
+    /// Priority: guidance JSON comment → .zig source top-comment → old STRUCTURE.md comment → null.
     fn resolveComment(
         self: *StructureGenerator,
         entry: FileEntry,
@@ -193,9 +193,56 @@ pub const StructureGenerator = struct {
         // for .zig source files; others simply won't have a matching JSON file).
         if (try self.commentFromGuidance(entry.rel_path)) |c| return c;
 
+        // For .zig files the sync pipeline intentionally omits the comment from JSON
+        // (source is the authoritative location).  Read the leading /// / //! lines
+        // directly from the source file.
+        if (std.mem.endsWith(u8, entry.rel_path, ".zig")) {
+            if (try self.commentFromZigSource(entry.abs_path)) |c| return c;
+        }
+
         // Fall back to the preserved comment from the previous STRUCTURE.md.
         if (old_comments.get(entry.name)) |c| return try self.allocator.dupe(u8, c);
 
+        return null;
+    }
+
+    /// Read the first `/// ` or `//! ` doc-comment line from a Zig source file.
+    /// Scans from the top, skipping blank lines and normal `//` comment lines,
+    /// and returns the first non-empty text from a doc-comment line.
+    fn commentFromZigSource(self: *StructureGenerator, abs_path: []const u8) !?[]const u8 {
+        const file = std.fs.openFileAbsolute(abs_path, .{}) catch return null;
+        defer file.close();
+
+        // Read up to 4 KiB — enough to find the module header without loading large files.
+        var buf: [4096]u8 = undefined;
+        const n = file.read(&buf) catch return null;
+        const source = buf[0..n];
+
+        var lines = std.mem.splitScalar(u8, source, '\n');
+        while (lines.next()) |raw_line| {
+            const line = std.mem.trimRight(u8, raw_line, "\r ");
+            if (line.len == 0) continue;
+
+            // Accept `//! ` (module doc) and `/// ` (declaration doc used at file top).
+            const text: []const u8 = blk: {
+                if (std.mem.startsWith(u8, line, "//! ")) break :blk line[4..];
+                if (std.mem.startsWith(u8, line, "//!")) break :blk line[3..];
+                if (std.mem.startsWith(u8, line, "/// ")) break :blk line[4..];
+                if (std.mem.startsWith(u8, line, "///")) break :blk line[3..];
+                // Any other content means the doc-comment block is over.
+                break :blk null;
+            } orelse break;
+
+            const trimmed = std.mem.trim(u8, text, " \t");
+            if (trimmed.len == 0) continue; // blank doc-comment line, keep scanning
+
+            // Enforce 120-char cap; truncate at word boundary when possible.
+            const cap: usize = 120;
+            if (trimmed.len > cap) {
+                return try std.fmt.allocPrint(self.allocator, "{s}...", .{trimmed[0..117]});
+            }
+            return try self.allocator.dupe(u8, trimmed);
+        }
         return null;
     }
 
