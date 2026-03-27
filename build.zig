@@ -491,6 +491,42 @@ pub fn build(b: *std.Build) void {
     coral_frontier_tests.linkLibC();
     coral_frontier_tests.linkSystemLibrary("sqlite3");
 
+    // -- Guidance vector_db tests (Task 3.1) --
+    const guidance_vector_db_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/vector_db.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Guidance simhash tests (Task 3.2) --
+    const guidance_simhash_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/simhash.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral frontier_tool_compiler tests (Task 5.1) --
+    const coral_frontier_tool_compiler_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/frontier_tool_compiler.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral anonymize tests (Task 8.2) --
+    const coral_anonymize_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/anonymize.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     // -------------------------------------------------------------------------
     // Wire all test runs
     // -------------------------------------------------------------------------
@@ -515,4 +551,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(coral_main_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_executor_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_frontier_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_vector_db_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_simhash_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_frontier_tool_compiler_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_anonymize_tests).step);
 }

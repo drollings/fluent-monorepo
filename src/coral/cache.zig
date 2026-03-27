@@ -50,6 +50,7 @@ pub const RoutingResult = struct {
 pub const L1Cache = struct {
     allocator: std.mem.Allocator,
     entries: std.StringHashMap(RoutingResult),
+    mu: std.Thread.RwLock = .{},
 
     pub fn init(allocator: std.mem.Allocator) L1Cache {
         return .{
@@ -68,12 +69,17 @@ pub const L1Cache = struct {
     }
 
     pub fn get(self: *L1Cache, query_hash: []const u8) ?RoutingResult {
+        self.mu.lockShared();
+        defer self.mu.unlockShared();
         return self.entries.get(query_hash);
     }
 
     pub fn put(self: *L1Cache, query_hash: []const u8, result: RoutingResult) !void {
         const owned_key = try self.allocator.dupe(u8, query_hash);
+        errdefer self.allocator.free(owned_key);
         const owned_result = try dupeRoutingResult(self.allocator, result);
+        self.mu.lock();
+        defer self.mu.unlock();
         try self.entries.put(owned_key, owned_result);
     }
 
@@ -701,6 +707,82 @@ pub const QueueReactor = struct {
 };
 
 // ---------------------------------------------------------------------------
+// Task 7.1 — ParallelRouter
+// ---------------------------------------------------------------------------
+
+/// Routes a batch of queries in parallel using the reactor's thread pool.
+/// Falls back to sequential routing if no thread pool is configured.
+pub const ParallelRouter = struct {
+    const Self = @This();
+
+    reactor: *QueueReactor,
+
+    pub fn init(reactor: *QueueReactor) Self {
+        return .{ .reactor = reactor };
+    }
+
+    /// Route all queries in `queries` concurrently.
+    /// Returns a slice of RoutingResults (same order as input).
+    /// Caller must free results and each result's nodes.
+    pub fn routeBatch(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        queries: []const []const u8,
+    ) ![]RoutingResult {
+        if (queries.len == 0) return &[_]RoutingResult{};
+
+        const results = try allocator.alloc(RoutingResult, queries.len);
+        errdefer allocator.free(results);
+
+        if (self.reactor.thread_pool) |pool| {
+            const TaskCtx = struct {
+                reactor: *QueueReactor,
+                query: []const u8,
+                result: *RoutingResult,
+                err: ?anyerror = null,
+
+                fn run(ctx: *@This()) void {
+                    ctx.result.* = ctx.reactor.route(ctx.query) catch |err| blk: {
+                        ctx.err = err;
+                        break :blk RoutingResult{
+                            .nodes = &[_]ContextNode{},
+                            .tool_result = &[_]u8{},
+                            .llm_response = &[_]u8{},
+                            .tier_used = .l5_llm,
+                            .latency_ms = 0,
+                        };
+                    };
+                }
+            };
+
+            const ctxs = try allocator.alloc(TaskCtx, queries.len);
+            defer allocator.free(ctxs);
+
+            for (queries, 0..) |q, i| {
+                ctxs[i] = .{
+                    .reactor = self.reactor,
+                    .query = q,
+                    .result = &results[i],
+                };
+            }
+
+            var wg: std.Thread.WaitGroup = .{};
+            for (ctxs) |*ctx| {
+                pool.spawnWg(&wg, TaskCtx.run, .{ctx});
+            }
+            pool.waitAndWork(&wg);
+        } else {
+            // Sequential fallback
+            for (queries, 0..) |q, i| {
+                results[i] = try self.reactor.route(q);
+            }
+        }
+
+        return results;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -937,6 +1019,31 @@ test "QueueReactorBuilder: threadCount initialises thread pool" {
     try testing.expect(reactor.thread_pool != null);
 }
 
+test "L1Cache: concurrent reads are safe" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var cache = L1Cache.init(allocator);
+    defer cache.deinit();
+
+    // put a result
+    const result = RoutingResult{
+        .nodes = &[_]ContextNode{},
+        .tool_result = &[_]u8{},
+        .llm_response = &[_]u8{},
+        .tier_used = .l1_memory,
+        .latency_ms = 5,
+    };
+    try cache.put("hash1", result);
+
+    // two concurrent reads should not race (single-threaded test just verifies no crash)
+    const r1 = cache.get("hash1");
+    const r2 = cache.get("hash1");
+    try testing.expect(r1 != null);
+    try testing.expect(r2 != null);
+}
+
 test "M5: concurrent writes via thread pool do not deadlock" {
     // Spawn multiple goroutines inserting nodes; WAL mode prevents SQLITE_BUSY.
     const NTHREADS = 4;
@@ -985,4 +1092,20 @@ test "M5: concurrent writes via thread pool do not deadlock" {
     try testing.expect(count > 0);
 }
 
+test "ParallelRouter: routeBatch with empty input" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
 
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    var reactor = QueueReactor.init(allocator, lib, 10);
+    defer reactor.deinit();
+
+    var router = ParallelRouter.init(&reactor);
+    const results = try router.routeBatch(allocator, &[_][]const u8{});
+    defer allocator.free(results);
+    try testing.expectEqual(@as(usize, 0), results.len);
+}

@@ -845,51 +845,149 @@ pub const ToolGenerator = struct {
     }
 };
 
-/// WASM tool cache — stores compiled tools in memory and SQLite.
+/// A test case for WASM tool verification.
+pub const ToolTestCase = struct {
+    /// Input to pass to the tool's "execute" entry point.
+    input: []const u8,
+    /// Optional output substring to check (null = accept any output).
+    expected_output_contains: ?[]const u8 = null,
+};
+
+/// Run a series of test cases against a WASM binary.
+/// Returns true if all test cases pass, false if any fail.
+pub fn verifyWithTests(
+    allocator: std.mem.Allocator,
+    wasm_bytes: []const u8,
+    test_cases: []const ToolTestCase,
+) bool {
+    if (test_cases.len == 0) return true;
+
+    for (test_cases) |tc| {
+        const output = executeWasmQuery(allocator, wasm_bytes, tc.input) catch return false;
+        defer allocator.free(output);
+        if (tc.expected_output_contains) |expected| {
+            if (std.mem.indexOf(u8, output, expected) == null) return false;
+        }
+    }
+    return true;
+}
+
+/// Cache entry for a single WASM tool with TTL/LRU metadata.
+pub const WasmToolCacheEntry = struct {
+    wasm_bytes: []const u8,
+    created_at: i64,
+    last_accessed: i64,
+    access_count: usize,
+};
+
+/// WASM tool cache — stores compiled tools in memory with TTL and LRU eviction.
 pub const WasmToolCache = struct {
     const Self = @This();
+    const DEFAULT_TTL_SECONDS: u64 = 3600; // 1 hour
+    const DEFAULT_MAX_ENTRIES: usize = 256;
 
     allocator: std.mem.Allocator,
-    tools: std.StringHashMapUnmanaged([]const u8), // name -> wasm_bytes
+    tools: std.StringHashMapUnmanaged(WasmToolCacheEntry),
+    max_entries: usize,
+    ttl_seconds: u64,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return .{
             .allocator = allocator,
             .tools = .{},
+            .max_entries = DEFAULT_MAX_ENTRIES,
+            .ttl_seconds = DEFAULT_TTL_SECONDS,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        var iter = self.tools.iterator();
-        while (iter.next()) |entry| {
+        var it = self.tools.iterator();
+        while (it.next()) |entry| {
             self.allocator.free(entry.key_ptr.*);
-            self.allocator.free(entry.value_ptr.*);
+            self.allocator.free(entry.value_ptr.wasm_bytes);
         }
         self.tools.deinit(self.allocator);
     }
 
+    /// Get WASM bytes by name. Returns null if not found or expired.
     pub fn get(self: *Self, name: []const u8) ?[]const u8 {
-        return self.tools.get(name);
+        const entry = self.tools.getPtr(name) orelse return null;
+        const now = std.time.timestamp();
+        if (self.ttl_seconds > 0 and now - entry.created_at > @as(i64, @intCast(self.ttl_seconds))) {
+            return null; // expired
+        }
+        entry.last_accessed = now;
+        entry.access_count += 1;
+        return entry.wasm_bytes;
     }
 
+    /// Store WASM bytes under `name`. Evicts LRU entry if at capacity.
     pub fn put(self: *Self, name: []const u8, wasm_bytes: []const u8) !void {
+        // Evict oldest entry if at capacity
+        if (self.tools.count() >= self.max_entries) {
+            try self.evictOldest();
+        }
+        // Evict existing entry with same name if present
+        if (self.tools.fetchRemove(name)) |kv| {
+            self.allocator.free(kv.key);
+            self.allocator.free(kv.value.wasm_bytes);
+        }
+        const owned_key = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(owned_key);
         const owned_bytes = try self.allocator.dupe(u8, wasm_bytes);
         errdefer self.allocator.free(owned_bytes);
+        const now = std.time.timestamp();
+        try self.tools.put(self.allocator, owned_key, .{
+            .wasm_bytes = owned_bytes,
+            .created_at = now,
+            .last_accessed = now,
+            .access_count = 0,
+        });
+    }
 
-        if (self.tools.getEntry(name)) |entry| {
-            // Key already exists: reuse the existing key allocation, free old value.
-            self.allocator.free(entry.value_ptr.*);
-            entry.value_ptr.* = owned_bytes;
-        } else {
-            const owned_name = try self.allocator.dupe(u8, name);
-            errdefer self.allocator.free(owned_name);
-            try self.tools.put(self.allocator, owned_name, owned_bytes);
+    /// Evict all entries older than ttl_seconds.
+    pub fn evictExpired(self: *Self) !void {
+        const now = std.time.timestamp();
+        var to_remove: std.ArrayListUnmanaged([]const u8) = .{};
+        defer to_remove.deinit(self.allocator);
+
+        var it = self.tools.iterator();
+        while (it.next()) |entry| {
+            if (self.ttl_seconds > 0 and now - entry.value_ptr.created_at > @as(i64, @intCast(self.ttl_seconds))) {
+                try to_remove.append(self.allocator, entry.key_ptr.*);
+            }
+        }
+        for (to_remove.items) |key| {
+            if (self.tools.fetchRemove(key)) |kv| {
+                self.allocator.free(kv.key);
+                self.allocator.free(kv.value.wasm_bytes);
+            }
         }
     }
 
-    pub fn computeHash(self: *Self, wasm_bytes: []const u8) [32]u8 {
-        _ = self;
-        return hash_mod.blake3Hash(wasm_bytes);
+    pub fn computeHash(_: *const Self, bytes: []const u8) [32]u8 {
+        var h: std.crypto.hash.sha2.Sha256 = .init(.{});
+        h.update(bytes);
+        return h.finalResult();
+    }
+
+    fn evictOldest(self: *Self) !void {
+        if (self.tools.count() == 0) return;
+        var oldest_key: ?[]const u8 = null;
+        var oldest_time: i64 = std.math.maxInt(i64);
+        var it = self.tools.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.last_accessed < oldest_time) {
+                oldest_time = entry.value_ptr.last_accessed;
+                oldest_key = entry.key_ptr.*;
+            }
+        }
+        if (oldest_key) |key| {
+            if (self.tools.fetchRemove(key)) |kv| {
+                self.allocator.free(kv.key);
+                self.allocator.free(kv.value.wasm_bytes);
+            }
+        }
     }
 };
 
@@ -1189,4 +1287,9 @@ test "BinaryContextNode: multiple non-empty LODs round-trip" {
     try testing.expectEqualStrings("LOD1 summary", bin.getLod(&buffer, 1));
     try testing.expectEqualStrings("LOD2 short", bin.getLod(&buffer, 2));
     try testing.expectEqual(@as(u32, 0), bin.lod_lengths[3]); // LOD3 never set
+}
+
+test "verifyWithTests: empty test cases returns true" {
+    const result = verifyWithTests(testing.allocator, &[_]u8{}, &[_]ToolTestCase{});
+    try testing.expect(result);
 }

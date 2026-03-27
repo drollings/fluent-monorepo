@@ -26,6 +26,16 @@ const QueueReactor = cache.QueueReactor;
 const CoralQueryParams = struct {
     query: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
+    pub fn describeField(comptime name: []const u8) reflection.FieldMeta {
+        if (comptime std.mem.eql(u8, name, "query")) {
+            return .{
+                .description = "The natural language query to route through the tiered cache",
+                .examples = &.{ "Who is Ada Lovelace?", "error: module not found" },
+                .identity = true,
+            };
+        }
+        return .{};
+    }
 };
 
 /// Manages node insertion parameters with fixed-size buffers; encapsulates ownership and invariants.
@@ -33,6 +43,22 @@ const InsertNodeParams = struct {
     name: []const u8,
     description: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
+    pub fn describeField(comptime name: []const u8) reflection.FieldMeta {
+        if (comptime std.mem.eql(u8, name, "name")) {
+            return .{
+                .description = "Human-readable name for the context node (lod4)",
+                .identity = true,
+                .examples = &.{ "Ada Lovelace", "build_zig", "HTTP gateway" },
+            };
+        }
+        if (comptime std.mem.eql(u8, name, "description")) {
+            return .{
+                .description = "Full text content for the context node (lod0)",
+                .examples = &.{"A pioneering computer scientist known for her work on the Analytical Engine."},
+            };
+        }
+        return .{};
+    }
 };
 
 /// Defines configuration parameters for Zig compilation; manages ownership and invariants during build.
@@ -40,7 +66,39 @@ const ExplainParams = struct {
     name: []const u8,
     max_tokens: i64 = 4096,
     pub const editable: reflection.Editable(@This()) = .{};
+    pub fn describeField(comptime name: []const u8) reflection.FieldMeta {
+        if (comptime std.mem.eql(u8, name, "name")) {
+            return .{
+                .description = "Name of the context node to explain (matches lod4)",
+                .identity = true,
+                .relation = "context_nodes",
+            };
+        }
+        if (comptime std.mem.eql(u8, name, "max_tokens")) {
+            return .{
+                .description = "Maximum token budget for LOD-packed context output",
+                .default = "4096",
+                .min = 256,
+                .max = 32768,
+                .units = "tokens",
+            };
+        }
+        return .{};
+    }
 };
+
+/// Check that all required (identity=true) fields are present in the args map.
+fn validateRequiredFields(
+    comptime T: type,
+    args: std.json.ObjectMap,
+) !void {
+    const accessors = reflection.Editable(T).accessors;
+    inline for (accessors) |acc| {
+        if (acc.meta.identity) {
+            if (args.get(acc.name) == null) return error.MissingRequiredField;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Tool definitions (P4.2)
@@ -269,6 +327,9 @@ pub const McpServer = struct {
 
     fn toolCoralQuery(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) ![]const u8 {
         _ = a;
+        validateRequiredFields(CoralQueryParams, args) catch |err| {
+            return self.errorResponse(req.id, -32602, "Missing required field", err);
+        };
         const query_val = args.get("query") orelse return self.errorResponse(req.id, -32602, "Missing query", error.MissingQuery);
         const query = switch (query_val) {
             .string => |s| s,
@@ -297,6 +358,9 @@ pub const McpServer = struct {
 
     fn toolCoralInsertNode(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) ![]const u8 {
         _ = a;
+        validateRequiredFields(InsertNodeParams, args) catch |err| {
+            return self.errorResponse(req.id, -32602, "Missing required field", err);
+        };
         const name_val = args.get("name") orelse return self.errorResponse(req.id, -32602, "Missing name", error.MissingName);
         const name = switch (name_val) {
             .string => |s| s,
@@ -335,6 +399,9 @@ pub const McpServer = struct {
     }
 
     fn toolCoralExplain(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) ![]const u8 {
+        validateRequiredFields(ExplainParams, args) catch |err| {
+            return self.errorResponse(req.id, -32602, "Missing required field", err);
+        };
         const name_val = args.get("name") orelse return self.errorResponse(req.id, -32602, "Missing name", error.MissingName);
         const name = switch (name_val) {
             .string => |s| s,
@@ -561,6 +628,30 @@ test "McpServer: unknown method returns error -32601" {
     defer allocator.free(resp);
 
     try testing.expect(std.mem.indexOf(u8, resp, "-32601") != null);
+}
+
+test "McpServer: missing required field returns error" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    var reactor = QueueReactor.init(allocator, lib, 10);
+    defer reactor.deinit();
+
+    var server = McpServer{
+        .allocator = allocator,
+        .reactor = &reactor,
+    };
+
+    const req = "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/call\",\"params\":{\"name\":\"coral_query\",\"arguments\":{}}}";
+    const resp = try server.handleRequest(req);
+    defer allocator.free(resp);
+    // Should return an error (missing required "query" field)
+    try testing.expect(std.mem.indexOf(u8, resp, "error") != null);
 }
 
 

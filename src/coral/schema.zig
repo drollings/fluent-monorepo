@@ -163,6 +163,20 @@ pub const DDL_ENTITY_TYPES: []const u8 =
 ;
 
 // ---------------------------------------------------------------------------
+// §2.11 Property Uses (YAGO ontology)
+// ---------------------------------------------------------------------------
+
+/// Maps predicates to their domain type, enabling property inheritance.
+pub const DDL_PROPERTY_USES: []const u8 =
+    \\CREATE TABLE IF NOT EXISTS property_uses (
+    \\    predicate TEXT NOT NULL,
+    \\    domain_type_id INTEGER NOT NULL,
+    \\    FOREIGN KEY (domain_type_id) REFERENCES context_nodes(id),
+    \\    PRIMARY KEY (predicate, domain_type_id)
+    \\)
+;
+
+// ---------------------------------------------------------------------------
 // Canned SQL queries
 // ---------------------------------------------------------------------------
 
@@ -213,6 +227,31 @@ pub const SCHEMA_DDL = [_][]const u8{
     DDL_APPROVAL_WORKFLOW,
     DDL_CONTRADICTIONS,
     DDL_ENTITY_TYPES,
+    DDL_PROPERTY_USES,
+};
+
+// ---------------------------------------------------------------------------
+// Schema versioning & migrations
+// ---------------------------------------------------------------------------
+
+/// Current schema version. Increment when adding migrations.
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// DDL for the schema version tracking table.
+pub const DDL_SCHEMA_VERSION: []const u8 =
+    \\CREATE TABLE IF NOT EXISTS schema_version (
+    \\    version INTEGER NOT NULL DEFAULT 0
+    \\)
+;
+
+/// Migrations applied sequentially from version 0 to SCHEMA_VERSION.
+/// Index i applies migration from version i to i+1.
+/// Empty string = no-op (initial schema already created by SCHEMA_DDL).
+pub const MIGRATIONS = [_][]const u8{
+    // 0 → 1: Initial schema (all tables created by SCHEMA_DDL)
+    "",
+    // 1 → 2: Add property_uses table
+    DDL_PROPERTY_USES,
 };
 
 // ---------------------------------------------------------------------------
@@ -271,13 +310,20 @@ test "schema uses SQLite syntax" {
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "VECTOR(1536)") == null);
 }
 
-test "SCHEMA_DDL has 11 statements" {
-    try testing.expectEqual(@as(usize, 11), SCHEMA_DDL.len);
+test "SCHEMA_DDL has 12 statements" {
+    try testing.expectEqual(@as(usize, 12), SCHEMA_DDL.len);
 }
 
 test "entity_types DDL is non-empty" {
     try testing.expect(DDL_ENTITY_TYPES.len > 0);
     try testing.expect(std.mem.indexOf(u8, DDL_ENTITY_TYPES, "entity_types") != null);
+}
+
+test "property_uses DDL is non-empty" {
+    try testing.expect(DDL_PROPERTY_USES.len > 0);
+    try testing.expect(std.mem.indexOf(u8, DDL_PROPERTY_USES, "property_uses") != null);
+    try testing.expect(std.mem.indexOf(u8, DDL_PROPERTY_USES, "predicate") != null);
+    try testing.expect(std.mem.indexOf(u8, DDL_PROPERTY_USES, "domain_type_id") != null);
 }
 
 test "query templates are SQL" {

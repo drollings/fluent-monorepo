@@ -356,7 +356,38 @@ pub const Library = struct {
         for (schema.SCHEMA_DDL) |ddl| {
             try self.exec(ddl);
         }
+        // Initialize schema version tracking
+        try self.exec(schema.DDL_SCHEMA_VERSION);
+        // Insert version row if not present
+        try self.exec(
+            \\INSERT OR IGNORE INTO schema_version (version) VALUES (0)
+        );
         self.initialized = true;
+    }
+
+    /// Return the current schema version from the database.
+    pub fn getSchemaVersion(self: *Self) !u32 {
+        const sql = "SELECT version FROM schema_version LIMIT 1";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        if (!try step(stmt)) return 0;
+        return @intCast(c.sqlite3_column_int(stmt, 0));
+    }
+
+    /// Apply pending migrations from current version to schema.SCHEMA_VERSION.
+    pub fn migrate(self: *Self) !void {
+        const current = try self.getSchemaVersion();
+        var v = current;
+        while (v < schema.SCHEMA_VERSION) : (v += 1) {
+            const migration_sql = schema.MIGRATIONS[v];
+            if (migration_sql.len > 0) {
+                try self.exec(migration_sql);
+            }
+            // Update version
+            const update_sql = try std.fmt.allocPrint(self.allocator, "UPDATE schema_version SET version = {d}", .{v + 1});
+            defer self.allocator.free(update_sql);
+            try self.exec(update_sql);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -825,6 +856,39 @@ pub const Library = struct {
         _ = c.sqlite3_bind_int64(stmt, 1, child_id);
         _ = c.sqlite3_bind_text(stmt, 2, parent_name.ptr, @intCast(parent_name.len), SQLITE_STATIC);
         return try step(stmt);
+    }
+
+    /// Return all ancestor type IDs of `entity_id` via recursive CTE.
+    /// Uses the entity_types table populated during YAGO ingestion.
+    /// Caller owns the returned slice.
+    pub fn getAllAncestors(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        entity_id: i64,
+    ) ![]i64 {
+        const sql =
+            \\WITH RECURSIVE ancestors(id) AS (
+            \\    SELECT type_id FROM entity_types WHERE entity_id = ?1
+            \\    UNION
+            \\    SELECT et.type_id FROM entity_types et
+            \\    JOIN ancestors a ON a.id = et.entity_id
+            \\)
+            \\SELECT id FROM ancestors
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
+
+        var result: std.ArrayListUnmanaged(i64) = .{};
+        errdefer result.deinit(allocator);
+
+        while (try step(stmt)) {
+            const id: i64 = c.sqlite3_column_int64(stmt, 0);
+            try result.append(allocator, id);
+        }
+
+        return result.toOwnedSlice(allocator);
     }
 
     // ------------------------------------------------------------------
@@ -1720,4 +1784,45 @@ test "Library: concurrent insert+read, 4 threads" {
     t4.join();
     // If we reach here without panic, the test passes.
     try testing.expect(true);
+}
+
+test "Library: getAllAncestors returns empty for unknown entity" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    const ancestors = try lib.getAllAncestors(allocator, 999);
+    defer allocator.free(ancestors);
+    try testing.expectEqual(@as(usize, 0), ancestors.len);
+}
+
+test "Library: getSchemaVersion returns 0 before migration" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    const v = try lib.getSchemaVersion();
+    try testing.expectEqual(@as(u32, 0), v);
+}
+
+test "Library: migrate advances schema version" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const lib = try Library.init(allocator, .mem, "");
+    defer lib.deinit();
+    try lib.initSchema();
+
+    try lib.migrate();
+    const v = try lib.getSchemaVersion();
+    try testing.expectEqual(schema.SCHEMA_VERSION, v);
 }

@@ -87,6 +87,19 @@
 
     {"key": "make", "values": ["Makefile", "pre-commit", "gen-status", "explain", "targets"]},
     {"key": "build", "values": ["zig build", "Makefile", "build.zig", "pre-commit"]},
-    {"key": "generate", "values": ["SyncProcessor", "processFile", "guidance gen", "syncDatabase"]}
+    {"key": "generate", "values": ["SyncProcessor", "processFile", "guidance gen", "syncDatabase"]},
+
+    {"key": "mcp", "values": ["McpServer", "handleRequest", "tools/call", "tools/list", "JSON-RPC", "coral_query"]},
+    {"key": "protocol", "values": ["McpServer", "JsonRpcRequest", "JSON-RPC", "handleRequest", "dispatch"]},
+
+    {"key": "binary", "values": ["BinaryContextNode", "BinaryHeader", "BinaryExecutionRequest", "writeToBuffer", "readFromBuffer"]},
+    {"key": "ipc", "values": ["BinaryContextNode", "BinaryHeader", "PayloadType", "CCND", "coral_schema"]},
+    {"key": "wire format", "values": ["BinaryContextNode", "BinaryHeader", "BINARY_MAGIC", "extern struct"]},
+
+    {"key": "simhash", "values": ["SimHash", "compute", "distance", "similar", "shingle", "near-duplicate"]},
+    {"key": "deduplication", "values": ["SimHash", "distance", "similar", "Hamming", "shingle"]},
+    {"key": "fingerprint", "values": ["SimHash", "compute", "hashShingle", "Wyhash", "locality-sensitive"]},
+
+    {"key": "hybrid search", "values": ["hybridSearch", "SearchResult", "SearchConfig", "vector_weight", "keyword_weight", "GuidanceSearchMode"]}
   ]
 }
