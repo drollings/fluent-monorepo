@@ -1,4 +1,4 @@
-//! logging.zig — Structured logging context and timing scope for Fluent WVR.
+//! logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 //!
 //! ## Design
 //!

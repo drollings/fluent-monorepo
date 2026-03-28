@@ -1,4 +1,4 @@
-# Fluent WVR — The Synthesis Pipeline
+# Fluent WEAVER — The Synthesis Pipeline built on Wrapped Extensible Arenas with Vtables using Editable Reflection
 
 **A design pattern guide for human coders and AI agents working in this codebase.**
 
@@ -77,7 +77,21 @@ target = Target(name="build", depends=["compile"], provides=["artifact"], essent
 
 ### The Zig solution
 
-A builder struct accumulates configuration through chained `*Self` setters. Errors are stored in `err: ?anyerror` and surface only at the terminal call — the entire chain is one `try`. The key insight is that the *accumulation phase* should never fail visibly to the caller. Each setter tests `if (self.err != null) return self;` and stores any failure silently. The terminal method (`register`, `build`, `sync`) is the only place the caller writes `try` — it either commits cleanly or surfaces the earliest error that occurred during the chain.
+A builder struct accumulates configuration through chained `*Self` setters. Errors are stored in `err: ?*BuilderError` — a rich error type that captures **where** and **why** the failure occurred — and surface only at the terminal call. The key insight is that the *accumulation phase* should never fail visibly to the caller. Each setter tests `if (self.hasError()) return self;` and stores any failure silently. The terminal method (`register`, `build`, `sync`) is the only place the caller writes `try` — it either commits cleanly or surfaces the earliest error that occurred during the chain.
+
+**Why `BuilderError` instead of `?anyerror`?**
+
+A naive implementation stores `err: ?anyerror`, which loses all context about *which* setter failed. Zig's error trace shows the terminal `register()` call, not the failing setter. The `BuilderError` pattern solves this by capturing:
+
+- `phase`: which setter failed (depends, provides, command, etc.)
+- `field`: the field name being set
+- `value`: the user-supplied value (truncated to 128 bytes)
+- `constraint`: what validation was violated
+- `cause`: the underlying Zig error
+
+The formatted message: `phase=depends field=provides value=compile,link constraint=invalid_reference cause=OutOfMemory`
+
+This is **more useful than a stack trace** — it shows the semantic context that a stack trace cannot.
 
 ### Canonical implementation: `TargetBuilder` in `src/common/registry.zig`
 
@@ -96,23 +110,42 @@ The builder shape:
 ```zig
 pub const TargetBuilder = struct {
     allocator: std.mem.Allocator,
-    registry:  *TargetRegistry,
-    interner:  *StringInterner,
-    target:    ?*Target,
-    err:       ?anyerror,          // accumulated error field
+    /// Owns all strings in BuilderError (error messages, value copies).
+    /// Deinited by register() on both success and error paths.
+    arena: std.heap.ArenaAllocator,
+    registry: *TargetRegistry,
+    interner: *StringInterner,
+    target: ?*Target,
+    /// Rich error with field/value/constraint context (arena-allocated).
+    err: ?*BuilderError,
+    /// Fallback plain error when BuilderError arena allocation itself fails.
+    err_any: ?anyerror,
+
+    fn hasError(self: *const TargetBuilder) bool {
+        return self.err != null or self.err_any != null;
+    }
 
     /// Every setter: guard → mutate → return self.
     pub fn depends(self: *TargetBuilder, names: []const []const u8) *TargetBuilder {
-        if (self.err != null or self.target == null) return self;  // short-circuit
-        self.target.?.setDepends(self.allocator, self.interner, names) catch |e| {
-            self.err = e;
+        if (self.hasError() or self.target == null) return self;  // short-circuit
+        self.target.?.setDepends(self.allocator, self.interner, names) catch |cause| {
+            const value = joinStringSlice(self.arena.allocator(), names) catch null;
+            self.setError(.depends, "depends", value, "invalid_reference", cause);
         };
         return self;
     }
 
     /// Terminal: surface accumulated error, transfer ownership to registry.
+    /// Always deinits the arena — do not call any setter after register().
     pub fn register(self: *TargetBuilder) !void {
+        defer self.arena.deinit();
         if (self.err) |e| {
+            if (self.target) |t| { t.deinit(self.allocator); self.allocator.destroy(t); }
+            // Caller can log e.message for diagnostics:
+            // std.log.err("Registration failed: {s}", .{e.message});
+            return e.cause;
+        }
+        if (self.err_any) |e| {
             if (self.target) |t| { t.deinit(self.allocator); self.allocator.destroy(t); }
             return e;
         }
@@ -124,16 +157,41 @@ pub const TargetBuilder = struct {
 };
 ```
 
+The `BuilderError` type (see `src/common/builder_error.zig`):
+
+```zig
+pub const BuilderError = struct {
+    phase: Phase,           // which setter failed: depends, provides, command, etc.
+    field: ?[]const u8,     // the field name
+    value: ?[]const u8,     // user-supplied value (truncated to 128 bytes)
+    constraint: ?[]const u8, // what was violated
+    cause: anyerror,        // underlying Zig error
+    message: []const u8,    // formatted: "phase=X field=Y value=Z cause=W"
+};
+
+pub const Phase = enum {
+    depends, provides, command, registration, validation, initialization,
+};
+```
+
 The factory on the owning struct encodes allocation errors into the builder, not the caller:
 
 ```zig
 pub fn target(self: *TargetRegistry, name: []const u8, tt: TargetType) TargetBuilder {
-    const t = self.allocator.create(Target) catch |e|
-        return .{ .allocator = self.allocator, .registry = self,
-                  .interner = self.interner, .target = null, .err = e };
-    // ... init t ...
-    return .{ .allocator = self.allocator, .registry = self,
-              .interner = self.interner, .target = t, .err = null };
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
+    const t = self.allocator.create(Target) catch |e| {
+        return .{ .allocator = self.allocator, .arena = arena,
+                  .registry = self, .interner = self.interner,
+                  .target = null, .err = null, .err_any = e };
+    };_ = t.init(self.allocator, self.interner, name, tt) catch |e| {
+        self.allocator.destroy(t);
+        return .{ .allocator = self.allocator, .arena = arena,
+                  .registry = self, .interner = self.interner,
+                  .target = null, .err = null, .err_any = e };
+    };
+    return .{ .allocator = self.allocator, .arena = arena,
+              .registry = self, .interner = self.interner,
+              .target = t, .err = null, .err_any = null };
 }
 ```
 
@@ -179,12 +237,15 @@ const reactor = try QueueReactorBuilder.init(allocator)
 
 ### Rules
 
-- `err: ?anyerror` — never panic mid-chain; accumulate, surface at terminal.
-- Every setter tests `if (self.err != null) return self;` before any allocation.
-- Terminal (`register`, `sync`, `build`) is always the only `try` in the call.
+- `err: ?*BuilderError` — use the rich error type, not bare `?anyerror`. Capture phase, field, value, and constraint.
+- `arena: std.heap.ArenaAllocator` — the builder owns an arena for error message strings. Always deinit in the terminal method.
+- Every setter calls `hasError()` before any allocation. If already errored, short-circuit.
+- Terminal (`register`, `sync`, `build`) is always the only `try` in the call, andalways deinits the arena.
 - If the terminal is never called, heap-allocated state leaks — document this.
 - Use `*Self` return when the builder is heap-managed or holds mid-chain allocations. Use value-copy (`Self`) return when the builder holds only slice references.
 - Do **not** apply to `init()` functions with 2–3 parameters. The benefit is readability; three params are already readable.
+- On error, log `e.message` for human-readable diagnostics: `std.log.err("Failed: {s}", .{e.message})`
+- Chain errors with `BuilderError.chain(arena, child, parent)` when one error causes another.
 
 ### Why not just use a config struct literal?
 
@@ -198,20 +259,39 @@ A struct literal is right for 3–4 known-at-compile-time fields with no allocat
 ### Python analogy
 
 ```python
-# Python: method chaining (same idea, different error model)
+# Python: method chaining with exception-like error accumulation
 class TargetBuilder:
     def __init__(self, registry):
         self._error = None
+        self._error_context = None# (phase, field, value)
+    
     def depends(self, names):
         if self._error: return self
-        self._names = names
+        try:
+            self._names = self._interner.intern(names)
+        except Exception as e:
+            self._error = e
+            self._error_context = ("depends", "depends", names)
         return self
+    
     def register(self):
-        if self._error: raise self._error
-        self._registry.add(...)
-
-# Zig difference: errors accumulate silently; ONE try at the end
+        if self._error:
+            # Rich error message with context
+            phase, field, value = self._error_context
+            raise RuntimeError(f"phase={phase} field={field} value={value}") from self._error
+        self._registry.add(...)# Zig difference: errors accumulate with semantic context; ONE try at the end
 ```
+
+**Why BuilderError beats bare `?anyerror`:**
+
+The criticism that "Zig's error traces point to `register()`, not the failing setter" is valid for `?anyerror`. But `BuilderError` solves this differently:
+
+| Approach | Stack Trace | Error Message |
+|----------|-------------|---------------|
+| `?anyerror` | Shows `register()` only | `Error.OutOfMemory` |
+| `?*BuilderError` | Shows `register()` but | `phase=depends field=provides value=compile,link cause=OutOfMemory` |
+
+The debugger sees `register()`, but the **log message** tells you exactly which setter failed, with what value, violating which constraint. This is more actionable than a stack trace through middleware boilerplate.
 
 ---
 
@@ -397,6 +477,22 @@ const port = try editable.getTyped("port", u16, .coder); // type-checked get
 
 **The boundary rule**: use the string path (`set`/`get`) whenever data arrives as strings from outside the process. Use the fast paths everywhere else.
 
+### Compile-time and binary size considerations
+
+**The critique is valid**: generating `Constraint(T)` vtables and `Accessor` arrays for every struct that touches a boundary is zero runtime cost, but not zero compile-time cost or zero binary size. LLVM must monomorphize generic code for each struct type, which increases debug build times and final binary size.
+
+**Why this trade-off is acceptable:**
+
+1. **The alternative is worse.** Hand-writing serialization, validation, and schema code for every struct would produce similar or greater binary size — plus the maintenance burden of keeping N files in sync.
+
+2. **Boundaries are few.** Schema-driven access is used at process boundaries (JSON-RPC, config loading, DB hydration), not in hot loops. The number of schema-enabled structs is bounded by the number of boundary types.
+
+3. **Debug builds don't go to production.** The binary size impact is most visible in debug builds. Release builds with `-OReleaseFast` benefit from LLVM's dead-code elimination — unused schema fields don't appear in the binary.
+
+**When to avoid reflection:**
+
+If a struct never crosses a boundary (never parsed from JSON, never stored to DB, never accessed by name), don't add `editable: Editable(Self)`. Use direct field access instead. The reflection layer is opt-in — you pay only for what you use.
+
 ### `BinaryFieldCodec` — binary serialization without string round-trips
 
 **Source: `src/reflection/binary.zig`**
@@ -545,6 +641,20 @@ The rest of the system never sees the wrapper type.
 - **Do not wrap functions that are already behind a vtable** — wrap before type erasure, not after.
 - Use `comptime_int` / `comptime` parameters for configuration baked in at compile time (retry count, log label). Use struct fields for runtime configuration.
 - Wrappers have no persistent state — if you need state (e.g., a running total), use a capturing struct instead.
+
+### Limitation: Zig cannot perfectly wrap arbitrary generic functions
+
+**The critique is correct**: Zig's type system cannot create a wrapper function that preserves exact parameter types for an arbitrary generic function. The original Python decorator pattern `@retry(max=3)` wraps a function and returns one with the same signature — but Zig cannot express "a function that takes any arguments and returns any type."
+
+**The workaround:** §14 introduces **call-site helpers** instead of true decorators:
+
+```zig
+// Instead of decorating a function reference:
+const wrapped = retry(myHandler);  // Cannot preserve parameter types// Apply the wrapper at the call site:
+const result = try retryCall(3, myHandler, .{arg1, arg2});
+```
+
+The `retryCall` helper wraps the *call*, not the *function reference*. This achieves the same effect — retry logic applied transparently — but the syntax differs. See `src/common/wrapper.zig` for`retryCall`, `wrapIf`, and `Pipeline.call`.
 
 ---
 
@@ -1430,11 +1540,11 @@ When writing new code in this codebase:
 
 1. **Check the source first.** Run `guidance explain "<topic>"` before writing. The pattern you need is probably already implemented and tested.
 
-2. **New multi-parameter construction** → `TargetBuilder` in `src/common/registry.zig` is the template. Accumulate errors in `err: ?anyerror`, surface at terminal.
+2. **New multi-parameter construction** → `TargetBuilder` in `src/common/registry.zig` is the template. Use `err: ?*BuilderError` with an `arena: std.heap.ArenaAllocator` for error strings. Capture phase, field, value, and constraint. Log `e.message` at the terminal for diagnostics.
 
 3. **New field-level access** → Add `editable: Editable(Self) = .{}` to the struct. Use `set`/`get` at boundaries; `setFast`/`getFast` inside the process.
 
-4. **New cross-cutting logic** → Comptime wrapper applied at the registration site. Do not modify the function being wrapped.
+4. **New cross-cutting logic** → Use call-site helpers (`retryCall`, `callLogged`, `Pipeline.call`). Do not try to create true comptime decorators — Zig cannot preserve exact parameter types for wrapped generic functions.
 
 5. **New subsystem with multiple implementations** → `EmbeddingProvider` in `src/common/embeddings.zig` is the template. Two-field `{ptr, vtable}` handle, `const` vtable globals.
 

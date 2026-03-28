@@ -48,7 +48,7 @@ Then you you must read
 │   │   │   └── guidance.schema.json
 │   │   └── DESIGN.md
 │   ├── patterns
-│   │   └── FLUENT_WVR.md
+│   │   └── FLUENT_WEAVER.md
 │   ├── capabilities
 │   └── skills
 ├── env
@@ -86,7 +86,7 @@ Then you you must read
 │   │   ├── llm.zig                               # common — Shared utilities and LLM client for guidance, vector, and coral.
 │   │   ├── local_model.zig                       # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
-│   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WVR.
+│   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 │   │   ├── refcount.zig                          # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── registry.zig
 │   │   ├── repl.zig
