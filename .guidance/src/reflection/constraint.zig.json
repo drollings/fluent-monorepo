@@ -10,11 +10,11 @@
     {
       "type": "struct",
       "name": "ConstraintVTable",
-      "match_hash": "5e4fd855fd21d5eae2f8804363a409d58d600c291b95dd5e469b31883b89ed13",
+      "match_hash": "a0941d4b301a6c255c58787cefea4d2fa2e5a9cdf23ea30534659b3700569236",
       "signature": "keyword_struct ConstraintVTable { ... }",
       "comment": "Defines a constraint table structure for validation; managed centrally, immutable after creation.",
       "is_pub": true,
-      "line": 9
+      "line": 12
     },
     {
       "type": "fn_decl",
@@ -27,7 +27,7 @@
       "returns": "ConstraintVTable",
       "comment": "Build a static ConstraintVTable for type T.\nThe returned value is typically stored as a comptime constant and referenced\nby pointer from Accessor.  Supported types: int, float, bool, []const u8,\nenum, optional, array, vector.",
       "is_pub": true,
-      "line": 84
+      "line": 111
     },
     {
       "type": "fn_decl",
@@ -43,7 +43,7 @@
       "returns": "anyerror!void",
       "comment": "Validates and sets constraints for a Zig type with allocator and input data.",
       "is_pub": true,
-      "line": 132
+      "line": 159
     },
     {
       "type": "fn_decl",
@@ -58,7 +58,7 @@
       "returns": "anyerror![]const u8",
       "comment": "Retrieves a value from a typed pointer using reflection, returning any error if failed.",
       "is_pub": true,
-      "line": 195
+      "line": 222
     }
   ]
 }

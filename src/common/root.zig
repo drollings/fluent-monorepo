@@ -121,6 +121,23 @@ pub const STOP_WORDS = str_mod.STOP_WORDS;
 pub const stripBoilerplate = str_mod.stripBoilerplate;
 pub const isNoisyComment = str_mod.isNoisyComment;
 
+// ── Reference-counted VTable handles (M7) ─────────────────────────────────────
+pub const refcount = @import("refcount.zig");
+pub const RefCounted = refcount.RefCounted;
+
+// ── Conditional wrappers and call helpers (M9) ────────────────────────────────
+pub const wrapper = @import("wrapper.zig");
+pub const wrapIf = wrapper.wrapIf;
+pub const retryCall = wrapper.retryCall;
+pub const WrapperKind = wrapper.WrapperKind;
+pub const Pipeline = wrapper.Pipeline;
+
+// ── Structured logging context (M8) ──────────────────────────────────────────
+pub const logging = @import("logging.zig");
+pub const LogContext = logging.LogContext;
+pub const LogScope = logging.Scope;
+pub const callLogged = logging.callLogged;
+
 // ── URL utilities ─────────────────────────────────────────────────────────────
 pub const isLocalHost = url_mod.isLocalHost;
 pub const isPrivateIp = url_mod.isPrivateIp;

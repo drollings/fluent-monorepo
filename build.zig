@@ -549,6 +549,114 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // -- M1: BuilderError structured error context (builder_error.zig) --
+    const builder_error_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/builder_error.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M6: Validation rules pipeline (validate.zig) --
+    const validate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/reflection/validate.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M4: Schema versioning primitives (schema_version.zig) --
+    const schema_version_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/reflection/schema_version.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M8: Structured logging context and scope (logging.zig) --
+    const logging_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/logging.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M7: Reference-counted VTable handles (refcount.zig) --
+    const refcount_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/refcount.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M9: Conditional wrappers (wrapper.zig) --
+    const wrapper_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/wrapper.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M3: Mock VTable testing infrastructure (mock_vtable.zig) --
+    const mock_vtable_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/testing/mock_vtable.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M11: Context — cancellation and deadline propagation --
+    const concurrency_context_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/context.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M11: AnyWorkUnit + WorkUnit(T) — type-erased work unit --
+    const concurrency_work_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/any_work_unit.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M13: Channel(T) — bounded mutex-backed channel --
+    const concurrency_channel_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/channel.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M12: spawn — fire-and-forget dispatch over std.Thread.Pool --
+    const concurrency_spawn_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/spawn.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- M14: ErrorGroup — structured parallel dispatch with error capture --
+    const concurrency_error_group_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/error_group.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     // -------------------------------------------------------------------------
     // Wire all test runs
     // -------------------------------------------------------------------------
@@ -579,4 +687,16 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(coral_anonymize_tests).step);
     test_step.dependOn(&b.addRunArtifact(resolver_tests).step);
     test_step.dependOn(&b.addRunArtifact(types_tests).step);
+    test_step.dependOn(&b.addRunArtifact(builder_error_tests).step);
+    test_step.dependOn(&b.addRunArtifact(schema_version_tests).step);
+    test_step.dependOn(&b.addRunArtifact(validate_tests).step);
+    test_step.dependOn(&b.addRunArtifact(logging_tests).step);
+    test_step.dependOn(&b.addRunArtifact(refcount_tests).step);
+    test_step.dependOn(&b.addRunArtifact(wrapper_tests).step);
+    test_step.dependOn(&b.addRunArtifact(mock_vtable_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_context_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_work_unit_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_channel_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_spawn_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_error_group_tests).step);
 }

@@ -1,0 +1,145 @@
+{
+  "meta": {
+    "module": "src.reflection.schema_version",
+    "source": "src/reflection/schema_version.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/reflection/accessor.zig", "src/reflection/constraint.zig", "src/reflection/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "SchemaVersion",
+      "match_hash": "5a3c747d57b56c005120b58f7b8dc7f53db14ecc3e3bbb8c64f7f69895b78086",
+      "signature": "keyword_struct SchemaVersion { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "compatible",
+          "match_hash": "30edc5ac9ae48c60a9bd595b22ae36d6c18ebf0ed597810fd6d89f43c16dfc3e",
+          "signature": "fn compatible(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 61
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isNewerThan",
+          "match_hash": "b7d5ec51daa48c8870d9ba6a89b2621a5c019d61a4a27b16e7cb3aa986d3f53e",
+          "signature": "fn isNewerThan(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 66
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "eql",
+          "match_hash": "15b1b5087ea49b816e79d96bf2af6d6d8487a5dfda48e938b497695058b1598f",
+          "signature": "fn eql(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 72
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "format",
+          "match_hash": "5e8ce5fcb00bc1ecd38738b1eb8de7cba51692bf525cc4f620aa770e4d719f14",
+          "signature": "fn format(self: SchemaVersion, writer) -> void",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 77
+        }
+      ],
+      "line": 53
+    },
+    {
+      "type": "fn_decl",
+      "name": "checkCompatible",
+      "match_hash": "194f410bb9942fa06c4db647fb2bb705d1f4d569bb9b52bbc56b5437c40f0b57",
+      "signature": "fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) -> error{SchemaMismatch}!void",
+      "params": [
+        { "name": "stored", "type": "SchemaVersion" },
+        { "name": "current", "type": "SchemaVersion" }
+      ],
+      "returns": "error{SchemaMismatch}!void",
+      "is_pub": true,
+      "line": 93
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: compatible same major",
+      "is_pub": false,
+      "line": 101
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: incompatible different major",
+      "is_pub": false,
+      "line": 108
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: isNewerThan major",
+      "is_pub": false,
+      "line": 115
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: isNewerThan minor",
+      "is_pub": false,
+      "line": 123
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: eql",
+      "is_pub": false,
+      "line": 130
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: format",
+      "is_pub": false,
+      "line": 138
+    },
+    {
+      "type": "test_decl",
+      "name": "SCHEMA_CURRENT: is v1.0",
+      "is_pub": false,
+      "line": 145
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCompatible: matching major succeeds",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCompatible: different major returns SchemaMismatch",
+      "is_pub": false,
+      "line": 154
+    },
+    {
+      "type": "test_decl",
+      "name": "SchemaVersion: SCHEMA_CURRENT compatible with itself",
+      "is_pub": false,
+      "line": 159
+    }
+  ]
+}

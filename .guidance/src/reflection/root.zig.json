@@ -12,153 +12,150 @@
       "name": "TestConfig",
       "match_hash": "2bdee22dcce48dbc7f389cfbdc91fad1e2b259a68ac8fefa94889f44ea293a44",
       "signature": "keyword_struct TestConfig { ... }",
-      "comment": "Represents configuration settings with a fixed structure; owned by the module; ensures consistent initialization and deinitialization.",
       "is_pub": false,
-      "line": 72
+      "line": 87
     },
     {
       "type": "test_decl",
       "name": "Editable: set and get integer",
       "is_pub": false,
-      "line": 79
+      "line": 94
     },
     {
       "type": "test_decl",
       "name": "Editable: set and get float",
       "is_pub": false,
-      "line": 88
+      "line": 103
     },
     {
       "type": "test_decl",
       "name": "Editable: set and get bool",
       "is_pub": false,
-      "line": 97
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "Editable: field not found",
       "is_pub": false,
-      "line": 106
+      "line": 121
     },
     {
       "type": "test_decl",
       "name": "Editable: zero-size mixin",
       "is_pub": false,
-      "line": 112
+      "line": 127
     },
     {
       "type": "test_decl",
       "name": "Editable: setFast and getFast",
       "is_pub": false,
-      "line": 116
+      "line": 131
     },
     {
       "type": "test_decl",
       "name": "Editable: string field set and get",
       "is_pub": false,
-      "line": 131
+      "line": 146
     },
     {
       "type": "enum",
       "name": "Status",
       "match_hash": "5e17af7d2b56b085692e0c26090e7c90fc9a441428abdee948cfda088bb47bbf",
       "signature": "keyword_enum Status { ... }",
-      "comment": "Defines a status enum with compile-time checks; owned by the module; ensures invariant values are fixed.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "pending",
           "is_pub": false,
-          "line": 148
+          "line": 163
         }
     ,    {
           "type": "enum_field",
           "name": "active",
           "is_pub": false,
-          "line": 148
+          "line": 163
         }
     ,    {
           "type": "enum_field",
           "name": "done",
           "is_pub": false,
-          "line": 148
+          "line": 163
         }
       ],
-      "line": 148
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "Editable: enum field set and get",
       "is_pub": false,
-      "line": 155
+      "line": 170
     },
     {
       "type": "test_decl",
       "name": "Editable: enum invalid value propagates error",
       "is_pub": false,
-      "line": 164
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "Editable: optional null",
       "is_pub": false,
-      "line": 177
+      "line": 192
     },
     {
       "type": "test_decl",
       "name": "Editable: optional value",
       "is_pub": false,
-      "line": 183
+      "line": 198
     },
     {
       "type": "test_decl",
       "name": "Editable: array set and get",
       "is_pub": false,
-      "line": 197
+      "line": 212
     },
     {
       "type": "test_decl",
       "name": "Editable: vector set and get",
       "is_pub": false,
-      "line": 215
+      "line": 230
     },
     {
       "type": "test_decl",
       "name": "DynamicEditable: basic set and get",
       "is_pub": false,
-      "line": 227
+      "line": 242
     },
     {
       "type": "test_decl",
       "name": "DynamicEditable: role-based permission",
       "is_pub": false,
-      "line": 253
+      "line": 268
     },
     {
       "type": "test_decl",
       "name": "RolePermissions: packed struct size",
       "is_pub": false,
-      "line": 269
+      "line": 284
     },
     {
       "type": "test_decl",
       "name": "RolePermissions: canRead and canWrite methods",
       "is_pub": false,
-      "line": 273
+      "line": 288
     },
     {
       "type": "test_decl",
       "name": "Editable: access denied on read",
       "is_pub": false,
-      "line": 281
+      "line": 296
     },
     {
       "type": "struct",
       "name": "TestSchema",
       "match_hash": "cb9e97a8a8c42ec45990b5c1797d1c4e9b35b5d9a4afb39eec667244a10e6b9a",
       "signature": "keyword_struct TestSchema { ... }",
-      "comment": "Defines a test schema with fixed-size buffers, managed via ownership and lifecycle; ensures invariants are preserved.",
       "is_pub": false,
       "members": [
         {
@@ -171,133 +168,272 @@
           ],
           "returns": "FieldMeta",
           "is_pub": true,
-          "line": 303
+          "line": 318
         }
       ],
-      "line": 296
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "Editable: describeSchema generates JSON",
       "is_pub": false,
-      "line": 329
+      "line": 344
     },
     {
       "type": "test_decl",
       "name": "Editable: fieldNames returns all fields",
       "is_pub": false,
-      "line": 341
+      "line": 356
     },
     {
       "type": "test_decl",
       "name": "Editable: getFieldMeta returns metadata",
       "is_pub": false,
-      "line": 347
+      "line": 362
     },
     {
       "type": "test_decl",
       "name": "DynamicEditable: describeSchema generates JSON",
       "is_pub": false,
-      "line": 355
+      "line": 370
     },
     {
       "type": "struct",
       "name": "TestConfigTyped",
       "match_hash": "372df65bb4ea2bfc65f1032c206794b734a4b6a775d2135546dc3254938f4e47",
       "signature": "keyword_struct TestConfigTyped { ... }",
-      "comment": "Defines a typed configuration struct for test settings, managed via reflection, with strict ownership and invariants.",
       "is_pub": false,
-      "line": 393
+      "line": 408
     },
     {
       "type": "test_decl",
       "name": "TypeId from type",
       "is_pub": false,
-      "line": 402
+      "line": 417
     },
     {
       "type": "test_decl",
       "name": "TypedAccessorTable field count",
       "is_pub": false,
-      "line": 412
+      "line": 427
     },
     {
       "type": "test_decl",
       "name": "TypedAccessorTable field index lookup",
       "is_pub": false,
-      "line": 417
+      "line": 432
     },
     {
       "type": "test_decl",
       "name": "TypedAccessorTable set and get field",
       "is_pub": false,
-      "line": 423
+      "line": 438
     },
     {
       "type": "test_decl",
       "name": "TypedAccessorTable compile-time type checking",
       "is_pub": false,
-      "line": 434
+      "line": 449
     },
     {
       "type": "test_decl",
       "name": "BinaryFieldCodec encode/decode integer",
       "is_pub": false,
-      "line": 442
+      "line": 457
     },
     {
       "type": "test_decl",
       "name": "BinaryFieldCodec encode/decode bool",
       "is_pub": false,
-      "line": 456
+      "line": 471
     },
     {
       "type": "test_decl",
       "name": "BinaryFieldCodec encode/decode enum",
       "is_pub": false,
-      "line": 470
+      "line": 485
     },
     {
       "type": "test_decl",
       "name": "BinaryFieldCodec wire size",
       "is_pub": false,
-      "line": 484
+      "line": 499
     },
     {
       "type": "test_decl",
       "name": "EnumRegistry register and lookup",
       "is_pub": false,
-      "line": 492
+      "line": 507
     },
     {
       "type": "test_decl",
       "name": "TypedAccessor validateRange",
       "is_pub": false,
-      "line": 508
+      "line": 523
     },
     {
       "type": "test_decl",
       "name": "TypedEditable set and get typed",
       "is_pub": false,
-      "line": 528
+      "line": 543
     },
     {
       "type": "test_decl",
       "name": "TypedEditable out of range validation",
       "is_pub": false,
-      "line": 580
+      "line": 595
     },
     {
       "type": "test_decl",
       "name": "TypedEditable string path still works",
       "is_pub": false,
-      "line": 609
+      "line": 624
     },
     {
       "type": "test_decl",
       "name": "TypedEditable type mismatch error",
       "is_pub": false,
-      "line": 637
+      "line": 652
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: SchemaVersion: compatible same major",
+      "is_pub": false,
+      "line": 678
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: checkCompatible: mismatch returns SchemaMismatch",
+      "is_pub": false,
+      "line": 686
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: Accessor.isPresentIn: default v1 accessor present in v1 data",
+      "is_pub": false,
+      "line": 692
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: Accessor.isPresentIn: v2 accessor absent in v1 data",
+      "is_pub": false,
+      "line": 706
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: Accessor.isPresentIn: removed field absent in v2 data",
+      "is_pub": false,
+      "line": 720
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: Accessor.migrate_from: called to transform old value",
+      "is_pub": false,
+      "line": 735
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: ConstraintVTable.version defaults to SCHEMA_CURRENT",
+      "is_pub": false,
+      "line": 761
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: ConstraintVTable.migrateFn defaults to null",
+      "is_pub": false,
+      "line": 767
+    },
+    {
+      "type": "test_decl",
+      "name": "M4: ConstraintVTable.migrateFn: custom migration called",
+      "is_pub": false,
+      "line": 772
+    },
+    {
+      "type": "struct",
+      "name": "AppConfig",
+      "match_hash": "618fee0070ae40a98bb2f2419f1ab780f776baff9a00e2cb69389d26e9bfbaa9",
+      "signature": "keyword_struct AppConfig { ... }",
+      "is_pub": false,
+      "line": 809
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: accessor count includes leaf fields",
+      "is_pub": false,
+      "line": 815
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: accessor names use dot-notation",
+      "is_pub": false,
+      "line": 820
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: set via dot-notation path",
+      "is_pub": false,
+      "line": 837
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: get via dot-notation path",
+      "is_pub": false,
+      "line": 848
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: non-nested field still works",
+      "is_pub": false,
+      "line": 855
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: nested struct: unknown path returns FieldNotFound",
+      "is_pub": false,
+      "line": 861
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: Accessor.parent field defaults to null",
+      "is_pub": false,
+      "line": 867
+    },
+    {
+      "type": "test_decl",
+      "name": "M5: Editable(AppConfig): zero-size mixin preserved",
+      "is_pub": false,
+      "line": 878
+    },
+    {
+      "type": "test_decl",
+      "name": "M6: Editable.set: custom_validate rejects invalid value",
+      "is_pub": false,
+      "line": 884
+    },
+    {
+      "type": "test_decl",
+      "name": "M6: Editable.set: enum_values rejects invalid value",
+      "is_pub": false,
+      "line": 914
+    },
+    {
+      "type": "test_decl",
+      "name": "M6: Editable.set: pattern rejects invalid value",
+      "is_pub": false,
+      "line": 941
+    },
+    {
+      "type": "test_decl",
+      "name": "M6: validateAll: passes when all fields satisfy rules",
+      "is_pub": false,
+      "line": 966
+    },
+    {
+      "type": "test_decl",
+      "name": "M6: validateAll: returns error when a field violates rules",
+      "is_pub": false,
+      "line": 987
     }
   ]
 }

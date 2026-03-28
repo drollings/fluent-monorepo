@@ -1,0 +1,156 @@
+{
+  "meta": {
+    "module": "src.concurrency.error_group",
+    "source": "src/concurrency/error_group.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/concurrency/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ErrorGroup",
+      "match_hash": "9b667b3ce7b5f63876d1d6e8428724c578266bb3521f188a9c1a40ed4df3fffc",
+      "signature": "keyword_struct ErrorGroup { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "1b83e274d9a184c38d808affc31de80841b4c62088667bfd9317b3cdd3891fdd",
+          "signature": "fn init(allocator: std.mem.Allocator, pool: *std.Thread.Pool, ctx: *Context) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "pool", "type": "*std.Thread.Pool" },
+            { "name": "ctx", "type": "*Context" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 51
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 68
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "go",
+          "match_hash": "854c8a939096d2fe4ed3c37453e12c576985456b93550dc06670b227bbb4dc5a",
+          "signature": "fn go(self: *Self, unit: AnyWorkUnit) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "unit", "type": "AnyWorkUnit" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 76
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "wait",
+          "match_hash": "b8f23e88d9f612602549471a07cf80739b291dd95022695f6ef911d72594cd02",
+          "signature": "fn wait(self: *Self) -> ?anyerror",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "?anyerror",
+          "is_pub": true,
+          "line": 86
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "waitAll",
+          "match_hash": "3472aff982aa8c8e5e3bb63b89e371a0f19bd7227f8cae462ad955e65dfb1836",
+          "signature": "fn waitAll(self: *Self) -> []anyerror",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "[]anyerror",
+          "is_pub": true,
+          "line": 96
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "recordError",
+          "match_hash": "2d7330a957dfdb96f217c43b27a7f18f980cec699915ea2cccd069ee5a8d89d0",
+          "signature": "fn recordError(self: *Self, e: anyerror) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "e", "type": "anyerror" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 103
+        }
+      ],
+      "line": 38
+    },
+    {
+      "type": "struct",
+      "name": "CountOrFailHandler",
+      "match_hash": "440824bdababd90222eaf7b41e8e7955de588962151ef5b9c9dd7c97287e2c4e",
+      "signature": "keyword_struct CountOrFailHandler { ... }",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "execute",
+          "match_hash": "79fd0939bae3a0647e8d06e8d05a991e5067b549328125680be4f810d032e0a9",
+          "signature": "fn execute(self: *CountOrFailHandler, arena: std.mem.Allocator, ctx: *const Context) -> void",
+          "params": [
+            { "name": "self", "type": "*CountOrFailHandler" },
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "ctx", "type": "*const Context" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 135
+        }
+      ],
+      "line": 131
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: wait returns null when all units succeed",
+      "is_pub": false,
+      "line": 143
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: wait returns first error when one unit fails",
+      "is_pub": false,
+      "line": 167
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: waitAll collects all errors",
+      "is_pub": false,
+      "line": 198
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: first error cancels context; subsequent units observe cancellation",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: wait blocks until all units complete (including post-error)",
+      "is_pub": false,
+      "line": 257
+    },
+    {
+      "type": "test_decl",
+      "name": "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail",
+      "is_pub": false,
+      "line": 295
+    }
+  ]
+}

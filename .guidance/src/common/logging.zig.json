@@ -1,0 +1,177 @@
+{
+  "meta": {
+    "module": "src.common.logging",
+    "source": "src/common/logging.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "LogContext",
+      "match_hash": "76979da75c2c56ddd63b863dfbf9b4b5eece6def364ed7ee9c3b31e23e1d373b",
+      "signature": "keyword_struct LogContext { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "set",
+          "match_hash": "c4930964ccf497d0fec1af7359003f678fc0d7a04ea6d9a5b175dba3ff810797",
+          "signature": "fn set(ctx: LogContext) -> void",
+          "params": [
+            { "name": "ctx", "type": "LogContext" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 55
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "1ac43d7e0964f77f3c5a762c032c385660e1e99fc85d5b7c07eaaa30222062f5",
+          "signature": "fn get() -> ?LogContext",
+          "returns": "?LogContext",
+          "is_pub": true,
+          "line": 60
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "clear",
+          "match_hash": "c68856862f999e021e2751886c1e9b7c112177922971150d3b8c383ffb9194eb",
+          "signature": "fn clear() -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 65
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "format",
+          "match_hash": "ae2d3dac206169875996d726dae1caca26de841fb2c8d5b1aa298d115d3c8729",
+          "signature": "fn format(self: LogContext, writer) -> void",
+          "params": [
+            { "name": "self", "type": "LogContext" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 72
+        }
+      ],
+      "line": 45
+    },
+    {
+      "type": "struct",
+      "name": "Scope",
+      "match_hash": "53652d04e14f56d304e62fa4fc0b92310ff0875555ac9413e952bb197c7ead0b",
+      "signature": "keyword_struct Scope { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "begin",
+          "match_hash": "7fe067cd4dfb279e55f34b5c0bdb1e88c7aa8cbf3194b14ffffaf0bc297cdd6f",
+          "signature": "fn begin(name: []const u8) -> Scope",
+          "params": [
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "Scope",
+          "is_pub": true,
+          "line": 109
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "end",
+          "match_hash": "2f28e2f9865312619ad4a56e5546a068c04a4b6b7ac6ae147104cc530dcd9737",
+          "signature": "fn end(self: Scope) -> void",
+          "params": [
+            { "name": "self", "type": "Scope" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 123
+        }
+      ],
+      "line": 103
+    },
+    {
+      "type": "fn_decl",
+      "name": "callLogged",
+      "match_hash": "11cfcf8aad127b1e0496c9aad502790fceb0800512416349ed89d22e5c60a009",
+      "signature": "fn callLogged(name: []const u8, func, args) -> @typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
+      "params": [
+        { "name": "name", "type": "[]const u8" },
+        { "name": "func" },
+        { "name": "args" }
+      ],
+      "returns": "@typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
+      "is_pub": true,
+      "line": 144
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: set and get",
+      "is_pub": false,
+      "line": 158
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: clear removes context",
+      "is_pub": false,
+      "line": 168
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: null by default (fresh thread)",
+      "is_pub": false,
+      "line": 174
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: format with all fields",
+      "is_pub": false,
+      "line": 181
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: format with partial fields",
+      "is_pub": false,
+      "line": 196
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: format with no fields",
+      "is_pub": false,
+      "line": 204
+    },
+    {
+      "type": "test_decl",
+      "name": "Scope: begin and end with no context does not panic",
+      "is_pub": false,
+      "line": 211
+    },
+    {
+      "type": "test_decl",
+      "name": "Scope: begin and end with context",
+      "is_pub": false,
+      "line": 217
+    },
+    {
+      "type": "test_decl",
+      "name": "callLogged: wraps plain function",
+      "is_pub": false,
+      "line": 225
+    },
+    {
+      "type": "test_decl",
+      "name": "callLogged: wraps error-returning function",
+      "is_pub": false,
+      "line": 239
+    },
+    {
+      "type": "test_decl",
+      "name": "LogContext: GPA no leaks",
+      "is_pub": false,
+      "line": 257
+    }
+  ]
+}

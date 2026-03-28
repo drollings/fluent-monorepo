@@ -672,6 +672,52 @@ fn callSet(accessor: *const Accessor, base: *anyopaque,
 - Do **not** use vtables when you only have one implementation — use generics.
 - Do **not** use vtables when the type is known at compile time — use generics.
 
+### Thread Safety Contract
+
+VTable handles (`EmbeddingProvider`, `ConstraintVTable`) are two pointers: `ptr` (to the implementation struct) and `vtable` (to static const functions). Thread safety depends on the underlying implementation, not the handle shape.
+
+**Rules:**
+
+1. **Handle creation** is NOT thread-safe. Create handles on a single thread during initialization.
+2. **Handle storage** in shared registries requires synchronization (mutex or read-write lock).
+3. **Vtable function calls** ARE thread-safe IF the underlying implementation does not mutate shared state. Stateless implementations (`NoopEmbedding`, `Constraint(T)`) are always safe.
+4. **Handle destruction** requires all concurrent calls to complete first. Join all threads before calling `deinit`.
+
+**Pattern:**
+
+```zig
+// ✅ Thread-safe usage pattern
+//
+// 1. Create on init thread (single-threaded):
+var impl = try OllamaEmbedding.init(allocator, null, null, null);
+const provider = impl.provider();                          // creation: single-threaded
+//
+// 2. Pass to workers (read-only — vtable pointer never changes):
+const worker = struct {
+    fn run(p: EmbeddingProvider) !void {
+        const vec = try p.embed(allocator, "hello");       // call: thread-safe if impl is
+        defer allocator.free(vec);
+    }
+};
+//
+// 3. Destroy after all workers join:
+thread.join();
+provider.deinit();                                         // destruction: after join
+```
+
+**Debug-build thread assertions:**
+
+`EmbeddingProvider` carries a `thread_id` field in debug/ReleaseSafe builds that is checked on every `embed()` call. This catches accidental cross-thread use of handles that were created for single-threaded use (e.g., HTTP clients that are not thread-safe). The assertion is a zero-cost no-op in ReleaseFast/ReleaseSmall.
+
+```zig
+// Cross-thread misuse is caught immediately in debug builds:
+const provider = impl.provider();           // creation on thread A
+// ... pass to thread B ...
+try provider.embed(allocator, "text");      // assert fires: wrong thread
+```
+
+Remove the assertion (set `thread_safe = true` when constructing) for implementations that are documented as thread-safe.
+
 ### Python / C++ analogy
 
 ```python
@@ -1119,7 +1165,262 @@ Arenas eliminate the most common source of allocator contention: a `GeneralPurpo
 
 ---
 
-## 13. Summary for AI Agents
+## 13. Schema Evolution and Versioning (M4)
+
+`src/reflection/schema_version.zig` provides `SchemaVersion` and helpers for
+forward- and backward-compatible schema evolution.
+
+### SchemaVersion
+
+```zig
+pub const SchemaVersion = struct {
+    major: u16,
+    minor: u16 = 0,
+
+    pub fn compatible(self, other: SchemaVersion) bool  // true if same major
+    pub fn isNewerThan(self, other: SchemaVersion) bool
+    pub fn eql(self, other: SchemaVersion) bool
+    pub fn format(self, writer: anytype) !void   // {f} → "v1.0"
+};
+
+pub const SCHEMA_CURRENT: SchemaVersion = .{ .major = 1, .minor = 0 };
+
+pub fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) !void;
+```
+
+### Versioning Fields on Accessor
+
+Each `Accessor` carries three optional versioning fields (all default to
+v1.0 / null — backward-compatible with pre-versioning code):
+
+```zig
+pub const Accessor = struct {
+    // ... existing fields ...
+
+    version_added:   SchemaVersion = SCHEMA_CURRENT,
+    version_removed: ?SchemaVersion = null,
+    migrate_from:    ?*const fn (old: []const u8, allocator: std.mem.Allocator)
+                         anyerror![]const u8 = null,
+
+    pub fn isPresentIn(self: *const Accessor, stored: SchemaVersion) bool
+};
+```
+
+**`isPresentIn(stored)`** returns true when:
+1. `stored >= version_added` (field had been introduced)
+2. `version_removed` is null OR `stored < version_removed` (field not yet removed)
+
+**`migrate_from`** transforms the serialized string before passing it to
+`constraint.setFn`:
+
+```zig
+if (accessor.migrate_from) |migrate| {
+    const new_val = try migrate(raw_value, allocator);
+    defer allocator.free(new_val);
+    try accessor.constraint.setFn(allocator, field_ptr, new_val);
+} else {
+    try accessor.constraint.setFn(allocator, field_ptr, raw_value);
+}
+```
+
+### Versioning Fields on ConstraintVTable
+
+```zig
+pub const ConstraintVTable = struct {
+    // ... existing vtable entries ...
+
+    version:   SchemaVersion = SCHEMA_CURRENT,
+    migrateFn: ?*const fn (from: SchemaVersion, to: SchemaVersion,
+                            allocator: std.mem.Allocator, ptr: *anyopaque)
+                   anyerror!void = null,
+};
+```
+
+### Upgrade Path for Schema Changes
+
+| Change | Bump | Action |
+|--------|------|--------|
+| Add field with default | `minor` | Set `version_added = .{ .major=1, .minor=N }` |
+| Remove field | `major` | Set `version_removed = .{ .major=N }` on old accessor |
+| Rename field | `major` | Old accessor with `version_removed`; new accessor with `version_added` + `migrate_from` |
+| Type change | `major` | Old accessor + `migrate_from` transforms old type string to new |
+
+### Re-exports from `reflection`
+
+```zig
+const reflection = @import("reflection");
+reflection.SchemaVersion    // the struct
+reflection.SCHEMA_CURRENT   // v1.0 constant
+reflection.checkCompatible  // returns error.SchemaMismatch on major mismatch
+```
+
+---
+
+## 14. Conditional Wrapper Application (M9)
+
+`src/common/wrapper.zig` provides build-mode-conditional wrappers, a retry
+call helper, and a composable `Pipeline` for call sites.
+
+### Why call helpers instead of type-preserving wrappers
+
+Zig's type system cannot create a wrapper function that perfectly preserves an
+arbitrary function's parameter types (generic functions cannot be cast to
+concrete function types).  The practical solution is **call helpers** that wrap
+a *call site* rather than a *function reference*:
+
+```zig
+// Instead of:
+const result = try func(arg1, arg2);
+
+// Write:
+const result = try retryCall(3, func, .{arg1, arg2});
+```
+
+### wrapIf
+
+Selects between two functions of the *same* type at comptime:
+
+```zig
+const handler = wrapIf(builtin.mode == .Debug, debugHandler, releaseHandler);
+```
+
+In release builds, `releaseHandler` is selected with zero overhead.
+
+### retryCall
+
+```zig
+const result = try retryCall(3, fetchData, .{url, allocator});
+```
+
+Calls `func(args...)` up to `max_attempts` times.  Returns the first success
+or the last error on exhaustion.
+
+### Pipeline
+
+Composes wrapper kinds around a call site:
+
+```zig
+const result = try Pipeline.call(&.{.retry, .none}, fetchData, .{url, alloc});
+```
+
+Currently defined `WrapperKind` values: `.none` (identity), `.retry` (3 attempts).
+
+### Composition Order
+
+When combining multiple wrappers, apply outer-to-inner:
+
+| Layer | Purpose |
+|-------|---------|
+| 1 | Rate limiting — reject early if overloaded |
+| 2 | Auth — reject early if unauthorized |
+| 3 | Tracing — start span (→ `Scope.begin` in logging.zig) |
+| 4 | Timing — measure full duration (→ `callLogged`) |
+| 5 | Retry — retry on transient failure (→ `retryCall`) |
+| 6 | Validation — validate input (→ `validateValue`) |
+| 7 | Core handler |
+
+### Re-exports from `common`
+
+```zig
+common.wrapIf       // conditional function selector
+common.retryCall    // retry call helper
+common.WrapperKind  // enum for Pipeline
+common.Pipeline     // call pipeline factory
+```
+
+---
+
+## 15. Structured Logging Context (M8)
+
+`src/common/logging.zig` provides thread-local request context and a timing scope.
+
+### LogContext
+
+```zig
+const LogContext = struct {
+    request_id: ?[]const u8 = null,
+    user_id:    ?[]const u8 = null,
+    trace_id:   ?[]const u8 = null,
+    span_id:    ?[]const u8 = null,
+
+    threadlocal var current: ?LogContext = null;
+
+    pub fn set(ctx: LogContext) void   { current = ctx; }
+    pub fn get() ?LogContext           { return current; }
+    pub fn clear() void                { current = null; }
+
+    // {f} format: [req=<id> user=<id> trace=<id> span=<id>]
+    pub fn format(self: LogContext, writer: anytype) !void { ... }
+};
+```
+
+**Key properties:**
+- Thread-local: each OS thread has its own slot — no synchronization needed.
+- Zero-copy: `LogContext` holds slices into caller-owned memory, not copies.
+- Context does NOT propagate across thread boundaries. Pass the value explicitly
+  and call `LogContext.set()` on the new thread.
+
+### Scope
+
+```zig
+pub const Scope = struct {
+    pub fn begin(name: []const u8) Scope { ... }  // logs start if context active
+    pub fn end(self: Scope) void { ... }           // logs duration in µs
+};
+```
+
+When `LogContext.get()` is null (no context active), `Scope.begin/end` are
+no-ops — no allocation, no log call. Zero overhead in production.
+
+Usage:
+
+```zig
+// Manual scope:
+const scope = Scope.begin("embed");
+defer scope.end();
+const vec = try provider.embed(allocator, text);
+
+// Single-expression callsite:
+const vec = try callLogged("embed", provider.embed, .{ allocator, text });
+```
+
+### callLogged
+
+```zig
+pub inline fn callLogged(
+    comptime name: []const u8,
+    func: anytype,
+    args: anytype,
+) @typeInfo(@TypeOf(func)).@"fn".return_type.? { ... }
+```
+
+Wraps a single function call in a `Scope`. Error unions propagate normally —
+callers use `try` as needed.
+
+### Setting context at request boundaries
+
+```zig
+pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
+    LogContext.set(.{ .request_id = generateRequestId() });
+    defer LogContext.clear();
+
+    // All Scope/callLogged calls in this stack now log with context.
+    return try self.reactor.route(raw_json);
+}
+```
+
+### Re-exports from `common`
+
+```zig
+const common = @import("common");
+common.LogContext    // the struct
+common.LogScope      // alias for logging.Scope
+common.callLogged    // the inline wrapper
+```
+
+---
+
+## 16. Summary for AI Agents
 
 The patterns in this document are the architectural vocabulary of this codebase. Code that departs from them without a clear local reason will be inconsistent, harder to test, and harder to extend. Code that applies them correctly will compose cleanly with the existing infrastructure, pass the test suite without leaks, and be readable to any contributor who has read this document.
 

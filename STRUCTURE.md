@@ -160,9 +160,13 @@ Then you you must read
 │       │   └── zig.mk
 │       ├── common.mk
 │       └── target_language.mk
+├── rag
+│   ├── TODO_SECURITY.md
+│   └── TODO_SECURITY_CHECKLIST.md
 ├── src
 │   ├── common
 │   │   ├── args.zig
+│   │   ├── builder_error.zig                                      # builder_error.zig — Structured error type for fluent builder chains.
 │   │   ├── cli.zig
 │   │   ├── context.zig
 │   │   ├── embeddings.zig                                         # Embedding providers — convert text to vectors for semantic search.
@@ -176,6 +180,8 @@ Then you you must read
 │   │   ├── llm.zig                                                # common — Shared utilities and LLM client for guidance, vector, and coral.
 │   │   ├── local_model.zig                                        # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
+│   │   ├── logging.zig                                            # logging.zig — Structured logging context and timing scope for Fluent WVR.
+│   │   ├── refcount.zig                                           # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── registry.zig
 │   │   ├── repl.zig
 │   │   ├── resolver.zig
@@ -188,7 +194,15 @@ Then you you must read
 │   │   ├── target.zig
 │   │   ├── terminal.zig
 │   │   ├── types.zig                                              # Represents a unique node identifier; managed via ownership model; ensures stable references.
-│   │   └── url.zig                                                # url.zig — Generic URL validation helpers
+│   │   ├── url.zig                                                # url.zig — Generic URL validation helpers
+│   │   └── wrapper.zig                                            # wrapper.zig — Conditional and composable comptime wrappers (M9).
+│   ├── concurrency
+│   │   ├── any_work_unit.zig                                      # any_work_unit.zig — Type-erased work unit and typed wrapper (M11).
+│   │   ├── channel.zig                                            # channel.zig — Bounded, mutex-backed MPMC channel (M13).
+│   │   ├── context.zig                                            # context.zig — Cancellation and deadline propagation (M11).
+│   │   ├── error_group.zig                                        # error_group.zig — Structured parallel dispatch with error capture (M14).
+│   │   ├── root.zig                                               # concurrency/root.zig — Public API re-exports for the concurrency layer.
+│   │   └── spawn.zig                                              # spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).
 │   ├── coral
 │   │   ├── anonymize.zig                                          # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                                              # batch.zig — Streaming Batch Ingestion Pipeline
@@ -267,7 +281,11 @@ Then you you must read
 │   │   ├── enum_registry.zig                                      # enum_registry.zig — EnumRegistry for runtime enum name/value lookups.
 │   │   ├── permissions.zig                                        # permissions.zig — Role-based permission system for Coral Context reflection.
 │   │   ├── root.zig                                               # reflection — Coral Context field-level reflection, validation, and permission layer.
-│   │   └── typed.zig                                              # typed.zig — TypedAccessorTable(T) and TypedEditable.
+│   │   ├── schema_version.zig                                     # schema_version.zig — Versioning primitives for the reflection schema.
+│   │   ├── typed.zig                                              # typed.zig — TypedAccessorTable(T) and TypedEditable.
+│   │   └── validate.zig                                           # validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).
+│   ├── testing
+│   │   └── mock_vtable.zig                                        # mock_vtable.zig — Mock implementations of VTable interfaces for testing.
 │   ├── vector
 │   │   ├── math.zig                                               # Vector operations — cosine similarity, normalization, hybrid merge.
 │   │   ├── root.zig                                               # guidance vector module — cosine search, embeddings, hybrid merge.
@@ -302,8 +320,8 @@ Then you you must read
 ├── STRUCTURE.md
 ├── TEST_EXPLAIN_PROMPT.md
 ├── TODO_FLUENT_WVR_CONCURRENCY.md
+├── TODO_FLUENT_WVR_CONCURRENCY_CHECKLIST.md
 ├── TODO_FLUENT_WVR_UPGRADE.md
-├── TODO_MEMORY_LEAK.md
-├── TODO_SECURITY.md
-└── TODO_SECURITY_CHECKLIST.md
+├── TODO_FLUENT_WVR_UPGRADE_CHECKLIST.md
+└── TODO_MEMORY_LEAK.md
 ```

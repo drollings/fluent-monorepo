@@ -1,0 +1,174 @@
+{
+  "meta": {
+    "module": "src.concurrency.context",
+    "source": "src/concurrency/context.zig",
+    "language": "zig"
+  },
+  "skills": [
+    { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
+  ],
+  "used_by": ["src/common/llm.zig", "src/common/repl.zig", "src/common/root.zig", "src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Context",
+      "match_hash": "a96cf8f29b4629d7166064e7fccd82fb6b99f50b997f8d18e0e21855455aa807",
+      "signature": "keyword_struct Context { ... }",
+      "patterns": [
+        { "name": "State Persistence", "type": "Domain", "ref": "guidance/skills/domain_patterns/SKILL.md#state-persistence" }
+      ],
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "background",
+          "match_hash": "e7d772188939173b586c4320bdff254d5369743509d8c2b9efc850d9b648f776",
+          "signature": "fn background() -> Context",
+          "returns": "Context",
+          "is_pub": true,
+          "line": 37
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withTimeout",
+          "match_hash": "aa668902015805ac9ffbd554518941c91dbbcfde5256b9723cebaa72aded48a7",
+          "signature": "fn withTimeout(duration_ns: u64) -> Context",
+          "params": [
+            { "name": "duration_ns", "type": "u64" }
+          ],
+          "returns": "Context",
+          "is_pub": true,
+          "line": 47
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withDeadline",
+          "match_hash": "3cb86dd214beef020ec7bed1e8697855b947922a2a039b63f1b2faba373f82d7",
+          "signature": "fn withDeadline(deadline_ns: i64) -> Context",
+          "params": [
+            { "name": "deadline_ns", "type": "i64" }
+          ],
+          "returns": "Context",
+          "is_pub": true,
+          "line": 57
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isCancelled",
+          "match_hash": "367e92e746a73960a72755af2019d4a11f2f1a0221c3e47de23bafc245d94e49",
+          "signature": "fn isCancelled(self: *const Context) -> bool",
+          "params": [
+            { "name": "self", "type": "*const Context" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 65
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isExpired",
+          "match_hash": "955f6f7f29b72aff65b8b5a718155eb0f53f27f61b54d1409ed1b16eaa4dc0c0",
+          "signature": "fn isExpired(self: *const Context) -> bool",
+          "params": [
+            { "name": "self", "type": "*const Context" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 71
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "err",
+          "match_hash": "18e1b029910ba659adc8ff235874d45e175476bd6a4f5ebd9f3b3d1c08aecb2b",
+          "signature": "fn err(self: *const Context) -> ?anyerror",
+          "params": [
+            { "name": "self", "type": "*const Context" }
+          ],
+          "returns": "?anyerror",
+          "is_pub": true,
+          "line": 84
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "cancel",
+          "match_hash": "017e48545d3cf847008b566a57218c87961ad901be7a01003575a64149ae83f2",
+          "signature": "fn cancel(self: *Context, reason: anyerror) -> void",
+          "params": [
+            { "name": "self", "type": "*Context" },
+            { "name": "reason", "type": "anyerror" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 94
+        }
+      ],
+      "line": 29
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: background is not cancelled",
+      "is_pub": false,
+      "line": 113
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: cancel sets isCancelled and err",
+      "is_pub": false,
+      "line": 120
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: first cancel wins, second is ignored",
+      "is_pub": false,
+      "line": 128
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: withTimeout 1ns deadline is immediately expired",
+      "is_pub": false,
+      "line": 137
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: withTimeout large deadline is not expired",
+      "is_pub": false,
+      "line": 146
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: withDeadline past deadline is expired",
+      "is_pub": false,
+      "line": 152
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: withDeadline future deadline is not expired",
+      "is_pub": false,
+      "line": 159
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: err returns null when only deadline expired (not explicitly cancelled)",
+      "is_pub": false,
+      "line": 166
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: cancel then err returns DeadlineExceeded if also expired",
+      "is_pub": false,
+      "line": 174
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: thread safety — cancel from two threads, first wins",
+      "is_pub": false,
+      "line": 183
+    },
+    {
+      "type": "test_decl",
+      "name": "Context: GPA no leaks — background, withTimeout, cancel",
+      "is_pub": false,
+      "line": 205
+    }
+  ]
+}

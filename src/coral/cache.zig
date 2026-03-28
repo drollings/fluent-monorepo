@@ -12,6 +12,9 @@ const coral_db = @import("coral_db");
 const wasm_mod = @import("wasm");
 const hashutil = @import("common");
 const local_model = @import("local_model");
+const common_registry = @import("common").registry;
+const BuilderError = common_registry.BuilderError;
+const BuilderPhase = common_registry.BuilderPhase;
 const llm_mod = @import("llm");
 const frontier = @import("frontier.zig");
 const LocalDecomposer = local_model.LocalDecomposer;
@@ -202,6 +205,8 @@ pub const L1Cache = struct {
 /// Manages queue reactor construction with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.
 pub const QueueReactorBuilder = struct {
     allocator: std.mem.Allocator,
+    /// Owns BuilderError strings; deinited by build() on all paths.
+    arena: std.heap.ArenaAllocator,
     _library: ?*Library = null,
     _embedder: ?EmbeddingProvider = null,
     _decomposer_cfg: ?DecomposerConfig = null,
@@ -210,10 +215,19 @@ pub const QueueReactorBuilder = struct {
     l3_max_depth: u8 = 4,
     _thread_count: ?u32 = null,
     _frontier_cfg: ?LlmConfig = null,
-    err: ?anyerror = null,
+    /// Rich structured error (arena-allocated); surfaced by build().
+    err: ?*BuilderError = null,
 
     pub fn init(allocator: std.mem.Allocator) QueueReactorBuilder {
-        return .{ .allocator = allocator };
+        return .{
+            .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
+        };
+    }
+
+    fn setError(self: *@This(), phase: BuilderPhase, field: []const u8, constraint: []const u8, cause: anyerror) void {
+        if (self.err != null) return;
+        self.err = BuilderError.init(self.arena.allocator(), phase, field, null, constraint, cause) catch null;
     }
 
     pub fn library(self: *@This(), lib: *Library) *@This() {
@@ -260,8 +274,18 @@ pub const QueueReactorBuilder = struct {
         return self;
     }
 
+    /// Terminal method: build the QueueReactor.
+    /// Always deinits the builder's arena on return — do not call setters after build().
     pub fn build(self: *@This()) !QueueReactor {
-        if (self._library == null) return error.LibraryRequired;
+        defer self.arena.deinit();
+        if (self._library == null) {
+            self.setError(.validation, "library", "required", error.LibraryRequired);
+        }
+        if (self.err) |e| {
+            // Caller can log e.message for diagnostics.
+            _ = e.message;
+            return e.cause;
+        }
         var reactor = QueueReactor{
             .allocator = self.allocator,
             .library = self._library.?,
@@ -1181,4 +1205,5 @@ test "ParallelRouter: routeBatch with empty input" {
     defer allocator.free(results);
     try testing.expectEqual(@as(usize, 0), results.len);
 }
+
 

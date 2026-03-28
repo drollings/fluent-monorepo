@@ -1,0 +1,86 @@
+{
+  "meta": {
+    "module": "src.common.wrapper",
+    "source": "src/common/wrapper.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "wrapIf",
+      "match_hash": "b4313ac3ca29239ae1700a30800060f160660782efe6431230b6b81b0e7a95c7",
+      "signature": "fn wrapIf(condition: bool, if_true, if_false: @TypeOf(if_true)) -> @TypeOf(if_true)",
+      "params": [
+        { "name": "condition", "type": "bool" },
+        { "name": "if_true" },
+        { "name": "if_false", "type": "@TypeOf(if_true)" }
+      ],
+      "returns": "@TypeOf(if_true)",
+      "is_pub": true,
+      "line": 51
+    },
+    {
+      "type": "fn_decl",
+      "name": "retryCall",
+      "match_hash": "fa5aef669ba750dd56598a3300d5f19d1f289362cd174715b8563d234c02899e",
+      "signature": "fn retryCall(max_attempts: usize, func, args) -> @typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
+      "params": [
+        { "name": "max_attempts", "type": "usize" },
+        { "name": "func" },
+        { "name": "args" }
+      ],
+      "returns": "@typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
+      "is_pub": true,
+      "line": 71
+    },
+    {
+      "type": "test_decl",
+      "name": "wrapIf: condition true returns if_true",
+      "is_pub": false,
+      "line": 138
+    },
+    {
+      "type": "test_decl",
+      "name": "wrapIf: condition false returns if_false",
+      "is_pub": false,
+      "line": 154
+    },
+    {
+      "type": "test_decl",
+      "name": "retryCall: succeeds on first attempt",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "test_decl",
+      "name": "retryCall: retries up to max_attempts on error",
+      "is_pub": false,
+      "line": 184
+    },
+    {
+      "type": "test_decl",
+      "name": "retryCall: succeeds after one failure",
+      "is_pub": false,
+      "line": 198
+    },
+    {
+      "type": "test_decl",
+      "name": "Pipeline: .none is identity",
+      "is_pub": false,
+      "line": 213
+    },
+    {
+      "type": "test_decl",
+      "name": "Pipeline: .retry wraps with retry logic",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "test_decl",
+      "name": "wrapIf: build-mode selection compiles correctly",
+      "is_pub": false,
+      "line": 239
+    }
+  ]
+}

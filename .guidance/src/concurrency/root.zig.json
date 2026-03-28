@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "module": "src.concurrency.root",
+    "source": "src/concurrency/root.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/vector/vector_db.zig"]
+}

@@ -1,5 +1,8 @@
 /// constraint.zig — ConstraintVTable, constraintSet, constraintGet, Constraint(T).
 const std = @import("std");
+const schema_version_mod = @import("schema_version.zig");
+pub const SchemaVersion = schema_version_mod.SchemaVersion;
+pub const SCHEMA_CURRENT = schema_version_mod.SCHEMA_CURRENT;
 
 // ============================================================
 // § 2  Constraint VTable
@@ -74,6 +77,30 @@ pub const ConstraintVTable = struct {
         allocator: std.mem.Allocator,
         ptr: *anyopaque,
         in_buf: []const u8,
+    ) anyerror!void = null,
+
+    // ── Schema versioning (M4) ─────────────────────────────────────────────
+
+    /// Schema version this constraint was compiled for.
+    /// Default: SCHEMA_CURRENT (v1.0 for all pre-versioning constraints).
+    version: SchemaVersion = SCHEMA_CURRENT,
+
+    /// Optional migration function.  Called when the stored schema version
+    /// differs from this constraint's version and an in-place transform is
+    /// needed before set/get can proceed:
+    ///
+    ///   if (vtable.migrateFn) |migrate| {
+    ///       try migrate(from_version, to_version, allocator, field_ptr);
+    ///   }
+    ///
+    /// The function should transform the raw bytes at `ptr` from the layout
+    /// expected by `from_version` to the layout expected by `to_version`.
+    /// Null means no migration is required (forward-compatible change).
+    migrateFn: ?*const fn (
+        from_version: SchemaVersion,
+        to_version: SchemaVersion,
+        allocator: std.mem.Allocator,
+        ptr: *anyopaque,
     ) anyerror!void = null,
 };
 
@@ -240,6 +267,7 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
         else => return error.UnsupportedType,
     }
 }
+
 
 
 

@@ -1,0 +1,106 @@
+{
+  "meta": {
+    "module": "src.concurrency.channel",
+    "source": "src/concurrency/channel.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/concurrency/root.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "Channel",
+      "match_hash": "c98f26087417e93e1f4c4f045a960cfd7a746817b54d890b8108b274ed16d286",
+      "signature": "fn Channel(T: type) -> type",
+      "params": [
+        { "name": "T", "type": "type" }
+      ],
+      "returns": "type",
+      "is_pub": true,
+      "line": 27
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: send then recv returns value",
+      "is_pub": false,
+      "line": 165
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: send then recv preserves FIFO order",
+      "is_pub": false,
+      "line": 174
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: recv on empty closed channel returns null",
+      "is_pub": false,
+      "line": 186
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: send on closed channel returns ChannelClosed",
+      "is_pub": false,
+      "line": 194
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: trySend returns ChannelFull when buffer full",
+      "is_pub": false,
+      "line": 202
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: trySend returns ChannelClosed when closed",
+      "is_pub": false,
+      "line": 211
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: drain-after-close pattern",
+      "is_pub": false,
+      "line": 219
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: close is idempotent",
+      "is_pub": false,
+      "line": 233
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: tryRecv returns null on empty channel",
+      "is_pub": false,
+      "line": 242
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: len tracks item count",
+      "is_pub": false,
+      "line": 249
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: N senders, 1 receiver — all values received exactly once",
+      "is_pub": false,
+      "line": 260
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: 1 sender, N receivers — each value received exactly once",
+      "is_pub": false,
+      "line": 294
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: blocking send unblocks when receiver consumes",
+      "is_pub": false,
+      "line": 328
+    },
+    {
+      "type": "test_decl",
+      "name": "Channel: GPA no leaks",
+      "is_pub": false,
+      "line": 346
+    }
+  ]
+}

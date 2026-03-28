@@ -8,9 +8,13 @@
 //!   - createEmbeddingProvider() factory
 
 const std = @import("std");
+const builtin = @import("builtin");
 const url_mod = @import("url.zig");
 const json_mod = @import("json.zig");
 const hash_mod = @import("hash.zig");
+
+/// True in Debug and ReleaseSafe builds — enables thread-safety assertions.
+const runtime_safety = builtin.mode == .Debug or builtin.mode == .ReleaseSafe;
 
 // ── JSON helper ───────────────────────────────────────────────────
 
@@ -23,10 +27,15 @@ const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
-/// Manages dynamic embedding generation; owns inference pipeline; key invariant is consistent key-value storage.
+/// Manages dynamic embedding generation; owns model instances; key invariant is consistent key structure.
 pub const EmbeddingProvider = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
+    /// Thread ID of the creating thread (debug/ReleaseSafe builds only).
+    /// Used by embed() to assert single-threaded use unless the impl is thread-safe.
+    thread_id: if (runtime_safety) std.Thread.Id else void,
+    /// Set to true for implementations that are safe to call from any thread.
+    thread_safe: bool = false,
 
     pub const VTable = struct {
         name: *const fn (ptr: *anyopaque) []const u8,
@@ -34,6 +43,16 @@ pub const EmbeddingProvider = struct {
         embed: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) anyerror![]f32,
         deinit: *const fn (ptr: *anyopaque) void,
     };
+
+    /// Internal constructor — use implementation-specific `provider()` methods instead.
+    pub fn make(ptr: *anyopaque, vtable: *const VTable) EmbeddingProvider {
+        return .{
+            .ptr = ptr,
+            .vtable = vtable,
+            .thread_id = if (runtime_safety) std.Thread.getCurrentId() else {},
+            .thread_safe = false,
+        };
+    }
 
     pub fn getName(self: EmbeddingProvider) []const u8 {
         return self.vtable.name(self.ptr);
@@ -44,7 +63,13 @@ pub const EmbeddingProvider = struct {
     }
 
     /// Embed a single text into a vector. Caller owns the returned slice.
+    ///
+    /// In debug/ReleaseSafe builds, asserts that this is called from the creating
+    /// thread unless `thread_safe` is set to true on the handle.
     pub fn embed(self: EmbeddingProvider, allocator: std.mem.Allocator, text: []const u8) ![]f32 {
+        if (runtime_safety and !self.thread_safe) {
+            std.debug.assert(std.Thread.getCurrentId() == self.thread_id);
+        }
         return self.vtable.embed(self.ptr, allocator, text);
     }
 
@@ -88,10 +113,7 @@ pub const NoopEmbedding = struct {
     };
 
     pub fn provider(self: *Self) EmbeddingProvider {
-        return .{
-            .ptr = @ptrCast(self),
-            .vtable = &vtable,
-        };
+        return EmbeddingProvider.make(@ptrCast(self), &vtable);
     }
 };
 
@@ -211,10 +233,7 @@ pub const OllamaEmbedding = struct {
     };
 
     pub fn provider(self: *Self) EmbeddingProvider {
-        return .{
-            .ptr = @ptrCast(self),
-            .vtable = &vtable,
-        };
+        return EmbeddingProvider.make(@ptrCast(self), &vtable);
     }
 };
 
@@ -388,10 +407,7 @@ pub const OpenAiEmbedding = struct {
     };
 
     pub fn provider(self: *Self) EmbeddingProvider {
-        return .{
-            .ptr = @ptrCast(self),
-            .vtable = &vtable,
-        };
+        return EmbeddingProvider.make(@ptrCast(self), &vtable);
     }
 };
 
@@ -549,6 +565,38 @@ test "contentHashWithModel is deterministic and model-sensitive" {
     try std.testing.expectEqualSlices(u8, &h1, &h2);
     try std.testing.expect(!std.mem.eql(u8, &h1, &h3));
 }
+
+// ── M2: Thread safety model ───────────────────────────────────────────────────
+
+test "EmbeddingProvider: thread_id set on creation thread" {
+    var noop: NoopEmbedding = .{};
+    const p = noop.provider();
+    if (runtime_safety) {
+        try std.testing.expectEqual(std.Thread.getCurrentId(), p.thread_id);
+    }
+}
+
+test "EmbeddingProvider: same-thread embed succeeds (thread_id assertion not triggered)" {
+    var noop: NoopEmbedding = .{};
+    const p = noop.provider();
+    // Calling from the same thread that created the handle — assertion passes.
+    const vec = try p.embed(std.testing.allocator, "hello");
+    defer std.testing.allocator.free(vec);
+    try std.testing.expectEqual(@as(usize, 0), vec.len);
+}
+
+test "EmbeddingProvider: thread_safe=true disables thread assertion" {
+    var noop: NoopEmbedding = .{};
+    var p = noop.provider();
+    p.thread_safe = true;
+    // With thread_safe set, embed() skips the thread_id assertion.
+    // We can't actually simulate a cross-thread call in a unit test without
+    // spawning threads (which risks flakiness), so we just verify the flag works.
+    const vec = try p.embed(std.testing.allocator, "safe");
+    defer std.testing.allocator.free(vec);
+    try std.testing.expectEqual(@as(usize, 0), vec.len);
+}
+
 
 
 

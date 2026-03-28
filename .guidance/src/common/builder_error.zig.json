@@ -1,0 +1,191 @@
+{
+  "meta": {
+    "module": "src.common.builder_error",
+    "source": "src/common/builder_error.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/registry.zig"],
+  "members": [
+    {
+      "type": "enum",
+      "name": "Phase",
+      "match_hash": "f3714964b5bf2a439b074d44e14f9f7e406f8deef0004a10e74023909f32c327",
+      "signature": "keyword_enum Phase { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "depends",
+          "is_pub": false,
+          "line": 19
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "provides",
+          "is_pub": false,
+          "line": 20
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "command",
+          "is_pub": false,
+          "line": 21
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "registration",
+          "is_pub": false,
+          "line": 22
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "validation",
+          "is_pub": false,
+          "line": 23
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "initialization",
+          "is_pub": false,
+          "line": 24
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "label",
+          "match_hash": "9995ba92067088073a046c000f2f19842335283d81944a50a9e1f828abf1d509",
+          "signature": "fn label(self: Phase) -> []const u8",
+          "params": [
+            { "name": "self", "type": "Phase" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 26
+        }
+      ],
+      "line": 18
+    },
+    {
+      "type": "struct",
+      "name": "BuilderError",
+      "match_hash": "8892e28103d316ed96f72a7959ff00e1bd55c5a4aedcae6d5b7d8754618ba6b0",
+      "signature": "keyword_struct BuilderError { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "33bac208877943a936633e991be10cfccac8f67c5fac9788d9f51fc7ec0c1743",
+          "signature": "fn init(arena: std.mem.Allocator, phase: Phase, field: ?[]const u8, value: ?[]const u8, constraint: ?[]const u8, cause: anyerror) -> *BuilderError",
+          "params": [
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "phase", "type": "Phase" },
+            { "name": "field", "type": "?[]const u8" },
+            { "name": "value", "type": "?[]const u8" },
+            { "name": "constraint", "type": "?[]const u8" },
+            { "name": "cause", "type": "anyerror" }
+          ],
+          "returns": "*BuilderError",
+          "is_pub": true,
+          "line": 53
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "format",
+          "match_hash": "1886bbc7342a44960a959d5be07eeff9505262df51c82a5456e0af39367edc74",
+          "signature": "fn format(self: *const BuilderError, _: []const u8, _: std.fmt.FormatOptions, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const BuilderError" },
+            { "name": "_", "type": "[]const u8" },
+            { "name": "_", "type": "std.fmt.FormatOptions" },
+            { "name": "writer" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 90
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "chain",
+          "match_hash": "f3d43ee4c9cd80f591818dcbd4b6ffc8398bcf37f03c6eb8189d24be211e0ed9",
+          "signature": "fn chain(arena: std.mem.Allocator, child: *BuilderError, parent: *const BuilderError) -> void",
+          "params": [
+            { "name": "arena", "type": "std.mem.Allocator" },
+            { "name": "child", "type": "*BuilderError" },
+            { "name": "parent", "type": "*const BuilderError" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 102
+        }
+      ],
+      "line": 35
+    },
+    {
+      "type": "fn_decl",
+      "name": "joinStringSlice",
+      "match_hash": "faed75d537ec9d57be09f4dd2dbb485aa44e50bc8cc0c561df2639805298cf6f",
+      "signature": "fn joinStringSlice(arena: std.mem.Allocator, names: []const []const u8) -> []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "names", "type": "[]const []const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 122
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: init captures field, value, constraint, cause",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: value is truncated to max_value_len",
+      "is_pub": false,
+      "line": 167
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: null field and constraint format correctly",
+      "is_pub": false,
+      "line": 179
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: format writes message",
+      "is_pub": false,
+      "line": 189
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: chain appends parent message",
+      "is_pub": false,
+      "line": 204
+    },
+    {
+      "type": "test_decl",
+      "name": "joinStringSlice: empty returns empty",
+      "is_pub": false,
+      "line": 217
+    },
+    {
+      "type": "test_decl",
+      "name": "joinStringSlice: single name",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "test_decl",
+      "name": "joinStringSlice: multiple names comma-separated",
+      "is_pub": false,
+      "line": 231
+    },
+    {
+      "type": "test_decl",
+      "name": "BuilderError: GPA no leaks",
+      "is_pub": false,
+      "line": 238
+    }
+  ]
+}

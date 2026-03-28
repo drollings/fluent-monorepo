@@ -3,12 +3,13 @@
 /// Standalone peer module promoted from src/common/reflection.zig (P2.4).
 ///
 /// Sub-module namespaces:
-///   reflection.constraint     — ConstraintVTable, Constraint(T), constraintSet/Get
-///   reflection.accessor       — Accessor, Editable(T), DynamicEditable, FieldMeta, TypeTag, OwnershipMode
-///   reflection.permissions    — Role, RolePermissions, perm_* constants
-///   reflection.typed          — TypedAccessorTable(T), TypedEditable, TypedAccessor
-///   reflection.binary         — BinaryFieldCodec
-///   reflection.enum_registry  — EnumRegistry
+///   reflection.constraint      — ConstraintVTable, Constraint(T), constraintSet/Get
+///   reflection.accessor        — Accessor, Editable(T), DynamicEditable, FieldMeta, TypeTag, OwnershipMode
+///   reflection.permissions     — Role, RolePermissions, perm_* constants
+///   reflection.typed           — TypedAccessorTable(T), TypedEditable, TypedAccessor
+///   reflection.binary          — BinaryFieldCodec
+///   reflection.enum_registry   — EnumRegistry
+///   reflection.schema_version  — SchemaVersion, SCHEMA_CURRENT, checkCompatible (M4)
 ///
 /// Flat re-exports preserve backward-compatible call sites such as:
 ///   @import("reflection").Constraint(T)
@@ -20,6 +21,8 @@ pub const permissions = @import("permissions.zig");
 pub const typed = @import("typed.zig");
 pub const binary = @import("binary.zig");
 pub const enum_registry = @import("enum_registry.zig");
+pub const schema_version = @import("schema_version.zig");
+pub const validate = @import("validate.zig");
 
 // ── Flat re-exports: constraint ───────────────────────────────────────────────
 pub const ConstraintVTable = constraint.ConstraintVTable;
@@ -58,6 +61,18 @@ pub const BinaryFieldCodec = binary.BinaryFieldCodec;
 
 // ── Flat re-exports: enum_registry ───────────────────────────────────────────
 pub const EnumRegistry = enum_registry.EnumRegistry;
+
+// ── Flat re-exports: schema_version (M4) ─────────────────────────────────────
+pub const SchemaVersion = schema_version.SchemaVersion;
+pub const SCHEMA_CURRENT = schema_version.SCHEMA_CURRENT;
+pub const checkCompatible = schema_version.checkCompatible;
+
+// ── Flat re-exports: validate (M6) ───────────────────────────────────────────
+pub const validateValue = validate.validateValue;
+pub const validateEnumValues = validate.validateEnumValues;
+pub const validateCustom = validate.validateCustom;
+pub const validatePattern = validate.validatePattern;
+pub const FieldValidationError = validate.ValidationError;
 
 // ── Pull in all tests from sub-modules ───────────────────────────────────────
 // Tests from the original reflection.zig (accessor/constraint/permissions/editable)
@@ -658,6 +673,334 @@ test "TypedEditable type mismatch error" {
     try testing.expectError(error.TypeMismatch, result);
 }
 
+// ── M4: SchemaVersion / Accessor versioning / ConstraintVTable versioning ─────
 
+test "M4: SchemaVersion: compatible same major" {
+    const v1_0 = SchemaVersion{ .major = 1 };
+    const v1_5 = SchemaVersion{ .major = 1, .minor = 5 };
+    try testing.expect(v1_0.compatible(v1_5));
+    try testing.expect(v1_5.compatible(v1_0));
+    try testing.expect(!v1_0.compatible(.{ .major = 2 }));
+}
 
+test "M4: checkCompatible: mismatch returns SchemaMismatch" {
+    try checkCompatible(SCHEMA_CURRENT, SCHEMA_CURRENT);
+    const err = checkCompatible(.{ .major = 2 }, SCHEMA_CURRENT);
+    try testing.expectError(error.SchemaMismatch, err);
+}
 
+test "M4: Accessor.isPresentIn: default v1 accessor present in v1 data" {
+    const u32_vtable = Constraint(u32);
+    const acc = Accessor{
+        .name = "x",
+        .offset = 0,
+        .permissions = perm_all,
+        .constraint = &u32_vtable,
+        // version_added defaults to SCHEMA_CURRENT (v1.0)
+    };
+    try testing.expect(acc.isPresentIn(.{ .major = 1 }));
+    try testing.expect(acc.isPresentIn(.{ .major = 1, .minor = 5 }));
+    try testing.expect(acc.isPresentIn(.{ .major = 2 }));
+}
+
+test "M4: Accessor.isPresentIn: v2 accessor absent in v1 data" {
+    const u32_vtable = Constraint(u32);
+    const acc = Accessor{
+        .name = "new_field",
+        .offset = 0,
+        .permissions = perm_all,
+        .constraint = &u32_vtable,
+        .version_added = .{ .major = 2 },
+    };
+    try testing.expect(!acc.isPresentIn(.{ .major = 1 }));
+    try testing.expect(!acc.isPresentIn(.{ .major = 1, .minor = 9 }));
+    try testing.expect(acc.isPresentIn(.{ .major = 2 }));
+}
+
+test "M4: Accessor.isPresentIn: removed field absent in v2 data" {
+    const u32_vtable = Constraint(u32);
+    const acc = Accessor{
+        .name = "old_field",
+        .offset = 0,
+        .permissions = perm_all,
+        .constraint = &u32_vtable,
+        .version_added = .{ .major = 1 },
+        .version_removed = .{ .major = 2 },
+    };
+    try testing.expect(acc.isPresentIn(.{ .major = 1 }));
+    try testing.expect(acc.isPresentIn(.{ .major = 1, .minor = 9 }));
+    try testing.expect(!acc.isPresentIn(.{ .major = 2 }));
+}
+
+test "M4: Accessor.migrate_from: called to transform old value" {
+    const migrateFn = struct {
+        fn migrate(old: []const u8, allocator: std.mem.Allocator) anyerror![]const u8 {
+            // Simulate upgrading "PORT=8080" → "8080".
+            if (std.mem.startsWith(u8, old, "PORT=")) {
+                return allocator.dupe(u8, old[5..]);
+            }
+            return allocator.dupe(u8, old);
+        }
+    }.migrate;
+
+    const u32_vtable = Constraint(u32);
+    const acc = Accessor{
+        .name = "port",
+        .offset = 0,
+        .permissions = perm_all,
+        .constraint = &u32_vtable,
+        .version_added = .{ .major = 2 },
+        .migrate_from = migrateFn,
+    };
+
+    const migrated = try acc.migrate_from.?("PORT=9000", testing.allocator);
+    defer testing.allocator.free(migrated);
+    try testing.expectEqualStrings("9000", migrated);
+}
+
+test "M4: ConstraintVTable.version defaults to SCHEMA_CURRENT" {
+    const vtable = Constraint(u32);
+    try testing.expectEqual(SCHEMA_CURRENT.major, vtable.version.major);
+    try testing.expectEqual(SCHEMA_CURRENT.minor, vtable.version.minor);
+}
+
+test "M4: ConstraintVTable.migrateFn defaults to null" {
+    const vtable = Constraint(u32);
+    try testing.expect(vtable.migrateFn == null);
+}
+
+test "M4: ConstraintVTable.migrateFn: custom migration called" {
+    var did_migrate = false;
+
+    const migrateFn = struct {
+        fn migrate(
+            _: SchemaVersion,
+            _: SchemaVersion,
+            _: std.mem.Allocator,
+            ptr: *anyopaque,
+        ) anyerror!void {
+            const flag: *bool = @ptrCast(@alignCast(ptr));
+            flag.* = true;
+        }
+    }.migrate;
+
+    const vtable = ConstraintVTable{
+        .setFn = Constraint(u32).setFn,
+        .getFn = Constraint(u32).getFn,
+        .version = .{ .major = 2 },
+        .migrateFn = migrateFn,
+    };
+
+    if (vtable.migrateFn) |migrate| {
+        try migrate(.{ .major = 1 }, .{ .major = 2 }, testing.allocator, @ptrCast(&did_migrate));
+    }
+    try testing.expect(did_migrate);
+}
+
+// ── M5: Nested struct reflection (dot-notation paths) ────────────────────────
+
+/// Plain data struct with no editable mixin — should be flattened.
+const DbConfig = struct {
+    host: []const u8 = "localhost",
+    port: u16 = 5432,
+};
+
+/// Host struct with a nested plain-data struct field.
+const AppConfig = struct {
+    db: DbConfig = .{},
+    timeout_ms: u32 = 5000,
+    editable: Editable(AppConfig) = .{},
+};
+
+test "M5: nested struct: accessor count includes leaf fields" {
+    // AppConfig has: db.host, db.port, timeout_ms → 3 leaf fields
+    try testing.expectEqual(@as(usize, 3), Editable(AppConfig).accessors.len);
+}
+
+test "M5: nested struct: accessor names use dot-notation" {
+    const names = try Editable(AppConfig).fieldNames(testing.allocator);
+    defer testing.allocator.free(names);
+
+    var found_host = false;
+    var found_port = false;
+    var found_timeout = false;
+    for (names) |name| {
+        if (std.mem.eql(u8, name, "db.host")) found_host = true;
+        if (std.mem.eql(u8, name, "db.port")) found_port = true;
+        if (std.mem.eql(u8, name, "timeout_ms")) found_timeout = true;
+    }
+    try testing.expect(found_host);
+    try testing.expect(found_port);
+    try testing.expect(found_timeout);
+}
+
+test "M5: nested struct: set via dot-notation path" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const alloc = gpa.allocator();
+
+    var cfg: AppConfig = .{};
+    try cfg.editable.set(alloc, "db.host", "remote.example.com", .player);
+    defer alloc.free(cfg.db.host);
+    try testing.expectEqualStrings("remote.example.com", cfg.db.host);
+}
+
+test "M5: nested struct: get via dot-notation path" {
+    var cfg: AppConfig = .{};
+    const val = try cfg.editable.get(testing.allocator, "db.port", .player);
+    defer testing.allocator.free(val);
+    try testing.expectEqualStrings("5432", val);
+}
+
+test "M5: nested struct: non-nested field still works" {
+    var cfg: AppConfig = .{};
+    try cfg.editable.set(testing.allocator, "timeout_ms", "9999", .player);
+    try testing.expectEqual(@as(u32, 9999), cfg.timeout_ms);
+}
+
+test "M5: nested struct: unknown path returns FieldNotFound" {
+    var cfg: AppConfig = .{};
+    const result = cfg.editable.set(testing.allocator, "db.nonexistent", "x", .player);
+    try testing.expectError(error.FieldNotFound, result);
+}
+
+test "M5: Accessor.parent field defaults to null" {
+    const u32_vtable = Constraint(u32);
+    const acc = Accessor{
+        .name = "x",
+        .offset = 0,
+        .permissions = perm_all,
+        .constraint = &u32_vtable,
+    };
+    try testing.expect(acc.parent == null);
+}
+
+test "M5: Editable(AppConfig): zero-size mixin preserved" {
+    try testing.expectEqual(@as(usize, 0), @sizeOf(Editable(AppConfig)));
+}
+
+// ── M6: Validation rules extension ───────────────────────────────────────────
+
+test "M6: Editable.set: custom_validate rejects invalid value" {
+    const minLen5 = struct {
+        fn f(v: []const u8) bool {
+            return v.len >= 5;
+        }
+    }.f;
+
+    const Validated = struct {
+        name: []const u8 = "hello",
+        editable: Editable(@This()) = .{},
+
+        pub fn describeField(comptime fname: []const u8) FieldMeta {
+            if (std.mem.eql(u8, fname, "name")) return .{ .custom_validate = minLen5 };
+            return .{};
+        }
+    };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const alloc = gpa.allocator();
+
+    var obj: Validated = .{};
+    try testing.expectError(
+        error.CustomValidationFailed,
+        obj.editable.set(alloc, "name", "hi", .player),
+    );
+    // Name unchanged.
+    try testing.expectEqualStrings("hello", obj.name);
+}
+
+test "M6: Editable.set: enum_values rejects invalid value" {
+    const EnumField = struct {
+        mode: []const u8 = "read",
+        editable: Editable(@This()) = .{},
+
+        pub fn describeField(comptime fname: []const u8) FieldMeta {
+            if (std.mem.eql(u8, fname, "mode"))
+                return .{ .enum_values = &.{ "read", "write", "admin" } };
+            return .{};
+        }
+    };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const alloc = gpa.allocator();
+
+    var obj: EnumField = .{};
+    try testing.expectError(
+        error.InvalidEnumValue,
+        obj.editable.set(alloc, "mode", "superuser", .player),
+    );
+    // Valid value goes through.
+    try obj.editable.set(alloc, "mode", "write", .player);
+    defer alloc.free(obj.mode);
+    try testing.expectEqualStrings("write", obj.mode);
+}
+
+test "M6: Editable.set: pattern rejects invalid value" {
+    const PatField = struct {
+        slug: []const u8 = "my-slug",
+        editable: Editable(@This()) = .{},
+
+        pub fn describeField(comptime fname: []const u8) FieldMeta {
+            if (std.mem.eql(u8, fname, "slug")) return .{ .pattern = "^slug-" };
+            return .{};
+        }
+    };
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const alloc = gpa.allocator();
+
+    var obj: PatField = .{};
+    try testing.expectError(
+        error.PatternMismatch,
+        obj.editable.set(alloc, "slug", "my-slug", .player),
+    );
+    try obj.editable.set(alloc, "slug", "slug-abc", .player);
+    defer alloc.free(obj.slug);
+    try testing.expectEqualStrings("slug-abc", obj.slug);
+}
+
+test "M6: validateAll: passes when all fields satisfy rules" {
+    const minLen2 = struct {
+        fn f(v: []const u8) bool {
+            return v.len >= 2;
+        }
+    }.f;
+
+    const Checked = struct {
+        tag: []const u8 = "ok",
+        editable: Editable(@This()) = .{},
+
+        pub fn describeField(comptime fname: []const u8) FieldMeta {
+            if (std.mem.eql(u8, fname, "tag")) return .{ .custom_validate = minLen2 };
+            return .{};
+        }
+    };
+
+    var obj: Checked = .{};
+    try obj.editable.validateAll(testing.allocator, .player);
+}
+
+test "M6: validateAll: returns error when a field violates rules" {
+    const minLen10 = struct {
+        fn f(v: []const u8) bool {
+            return v.len >= 10;
+        }
+    }.f;
+
+    const Checked = struct {
+        tag: []const u8 = "short",
+        editable: Editable(@This()) = .{},
+
+        pub fn describeField(comptime fname: []const u8) FieldMeta {
+            if (std.mem.eql(u8, fname, "tag")) return .{ .custom_validate = minLen10 };
+            return .{};
+        }
+    };
+
+    var obj: Checked = .{};
+    try testing.expectError(error.CustomValidationFailed, obj.editable.validateAll(testing.allocator, .player));
+}
