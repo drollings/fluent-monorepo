@@ -600,3 +600,125 @@ pub const MergeResult = struct {
     lines_corrected: usize = 0,
     has_changes: bool = false,
 };
+
+const testing = std.testing;
+
+test "JsonStore.isLeakedPrompt: detects 'we need to write' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("We need to write a function that..."));
+    try testing.expect(JsonStore.isLeakedPrompt("we need to write"));
+    try testing.expect(JsonStore.isLeakedPrompt("WE NEED TO WRITE something"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'we need to look' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("We need to look at the code"));
+    try testing.expect(JsonStore.isLeakedPrompt("we need to look"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'we need to read' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("We need to read the file"));
+    try testing.expect(JsonStore.isLeakedPrompt("we need to read"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'i need to write' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("I need to write a test"));
+    try testing.expect(JsonStore.isLeakedPrompt("i need to write"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'let's write' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("Let's write the implementation"));
+    try testing.expect(JsonStore.isLeakedPrompt("let's write"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'let me write' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("Let me write this for you"));
+    try testing.expect(JsonStore.isLeakedPrompt("let me write"));
+}
+
+test "JsonStore.isLeakedPrompt: detects 'write a one-sentence' preamble" {
+    try testing.expect(JsonStore.isLeakedPrompt("Write a one-sentence description"));
+    try testing.expect(JsonStore.isLeakedPrompt("write a one-sentence"));
+}
+
+test "JsonStore.isLeakedPrompt: returns false for valid comments" {
+    try testing.expect(!JsonStore.isLeakedPrompt("This function computes the hash."));
+    try testing.expect(!JsonStore.isLeakedPrompt("Returns the sum of two numbers."));
+    try testing.expect(!JsonStore.isLeakedPrompt("The module handles synchronization."));
+    try testing.expect(!JsonStore.isLeakedPrompt(""));
+}
+
+test "JsonStore.isLeakedPrompt: case-insensitive matching" {
+    try testing.expect(JsonStore.isLeakedPrompt("WE NEED TO WRITE"));
+    try testing.expect(JsonStore.isLeakedPrompt("Let'S Write code"));
+    try testing.expect(JsonStore.isLeakedPrompt("I NEED TO WRITE"));
+}
+
+test "JsonStore.isLeakedPrompt: false for text starting with similar but different words" {
+    try testing.expect(!JsonStore.isLeakedPrompt("We needed to write"));
+    try testing.expect(!JsonStore.isLeakedPrompt("We need another approach"));
+    try testing.expect(!JsonStore.isLeakedPrompt("Let'swriting"));
+}
+
+test "JsonStore: init creates store with allocator" {
+    const store = JsonStore.init(testing.allocator);
+    try testing.expectEqual(testing.allocator, store.allocator);
+}
+
+test "JsonStore: loadGuidance returns null for non-existent file" {
+    var store = JsonStore.init(testing.allocator);
+    const doc = try store.loadGuidance("/nonexistent/path/file.json");
+    try testing.expect(doc == null);
+}
+
+test "JsonStore: parseGuidance returns null for invalid JSON" {
+    var store = JsonStore.init(testing.allocator);
+    const doc = try store.parseGuidance("not valid json {");
+    try testing.expect(doc == null);
+}
+
+test "JsonStore: parseGuidance returns null for JSON missing meta" {
+    var store = JsonStore.init(testing.allocator);
+    const doc = try store.parseGuidance("{\"other\": 123}");
+    try testing.expect(doc == null);
+}
+
+test "JsonStore: parseGuidance returns null for JSON missing module/source" {
+    var store = JsonStore.init(testing.allocator);
+    const doc1 = try store.parseGuidance("{\"meta\": {}}");
+    try testing.expect(doc1 == null);
+    const doc2 = try store.parseGuidance("{\"meta\": {\"module\": \"test\"}}");
+    try testing.expect(doc2 == null);
+}
+
+test "JsonStore: dupeStrings deep copies strings" {
+    var store = JsonStore.init(testing.allocator);
+    const input = [_][]const u8{ "hello", "world" };
+    const copy = try store.dupeStrings(&input);
+    defer {
+        for (copy) |s| testing.allocator.free(s);
+        testing.allocator.free(copy);
+    }
+    try testing.expectEqual(@as(usize, 2), copy.len);
+    try testing.expectEqualSlices(u8, "hello", copy[0]);
+    try testing.expectEqualSlices(u8, "world", copy[1]);
+}
+
+test "JsonStore: dupeSkills deep copies skills" {
+    var store = JsonStore.init(testing.allocator);
+    const input = [_]types.Skill{
+        .{ .ref = "skill1", .context = "context1" },
+        .{ .ref = "skill2", .context = null },
+    };
+    const copy = try store.dupeSkills(&input);
+    defer {
+        for (copy) |s| {
+            testing.allocator.free(s.ref);
+            if (s.context) |c| testing.allocator.free(c);
+        }
+        testing.allocator.free(copy);
+    }
+    try testing.expectEqual(@as(usize, 2), copy.len);
+    try testing.expectEqualSlices(u8, "skill1", copy[0].ref);
+    try testing.expectEqualSlices(u8, "context1", copy[0].context.?);
+    try testing.expectEqualSlices(u8, "skill2", copy[1].ref);
+    try testing.expect(copy[1].context == null);
+}

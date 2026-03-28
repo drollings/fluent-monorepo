@@ -313,7 +313,7 @@
     {
       "type": "fn_private",
       "name": "loadAliases",
-      "match_hash": "338663b389db9cf362981416c9e71bc5a2d018aa794320fff46b9cad3cb06130",
+      "match_hash": "d1163b88b7d82719145aa4f2435f5bb297e5445646e0a950231df71274e7cfef",
       "signature": "fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) -> ?vector_db_mod.SemanticAliases",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -540,6 +540,54 @@
       "returns": "[]TestQuery",
       "is_pub": false,
       "line": 1771
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: empty string is short",
+      "is_pub": false,
+      "line": 1847
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: one word is short",
+      "is_pub": false,
+      "line": 1852
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: two words is short",
+      "is_pub": false,
+      "line": 1857
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: three words is not short",
+      "is_pub": false,
+      "line": 1862
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: question mark makes it not short",
+      "is_pub": false,
+      "line": 1867
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: question word prefixes make it not short",
+      "is_pub": false,
+      "line": 1872
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: question words case insensitive",
+      "is_pub": false,
+      "line": 1882
+    },
+    {
+      "type": "test_decl",
+      "name": "isShortQuery: regular two-word queries are short",
+      "is_pub": false,
+      "line": 1888
     }
   ]
 }

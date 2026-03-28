@@ -12,7 +12,6 @@
       "name": "ConstraintVTable",
       "match_hash": "a0941d4b301a6c255c58787cefea4d2fa2e5a9cdf23ea30534659b3700569236",
       "signature": "keyword_struct ConstraintVTable { ... }",
-      "comment": "Defines a constraint table structure for validation; managed centrally, immutable after creation.",
       "is_pub": true,
       "line": 12
     },
@@ -25,7 +24,6 @@
         { "name": "T", "type": "type" }
       ],
       "returns": "ConstraintVTable",
-      "comment": "Build a static ConstraintVTable for type T.\nThe returned value is typically stored as a comptime constant and referenced\nby pointer from Accessor.  Supported types: int, float, bool, []const u8,\nenum, optional, array, vector.",
       "is_pub": true,
       "line": 111
     },
@@ -41,7 +39,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "anyerror!void",
-      "comment": "Validates and sets constraints for a Zig type with allocator and input data.",
       "is_pub": true,
       "line": 159
     },
@@ -56,9 +53,140 @@
         { "name": "typed_ptr", "type": "*const T" }
       ],
       "returns": "anyerror![]const u8",
-      "comment": "Retrieves a value from a typed pointer using reflection, returning any error if failed.",
       "is_pub": true,
       "line": 222
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: integer types",
+      "is_pub": false,
+      "line": 273
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: float types",
+      "is_pub": false,
+      "line": 283
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: bool types",
+      "is_pub": false,
+      "line": 293
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: bool invalid value",
+      "is_pub": false,
+      "line": 305
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: string slice",
+      "is_pub": false,
+      "line": 310
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: enum types",
+      "is_pub": false,
+      "line": 317
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: enum invalid value",
+      "is_pub": false,
+      "line": 324
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: optional types",
+      "is_pub": false,
+      "line": 330
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: array types",
+      "is_pub": false,
+      "line": 340
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: array too long",
+      "is_pub": false,
+      "line": 346
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: array too short",
+      "is_pub": false,
+      "line": 351
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintSet: vector types",
+      "is_pub": false,
+      "line": 356
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: integer types",
+      "is_pub": false,
+      "line": 364
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: float types",
+      "is_pub": false,
+      "line": 371
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: bool types",
+      "is_pub": false,
+      "line": 378
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: string slice",
+      "is_pub": false,
+      "line": 389
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: enum types",
+      "is_pub": false,
+      "line": 396
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: optional types",
+      "is_pub": false,
+      "line": 404
+    },
+    {
+      "type": "test_decl",
+      "name": "constraintGet: array types",
+      "is_pub": false,
+      "line": 415
+    },
+    {
+      "type": "test_decl",
+      "name": "Constraint: round-trip integer",
+      "is_pub": false,
+      "line": 422
+    },
+    {
+      "type": "test_decl",
+      "name": "Constraint: round-trip string",
+      "is_pub": false,
+      "line": 431
+    },
+    {
+      "type": "test_decl",
+      "name": "Constraint: releaseFn frees string slice",
+      "is_pub": false,
+      "line": 445
     }
   ]
 }

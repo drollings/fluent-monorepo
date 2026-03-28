@@ -268,6 +268,188 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
     }
 }
 
+const testing = std.testing;
 
+test "constraintSet: integer types" {
+    var val: i32 = 0;
+    try constraintSet(i32, testing.allocator, &val, "42");
+    try testing.expectEqual(@as(i32, 42), val);
 
+    var uval: u8 = 0;
+    try constraintSet(u8, testing.allocator, &uval, "255");
+    try testing.expectEqual(@as(u8, 255), uval);
+}
 
+test "constraintSet: float types" {
+    var val: f64 = 0;
+    try constraintSet(f64, testing.allocator, &val, "3.14159");
+    try testing.expectApproxEqAbs(@as(f64, 3.14159), val, 0.00001);
+
+    var fval: f32 = 0;
+    try constraintSet(f32, testing.allocator, &fval, "-2.5");
+    try testing.expectApproxEqAbs(@as(f32, -2.5), fval, 0.001);
+}
+
+test "constraintSet: bool types" {
+    var val: bool = false;
+    try constraintSet(bool, testing.allocator, &val, "true");
+    try testing.expect(val);
+    try constraintSet(bool, testing.allocator, &val, "false");
+    try testing.expect(!val);
+    try constraintSet(bool, testing.allocator, &val, "1");
+    try testing.expect(val);
+    try constraintSet(bool, testing.allocator, &val, "0");
+    try testing.expect(!val);
+}
+
+test "constraintSet: bool invalid value" {
+    var val: bool = false;
+    try testing.expectError(error.InvalidBool, constraintSet(bool, testing.allocator, &val, "yes"));
+}
+
+test "constraintSet: string slice" {
+    var val: []const u8 = "";
+    try constraintSet([]const u8, testing.allocator, &val, "hello world");
+    defer testing.allocator.free(val);
+    try testing.expectEqualSlices(u8, "hello world", val);
+}
+
+test "constraintSet: enum types" {
+    const Color = enum { red, green, blue };
+    var val: Color = .red;
+    try constraintSet(Color, testing.allocator, &val, "green");
+    try testing.expectEqual(Color.green, val);
+}
+
+test "constraintSet: enum invalid value" {
+    const Color = enum { red, green, blue };
+    var val: Color = .red;
+    try testing.expectError(error.InvalidEnum, constraintSet(Color, testing.allocator, &val, "yellow"));
+}
+
+test "constraintSet: optional types" {
+    var val: ?i32 = null;
+    try constraintSet(?i32, testing.allocator, &val, "42");
+    try testing.expectEqual(@as(?i32, 42), val);
+    try constraintSet(?i32, testing.allocator, &val, "null");
+    try testing.expect(val == null);
+    try constraintSet(?i32, testing.allocator, &val, "");
+    try testing.expect(val == null);
+}
+
+test "constraintSet: array types" {
+    var val: [3]i32 = .{ 0, 0, 0 };
+    try constraintSet([3]i32, testing.allocator, &val, "1,2,3");
+    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 3 }, &val);
+}
+
+test "constraintSet: array too long" {
+    var val: [2]i32 = .{ 0, 0 };
+    try testing.expectError(error.ArrayTooLong, constraintSet([2]i32, testing.allocator, &val, "1,2,3"));
+}
+
+test "constraintSet: array too short" {
+    var val: [3]i32 = .{ 0, 0, 0 };
+    try testing.expectError(error.ArrayTooShort, constraintSet([3]i32, testing.allocator, &val, "1,2"));
+}
+
+test "constraintSet: vector types" {
+    var val: @Vector(3, f32) = .{ 0, 0, 0 };
+    try constraintSet(@Vector(3, f32), testing.allocator, &val, "1.0, 2.0, 3.0");
+    try testing.expectApproxEqAbs(@as(f32, 1.0), val[0], 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 2.0), val[1], 0.001);
+    try testing.expectApproxEqAbs(@as(f32, 3.0), val[2], 0.001);
+}
+
+test "constraintGet: integer types" {
+    var val: i32 = 42;
+    const s = try constraintGet(i32, testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "42", s);
+}
+
+test "constraintGet: float types" {
+    var val: f64 = 3.5;
+    const s = try constraintGet(f64, testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expect(std.mem.startsWith(u8, s, "3.5"));
+}
+
+test "constraintGet: bool types" {
+    var val: bool = true;
+    const s_true = try constraintGet(bool, testing.allocator, &val);
+    defer testing.allocator.free(s_true);
+    try testing.expectEqualSlices(u8, "true", s_true);
+    val = false;
+    const s_false = try constraintGet(bool, testing.allocator, &val);
+    defer testing.allocator.free(s_false);
+    try testing.expectEqualSlices(u8, "false", s_false);
+}
+
+test "constraintGet: string slice" {
+    var val: []const u8 = "test string";
+    const s = try constraintGet([]const u8, testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "test string", s);
+}
+
+test "constraintGet: enum types" {
+    const Color = enum { red, green, blue };
+    var val: Color = .green;
+    const s = try constraintGet(Color, testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "green", s);
+}
+
+test "constraintGet: optional types" {
+    var val: ?i32 = 42;
+    const s_some = try constraintGet(?i32, testing.allocator, &val);
+    defer testing.allocator.free(s_some);
+    try testing.expectEqualSlices(u8, "42", s_some);
+    val = null;
+    const s_null = try constraintGet(?i32, testing.allocator, &val);
+    defer testing.allocator.free(s_null);
+    try testing.expectEqualSlices(u8, "null", s_null);
+}
+
+test "constraintGet: array types" {
+    var val: [3]i32 = .{ 1, 2, 3 };
+    const s = try constraintGet([3]i32, testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "[1,2,3]", s);
+}
+
+test "Constraint: round-trip integer" {
+    const vtable = Constraint(i32);
+    var val: i32 = 0;
+    try vtable.setFn(testing.allocator, &val, "123");
+    const s = try vtable.getFn(testing.allocator, &val);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "123", s);
+}
+
+test "Constraint: round-trip string" {
+    const vtable = Constraint([]const u8);
+    var val: []const u8 = "";
+    const ptr: *anyopaque = @ptrCast(&val);
+    try vtable.setFn(testing.allocator, ptr, "hello");
+    defer if (val.len > 0) testing.allocator.free(val);
+    const s = try vtable.getFn(testing.allocator, ptr);
+    defer testing.allocator.free(s);
+    try testing.expectEqualSlices(u8, "hello", s);
+    if (vtable.releaseFn) |release| {
+        release(testing.allocator, ptr);
+    }
+}
+
+test "Constraint: releaseFn frees string slice" {
+    const vtable = Constraint([]const u8);
+    var val: []const u8 = "";
+    const ptr: *anyopaque = @ptrCast(&val);
+    try vtable.setFn(testing.allocator, ptr, "owned string");
+    try testing.expectEqualSlices(u8, "owned string", val);
+    if (vtable.releaseFn) |release| {
+        release(testing.allocator, ptr);
+    }
+    try testing.expectEqualSlices(u8, "", val);
+}

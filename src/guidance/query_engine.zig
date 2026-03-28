@@ -1841,3 +1841,52 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
 
     return queries.toOwnedSlice(allocator);
 }
+
+const testing = std.testing;
+
+test "isShortQuery: empty string is short" {
+    try testing.expect(isShortQuery(""));
+    try testing.expect(isShortQuery("   "));
+}
+
+test "isShortQuery: one word is short" {
+    try testing.expect(isShortQuery("foo"));
+    try testing.expect(isShortQuery("  bar  "));
+}
+
+test "isShortQuery: two words is short" {
+    try testing.expect(isShortQuery("foo bar"));
+    try testing.expect(isShortQuery("one two"));
+}
+
+test "isShortQuery: three words is not short" {
+    try testing.expect(!isShortQuery("foo bar baz"));
+    try testing.expect(!isShortQuery("one two three"));
+}
+
+test "isShortQuery: question mark makes it not short" {
+    try testing.expect(!isShortQuery("foo?"));
+    try testing.expect(!isShortQuery("foo bar?"));
+}
+
+test "isShortQuery: question word prefixes make it not short" {
+    try testing.expect(!isShortQuery("how does this work"));
+    try testing.expect(!isShortQuery("what is foo"));
+    try testing.expect(!isShortQuery("where is bar"));
+    try testing.expect(!isShortQuery("when does it run"));
+    try testing.expect(!isShortQuery("why is this happening"));
+    try testing.expect(!isShortQuery("if this happens"));
+    try testing.expect(!isShortQuery("does it work"));
+}
+
+test "isShortQuery: question words case insensitive" {
+    try testing.expect(!isShortQuery("How does this work"));
+    try testing.expect(!isShortQuery("WHAT is foo"));
+    try testing.expect(!isShortQuery("Where IS bar"));
+}
+
+test "isShortQuery: regular two-word queries are short" {
+    try testing.expect(isShortQuery("sync json"));
+    try testing.expect(isShortQuery("parse file"));
+    try testing.expect(isShortQuery("load config"));
+}
