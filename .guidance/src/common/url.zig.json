@@ -16,8 +16,35 @@
         { "name": "host", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `host` resolves to the loopback interface.\nCovers the common aliases: \"localhost\", \"127.0.0.1\", \"::1\", and the\nfull 127.x.x.x range.",
       "is_pub": true,
-      "line": 11
+      "line": 13
+    },
+    {
+      "type": "fn_decl",
+      "name": "isPrivateIp",
+      "match_hash": "323ca53f5899f43d8df925ad8aa7d7ee4ad2336639a374210a970c562603489e",
+      "signature": "fn isPrivateIp(host: []const u8) -> bool",
+      "params": [
+        { "name": "host", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Checks if a given IP slice is a private IP address and returns true or false.",
+      "is_pub": true,
+      "line": 22
+    },
+    {
+      "type": "fn_private",
+      "name": "extractHost",
+      "match_hash": "2d345d024d6b848ca716f474b0eb1b82a66f779eb7615c42143701cbfe96ea93",
+      "signature": "fn extractHost(url: []const u8) -> []const u8",
+      "params": [
+        { "name": "url", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Extract the host (without brackets, port, or path) from a URL that has\nalready been validated to start with `http://` or `https://`.",
+      "is_pub": false,
+      "line": 64
     },
     {
       "type": "fn_decl",
@@ -28,44 +55,93 @@
         { "name": "url", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Validate that `url` is acceptable as an API endpoint.\n\nAllowed:\n  - `https://` URL to any *public* host\n  - `http://` URL to localhost / 127.x.x.x / ::1\n\nRejected:\n  - Empty or non-http(s) URLs         → `error.InvalidApiUrl`\n  - Plain HTTP to non-localhost host  → `error.InsecureApiUrl`\n  - Private / link-local IP ranges    → `error.SsrfBlockedUrl`",
       "is_pub": true,
-      "line": 25
+      "line": 81
     },
     {
       "type": "test_decl",
       "name": "isLocalHost recognises loopback aliases",
       "is_pub": false,
-      "line": 44
+      "line": 102
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp accepts https",
       "is_pub": false,
-      "line": 53
+      "line": 111
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp accepts local http",
       "is_pub": false,
-      "line": 57
+      "line": 115
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects empty",
       "is_pub": false,
-      "line": 62
+      "line": 120
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects bare hostname",
       "is_pub": false,
-      "line": 66
+      "line": 124
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects remote http",
       "is_pub": false,
-      "line": 70
+      "line": 128
+    },
+    {
+      "type": "test_decl",
+      "name": "isPrivateIp detects private ranges",
+      "is_pub": false,
+      "line": 132
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via http",
+      "is_pub": false,
+      "line": 147
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via https",
+      "is_pub": false,
+      "line": 156
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp blocks private class A via http",
+      "is_pub": false,
+      "line": 163
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp blocks private class A via https",
+      "is_pub": false,
+      "line": 171
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp blocks private class C via https",
+      "is_pub": false,
+      "line": 178
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp allows localhost http",
+      "is_pub": false,
+      "line": 185
+    },
+    {
+      "type": "test_decl",
+      "name": "validateHttpsOrLocalHttp allows public https",
+      "is_pub": false,
+      "line": 190
     }
   ]
 }

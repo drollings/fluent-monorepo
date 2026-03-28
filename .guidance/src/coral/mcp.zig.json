@@ -12,7 +12,6 @@
       "name": "CoralQueryParams",
       "match_hash": "39519fa82b2a25c7b5b75ba6b5c14876db598b319df91df6ea50fd0d34ee270b",
       "signature": "keyword_struct CoralQueryParams { ... }",
-      "comment": "Manages query parameters for Coral queries, owns state, ensures consistent invariants across sessions.",
       "is_pub": false,
       "members": [
         {
@@ -35,7 +34,6 @@
       "name": "InsertNodeParams",
       "match_hash": "fd927d059b17d04b21ef380c35de94af89e9920270fd32c8d0790fe8a6c64a13",
       "signature": "keyword_struct InsertNodeParams { ... }",
-      "comment": "Manages node insertion parameters with fixed-size buffers; encapsulates ownership and invariants.",
       "is_pub": false,
       "members": [
         {
@@ -58,7 +56,6 @@
       "name": "ExplainParams",
       "match_hash": "97da4a363710d2bf8750c09ffcf399ec14ce8586b02954afcfb328dfa813447c",
       "signature": "keyword_struct ExplainParams { ... }",
-      "comment": "Defines configuration parameters for Zig compilation; manages ownership and invariants during build.",
       "is_pub": false,
       "members": [
         {
@@ -86,7 +83,6 @@
         { "name": "args", "type": "std.json.ObjectMap" }
       ],
       "returns": "void",
-      "comment": "Check that all required (identity=true) fields are present in the args map.",
       "is_pub": false,
       "line": 92
     },
@@ -95,7 +91,6 @@
       "name": "ToolDef",
       "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
       "signature": "keyword_struct ToolDef { ... }",
-      "comment": "MCP tool descriptor: name, human-readable description, and JSON Schema for the input object.",
       "is_pub": true,
       "line": 109
     },
@@ -104,7 +99,6 @@
       "name": "JsonRpcRequest",
       "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
       "signature": "keyword_struct JsonRpcRequest { ... }",
-      "comment": "Incoming JSON-RPC 2.0 request frame; `id` is null for notifications.",
       "is_pub": false,
       "line": 144
     },
@@ -113,7 +107,6 @@
       "name": "McpServer",
       "match_hash": "e6043e4781e4ac55df457ded001af893105e13c89e925e9a61066b1ab680245a",
       "signature": "keyword_struct McpServer { ... }",
-      "comment": "Manages server state with fixed buffers; encapsulates initialization logic; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -127,7 +120,6 @@
             { "name": "writer", "type": "*std.Io.Writer" }
           ],
           "returns": "void",
-          "comment": "Serve requests from reader, writing responses to writer.\nReads Content-Length framed JSON-RPC messages until EOF.",
           "is_pub": true,
           "line": 168
         }
@@ -141,9 +133,8 @@
             { "name": "raw_json", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Handle a single JSON-RPC request.\nReturns an allocator-owned JSON response string (caller must free).\narena #5: all parse/routing scratch lives in req_arena; only the\nserialized response escapes to self.allocator.",
           "is_pub": true,
-          "line": 212
+          "line": 223
         }
     ,    {
           "type": "fn_private",
@@ -157,7 +148,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 231
+          "line": 242
         }
     ,    {
           "type": "fn_private",
@@ -171,7 +162,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 244
+          "line": 255
         }
     ,    {
           "type": "fn_private",
@@ -185,7 +176,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 259
+          "line": 270
         }
     ,    {
           "type": "fn_private",
@@ -199,7 +190,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 295
+          "line": 306
         }
     ,    {
           "type": "fn_private",
@@ -214,7 +205,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 329
+          "line": 340
         }
     ,    {
           "type": "fn_private",
@@ -229,7 +220,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 360
+          "line": 371
         }
     ,    {
           "type": "fn_private",
@@ -244,7 +235,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 402
+          "line": 413
         }
     ,    {
           "type": "fn_private",
@@ -260,7 +251,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 461
+          "line": 472
         }
     ,    {
           "type": "fn_private",
@@ -273,7 +264,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 475
+          "line": 486
         }
       ],
       "line": 156
@@ -289,7 +280,7 @@
       ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
-      "line": 487
+      "line": 498
     },
     {
       "type": "fn_private",
@@ -301,39 +292,38 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write `s` to `writer` with JSON string escaping (no surrounding quotes).",
       "is_pub": false,
-      "line": 512
+      "line": 523
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest initialize",
       "is_pub": false,
-      "line": 532
+      "line": 543
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest tools/list",
       "is_pub": false,
-      "line": 557
+      "line": 568
     },
     {
       "type": "test_decl",
       "name": "McpServer: tools/call coral_query routes to L5",
       "is_pub": false,
-      "line": 583
+      "line": 594
     },
     {
       "type": "test_decl",
       "name": "McpServer: unknown method returns error -32601",
       "is_pub": false,
-      "line": 610
+      "line": 621
     },
     {
       "type": "test_decl",
       "name": "McpServer: missing required field returns error",
       "is_pub": false,
-      "line": 634
+      "line": 645
     }
   ]
 }

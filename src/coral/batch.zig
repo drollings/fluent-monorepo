@@ -156,11 +156,19 @@ pub const BatchIngestor = struct {
     }
 
     /// Ingest a Turtle file at the given path.
-    /// Supports files up to 4 GiB (limited by virtual address space on 32-bit platforms).
+    /// Enforces a 100 MB size cap (see src/common/limits.zig MAX_FILE_SIZE).
+    /// Rejects paths containing `..` components to prevent directory traversal.
     pub fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) !IngestStats {
+        // P2: Reject path traversal components.
+        if (std.mem.indexOf(u8, path, "..") != null) return error.PathTraversal;
+        // Reject null bytes to prevent bypass via null-terminated string confusion.
+        if (std.mem.indexOfScalar(u8, path, 0) != null) return error.PathTraversal;
+
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
-        const source = try file.readToEndAlloc(self.allocator, 4 * 1024 * 1024 * 1024);
+        // P1: 100 MB limit — was 4 GB (see src/common/limits.zig MAX_FILE_SIZE).
+        const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
+        const source = try file.readToEndAlloc(self.allocator, MAX_FILE_SIZE);
         defer self.allocator.free(source);
         return self.ingestSource(source, library);
     }

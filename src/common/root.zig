@@ -123,7 +123,16 @@ pub const isNoisyComment = str_mod.isNoisyComment;
 
 // ── URL utilities ─────────────────────────────────────────────────────────────
 pub const isLocalHost = url_mod.isLocalHost;
+pub const isPrivateIp = url_mod.isPrivateIp;
 pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
+
+// ── Resource limits ───────────────────────────────────────────────────────────
+/// Shared size/count caps for file reads, MCP requests, KNN scans, etc.
+pub const limits = @import("limits.zig");
+
+// ── Shell command parser ──────────────────────────────────────────────────────
+/// Safe command-string tokenizer (no shell intermediary).
+pub const shell_parser = @import("shell_parser.zig");
 
 // ── Typed ID handles ──────────────────────────────────────────────────────────
 pub const types = @import("types.zig");

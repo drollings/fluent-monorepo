@@ -3,6 +3,7 @@ const Target = @import("target.zig").Target;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
 const DependencyResolver = @import("resolver.zig").DependencyResolver;
 const StringInterner = @import("interner.zig").StringInterner;
+const shell_parser = @import("shell_parser.zig");
 
 pub const BuildError = error{
     ExecutionFailed,
@@ -188,10 +189,16 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
             std.log.info("  > {s}", .{cmd});
         }
 
-        var child = std.process.Child.init(
-            &[_][]const u8{ "/bin/sh", "-c", cmd },
-            self.allocator,
-        );
+        const argv = shell_parser.parseCommand(self.allocator, cmd) catch |err| {
+            std.log.err("Failed to parse command '{s}': {s}", .{ cmd, @errorName(err) });
+            return false;
+        };
+        defer {
+            for (argv) |arg| self.allocator.free(arg);
+            self.allocator.free(argv);
+        }
+
+        var child = std.process.Child.init(argv, self.allocator);
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
 
@@ -522,8 +529,3 @@ test "BuildContext: GPA no leaks across a multi-target build" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
-
-
-
-
-

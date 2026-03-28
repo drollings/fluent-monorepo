@@ -111,7 +111,7 @@
           ],
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 160
+          "line": 161
         }
       ],
       "line": 66
@@ -134,7 +134,7 @@
           ],
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 184
+          "line": 192
         }
     ,    {
           "type": "fn_decl",
@@ -147,7 +147,7 @@
           ],
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 190
+          "line": 198
         }
     ,    {
           "type": "fn_decl",
@@ -160,7 +160,7 @@
           ],
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 196
+          "line": 204
         }
     ,    {
           "type": "fn_decl",
@@ -173,7 +173,7 @@
           ],
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 202
+          "line": 210
         }
     ,    {
           "type": "fn_decl",
@@ -186,7 +186,7 @@
           ],
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 208
+          "line": 216
         }
     ,    {
           "type": "fn_decl",
@@ -199,58 +199,58 @@
           ],
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 214
+          "line": 222
         }
       ],
-      "line": 178
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "batch ingestor accumulates triples without flush",
       "is_pub": false,
-      "line": 226
+      "line": 234
     },
     {
       "type": "test_decl",
       "name": "batch boundary: small batch_size flushes multiple times",
       "is_pub": false,
-      "line": 250
+      "line": 258
     },
     {
       "type": "test_decl",
       "name": "progress callback invoked",
       "is_pub": false,
-      "line": 270
+      "line": 278
     },
     {
       "type": "test_decl",
       "name": "batch config defaults",
       "is_pub": false,
-      "line": 286
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "max_triples: stops after limit",
       "is_pub": false,
-      "line": 294
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "ingest stats zero on init",
       "is_pub": false,
-      "line": 322
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestSource on YAGO sample returns nodes and edges",
       "is_pub": false,
-      "line": 339
+      "line": 347
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)",
       "is_pub": false,
-      "line": 371
+      "line": 379
     }
   ]
 }

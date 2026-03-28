@@ -82,6 +82,10 @@ Then you you must read
 │   │   │   ├── TEST_EXPLAIN.md
 │   │   │   ├── TEST_EXPLAIN_RESULTS.md
 │   │   │   ├── TODO.md
+│   │   │   ├── TODO_20260326.md
+│   │   │   ├── TODO_20260326_CHECKLIST.md
+│   │   │   ├── TODO_20260326b.md
+│   │   │   ├── TODO_20260326b_CHECKLIST.md
 │   │   │   ├── TODO_AUDIT_REMEDY.md
 │   │   │   ├── TODO_AUDIT_REMEDY_CHECKLIST.md
 │   │   │   ├── TODO_COMMON.md
@@ -94,7 +98,6 @@ Then you you must read
 │   │   │   ├── TODO_NEW_COMMENTS.md
 │   │   │   ├── TODO_NEW_COMMENTS_CHECKLIST.md
 │   │   │   ├── TODO_REFLECTION.md
-│   │   │   ├── TODO_SECURITY.md
 │   │   │   ├── TODO_YAGO.md
 │   │   │   ├── TODO_YAGO_CHECKLIST.md
 │   │   │   ├── unifiedprompt2.md
@@ -157,11 +160,6 @@ Then you you must read
 │       │   └── zig.mk
 │       ├── common.mk
 │       └── target_language.mk
-├── rag
-│   ├── TODO_20260326.md
-│   ├── TODO_20260326_CHECKLIST.md
-│   ├── TODO_20260326b.md
-│   └── TODO_20260326b_CHECKLIST.md
 ├── src
 │   ├── common
 │   │   ├── args.zig
@@ -174,6 +172,7 @@ Then you you must read
 │   │   ├── io.zig                                                 # io.zig — Shared buffered I/O helpers
 │   │   ├── json.zig                                               # json.zig — Generic JSON serialization helpers
 │   │   ├── json_parser.zig
+│   │   ├── limits.zig                                             # limits.zig — Shared resource-limit constants
 │   │   ├── llm.zig                                                # common — Shared utilities and LLM client for guidance, vector, and coral.
 │   │   ├── local_model.zig                                        # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
@@ -182,6 +181,7 @@ Then you you must read
 │   │   ├── resolver.zig
 │   │   ├── root.zig                                               # common — Module umbrella root.
 │   │   ├── shared_string.zig                                      # SharedString — heap-allocated, reference-counted, immutable string.
+│   │   ├── shell_parser.zig                                       # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── source.zig                                             # source.zig — Source code excerpt extraction helpers
 │   │   ├── str.zig                                                # str.zig — Generic string classification and inspection helpers
 │   │   ├── string.zig
@@ -287,6 +287,9 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
+├── FLUENT_WEAVER_DISCUSSION.md
+├── FLUENT_WVR_DISCUSSION.md
+├── GUIDANCE_PROTOPYNE.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
@@ -298,5 +301,9 @@ Then you you must read
 ├── SECURITY_REVIEW.md
 ├── STRUCTURE.md
 ├── TEST_EXPLAIN_PROMPT.md
-└── TODO_MEMORY_LEAK.md
+├── TODO_FLUENT_WVR_CONCURRENCY.md
+├── TODO_FLUENT_WVR_UPGRADE.md
+├── TODO_MEMORY_LEAK.md
+├── TODO_SECURITY.md
+└── TODO_SECURITY_CHECKLIST.md
 ```

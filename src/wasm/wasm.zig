@@ -344,10 +344,32 @@ pub const WasmPlugin = struct {
 // ---------------------------------------------------------------------------
 
 /// Host function context - passed to host functions for controlled I/O.
+///
+/// `call_count` is incremented on every host-function invocation and compared
+/// against `max_calls` to prevent tight-loop DoS from malicious WASM modules.
+/// The counter is reset to zero each time a new plugin invocation begins via
+/// `HostFunctionContext.reset()`.
 pub const HostFunctionContext = struct {
     library: *Library,
     allocator: std.mem.Allocator,
+    /// Total host-function calls made in the current plugin invocation.
+    call_count: u32 = 0,
+    /// Maximum calls allowed per invocation (see limits.zig MAX_WASM_HOST_CALLS).
+    max_calls: u32 = 10_000,
+
+    /// Reset the call counter at the start of each plugin invocation.
+    pub fn reset(self: *HostFunctionContext) void {
+        self.call_count = 0;
+    }
 };
+
+/// Check whether the per-invocation host-function rate limit has been reached.
+/// Increments `ctx.call_count` and returns `error.RateLimited` when the cap
+/// is exceeded.  All host functions call this as their first action.
+fn checkRateLimit(ctx: *HostFunctionContext) error{RateLimited}!void {
+    ctx.call_count += 1;
+    if (ctx.call_count > ctx.max_calls) return error.RateLimited;
+}
 
 /// Host function: Get node LOD1 summary by ID.
 /// Input: (id: i64)
@@ -362,6 +384,11 @@ pub fn hostGetNodeLod1(
 ) callconv(std.builtin.CallingConvention.c) void {
     _ = n_outputs;
     const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse return;
+
+    checkRateLimit(ctx) catch {
+        outputs[0] = .{ .t = .ptr, .v = 0 };
+        return;
+    };
 
     if (n_inputs < 1) {
         outputs[0] = .{ .t = .ptr, .v = 0 };
@@ -401,6 +428,11 @@ pub fn hostGetNeighbors(
 ) callconv(std.builtin.CallingConvention.c) void {
     _ = n_outputs;
     const ctx = @as(?*HostFunctionContext, @ptrCast(@alignCast(user_data))) orelse return;
+
+    checkRateLimit(ctx) catch {
+        outputs[0] = .{ .t = .ptr, .v = 0 };
+        return;
+    };
 
     if (n_inputs < 1) {
         outputs[0] = .{ .t = .ptr, .v = 0 };
@@ -456,6 +488,11 @@ pub fn hostInsertEdge(
         return;
     };
 
+    checkRateLimit(ctx) catch {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
+        return;
+    };
+
     if (n_inputs < 2) {
         outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
         return;
@@ -463,6 +500,19 @@ pub fn hostInsertEdge(
 
     const from_id: i64 = @bitCast(inputs[0].v);
     const to_id: i64 = @bitCast(inputs[1].v);
+
+    // Validate both nodes exist before inserting the edge.
+    // Prevents referential integrity violations and orphan-edge graph corruption.
+    var from_opt = ctx.library.fetchNode(from_id) catch null;
+    if (from_opt) |*n| n.free(ctx.allocator) else {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 2)) }; // 2 = node not found
+        return;
+    }
+    var to_opt = ctx.library.fetchNode(to_id) catch null;
+    if (to_opt) |*n| n.free(ctx.allocator) else {
+        outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 2)) }; // 2 = node not found
+        return;
+    }
 
     ctx.library.insertNeighborOf(from_id, to_id, 0.0, .neighbor_of) catch {
         outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 1)) };
@@ -1293,4 +1343,3 @@ test "verifyWithTests: empty test cases returns true" {
     const result = verifyWithTests(testing.allocator, &[_]u8{}, &[_]ToolTestCase{});
     try testing.expect(result);
 }
-

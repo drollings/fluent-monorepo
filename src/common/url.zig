@@ -1,8 +1,10 @@
 /// url.zig — Generic URL validation helpers
 ///
 /// Provides simple, allocation-free checks for acceptable API endpoint URLs.
-/// The policy enforced here — HTTPS anywhere, plain HTTP only to localhost —
-/// is a sensible default for any CLI tool that calls local or remote APIs.
+/// Policy:
+///   - HTTPS anywhere (public hosts), OR
+///   - HTTP only to localhost / 127.x.x.x
+///   - Private IP ranges always blocked (SSRF prevention)
 const std = @import("std");
 
 /// Return true when `host` resolves to the loopback interface.
@@ -16,25 +18,81 @@ pub fn isLocalHost(host: []const u8) bool {
     return false;
 }
 
-/// Validate that `url` is either:
-///   - an `https://` URL (any host), or
-///   - an `http://` URL whose host is localhost / 127.x / ::1
+/// Checks if a given IP slice is a private IP address and returns true or false.
+pub fn isPrivateIp(host: []const u8) bool {
+    // Strip IPv6 brackets: [::1] → ::1
+    const h = if (host.len >= 2 and host[0] == '[' and host[host.len - 1] == ']')
+        host[1 .. host.len - 1]
+    else
+        host;
+
+    // IPv4 private ranges
+    if (std.mem.startsWith(u8, h, "10.")) return true;
+    if (std.mem.startsWith(u8, h, "192.168.")) return true;
+    if (std.mem.startsWith(u8, h, "169.254.")) return true; // IMDS / link-local
+    if (std.mem.startsWith(u8, h, "0.")) return true;
+
+    // 172.16.0.0/12 — second octet 16..31
+    if (std.mem.startsWith(u8, h, "172.")) {
+        const after = h["172.".len..];
+        const dot = std.mem.indexOf(u8, after, ".") orelse after.len;
+        const octet = std.fmt.parseInt(u8, after[0..dot], 10) catch 0;
+        if (octet >= 16 and octet <= 31) return true;
+    }
+
+    // IPv6 private: fc00::/7 covers fc** and fd**
+    if (h.len >= 2) {
+        const lo = std.ascii.toLower(h[0]);
+        const lo1 = std.ascii.toLower(h[1]);
+        if (lo == 'f' and (lo1 == 'c' or lo1 == 'd')) return true; // fc00::/7
+        if (lo == 'f' and lo1 == 'e' and h.len >= 4) {
+            const lo2 = std.ascii.toLower(h[2]);
+            const lo3 = std.ascii.toLower(h[3]);
+            // fe80::/10 — first 10 bits = 1111 1110 10
+            if (lo2 == '8' or lo2 == '9' or lo2 == 'a' or lo2 == 'b') {
+                _ = lo3;
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Extract the host (without brackets, port, or path) from a URL that has
+/// already been validated to start with `http://` or `https://`.
+fn extractHost(url: []const u8) []const u8 {
+    const scheme_end = (std.mem.indexOf(u8, url, "://") orelse 0) + 3;
+    const after = url[scheme_end..];
+    const host_end = std.mem.indexOfAny(u8, after, ":/") orelse after.len;
+    return after[0..host_end];
+}
+
+/// Validate that `url` is acceptable as an API endpoint.
 ///
-/// Returns `error.InvalidApiUrl` for empty or non-http(s) strings and
-/// `error.InsecureApiUrl` for plain-HTTP URLs that point at a remote host.
+/// Allowed:
+///   - `https://` URL to any *public* host
+///   - `http://` URL to localhost / 127.x.x.x / ::1
+///
+/// Rejected:
+///   - Empty or non-http(s) URLs         → `error.InvalidApiUrl`
+///   - Plain HTTP to non-localhost host  → `error.InsecureApiUrl`
+///   - Private / link-local IP ranges    → `error.SsrfBlockedUrl`
 pub fn validateHttpsOrLocalHttp(url: []const u8) !void {
     if (url.len == 0) return error.InvalidApiUrl;
     const is_https = std.mem.startsWith(u8, url, "https://");
     const is_http = std.mem.startsWith(u8, url, "http://");
     if (!is_https and !is_http) return error.InvalidApiUrl;
 
+    const host = extractHost(url);
+
     if (is_http) {
-        // Extract host from http://host:port/path
-        const after = url["http://".len..];
-        const host_end = std.mem.indexOfAny(u8, after, ":/") orelse after.len;
-        const host = after[0..host_end];
         if (!isLocalHost(host)) return error.InsecureApiUrl;
     }
+
+    // Block private IP ranges for both HTTP and HTTPS (SSRF prevention).
+    // Loopback (127.x) is exempt — it is the only permitted plain-HTTP host.
+    if (isPrivateIp(host) and !isLocalHost(host)) return error.SsrfBlockedUrl;
 }
 
 // =============================================================================
@@ -70,3 +128,67 @@ test "validateHttpsOrLocalHttp rejects bare hostname" {
 test "validateHttpsOrLocalHttp rejects remote http" {
     try std.testing.expectError(error.InsecureApiUrl, validateHttpsOrLocalHttp("http://remote.host/api"));
 }
+
+test "isPrivateIp detects private ranges" {
+    try std.testing.expect(isPrivateIp("10.0.0.1"));
+    try std.testing.expect(isPrivateIp("10.255.255.255"));
+    try std.testing.expect(isPrivateIp("192.168.1.1"));
+    try std.testing.expect(isPrivateIp("192.168.0.0"));
+    try std.testing.expect(isPrivateIp("169.254.169.254")); // AWS IMDS
+    try std.testing.expect(isPrivateIp("172.16.0.1"));
+    try std.testing.expect(isPrivateIp("172.31.255.255"));
+    try std.testing.expect(isPrivateIp("0.0.0.0"));
+    try std.testing.expect(!isPrivateIp("172.15.0.1")); // just outside /12
+    try std.testing.expect(!isPrivateIp("172.32.0.1")); // just outside /12
+    try std.testing.expect(!isPrivateIp("8.8.8.8"));
+    try std.testing.expect(!isPrivateIp("example.com"));
+}
+
+test "validateHttpsOrLocalHttp blocks AWS metadata endpoint via http" {
+    // Plain-HTTP to a non-localhost host is already rejected as InsecureApiUrl;
+    // the SSRF check fires for HTTPS variants of the same host.
+    try std.testing.expectError(
+        error.InsecureApiUrl,
+        validateHttpsOrLocalHttp("http://169.254.169.254/latest/meta-data/"),
+    );
+}
+
+test "validateHttpsOrLocalHttp blocks AWS metadata endpoint via https" {
+    try std.testing.expectError(
+        error.SsrfBlockedUrl,
+        validateHttpsOrLocalHttp("https://169.254.169.254/latest/meta-data/"),
+    );
+}
+
+test "validateHttpsOrLocalHttp blocks private class A via http" {
+    // http:// to non-localhost → InsecureApiUrl first
+    try std.testing.expectError(
+        error.InsecureApiUrl,
+        validateHttpsOrLocalHttp("http://10.0.0.5:8080/"),
+    );
+}
+
+test "validateHttpsOrLocalHttp blocks private class A via https" {
+    try std.testing.expectError(
+        error.SsrfBlockedUrl,
+        validateHttpsOrLocalHttp("https://10.0.0.5/api"),
+    );
+}
+
+test "validateHttpsOrLocalHttp blocks private class C via https" {
+    try std.testing.expectError(
+        error.SsrfBlockedUrl,
+        validateHttpsOrLocalHttp("https://192.168.1.1/"),
+    );
+}
+
+test "validateHttpsOrLocalHttp allows localhost http" {
+    try validateHttpsOrLocalHttp("http://localhost:11434/api/embed");
+    try validateHttpsOrLocalHttp("http://127.0.0.1:8080/v1");
+}
+
+test "validateHttpsOrLocalHttp allows public https" {
+    try validateHttpsOrLocalHttp("https://api.openai.com/v1/embeddings");
+    try validateHttpsOrLocalHttp("https://example.com/api");
+}
+

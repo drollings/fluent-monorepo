@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "module": "src.common.limits",
+    "source": "src/common/limits.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig"]
+}
