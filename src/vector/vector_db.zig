@@ -3468,7 +3468,7 @@ const ParsedDoc = struct {
 // ---------------------------------------------------------------------------
 
 /// Extract the capability name from an absolute CAPABILITY.md path.
-/// Example: ".guidance/capabilities/vector-search/CAPABILITY.md" → "vector-search"
+/// Example: "doc/capabilities/vector-search/CAPABILITY.md" → "vector-search"
 fn capabilityNameFromPath(file_path: []const u8) []const u8 {
     const dir = std.fs.path.dirname(file_path) orelse return file_path;
     return std.fs.path.basename(dir);
@@ -3997,12 +3997,12 @@ test "DbSyncBuilder fluent setters return updated values" {
         ".guidance.db",
         embedder,
     )
-        .withCapabilities(".guidance/.doc/capabilities")
+        .withCapabilities(".doc/capabilities")
         .cacheLimit(500);
 
     try std.testing.expectEqual(@as(u32, 500), builder.cache_limit);
     try std.testing.expect(builder.capabilities_dir != null);
-    try std.testing.expectEqualStrings(".guidance/.doc/capabilities", builder.capabilities_dir.?);
+    try std.testing.expectEqualStrings(".doc/capabilities", builder.capabilities_dir.?);
     // aliases still unset
     try std.testing.expect(builder.aliases == null);
 }

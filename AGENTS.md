@@ -71,13 +71,3 @@ doc/
 **DON'T:**
 - Assume skills apply without validating against source code
 - Skip source reading before implementation
-
----
-
-## Capturing Knowledge
-
-### Insights  (`.guidance/.doc/inbox/INSIGHTS.md`)
-Append major discoveries here as markdown bullets.
-
-### New Capabilities  (`.guidance/.doc/inbox/CAPABILITIES.md`)
-Append major new features here as markdown bullets.  Before implementing, consult `.guidance/.doc/capabilities/*.md` to enforce DRY.
