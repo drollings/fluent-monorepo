@@ -144,6 +144,8 @@ pub fn main() !void {
             std.process.exit(1);
         };
 
+        const dry_run = args.dry_run;
+
         const home = std.posix.getenv("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
@@ -157,25 +159,50 @@ pub fn main() !void {
         defer lib.deinit();
         try lib.initSchema();
 
+        // Progress callback for verbose mode - logs every batch (10K triples)
+        const ProgressCb = yago_ingest_mod.ProgressCallback;
+        const progressCallback: ?ProgressCb = if (args.verbose) struct {
+            fn callback(triples: usize, nodes: usize, edges: usize) void {
+                std.log.info("YAGO progress: {d} triples, {d} nodes, {d} edges", .{ triples, nodes, edges });
+            }
+        }.callback else null;
+
         const config = YagoConfig{
             .batch_size = 10_000,
             .whitelist_only = true,
             .build_hierarchy = false,
             .skip_errors = true,
+            .dry_run = dry_run,
+            .on_progress = progressCallback,
         };
         var ingestor = YagoIngestor.init(allocator, config);
 
-        try stdout.print("YAGO ingestion starting: {s}\n", .{source_path});
+        if (dry_run) {
+            try stdout.print("YAGO dry-run (no database writes): {s}\n", .{source_path});
+        } else {
+            try stdout.print("YAGO ingestion starting: {s}\n", .{source_path});
+        }
         try stdout.flush();
 
+        const start_time = std.time.nanoTimestamp();
         const stats = try ingestor.ingestFile(source_path, lib, null);
+        const elapsed_ns = std.time.nanoTimestamp() - start_time;
+        const elapsed_s = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
 
-        try stdout.print("YAGO ingestion complete:\n", .{});
-        try stdout.print("  triples processed : {d}\n", .{stats.triples_processed});
-        try stdout.print("  nodes created    : {d}\n", .{stats.nodes_created});
-        try stdout.print("  edges created    : {d}\n", .{stats.edges_created});
-        try stdout.print("  errors skipped   : {d}\n", .{stats.errors_skipped});
-        try stdout.print("  batches flushed  : {d}\n", .{stats.batches_flushed});
+        if (dry_run) {
+            try stdout.print("YAGO dry-run complete ({d:.2}s):\n", .{elapsed_s});
+            try stdout.print("  triples scanned    : {d}\n", .{stats.triples_processed});
+            try stdout.print("  triples filtered   : {d}\n", .{stats.triples_filtered});
+            try stdout.print("  errors skipped     : {d}\n", .{stats.errors_skipped});
+        } else {
+            const rate = if (elapsed_s > 0) @as(f64, @floatFromInt(stats.triples_processed)) / elapsed_s else 0;
+            try stdout.print("YAGO ingestion complete ({d:.2}s, {d:.0} triples/sec):\n", .{ elapsed_s, rate });
+            try stdout.print("  triples processed : {d}\n", .{stats.triples_processed});
+            try stdout.print("  nodes created    : {d}\n", .{stats.nodes_created});
+            try stdout.print("  edges created     : {d}\n", .{stats.edges_created});
+            try stdout.print("  errors skipped   : {d}\n", .{stats.errors_skipped});
+            try stdout.print("  batches flushed  : {d}\n", .{stats.batches_flushed});
+        }
         try stdout.flush();
         return;
     }

@@ -15,22 +15,25 @@
         { "name": "triple", "type": "Triple" }
       ],
       "returns": "bool",
+      "comment": "`FilterFn` compatible with `BatchConfig.filter_fn`.\nReturns true (accept) when the triple's subject IRI starts with any of\nthe YAGO/schema.org/RDF namespaces, or the subject is a blank node.\nReturns false (skip) for subjects from unrecognised namespaces.",
       "is_pub": true,
       "line": 37
     },
     {
       "type": "struct",
       "name": "YagoConfig",
-      "match_hash": "42500de3ff776f8ecc1d2f3d5b3bbec9cc9dfcd36982fa8bb533cfb49a5a79f8",
+      "match_hash": "811278e21a721ea943f842207c4ea9d75b5e8a56a20024fecfbb9e7f5ceb28a4",
       "signature": "keyword_struct YagoConfig { ... }",
+      "comment": "Manages YagoConfig settings with fixed buffers; encapsulates ownership and invariants.",
       "is_pub": true,
-      "line": 61
+      "line": 64
     },
     {
       "type": "struct",
       "name": "YagoIngestor",
       "match_hash": "0e5e1fd25c231964bf86efd7d7f97cd5bb7e3796569d6d8d9e5a7c5a4f95b32b",
       "signature": "keyword_struct YagoIngestor { ... }",
+      "comment": "YAGO-specific ingestion wrapper.\n\nUsage:\n  var ingestor = YagoIngestor.init(allocator, .{});\n  var ci = CapabilityInference.init(allocator);\n  defer ci.deinit();\n  const stats = try ingestor.ingestFile(\"yago-types.ttl\", lib, &ci);",
       "is_pub": true,
       "members": [
         {
@@ -44,7 +47,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 91
+          "line": 99
         }
     ,    {
           "type": "fn_decl",
@@ -58,8 +61,9 @@
             { "name": "capability_inference", "type": "?*CapabilityInference" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest a Turtle source string.\nOptionally populate `capability_inference` with the YAGO class hierarchy.",
           "is_pub": true,
-          "line": 101
+          "line": 109
         }
     ,    {
           "type": "fn_decl",
@@ -73,8 +77,9 @@
             { "name": "capability_inference", "type": "?*CapabilityInference" }
           ],
           "returns": "IngestStats",
+          "comment": "Ingest a Turtle file at `path`.\nRejects path components containing `..` or null bytes.\nFile size capped at 100 MB (delegated to BatchIngestor.ingestFile).",
           "is_pub": true,
-          "line": 117
+          "line": 125
         }
     ,    {
           "type": "fn_private",
@@ -89,10 +94,25 @@
           ],
           "returns": "IngestStats",
           "is_pub": false,
-          "line": 134
+          "line": 142
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "runDryRun",
+          "match_hash": "c422116c96412fb4793564c29494c97ad4ecf340796219d0df7277f880225ff7",
+          "signature": "fn runDryRun(self: *Self, source: ?[]const u8, path: ?[]const u8) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "source", "type": "?[]const u8" },
+            { "name": "path", "type": "?[]const u8" }
+          ],
+          "returns": "IngestStats",
+          "comment": "Parse triples without inserting into Library.\nReturns stats with triples_processed, triples_filtered populated.",
+          "is_pub": false,
+          "line": 159
         }
       ],
-      "line": 85
+      "line": 93
     },
     {
       "type": "fn_decl",
@@ -103,50 +123,51 @@
         { "name": "ci", "type": "*CapabilityInference" }
       ],
       "returns": "void",
+      "comment": "Constructs a baseline hierarchy structure from input data using Zig's capabilities.",
       "is_pub": true,
-      "line": 151
+      "line": 195
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts YAGO subject",
       "is_pub": false,
-      "line": 165
+      "line": 209
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: rejects unknown subject",
       "is_pub": false,
-      "line": 175
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts schema.org subject",
       "is_pub": false,
-      "line": 185
+      "line": 229
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Person is subclass of Entity",
       "is_pub": false,
-      "line": 195
+      "line": 239
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Organization is subclass of Entity",
       "is_pub": false,
-      "line": 206
+      "line": 250
     },
     {
       "type": "test_decl",
       "name": "YagoConfig defaults",
       "is_pub": false,
-      "line": 216
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "IngestStats has triples_filtered field",
       "is_pub": false,
-      "line": 224
+      "line": 268
     }
   ]
 }

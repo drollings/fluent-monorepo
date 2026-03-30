@@ -417,19 +417,21 @@ Index in SQLite
    - `DynamicEditable` for runtime-defined schemas
    - Role-based permissions enforced on every `set`/`get`
    - Binary and string serialization paths from same accessor table
+6. **MCP Server**: JSON-RPC perimeter for agent integration (HTTP + STDIO transports)
+7. **YAGO 4.5 Ingestion**: Sparse ontology with whitelist filtering, namespace prefix support
+8. **Hybrid Search**: HNSW index + vector similarity, L1-L5 cache hierarchy
+9. **Schema-Driven Hydration**: SQL binder and hydrator using accessor tables
+10. **Performance Benchmarks**: L1 cache, HNSW build/search, comparison targets
 
 ### In Progress 🔄
 
-1. **MCP Server**: JSON-RPC perimeter for agent integration
-2. **Local Model Integration**: 3-4B parameter inference for decomposition
-3. **Hybrid Search**: Vector + keyword fusion for tool discovery at scale
-4. **Schema-Driven Hydration**: Migrate remaining SQLite persistence to use accessor tables
+1. **Local Model Integration**: 3-4B parameter inference for decomposition
+2. **Frontier Protocol**: Anonymized LLM fallback for novel queries
 
 ### Planned 📋
 
-1. **YAGO 4.5 Ingestion**: Sparse ontology for duck typing
-2. **Frontier Protocol**: Anonymized LLM fallback
-3. **Evolutionary Improvement**: *Aspirational* - Genetic selection of high-value tools
+1. **Evolutionary Improvement**: *Aspirational* - Genetic selection of high-value tools
+2. **Advanced Caching**: LRU eviction policies for L1, semantic cache warming
 
 ---
 

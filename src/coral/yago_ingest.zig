@@ -57,6 +57,9 @@ pub fn yagoNamespaceFilter(triple: Triple) bool {
 // YagoConfig
 // ---------------------------------------------------------------------------
 
+/// Progress callback invoked after each batch flush.
+pub const ProgressCallback = *const fn (triples: usize, nodes: usize, edges: usize) void;
+
 /// Manages YagoConfig settings with fixed buffers; encapsulates ownership and invariants.
 pub const YagoConfig = struct {
     /// Triples per Library flush (forwarded to BatchConfig.batch_size).
@@ -69,6 +72,11 @@ pub const YagoConfig = struct {
     build_hierarchy: bool = true,
     /// Forward to BatchConfig.skip_errors.
     skip_errors: bool = false,
+    /// When true, parse and count triples without inserting into Library.
+    /// Useful for estimating file size and verifying filter coverage.
+    dry_run: bool = false,
+    /// Optional callback invoked after each batch flush.
+    on_progress: ?ProgressCallback = null,
 };
 
 // ---------------------------------------------------------------------------
@@ -132,14 +140,50 @@ pub const YagoIngestor = struct {
     // -------------------------------------------------------------------------
 
     fn runIngest(self: *Self, library: *Library, source: ?[]const u8, path: ?[]const u8) !IngestStats {
+        if (self.config.dry_run) {
+            return self.runDryRun(source, path);
+        }
         const cfg = coral_batch.BatchConfig{
             .batch_size = self.config.batch_size,
             .skip_errors = self.config.skip_errors,
             .filter_fn = if (self.config.whitelist_only) yagoNamespaceFilter else null,
+            .on_progress = self.config.on_progress,
         };
         var ingestor = BatchIngestor.init(self.allocator, cfg);
         if (source) |src| return ingestor.ingestSource(src, library);
         return ingestor.ingestFile(path.?, library);
+    }
+
+    /// Parse triples without inserting into Library.
+    /// Returns stats with triples_processed, triples_filtered populated.
+    fn runDryRun(self: *Self, source: ?[]const u8, path: ?[]const u8) !IngestStats {
+        var stats = IngestStats{};
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        const content: []const u8 = if (source) |src| src else blk: {
+            const file = try std.fs.cwd().openFile(path.?, .{});
+            defer file.close();
+            break :blk try file.readToEndAlloc(self.allocator, 100 * 1024 * 1024);
+        };
+        defer if (path != null) self.allocator.free(content);
+
+        var parser = try rdf.Parser.init(self.allocator, content);
+        defer parser.deinit();
+
+        while (try parser.next()) |triple| {
+            defer triple.deinit(self.allocator);
+            stats.triples_processed += 1;
+            if (self.config.whitelist_only and !yagoNamespaceFilter(triple)) {
+                stats.triples_filtered += 1;
+            }
+            if (self.config.on_progress) |cb| {
+                if (stats.triples_processed % self.config.batch_size == 0) {
+                    cb(stats.triples_processed, 0, 0);
+                }
+            }
+        }
+        return stats;
     }
 };
 
@@ -226,3 +270,4 @@ test "IngestStats has triples_filtered field" {
     const s = IngestStats{};
     try testing.expectEqual(@as(usize, 0), s.triples_filtered);
 }
+

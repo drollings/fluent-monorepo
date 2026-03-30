@@ -132,6 +132,11 @@ pub const retryCall = wrapper.retryCall;
 pub const WrapperKind = wrapper.WrapperKind;
 pub const Pipeline = wrapper.Pipeline;
 
+// ── Structured error context ─────────────────────────────────────────────────────
+pub const error_context = @import("error_context.zig");
+pub const ErrorContext = error_context.ErrorContext;
+pub const ArenaErrorContext = error_context.ArenaErrorContext;
+
 // ── Structured logging context (M8) ──────────────────────────────────────────
 pub const logging = @import("logging.zig");
 pub const LogContext = logging.LogContext;

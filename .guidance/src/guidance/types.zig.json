@@ -4,7 +4,7 @@
     "source": "src/guidance/types.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
+  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
   "members": [
     {
       "type": "enum",
@@ -348,19 +348,6 @@
     },
     {
       "type": "fn_private",
-      "name": "writeEscapedValue",
-      "match_hash": "d2d72ecbe63536e0b701a6b21fa972d63b855299baedb396df1c52ef5e83ef2f",
-      "signature": "fn writeEscapedValue(writer, value: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "value", "type": "[]const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 358
-    },
-    {
-      "type": "fn_private",
       "name": "writeEscapedString",
       "match_hash": "6223b0721dadb199f1e583f91d5d512c57c56fb85300b90e6ed8a739f67756ad",
       "signature": "fn writeEscapedString(writer, key: []const u8, value: []const u8) -> void",
@@ -371,7 +358,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 371
+      "line": 362
     },
     {
       "type": "fn_decl",
@@ -384,121 +371,121 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 378
+      "line": 369
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: zig extension maps to source",
       "is_pub": false,
-      "line": 526
+      "line": 517
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: py extension maps to source",
       "is_pub": false,
-      "line": 530
+      "line": 521
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: md extension maps to markdown",
       "is_pub": false,
-      "line": 534
+      "line": 525
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: json extension maps to config",
       "is_pub": false,
-      "line": 538
+      "line": 529
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: txt extension maps to unknown",
       "is_pub": false,
-      "line": 542
+      "line": 533
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: case insensitive ZIG maps to source",
       "is_pub": false,
-      "line": 546
+      "line": 537
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: source round-trip",
       "is_pub": false,
-      "line": 550
+      "line": 541
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: markdown round-trip",
       "is_pub": false,
-      "line": 554
+      "line": 545
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: config round-trip",
       "is_pub": false,
-      "line": 558
+      "line": 549
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: unknown round-trip",
       "is_pub": false,
-      "line": 562
+      "line": 553
     },
     {
       "type": "test_decl",
       "name": "freeStages: no leak on empty slice",
       "is_pub": false,
-      "line": 566
+      "line": 557
     },
     {
       "type": "test_decl",
       "name": "freeStages: frees all stage content",
       "is_pub": false,
-      "line": 572
+      "line": 563
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: minimal fn_decl contains expected JSON fields",
       "is_pub": false,
-      "line": 590
+      "line": 581
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: special chars are escaped in name",
       "is_pub": false,
-      "line": 611
+      "line": 602
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: with line field included",
       "is_pub": false,
-      "line": 630
+      "line": 621
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: with params",
       "is_pub": false,
-      "line": 649
+      "line": 640
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: no trailing comma when no members and no line",
       "is_pub": false,
-      "line": 672
+      "line": 663
     },
     {
       "type": "test_decl",
       "name": "jsonifyGuidanceDoc: minimal doc with just meta",
       "is_pub": false,
-      "line": 688
+      "line": 679
     },
     {
       "type": "test_decl",
       "name": "jsonifyGuidanceDoc: doc with comment and keywords",
       "is_pub": false,
-      "line": 705
+      "line": 696
     }
   ]
 }

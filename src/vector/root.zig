@@ -4,12 +4,15 @@ const common = @import("common");
 
 pub const math = @import("math.zig");
 pub const vector_db = @import("vector_db.zig");
+pub const hnsw = @import("hnsw.zig");
 
 pub const GuidanceDb = vector_db.GuidanceDb;
 pub const SearchResult = vector_db.SearchResult;
 pub const SemanticAliases = vector_db.SemanticAliases;
 pub const syncDatabase = vector_db.syncDatabase;
 pub const loadSemanticAliases = vector_db.loadSemanticAliases;
+
+pub const HnswIndex = hnsw.HnswIndex;
 
 pub const EmbeddingProvider = common.EmbeddingProvider;
 pub const NoopEmbedding = common.NoopEmbedding;

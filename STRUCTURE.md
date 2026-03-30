@@ -80,6 +80,7 @@ Then you you must read
 │   │   ├── context.zig
 │   │   ├── dag_executor.zig                      # dag_executor.zig — M6.1 Parallel DAG Execution
 │   │   ├── embeddings.zig                        # Embedding providers — convert text to vectors for semantic search.
+│   │   ├── error_context.zig                     # error_context.zig — Structured error context for non-builder code paths.
 │   │   ├── format.zig
 │   │   ├── hash.zig                              # hash.zig — Generic cryptographic hashing utilities
 │   │   ├── interner.zig                          # interner.zig — String interning with optional bitset support.
@@ -116,6 +117,7 @@ Then you you must read
 │   ├── coral
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
+│   │   ├── benchmark.zig                         # benchmark.zig — G5 Performance Benchmarks
 │   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing
 │   │   ├── cache_test.zig                        # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation

@@ -355,18 +355,9 @@ fn writeFieldOrComma(writer: anytype, key: []const u8, value: ?[]const u8) !void
     // the file-level comment and keeps JSON clean for infill-eligible members.
 }
 
-fn writeEscapedValue(writer: anytype, value: []const u8) !void {
-    for (value) |c| {
-        switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => try writer.writeByte(c),
-        }
-    }
-}
+/// Escapes JSON special characters in a string value.
+/// Delegates to common.jsonWriteEscaped to avoid code duplication.
+const writeEscapedValue = common.jsonWriteEscaped;
 
 fn writeEscapedString(writer: anytype, key: []const u8, value: []const u8) !void {
     try writer.print("  \"{s}\": \"", .{key});

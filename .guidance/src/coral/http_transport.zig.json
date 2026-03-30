@@ -4,13 +4,13 @@
     "source": "src/coral/http_transport.zig",
     "language": "zig"
   },
+  "used_by": ["src/coral/main.zig"],
   "members": [
     {
       "type": "struct",
       "name": "McpHandler",
       "match_hash": "aa50b351ffc3cc5fc5073eeae139f90defa37093ce2793a1179810d9d083ccc2",
       "signature": "keyword_struct McpHandler { ... }",
-      "comment": "MCP handler interface — must implement handleJsonRpc.",
       "is_pub": true,
       "members": [
         {
@@ -47,7 +47,6 @@
       "name": "SseEvent",
       "match_hash": "d4c954e6a0662040ddc15993b5da796411776930215df889b7b6f8fa0e3d4a91",
       "signature": "keyword_struct SseEvent { ... }",
-      "comment": "SSE event for streaming responses.",
       "is_pub": true,
       "line": 40
     },
@@ -56,7 +55,6 @@
       "name": "HttpTransport",
       "match_hash": "bbdc7e8c07c48cb47e5ad2c51dd9b598c41f1ba80a9e462648a8652782fd5626",
       "signature": "keyword_struct HttpTransport { ... }",
-      "comment": "Manages HTTP transport connections with a fixed-size buffer pool; owned by the server; ensures stable, non-thread-safe operations.",
       "is_pub": true,
       "members": [
         {
@@ -71,7 +69,6 @@
             { "name": "port", "type": "u16" }
           ],
           "returns": "Self",
-          "comment": "Initialize HTTP transport with binding configuration.",
           "is_pub": true,
           "line": 67
         }
@@ -84,7 +81,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Start the HTTP server and listen for connections.\nBlocks until shutdown is requested.",
           "is_pub": true,
           "line": 83
         }
@@ -98,7 +94,6 @@
             { "name": "ready_signal", "type": "*std.Thread.ResetEvent" }
           ],
           "returns": "void",
-          "comment": "Start the HTTP server with a ready signal.\nSignal is set when the server is listening and ready to accept connections.\nUseful for integration tests that need to know when the server is up.",
           "is_pub": true,
           "line": 117
         }
@@ -111,7 +106,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Request graceful shutdown.",
           "is_pub": true,
           "line": 123
         }
@@ -139,7 +133,6 @@
             { "name": "name", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Extract a header value from raw head buffer.\nReturns null if header not found.",
           "is_pub": false,
           "line": 152
         }
@@ -182,7 +175,6 @@
             { "name": "arena", "type": "std.mem.Allocator" }
           ],
           "returns": "void",
-          "comment": "Handle MCP request with SSE streaming.",
           "is_pub": false,
           "line": 241
         }
@@ -197,7 +189,6 @@
             { "name": "event", "type": "SseEvent" }
           ],
           "returns": "void",
-          "comment": "Send a single SSE event.",
           "is_pub": false,
           "line": 290
         }
@@ -309,6 +300,63 @@
       "name": "McpHandler VTable interface compiles",
       "is_pub": false,
       "line": 426
+    },
+    {
+      "type": "struct",
+      "name": "TestMcpHandler",
+      "match_hash": "79159eccd6f7ea7d2b59b66220e6340f32d62f93ffe52af33e03960fb787adf5",
+      "signature": "keyword_struct TestMcpHandler { ... }",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_private",
+          "name": "handleJsonRpc",
+          "match_hash": "8d7b8805463e4865dbb83f70e0f91015a3d8b636fcfecde39c3e1b9b82c8ce27",
+          "signature": "fn handleJsonRpc(ptr: *anyopaque, json: []const u8, allocator: std.mem.Allocator) -> anyerror![]const u8",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" },
+            { "name": "json", "type": "[]const u8" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "anyerror![]const u8",
+          "is_pub": false,
+          "line": 442
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "deinit",
+          "match_hash": "a35bba476da2212c402bb4a75af8dced3441d64f7f92e37705c3a8f3060b3b6e",
+          "signature": "fn deinit(ptr: *anyopaque) -> void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 449
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "initVTable",
+          "match_hash": "3c10d26ec19f9fd0242ad153aa40d42a437bde32ebbdacc8f7495a4ff819b28c",
+          "signature": "fn initVTable() -> McpHandler.VTable",
+          "returns": "McpHandler.VTable",
+          "is_pub": false,
+          "line": 453
+        }
+      ],
+      "line": 438
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: health check returns JSON",
+      "is_pub": false,
+      "line": 461
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: SSE event format",
+      "is_pub": false,
+      "line": 477
     }
   ]
 }

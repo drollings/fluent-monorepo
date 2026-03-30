@@ -714,4 +714,42 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(concurrency_channel_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_spawn_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_error_group_tests).step);
+
+    // -------------------------------------------------------------------------
+    // 4. Benchmark step (G5)
+    // -------------------------------------------------------------------------
+    const benchmark_step = b.step("benchmark", "Run performance benchmarks");
+
+    // Benchmark tests (unit tests for benchmark utilities)
+    const benchmark_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vector", .module = vector_module },
+                .{ .name = "reflection", .module = reflection_module },
+            },
+        }),
+    });
+
+    const benchmark_run = b.addRunArtifact(benchmark_tests);
+    benchmark_step.dependOn(&benchmark_run.step);
+
+    // Benchmark executable (runs main() for actual benchmarks)
+    const benchmark_exe = b.addExecutable(.{
+        .name = "benchmark",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/benchmark.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "vector", .module = vector_module },
+                .{ .name = "reflection", .module = reflection_module },
+            },
+        }),
+    });
+
+    const benchmark_exe_run = b.addRunArtifact(benchmark_exe);
+    benchmark_step.dependOn(&benchmark_exe_run.step);
 }

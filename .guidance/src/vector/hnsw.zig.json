@@ -4,6 +4,7 @@
     "source": "src/vector/hnsw.zig",
     "language": "zig"
   },
+  "used_by": ["src/vector/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -103,7 +104,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 146
+          "line": 149
         }
     ,    {
           "type": "fn_decl",
@@ -116,7 +117,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 208
+          "line": 211
         }
     ,    {
           "type": "fn_private",
@@ -129,7 +130,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 227
+          "line": 230
         }
     ,    {
           "type": "fn_private",
@@ -142,7 +143,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 232
+          "line": 235
         }
     ,    {
           "type": "fn_private",
@@ -155,7 +156,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 237
+          "line": 240
         }
     ,    {
           "type": "fn_private",
@@ -168,7 +169,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 242
+          "line": 245
         }
     ,    {
           "type": "fn_private",
@@ -180,7 +181,7 @@
           ],
           "returns": "u32",
           "is_pub": false,
-          "line": 250
+          "line": 253
         }
     ,    {
           "type": "fn_private",
@@ -192,7 +193,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 255
+          "line": 258
         }
     ,    {
           "type": "fn_private",
@@ -204,7 +205,7 @@
           ],
           "returns": "u64",
           "is_pub": false,
-          "line": 260
+          "line": 263
         }
     ,    {
           "type": "fn_decl",
@@ -217,7 +218,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 267
+          "line": 270
         }
     ,    {
           "type": "fn_decl",
@@ -230,7 +231,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 290
+          "line": 293
         }
     ,    {
           "type": "fn_private",
@@ -242,7 +243,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 320
+          "line": 323
         }
     ,    {
           "type": "fn_private",
@@ -256,7 +257,7 @@
           ],
           "returns": "f32",
           "is_pub": false,
-          "line": 328
+          "line": 331
         }
     ,    {
           "type": "fn_private",
@@ -271,7 +272,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 338
+          "line": 341
         }
       ],
       "line": 16
@@ -280,55 +281,61 @@
       "type": "test_decl",
       "name": "HnswIndex: init and deinit",
       "is_pub": false,
-      "line": 378
+      "line": 381
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: add single node",
       "is_pub": false,
-      "line": 386
+      "line": 389
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: dimension mismatch returns error",
       "is_pub": false,
-      "line": 397
+      "line": 400
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: search returns nearest neighbors",
       "is_pub": false,
-      "line": 405
+      "line": 408
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: remove node",
       "is_pub": false,
-      "line": 421
+      "line": 424
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: save and load preserves node count and search",
       "is_pub": false,
-      "line": 431
+      "line": 434
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: recall validation (results validated)",
       "is_pub": false,
-      "line": 472
+      "line": 475
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: recall@10 > 95% vs linear scan",
+      "is_pub": false,
+      "line": 532
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: build time under 5s for 10K nodes (debug-safe)",
       "is_pub": false,
-      "line": 529
+      "line": 601
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: search time under 100ms per query on average (debug-safe)",
       "is_pub": false,
-      "line": 554
+      "line": 626
     }
   ]
 }

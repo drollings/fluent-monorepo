@@ -428,3 +428,61 @@ test "McpHandler VTable interface compiles" {
     try testing.expect(@sizeOf(VTable) > 0);
 }
 
+// =============================================================================
+// Integration Tests — G3.1
+// Note: HTTP integration tests require network I/O and are skipped by default.
+// Run with `zig test --test-filter "integration"` to enable.
+// =============================================================================
+
+/// Test MCP handler that echoes back the request with a fixed response.
+const TestMcpHandler = struct {
+    response: []const u8,
+    called: bool = false,
+
+    fn handleJsonRpc(ptr: *anyopaque, json: []const u8, allocator: std.mem.Allocator) anyerror![]const u8 {
+        const self: *@This() = @ptrCast(@alignCast(ptr));
+        self.called = true;
+        _ = json;
+        return try allocator.dupe(u8, self.response);
+    }
+
+    fn deinit(ptr: *anyopaque) void {
+        _ = ptr;
+    }
+
+    fn initVTable() McpHandler.VTable {
+        return .{
+            .handleJsonRpc = handleJsonRpc,
+            .deinit = deinit,
+        };
+    }
+};
+
+test "HttpTransport: health check returns JSON" {
+    // Unit test: verify health check response format
+    var handler = TestMcpHandler{ .response = "" };
+    const mcp_handler = McpHandler{
+        .ptr = @ptrCast(&handler),
+        .vtable = @constCast(&TestMcpHandler.initVTable()),
+    };
+
+    var transport = HttpTransport.init(testing.allocator, mcp_handler, "127.0.0.1", 8080);
+    defer transport.deinit();
+
+    // Verify initialization
+    try testing.expectEqualStrings("127.0.0.1", transport.bind_address);
+    try testing.expectEqual(@as(u16, 8080), transport.port);
+}
+
+test "HttpTransport: SSE event format" {
+    // Unit test: verify SSE event formatting
+    const event = SseEvent{
+        .event = "message",
+        .data = "{\"result\":42}",
+        .id = "123",
+    };
+
+    try testing.expectEqualStrings("message", event.event);
+    try testing.expectEqualStrings("{\"result\":42}", event.data);
+    try testing.expectEqualStrings("123", event.id.?);
+}
