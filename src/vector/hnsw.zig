@@ -122,16 +122,19 @@ pub const HnswIndex = struct {
         try self.nodes.put(self.allocator, id, node);
         self.count += 1;
 
+        // Capture old entry point before potentially updating.
+        const old_entry_point = self.entry_point;
+
         // Set as entry point if first node or higher layer.
         if (self.entry_point == null or level > self.nodes.getPtr(self.entry_point.?).?.max_layer) {
             self.entry_point = id;
         }
 
-        // Connect to neighbors (simplified: just connect to entry point for now).
+        // Connect to neighbors (simplified: just connect to old entry point for now).
         // Full HNSW construction would search each layer and connect to closest neighbors.
-        if (self.entry_point != null and self.entry_point.? != id) {
+        if (old_entry_point != null) {
             // Add bidirectional connection at layer 0.
-            try self.connect(id, self.entry_point.?, 0);
+            try self.connect(id, old_entry_point.?, 0);
         }
     }
 
