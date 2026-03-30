@@ -196,6 +196,7 @@ Then you you must read
 │   │   ├── permissions.zig                       # permissions.zig — Role-based permission system for Coral Context reflection.
 │   │   ├── root.zig                              # reflection — Coral Context field-level reflection, validation, and permission layer.
 │   │   ├── schema_version.zig                    # schema_version.zig — Versioning primitives for the reflection schema.
+│   │   ├── sql.zig                               # sql.zig — Schema-driven SQLite binding and hydration.
 │   │   ├── typed.zig                             # typed.zig — TypedAccessorTable(T) and TypedEditable.
 │   │   └── validate.zig                          # validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).
 │   ├── testing
@@ -228,12 +229,14 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
+├── PROMPT_VISION.md
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
 ├── REVIEW_20260328.md
 ├── STRUCTURE.md
 ├── TODO_GAPS.md
+├── TODO_GAPS_20260329.md
 ├── TODO_REVIEW_20260328.md
 └── TODO_REVIEW_20260328_CHECKLIST.md
 ```

@@ -38,7 +38,19 @@ pub const FieldMeta = accessor.FieldMeta;
 pub const RequiresWhenEntry = accessor.RequiresWhenEntry;
 pub const TypeTag = accessor.TypeTag;
 pub const OwnershipMode = accessor.OwnershipMode;
+pub const SqlType = accessor.SqlType;
 pub const describeSchemaFromAccessors = accessor.describeSchemaFromAccessors;
+
+// ── Module: sql ───────────────────────────────────────────────────────────────
+pub const sql = @import("sql.zig");
+pub const SqlBinder = sql.SqlBinder;
+pub const SqlHydrator = sql.SqlHydrator;
+pub const SqlColumn = sql.SqlColumn;
+pub const TableSchema = sql.TableSchema;
+pub const bindFromSchema = sql.bindFromSchema;
+pub const hydrateFromSchema = sql.hydrateFromSchema;
+pub const hydrateField = sql.hydrateField;
+pub const bindField = sql.bindField;
 
 // ── Flat re-exports: permissions ──────────────────────────────────────────────
 pub const Role = permissions.Role;
