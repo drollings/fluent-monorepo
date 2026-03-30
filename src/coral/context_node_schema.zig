@@ -245,6 +245,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .int,
             .ownership = .value,
             .binary_size = @sizeOf(i64),
+            .sql_type = .integer,
         };
         self.accessors[1] = .{
             .name = "lod0",
@@ -257,6 +258,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .borrowed,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[2] = .{
             .name = "lod1",
@@ -266,6 +268,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .owned,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[3] = .{
             .name = "lod2",
@@ -275,6 +278,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .owned,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[4] = .{
             .name = "lod3",
@@ -284,6 +288,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .owned,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[5] = .{
             .name = "lod4",
@@ -293,6 +298,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .owned,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[6] = .{
             .name = "lod5",
@@ -302,6 +308,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .string_owned,
             .ownership = .owned,
             .binary_size = 0,
+            .sql_type = .text,
         };
         self.accessors[7] = .{
             .name = "valid_from",
@@ -311,6 +318,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .float,
             .ownership = .value,
             .binary_size = @sizeOf(f64),
+            .sql_type = .real,
         };
         self.accessors[8] = .{
             .name = "valid_to",
@@ -320,6 +328,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .optional,
             .ownership = .value,
             .binary_size = @sizeOf(i64),
+            .sql_type = .real,
         };
         self.accessors[9] = .{
             .name = "confidence",
@@ -329,6 +338,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .int,
             .ownership = .value,
             .binary_size = @sizeOf(i32),
+            .sql_type = .integer,
         };
         self.accessors[10] = .{
             .name = "provenance_id",
@@ -338,6 +348,7 @@ pub const ContextNodeSchema = struct {
             .type_tag = .int,
             .ownership = .value,
             .binary_size = @sizeOf(i32),
+            .sql_type = .integer,
         };
 
         return self;
@@ -502,4 +513,29 @@ test "ContextNodeSchema: access denied on protected field" {
 
     const result = view.set("id", "99", .player);
     try testing.expectError(error.AccessDenied, result);
+}
+
+test "ContextNodeSchema: sql_type is correctly set on all accessors" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const schema_ptr = try ContextNodeSchema.create(allocator);
+    defer schema_ptr.destroy(allocator);
+
+    // Verify sql_type matches SQL column types:
+    // id, confidence, provenance_id -> INTEGER
+    // lod0-5 -> TEXT
+    // valid_from, valid_to -> REAL
+    try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[0].sql_type); // id
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[1].sql_type); // lod0
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[2].sql_type); // lod1
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[3].sql_type); // lod2
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[4].sql_type); // lod3
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[5].sql_type); // lod4
+    try testing.expectEqual(reflection.SqlType.text, schema_ptr.accessors[6].sql_type); // lod5
+    try testing.expectEqual(reflection.SqlType.real, schema_ptr.accessors[7].sql_type); // valid_from
+    try testing.expectEqual(reflection.SqlType.real, schema_ptr.accessors[8].sql_type); // valid_to
+    try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[9].sql_type); // confidence
+    try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[10].sql_type); // provenance_id
 }

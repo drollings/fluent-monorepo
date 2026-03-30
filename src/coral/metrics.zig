@@ -65,6 +65,22 @@ pub const LatencyHistogram = struct {
         }
         return cum;
     }
+
+    /// Estimate the `p`-th percentile latency (0.0–1.0) from histogram buckets.
+    /// Returns the upper bound of the first bucket whose cumulative count
+    /// reaches or exceeds `p * total`.  Returns 0 when no observations.
+    pub fn estimatePercentile(self: *const LatencyHistogram, p: f64) u64 {
+        const total = self.count.load(.monotonic);
+        if (total == 0) return 0;
+        const target: u64 = @intFromFloat(@ceil(p * @as(f64, @floatFromInt(total))));
+        var cum: u64 = 0;
+        for (BUCKET_MS, 0..) |bound, i| {
+            cum += self.buckets[i].load(.monotonic);
+            if (cum >= target) return bound;
+        }
+        // All observations fall in the +Inf bucket.
+        return std.math.maxInt(u64);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -226,4 +242,44 @@ test "CoralMetrics: formatPrometheus emits deterministic_rate line" {
     const out = fbs.getWritten();
     try testing.expect(std.mem.indexOf(u8, out, "coral_deterministic_rate") != null);
     try testing.expect(std.mem.indexOf(u8, out, "coral_l1_hit_latency_bucket") != null);
+}
+
+test "LatencyHistogram: estimatePercentile returns 0 when empty" {
+    const h = LatencyHistogram.init();
+    try testing.expectEqual(@as(u64, 0), h.estimatePercentile(0.5));
+}
+
+test "LatencyHistogram: estimatePercentile p50 with known observations" {
+    var h = LatencyHistogram.init();
+    // 4 observations: 1ms, 1ms, 10ms, 10ms → median falls in ≤10ms bucket
+    h.observe(1);
+    h.observe(1);
+    h.observe(10);
+    h.observe(10);
+    // p50 = ceil(0.5 * 4) = 2nd observation → bucket ≤1ms has count=2, cum=2 >= 2
+    try testing.expectEqual(@as(u64, 1), h.estimatePercentile(0.5));
+    // p75 = ceil(0.75 * 4) = 3rd observation → falls in ≤10ms bucket
+    try testing.expectEqual(@as(u64, 10), h.estimatePercentile(0.75));
+}
+
+test "CoralMetrics: thread-safe concurrent observe" {
+    var m = CoralMetrics{};
+    const N_THREADS = 4;
+    const N_OBS = 100;
+
+    const S = struct {
+        fn worker(metrics: *CoralMetrics) void {
+            for (0..N_OBS) |_| {
+                metrics.l1_hit.observe(5);
+            }
+        }
+    };
+
+    var threads: [N_THREADS]std.Thread = undefined;
+    for (&threads) |*t| {
+        t.* = try std.Thread.spawn(.{}, S.worker, .{&m});
+    }
+    for (&threads) |*t| t.join();
+
+    try testing.expectEqual(@as(u64, N_THREADS * N_OBS), m.l1Hits());
 }

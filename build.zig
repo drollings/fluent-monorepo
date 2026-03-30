@@ -183,6 +183,8 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "coral_batch", .module = coral_batch_module },
+                .{ .name = "ontology", .module = ontology_module },
+                .{ .name = "rdf", .module = rdf_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
@@ -465,6 +467,15 @@ pub fn build(b: *std.Build) void {
     coral_main_tests.linkLibC();
     coral_main_tests.linkSystemLibrary("sqlite3");
 
+    // -- HNSW index tests (M5.1) — standalone, no external deps --
+    const hnsw_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vector/hnsw.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     // -- Coral DAG executor tests (M3.3) --
     const coral_executor_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -668,6 +679,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(local_model_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_math_tests).step);
+    test_step.dependOn(&b.addRunArtifact(hnsw_tests).step);
     test_step.dependOn(&b.addRunArtifact(lance_db_tests).step);
     test_step.dependOn(&b.addRunArtifact(reflection_tests).step);
     test_step.dependOn(&b.addRunArtifact(interner_tests).step);

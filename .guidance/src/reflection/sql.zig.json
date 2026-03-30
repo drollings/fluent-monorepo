@@ -331,6 +331,18 @@
           "is_pub": true,
           "line": 270
         }
+    ,    {
+          "type": "fn_decl",
+          "name": "peekCol",
+          "match_hash": "b814536e9b58c1428936ae061bf6cfa96b731167db5cd94c9001d891920f4327",
+          "signature": "fn peekCol(self: *const SqlHydrator) -> c_int",
+          "params": [
+            { "name": "self", "type": "*const SqlHydrator" }
+          ],
+          "returns": "c_int",
+          "is_pub": true,
+          "line": 274
+        }
       ],
       "line": 158
     },
@@ -340,7 +352,7 @@
       "match_hash": "c37c972ab4c026a699c658a52932894e7484e3cf72e9d0a0b39b3def2ef66dcd",
       "signature": "keyword_struct SqlColumn { ... }",
       "is_pub": true,
-      "line": 281
+      "line": 285
     },
     {
       "type": "fn_decl",
@@ -356,7 +368,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 328
+      "line": 332
     },
     {
       "type": "fn_decl",
@@ -372,7 +384,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 375
+      "line": 379
     },
     {
       "type": "fn_decl",
@@ -387,7 +399,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 406
+      "line": 410
     },
     {
       "type": "fn_decl",
@@ -402,7 +414,7 @@
       ],
       "returns": "anyerror!?[]const u8",
       "is_pub": true,
-      "line": 474
+      "line": 478
     },
     {
       "type": "struct",
@@ -423,7 +435,7 @@
           ],
           "returns": "TableSchema",
           "is_pub": true,
-          "line": 527
+          "line": 531
         }
     ,    {
           "type": "fn_decl",
@@ -435,7 +447,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 538
+          "line": 542
         }
     ,    {
           "type": "fn_decl",
@@ -448,7 +460,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 542
+          "line": 546
         }
     ,    {
           "type": "fn_decl",
@@ -462,7 +474,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 560
+          "line": 564
         }
     ,    {
           "type": "fn_decl",
@@ -476,7 +488,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 576
+          "line": 580
         }
     ,    {
           "type": "fn_decl",
@@ -490,7 +502,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 589
+          "line": 593
         }
     ,    {
           "type": "fn_decl",
@@ -505,16 +517,16 @@
           ],
           "returns": "TableSchema",
           "is_pub": true,
-          "line": 607
+          "line": 611
         }
       ],
-      "line": 521
+      "line": 525
     },
     {
       "type": "test_decl",
       "name": "TableSchema SQL generation",
       "is_pub": false,
-      "line": 640
+      "line": 644
     }
   ]
 }

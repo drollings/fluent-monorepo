@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "module": "src.coral.fixtures",
+    "source": "src/coral/fixtures.zig",
+    "language": "zig"
+  },
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "members": [
+    {
+      "type": "struct",
+      "name": "TestLibrary",
+      "match_hash": "adb6708f01a27b73237df81734b17b8640c09912b6f385a9483519cc248de490",
+      "signature": "keyword_struct TestLibrary { ... }",
+      "is_pub": true,
+      "line": 20
+    },
+    {
+      "type": "fn_decl",
+      "name": "createTestLibrary",
+      "match_hash": "53694813e93b0c05371bbea16a36d0df8004364a4f83ecba24b001a2ed5dc0e3",
+      "signature": "fn createTestLibrary(allocator: std.mem.Allocator) -> TestLibrary",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "TestLibrary",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "line": 27
+    },
+    {
+      "type": "fn_decl",
+      "name": "deinitTestLibrary",
+      "match_hash": "fef5157dd100f97e67a0670a1ac4acecda8eddbf3e9f485f0c0c6ae59a7a803a",
+      "signature": "fn deinitTestLibrary(tl: *TestLibrary) -> void",
+      "params": [
+        { "name": "tl", "type": "*TestLibrary" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 43
+    },
+    {
+      "type": "fn_decl",
+      "name": "createTestEmbedding",
+      "match_hash": "fea008e48af24d49bd49c12d638054ec3816559cc212f3ae16d3a512784ec4b6",
+      "signature": "fn createTestEmbedding() -> EmbeddingProvider",
+      "returns": "EmbeddingProvider",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "line": 50
+    },
+    {
+      "type": "fn_decl",
+      "name": "createTestNode",
+      "match_hash": "a639f2e912da590a2b219ce6cb4b80f568dd7876e6d32433e8e03e433dca8d33",
+      "signature": "fn createTestNode(tl: *TestLibrary, id: i64, name: []const u8, full_text: []const u8) -> ContextNode",
+      "params": [
+        { "name": "tl", "type": "*TestLibrary" },
+        { "name": "id", "type": "i64" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "full_text", "type": "[]const u8" }
+      ],
+      "returns": "ContextNode",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "line": 56
+    },
+    {
+      "type": "fn_decl",
+      "name": "insertTestNode",
+      "match_hash": "2a77f68ed88bb09a24c977f5eaa17c7074ada3aed2769145bb4e8d10b8c47ab0",
+      "signature": "fn insertTestNode(tl: *TestLibrary, node: ContextNode) -> void",
+      "params": [
+        { "name": "tl", "type": "*TestLibrary" },
+        { "name": "node", "type": "ContextNode" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 66
+    },
+    {
+      "type": "fn_decl",
+      "name": "createTestWasmTool",
+      "match_hash": "5c39d3709c6f680906fa6785455440658af1111712f8a2fc3d321f5be01a99a1",
+      "signature": "fn createTestWasmTool(allocator: std.mem.Allocator, id: i64, target_id: i64, wasm_b64: []const u8, test_passed: bool) -> WasmTool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "id", "type": "i64" },
+        { "name": "target_id", "type": "i64" },
+        { "name": "wasm_b64", "type": "[]const u8" },
+        { "name": "test_passed", "type": "bool" }
+      ],
+      "returns": "WasmTool",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": true,
+      "line": 71
+    },
+    {
+      "type": "struct",
+      "name": "TestNodeSpec",
+      "match_hash": "5e3a27f4b17c300db14c983fc8f05d24d1cabaf332b6b80bb85351ea6482477f",
+      "signature": "keyword_struct TestNodeSpec { ... }",
+      "is_pub": true,
+      "line": 91
+    },
+    {
+      "type": "fn_decl",
+      "name": "insertTestNodes",
+      "match_hash": "b4ae822e93885e520a155b14f48e57b8e2afbfc64dc176d1a1810c36c4e86ea9",
+      "signature": "fn insertTestNodes(tl: *TestLibrary, specs: []const TestNodeSpec) -> void",
+      "params": [
+        { "name": "tl", "type": "*TestLibrary" },
+        { "name": "specs", "type": "[]const TestNodeSpec" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 100
+    }
+  ]
+}

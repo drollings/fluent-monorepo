@@ -10,6 +10,7 @@
       "name": "McpHandler",
       "match_hash": "aa50b351ffc3cc5fc5073eeae139f90defa37093ce2793a1179810d9d083ccc2",
       "signature": "keyword_struct McpHandler { ... }",
+      "comment": "MCP handler interface — must implement handleJsonRpc.",
       "is_pub": true,
       "members": [
         {
@@ -46,14 +47,16 @@
       "name": "SseEvent",
       "match_hash": "d4c954e6a0662040ddc15993b5da796411776930215df889b7b6f8fa0e3d4a91",
       "signature": "keyword_struct SseEvent { ... }",
+      "comment": "SSE event for streaming responses.",
       "is_pub": true,
       "line": 40
     },
     {
       "type": "struct",
       "name": "HttpTransport",
-      "match_hash": "594242bf017b0afc542ab9287a3bd6a6e6e19528b03ea05657a8e446e12fd04e",
+      "match_hash": "bbdc7e8c07c48cb47e5ad2c51dd9b598c41f1ba80a9e462648a8652782fd5626",
       "signature": "keyword_struct HttpTransport { ... }",
+      "comment": "Manages HTTP transport connections with a fixed-size buffer pool; owned by the server; ensures stable, non-thread-safe operations.",
       "is_pub": true,
       "members": [
         {
@@ -68,8 +71,9 @@
             { "name": "port", "type": "u16" }
           ],
           "returns": "Self",
+          "comment": "Initialize HTTP transport with binding configuration.",
           "is_pub": true,
-          "line": 68
+          "line": 67
         }
     ,    {
           "type": "fn_decl",
@@ -80,8 +84,23 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
+          "comment": "Start the HTTP server and listen for connections.\nBlocks until shutdown is requested.",
           "is_pub": true,
-          "line": 84
+          "line": 83
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "listenWithReady",
+          "match_hash": "2e7ebfc537db5d5583551f4ab18eb6382056789d2b1d83844153630b5e3794f7",
+          "signature": "fn listenWithReady(self: *Self, ready_signal: *std.Thread.ResetEvent) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "ready_signal", "type": "*std.Thread.ResetEvent" }
+          ],
+          "returns": "void",
+          "comment": "Start the HTTP server with a ready signal.\nSignal is set when the server is listening and ready to accept connections.\nUseful for integration tests that need to know when the server is up.",
+          "is_pub": true,
+          "line": 117
         }
     ,    {
           "type": "fn_decl",
@@ -92,22 +111,37 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
+          "comment": "Request graceful shutdown.",
           "is_pub": true,
-          "line": 113
+          "line": 123
         }
     ,    {
           "type": "fn_private",
           "name": "handleConnection",
-          "match_hash": "c1973bafaa87fd50ef3231e6e3a74d63aa110a914e5cfc9283abd7b778e07058",
-          "signature": "fn handleConnection(self: *Self, conn: net.StreamServer.Connection, read_buf: []u8) -> void",
+          "match_hash": "f089c7451d699682eac4c2f0574ae98fe9d62b7d48cdf06a592daf0b7801e96a",
+          "signature": "fn handleConnection(self: *Self, conn: net.Server.Connection, read_buf: []u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
-            { "name": "conn", "type": "net.StreamServer.Connection" },
+            { "name": "conn", "type": "net.Server.Connection" },
             { "name": "read_buf", "type": "[]u8" }
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 117
+          "line": 127
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getHeader",
+          "match_hash": "d5124b0cc2bfcbf70dacc43677d7e79e5287a50f56139cf11f5bb181b7a0476e",
+          "signature": "fn getHeader(head_buffer: []const u8, name: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "head_buffer", "type": "[]const u8" },
+            { "name": "name", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "comment": "Extract a header value from raw head buffer.\nReturns null if header not found.",
+          "is_pub": false,
+          "line": 152
         }
     ,    {
           "type": "fn_private",
@@ -121,7 +155,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 139
+          "line": 171
         }
     ,    {
           "type": "fn_private",
@@ -135,7 +169,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 181
+          "line": 213
         }
     ,    {
           "type": "fn_private",
@@ -148,8 +182,9 @@
             { "name": "arena", "type": "std.mem.Allocator" }
           ],
           "returns": "void",
+          "comment": "Handle MCP request with SSE streaming.",
           "is_pub": false,
-          "line": 196
+          "line": 241
         }
     ,    {
           "type": "fn_private",
@@ -162,8 +197,9 @@
             { "name": "event", "type": "SseEvent" }
           ],
           "returns": "void",
+          "comment": "Send a single SSE event.",
           "is_pub": false,
-          "line": 234
+          "line": 290
         }
     ,    {
           "type": "fn_private",
@@ -176,7 +212,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 254
+          "line": 310
         }
     ,    {
           "type": "fn_private",
@@ -190,7 +226,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 265
+          "line": 321
         }
     ,    {
           "type": "fn_private",
@@ -203,7 +239,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 283
+          "line": 339
         }
     ,    {
           "type": "fn_private",
@@ -217,7 +253,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 295
+          "line": 351
         }
     ,    {
           "type": "fn_private",
@@ -232,7 +268,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 306
+          "line": 362
         }
     ,    {
           "type": "fn_private",
@@ -245,7 +281,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 316
+          "line": 372
         }
     ,    {
           "type": "fn_decl",
@@ -257,7 +293,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 320
+          "line": 376
         }
       ],
       "line": 53
@@ -266,13 +302,13 @@
       "type": "test_decl",
       "name": "HttpTransport: init sets default values",
       "is_pub": false,
-      "line": 341
+      "line": 397
     },
     {
       "type": "test_decl",
       "name": "McpHandler VTable interface compiles",
       "is_pub": false,
-      "line": 370
+      "line": 426
     }
   ]
 }

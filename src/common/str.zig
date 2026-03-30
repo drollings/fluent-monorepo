@@ -172,6 +172,26 @@ pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]
     return result;
 }
 
+/// Converts a null-terminated string into a Zig-safe slice, handling memory allocation internally.
+pub fn dupeString(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+    if (s.len == 0) return null;
+    return try allocator.dupe(u8, s);
+}
+
+/// Deep-copy an optional string with a null-check.
+///
+/// If `opt` is null, returns null without allocating.
+/// If `opt` points to an empty slice, returns null without allocating.
+/// On error, propagates `error.OutOfMemory`.
+///
+/// Useful for fields that are `?[]const u8` where you need to
+/// normalize null and empty to a single representation.
+pub fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) !?[]const u8 {
+    const s = opt orelse return null;
+    if (s.len == 0) return null;
+    return try allocator.dupe(u8, s);
+}
+
 // =============================================================================
 // Embedding text preprocessing — strip boilerplate from doc comments
 // =============================================================================
@@ -181,15 +201,13 @@ pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]
 /// remaining domain nouns and action verbs cluster more tightly in the
 /// embedding space than generic management/ownership language.
 const STRIP_PREFIXES = [_][]const u8{
-    "Returns the ",    "Return the ",    "Returns a ",    "Returns an ",
-    "Initializes the ", "Initialize the ", "Initialize ",
-    "Creates a ",      "Create a ",      "Creates an ",   "Create an ",
-    "Checks if ",      "Check if ",
-    "Verifies that ",  "Verify that ",
-    "Ensures that ",   "Ensure that ",
-    "Manages ",        "Represents ",    "Defines ",
-    "Caller must ",    "Caller should ", "The caller ",
-    "Not thread-safe", "Thread-safe",
+    "Returns the ",     "Return the ",     "Returns a ",   "Returns an ",
+    "Initializes the ", "Initialize the ", "Initialize ",  "Creates a ",
+    "Create a ",        "Creates an ",     "Create an ",   "Checks if ",
+    "Check if ",        "Verifies that ",  "Verify that ", "Ensures that ",
+    "Ensure that ",     "Manages ",        "Represents ",  "Defines ",
+    "Caller must ",     "Caller should ",  "The caller ",  "Not thread-safe",
+    "Thread-safe",
 };
 
 /// Removes unnecessary comment bytes from a Zig source file.
@@ -228,26 +246,27 @@ pub fn isNoisyComment(comment: []const u8) bool {
 /// Common English filler words that add no semantic signal when embedding.
 /// Stored as a comptime perfect hash — zero runtime overhead.
 pub const STOP_WORDS = std.StaticStringMap(void).initComptime(.{
-    .{ "the", {} }, .{ "a", {} }, .{ "an", {} },
-    .{ "in", {} }, .{ "on", {} }, .{ "at", {} }, .{ "to", {} },
-    .{ "of", {} }, .{ "for", {} }, .{ "with", {} }, .{ "by", {} },
-    .{ "is", {} }, .{ "are", {} }, .{ "was", {} }, .{ "be", {} },
-    .{ "do", {} }, .{ "does", {} }, .{ "did", {} }, .{ "done", {} },
-    .{ "work", {} }, .{ "works", {} }, .{ "get", {} }, .{ "use", {} },
+    .{ "the", {} },  .{ "a", {} },    .{ "an", {} },
+    .{ "in", {} },   .{ "on", {} },   .{ "at", {} },
+    .{ "to", {} },   .{ "of", {} },   .{ "for", {} },
+    .{ "with", {} }, .{ "by", {} },   .{ "is", {} },
+    .{ "are", {} },  .{ "was", {} },  .{ "be", {} },
+    .{ "do", {} },   .{ "does", {} }, .{ "did", {} },
+    .{ "done", {} }, .{ "work", {} }, .{ "works", {} },
+    .{ "get", {} },  .{ "use", {} },
 });
 
 /// Natural-language interrogative prefixes to strip before embedding a query.
 /// Stripping these improves cosine similarity against descriptor-format entries.
 const NL_PREFIXES = [_][]const u8{
-    "what is ",    "what are ",   "what does ",  "what's ",
-    "where is ",   "where are ",  "where does ", "where can i find ",
-    "how does ",   "how do ",     "how can i ",  "how to ",
-    "why does ",   "why is ",     "why are ",
-    "when does ",  "when is ",
-    "which ",      "who ",        "whose ",
-    "can you explain ", "explain ", "describe ", "tell me about ",
-    "show me ",    "find ",       "search for ", "look for ",
-    "i need ",     "i want ",     "help me ",
+    "what is ",         "what are ",  "what does ",  "what's ",
+    "where is ",        "where are ", "where does ", "where can i find ",
+    "how does ",        "how do ",    "how can i ",  "how to ",
+    "why does ",        "why is ",    "why are ",    "when does ",
+    "when is ",         "which ",     "who ",        "whose ",
+    "can you explain ", "explain ",   "describe ",   "tell me about ",
+    "show me ",         "find ",      "search for ", "look for ",
+    "i need ",          "i want ",    "help me ",
 };
 
 /// Removes leading null characters from a UTF-8 string slice.
@@ -412,5 +431,35 @@ test "STOP_WORDS contains expected words" {
     try std.testing.expect(!STOP_WORDS.has("search"));
 }
 
+test "dupeString produces independent copy" {
+    const original = "hello world";
+    const copy = try dupeString(std.testing.allocator, original);
+    defer std.testing.allocator.free(copy);
+    try std.testing.expectEqualStrings(original, copy);
+    try std.testing.expect(copy.ptr != original.ptr);
+}
 
+test "dupeString returns null for empty string" {
+    const result = try dupeString(std.testing.allocator, "");
+    try std.testing.expect(result == null);
+}
+
+test "dupeStringOpt returns null for null input" {
+    const result = try dupeStringOpt(std.testing.allocator, null);
+    try std.testing.expect(result == null);
+}
+
+test "dupeStringOpt returns null for empty string" {
+    const result = try dupeStringOpt(std.testing.allocator, "");
+    try std.testing.expect(result == null);
+}
+
+test "dupeStringOpt returns copy for non-empty string" {
+    const original = "test content";
+    const result = try dupeStringOpt(std.testing.allocator, original);
+    defer if (result) |s| std.testing.allocator.free(s);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqualStrings(original, result.?);
+    try std.testing.expect(result.?.ptr != original.ptr);
+}
 

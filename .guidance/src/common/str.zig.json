@@ -159,6 +159,34 @@
     },
     {
       "type": "fn_decl",
+      "name": "dupeString",
+      "match_hash": "03ad2bb4525928eef5b5e3ff9feadcb31359b3c8e5e2b6d698eb3b98b392df61",
+      "signature": "fn dupeString(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "comment": "Converts a null-terminated string into a Zig-safe slice, handling memory allocation internally.",
+      "is_pub": true,
+      "line": 176
+    },
+    {
+      "type": "fn_decl",
+      "name": "dupeStringOpt",
+      "match_hash": "1b451b4770dd4d7b4fb37136499817118b39887f4223e65f84cfad1a2aa0cb7f",
+      "signature": "fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "opt", "type": "?[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "comment": "Deep-copy an optional string with a null-check.\n\nIf `opt` is null, returns null without allocating.\nIf `opt` points to an empty slice, returns null without allocating.\nOn error, propagates `error.OutOfMemory`.\n\nUseful for fields that are `?[]const u8` where you need to\nnormalize null and empty to a single representation.",
+      "is_pub": true,
+      "line": 189
+    },
+    {
+      "type": "fn_decl",
       "name": "stripBoilerplate",
       "match_hash": "c56921142090f8e4dd08c2b113fff2ce2b6316f5ca933156ab39987847a4c2aa",
       "signature": "fn stripBoilerplate(comment: []const u8) -> []const u8",
@@ -168,7 +196,7 @@
       "returns": "[]const u8",
       "comment": "Removes unnecessary comment bytes from a Zig source file.",
       "is_pub": true,
-      "line": 196
+      "line": 214
     },
     {
       "type": "fn_decl",
@@ -181,7 +209,7 @@
       "returns": "bool",
       "comment": "Return true when a doc comment is predominantly numeric or punctuation\nnoise (auto-generated tables, hex dumps, lookup arrays).\n\nThreshold: >50% of non-whitespace characters are digits or ASCII\npunctuation — equivalent to bloop's `is_noisy()` heuristic.",
       "is_pub": true,
-      "line": 211
+      "line": 229
     },
     {
       "type": "fn_decl",
@@ -194,133 +222,163 @@
       "returns": "[]const u8",
       "comment": "Removes leading null characters from a UTF-8 string slice.",
       "is_pub": true,
-      "line": 254
+      "line": 273
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier snake_case",
       "is_pub": false,
-      "line": 272
+      "line": 291
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier camelCase and PascalCase",
       "is_pub": false,
-      "line": 277
+      "line": 296
     },
     {
       "type": "test_decl",
       "name": "containsWord whole-word match",
       "is_pub": false,
-      "line": 283
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "containsAny matches any keyword",
       "is_pub": false,
-      "line": 291
+      "line": 310
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord whole-word multi-keyword",
       "is_pub": false,
-      "line": 298
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "hasExtension matches without dot",
       "is_pub": false,
-      "line": 304
+      "line": 323
     },
     {
       "type": "test_decl",
       "name": "isPathToken detects paths and extensions",
       "is_pub": false,
-      "line": 312
+      "line": 331
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase finds substring",
       "is_pub": false,
-      "line": 320
+      "line": 339
     },
     {
       "type": "test_decl",
       "name": "langFromPath maps extensions",
       "is_pub": false,
-      "line": 327
+      "line": 346
     },
     {
       "type": "test_decl",
       "name": "dupeStrings produces independent copies",
       "is_pub": false,
-      "line": 335
+      "line": 354
     },
     {
       "type": "test_decl",
       "name": "dupeStrings handles empty slice",
       "is_pub": false,
-      "line": 350
+      "line": 369
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier rejects plain words",
       "is_pub": false,
-      "line": 356
+      "line": 375
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix removes interrogative prefix",
       "is_pub": false,
-      "line": 363
+      "line": 382
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix leaves identifiers unchanged",
       "is_pub": false,
-      "line": 371
+      "line": 390
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix is case-insensitive on prefix",
       "is_pub": false,
-      "line": 377
+      "line": 396
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate removes leading phrase",
       "is_pub": false,
-      "line": 382
+      "line": 401
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate trims leading whitespace",
       "is_pub": false,
-      "line": 389
+      "line": 408
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: short comment is noisy",
       "is_pub": false,
-      "line": 393
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: hex dump is noisy",
       "is_pub": false,
-      "line": 398
+      "line": 417
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: prose is not noisy",
       "is_pub": false,
-      "line": 402
+      "line": 421
     },
     {
       "type": "test_decl",
       "name": "STOP_WORDS contains expected words",
       "is_pub": false,
-      "line": 407
+      "line": 426
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeString produces independent copy",
+      "is_pub": false,
+      "line": 434
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeString returns null for empty string",
+      "is_pub": false,
+      "line": 442
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns null for null input",
+      "is_pub": false,
+      "line": 447
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns null for empty string",
+      "is_pub": false,
+      "line": 452
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns copy for non-empty string",
+      "is_pub": false,
+      "line": 457
     }
   ]
 }

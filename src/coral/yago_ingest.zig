@@ -30,16 +30,6 @@ const yago_schema = ontology.yago;
 // Namespace whitelist filter
 // ---------------------------------------------------------------------------
 
-/// Subject namespace prefixes whose triples are accepted during ingestion.
-const ACCEPTED_PREFIXES = [_][]const u8{
-    yago_schema.NS_YAGO,
-    yago_schema.NS_SCHEMA,
-    yago_schema.NS_RDF,
-    yago_schema.NS_RDFS,
-    yago_schema.NS_OWL,
-    yago_schema.NS_SKOS,
-};
-
 /// `FilterFn` compatible with `BatchConfig.filter_fn`.
 /// Returns true (accept) when the triple's subject IRI starts with any of
 /// the YAGO/schema.org/RDF namespaces, or the subject is a blank node.
@@ -50,7 +40,14 @@ pub fn yagoNamespaceFilter(triple: Triple) bool {
         .blank_node => return true,
         else => return false,
     };
-    for (ACCEPTED_PREFIXES) |prefix| {
+    inline for (.{
+        yago_schema.NS_YAGO,
+        yago_schema.NS_SCHEMA,
+        yago_schema.NS_RDF,
+        yago_schema.NS_RDFS,
+        yago_schema.NS_OWL,
+        yago_schema.NS_SKOS,
+    }) |prefix| {
         if (std.mem.startsWith(u8, subj_iri, prefix)) return true;
     }
     return false;
@@ -152,16 +149,7 @@ pub const YagoIngestor = struct {
 
 /// Constructs a baseline hierarchy structure from input data using Zig's capabilities.
 pub fn buildBaselineHierarchy(ci: *CapabilityInference) !void {
-    const classes = [_]*const yago_schema.OntologyClass{
-        &yago_schema.CLASS_ENTITY,
-        &yago_schema.CLASS_PERSON,
-        &yago_schema.CLASS_ORGANIZATION,
-        &yago_schema.CLASS_LOCATION,
-        &yago_schema.CLASS_EVENT,
-        &yago_schema.CLASS_ARTIFACT,
-        &yago_schema.CLASS_CONCEPT,
-    };
-    for (classes) |cls| {
+    for (yago_schema.ALL_CLASSES) |cls| {
         if (cls.superclass) |parent_iri| {
             try ci.addSubclassEdge(cls.iri, parent_iri);
         }

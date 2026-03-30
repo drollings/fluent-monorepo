@@ -12,9 +12,8 @@
       "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
       "signature": "fn main() -> void",
       "returns": "void",
-      "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 19
+      "line": 22
     },
     {
       "type": "fn_private",
@@ -26,13 +25,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 240
+      "line": 289
     },
     {
       "type": "test_decl",
       "name": "coral: core module imports compile",
       "is_pub": false,
-      "line": 279
+      "line": 328
     }
   ]
 }

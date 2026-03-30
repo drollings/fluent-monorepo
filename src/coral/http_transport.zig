@@ -49,7 +49,7 @@ pub const SseState = struct {
     connected_at: i64,
 };
 
-/// HTTP transport server wrapping an MCP handler.
+/// Manages HTTP transport connections with a fixed-size buffer pool; owned by the server; ensures stable, non-thread-safe operations.
 pub const HttpTransport = struct {
     const Self = @This();
 
@@ -59,9 +59,8 @@ pub const HttpTransport = struct {
     mcp_handler: McpHandler,
     running: bool = false,
     shutdown_requested: bool = false,
-    /// SSE connections for progress streaming
+    ready_signal: ?*std.Thread.ResetEvent = null,
     sse_connections: std.ArrayListUnmanaged(*SseConnection) = .{},
-    /// Heartbeat interval for SSE connections (milliseconds)
     sse_heartbeat_ms: u32 = 30_000,
 
     /// Initialize HTTP transport with binding configuration.
@@ -89,6 +88,9 @@ pub const HttpTransport = struct {
         defer server.deinit();
 
         self.running = true;
+        if (self.ready_signal) |signal| {
+            signal.set();
+        }
 
         var read_buf: [8192]u8 = undefined;
 
@@ -109,17 +111,27 @@ pub const HttpTransport = struct {
         self.running = false;
     }
 
+    /// Start the HTTP server with a ready signal.
+    /// Signal is set when the server is listening and ready to accept connections.
+    /// Useful for integration tests that need to know when the server is up.
+    pub fn listenWithReady(self: *Self, ready_signal: *std.Thread.ResetEvent) !void {
+        self.ready_signal = ready_signal;
+        return self.listen();
+    }
+
     /// Request graceful shutdown.
     pub fn requestShutdown(self: *Self) void {
         self.shutdown_requested = true;
     }
 
-    fn handleConnection(self: *Self, conn: net.StreamServer.Connection, read_buf: []u8) !void {
+    fn handleConnection(self: *Self, conn: net.Server.Connection, read_buf: []u8) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
-        var server = http.Server.init(conn.stream, read_buf);
-        defer server.deinit();
+        var send_buf: [4096]u8 = undefined;
+        var connection_reader = conn.stream.reader(read_buf);
+        var connection_writer = conn.stream.writer(&send_buf);
+        var server = http.Server.init(connection_reader.interface(), &connection_writer.interface);
 
         while (true) {
             var request = server.receiveHead() catch |err| {
@@ -129,20 +141,40 @@ pub const HttpTransport = struct {
 
             try self.handleRequest(&request, arena.allocator());
 
-            // Check for keep-alive or close.
-            const connection = request.head.headers.getFirstValue("Connection");
-            const keep_alive = if (connection) |c| std.ascii.eqlIgnoreCase(c, "keep-alive") else false;
+            // Check for keep-alive from parsed head
+            const keep_alive = request.head.keep_alive;
             if (!keep_alive) break;
         }
+    }
+
+    /// Extract a header value from raw head buffer.
+    /// Returns null if header not found.
+    fn getHeader(head_buffer: []const u8, name: []const u8) ?[]const u8 {
+        var lines = std.mem.splitSequence(u8, head_buffer, "\r\n");
+        var found_status = false;
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            if (!found_status) {
+                found_status = true;
+                continue;
+            }
+            const colon_idx = std.mem.indexOfScalar(u8, line, ':') orelse continue;
+            const header_name = line[0..colon_idx];
+            const header_value = std.mem.trim(u8, line[colon_idx + 1 ..], " \t");
+            if (std.ascii.eqlIgnoreCase(header_name, name)) {
+                return header_value;
+            }
+        }
+        return null;
     }
 
     fn handleRequest(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) !void {
         const method = request.head.method;
         const target = request.head.target;
 
-        // Check for SSE streaming request
-        const accept = request.head.headers.getFirstValue("Accept");
-        const x_stream = request.head.headers.getFirstValue("X-MCP-Stream");
+        // Check for SSE streaming request by parsing headers from raw buffer
+        const accept = getHeader(request.head_buffer, "Accept");
+        const x_stream = getHeader(request.head_buffer, "X-MCP-Stream");
         const is_sse = (accept != null and std.mem.indexOf(u8, accept.?, "text/event-stream") != null) or
             (x_stream != null and std.mem.eql(u8, x_stream.?, "true"));
 
@@ -179,8 +211,21 @@ pub const HttpTransport = struct {
     }
 
     fn handleMcpRequest(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) !void {
-        // Read body.
-        const body = try (try request.reader()).readAllAlloc(arena, 1024 * 1024);
+        // Read body using Zig 0.15 API
+        var read_buf: [65536]u8 = undefined;
+        const reader = http.Server.Request.readerExpectNone(request, &read_buf);
+
+        const content_length = request.head.content_length orelse 0;
+        if (content_length == 0) {
+            try self.sendError(request, 400, "Empty body");
+            return;
+        }
+        if (content_length > 1024 * 1024) {
+            try self.sendError(request, 413, "Body too large");
+            return;
+        }
+
+        const body = try reader.readAlloc(arena, content_length);
 
         // Parse JSON-RPC request.
         const response = self.mcp_handler.handleJsonRpc(body, arena) catch |err| {
@@ -194,11 +239,22 @@ pub const HttpTransport = struct {
 
     /// Handle MCP request with SSE streaming.
     fn handleMcpRequestSse(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) !void {
-        // Read body.
-        const body = try (try request.reader()).readAllAlloc(arena, 1024 * 1024);
+        // Read body using Zig 0.15 API
+        var read_buf: [65536]u8 = undefined;
+        const reader = http.Server.Request.readerExpectNone(request, &read_buf);
+
+        const content_length = request.head.content_length orelse 0;
+        if (content_length == 0) {
+            return error.EmptyBody;
+        }
+        if (content_length > 1024 * 1024) {
+            return error.BodyTooLarge;
+        }
+
+        const body = try reader.readAlloc(arena, content_length);
 
         // Check for resume with Last-Event-ID
-        const last_event_id = request.head.headers.getFirstValue("Last-Event-ID");
+        const last_event_id = getHeader(request.head_buffer, "Last-Event-ID");
 
         // Send SSE headers
         try request.respond("", .{
@@ -267,9 +323,9 @@ pub const HttpTransport = struct {
         defer buf.deinit(arena);
 
         // Add basic metrics
-        try buf.writer().writeAll("# HELP coral_connections_active Number of active connections\n");
-        try buf.writer().writeAll("# TYPE coral_connections_active gauge\n");
-        try buf.writer().print("coral_connections_active {d}\n", .{self.sse_connections.items.len});
+        try buf.writer(arena).writeAll("# HELP coral_connections_active Number of active connections\n");
+        try buf.writer(arena).writeAll("# TYPE coral_connections_active gauge\n");
+        try buf.writer(arena).print("coral_connections_active {d}\n", .{self.sse_connections.items.len});
 
         try request.respond(buf.items, .{
             .status = .ok,
@@ -371,3 +427,4 @@ test "McpHandler VTable interface compiles" {
     const VTable = McpHandler.VTable;
     try testing.expect(@sizeOf(VTable) > 0);
 }
+

@@ -3,6 +3,7 @@ const common = @import("common");
 const coral_db = @import("coral_db");
 const mcp = @import("mcp.zig");
 const batch_mod = @import("coral_batch");
+const yago_ingest_mod = @import("yago_ingest.zig");
 const StringInterner = common.interner.StringInterner;
 const TargetRegistry = common.registry.TargetRegistry;
 const BuildContext = common.context.BuildContext;
@@ -12,6 +13,8 @@ const llm = common;
 const Library = coral_db.Library;
 const QueueReactor = @import("cache.zig").QueueReactor;
 const BatchIngestor = batch_mod.BatchIngestor;
+const YagoIngestor = yago_ingest_mod.YagoIngestor;
+const YagoConfig = yago_ingest_mod.YagoConfig;
 
 pub const version = "0.1.0";
 
@@ -127,6 +130,52 @@ pub fn main() !void {
         try stdout.print("  edges created     : {d}\n", .{stats.edges_created});
         try stdout.print("  errors skipped    : {d}\n", .{stats.errors_skipped});
         try stdout.print("  batches flushed   : {d}\n", .{stats.batches_flushed});
+        try stdout.flush();
+        return;
+    }
+
+    // yago-ingest subcommand: `coral yago-ingest <ttl-dir-or-file>`
+    const want_yago_ingest = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "yago-ingest");
+    if (want_yago_ingest) {
+        const source_path: []const u8 = blk: {
+            if (args.config_file) |f| break :blk f;
+            if (positional.items.len > 1) break :blk positional.items[1];
+            std.log.err("coral yago-ingest: specify source with --file <path> or as second argument", .{});
+            std.process.exit(1);
+        };
+
+        const home = std.posix.getenv("HOME") orelse ".";
+        const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+        defer allocator.free(db_dir);
+        std.fs.makeDirAbsolute(db_dir) catch |e| {
+            if (e != error.PathAlreadyExists) return e;
+        };
+        const db_path = try std.fmt.allocPrint(allocator, "{s}/yago.db", .{db_dir});
+        defer allocator.free(db_path);
+
+        const lib = try Library.init(allocator, .sqlite, db_path);
+        defer lib.deinit();
+        try lib.initSchema();
+
+        const config = YagoConfig{
+            .batch_size = 10_000,
+            .whitelist_only = true,
+            .build_hierarchy = false,
+            .skip_errors = true,
+        };
+        var ingestor = YagoIngestor.init(allocator, config);
+
+        try stdout.print("YAGO ingestion starting: {s}\n", .{source_path});
+        try stdout.flush();
+
+        const stats = try ingestor.ingestFile(source_path, lib, null);
+
+        try stdout.print("YAGO ingestion complete:\n", .{});
+        try stdout.print("  triples processed : {d}\n", .{stats.triples_processed});
+        try stdout.print("  nodes created    : {d}\n", .{stats.nodes_created});
+        try stdout.print("  edges created    : {d}\n", .{stats.edges_created});
+        try stdout.print("  errors skipped   : {d}\n", .{stats.errors_skipped});
+        try stdout.print("  batches flushed  : {d}\n", .{stats.batches_flushed});
         try stdout.flush();
         return;
     }
@@ -284,4 +333,5 @@ test "coral: core module imports compile" {
     _ = @import("yago_ingest.zig"); // yago_ingest.zig pulls in coral_batch + ontology
     _ = @import("token_budget.zig"); // M7.1 TokenEstimator
     _ = @import("metrics.zig"); // M8.1 LatencyHistogram
+    _ = @import("http_transport.zig"); // M4.1 HTTP/SSE transport
 }

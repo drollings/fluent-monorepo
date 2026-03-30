@@ -89,21 +89,21 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 94
+          "line": 95
         }
     ,    {
           "type": "fn_decl",
           "name": "search",
-          "match_hash": "368c584d1b77ff7ba97234de439df7255ed2b952a0ad1241848bbc04763948b5",
-          "signature": "fn search(self: *Self, query: []const f32, k: usize) -> []struct { id: i64, distance: f32 }",
+          "match_hash": "1bfa8d94afa46446e2029d13423b35a6a988eeaa70b5cbf89ab001a8ed516ed5",
+          "signature": "fn search(self: *Self, query: []const f32, k: usize) -> []SearchResult",
           "params": [
             { "name": "self", "type": "*Self" },
             { "name": "query", "type": "[]const f32" },
             { "name": "k", "type": "usize" }
           ],
-          "returns": "[]struct { id: i64, distance: f32 }",
+          "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 134
+          "line": 146
         }
     ,    {
           "type": "fn_decl",
@@ -116,7 +116,95 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 200
+          "line": 208
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "writeU32",
+          "match_hash": "45965214684dfb9c33bbb0452e10ab76628f98e8a693579364c838a418249654",
+          "signature": "fn writeU32(file: std.fs.File, v: u32) -> void",
+          "params": [
+            { "name": "file", "type": "std.fs.File" },
+            { "name": "v", "type": "u32" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 227
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "writeI64",
+          "match_hash": "618c2c5d8ec5e8add96dabd548dc62c03a5bd28f717a3855d2672b2cabc0d364",
+          "signature": "fn writeI64(file: std.fs.File, v: i64) -> void",
+          "params": [
+            { "name": "file", "type": "std.fs.File" },
+            { "name": "v", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 232
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "writeU64",
+          "match_hash": "429e68c425700922284ecf49c8dc28cff507081206b5b9493aae728a85dfbd0b",
+          "signature": "fn writeU64(file: std.fs.File, v: u64) -> void",
+          "params": [
+            { "name": "file", "type": "std.fs.File" },
+            { "name": "v", "type": "u64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 237
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readExact",
+          "match_hash": "264f335d3391cdb9464c770a9d8cdea6ce59e9fc23c342f9f3ff067ed02662e2",
+          "signature": "fn readExact(file: std.fs.File, buf: []u8) -> void",
+          "params": [
+            { "name": "file", "type": "std.fs.File" },
+            { "name": "buf", "type": "[]u8" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 242
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readU32",
+          "match_hash": "d081691361c5cd0c198d4a5ddc2182b5908176b2c652ce27764e49b926942af7",
+          "signature": "fn readU32(file: std.fs.File) -> u32",
+          "params": [
+            { "name": "file", "type": "std.fs.File" }
+          ],
+          "returns": "u32",
+          "is_pub": false,
+          "line": 250
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readI64",
+          "match_hash": "46aba62b2d0653552dac7fd0475e1017ab40754db4dd873729f4be007efd9df8",
+          "signature": "fn readI64(file: std.fs.File) -> i64",
+          "params": [
+            { "name": "file", "type": "std.fs.File" }
+          ],
+          "returns": "i64",
+          "is_pub": false,
+          "line": 255
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readU64",
+          "match_hash": "6857305a504556ce093034dc77fa2e583c5ac4e08178855a89887930d0ac8def",
+          "signature": "fn readU64(file: std.fs.File) -> u64",
+          "params": [
+            { "name": "file", "type": "std.fs.File" }
+          ],
+          "returns": "u64",
+          "is_pub": false,
+          "line": 260
         }
     ,    {
           "type": "fn_decl",
@@ -129,7 +217,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 218
+          "line": 267
         }
     ,    {
           "type": "fn_decl",
@@ -142,7 +230,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 242
+          "line": 290
         }
     ,    {
           "type": "fn_private",
@@ -154,7 +242,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 270
+          "line": 320
         }
     ,    {
           "type": "fn_private",
@@ -168,7 +256,7 @@
           ],
           "returns": "f32",
           "is_pub": false,
-          "line": 278
+          "line": 328
         }
     ,    {
           "type": "fn_private",
@@ -183,7 +271,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 288
+          "line": 338
         }
       ],
       "line": 16
@@ -192,31 +280,55 @@
       "type": "test_decl",
       "name": "HnswIndex: init and deinit",
       "is_pub": false,
-      "line": 328
+      "line": 378
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: add single node",
       "is_pub": false,
-      "line": 336
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: dimension mismatch returns error",
       "is_pub": false,
-      "line": 347
+      "line": 397
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: search returns nearest neighbors",
       "is_pub": false,
-      "line": 355
+      "line": 405
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: remove node",
       "is_pub": false,
-      "line": 371
+      "line": 421
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: save and load preserves node count and search",
+      "is_pub": false,
+      "line": 431
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: recall validation (results validated)",
+      "is_pub": false,
+      "line": 472
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: build time under 5s for 10K nodes (debug-safe)",
+      "is_pub": false,
+      "line": 529
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: search time under 100ms per query on average (debug-safe)",
+      "is_pub": false,
+      "line": 554
     }
   ]
 }

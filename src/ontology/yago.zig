@@ -134,7 +134,7 @@ pub const CLASS_CONCEPT = OntologyClass{
 };
 
 /// All known classes in definition order.
-const ALL_CLASSES = [_]*const OntologyClass{
+pub const ALL_CLASSES = [_]*const OntologyClass{
     &CLASS_ENTITY,
     &CLASS_PERSON,
     &CLASS_ORGANIZATION,
@@ -143,6 +143,18 @@ const ALL_CLASSES = [_]*const OntologyClass{
     &CLASS_ARTIFACT,
     &CLASS_CONCEPT,
 };
+
+/// Returns the IRI of every class in ALL_CLASSES, suitable for type-filter
+/// during ingestion. Out slice must have capacity >= ALL_CLASSES.len.
+pub fn whitelistIRIs(out: [][]const u8) usize {
+    var i: usize = 0;
+    for (ALL_CLASSES) |cls| {
+        if (i >= out.len) break;
+        out[i] = cls.iri;
+        i += 1;
+    }
+    return i;
+}
 
 /// Look up a class by IRI. Returns null if unknown.
 pub fn lookupClass(iri: []const u8) ?*const OntologyClass {

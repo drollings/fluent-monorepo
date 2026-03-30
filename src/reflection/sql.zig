@@ -270,6 +270,10 @@ pub const SqlHydrator = struct {
     pub fn peekType(self: *const SqlHydrator) c_int {
         return c.sqlite3_column_type(self.stmt, self.next_col);
     }
+
+    pub fn peekCol(self: *const SqlHydrator) c_int {
+        return self.next_col;
+    }
 };
 
 // ============================================================

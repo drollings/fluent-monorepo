@@ -370,6 +370,18 @@
       "name": "CapabilityInference: cache invalidation on new capability",
       "is_pub": false,
       "line": 539
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: cycle detection in subClassOf",
+      "is_pub": false,
+      "line": 555
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: inferCapabilities traverses subClassOf chain",
+      "is_pub": false,
+      "line": 575
     }
   ]
 }

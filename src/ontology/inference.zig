@@ -551,3 +551,44 @@ test "CapabilityInference: cache invalidation on new capability" {
     try ci.registerCapability("Animal", "can_breathe");
     try testing.expect(try ci.duckType("Cat", "can_breathe"));
 }
+
+test "CapabilityInference: cycle detection in subClassOf" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    // Create a cycle: A → B → A
+    const ab = try buildSubclassTriple(testing.allocator, "CycleA", RDFS_SUBCLASS_OF, "CycleB");
+    defer ab.deinit(testing.allocator);
+    const ba = try buildSubclassTriple(testing.allocator, "CycleB", RDFS_SUBCLASS_OF, "CycleA");
+    defer ba.deinit(testing.allocator);
+    try ci.loadHierarchy(&[_]Triple{ ab, ba }, RDFS_SUBCLASS_OF);
+
+    // Register capability on CycleA; CycleB should inherit it (no infinite loop).
+    try ci.registerCapability("CycleA", "cycle_cap");
+    try testing.expect(try ci.duckType("CycleB", "cycle_cap"));
+
+    // inferCapabilities on CycleA should also terminate.
+    const caps = try ci.inferCapabilities("CycleA");
+    try testing.expect(caps.contains("cycle_cap"));
+}
+
+test "CapabilityInference: inferCapabilities traverses subClassOf chain" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    // Chain: Engineer → Person → Agent
+    const ep = try buildSubclassTriple(testing.allocator, "Engineer", RDFS_SUBCLASS_OF, "Person");
+    defer ep.deinit(testing.allocator);
+    const pa = try buildSubclassTriple(testing.allocator, "Person", RDFS_SUBCLASS_OF, "Agent");
+    defer pa.deinit(testing.allocator);
+    try ci.loadHierarchy(&[_]Triple{ ep, pa }, RDFS_SUBCLASS_OF);
+
+    try ci.registerCapability("Agent", "has_id");
+    try ci.registerCapability("Person", "has_name");
+
+    // inferCapabilities("Engineer") should return both has_id and has_name.
+    const caps = try ci.inferCapabilities("Engineer");
+    try testing.expect(caps.contains("has_id"));
+    try testing.expect(caps.contains("has_name"));
+    try testing.expect(!caps.contains("has_altitude"));
+}

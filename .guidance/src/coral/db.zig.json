@@ -368,7 +368,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 418
+          "line": 422
         }
     ,    {
           "type": "fn_decl",
@@ -381,7 +381,7 @@
           ],
           "returns": "?ContextNode",
           "is_pub": true,
-          "line": 450
+          "line": 458
         }
     ,    {
           "type": "fn_decl",
@@ -399,7 +399,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 502
+          "line": 510
         }
     ,    {
           "type": "fn_decl",
@@ -412,7 +412,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 541
+          "line": 549
         }
     ,    {
           "type": "fn_decl",
@@ -425,7 +425,7 @@
           ],
           "returns": "?WasmTool",
           "is_pub": true,
-          "line": 569
+          "line": 577
         }
     ,    {
           "type": "fn_decl",
@@ -438,7 +438,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 602
+          "line": 610
         }
     ,    {
           "type": "fn_decl",
@@ -450,7 +450,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 609
+          "line": 617
         }
     ,    {
           "type": "fn_decl",
@@ -464,7 +464,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 628
+          "line": 636
         }
     ,    {
           "type": "fn_decl",
@@ -480,7 +480,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 638
+          "line": 646
         }
     ,    {
           "type": "fn_decl",
@@ -495,7 +495,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 665
+          "line": 673
         }
     ,    {
           "type": "fn_decl",
@@ -511,7 +511,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 669
+          "line": 677
         }
     ,    {
           "type": "fn_decl",
@@ -524,7 +524,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 675
+          "line": 683
         }
     ,    {
           "type": "fn_decl",
@@ -538,7 +538,7 @@
           ],
           "returns": "[]i64",
           "is_pub": true,
-          "line": 689
+          "line": 697
         }
     ,    {
           "type": "fn_decl",
@@ -553,7 +553,7 @@
           ],
           "returns": "[]KnnHit",
           "is_pub": true,
-          "line": 705
+          "line": 713
         }
     ,    {
           "type": "fn_decl",
@@ -568,7 +568,7 @@
           ],
           "returns": "[]ContextNode",
           "is_pub": true,
-          "line": 713
+          "line": 721
         }
     ,    {
           "type": "fn_decl",
@@ -580,7 +580,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 747
+          "line": 755
         }
     ,    {
           "type": "fn_decl",
@@ -593,7 +593,7 @@
           ],
           "returns": "?i64",
           "is_pub": true,
-          "line": 756
+          "line": 764
         }
     ,    {
           "type": "fn_decl",
@@ -608,7 +608,7 @@
           ],
           "returns": "[]ContextNode",
           "is_pub": true,
-          "line": 772
+          "line": 780
         }
     ,    {
           "type": "fn_decl",
@@ -625,7 +625,7 @@
           ],
           "returns": "[]ContextNode",
           "is_pub": true,
-          "line": 810
+          "line": 818
         }
     ,    {
           "type": "fn_decl",
@@ -639,7 +639,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 889
+          "line": 897
         }
     ,    {
           "type": "fn_decl",
@@ -653,7 +653,7 @@
           ],
           "returns": "[]i64",
           "is_pub": true,
-          "line": 912
+          "line": 920
         }
     ,    {
           "type": "fn_decl",
@@ -667,7 +667,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 948
+          "line": 956
         }
     ,    {
           "type": "fn_decl",
@@ -681,7 +681,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 989
+          "line": 997
         }
     ,    {
           "type": "fn_decl",
@@ -695,7 +695,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 1002
+          "line": 1010
         }
     ,    {
           "type": "fn_decl",
@@ -709,7 +709,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1040
+          "line": 1048
         }
     ,    {
           "type": "fn_decl",
@@ -724,7 +724,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1051
+          "line": 1059
         }
     ,    {
           "type": "fn_decl",
@@ -739,7 +739,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1069
+          "line": 1077
         }
     ,    {
           "type": "fn_decl",
@@ -753,7 +753,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1088
+          "line": 1096
         }
     ,    {
           "type": "fn_decl",
@@ -769,7 +769,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1101
+          "line": 1109
         }
     ,    {
           "type": "fn_decl",
@@ -786,7 +786,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1121
+          "line": 1129
         }
       ],
       "line": 282
@@ -809,7 +809,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 1153
+          "line": 1161
         }
     ,    {
           "type": "fn_decl",
@@ -822,7 +822,7 @@
           ],
           "returns": "f32",
           "is_pub": true,
-          "line": 1159
+          "line": 1167
         }
     ,    {
           "type": "fn_decl",
@@ -836,7 +836,7 @@
           ],
           "returns": "[]KnnHit",
           "is_pub": true,
-          "line": 1176
+          "line": 1184
         }
     ,    {
           "type": "fn_decl",
@@ -849,7 +849,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1225
+          "line": 1233
         }
     ,    {
           "type": "fn_decl",
@@ -863,10 +863,10 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 1230
+          "line": 1238
         }
       ],
-      "line": 1147
+      "line": 1155
     },
     {
       "type": "struct",
@@ -887,7 +887,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 1255
+          "line": 1263
         }
     ,    {
           "type": "fn_decl",
@@ -901,7 +901,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 1260
+          "line": 1268
         }
     ,    {
           "type": "fn_decl",
@@ -914,7 +914,7 @@
           ],
           "returns": "[]GraphNode",
           "is_pub": true,
-          "line": 1272
+          "line": 1280
         }
     ,    {
           "type": "fn_decl",
@@ -927,7 +927,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 1291
+          "line": 1299
         }
     ,    {
           "type": "fn_decl",
@@ -940,250 +940,256 @@
           ],
           "returns": "struct { text: []const u8, tokens_used: usize, nodes_included: usize }",
           "is_pub": true,
-          "line": 1336
+          "line": 1344
         }
       ],
-      "line": 1247
+      "line": 1255
     },
     {
       "type": "test_decl",
       "name": "NodeId: round-trip through helpers",
       "is_pub": false,
-      "line": 1441
+      "line": 1449
     },
     {
       "type": "test_decl",
       "name": "ContextNode init",
       "is_pub": false,
-      "line": 1452
+      "line": 1460
     },
     {
       "type": "test_decl",
       "name": "ContextNode LOD fields",
       "is_pub": false,
-      "line": 1462
+      "line": 1470
     },
     {
       "type": "test_decl",
       "name": "ContextNode getLod/setLod",
       "is_pub": false,
-      "line": 1474
+      "line": 1482
     },
     {
       "type": "test_decl",
       "name": "EdgeType relation and label",
       "is_pub": false,
-      "line": 1483
+      "line": 1491
     },
     {
       "type": "test_decl",
       "name": "HydrationPipeline: cosine distance",
       "is_pub": false,
-      "line": 1490
+      "line": 1498
     },
     {
       "type": "test_decl",
       "name": "HydrationPipeline: empty vectors return max distance",
       "is_pub": false,
-      "line": 1500
+      "line": 1508
     },
     {
       "type": "test_decl",
       "name": "HydrationPipeline: mismatched lengths return max distance",
       "is_pub": false,
-      "line": 1506
+      "line": 1514
     },
     {
       "type": "test_decl",
       "name": "HydrationPipeline: cosine distance — anti-parallel vectors",
       "is_pub": false,
-      "line": 1512
+      "line": 1520
     },
     {
       "type": "test_decl",
       "name": "HydrationPipeline: cosine distance — equal unit vectors",
       "is_pub": false,
-      "line": 1519
+      "line": 1527
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: LOD selection",
       "is_pub": false,
-      "line": 1525
+      "line": 1533
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: empty LOD fallbacks",
       "is_pub": false,
-      "line": 1547
+      "line": 1555
     },
     {
       "type": "test_decl",
       "name": "Library: open in-memory, init schema",
       "is_pub": false,
-      "line": 1562
+      "line": 1570
     },
     {
       "type": "test_decl",
       "name": "Library: insert and fetch ContextNode",
       "is_pub": false,
-      "line": 1571
+      "line": 1579
+    },
+    {
+      "type": "test_decl",
+      "name": "Library: insert and fetch ContextNode round-trip all fields",
+      "is_pub": false,
+      "line": 1596
     },
     {
       "type": "test_decl",
       "name": "Library: insert target and depends_on edge",
       "is_pub": false,
-      "line": 1588
+      "line": 1654
     },
     {
       "type": "test_decl",
       "name": "Library: neighbor_of edge insertion",
       "is_pub": false,
-      "line": 1611
+      "line": 1677
     },
     {
       "type": "test_decl",
       "name": "Library: fetchNode returns null for unknown id",
       "is_pub": false,
-      "line": 1629
+      "line": 1695
     },
     {
       "type": "test_decl",
       "name": "Library: upsert overwrites existing node",
       "is_pub": false,
-      "line": 1640
+      "line": 1706
     },
     {
       "type": "test_decl",
       "name": "Library: initSchema is idempotent",
       "is_pub": false,
-      "line": 1662
+      "line": 1728
     },
     {
       "type": "test_decl",
       "name": "WasmTool: editable mixin is zero size",
       "is_pub": false,
-      "line": 1672
+      "line": 1738
     },
     {
       "type": "test_decl",
       "name": "WasmTool: reflective get on scalar fields",
       "is_pub": false,
-      "line": 1676
+      "line": 1742
     },
     {
       "type": "test_decl",
       "name": "Library: insert and fetch WasmTool",
       "is_pub": false,
-      "line": 1692
+      "line": 1758
     },
     {
       "type": "test_decl",
       "name": "Library: fetchWasmTool returns null for unknown id",
       "is_pub": false,
-      "line": 1720
+      "line": 1786
     },
     {
       "type": "test_decl",
       "name": "Library: insertWasmTool upsert overwrites existing record",
       "is_pub": false,
-      "line": 1731
+      "line": 1797
     },
     {
       "type": "test_decl",
       "name": "Library: persistNeighborEdges with empty slice is a no-op",
       "is_pub": false,
-      "line": 1748
+      "line": 1814
     },
     {
       "type": "test_decl",
       "name": "Library: persistNeighborEdges single-element slice is also a no-op",
       "is_pub": false,
-      "line": 1757
+      "line": 1823
     },
     {
       "type": "test_decl",
       "name": "Library: all EdgeType variants can be inserted",
       "is_pub": false,
-      "line": 1771
+      "line": 1837
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: selectLod distance 3 always returns name",
       "is_pub": false,
-      "line": 1796
+      "line": 1862
     },
     {
       "type": "test_decl",
       "name": "Library: KNN search returns top-K hits sorted by distance",
       "is_pub": false,
-      "line": 1812
+      "line": 1878
     },
     {
       "type": "test_decl",
       "name": "Library: BFS distance via ContextPacker.getNodesByDistance",
       "is_pub": false,
-      "line": 1847
+      "line": 1913
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: BFS distance → LOD assignment → token-budget downgrade",
       "is_pub": false,
-      "line": 1879
+      "line": 1945
     },
     {
       "type": "test_decl",
       "name": "Library: hybridSearch returns nodes matching keyword",
       "is_pub": false,
-      "line": 1938
+      "line": 2004
     },
     {
       "type": "test_decl",
       "name": "Library: keywordSearch finds name and description matches",
       "is_pub": false,
-      "line": 1968
+      "line": 2034
     },
     {
       "type": "test_decl",
       "name": "Library: concurrent insert+read, 4 threads",
       "is_pub": false,
-      "line": 1991
+      "line": 2057
     },
     {
       "type": "test_decl",
       "name": "Library: getAllAncestors returns empty for unknown entity",
       "is_pub": false,
-      "line": 2035
+      "line": 2101
     },
     {
       "type": "test_decl",
       "name": "Library: getSchemaVersion returns SCHEMA_VERSION after initSchema",
       "is_pub": false,
-      "line": 2049
+      "line": 2115
     },
     {
       "type": "test_decl",
       "name": "Library: migrate is idempotent on fresh install",
       "is_pub": false,
-      "line": 2063
+      "line": 2129
     },
     {
       "type": "test_decl",
       "name": "Library.getCapabilitiesForEntity: returns capabilities for subtype",
       "is_pub": false,
-      "line": 2078
+      "line": 2144
     },
     {
       "type": "test_decl",
       "name": "Library.getCapabilitiesForEntity: empty for unknown entity",
       "is_pub": false,
-      "line": 2117
+      "line": 2183
     },
     {
       "type": "test_decl",
       "name": "Library.getInheritedProperties: returns predicates via type hierarchy",
       "is_pub": false,
-      "line": 2134
+      "line": 2200
     }
   ]
 }

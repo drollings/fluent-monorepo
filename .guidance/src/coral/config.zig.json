@@ -4,7 +4,7 @@
     "source": "src/coral/config.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/main.zig"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",

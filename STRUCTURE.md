@@ -117,14 +117,17 @@ Then you you must read
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing
+│   │   ├── cache_test.zig                        # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                            # Coral project configuration loader.
 │   │   ├── context_node_schema.zig
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
+│   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
 │   │   ├── frontier_tool_compiler.zig            # frontier_tool_compiler.zig — Compiles LLM-generated source into WASM tools.
 │   │   ├── http_transport.zig                    # http_transport.zig — M4.1/M4.2 HTTP Transport Layer with SSE
+│   │   ├── http_transport_test.zig               # http_transport_test.zig — Unit tests for HTTP transport layer
 │   │   ├── main.zig
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
@@ -235,8 +238,10 @@ Then you you must read
 ├── requirements.txt
 ├── REVIEW_20260328.md
 ├── STRUCTURE.md
+├── test_http
 ├── TODO_GAPS.md
 ├── TODO_GAPS_20260329.md
+├── TODO_GAPS_20260329_CHECKLIST.md
 ├── TODO_REVIEW_20260328.md
 └── TODO_REVIEW_20260328_CHECKLIST.md
 ```

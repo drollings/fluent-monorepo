@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "module": "src.coral.http_transport_test",
+    "source": "src/coral/http_transport_test.zig",
+    "language": "zig"
+  },
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "members": [
+    {
+      "type": "fn_private",
+      "name": "makeEchoHandler",
+      "match_hash": "63507e36d3cacb825b14a40847f3ed774002d64babf8b5483070739ccf2ad310",
+      "signature": "fn makeEchoHandler() -> McpHandler",
+      "returns": "McpHandler",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": false,
+      "line": 16
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: init sets default values",
+      "is_pub": false,
+      "line": 37
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: requestShutdown sets flag",
+      "is_pub": false,
+      "line": 48
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: deinit cleans up without error",
+      "is_pub": false,
+      "line": 58
+    },
+    {
+      "type": "test_decl",
+      "name": "McpHandler VTable interface compiles and calls through",
+      "is_pub": false,
+      "line": 66
+    },
+    {
+      "type": "test_decl",
+      "name": "McpHandler: echo handler returns input",
+      "is_pub": false,
+      "line": 105
+    },
+    {
+      "type": "test_decl",
+      "name": "SseEvent: default values",
+      "is_pub": false,
+      "line": 118
+    },
+    {
+      "type": "test_decl",
+      "name": "SseState: default values",
+      "is_pub": false,
+      "line": 127
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: bind address parsing",
+      "is_pub": false,
+      "line": 134
+    },
+    {
+      "type": "test_decl",
+      "name": "HttpTransport: signals ready when listenWithReady called",
+      "is_pub": false,
+      "line": 143
+    }
+  ]
+}

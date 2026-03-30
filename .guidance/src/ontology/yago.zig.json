@@ -83,6 +83,18 @@
     },
     {
       "type": "fn_decl",
+      "name": "whitelistIRIs",
+      "match_hash": "b4f2d47ff1c50c7bea97846dbbb0c9ffe61b657a4d27b516ab50b82bbd926246",
+      "signature": "fn whitelistIRIs(out: [][]const u8) -> usize",
+      "params": [
+        { "name": "out", "type": "[][]const u8" }
+      ],
+      "returns": "usize",
+      "is_pub": true,
+      "line": 149
+    },
+    {
+      "type": "fn_decl",
       "name": "lookupClass",
       "match_hash": "71069eb59d32b3d652013448109c1b8db2102d12a9dda4fb84eae3ed67c7b8f2",
       "signature": "fn lookupClass(iri: []const u8) -> ?*const OntologyClass",
@@ -91,7 +103,7 @@
       ],
       "returns": "?*const OntologyClass",
       "is_pub": true,
-      "line": 148
+      "line": 160
     },
     {
       "type": "fn_decl",
@@ -104,7 +116,7 @@
       ],
       "returns": "usize",
       "is_pub": true,
-      "line": 157
+      "line": 169
     },
     {
       "type": "fn_decl",
@@ -117,7 +129,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 177
+      "line": 189
     },
     {
       "type": "fn_decl",
@@ -129,73 +141,73 @@
       ],
       "returns": "?*const OntologyProperty",
       "is_pub": true,
-      "line": 318
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "class lookup by IRI",
       "is_pub": false,
-      "line": 331
+      "line": 343
     },
     {
       "type": "test_decl",
       "name": "class lookup unknown IRI returns null",
       "is_pub": false,
-      "line": 337
+      "line": 349
     },
     {
       "type": "test_decl",
       "name": "property lookup by IRI",
       "is_pub": false,
-      "line": 341
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "property lookup rdf:type",
       "is_pub": false,
-      "line": 347
+      "line": 359
     },
     {
       "type": "test_decl",
       "name": "superclass chain for Person",
       "is_pub": false,
-      "line": 353
+      "line": 365
     },
     {
       "type": "test_decl",
       "name": "domain validation on hasGender",
       "is_pub": false,
-      "line": 361
+      "line": 373
     },
     {
       "type": "test_decl",
       "name": "transitive property subClassOf",
       "is_pub": false,
-      "line": 367
+      "line": 379
     },
     {
       "type": "test_decl",
       "name": "isSubclassOf: identity",
       "is_pub": false,
-      "line": 372
+      "line": 384
     },
     {
       "type": "test_decl",
       "name": "isSubclassOf: direct subclass",
       "is_pub": false,
-      "line": 376
+      "line": 388
     },
     {
       "type": "test_decl",
       "name": "isSubclassOf: unrelated classes",
       "is_pub": false,
-      "line": 381
+      "line": 393
     },
     {
       "type": "test_decl",
       "name": "isSubclassOf: unknown child IRI",
       "is_pub": false,
-      "line": 385
+      "line": 397
     }
   ]
 }

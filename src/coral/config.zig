@@ -9,6 +9,7 @@
 /// do not need to allocate to derive them.
 const std = @import("std");
 const builtin = @import("builtin");
+const yago = @import("ontology").yago;
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -25,21 +26,20 @@ pub const DEFAULT_API_URL = "http://localhost:11434/v1/chat/completions";
 //
 // Only entities whose rdf:type matches one of these schema.org class URIs are
 // ingested.  This keeps the SQLite database below 1 GB for the on-device
-// duck-typing use case.  Add entries here to expand coverage.
+// duck-typing use case.  Add entries to ontology.yago.ALL_CLASSES to expand.
 //
 // Target: < 5M nodes, < 1 GB SQLite file.
-pub const YAGO_TYPE_WHITELIST = [_][]const u8{
-    "schema:Person",
-    "schema:SoftwareApplication",
-    "schema:Organization",
-    "schema:CreativeWork",
-    "schema:Place",
-    "schema:Event",
-    "schema:Product",
-    "schema:Action",
-    "schema:MedicalEntity",
-    "schema:BioChemEntity",
-    "schema:Taxon",
+//
+// Derived from ontology.yago.ALL_CLASSES at compile time.  The set is limited
+// to classes with actual property definitions in the ontology (currently 7).
+// The 11-entry list previously here included placeholder entries for future
+// expansion; those placeholders should be added to yago.zig as proper classes.
+pub const YAGO_TYPE_WHITELIST: []const []const u8 = blk: {
+    var iri_list: [yago.ALL_CLASSES.len][]const u8 = undefined;
+    for (yago.ALL_CLASSES, 0..) |cls, i| {
+        iri_list[i] = cls.iri;
+    }
+    break :blk &iri_list;
 };
 
 // ---------------------------------------------------------------------------

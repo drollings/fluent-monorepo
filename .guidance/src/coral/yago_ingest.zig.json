@@ -16,7 +16,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 47
+      "line": 37
     },
     {
       "type": "struct",
@@ -24,7 +24,7 @@
       "match_hash": "42500de3ff776f8ecc1d2f3d5b3bbec9cc9dfcd36982fa8bb533cfb49a5a79f8",
       "signature": "keyword_struct YagoConfig { ... }",
       "is_pub": true,
-      "line": 64
+      "line": 61
     },
     {
       "type": "struct",
@@ -44,7 +44,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 94
+          "line": 91
         }
     ,    {
           "type": "fn_decl",
@@ -59,7 +59,7 @@
           ],
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 104
+          "line": 101
         }
     ,    {
           "type": "fn_decl",
@@ -74,7 +74,7 @@
           ],
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 120
+          "line": 117
         }
     ,    {
           "type": "fn_private",
@@ -89,10 +89,10 @@
           ],
           "returns": "IngestStats",
           "is_pub": false,
-          "line": 137
+          "line": 134
         }
       ],
-      "line": 88
+      "line": 85
     },
     {
       "type": "fn_decl",
@@ -104,49 +104,49 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 154
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts YAGO subject",
       "is_pub": false,
-      "line": 177
+      "line": 165
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: rejects unknown subject",
       "is_pub": false,
-      "line": 187
+      "line": 175
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts schema.org subject",
       "is_pub": false,
-      "line": 197
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Person is subclass of Entity",
       "is_pub": false,
-      "line": 207
+      "line": 195
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Organization is subclass of Entity",
       "is_pub": false,
-      "line": 218
+      "line": 206
     },
     {
       "type": "test_decl",
       "name": "YagoConfig defaults",
       "is_pub": false,
-      "line": 228
+      "line": 216
     },
     {
       "type": "test_decl",
       "name": "IngestStats has triples_filtered field",
       "is_pub": false,
-      "line": 236
+      "line": 224
     }
   ]
 }

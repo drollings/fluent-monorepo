@@ -233,7 +233,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 346
+          "line": 357
         }
     ,    {
           "type": "fn_decl",
@@ -247,7 +247,7 @@
           ],
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
-          "line": 350
+          "line": 361
         }
     ,    {
           "type": "fn_decl",
@@ -259,7 +259,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 360
+          "line": 371
         }
       ],
       "line": 185
@@ -268,43 +268,49 @@
       "type": "test_decl",
       "name": "ContextNodeSchema: sql_bind_order has correct length",
       "is_pub": false,
-      "line": 375
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: create and destroy",
       "is_pub": false,
-      "line": 379
+      "line": 390
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: viewOf set and get",
       "is_pub": false,
-      "line": 389
+      "line": 400
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: viewOf lod field access",
       "is_pub": false,
-      "line": 414
+      "line": 425
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: valid_to optional field",
       "is_pub": false,
-      "line": 436
+      "line": 447
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: round-trip serialization",
       "is_pub": false,
-      "line": 462
+      "line": 473
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: access denied on protected field",
       "is_pub": false,
-      "line": 490
+      "line": 501
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextNodeSchema: sql_type is correctly set on all accessors",
+      "is_pub": false,
+      "line": 518
     }
   ]
 }

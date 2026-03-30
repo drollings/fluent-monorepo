@@ -415,6 +415,10 @@ pub const Library = struct {
     // ------------------------------------------------------------------
 
     /// Insert or replace a ContextNode (upsert by id).
+    ///
+    /// Note: Uses inline sqlite3_bind_* calls rather than SqlBinder because
+    /// each module's @cImport creates distinct sqlite3_stmt types. Future work
+    /// could extract sqlite3.c to a shared module for SqlBinder reuse.
     pub fn insertNode(self: *Self, node: ContextNode) !void {
         self.mu.lock();
         defer self.mu.unlock();
@@ -447,6 +451,10 @@ pub const Library = struct {
 
     /// Fetch a ContextNode by id.  Strings in the returned node are
     /// allocator-owned; free with node.free(allocator).
+    ///
+    /// Note: Uses inline sqlite3_column_* calls rather than SqlHydrator because
+    /// each module's @cImport creates distinct sqlite3_stmt types, and lod[0]
+    /// requires SharedString.Ref.init() rather than simple allocator.dupe().
     pub fn fetchNode(self: *Self, id: i64) !?ContextNode {
         const sql =
             \\SELECT lod0, lod1, lod2, lod3, lod4, lod5,
@@ -1583,6 +1591,64 @@ test "Library: insert and fetch ContextNode" {
     defer fetched.free(lib.allocator);
     try testing.expectEqualStrings("hello", fetched.lod[4]);
     try testing.expectEqualStrings("Hello world.", fetched.lod[0]);
+}
+
+test "Library: insert and fetch ContextNode round-trip all fields" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+
+    // Build a node with non-default values for every field.
+    const src = try SharedString.Ref.init(allocator, "Full text round-trip.");
+    const name_copy = try allocator.dupe(u8, "rt_name");
+    const lod1_copy = try allocator.dupe(u8, "brief");
+    const lod2_copy = try allocator.dupe(u8, "medium");
+    const lod3_copy = try allocator.dupe(u8, "detailed");
+    const lod5_copy = try allocator.dupe(u8, "extra");
+    // Embedding is bound SQLITE_STATIC during insertNode so it's safe to free after.
+    const emb_data = [_]f32{ 0.1, 0.2, 0.3 };
+
+    var node = ContextNode{
+        .id = 0x1234_5678,
+        .source = src,
+        .lod = [_][]const u8{ src.slice(), lod1_copy, lod2_copy, lod3_copy, name_copy, lod5_copy },
+        .lod_owned = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
+        .embedding = &emb_data,
+        .valid_from = 1_700_000_000.0,
+        .valid_to = 1_800_000_000.0,
+        .confidence = 42,
+        .provenance_id = 7,
+    };
+    defer node.free(allocator);
+
+    try lib.insertNode(node);
+
+    // Verify all text and numeric fields survive the round-trip via fetchNode.
+    // Note: fetchNode intentionally leaves embedding empty ([]f32{}); embeddings
+    // are accessed via knnSearch for performance reasons.
+    var fetched = (try lib.fetchNode(@as(i64, 0x1234_5678))).?;
+    defer fetched.free(lib.allocator);
+
+    try testing.expectEqualStrings("Full text round-trip.", fetched.lod[0]);
+    try testing.expectEqualStrings("brief", fetched.lod[1]);
+    try testing.expectEqualStrings("medium", fetched.lod[2]);
+    try testing.expectEqualStrings("detailed", fetched.lod[3]);
+    try testing.expectEqualStrings("rt_name", fetched.lod[4]);
+    try testing.expectEqualStrings("extra", fetched.lod[5]);
+    try testing.expectEqual(@as(i32, 42), fetched.confidence);
+    try testing.expectEqual(@as(i32, 7), fetched.provenance_id);
+    try testing.expectApproxEqAbs(@as(f64, 1_700_000_000.0), fetched.valid_from, 0.001);
+    try testing.expect(fetched.valid_to != null);
+    try testing.expectApproxEqAbs(@as(f64, 1_800_000_000.0), fetched.valid_to.?, 0.001);
+
+    // Verify embedding is stored and retrievable via knnSearch.
+    const hits = try lib.knnSearch(allocator, &emb_data, 1);
+    defer allocator.free(hits);
+    try testing.expectEqual(@as(usize, 1), hits.len);
+    try testing.expectEqual(@as(i64, 0x1234_5678), hits[0].id);
+    try testing.expectApproxEqAbs(@as(f32, 0.0), hits[0].distance, 0.001);
 }
 
 test "Library: insert target and depends_on edge" {
