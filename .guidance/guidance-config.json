@@ -2,8 +2,8 @@
   "version": "1",
   "guidance_dir": ".guidance",
   "db_path": ".guidance.db",
-  "skills_dir": "skills",
-  "capabilities_dir": "capabilities",
+  "skills_dir": "doc/skills",
+  "capabilities_dir": "doc/capabilities",
   "src_dirs": ["src"],
   "providers": {
     "local": {

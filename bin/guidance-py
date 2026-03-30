@@ -151,9 +151,7 @@ def _extract_answer_from_thinking(thinking: str) -> str:
         if candidate:
             return candidate
     transition_re = re.compile(
-        r"(?:so[,:]?\s+(?:maybe|the answer is|we can say|it is|probably)|"
-        r"answer[:\s]+|final[:\s]+|result[:\s]+|description[:\s]+|"
-        r'something like[:\s]+|perhaps[:\s]+)\s*["\']?(.+)',
+        r"(?:so[,:]?\s+(?:maybe|the answer is|we can say|it is|probably)|" r"answer[:\s]+|final[:\s]+|result[:\s]+|description[:\s]+|" r'something like[:\s]+|perhaps[:\s]+)\s*["\']?(.+)',
         re.IGNORECASE,
     )
     for match in transition_re.finditer(thinking):
@@ -610,6 +608,7 @@ def _canonical_member(m: Dict) -> Dict:
         "params": [{"name": a.get("name", ""), "type": a.get("type", ""), "default": a.get("default")} for a in m.get("args", m.get("params", []))],
         "returns": m.get("returns", ""),
         "patterns": m.get("patterns", []),
+        "tags": m.get("tags", []),
         "members": [_canonical_member(n) for n in m.get("members", [])],
     }
     if result["line"] is None:
@@ -631,8 +630,18 @@ def _apply_skill_prefix(comment: str, skills: List[Dict]) -> str:
     return f"{prefix}{comment}" if prefix else comment
 
 
-def build_canonical_doc(meta: Dict, comment: str, skills: List[Dict], hashtags: List[str], used_by: List[str], members: List[Dict]) -> Dict:
-    return {
+def build_canonical_doc(
+    meta: Dict,
+    comment: str,
+    skills: List[Dict],
+    hashtags: List[str],
+    used_by: List[str],
+    members: List[Dict],
+    detail: Optional[str] = None,
+    keywords: Optional[List[str]] = None,
+    capabilities: Optional[List[str]] = None,
+) -> Dict:
+    doc: Dict[str, Any] = {
         "meta": meta,
         "comment": comment,
         "skills": skills,
@@ -640,6 +649,13 @@ def build_canonical_doc(meta: Dict, comment: str, skills: List[Dict], hashtags: 
         "used_by": used_by,
         "members": [_canonical_member(m) for m in members],
     }
+    if detail:
+        doc["detail"] = detail
+    if keywords:
+        doc["keywords"] = keywords
+    if capabilities:
+        doc["capabilities"] = capabilities
+    return doc
 
 
 # ============================================================================
@@ -810,6 +826,9 @@ class ModuleProcessor:
         skills = self._build_skills(source_members, existing_doc.get("skills", []))
         used_by = self._find_reverse_deps(rel_path)
         hashtags = existing_doc.get("hashtags", [])
+        detail = existing_doc.get("detail")
+        keywords = existing_doc.get("keywords", [])
+        capabilities = existing_doc.get("capabilities", [])
 
         existing_members_map = {m["name"]: m for m in existing_doc.get("members", [])}
         merged_members = []
@@ -837,7 +856,7 @@ class ModuleProcessor:
         module_comment = _apply_skill_prefix(module_comment, skills)
 
         meta = {"module": self._get_fqname(rel_path), "source": str(rel_path), "language": "python"}
-        doc = build_canonical_doc(meta, module_comment, skills, hashtags, used_by, merged_members)
+        doc = build_canonical_doc(meta, module_comment, skills, hashtags, used_by, merged_members, detail, keywords, capabilities)
 
         existing_json_str = json_path.read_text(encoding="utf-8").strip() if json_path.exists() else ""
         new_json_str = json.dumps(doc, indent=2)
@@ -1248,8 +1267,7 @@ def cmd_sync(
         if not dry_run:
             _touch_json(json_path)
 
-    print(f"✓ Phase 1 complete: {py_count}/{len(stale_files)} stale Python file(s) synced"
-          + (f" ({lint_failures} lint failure(s) skipped)" if lint_failures else "") + ".")
+    print(f"✓ Phase 1 complete: {py_count}/{len(stale_files)} stale Python file(s) synced" + (f" ({lint_failures} lint failure(s) skipped)" if lint_failures else "") + ".")
 
     # Phase 1.5 — scrub synthetic comments
     scrubbed_count = 0
@@ -1322,6 +1340,57 @@ def _infill_all_py_json(guidance_dir: Path, llm_client: LLMClient, regen: bool, 
                 if new_comment != cur_module_comment:
                     doc["comment"] = new_comment
                     modified = True
+
+        # Generate detail (comprehensive module documentation) when missing
+        cur_detail = doc.get("detail", "")
+        if not cur_detail or regen:
+            source_preview = ""
+            src_path = PROJECT_ROOT / source
+            if src_path.exists():
+                try:
+                    source_preview = src_path.read_text(encoding="utf-8", errors="ignore")[:3000]
+                except Exception:
+                    pass
+            member_sigs = []
+            for m in doc.get("members", [])[:15]:
+                sig = m.get("signature", m.get("name", ""))
+                if sig:
+                    member_sigs.append(sig)
+            member_sigs_str = "\n".join(member_sigs)
+            detail_prompt = (
+                f"Write comprehensive module documentation for this Python file.\n\n"
+                f"File: {source}\nPublic API:\n{member_sigs_str}\n\n"
+                f"Source preview:\n{source_preview[:2500]}\n\n"
+                "Output three sections:\n"
+                "1. <detail>...</detail> — Detailed description under 500 words covering purpose, key abstractions, usage patterns, and implementation notes.\n"
+                "2. <keywords>...</keywords> — 5-10 comma-separated discovery keywords (API names, domain terms, design patterns).\n"
+                "3. <comment>...</comment> — Concise one-liner (max 80 chars).\n"
+            )
+            new_detail = llm_client.complete(detail_prompt, max_tokens=500, temperature=0.3)
+            if new_detail:
+                # Extract detail, keywords, and comment from response
+                detail_match = re.search(r"<detail>(.*?)</detail>", new_detail, re.DOTALL)
+                keywords_match = re.search(r"<keywords>(.*?)</keywords>", new_detail, re.DOTALL)
+                comment_match = re.search(r"<comment>(.*?)</comment>", new_detail, re.DOTALL)
+
+                if detail_match:
+                    new_detail_text = detail_match.group(1).strip()
+                    if new_detail_text and new_detail_text != cur_detail:
+                        doc["detail"] = new_detail_text
+                        modified = True
+
+                if keywords_match:
+                    keywords_text = keywords_match.group(1).strip()
+                    keywords_list = [k.strip() for k in keywords_text.split(",") if k.strip()]
+                    if keywords_list and keywords_list != doc.get("keywords", []):
+                        doc["keywords"] = keywords_list
+                        modified = True
+
+                if comment_match and not doc.get("comment"):
+                    new_comment_text = comment_match.group(1).strip()
+                    if new_comment_text:
+                        doc["comment"] = _apply_skill_prefix(new_comment_text, doc.get("skills", []))
+                        modified = True
 
         if _infill_members_json(doc.get("members", []), llm_client, source, "python", regen, debug):
             modified = True

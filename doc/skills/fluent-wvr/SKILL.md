@@ -1,4 +1,9 @@
-# Fluent WEAVER — The Synthesis Pipeline built on Wrapped Extensible Arenas with Vtables using Editable Reflection
+---
+name: fluent-wvr
+description: Crucially important Zig implementation of Fluent Wrapped Vtables with Reflection
+---
+
+# Fluent WVR — The Synthesis Pipeline built on Fluent Wrapped Vtables with Reflection
 
 **A design pattern guide for human coders and AI agents working in this codebase.**
 
