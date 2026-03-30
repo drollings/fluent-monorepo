@@ -44,16 +44,16 @@ pub const InferenceEngine = struct {
     pub fn init(allocator: std.mem.Allocator) InferenceEngine {
         return .{
             .allocator = allocator,
-            .rules = std.ArrayList(InferenceRule).init(allocator),
+            .rules = .{},
         };
     }
 
     pub fn deinit(self: *InferenceEngine) void {
-        self.rules.deinit();
+        self.rules.deinit(self.allocator);
     }
 
     pub fn addRule(self: *InferenceEngine, rule: InferenceRule) !void {
-        try self.rules.append(rule);
+        try self.rules.append(self.allocator, rule);
     }
 
     /// Materialise derived triples from `input` for all registered rules.
@@ -62,10 +62,10 @@ pub const InferenceEngine = struct {
     /// subject/predicate/object strings (allocated from `self.allocator`).
     /// Free with: for (result) |t| t.deinit(allocator); allocator.free(result);
     pub fn infer(self: *InferenceEngine, triples: []const Triple) ![]Triple {
-        var derived = std.ArrayList(Triple).init(self.allocator);
+        var derived: std.ArrayList(Triple) = .{};
         errdefer {
             for (derived.items) |t| t.deinit(self.allocator);
-            derived.deinit();
+            derived.deinit(self.allocator);
         }
 
         for (self.rules.items) |rule| {
@@ -77,7 +77,7 @@ pub const InferenceEngine = struct {
             }
         }
 
-        return derived.toOwnedSlice();
+        return derived.toOwnedSlice(self.allocator);
     }
 
     /// Persist inferred edges to SQLite via Library.
@@ -124,14 +124,14 @@ fn inferSubclassTransitivity(
 
     // Seed known set from base triples.
     for (base) |t| {
-        if (!isSubclassOf(t, predicate_iri)) continue;
+        if (!isSubclassOfTriple(t, predicate_iri)) continue;
         const s = tripleSubjectIri(t) orelse continue;
         const o = tripleObjectIri(t) orelse continue;
         try known.put(.{ .subject = s, .object = o }, {});
     }
     // Seed from already-derived triples.
     for (derived.items) |t| {
-        if (!isSubclassOf(t, predicate_iri)) continue;
+        if (!isSubclassOfTriple(t, predicate_iri)) continue;
         const s = tripleSubjectIri(t) orelse continue;
         const o = tripleObjectIri(t) orelse continue;
         try known.put(.{ .subject = s, .object = o }, {});
@@ -143,10 +143,10 @@ fn inferSubclassTransitivity(
         changed = false;
 
         // Collect current edge list (stable snapshot).
-        var edges = std.ArrayList(Edge).init(allocator);
-        defer edges.deinit();
+        var edges: std.ArrayList(Edge) = .{};
+        defer edges.deinit(allocator);
         var kit = known.keyIterator();
-        while (kit.next()) |k| try edges.append(k.*);
+        while (kit.next()) |k| try edges.append(allocator, k.*);
 
         for (edges.items) |ab| { // A → B
             for (edges.items) |bc| { // B → C
@@ -155,7 +155,7 @@ fn inferSubclassTransitivity(
                 if (known.contains(ac)) continue;
                 // New transitive edge: emit triple.
                 const new_triple = try buildSubclassTriple(allocator, ac.subject, predicate_iri, ac.object);
-                try derived.append(new_triple);
+                try derived.append(allocator, new_triple);
                 try known.put(ac, {});
                 changed = true;
             }
@@ -163,7 +163,7 @@ fn inferSubclassTransitivity(
     }
 }
 
-fn isSubclassOf(t: Triple, predicate_iri: []const u8) bool {
+fn isSubclassOfTriple(t: Triple, predicate_iri: []const u8) bool {
     return t.predicate == .iri and std.mem.eql(u8, t.predicate.iri, predicate_iri);
 }
 
@@ -200,6 +200,207 @@ fn buildSubclassTriple(
         .object = .{ .iri = o },
     };
 }
+
+// =============================================================================
+// M3.1 — CapabilityInference: duck-typing via rdfs:subClassOf hierarchy
+// =============================================================================
+//
+// Connects the ontology subclass hierarchy to capability matching so that a
+// tool registered for "Person" also matches queries about "Scientist" once the
+// is-a chain is materialised from YAGO triples.
+//
+// Usage:
+//   var ci = CapabilityInference.init(allocator);
+//   defer ci.deinit();
+//   try ci.loadHierarchy(triples, RDFS_SUBCLASS_OF);  // from YAGO ingest
+//   const has_cap = try ci.duckType("Scientist", "has_birth_date");
+
+/// Map from class IRI to all its direct superclass IRIs.
+/// Key is arena-owned; values list is arena-owned.
+const HierarchyMap = std.StringHashMapUnmanaged([][]const u8);
+
+/// Map from class IRI to the accumulated capability set (string names).
+/// Represents: class C can fulfil capability K if K ∈ capability_cache[C].
+const CapabilitySet = std.StringHashMapUnmanaged(void);
+const CapabilityCache = std.StringHashMapUnmanaged(CapabilitySet);
+
+/// Manages inference capabilities with a fixed-size structure, ensuring ownership and invariants on initialization/deinit.
+pub const CapabilityInference = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    /// Arena used for all internal string copies and list allocations.
+    arena: std.heap.ArenaAllocator,
+    /// Class IRI → direct superclass IRIs.
+    hierarchy: HierarchyMap,
+    /// Class IRI → set of capability names provided by that class (direct, not inherited).
+    direct_capabilities: CapabilityCache,
+    /// Class IRI → set of inherited capability names (computed lazily, cached).
+    inferred_cache: CapabilityCache,
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return .{
+            .allocator = allocator,
+            .arena = std.heap.ArenaAllocator.init(allocator),
+            .hierarchy = .{},
+            .direct_capabilities = .{},
+            .inferred_cache = .{},
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.hierarchy.deinit(self.allocator);
+        // CapabilitySets inside caches share arena memory; just clear the maps.
+        var dit = self.direct_capabilities.iterator();
+        while (dit.next()) |entry| entry.value_ptr.deinit(self.allocator);
+        self.direct_capabilities.deinit(self.allocator);
+        var iit = self.inferred_cache.iterator();
+        while (iit.next()) |entry| entry.value_ptr.deinit(self.allocator);
+        self.inferred_cache.deinit(self.allocator);
+        self.arena.deinit();
+    }
+
+    /// Populate the class hierarchy from a slice of RDF triples.
+    /// Only triples with `predicate_iri` (typically rdfs:subClassOf) are processed.
+    /// Strings are copied into the arena so the input triples may be freed afterwards.
+    pub fn loadHierarchy(
+        self: *Self,
+        triples: []const Triple,
+        predicate_iri: []const u8,
+    ) !void {
+        const a = self.arena.allocator();
+        for (triples) |t| {
+            if (!isSubclassOfTriple(t, predicate_iri)) continue;
+            const child_iri = tripleSubjectIri(t) orelse continue;
+            const parent_iri = tripleObjectIri(t) orelse continue;
+
+            const child_owned = try a.dupe(u8, child_iri);
+            const parent_owned = try a.dupe(u8, parent_iri);
+
+            // Invalidate any inferred cache entry for this class.
+            self.invalidate(child_iri);
+
+            // Append parent to child's superclass list.
+            const gop = try self.hierarchy.getOrPut(self.allocator, child_owned);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = &[_][]const u8{};
+            }
+            const old = gop.value_ptr.*;
+            const new_list = try a.alloc([]const u8, old.len + 1);
+            @memcpy(new_list[0..old.len], old);
+            new_list[old.len] = parent_owned;
+            gop.value_ptr.* = new_list;
+        }
+    }
+
+    /// Add a single rdfs:subClassOf edge without requiring a Triple slice.
+    /// Useful for building the hierarchy from static registries or DB query results.
+    /// Strings are copied into the arena; `child_iri` and `parent_iri` may be freed afterward.
+    pub fn addSubclassEdge(self: *Self, child_iri: []const u8, parent_iri: []const u8) !void {
+        const a = self.arena.allocator();
+        const child_owned = try a.dupe(u8, child_iri);
+        const parent_owned = try a.dupe(u8, parent_iri);
+        self.invalidate(child_iri);
+        const gop = try self.hierarchy.getOrPut(self.allocator, child_owned);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = &[_][]const u8{};
+        }
+        const old = gop.value_ptr.*;
+        const new_list = try a.alloc([]const u8, old.len + 1);
+        @memcpy(new_list[0..old.len], old);
+        new_list[old.len] = parent_owned;
+        gop.value_ptr.* = new_list;
+    }
+
+    /// Register a direct capability for `class_iri`.
+    /// Invalidates any cached inferred capabilities for `class_iri`.
+    pub fn registerCapability(
+        self: *Self,
+        class_iri: []const u8,
+        capability_name: []const u8,
+    ) !void {
+        self.invalidate(class_iri);
+        const a = self.arena.allocator();
+        const key = try a.dupe(u8, class_iri);
+        const cap = try a.dupe(u8, capability_name);
+
+        const gop = try self.direct_capabilities.getOrPut(self.allocator, key);
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        const cap_key = try a.dupe(u8, cap);
+        try gop.value_ptr.put(self.allocator, cap_key, {});
+    }
+
+    /// Invalidate cached inferred capabilities for `class_iri`.
+    /// Call after adding new hierarchy edges or capabilities.
+    pub fn invalidate(self: *Self, class_iri: []const u8) void {
+        if (self.inferred_cache.getPtr(class_iri)) |set| {
+            set.deinit(self.allocator);
+            _ = self.inferred_cache.remove(class_iri);
+        }
+    }
+
+    /// Return all capability names transitively available to `class_iri`
+    /// (its own capabilities + all ancestor capabilities via rdfs:subClassOf).
+    /// Result is cached; the returned pointer is valid until the next
+    /// registerCapability() or loadHierarchy() call for this class.
+    pub fn inferCapabilities(self: *Self, class_iri: []const u8) !*const CapabilitySet {
+        if (self.inferred_cache.getPtr(class_iri)) |cached| return cached;
+
+        const a = self.arena.allocator();
+        var merged: CapabilitySet = .{};
+        errdefer merged.deinit(self.allocator);
+
+        // Collect direct capabilities.
+        if (self.direct_capabilities.get(class_iri)) |direct| {
+            var kit = direct.keyIterator();
+            while (kit.next()) |k| try merged.put(self.allocator, try a.dupe(u8, k.*), {});
+        }
+
+        // Walk ancestors recursively (cycle-safe via a visited set).
+        var visited: std.StringHashMapUnmanaged(void) = .{};
+        defer visited.deinit(self.allocator);
+        try self.collectAncestorCaps(class_iri, &merged, &visited);
+
+        const owned_key = try a.dupe(u8, class_iri);
+        try self.inferred_cache.put(self.allocator, owned_key, merged);
+        return self.inferred_cache.getPtr(class_iri).?;
+    }
+
+    fn collectAncestorCaps(
+        self: *Self,
+        class_iri: []const u8,
+        out: *CapabilitySet,
+        visited: *std.StringHashMapUnmanaged(void),
+    ) !void {
+        if (visited.contains(class_iri)) return;
+        try visited.put(self.allocator, class_iri, {});
+
+        const parents = self.hierarchy.get(class_iri) orelse return;
+        const a = self.arena.allocator();
+        for (parents) |parent| {
+            // Include parent's direct capabilities.
+            if (self.direct_capabilities.get(parent)) |direct| {
+                var kit = direct.keyIterator();
+                while (kit.next()) |k| {
+                    try out.put(self.allocator, try a.dupe(u8, k.*), {});
+                }
+            }
+            // Recurse.
+            try self.collectAncestorCaps(parent, out, visited);
+        }
+    }
+
+    /// Return true if an instance of `class_iri` (or any of its ancestors)
+    /// can satisfy `capability_name`.
+    ///
+    /// Example:
+    ///   duckType("Scientist", "has_birth_date")
+    ///   → true if "Person" has_birth_date and "Scientist" subClassOf "Person"
+    pub fn duckType(self: *Self, class_iri: []const u8, capability_name: []const u8) !bool {
+        const caps = try self.inferCapabilities(class_iri);
+        return caps.contains(capability_name);
+    }
+};
 
 // =============================================================================
 // Tests
@@ -295,3 +496,58 @@ test "subClassOf transitivity: no new edges when already transitive" {
     try testing.expectEqual(@as(usize, 0), derived.len);
 }
 
+// CapabilityInference tests
+
+test "CapabilityInference: direct capability match" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    try ci.registerCapability("Person", "has_birth_date");
+    try testing.expect(try ci.duckType("Person", "has_birth_date"));
+    try testing.expect(!try ci.duckType("Person", "has_altitude"));
+}
+
+test "CapabilityInference: inherited capability via subClassOf" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    // Scientist subClassOf Person; Person has capability has_birth_date
+    const triple = try buildSubclassTriple(testing.allocator, "Scientist", RDFS_SUBCLASS_OF, "Person");
+    defer triple.deinit(testing.allocator);
+    try ci.loadHierarchy(&[_]Triple{triple}, RDFS_SUBCLASS_OF);
+    try ci.registerCapability("Person", "has_birth_date");
+
+    // Scientist should inherit has_birth_date from Person
+    try testing.expect(try ci.duckType("Scientist", "has_birth_date"));
+}
+
+test "CapabilityInference: transitive inheritance A→B→C" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    const ab = try buildSubclassTriple(testing.allocator, "Developer", RDFS_SUBCLASS_OF, "Person");
+    defer ab.deinit(testing.allocator);
+    const bc = try buildSubclassTriple(testing.allocator, "Person", RDFS_SUBCLASS_OF, "Agent");
+    defer bc.deinit(testing.allocator);
+    try ci.loadHierarchy(&[_]Triple{ ab, bc }, RDFS_SUBCLASS_OF);
+    try ci.registerCapability("Agent", "has_id");
+
+    // Developer should inherit has_id from Agent through Person
+    try testing.expect(try ci.duckType("Developer", "has_id"));
+}
+
+test "CapabilityInference: cache invalidation on new capability" {
+    var ci = CapabilityInference.init(testing.allocator);
+    defer ci.deinit();
+
+    const triple = try buildSubclassTriple(testing.allocator, "Cat", RDFS_SUBCLASS_OF, "Animal");
+    defer triple.deinit(testing.allocator);
+    try ci.loadHierarchy(&[_]Triple{triple}, RDFS_SUBCLASS_OF);
+
+    // Initially no capability
+    try testing.expect(!try ci.duckType("Cat", "can_purr"));
+
+    // Register capability and re-query (cache should be invalidated for Animal's subclasses)
+    try ci.registerCapability("Animal", "can_breathe");
+    try testing.expect(try ci.duckType("Cat", "can_breathe"));
+}

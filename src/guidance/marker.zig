@@ -203,12 +203,23 @@ test "testsCanBeSkipped: source newer than marker → false" {
     defer std.testing.allocator.free(marker);
     try touchTestMarker(marker);
 
+    // Ensure marker mtime is flushed to filesystem
+    {
+        const mf = try std.fs.openFileAbsolute(marker, .{});
+        defer mf.close();
+        try mf.sync();
+    }
+
+    // Sleep to ensure filesystem mtime resolution captures difference.
+    // Many filesystems have 1-10ms mtime precision; use 50ms for reliability.
+    std.Thread.sleep(50_000_000);
+
     // Create source AFTER marker (simulate edit)
-    std.Thread.sleep(1_000_000); // 1ms to ensure mtime difference
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
     defer std.testing.allocator.free(src);
     {
         const f = try std.fs.createFileAbsolute(src, .{});
+        try f.sync(); // Ensure mtime is written
         f.close();
     }
 

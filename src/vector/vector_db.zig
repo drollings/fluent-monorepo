@@ -2484,6 +2484,8 @@ pub const GuidanceDb = struct {
     }
 
     /// Hybrid search: fuse vector and keyword results.
+    /// M5.2: Three-way fusion with capability keywords.
+    /// Weights: cosine × 0.60 + BM25 × 0.25 + capability × 0.15
     fn hybridSearch(
         self: *Self,
         allocator: std.mem.Allocator,
@@ -2491,28 +2493,34 @@ pub const GuidanceDb = struct {
         query_embedding: []const f32,
         limit: usize,
     ) ![]SearchResult {
-        // Run both searches at 2x limit for fusion
-        const double_limit = limit * 2;
+        // Run all three searches at 3x limit for fusion
+        const triple_limit = limit * 3;
 
         // ── Vector results ──
-        const vec_results = self.vectorSearch(allocator, query_embedding, double_limit) catch &[_]SearchResult{};
+        const vec_results = self.vectorSearch(allocator, query_embedding, triple_limit) catch &[_]SearchResult{};
         defer {
             for (vec_results) |r| freeSearchResult(allocator, r);
             allocator.free(vec_results);
         }
 
-        // ── Keyword results ──
-        const kw_results = self.keywordSearch(allocator, query_text, double_limit) catch &[_]SearchResult{};
+        // ── Keyword results (BM25 on lod text) ──
+        const kw_results = self.keywordSearch(allocator, query_text, triple_limit) catch &[_]SearchResult{};
         defer {
             for (kw_results) |r| freeSearchResult(allocator, r);
             allocator.free(kw_results);
         }
 
-        // Build IdScore arrays for merging (use row id)
+        // ── Capability keyword results ──
+        const cap_results = self.capabilityKeywordSearch(allocator, query_text, triple_limit) catch &[_]SearchResult{};
+        defer {
+            for (cap_results) |r| freeSearchResult(allocator, r);
+            allocator.free(cap_results);
+        }
+
+        // Build IdScore arrays for three-way merging
         var vec_ids: std.ArrayList(vector.IdScore) = .empty;
         defer vec_ids.deinit(allocator);
         for (vec_results) |r| {
-            // We need the actual row id — look it up via file_path + name + module
             const row_id = self.lookupId(r.file_path, r.module, r.name, r.node_type) catch continue;
             try vec_ids.append(allocator, .{ .id = row_id, .score = @floatCast(r.score) });
         }
@@ -2524,13 +2532,23 @@ pub const GuidanceDb = struct {
             try kw_ids.append(allocator, .{ .id = row_id, .score = @floatCast(r.score) });
         }
 
-        const merged = try vector.hybridMerge(
+        var cap_ids: std.ArrayList(vector.IdScore) = .empty;
+        defer cap_ids.deinit(allocator);
+        for (cap_results) |r| {
+            const row_id = self.lookupId(r.file_path, r.module, r.name, r.node_type) catch continue;
+            try cap_ids.append(allocator, .{ .id = row_id, .score = @floatCast(r.score) });
+        }
+
+        // Three-way hybrid merge (M5.2 weights: 0.60, 0.25, 0.15)
+        const merged = try vector.hybridMergeThree(
             allocator,
             vec_ids.items,
             kw_ids.items,
-            0.65, // vector weight
-            0.35, // keyword weight
-            double_limit,
+            cap_ids.items,
+            0.60, // cosine weight
+            0.25, // BM25 weight
+            0.15, // capability keyword weight
+            triple_limit,
         );
         defer allocator.free(merged);
 
@@ -2555,6 +2573,102 @@ pub const GuidanceDb = struct {
             for (result_slice[actual..]) |r| freeSearchResult(allocator, r);
         }
         return allocator.realloc(result_slice, actual) catch result_slice[0..actual];
+    }
+
+    /// Capability keyword search: match query terms against capability_keywords table.
+    fn capabilityKeywordSearch(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        query_text: []const u8,
+        limit: usize,
+    ) ![]SearchResult {
+        _ = limit;
+        var results: std.ArrayList(SearchResult) = .empty;
+        errdefer {
+            for (results.items) |r| freeSearchResult(allocator, r);
+            results.deinit(allocator);
+        }
+
+        // Tokenize query into lowercase keywords
+        var keywords: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (keywords.items) |kw| allocator.free(kw);
+            keywords.deinit(allocator);
+        }
+
+        var iter = std.mem.tokenizeAny(u8, query_text, " \t\n\r,.;:!?\"'()[]{}/\\");
+        while (iter.next()) |token| {
+            const lower = try std.ascii.allocLowerString(allocator, token);
+            try keywords.append(allocator, lower);
+        }
+
+        if (keywords.items.len == 0) return allocator.alloc(SearchResult, 0);
+
+        // Simplified: just match any keyword from capability_keywords
+        var stmt: ?*c.sqlite3_stmt = null;
+        const simple_sql = "SELECT DISTINCT a.id, a.file_path, a.module, a.name, a.node_type, a.lod0 " ++
+            "FROM ast_nodes a " ++
+            "JOIN capability_keywords ck ON ck.capability_name = a.name ";
+
+        if (c.sqlite3_prepare_v2(self.db, simple_sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(SearchResult, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var seen_ids = std.AutoHashMap(i64, void).init(allocator);
+        defer seen_ids.deinit();
+
+        var scored_results: std.ArrayList(struct {
+            id: i64,
+            score: f32,
+            file_path: []const u8,
+            module: []const u8,
+            name: []const u8,
+            node_type: []const u8,
+            lod0: []const u8,
+        }) = .empty;
+        defer scored_results.deinit(allocator);
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const row_id = c.sqlite3_column_int64(stmt, 0);
+            if (seen_ids.contains(row_id)) continue;
+            try seen_ids.put(row_id, {});
+
+            const fp = try dupeCol(stmt.?, 1, allocator);
+            const mod = try dupeCol(stmt.?, 2, allocator);
+            const nm = try dupeCol(stmt.?, 3, allocator);
+            const nt = try dupeCol(stmt.?, 4, allocator);
+            const lod0 = try dupeCol(stmt.?, 5, allocator);
+
+            try scored_results.append(allocator, .{
+                .id = row_id,
+                .score = 1.0, // Default score for capability match
+                .file_path = fp,
+                .module = mod,
+                .name = nm,
+                .node_type = nt,
+                .lod0 = lod0,
+            });
+        }
+
+        for (scored_results.items) |sr| {
+            try results.append(allocator, .{
+                .file_path = sr.file_path,
+                .source = sr.lod0,
+                .module = sr.module,
+                .name = sr.name,
+                .node_type = sr.node_type,
+                .signature = null,
+                .comment = null,
+                .detail = null,
+                .line = null,
+                .used_by = &[_][]const u8{},
+                .language = "unknown",
+                .score = sr.score,
+            });
+        }
+
+        return results.toOwnedSlice(allocator);
     }
 
     fn lookupId(

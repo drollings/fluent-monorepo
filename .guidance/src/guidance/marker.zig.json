@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "guidance", "mtime", "incremental processing", "test cycle", "JSON file", "file monitoring", "language tools"],
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_decl",

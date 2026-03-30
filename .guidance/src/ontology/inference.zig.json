@@ -12,7 +12,6 @@
       "name": "RuleType",
       "match_hash": "e0580ff100d9e3bde1c80fef63b8d1aa23fa8ad281e7f73abd06cd2e49b2b9b6",
       "signature": "keyword_enum RuleType { ... }",
-      "comment": "Defines inference rules with plain English semantics, manages ownership, ensures invariants; key model is rule-based inference.",
       "is_pub": true,
       "members": [
         {
@@ -47,7 +46,6 @@
       "name": "InferenceEngine",
       "match_hash": "e041047b304df9640feaa8b00589fd7a49d19ac589d4cdada71dd3588eace69a",
       "signature": "keyword_struct InferenceEngine { ... }",
-      "comment": "Ontology inference engine.\n\nCall `addRule` to register rules, then `infer(triples)` to materialise\nderived triples.  The engine is stateless between `infer` calls.",
       "is_pub": true,
       "members": [
         {
@@ -84,7 +82,6 @@
             { "name": "rule", "type": "InferenceRule" }
           ],
           "returns": "void",
-          "comment": "Add a rule for future use.",
           "is_pub": true,
           "line": 55
         }
@@ -98,7 +95,6 @@
             { "name": "triples", "type": "[]const Triple" }
           ],
           "returns": "[]Triple",
-          "comment": "Materialise derived triples from `input` for all registered rules.\n\nReturns a caller-owned slice.  Each Triple in the slice owns its\nsubject/predicate/object strings (allocated from `self.allocator`).\nFree with: for (result) |t| t.deinit(allocator); allocator.free(result);",
           "is_pub": true,
           "line": 64
         }
@@ -111,7 +107,6 @@
             { "name": "self", "type": "*InferenceEngine" }
           ],
           "returns": "void",
-          "comment": "Persist inferred edges to SQLite via Library.\nCurrently a no-op stub (see materializeInto for the Library variant).",
           "is_pub": true,
           "line": 85
         }
@@ -130,15 +125,14 @@
         { "name": "predicate_iri", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Build the transitive closure of `rdfs:subClassOf` edges using iterative\nforward chaining.  New triples are appended to `derived`.\n\nAlgorithm: repeat until no new triples are produced.\n  For each triple (A, subClassOf, B) and (B, subClassOf, C):\n    if (A, subClassOf, C) not already in known set → emit it.",
       "is_pub": false,
       "line": 100
     },
     {
       "type": "fn_private",
-      "name": "isSubclassOf",
-      "match_hash": "c3979c35dc8cbf51fa66bbf323dc490a775b2c71614b9873828eea18e0de9606",
-      "signature": "fn isSubclassOf(t: Triple, predicate_iri: []const u8) -> bool",
+      "name": "isSubclassOfTriple",
+      "match_hash": "e3fcd941fa8266b6f1d1922949002980386dc1d74c68baa2805457fa70f9d2ab",
+      "signature": "fn isSubclassOfTriple(t: Triple, predicate_iri: []const u8) -> bool",
       "params": [
         { "name": "t", "type": "Triple" },
         { "name": "predicate_iri", "type": "[]const u8" }
@@ -183,45 +177,199 @@
         { "name": "object_iri", "type": "[]const u8" }
       ],
       "returns": "Triple",
-      "comment": "Allocate a new Triple with owned IRI strings.",
       "is_pub": false,
       "line": 185
+    },
+    {
+      "type": "struct",
+      "name": "CapabilityInference",
+      "match_hash": "7ef97bf0f1a0389723fe02f978862a69b37ce9a8b942c5d851f25cf0ec74d0a5",
+      "signature": "keyword_struct CapabilityInference { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "4cf7ef047edd8c359228c38b52c1f94c509665d7e1cc3508be970d1f9e73bb3f",
+          "signature": "fn init(allocator: std.mem.Allocator) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 241
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 251
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "loadHierarchy",
+          "match_hash": "6fc730dc0f16d3df029d8def8dc3e87dafbdf517f80ae3dd1a6f427dbd649189",
+          "signature": "fn loadHierarchy(self: *Self, triples: []const Triple, predicate_iri: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "triples", "type": "[]const Triple" },
+            { "name": "predicate_iri", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 266
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "addSubclassEdge",
+          "match_hash": "804a7349b6384ed20b63727ce654f9db13c68f24983a69658f9fdcbd448e0ce9",
+          "signature": "fn addSubclassEdge(self: *Self, child_iri: []const u8, parent_iri: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "child_iri", "type": "[]const u8" },
+            { "name": "parent_iri", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 299
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "registerCapability",
+          "match_hash": "aff97f37c44462c147b9af009656825751fe1c4eacf9e0d60105a21db5a61b71",
+          "signature": "fn registerCapability(self: *Self, class_iri: []const u8, capability_name: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "class_iri", "type": "[]const u8" },
+            { "name": "capability_name", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 317
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "invalidate",
+          "match_hash": "4312029d6ed449e9be88a2a6fcd56e51bfa9651208cd5906f0f4a72a2c1bc0f3",
+          "signature": "fn invalidate(self: *Self, class_iri: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "class_iri", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 335
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "inferCapabilities",
+          "match_hash": "97175fe4f73d96220bd248316d4f30398b25f49b3ebcff7298be8d4827051f3a",
+          "signature": "fn inferCapabilities(self: *Self, class_iri: []const u8) -> *const CapabilitySet",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "class_iri", "type": "[]const u8" }
+          ],
+          "returns": "*const CapabilitySet",
+          "is_pub": true,
+          "line": 346
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "collectAncestorCaps",
+          "match_hash": "b956f28d0c3f640f963088c03eb8797c30564f48f265554455b167f7d1860399",
+          "signature": "fn collectAncestorCaps(self: *Self, class_iri: []const u8, out: *CapabilitySet, visited: *std.StringHashMapUnmanaged(void)) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "class_iri", "type": "[]const u8" },
+            { "name": "out", "type": "*CapabilitySet" },
+            { "name": "visited", "type": "*std.StringHashMapUnmanaged(void)" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 369
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "duckType",
+          "match_hash": "fefc817758c63769c63332ea7dab4a5bbb9e3044b3ff2ed550fb096811198a75",
+          "signature": "fn duckType(self: *Self, class_iri: []const u8, capability_name: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "class_iri", "type": "[]const u8" },
+            { "name": "capability_name", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 399
+        }
+      ],
+      "line": 228
     },
     {
       "type": "test_decl",
       "name": "inference stub returns empty triples",
       "is_pub": false,
-      "line": 211
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "inference stub materialize is no-op",
       "is_pub": false,
-      "line": 219
+      "line": 420
     },
     {
       "type": "test_decl",
       "name": "inference rule addition",
       "is_pub": false,
-      "line": 225
+      "line": 426
     },
     {
       "type": "test_decl",
       "name": "subClassOf transitivity: A→B, B→C gives A→C",
       "is_pub": false,
-      "line": 236
+      "line": 437
     },
     {
       "type": "test_decl",
       "name": "subClassOf transitivity: longer chain A→B→C→D",
       "is_pub": false,
-      "line": 259
+      "line": 460
     },
     {
       "type": "test_decl",
       "name": "subClassOf transitivity: no new edges when already transitive",
       "is_pub": false,
-      "line": 281
+      "line": 482
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: direct capability match",
+      "is_pub": false,
+      "line": 501
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: inherited capability via subClassOf",
+      "is_pub": false,
+      "line": 510
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: transitive inheritance A→B→C",
+      "is_pub": false,
+      "line": 524
+    },
+    {
+      "type": "test_decl",
+      "name": "CapabilityInference: cache invalidation on new capability",
+      "is_pub": false,
+      "line": 539
     }
   ]
 }

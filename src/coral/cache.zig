@@ -15,6 +15,7 @@ const local_model = @import("local_model");
 const common_registry = @import("common").registry;
 const BuilderError = common_registry.BuilderError;
 const BuilderPhase = common_registry.BuilderPhase;
+const logIfError = common_registry.logIfError;
 const llm_mod = @import("llm");
 const frontier = @import("frontier.zig");
 const LocalDecomposer = local_model.LocalDecomposer;
@@ -282,8 +283,7 @@ pub const QueueReactorBuilder = struct {
             self.setError(.validation, "library", "required", error.LibraryRequired);
         }
         if (self.err) |e| {
-            // Caller can log e.message for diagnostics.
-            _ = e.message;
+            logIfError(e);
             return e.cause;
         }
         var reactor = QueueReactor{
@@ -1205,5 +1205,3 @@ test "ParallelRouter: routeBatch with empty input" {
     defer allocator.free(results);
     try testing.expectEqual(@as(usize, 0), results.len);
 }
-
-

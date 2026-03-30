@@ -281,5 +281,7 @@ test "coral: core module imports compile" {
     // They cannot be imported relatively when coral_db is a build dep (module conflict).
     _ = coral_db; // exercises db.zig + schema.zig via named module
     _ = @import("scrub.zig"); // scrub.zig is not part of coral_db, safe to import relatively
+    _ = @import("yago_ingest.zig"); // yago_ingest.zig pulls in coral_batch + ontology
+    _ = @import("token_budget.zig"); // M7.1 TokenEstimator
+    _ = @import("metrics.zig"); // M8.1 LatencyHistogram
 }
-

@@ -15,64 +15,60 @@
       "name": "CacheTier",
       "match_hash": "2ee80326d2e14d4cda90f086ed56116c4e5ae736db1b9b043ef63c404ed5de0e",
       "signature": "keyword_enum CacheTier { ... }",
-      "comment": "Identifies which routing tier resolved a query; numeric value matches tier latency ordering (L1=fastest).",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "l1_memory",
           "is_pub": false,
-          "line": 34
+          "line": 35
         }
     ,    {
           "type": "enum_field",
           "name": "l2_workflow",
           "is_pub": false,
-          "line": 35
+          "line": 36
         }
     ,    {
           "type": "enum_field",
           "name": "l3_graph",
           "is_pub": false,
-          "line": 36
+          "line": 37
         }
     ,    {
           "type": "enum_field",
           "name": "l4_semantic",
           "is_pub": false,
-          "line": 37
+          "line": 38
         }
     ,    {
           "type": "enum_field",
           "name": "l4_5_decompose",
-          "comment": "P6.2 — Local model decomposition: query split into sub-tasks then re-routed.",
           "is_pub": false,
-          "line": 39
+          "line": 40
         }
     ,    {
           "type": "enum_field",
           "name": "l5_llm",
           "is_pub": false,
-          "line": 40
+          "line": 41
         }
       ],
-      "line": 33
+      "line": 34
     },
     {
       "type": "struct",
       "name": "RoutingResult",
       "match_hash": "9b535d00a3c6018e6fc792300c3d96697b113c6eeafac16989ab740a843a940a",
       "signature": "keyword_struct RoutingResult { ... }",
-      "comment": "Manages routing result structures with fixed-size buffers; owned by the module; ensures consistent state across operations.",
       "is_pub": true,
-      "line": 44
+      "line": 45
     },
     {
       "type": "struct",
       "name": "L1Cache",
       "match_hash": "c35eede1265d83dbfaccdee6b264cac4f4bbfee7990f9507cb186022ba27c155",
       "signature": "keyword_struct L1Cache { ... }",
-      "comment": "Manages low-latency cache operations with fixed-size buffers; owned by the system; ensures consistent key-value storage.",
       "is_pub": true,
       "members": [
         {
@@ -85,7 +81,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 78
+          "line": 79
         }
     ,    {
           "type": "fn_decl",
@@ -98,7 +94,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 82
+          "line": 83
         }
     ,    {
           "type": "fn_decl",
@@ -110,7 +106,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 90
+          "line": 91
         }
     ,    {
           "type": "fn_decl",
@@ -122,9 +118,8 @@
             { "name": "query_hash", "type": "[]const u8" }
           ],
           "returns": "?RoutingResult",
-          "comment": "Look up `query_hash` and promote the entry to most-recently-used.\nReturns a copy of the RoutingResult, or null if not cached.",
           "is_pub": true,
-          "line": 104
+          "line": 105
         }
     ,    {
           "type": "fn_decl",
@@ -137,9 +132,8 @@
             { "name": "result", "type": "RoutingResult" }
           ],
           "returns": "void",
-          "comment": "Insert (or replace) `result` for `query_hash`, evicting the LRU entry\nif the cache is at `max_entries` capacity.",
           "is_pub": true,
-          "line": 116
+          "line": 117
         }
     ,    {
           "type": "fn_private",
@@ -152,7 +146,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 161
+          "line": 162
         }
     ,    {
           "type": "fn_private",
@@ -165,17 +159,16 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 174
+          "line": 175
         }
       ],
-      "line": 70
+      "line": 71
     },
     {
       "type": "struct",
       "name": "QueueReactorBuilder",
       "match_hash": "c439c966ec316b4c7a44c24ba368b1a09c195ff15901f63fb47c5aa0ff9da480",
       "signature": "keyword_struct QueueReactorBuilder { ... }",
-      "comment": "Manages queue reactor construction with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
       ],
@@ -191,7 +184,7 @@
           ],
           "returns": "QueueReactorBuilder",
           "is_pub": true,
-          "line": 221
+          "line": 222
         }
     ,    {
           "type": "fn_private",
@@ -207,7 +200,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 228
+          "line": 229
         }
     ,    {
           "type": "fn_decl",
@@ -220,7 +213,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 233
+          "line": 234
         }
     ,    {
           "type": "fn_decl",
@@ -233,7 +226,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 238
+          "line": 239
         }
     ,    {
           "type": "fn_decl",
@@ -246,7 +239,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 243
+          "line": 244
         }
     ,    {
           "type": "fn_decl",
@@ -259,7 +252,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 248
+          "line": 249
         }
     ,    {
           "type": "fn_decl",
@@ -272,7 +265,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 253
+          "line": 254
         }
     ,    {
           "type": "fn_decl",
@@ -284,9 +277,8 @@
             { "name": "cfg", "type": "DecomposerConfig" }
           ],
           "returns": "*@This()",
-          "comment": "Enable L4.5 local decomposition with the supplied LLM config.",
           "is_pub": true,
-          "line": 259
+          "line": 260
         }
     ,    {
           "type": "fn_decl",
@@ -298,9 +290,8 @@
             { "name": "n", "type": "u32" }
           ],
           "returns": "*@This()",
-          "comment": "Enable async routing via a thread pool with `n` worker threads.\nPass 0 to use the default (number of logical CPUs).",
           "is_pub": true,
-          "line": 266
+          "line": 267
         }
     ,    {
           "type": "fn_decl",
@@ -312,9 +303,8 @@
             { "name": "cfg", "type": "LlmConfig" }
           ],
           "returns": "*@This()",
-          "comment": "Enable L5 frontier LLM routing with the supplied config.",
           "is_pub": true,
-          "line": 272
+          "line": 273
         }
     ,    {
           "type": "fn_decl",
@@ -325,19 +315,17 @@
             { "name": "self", "type": "*@This()" }
           ],
           "returns": "QueueReactor",
-          "comment": "Terminal method: build the QueueReactor.\nAlways deinits the builder's arena on return — do not call setters after build().",
           "is_pub": true,
-          "line": 279
+          "line": 280
         }
       ],
-      "line": 206
+      "line": 207
     },
     {
       "type": "struct",
       "name": "QueueReactor",
       "match_hash": "db652831919d69cb01c9da88363a46e1360af7fb9bddaa43718bc3ab0ff82dc5",
       "signature": "keyword_struct QueueReactor { ... }",
-      "comment": "Manages asynchronous queue operations with fixed-size buffers; owned by the system; ensures data integrity during transitions.",
       "is_pub": true,
       "members": [
         {
@@ -376,7 +364,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "*Task",
-          "comment": "Submit `query` as an async routing task on the thread pool.\nReturns a heap-allocated Task; caller must call `task.arena.deinit()` after\ninspecting the result.  Falls back to synchronous execution if no thread pool.",
           "is_pub": true,
           "line": 378
         }
@@ -403,7 +390,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "anyerror!RoutingResult",
-          "comment": "Route a query through the L1-L5 hierarchy.",
           "is_pub": true,
           "line": 421
         }
@@ -417,7 +403,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "?WasmTool",
-          "comment": "Return the first tested + non-empty WASM tool from the pre-loaded slice.\nFull trait-matching via popCount bitsets is deferred to M5+.",
           "is_pub": false,
           "line": 516
         }
@@ -431,7 +416,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Decode a WasmTool's base64 bytes and call its \"run\" entry-point with\n`query` as input.  Returns the raw output (allocator-owned) or null on\nany failure (no tool found, decode error, Extism runtime unavailable).",
           "is_pub": false,
           "line": 527
         }
@@ -484,7 +468,6 @@
             { "name": "query", "type": "[]const u8" }
           ],
           "returns": "?RoutingResult",
-          "comment": "Call the frontier LLM with a minimized context prompt.\nReturns null when frontier_cfg is not set or the LLM call fails.\nOn success, returns a RoutingResult with llm_response set (allocator-owned).",
           "is_pub": false,
           "line": 636
         }
@@ -513,7 +496,6 @@
             { "name": "depth", "type": "u8" }
           ],
           "returns": "?[]ContextNode",
-          "comment": "Decompose `query` into sub-tasks via local LLM and route each recursively.\nReturns merged nodes slice (owned by self.allocator) or null on failure.\n`depth` guards against unbounded recursion; max_depth comes from DecomposerConfig.",
           "is_pub": false,
           "line": 699
         }
@@ -528,7 +510,6 @@
             { "name": "result", "type": "RoutingResult" }
           ],
           "returns": "void",
-          "comment": "Cache a successful routing result in L1.",
           "is_pub": true,
           "line": 742
         }
@@ -567,7 +548,6 @@
       "name": "ParallelRouter",
       "match_hash": "c410a0893f626316ecac288ce474c518b060b506bf452fa895dae5c19aea7ab4",
       "signature": "keyword_struct ParallelRouter { ... }",
-      "comment": "Routes a batch of queries in parallel using the reactor's thread pool.\nFalls back to sequential routing if no thread pool is configured.",
       "is_pub": true,
       "members": [
         {
@@ -593,7 +573,6 @@
             { "name": "queries", "type": "[]const []const u8" }
           ],
           "returns": "[]RoutingResult",
-          "comment": "Route all queries in `queries` concurrently.\nReturns a slice of RoutingResults (same order as input).\nCaller must free results and each result's nodes.",
           "is_pub": true,
           "line": 823
         }

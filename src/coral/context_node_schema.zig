@@ -125,6 +125,62 @@ pub const BinaryContextNode = extern struct {
     }
 };
 
+// ---------------------------------------------------------------------------
+// Binary IPC — Execution Request / Result
+// ---------------------------------------------------------------------------
+// Defined here (in the canonical binary schema file) so both wasm.zig and
+// execution_request.zig can import these types via coral_schema without
+// creating a circular dependency.
+
+/// Execution request sent to a WASM tool over the binary IPC channel.
+pub const BinaryExecutionRequest = extern struct {
+    header: BinaryHeader align(1),
+    target_id: i64 align(1),
+    input_offset: u32 align(1),
+    input_len: u32 align(1),
+    flags: u32 align(1),
+
+    pub const Flag = struct {
+        pub const VERBOSE: u32 = 1 << 0;
+        pub const DRY_RUN: u32 = 1 << 1;
+        pub const FORCE: u32 = 1 << 2;
+    };
+};
+
+/// Execution result returned from a WASM tool over the binary IPC channel.
+///
+/// provides_words_count / provides_words_offset encode the `provides` bitset
+/// as an array of u64 words appended after this header.
+/// Use getProvidesBitSet() to reconstruct a DynamicBitSetUnmanaged.
+pub const BinaryExecutionResult = extern struct {
+    header: BinaryHeader align(1),
+    success: u32 align(1), // 0 = failure, 1 = success
+    error_code: u32 align(1),
+    output_offset: u32 align(1),
+    output_len: u32 align(1),
+    provides_words_offset: u32 align(1),
+    provides_words_count: u32 align(1),
+
+    /// Reconstruct the provides bitset from the trailing word array.
+    /// Caller owns the returned bitset and must deinit it.
+    pub fn getProvidesBitSet(
+        self: *const BinaryExecutionResult,
+        allocator: std.mem.Allocator,
+        payload: []const u8,
+    ) !std.bit_set.DynamicBitSetUnmanaged {
+        const wc = self.provides_words_count;
+        const bit_length = @as(usize, wc) * @bitSizeOf(usize);
+        var bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, bit_length);
+        errdefer bs.deinit(allocator);
+        const off = self.provides_words_offset;
+        for (0..wc) |i| {
+            const w = std.mem.readInt(u64, payload[off + i * 8 ..][0..8], .little);
+            bs.masks[i] = @intCast(w);
+        }
+        return bs;
+    }
+};
+
 /// Reflection-based schema for ContextNode: holds the 11 field accessors used by MCP tool-schema generation and validation.
 pub const ContextNodeSchema = struct {
     /// SQL bind indices — column order for INSERT OR REPLACE in context_nodes.

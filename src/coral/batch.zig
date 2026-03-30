@@ -34,18 +34,25 @@ pub const ProgressCallback = *const fn (triples_processed: usize, nodes_created:
 // Ingestion statistics
 // ---------------------------------------------------------------------------
 
-/// Running counters for one ingestion pass; zeroed at the start of each batch run.
+/// Tracks ingestion statistics with a fixed-size buffer pool; managed centrally; not thread-safe.
 pub const IngestStats = struct {
     triples_processed: usize = 0,
     nodes_created: usize = 0,
     edges_created: usize = 0,
     errors_skipped: usize = 0,
     batches_flushed: usize = 0,
+    /// Triples skipped by `BatchConfig.filter_fn`.
+    triples_filtered: usize = 0,
 };
 
 // ---------------------------------------------------------------------------
 // BatchIngestor config
 // ---------------------------------------------------------------------------
+
+/// Manages batch configuration settings with fixed-size buffers; owned by the batch engine; ensures consistent state across runs.
+/// Optional triple filter: called for each parsed triple before `processTriple`.
+/// Return false to skip the triple (counted in `IngestStats.triples_filtered`).
+pub const FilterFn = *const fn (triple: parser_mod.Triple) bool;
 
 /// Manages batch configuration settings with fixed-size buffers; owned by the batch engine; ensures consistent state across runs.
 pub const BatchConfig = struct {
@@ -56,6 +63,8 @@ pub const BatchConfig = struct {
     skip_errors: bool = false,
     /// Stop after processing this many triples (0 = unlimited).
     max_triples: usize = 0,
+    /// Optional filter: triples for which the function returns false are skipped.
+    filter_fn: ?FilterFn = null,
 };
 
 // ---------------------------------------------------------------------------
@@ -138,6 +147,14 @@ pub const BatchIngestor = struct {
             const triple = triple_opt orelse break;
             defer triple.deinit(self.allocator);
 
+            // Apply optional filter before processing.
+            if (self.config.filter_fn) |f| {
+                if (!f(triple)) {
+                    stats.triples_filtered += 1;
+                    continue;
+                }
+            }
+
             try mapper.processTriple(triple);
             stats.triples_processed += 1;
             triples_in_batch += 1;
@@ -203,6 +220,12 @@ pub const IngestBuilder = struct {
     /// Stop after processing this many triples (0 = unlimited).
     pub fn maxTriples(self: *IngestBuilder, n: usize) *IngestBuilder {
         self.config.max_triples = n;
+        return self;
+    }
+
+    /// Set a filter function: triples for which `f` returns false are skipped.
+    pub fn filter(self: *IngestBuilder, f: FilterFn) *IngestBuilder {
+        self.config.filter_fn = f;
         return self;
     }
 
@@ -406,3 +429,5 @@ test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     try testing.expectEqual(@as(usize, 100), stats.triples_processed);
     try testing.expect(stats.nodes_created > 0);
 }
+
+

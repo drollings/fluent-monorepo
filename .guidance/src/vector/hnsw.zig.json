@@ -1,0 +1,222 @@
+{
+  "meta": {
+    "module": "src.vector.hnsw",
+    "source": "src/vector/hnsw.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "HnswIndex",
+      "match_hash": "33dce003ad91faa1b2a4919adc830e0110e5bf61924e963712856996003339e7",
+      "signature": "keyword_struct HnswIndex { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "634d0adc1eb1d599195ffa9e94b3168611fdc51d48380f4f62da635944180414",
+          "signature": "fn init(allocator: std.mem.Allocator, dimensions: usize, max_elements: usize) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "dimensions", "type": "usize" },
+            { "name": "max_elements", "type": "usize" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 50
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withM",
+          "match_hash": "fc228cf5dcd7a735c3f40799d49f7f98b6d28af107b5f58ffa9c37274d1016e8",
+          "signature": "fn withM(self: *Self, m: usize) -> *Self",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "m", "type": "usize" }
+          ],
+          "returns": "*Self",
+          "is_pub": true,
+          "line": 65
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withEfConstruction",
+          "match_hash": "a8c4c17da872ab26d329b92df9a8ba50db3ed079fca2a4db5771e22861cf4799",
+          "signature": "fn withEfConstruction(self: *Self, ef: usize) -> *Self",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "ef", "type": "usize" }
+          ],
+          "returns": "*Self",
+          "is_pub": true,
+          "line": 70
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "withEfSearch",
+          "match_hash": "c57c251f4e8cd46a8d0fa9c1d1f8a879575d7ac3381b553667a78304e4df9ad8",
+          "signature": "fn withEfSearch(self: *Self, ef: usize) -> *Self",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "ef", "type": "usize" }
+          ],
+          "returns": "*Self",
+          "is_pub": true,
+          "line": 75
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 81
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "add",
+          "match_hash": "40996eddc0812cace7600a320d9a205717fd3db7c2cacd84b8f1921a45af90d9",
+          "signature": "fn add(self: *Self, id: i64, vector: []const f32) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "id", "type": "i64" },
+            { "name": "vector", "type": "[]const f32" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 94
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "search",
+          "match_hash": "368c584d1b77ff7ba97234de439df7255ed2b952a0ad1241848bbc04763948b5",
+          "signature": "fn search(self: *Self, query: []const f32, k: usize) -> []struct { id: i64, distance: f32 }",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query", "type": "[]const f32" },
+            { "name": "k", "type": "usize" }
+          ],
+          "returns": "[]struct { id: i64, distance: f32 }",
+          "is_pub": true,
+          "line": 134
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "remove",
+          "match_hash": "49f480b560014b3aca06f8019ea9bec44c3769357d66a5e461ac36297fb83bd6",
+          "signature": "fn remove(self: *Self, id: i64) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "id", "type": "i64" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 200
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "save",
+          "match_hash": "726ca8029472f3cb12cc9fb96f91bf235733cd937042b25ec87f1fc539068d96",
+          "signature": "fn save(self: *const Self, path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 218
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "load",
+          "match_hash": "2a4f1550e42766bf519e2155d6a869d10bf0e716fdb702001f6c0da264b3a555",
+          "signature": "fn load(self: *Self, path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 242
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "randomLevel",
+          "match_hash": "b917a8e8f61ae8849bc761112fcec4a3a093abdf333139bf280027315d433085",
+          "signature": "fn randomLevel(self: *Self) -> usize",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "usize",
+          "is_pub": false,
+          "line": 270
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "distance",
+          "match_hash": "36d8572ffef9f17adb6255657b3e248d23057d6f2cda71ecd859847f08901025",
+          "signature": "fn distance(self: *const Self, a: []const f32, b: []const f32) -> f32",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "a", "type": "[]const f32" },
+            { "name": "b", "type": "[]const f32" }
+          ],
+          "returns": "f32",
+          "is_pub": false,
+          "line": 278
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "connect",
+          "match_hash": "dbc7f7f3c74bd569ba62421dd92fb3e9454bee36865e94114d62638131621f9b",
+          "signature": "fn connect(self: *Self, id1: i64, id2: i64, layer: usize) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "id1", "type": "i64" },
+            { "name": "id2", "type": "i64" },
+            { "name": "layer", "type": "usize" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 288
+        }
+      ],
+      "line": 16
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: init and deinit",
+      "is_pub": false,
+      "line": 328
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: add single node",
+      "is_pub": false,
+      "line": 336
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: dimension mismatch returns error",
+      "is_pub": false,
+      "line": 347
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: search returns nearest neighbors",
+      "is_pub": false,
+      "line": 355
+    },
+    {
+      "type": "test_decl",
+      "name": "HnswIndex: remove node",
+      "is_pub": false,
+      "line": 371
+    }
+  ]
+}

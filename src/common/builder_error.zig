@@ -11,6 +11,7 @@
 //! arena; the arena is deinited by the terminal method (register / build / sync).
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 // ── Phase ─────────────────────────────────────────────────────────────────────
 
@@ -114,6 +115,20 @@ pub const BuilderError = struct {
 
 /// Maximum bytes copied from a user-supplied value into a BuilderError.
 pub const max_value_len: usize = 128;
+
+/// Log `err.message` at the `err` level if `maybe_err` is non-null.
+/// Call this at terminal builder methods before returning the error.
+///
+///   if (self.err) |e| {
+///       logIfError(e);
+///       return e.cause;
+///   }
+pub fn logIfError(maybe_err: ?*const BuilderError) void {
+    const e = maybe_err orelse return;
+    // Skip logging during test builds to avoid test output pollution.
+    if (builtin.is_test) return;
+    std.log.err("builder error: {s}", .{e.message});
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -22,5 +22,6 @@ pub const cosineSimilarity = math.cosineSimilarity;
 pub const vecToBytes = math.vecToBytes;
 pub const bytesToVec = math.bytesToVec;
 pub const hybridMerge = math.hybridMerge;
+pub const hybridMergeThree = math.hybridMergeThree;
 pub const ScoredResult = math.ScoredResult;
 pub const IdScore = math.IdScore;

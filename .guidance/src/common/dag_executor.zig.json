@@ -1,0 +1,180 @@
+{
+  "meta": {
+    "module": "src.common.dag_executor",
+    "source": "src/common/dag_executor.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "DagNode",
+      "match_hash": "a9dbbb164975b9681f744ea8fce8995d6305037d4d42504e87de8d0b40556a1a",
+      "signature": "keyword_struct DagNode { ... }",
+      "is_pub": true,
+      "line": 11
+    },
+    {
+      "type": "struct",
+      "name": "DagResult",
+      "match_hash": "13b54f57838081df9defdffef9ccf8c5ddbc307e0a1484e67c1529b4de501b29",
+      "signature": "keyword_struct DagResult { ... }",
+      "is_pub": true,
+      "line": 29
+    },
+    {
+      "type": "struct",
+      "name": "DagCallbacks",
+      "match_hash": "aa486bed027a48939876e60c065b56de768877b2f7c56f319d1adf75ed10e408",
+      "signature": "keyword_struct DagCallbacks { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "execute",
+          "match_hash": "3746a88f655880c826ebf9111af62131ed09ac07694602d18355e1ccca446aed",
+          "signature": "fn execute(self: DagCallbacks, node_id: i64, allocator: std.mem.Allocator) -> anyerror!DagResult",
+          "params": [
+            { "name": "self", "type": "DagCallbacks" },
+            { "name": "node_id", "type": "i64" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "anyerror!DagResult",
+          "is_pub": true,
+          "line": 50
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "onNodeStart",
+          "match_hash": "b463fc14b05f9ea76490abbd04c0cd33cc901d36f19261d050105490ba96540f",
+          "signature": "fn onNodeStart(self: DagCallbacks, node_id: i64) -> void",
+          "params": [
+            { "name": "self", "type": "DagCallbacks" },
+            { "name": "node_id", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 54
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "onNodeComplete",
+          "match_hash": "2560ae72312e72bb7cdcd47bfa15a0ea199eb1d249456f06293f2ed0b38953e2",
+          "signature": "fn onNodeComplete(self: DagCallbacks, result: DagResult) -> void",
+          "params": [
+            { "name": "self", "type": "DagCallbacks" },
+            { "name": "result", "type": "DagResult" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 58
+        }
+      ],
+      "line": 37
+    },
+    {
+      "type": "struct",
+      "name": "DagExecutor",
+      "match_hash": "8a62063b33ba1d4acf979f7ff88dbea16358fcd571aec94264f971f986d81a28",
+      "signature": "keyword_struct DagExecutor { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "a537853f7c92ae62a3a86a0c703f875c33e1d2c9444853bc13a0b2667a08cb3e",
+          "signature": "fn init(allocator: std.mem.Allocator, workers: usize, callbacks: DagCallbacks) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "workers", "type": "usize" },
+            { "name": "callbacks", "type": "DagCallbacks" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 87
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 103
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "addNode",
+          "match_hash": "4fe7efaa6758b39fe044bed687889a381090d7914f0ab7cd764c538140fbae8f",
+          "signature": "fn addNode(self: *Self, node: DagNode) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "node", "type": "DagNode" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 119
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "execute",
+          "match_hash": "e893bd7296773b276a3384950b2f232d2df1aa7657386f19cd01be0edf436f3c",
+          "signature": "fn execute(self: *Self) -> []DagResult",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
+          "returns": "[]DagResult",
+          "is_pub": true,
+          "line": 127
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "dispatchNode",
+          "match_hash": "f5f99ca598628b4dd3f254780cac97d9c9c86c9e29e80ebe03b0c9449d5e96d0",
+          "signature": "fn dispatchNode(self: *Self, pool: *std.Thread.Pool, node_id: i64) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "pool", "type": "*std.Thread.Pool" },
+            { "name": "node_id", "type": "i64" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 203
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "runTask",
+          "match_hash": "ed570ac212c9afa0a0ecd2495735139e8fc21bff5f4d19107257c99b4e7ac72c",
+          "signature": "fn runTask(ctx: *TaskContext) -> void",
+          "params": [
+            { "name": "ctx", "type": "*TaskContext" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 213
+        }
+      ],
+      "line": 64
+    },
+    {
+      "type": "test_decl",
+      "name": "DagNode: init pending",
+      "is_pub": false,
+      "line": 278
+    },
+    {
+      "type": "test_decl",
+      "name": "DagExecutor: empty DAG",
+      "is_pub": false,
+      "line": 289
+    },
+    {
+      "type": "test_decl",
+      "name": "DagExecutor: single node",
+      "is_pub": false,
+      "line": 309
+    }
+  ]
+}

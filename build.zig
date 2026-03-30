@@ -443,6 +443,7 @@ pub fn build(b: *std.Build) void {
     coral_batch_tests.linkSystemLibrary("sqlite3");
 
     // Note: main.zig imports coral_db, coral_batch, wasm, coral_schema, local_model as named modules.
+    // ontology + rdf added for yago_ingest.zig which imports both.
     const coral_main_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/coral/main.zig"),
@@ -452,6 +453,8 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "coral_batch", .module = coral_batch_module },
+                .{ .name = "ontology", .module = ontology_module },
+                .{ .name = "rdf", .module = rdf_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },

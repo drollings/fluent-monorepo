@@ -167,6 +167,38 @@
     },
     {
       "type": "struct",
+      "name": "BinaryExecutionRequest",
+      "match_hash": "f3ab3a52c0c4e7e653f76815775376c8d9d1c200ac1db36d242918e1160e8122",
+      "signature": "keyword_struct BinaryExecutionRequest { ... }",
+      "is_pub": true,
+      "line": 136
+    },
+    {
+      "type": "struct",
+      "name": "BinaryExecutionResult",
+      "match_hash": "0d90c6316e82792af2283c401f4d5264cc93305d9554bf81b237e9b5f67486e6",
+      "signature": "keyword_struct BinaryExecutionResult { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "getProvidesBitSet",
+          "match_hash": "439f503ef1dfb6f454f235bd33ce41122c9e3b8cfe7d5f000d92413371686beb",
+          "signature": "fn getProvidesBitSet(self: *const BinaryExecutionResult, allocator: std.mem.Allocator, payload: []const u8) -> std.bit_set.DynamicBitSetUnmanaged",
+          "params": [
+            { "name": "self", "type": "*const BinaryExecutionResult" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "payload", "type": "[]const u8" }
+          ],
+          "returns": "std.bit_set.DynamicBitSetUnmanaged",
+          "is_pub": true,
+          "line": 166
+        }
+      ],
+      "line": 155
+    },
+    {
+      "type": "struct",
       "name": "ContextNodeSchema",
       "match_hash": "730d2d6cc43fd07d1cddc933feb78ef8c349ec4f81c042c710434d7b5a4ff58c",
       "signature": "keyword_struct ContextNodeSchema { ... }",
@@ -188,7 +220,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 180
+          "line": 236
         }
     ,    {
           "type": "fn_decl",
@@ -201,7 +233,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 290
+          "line": 346
         }
     ,    {
           "type": "fn_decl",
@@ -215,7 +247,7 @@
           ],
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
-          "line": 294
+          "line": 350
         }
     ,    {
           "type": "fn_decl",
@@ -227,52 +259,52 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 304
+          "line": 360
         }
       ],
-      "line": 129
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: sql_bind_order has correct length",
       "is_pub": false,
-      "line": 319
+      "line": 375
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: create and destroy",
       "is_pub": false,
-      "line": 323
+      "line": 379
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: viewOf set and get",
       "is_pub": false,
-      "line": 333
+      "line": 389
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: viewOf lod field access",
       "is_pub": false,
-      "line": 358
+      "line": 414
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: valid_to optional field",
       "is_pub": false,
-      "line": 380
+      "line": 436
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: round-trip serialization",
       "is_pub": false,
-      "line": 406
+      "line": 462
     },
     {
       "type": "test_decl",
       "name": "ContextNodeSchema: access denied on protected field",
       "is_pub": false,
-      "line": 434
+      "line": 490
     }
   ]
 }

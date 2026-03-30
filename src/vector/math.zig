@@ -163,6 +163,112 @@ pub fn hybridMerge(
     return allocator.dupe(ScoredResult, results.items[0..actual_limit]);
 }
 
+/// Three-way hybrid merge for M5.2 capability keyword indexing.
+///
+/// final_score = cosine_w * cosine_score + keyword_w * keyword_score + cap_w * cap_score
+///
+/// Deduplicates by id. Results sorted by final_score descending.
+/// Caller owns the returned slice and must free it.
+pub fn hybridMergeThree(
+    allocator: std.mem.Allocator,
+    vector_results: []const IdScore,
+    keyword_results: []const IdScore,
+    capability_results: []const IdScore,
+    cosine_w: f32,
+    keyword_w: f32,
+    cap_w: f32,
+    limit: usize,
+) ![]ScoredResult {
+    var ids: std.ArrayList(i64) = .empty;
+    defer ids.deinit(allocator);
+
+    var vec_scores = std.AutoHashMap(i64, f32).init(allocator);
+    defer vec_scores.deinit();
+
+    var kw_scores = std.AutoHashMap(i64, f32).init(allocator);
+    defer kw_scores.deinit();
+
+    var cap_scores = std.AutoHashMap(i64, f32).init(allocator);
+    defer cap_scores.deinit();
+
+    // Collect vector scores
+    for (vector_results) |vr| {
+        const entry = try vec_scores.getOrPut(vr.id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = vr.score;
+            try ids.append(allocator, vr.id);
+        } else {
+            entry.value_ptr.* = @max(entry.value_ptr.*, vr.score);
+        }
+    }
+
+    // Normalize and collect keyword scores
+    var max_kw: f32 = 0.0;
+    for (keyword_results) |kr| max_kw = @max(max_kw, kr.score);
+    if (max_kw < std.math.floatEps(f32)) max_kw = 1.0;
+
+    for (keyword_results) |kr| {
+        const normalized = kr.score / max_kw;
+        const entry = try kw_scores.getOrPut(kr.id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = normalized;
+            if (!vec_scores.contains(kr.id)) {
+                try ids.append(allocator, kr.id);
+            }
+        } else {
+            entry.value_ptr.* = @max(entry.value_ptr.*, normalized);
+        }
+    }
+
+    // Normalize and collect capability scores
+    var max_cap: f32 = 0.0;
+    for (capability_results) |cr| max_cap = @max(max_cap, cr.score);
+    if (max_cap < std.math.floatEps(f32)) max_cap = 1.0;
+
+    for (capability_results) |cr| {
+        const normalized = cr.score / max_cap;
+        const entry = try cap_scores.getOrPut(cr.id);
+        if (!entry.found_existing) {
+            entry.value_ptr.* = normalized;
+            if (!vec_scores.contains(cr.id) and !kw_scores.contains(cr.id)) {
+                try ids.append(allocator, cr.id);
+            }
+        } else {
+            entry.value_ptr.* = @max(entry.value_ptr.*, normalized);
+        }
+    }
+
+    // Build scored results
+    var results: std.ArrayList(ScoredResult) = .empty;
+    defer results.deinit(allocator);
+
+    for (ids.items) |id| {
+        const vs = vec_scores.get(id);
+        const ks = kw_scores.get(id);
+        const cs = cap_scores.get(id);
+        const vs_val = vs orelse 0.0;
+        const ks_val = ks orelse 0.0;
+        const cs_val = cs orelse 0.0;
+        const final = cosine_w * vs_val + keyword_w * ks_val + cap_w * cs_val;
+        try results.append(allocator, .{
+            .id = id,
+            .vector_score = vs,
+            .keyword_score = ks,
+            .final_score = final,
+        });
+    }
+
+    // Sort by final_score descending
+    std.mem.sortUnstable(ScoredResult, results.items, {}, struct {
+        fn lessThan(_: void, lhs: ScoredResult, rhs: ScoredResult) bool {
+            return lhs.final_score > rhs.final_score;
+        }
+    }.lessThan);
+
+    const actual_limit = @min(limit, results.items.len);
+    return allocator.dupe(ScoredResult, results.items[0..actual_limit]);
+}
+
 // ── Tests ─────────────────────────────────────────────────────────
 
 test "cosine identical vectors" {
@@ -217,4 +323,17 @@ test "hybrid merge respects limit" {
     const merged = try hybridMerge(std.testing.allocator, &vec_results, &.{}, 1.0, 0.0, 5);
     defer std.testing.allocator.free(merged);
     try std.testing.expectEqual(@as(usize, 5), merged.len);
+}
+
+test "hybrid merge three-way combines all scores" {
+    const vec_results = [_]IdScore{.{ .id = 1, .score = 0.8 }};
+    const kw_results = [_]IdScore{.{ .id = 1, .score = 5.0 }};
+    const cap_results = [_]IdScore{.{ .id = 1, .score = 2.0 }};
+    const merged = try hybridMergeThree(std.testing.allocator, &vec_results, &kw_results, &cap_results, 0.6, 0.25, 0.15, 10);
+    defer std.testing.allocator.free(merged);
+
+    try std.testing.expectEqual(@as(usize, 1), merged.len);
+    try std.testing.expectEqual(@as(i64, 1), merged[0].id);
+    // 0.8 * 0.6 + 1.0 * 0.25 + 1.0 * 0.15 = 0.48 + 0.25 + 0.15 = 0.88
+    try std.testing.expect(@abs(merged[0].final_score - 0.88) < 0.01);
 }

@@ -49,14 +49,14 @@ fn isMetachar(c: u8) bool {
 ///   for (argv) |arg| allocator.free(arg);
 ///   allocator.free(argv);
 pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseError![][]const u8 {
-    var args = std.ArrayList([]const u8).init(allocator);
+    var args: std.ArrayList([]const u8) = .{};
     errdefer {
         for (args.items) |arg| allocator.free(arg);
-        args.deinit();
+        args.deinit(allocator);
     }
 
-    var current = std.ArrayList(u8).init(allocator);
-    defer current.deinit();
+    var current: std.ArrayList(u8) = .{};
+    defer current.deinit(allocator);
 
     const State = enum { idle, token, single_quote, double_quote };
     var state: State = .idle;
@@ -73,14 +73,14 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                     '"' => state = .double_quote,
                     '\\' => {
                         if (i + 1 < cmd.len) {
-                            try current.append(cmd[i + 1]);
+                            try current.append(allocator, cmd[i + 1]);
                             i += 1;
                         }
                         state = .token;
                     },
                     else => {
                         if (isMetachar(c)) return error.ShellMetacharacter;
-                        try current.append(c);
+                        try current.append(allocator, c);
                         state = .token;
                     },
                 }
@@ -91,7 +91,7 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                     ' ', '\t' => {
                         // Flush current token
                         const owned = try allocator.dupe(u8, current.items);
-                        args.append(owned) catch |e| {
+                        args.append(allocator, owned) catch |e| {
                             allocator.free(owned);
                             return e;
                         };
@@ -102,13 +102,13 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                     '"' => state = .double_quote,
                     '\\' => {
                         if (i + 1 < cmd.len) {
-                            try current.append(cmd[i + 1]);
+                            try current.append(allocator, cmd[i + 1]);
                             i += 1;
                         }
                     },
                     else => {
                         if (isMetachar(c)) return error.ShellMetacharacter;
-                        try current.append(c);
+                        try current.append(allocator, c);
                     },
                 }
             },
@@ -118,7 +118,7 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                 if (c == '\'') {
                     state = .token;
                 } else {
-                    try current.append(c);
+                    try current.append(allocator, c);
                 }
             },
 
@@ -130,10 +130,10 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                         if (i + 1 < cmd.len) {
                             const next = cmd[i + 1];
                             if (next == '"' or next == '\\') {
-                                try current.append(next);
+                                try current.append(allocator, next);
                                 i += 1;
                             } else {
-                                try current.append('\\');
+                                try current.append(allocator, '\\');
                             }
                         }
                     },
@@ -141,7 +141,7 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
                         // Metacharacters are rejected even inside double quotes
                         // to prevent injection via escape-sequence bypasses.
                         if (isMetachar(c)) return error.ShellMetacharacter;
-                        try current.append(c);
+                        try current.append(allocator, c);
                     },
                 }
             },
@@ -155,7 +155,7 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
         .idle => {}, // clean termination
         .token => {
             const owned = try allocator.dupe(u8, current.items);
-            args.append(owned) catch |e| {
+            args.append(allocator, owned) catch |e| {
                 allocator.free(owned);
                 return e;
             };
@@ -165,7 +165,7 @@ pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseErr
 
     if (args.items.len == 0) return error.EmptyCommand;
 
-    return try args.toOwnedSlice();
+    return try args.toOwnedSlice(allocator);
 }
 
 // =============================================================================

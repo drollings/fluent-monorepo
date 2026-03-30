@@ -6,6 +6,7 @@ const builder_error_mod = @import("builder_error.zig");
 pub const BuilderError = builder_error_mod.BuilderError;
 pub const BuilderPhase = builder_error_mod.Phase;
 const joinStringSlice = builder_error_mod.joinStringSlice;
+pub const logIfError = builder_error_mod.logIfError;
 
 pub const TargetRegistry = @This();
 
@@ -266,8 +267,7 @@ pub const TargetBuilder = struct {
                 self.allocator.destroy(t);
                 self.target = null;
             }
-            // Caller can log e.message for diagnostics.
-            _ = e.message;
+            logIfError(e);
             return e.cause;
         }
         if (self.err_any) |e| {
@@ -296,16 +296,13 @@ pub const TargetBuilder = struct {
 pub fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) TargetBuilder {
     const arena = std.heap.ArenaAllocator.init(self.allocator);
     const t = self.allocator.create(Target) catch |e| {
-        return .{ .allocator = self.allocator, .arena = arena, .registry = self,
-                  .interner = self.interner, .target = null, .err = null, .err_any = e };
+        return .{ .allocator = self.allocator, .arena = arena, .registry = self, .interner = self.interner, .target = null, .err = null, .err_any = e };
     };
     t.* = Target.init(self.allocator, self.interner, name, target_type) catch |e| {
         self.allocator.destroy(t);
-        return .{ .allocator = self.allocator, .arena = arena, .registry = self,
-                  .interner = self.interner, .target = null, .err = null, .err_any = e };
+        return .{ .allocator = self.allocator, .arena = arena, .registry = self, .interner = self.interner, .target = null, .err = null, .err_any = e };
     };
-    return .{ .allocator = self.allocator, .arena = arena, .registry = self,
-               .interner = self.interner, .target = t, .err = null, .err_any = null };
+    return .{ .allocator = self.allocator, .arena = arena, .registry = self, .interner = self.interner, .target = t, .err = null, .err_any = null };
 }
 
 // ---------------------------------------------------------------------------
@@ -909,5 +906,3 @@ test "TargetBuilder: err field is null on successful register" {
     try testing.expect(b.err_any == null);
     try b.command("rm -rf build").register();
 }
-
-

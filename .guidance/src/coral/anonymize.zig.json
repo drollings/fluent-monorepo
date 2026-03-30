@@ -9,27 +9,82 @@
     {
       "type": "enum",
       "name": "AnonymizationPattern",
-      "match_hash": "fefb7037264873aafec6157a8008bc71b3f0a623cd9fb58671b35e6e49f8e39c",
+      "match_hash": "ea4f86634c6a6f0d5263c6f5a1e92fa336582c5e20ba6408d5b4d5ac99e748ca",
       "signature": "keyword_enum AnonymizationPattern { ... }",
+      "comment": "Defines anonymization rules with a fixed pattern; manages key invariants; owned by the system; supports secure data handling.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "email",
           "is_pub": false,
-          "line": 15
+          "line": 10
         }
     ,    {
           "type": "enum_field",
           "name": "phone_us",
           "is_pub": false,
-          "line": 16
+          "line": 11
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "phone_intl",
+          "is_pub": false,
+          "line": 12
         }
     ,    {
           "type": "enum_field",
           "name": "credit_card",
           "is_pub": false,
+          "line": 13
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ssn_us",
+          "is_pub": false,
+          "line": 14
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ssn_uk",
+          "is_pub": false,
+          "line": 15
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ssn_ca",
+          "is_pub": false,
+          "line": 16
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ipv4",
+          "is_pub": false,
           "line": 17
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ipv6",
+          "is_pub": false,
+          "line": 18
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "api_key_bearer",
+          "is_pub": false,
+          "line": 19
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "api_key_aws",
+          "is_pub": false,
+          "line": 20
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "api_key_generic",
+          "is_pub": false,
+          "line": 21
         }
     ,    {
           "type": "fn_decl",
@@ -41,10 +96,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 19
+          "line": 23
         }
       ],
-      "line": 14
+      "line": 9
     },
     {
       "type": "fn_decl",
@@ -57,8 +112,9 @@
         { "name": "patterns", "type": "[]const AnonymizationPattern" }
       ],
       "returns": "[]u8",
+      "comment": "Anonymize a context string by replacing detected PII patterns.\nReturns an allocator-owned string; caller must free.",
       "is_pub": true,
-      "line": 30
+      "line": 43
     },
     {
       "type": "fn_private",
@@ -71,8 +127,9 @@
         { "name": "pattern", "type": "AnonymizationPattern" }
       ],
       "returns": "[]u8",
+      "comment": "Replace occurrences of `pattern` in `input`.\nReturns an allocator-owned string.",
       "is_pub": false,
-      "line": 46
+      "line": 59
     },
     {
       "type": "fn_private",
@@ -84,8 +141,9 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
+      "comment": "Replace email-like tokens (word@word.tld) with [EMAIL].",
       "is_pub": false,
-      "line": 59
+      "line": 81
     },
     {
       "type": "fn_private",
@@ -97,7 +155,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 95
+      "line": 117
     },
     {
       "type": "fn_private",
@@ -109,8 +167,9 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
+      "comment": "Replace US phone patterns (10-digit with optional separators) with [PHONE].",
       "is_pub": false,
-      "line": 100
+      "line": 122
     },
     {
       "type": "fn_private",
@@ -122,32 +181,244 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
+      "comment": "Replace credit card patterns (16 digits with optional spaces/dashes) with [CARD].",
       "is_pub": false,
-      "line": 130
+      "line": 152
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceIntlPhones",
+      "match_hash": "e64e0b02d41ebfae76253241777ee8c3f068e06ada1d09517d2b6fae81e202b9",
+      "signature": "fn replaceIntlPhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace international phone numbers (E.164, UK +44, EU formats) with [PHONE].\nDetects: +<country_code><digits> where total digit count is 7-15.",
+      "is_pub": false,
+      "line": 182
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceSsnUs",
+      "match_hash": "78540c096c1413b766085bf0a67cc31f65435ed4e0dab6dd25b6f218cccceeb6",
+      "signature": "fn replaceSsnUs(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace US SSN (NNN-NN-NNNN) with [SSN].",
+      "is_pub": false,
+      "line": 217
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceSsnUk",
+      "match_hash": "75adad53054d8ed6ac4cbdb11b49653de26654c024c94a60c03fbdc9cce60a09",
+      "signature": "fn replaceSsnUk(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace UK NINO (AA999999A format) with [NINO].",
+      "is_pub": false,
+      "line": 247
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceSsnCa",
+      "match_hash": "a92a60362a700afa3fda0e489b414de61fa14f467796f77441c7a5db9baa88f5",
+      "signature": "fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace Canadian SIN (NNN-NNN-NNN) with [SIN].",
+      "is_pub": false,
+      "line": 280
+    },
+    {
+      "type": "fn_private",
+      "name": "isNDigits",
+      "match_hash": "56cbb914f4ae5cb36f2950490fc6d10468b7ba597a3bc8faf27749cc55fd4ce4",
+      "signature": "fn isNDigits(s: []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "comment": "Returns true if every byte in `s` is an ASCII digit.",
+      "is_pub": false,
+      "line": 308
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceIpv4",
+      "match_hash": "ce52e842864b8b93241834c7dd38b9acfb3bea3f6343fb5689f3f07732a213ea",
+      "signature": "fn replaceIpv4(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace IPv4 addresses (d.d.d.d) with [IP].",
+      "is_pub": false,
+      "line": 314
+    },
+    {
+      "type": "fn_private",
+      "name": "looksLikeIpv4",
+      "match_hash": "9160a75f42b35bab69be2a48efccf950e8450778ac5447ba1df48d2d052ad4e5",
+      "signature": "fn looksLikeIpv4(s: []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 345
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceIpv6",
+      "match_hash": "5af31d98a99863a0c9f2bfb38ccbf450e4c0b35ef6dd9cd605ac17b7a010aaee",
+      "signature": "fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace IPv6 addresses (hex groups separated by colons) with [IP].\nDetects: at least two colon-separated hex groups totalling 4+ hex chars.",
+      "is_pub": false,
+      "line": 365
+    },
+    {
+      "type": "fn_private",
+      "name": "isHexChar",
+      "match_hash": "15d3a006694f7894335944477ba0106338144591caddaddf84fc8c9a1af3ee3f",
+      "signature": "fn isHexChar(c: u8) -> bool",
+      "params": [
+        { "name": "c", "type": "u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 395
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceBearerTokens",
+      "match_hash": "7da19ca16ab65153ca1520bdd1c686bd907da65719676bb64282240bbf36645e",
+      "signature": "fn replaceBearerTokens(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace \"Bearer <token>\" with \"Bearer [BEARER_TOKEN]\".",
+      "is_pub": false,
+      "line": 400
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceAwsKeys",
+      "match_hash": "af328bc4bb455eae767c8c22d96c127aa366e0ebf537e83a97f954e52751628e",
+      "signature": "fn replaceAwsKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace AWS access key IDs (AKIA followed by 16 uppercase alphanumeric chars).",
+      "is_pub": false,
+      "line": 431
+    },
+    {
+      "type": "fn_private",
+      "name": "replaceGenericApiKeys",
+      "match_hash": "8288cfbf74447a86821ece6dda2072232ddcdd89494149fe7506bc29e8a4b623",
+      "signature": "fn replaceGenericApiKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "comment": "Replace generic API keys: 32+ consecutive alphanumeric chars preceded and\nfollowed by a non-alphanumeric boundary (quote, space, =, etc.).",
+      "is_pub": false,
+      "line": 465
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces email",
       "is_pub": false,
-      "line": 163
+      "line": 500
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces US phone",
       "is_pub": false,
-      "line": 175
+      "line": 512
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: no PII passes through unchanged",
       "is_pub": false,
-      "line": 186
+      "line": 523
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: multiple patterns applied in order",
       "is_pub": false,
-      "line": 198
+      "line": 535
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces international phone E.164",
+      "is_pub": false,
+      "line": 547
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces US SSN",
+      "is_pub": false,
+      "line": 559
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces Canadian SIN",
+      "is_pub": false,
+      "line": 571
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces IPv4",
+      "is_pub": false,
+      "line": 582
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces AWS key",
+      "is_pub": false,
+      "line": 594
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces Bearer token",
+      "is_pub": false,
+      "line": 606
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: replaces generic API key (32+ chars)",
+      "is_pub": false,
+      "line": 617
+    },
+    {
+      "type": "test_decl",
+      "name": "anonymizeContext: no false positive on short alphanumeric",
+      "is_pub": false,
+      "line": 628
     }
   ]
 }

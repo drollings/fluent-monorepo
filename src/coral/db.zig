@@ -1323,6 +1323,106 @@ pub const ContextPacker = struct {
 
         return context_buffer.toOwnedSlice(self.allocator);
     }
+
+    /// Pack context using First-Fit Decreasing (FFD) bin-packing.
+    /// Sorts nodes by priority (LOD level weight × distance decay) and
+    /// adds them to the context if they fit remaining budget.
+    ///
+    /// Priority formula: priority = lod_weight[LOD] * distance_decay^distance
+    /// LOD weights: lod0=1.0, lod1=0.8, lod2=0.6, lod3=0.4, lod4=0.2
+    /// Distance decay: 0.9 per hop
+    ///
+    /// Returns packed text and metadata about token usage.
+    pub fn packFFD(self: *Self, semantic_center_id: i64) !struct { text: []const u8, tokens_used: usize, nodes_included: usize } {
+        const lod_weights = [_]f32{ 1.0, 0.8, 0.6, 0.4, 0.2 };
+        const distance_decay: f32 = 0.9;
+
+        var context_buffer: std.ArrayListUnmanaged(u8) = .{};
+        defer context_buffer.deinit(self.allocator);
+        var tokens_used: usize = 0;
+        var nodes_included: usize = 0;
+
+        // Get all nodes with graph distances.
+        const graph_nodes = try self.getNodesByDistance(semantic_center_id);
+        defer self.allocator.free(graph_nodes);
+
+        // Build priority-sorted list.
+        var candidates: std.ArrayListUnmanaged(struct {
+            id: i64,
+            priority: f32,
+            lod_level: usize,
+            text: []const u8,
+            tokens: usize,
+        }) = .{};
+        defer {
+            for (candidates.items) |candidate| {
+                if (candidate.text.len > 0) self.allocator.free(@constCast(candidate.text));
+            }
+            candidates.deinit(self.allocator);
+        }
+
+        for (graph_nodes) |gnode| {
+            const maybe_node = try self.library.fetchNode(gnode.id);
+            if (maybe_node == null) continue;
+            var node = maybe_node.?;
+            defer node.free(self.library.allocator);
+
+            // Select LOD based on distance.
+            const lod_level: usize = switch (gnode.graph_distance) {
+                0 => 0,
+                1 => if (node.lod[1].len > 0) 1 else 0,
+                2 => if (node.lod[2].len > 0) 2 else 4,
+                else => 4,
+            };
+
+            const text = blk: {
+                for (lod_level..6) |lvl| {
+                    if (node.lod[lvl].len > 0) break :blk node.lod[lvl];
+                }
+                break :blk "";
+            };
+
+            if (text.len == 0) continue;
+
+            const tokens = (text.len + self.chars_per_token - 1) / self.chars_per_token;
+            const priority = lod_weights[@min(lod_level, 4)] * std.math.pow(f32, distance_decay, @floatFromInt(gnode.graph_distance));
+
+            // Clone text for ownership.
+            const owned_text = try self.allocator.dupe(u8, text);
+            try candidates.append(self.allocator, .{
+                .id = gnode.id,
+                .priority = priority,
+                .lod_level = lod_level,
+                .text = owned_text,
+                .tokens = tokens,
+            });
+        }
+
+        // Sort by priority descending.
+        std.sort.block(@TypeOf(candidates.items[0]), candidates.items, {}, struct {
+            fn lessThan(_: void, a: @TypeOf(candidates.items[0]), b: @TypeOf(candidates.items[0])) bool {
+                return a.priority > b.priority;
+            }
+        }.lessThan);
+
+        // First-fit: add nodes in priority order if they fit.
+        var remaining_budget = self.max_tokens;
+        for (candidates.items) |candidate| {
+            if (candidate.tokens <= remaining_budget) {
+                try context_buffer.appendSlice(self.allocator, candidate.text);
+                try context_buffer.appendSlice(self.allocator, "\n---\n");
+                remaining_budget -= candidate.tokens;
+                tokens_used += candidate.tokens;
+                nodes_included += 1;
+            }
+        }
+
+        return .{
+            .text = try context_buffer.toOwnedSlice(self.allocator),
+            .tokens_used = tokens_used,
+            .nodes_included = nodes_included,
+        };
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -2067,4 +2167,3 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
-

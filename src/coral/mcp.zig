@@ -18,6 +18,25 @@ const ContextPacker = coral_db.ContextPacker;
 const QueueReactor = cache.QueueReactor;
 
 // ---------------------------------------------------------------------------
+// M9.1 — Typed session handle (prevents mixing with NodeId or TargetId)
+// ---------------------------------------------------------------------------
+
+/// Type-safe MCP session identifier.
+/// Using an enum prevents accidental cross-assignment with NodeId or TargetId.
+/// Conversion: sessionIdFromInt() / sessionIdToInt()
+pub const SessionId = enum(i64) { _ };
+
+/// Cast an i64 to a SessionId.
+pub fn sessionIdFromInt(i: i64) SessionId {
+    return @enumFromInt(i);
+}
+
+/// Extract the underlying i64 from a SessionId.
+pub fn sessionIdToInt(id: SessionId) i64 {
+    return @intFromEnum(id);
+}
+
+// ---------------------------------------------------------------------------
 // MCP tool parameter structs (M2.6)
 // Enables Editable(T).describeSchema() to generate JSON Schema at runtime,
 // replacing the hardcoded input_schema strings.
