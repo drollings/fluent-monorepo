@@ -1,0 +1,116 @@
+{
+  "meta": {
+    "module": "src.guidance.mcp",
+    "source": "src/guidance/mcp.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Request",
+      "match_hash": "2b345c894ea6745785bd353c470d9ee6f03cee527e4f280160c3c1f4d41eb3c0",
+      "signature": "keyword_struct Request { ... }",
+      "is_pub": false,
+      "line": 28
+    },
+    {
+      "type": "fn_private",
+      "name": "writeJsonString",
+      "match_hash": "2ad1dba9703441e3cf06563bdb74fe0e5cabed123c2b1d4ecafea4d4570e36c2",
+      "signature": "fn writeJsonString(writer, s: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 35
+    },
+    {
+      "type": "fn_private",
+      "name": "writeResult",
+      "match_hash": "2083e2e581120ff5fc660aa16e846b4ca9fda6e8afd4ab0edfaaa03dfc561ced",
+      "signature": "fn writeResult(writer, id: ?std.json.Value, content: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "id", "type": "?std.json.Value" },
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 52
+    },
+    {
+      "type": "fn_private",
+      "name": "writeError",
+      "match_hash": "0e22cb9d5756e18cee1195eb3db99a9be2c884937bcd629cd1212e3dc89f46d5",
+      "signature": "fn writeError(writer, id: ?std.json.Value, code: i32, msg: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "id", "type": "?std.json.Value" },
+        { "name": "code", "type": "i32" },
+        { "name": "msg", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 64
+    },
+    {
+      "type": "fn_private",
+      "name": "handleInitialize",
+      "match_hash": "abfb54b3efdcd7e801f9991536a44fa8c922e4fe2e45ac276c28d2a1d9cca6e0",
+      "signature": "fn handleInitialize(allocator: std.mem.Allocator, writer, id: ?std.json.Value) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "writer" },
+        { "name": "id", "type": "?std.json.Value" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 82
+    },
+    {
+      "type": "fn_private",
+      "name": "handleToolsList",
+      "match_hash": "719074dc194228853019bbc4f457928829265360663435ceba11215fef01e619",
+      "signature": "fn handleToolsList(writer, id: ?std.json.Value) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "id", "type": "?std.json.Value" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 92
+    },
+    {
+      "type": "fn_private",
+      "name": "handleToolCall",
+      "match_hash": "9ce8b75471c13017a1173bd573bc93e94e04d33a7eb52f7d6fc7747d516005d4",
+      "signature": "fn handleToolCall(allocator: std.mem.Allocator, writer, id: ?std.json.Value, name: []const u8, params: ?std.json.Value) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "writer" },
+        { "name": "id", "type": "?std.json.Value" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "params", "type": "?std.json.Value" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 106
+    },
+    {
+      "type": "fn_decl",
+      "name": "serve",
+      "match_hash": "4a74ef7f434b9d6c95423b7da828cd1d33b65e8212ece4a04fbda6b702851f4b",
+      "signature": "fn serve(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 194
+    }
+  ]
+}

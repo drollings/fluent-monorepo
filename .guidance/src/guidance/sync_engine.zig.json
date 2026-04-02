@@ -11,6 +11,7 @@
       "name": "InitArgs",
       "match_hash": "0160b4cb9c32cc9317f5c8846e6b92c22b2eb5a324a9ef40e26d0aaaefdfc55e",
       "signature": "keyword_struct InitArgs { ... }",
+      "comment": "Manages initialization arguments for Zig's guidance system, owns state, ensures invariant correctness.",
       "is_pub": false,
       "members": [
         {
@@ -23,10 +24,10 @@
           ],
           "returns": "error{MissingValue}!InitArgs",
           "is_pub": false,
-          "line": 43
+          "line": 44
         }
       ],
-      "line": 39
+      "line": 40
     },
     {
       "type": "fn_decl",
@@ -38,8 +39,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Initializes the sync engine with allocator and command arguments, preparing for Zig command execution.",
       "is_pub": true,
-      "line": 63
+      "line": 64
     },
     {
       "type": "fn_private",
@@ -53,7 +55,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 167
+      "line": 168
     },
     {
       "type": "fn_private",
@@ -66,8 +68,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
+      "comment": "Split a unified diff into per-file chunks starting at each \"diff --git\" header.",
       "is_pub": false,
-      "line": 184
+      "line": 185
     },
     {
       "type": "fn_private",
@@ -78,8 +81,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extract the file path from \"diff --git a/<path> b/<path>\".",
       "is_pub": false,
-      "line": 200
+      "line": 201
     },
     {
       "type": "fn_private",
@@ -91,8 +95,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true for auto-generated guidance JSON files (not real code changes).\nUses guidance_dir (e.g. \".guidance\") to identify which paths to ignore.",
       "is_pub": false,
-      "line": 212
+      "line": 213
     },
     {
       "type": "fn_private",
@@ -104,14 +109,16 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[][2]u32",
+      "comment": "Parse `@@ -X,Y +A,B @@` hunk headers; returns owned [start, end) pairs in new-file coords.",
       "is_pub": false,
-      "line": 220
+      "line": 221
     },
     {
       "type": "struct",
       "name": "CommitMemberInfo",
       "match_hash": "6019dd5770b81fce562320627ed1bfaa2a1e0fe0f263c0416bae3310c49c08a6",
       "signature": "keyword_struct CommitMemberInfo { ... }",
+      "comment": "Snapshot of a member's name, line, comment, and signature at the point a commit is prepared.",
       "is_pub": false,
       "members": [
         {
@@ -125,10 +132,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 248
+          "line": 249
         }
       ],
-      "line": 242
+      "line": 243
     },
     {
       "type": "fn_private",
@@ -139,8 +146,9 @@
         { "name": "obj", "type": "std.json.ObjectMap" }
       ],
       "returns": "?u32",
+      "comment": "Extract a ?u32 line number from a JSON member object value (.line field).",
       "is_pub": false,
-      "line": 256
+      "line": 257
     },
     {
       "type": "fn_private",
@@ -153,8 +161,9 @@
         { "name": "context", "type": "u32" }
       ],
       "returns": "bool",
+      "comment": "Return true when `line` falls within any hunk range expanded by `context`.",
       "is_pub": false,
-      "line": 266
+      "line": 267
     },
     {
       "type": "fn_private",
@@ -169,8 +178,9 @@
         { "name": "out", "type": "*std.ArrayList(CommitMemberInfo)" }
       ],
       "returns": "void",
+      "comment": "Append a CommitMemberInfo to `out` when the JSON member object is valid and\nits line falls within `hunk_ranges` (or when hunk_ranges is empty).",
       "is_pub": false,
-      "line": 277
+      "line": 278
     },
     {
       "type": "fn_private",
@@ -184,8 +194,9 @@
         { "name": "hunk_ranges", "type": "[]const [2]u32" }
       ],
       "returns": "[]CommitMemberInfo",
+      "comment": "Load guidance JSON for rel_path and return members whose lines overlap hunk_ranges.",
       "is_pub": false,
-      "line": 304
+      "line": 305
     },
     {
       "type": "fn_private",
@@ -204,7 +215,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 343
+      "line": 344
     },
     {
       "type": "fn_private",
@@ -217,7 +228,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 529
+      "line": 530
     },
     {
       "type": "fn_decl",
@@ -229,8 +240,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Handles command execution with allocator and arguments, returning void.",
       "is_pub": true,
-      "line": 540
+      "line": 541
     },
     {
       "type": "fn_private",
@@ -242,14 +254,16 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Read `models.commit` or `models.default` from guidance-config.json.\nReturns an owned slice; caller must free. Returns error when absent.",
       "is_pub": false,
-      "line": 772
+      "line": 773
     },
     {
       "type": "struct",
       "name": "GenArgs",
-      "match_hash": "c76590c0b51a9616b54a84155ec5f9344dfdcb534d8c71ba31a7dd639912884d",
+      "match_hash": "77332c7d374fc2ac2f624ea2fb09159d0c773a3c0a61c2d9c18edbd97e5d89b0",
       "signature": "keyword_struct GenArgs { ... }",
+      "comment": "Manages generation parameters for sync engine; owns configuration struct; ensures consistent initialization.",
       "is_pub": false,
       "members": [
         {
@@ -261,17 +275,19 @@
             { "name": "args", "type": "[]const []const u8" }
           ],
           "returns": "error{MissingValue}!GenArgs",
+          "comment": "Parse gen subcommand arguments. Returns error.MissingValue when a\nflag-with-value is the last argument (fail fast; do not silently drop).",
           "is_pub": false,
-          "line": 836
+          "line": 839
         }
       ],
-      "line": 795
+      "line": 796
     },
     {
       "type": "struct",
       "name": "ResolvedGenPaths",
       "match_hash": "a50226053159b5dd8d0fa5f1f7003b8ded8c16f9c7c06fb69319fe233edfbf32",
       "signature": "keyword_struct ResolvedGenPaths { ... }",
+      "comment": "Resolved absolute paths for a gen run. All fields are owned; call deinit().",
       "is_pub": false,
       "members": [
         {
@@ -285,10 +301,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 924
+          "line": 929
         }
       ],
-      "line": 919
+      "line": 924
     },
     {
       "type": "fn_private",
@@ -301,8 +317,9 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "ResolvedGenPaths",
+      "comment": "Resolve workspace, json_dir, and db_path (→ .guidance.db) to absolute\npaths.  db_path is the SQLite vector database; it defaults to the value\nin guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.",
       "is_pub": false,
-      "line": 934
+      "line": 939
     },
     {
       "type": "fn_private",
@@ -316,8 +333,9 @@
         { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Wire up the LLM enhancer on a `CommentSyncProcessor`.\n\nAllocates an `Enhancer` on the heap (required because `CommentSyncProcessor`\nholds a `?*Enhancer` pointer).  The returned pointer must be freed with\n`teardownCspEnhancer` after the processor is done.",
       "is_pub": false,
-      "line": 950
+      "line": 955
     },
     {
       "type": "fn_private",
@@ -329,8 +347,9 @@
         { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Release the heap-allocated enhancer previously set by `setupCspEnhancer`.",
       "is_pub": false,
-      "line": 1006
+      "line": 1011
     },
     {
       "type": "fn_private",
@@ -344,8 +363,9 @@
         { "name": "processor", "type": "*sync_mod.SyncProcessor" }
       ],
       "returns": "void",
+      "comment": "Wire up the LLM enhancer for automatic comment generation.\nModel selection: fast slot (if set) > default slot.\nUses resolveLlmConfigForThinking to ensure thinking models use /api/chat endpoint.\nLogs a warning and leaves processor.enhancer null if initialisation fails.",
       "is_pub": false,
-      "line": 1018
+      "line": 1023
     },
     {
       "type": "fn_private",
@@ -359,8 +379,9 @@
         { "name": "paths", "type": "ResolvedGenPaths" }
       ],
       "returns": "usize",
+      "comment": "Dispatch to single-file, explicit-scan, or full-workspace processing.\nFails fast and propagates the first error encountered.\nReturns the count of source files processed.",
       "is_pub": false,
-      "line": 1113
+      "line": 1118
     },
     {
       "type": "fn_private",
@@ -374,8 +395,9 @@
         { "name": "capabilities_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Returns true when `db_path` is newer than every dependency that `syncGuidanceDb`\nconsumes:\n  • every .json file under `json_dir/src/`\n  • `json_dir/semantic-aliases.json`\n  • `json_dir/capability-mapping.json`\n  • `json_dir/guidance-config.json`\n  • every file under `capabilities_dir` (when non-null)\n\nReturns false (→ sync needed) when the db is absent or any dep is newer.",
       "is_pub": false,
-      "line": 1158
+      "line": 1163
     },
     {
       "type": "fn_private",
@@ -390,8 +412,23 @@
         { "name": "verbose", "type": "bool" }
       ],
       "returns": "void",
+      "comment": "Sync .guidance.db (SQLite vector database with in-process cosine similarity).\nCreates an embedding provider from config and calls vector_db.syncDatabase.\nFailures are logged as warnings but do not abort the gen pipeline.",
       "is_pub": false,
-      "line": 1219
+      "line": 1224
+    },
+    {
+      "type": "fn_private",
+      "name": "clearSynthesisCacheAt",
+      "match_hash": "365c51ffba6ce4594aa284d6bdd6baa45c6c701ff57dbe620450c2623314192b",
+      "signature": "fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db_path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "comment": "Open the guidance db at `db_path` and delete all llm_cache entries.\nBest-effort: failures are silently ignored.",
+      "is_pub": false,
+      "line": 1296
     },
     {
       "type": "fn_private",
@@ -403,8 +440,9 @@
         { "name": "verbose", "type": "bool" }
       ],
       "returns": "void",
+      "comment": "Extract keywords from all guidance JSON files, rank by frequency, and generate\noptimized semantic aliases using LLM consolidation.\nNOTE: This preserves existing semantic-aliases.json if it exists.",
       "is_pub": false,
-      "line": 1292
+      "line": 1307
     },
     {
       "type": "fn_decl",
@@ -416,8 +454,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Generates a Zig command string using provided allocator and arguments.",
       "is_pub": true,
-      "line": 1314
+      "line": 1329
     },
     {
       "type": "fn_private",
@@ -429,8 +468,24 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "void",
+      "comment": "Core gen implementation shared by `gen` and `check`.\n\nPipeline (per source file):\n  incremental check → test (once/language) → lint → fmt → guidance → touch JSON\n\nIncremental detection is always active: a file is skipped when its guidance\nJSON is at least as new as the source.  Pass `ga.force = true` to override.\nThe guidance JSON is always touched after successful processing so its mtime\nacts as the universal \"all phases passed\" marker across all languages.",
       "is_pub": false,
-      "line": 1331
+      "line": 1346
+    },
+    {
+      "type": "fn_private",
+      "name": "validateAllJsonSchema",
+      "match_hash": "a63760e00b02ba6bd7b28d000ef69702fe3c3af1fab05e92ec6313478ece4cc9",
+      "signature": "fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "verbose", "type": "bool" }
+      ],
+      "returns": "void",
+      "comment": "Walk `json_dir/src/` and validate every .json file against the GuidanceDoc schema.\nPrints a warning for each invalid file but does not abort the gen run.",
+      "is_pub": false,
+      "line": 1657
     },
     {
       "type": "fn_decl",
@@ -442,8 +497,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Validates and processes Zig command arguments, returning a status update.",
       "is_pub": true,
-      "line": 1637
+      "line": 1698
     },
     {
       "type": "fn_decl",
@@ -455,8 +511,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Cleans up memory by allocating and returning a cleaned Zig allocation.",
       "is_pub": true,
-      "line": 1719
+      "line": 1780
     },
     {
       "type": "fn_decl",
@@ -470,8 +527,9 @@
         { "name": "src_abs", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extracts a JSON path from a Zig source file using an allocator and workspace parameters.",
       "is_pub": true,
-      "line": 1767
+      "line": 1828
     },
     {
       "type": "fn_decl",
@@ -483,8 +541,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Map CAPABILITY.md files to source files by analysing AST JSON content.\nUpdates .guidance/capability-mapping.json with fresh keyword and source mappings.\nPreserves the \"mapping\" (file→capability) section; regenerates \"capability_keywords\".\n\nUsage: guidance map-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run]",
       "is_pub": true,
-      "line": 1789
+      "line": 1850
     },
     {
       "type": "fn_private",
@@ -495,8 +554,9 @@
         { "name": "tok", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true if `tok` is a plausible Zig/Python identifier keyword.\nAccepts: camelCase, PascalCase, snake_case, dotted.paths, but not\npunctuation-heavy strings or all-lowercase common words.",
       "is_pub": false,
-      "line": 1989
+      "line": 2050
     },
     {
       "type": "fn_private",
@@ -508,8 +568,9 @@
         { "name": "argv", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Run an arbitrary command (full argv, no template substitution).\nReturns true on exit code 0.",
       "is_pub": false,
-      "line": 2013
+      "line": 2074
     },
     {
       "type": "fn_private",
@@ -522,8 +583,9 @@
         { "name": "file_path", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Substitute `{file}` tokens in `argv_template` with `file_path`, then run\nthe resulting command via `runCommand`.\n\nReturns true on exit code 0, false otherwise.",
       "is_pub": false,
-      "line": 2027
+      "line": 2088
     },
     {
       "type": "fn_private",
@@ -536,8 +598,9 @@
         { "name": "exts", "type": "[]const []const u8" }
       ],
       "returns": "[][]const u8",
+      "comment": "Walk `dir_abs` recursively and collect all files whose extension matches\nany member of `exts` (e.g. `.{\".zig\"}`).\nReturns an owned slice of owned absolute paths; caller must free each and\nthen the slice.",
       "is_pub": false,
-      "line": 2044
+      "line": 2105
     },
     {
       "type": "fn_private",
@@ -552,8 +615,9 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "bool",
+      "comment": "Run the per-file pipeline for one built-in source file:\n  1. lint  (if configured and not skip_lint)\n  2. fmt   (if configured and not skip_fmt)\n  3. guidance  (AST → JSON via SyncProcessor)\n  4. touch JSON  (always — makes JSON mtime the universal \"all phases passed\" marker)\n\nFormatting runs AFTER lint so that:\n  - Semantic lint errors are caught before any file modification.\n  - The formatter normalises whitespace before the AST is parsed, ensuring\n    line numbers in the JSON are stable and accurate.\n\nReturns false when lint fails (caller should abort the batch).",
       "is_pub": false,
-      "line": 2087
+      "line": 2148
     },
     {
       "type": "fn_private",
@@ -571,8 +635,9 @@
         { "name": "ga", "type": "GenArgs" }
       ],
       "returns": "void",
+      "comment": "Run the full built-in pipeline over a set of source files that share the\nsame language group:\n  1. Test suite (once, if any file is stale relative to the test marker)\n  2. Per-file: lint → fmt → guidance → touch JSON\n\n`language` is a short tag (e.g. \"zig\") used for the test marker path.\n`stale_files` are the files that need processing (source newer than JSON).\n`all_files` are ALL source files for this language (used for test marker check).\n`guidance_root` is the absolute path to the guidance directory (e.g. .guidance).",
       "is_pub": false,
-      "line": 2150
+      "line": 2211
     },
     {
       "type": "fn_decl",
@@ -584,8 +649,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Processes a Zig source file to extract and return sync-comment data.",
       "is_pub": true,
-      "line": 2211
+      "line": 2272
     },
     {
       "type": "fn_decl",
@@ -597,8 +663,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Processes and migrates comment data during sync operations.",
       "is_pub": true,
-      "line": 2382
+      "line": 2443
     },
     {
       "type": "fn_decl",
@@ -610,8 +677,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Walk .guidance/src/**/*.json and blank any synthetic comments in-place.\nUsage: guidance scrub [--guidance-dir DIR] [--dry-run]",
       "is_pub": true,
-      "line": 2544
+      "line": 2605
     },
     {
       "type": "fn_private",
@@ -622,8 +690,9 @@
         { "name": "value", "type": "*std.json.Value" }
       ],
       "returns": "usize",
+      "comment": "Count and scrub synthetic comments in a Value tree; returns count blanked.",
       "is_pub": false,
-      "line": 2640
+      "line": 2701
     },
     {
       "type": "fn_decl",
@@ -635,8 +704,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Dispatch to todo subcommands.\nUsage: guidance todo <new|triage|checklist|status|list|abandon> [args...]",
       "is_pub": true,
-      "line": 2667
+      "line": 2728
     },
     {
       "type": "fn_decl",
@@ -648,8 +718,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Append a timestamped entry to the current work item's DIARY.md.\nUsage: guidance diary \"<message>\"",
       "is_pub": true,
-      "line": 2731
+      "line": 2792
     },
     {
       "type": "fn_decl",
@@ -661,8 +732,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance check` runs the complete RALPH loop:\n  test → lint → fmt → guidance (all languages) → structure → db\n\nIt is the recommended entry point for pre-commit hooks and CI.\nIncremental detection is always active: only stale files are processed.",
       "is_pub": true,
-      "line": 2780
+      "line": 2841
     },
     {
       "type": "fn_decl",
@@ -674,8 +746,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[][2]u32",
+      "comment": "Converts a null-terminated string into a slice of u32 values representing hunk ranges.",
       "is_pub": true,
-      "line": 2834
+      "line": 2895
     },
     {
       "type": "fn_decl",
@@ -689,8 +762,9 @@
         { "name": "hunk_ranges", "type": "[]const [2]u32" }
       ],
       "returns": "[]CommitMemberInfo",
+      "comment": "Loads changed member information from a Zig file using allocator, guidance root, relative paths, and hunk ranges.",
       "is_pub": true,
-      "line": 2839
+      "line": 2900
     },
     {
       "type": "fn_decl",
@@ -702,8 +776,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a chunk should be ignored based on guidance data.",
       "is_pub": true,
-      "line": 2844
+      "line": 2905
     },
     {
       "type": "fn_decl",
@@ -714,8 +789,9 @@
         { "name": "chunk", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Converts a chunk of bytes into a public file path string.",
       "is_pub": true,
-      "line": 2849
+      "line": 2910
     },
     {
       "type": "fn_decl",
@@ -728,8 +804,9 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
+      "comment": "Splits a diff array by file pub key, returning an allocated slice of bytes.",
       "is_pub": true,
-      "line": 2854
+      "line": 2915
     }
   ]
 }

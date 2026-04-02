@@ -611,6 +611,62 @@ pub const GuidanceDb = struct {
             }
         }
 
+        // ── Step 2h: query_count column on ast_nodes (hot files tracking) ──
+        // Incremented each time an ast_nodes row is returned in a keyword search.
+        {
+            var qc_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(
+                self.db,
+                "ALTER TABLE ast_nodes ADD COLUMN query_count INTEGER NOT NULL DEFAULT 0",
+                null,
+                null,
+                &qc_err,
+            );
+            if (qc_err) |msg| c.sqlite3_free(msg);
+        }
+
+        // ── Step 2i: query_log table (telemetry) ──
+        {
+            const ql_sql =
+                \\CREATE TABLE IF NOT EXISTS query_log (
+                \\  id           INTEGER PRIMARY KEY,
+                \\  query        TEXT    NOT NULL,
+                \\  timestamp    INTEGER NOT NULL,
+                \\  latency_ms   INTEGER,
+                \\  result_count INTEGER,
+                \\  tier         TEXT
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_ql_ts  ON query_log(timestamp);
+                \\CREATE INDEX IF NOT EXISTS idx_ql_q   ON query_log(query);
+            ;
+            var ql_err: [*c]u8 = null;
+            const ql_rc = c.sqlite3_exec(self.db, ql_sql, null, null, &ql_err);
+            if (ql_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE query_log", ql_rc, ql_err, self.db);
+                if (ql_err) |msg| c.sqlite3_free(msg);
+                // Non-fatal: telemetry is best-effort.
+            }
+        }
+
+        // ── Step 2j: llm_cache table (synthesis cache) ──
+        {
+            const lc_sql =
+                \\CREATE TABLE IF NOT EXISTS llm_cache (
+                \\  query_hash     TEXT PRIMARY KEY,
+                \\  response       TEXT NOT NULL,
+                \\  created_at     INTEGER NOT NULL,
+                \\  signature_hash TEXT NOT NULL
+                \\);
+            ;
+            var lc_err: [*c]u8 = null;
+            const lc_rc = c.sqlite3_exec(self.db, lc_sql, null, null, &lc_err);
+            if (lc_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE llm_cache", lc_rc, lc_err, self.db);
+                if (lc_err) |msg| c.sqlite3_free(msg);
+                // Non-fatal.
+            }
+        }
+
         // ── Step 5: schema version ──
         const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
         var stmt: ?*c.sqlite3_stmt = null;
@@ -3434,6 +3490,204 @@ pub const GuidanceDb = struct {
         }
 
         return results.toOwnedSlice(allocator);
+    }
+
+    // ── Telemetry: query_log ──────────────────────────────────────────────────
+
+    /// Log a query execution to query_log for telemetry.  Best-effort: never returns an error.
+    pub fn logQuery(
+        self: *Self,
+        query: []const u8,
+        latency_ms: i64,
+        result_count: usize,
+        tier: []const u8,
+    ) void {
+        const sql = "INSERT INTO query_log(query,timestamp,latency_ms,result_count,tier) VALUES(?1,strftime('%s','now'),?2,?3,?4)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_text(stmt.?, 1, query.ptr, @intCast(query.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt.?, 2, latency_ms);
+        _ = c.sqlite3_bind_int64(stmt.?, 3, @intCast(result_count));
+        _ = c.sqlite3_bind_text(stmt.?, 4, tier.ptr, @intCast(tier.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt.?);
+    }
+
+    pub const TelemetryEntry = struct {
+        query: []const u8,
+        count: i64,
+        avg_latency_ms: f64,
+        tier: []const u8,
+    };
+
+    /// Return the top N most frequent queries from query_log.
+    /// Caller owns the returned slice (each TelemetryEntry.query is owned).
+    pub fn topQueries(self: *Self, allocator: std.mem.Allocator, limit: usize) ![]TelemetryEntry {
+        const sql = "SELECT query, COUNT(*) as cnt, AVG(latency_ms) as avg_lat, COALESCE(tier,'') as tier FROM query_log GROUP BY query ORDER BY cnt DESC LIMIT ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_int64(stmt.?, 1, @intCast(limit));
+
+        var results: std.ArrayList(TelemetryEntry) = .{};
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            const qraw = c.sqlite3_column_text(stmt.?, 0);
+            const qlen: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
+            const entry = TelemetryEntry{
+                .query = try allocator.dupe(u8, if (qraw) |p| p[0..qlen] else ""),
+                .count = c.sqlite3_column_int64(stmt.?, 1),
+                .avg_latency_ms = c.sqlite3_column_double(stmt.?, 2),
+                .tier = blk: {
+                    const traw = c.sqlite3_column_text(stmt.?, 3);
+                    const tlen: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 3));
+                    break :blk try allocator.dupe(u8, if (traw) |p| p[0..tlen] else "");
+                },
+            };
+            try results.append(allocator, entry);
+        }
+        return results.toOwnedSlice(allocator);
+    }
+
+    // ── Hot Files: query_count on ast_nodes ──────────────────────────────────
+
+    /// Return the top `limit` hot files: ast_nodes rows ordered by query_count desc.
+    /// Caller owns the returned slice and must free each entry with `freeSearchResult`.
+    pub fn listHotFiles(self: *Self, allocator: std.mem.Allocator, limit: usize) ![]SearchResult {
+        // Column order matches readRowResult (cols 0-10) + query_count as col 11.
+        // 0:file_path 1:source 2:module 3:node_type 4:name
+        // 5:signature 6:comment 7:line 8:used_by 9:language 10:detail 11:query_count
+        const sql =
+            \\SELECT file_path, COALESCE(source,''), module, node_type, name,
+            \\       signature, comment, line, used_by, language, detail, query_count
+            \\FROM ast_nodes
+            \\WHERE query_count > 0
+            \\ORDER BY query_count DESC
+            \\LIMIT ?1
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return &.{};
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_int64(stmt.?, 1, @intCast(limit));
+
+        var results: std.ArrayList(SearchResult) = .{};
+        errdefer {
+            for (results.items) |r| freeSearchResult(allocator, r);
+            results.deinit(allocator);
+        }
+        while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
+            var r = try readRowResult(stmt.?, allocator);
+            r.score = @floatFromInt(c.sqlite3_column_int64(stmt.?, 11));
+            try results.append(allocator, r);
+        }
+        return results.toOwnedSlice(allocator);
+    }
+
+    /// Increment query_count for the given ast_nodes id. Best-effort, no error.
+    pub fn incrementQueryCount(self: *Self, node_id: i64) void {
+        const sql = "UPDATE ast_nodes SET query_count = query_count + 1 WHERE id = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_int64(stmt.?, 1, node_id);
+        _ = c.sqlite3_step(stmt.?);
+    }
+
+    /// Increment query_count for all ast_nodes with the given relative source path.
+    /// `source_path` matches the `source` column (e.g. "src/guidance/llm_filter.zig").
+    /// Best-effort, no error.
+    pub fn incrementQueryCountForFile(self: *Self, source_path: []const u8) void {
+        const sql = "UPDATE ast_nodes SET query_count = query_count + 1 WHERE source = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_text(stmt.?, 1, source_path.ptr, @intCast(source_path.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt.?);
+    }
+
+    // ── LLM Synthesis Cache ───────────────────────────────────────────────────
+
+    /// Look up a cached LLM synthesis response by query hash.
+    /// Returns an allocator-owned string or null on miss. `query_hash` is SHA-256 hex.
+    pub fn loadCachedSynthesis(self: *Self, allocator: std.mem.Allocator, query_hash: []const u8) !?[]const u8 {
+        const sql = "SELECT response FROM llm_cache WHERE query_hash = ?1 LIMIT 1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return null;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_text(stmt.?, 1, query_hash.ptr, @intCast(query_hash.len), c.SQLITE_STATIC);
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return null;
+        const raw = c.sqlite3_column_text(stmt.?, 0);
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
+        return try allocator.dupe(u8, if (raw) |p| p[0..len] else "");
+    }
+
+    /// Store an LLM synthesis response in the cache. `signature_hash` tracks
+    /// the set of source files that contributed to this response; used for
+    /// invalidation on `guidance gen --force`.
+    pub fn storeSynthesisCache(
+        self: *Self,
+        query_hash: []const u8,
+        response: []const u8,
+        signature_hash: []const u8,
+    ) void {
+        const sql =
+            \\INSERT OR REPLACE INTO llm_cache(query_hash, response, created_at, signature_hash)
+            \\VALUES(?1, ?2, strftime('%s','now'), ?3)
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_text(stmt.?, 1, query_hash.ptr, @intCast(query_hash.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt.?, 2, response.ptr, @intCast(response.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt.?, 3, signature_hash.ptr, @intCast(signature_hash.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt.?);
+    }
+
+    /// Delete ALL llm_cache entries. Called by `guidance gen --force`.
+    pub fn clearSynthesisCache(self: *Self) void {
+        _ = c.sqlite3_exec(self.db, "DELETE FROM llm_cache", null, null, null);
+    }
+
+    /// Delete all llm_cache entries whose signature_hash matches.
+    /// Called by `guidance gen --force` to invalidate stale cached responses.
+    pub fn invalidateSynthesisCache(self: *Self, signature_hash: []const u8) void {
+        const sql = "DELETE FROM llm_cache WHERE signature_hash = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        _ = c.sqlite3_bind_text(stmt.?, 1, signature_hash.ptr, @intCast(signature_hash.len), c.SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt.?);
+    }
+
+    /// Return cache statistics: total entries, total bytes. Best-effort.
+    pub fn cacheStats(self: *Self) struct { entries: i64, bytes: i64 } {
+        const sql = "SELECT COUNT(*), SUM(LENGTH(response)) FROM llm_cache";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK)
+            return .{ .entries = 0, .bytes = 0 };
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        if (c.sqlite3_step(stmt.?) != c.SQLITE_ROW) return .{ .entries = 0, .bytes = 0 };
+        return .{
+            .entries = c.sqlite3_column_int64(stmt.?, 0),
+            .bytes = c.sqlite3_column_int64(stmt.?, 1),
+        };
     }
 };
 

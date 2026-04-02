@@ -127,7 +127,7 @@
           ],
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 365
+          "line": 366
         }
     ,    {
           "type": "fn_decl",
@@ -140,7 +140,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 379
+          "line": 380
         }
     ,    {
           "type": "fn_private",
@@ -153,7 +153,7 @@
           ],
           "returns": "[]types.Pattern",
           "is_pub": false,
-          "line": 383
+          "line": 384
         }
     ,    {
           "type": "fn_decl",
@@ -166,7 +166,7 @@
           ],
           "returns": "[]types.Skill",
           "is_pub": true,
-          "line": 396
+          "line": 397
         }
     ,    {
           "type": "fn_decl",
@@ -179,7 +179,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 407
+          "line": 408
         }
     ,    {
           "type": "fn_decl",
@@ -192,7 +192,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 431
+          "line": 434
         }
     ,    {
           "type": "fn_decl",
@@ -207,7 +207,7 @@
           ],
           "returns": "std.mem.Allocator.Error!MergeResult",
           "is_pub": true,
-          "line": 453
+          "line": 458
         }
     ,    {
           "type": "fn_private",
@@ -223,7 +223,7 @@
           ],
           "returns": "types.Member",
           "is_pub": false,
-          "line": 496
+          "line": 501
         }
       ],
       "line": 8
@@ -234,109 +234,109 @@
       "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
       "is_pub": true,
-      "line": 591
+      "line": 596
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to write' preamble",
       "is_pub": false,
-      "line": 606
+      "line": 611
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to look' preamble",
       "is_pub": false,
-      "line": 612
+      "line": 617
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to read' preamble",
       "is_pub": false,
-      "line": 617
+      "line": 622
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'i need to write' preamble",
       "is_pub": false,
-      "line": 622
+      "line": 627
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let's write' preamble",
       "is_pub": false,
-      "line": 627
+      "line": 632
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let me write' preamble",
       "is_pub": false,
-      "line": 632
+      "line": 637
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'write a one-sentence' preamble",
       "is_pub": false,
-      "line": 637
+      "line": 642
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: returns false for valid comments",
       "is_pub": false,
-      "line": 642
+      "line": 647
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: case-insensitive matching",
       "is_pub": false,
-      "line": 649
+      "line": 654
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: false for text starting with similar but different words",
       "is_pub": false,
-      "line": 655
+      "line": 660
     },
     {
       "type": "test_decl",
       "name": "JsonStore: init creates store with allocator",
       "is_pub": false,
-      "line": 661
+      "line": 666
     },
     {
       "type": "test_decl",
       "name": "JsonStore: loadGuidance returns null for non-existent file",
       "is_pub": false,
-      "line": 666
+      "line": 671
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for invalid JSON",
       "is_pub": false,
-      "line": 672
+      "line": 677
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing meta",
       "is_pub": false,
-      "line": 678
+      "line": 683
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing module/source",
       "is_pub": false,
-      "line": 684
+      "line": 689
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeStrings deep copies strings",
       "is_pub": false,
-      "line": 692
+      "line": 697
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeSkills deep copies skills",
       "is_pub": false,
-      "line": 705
+      "line": 710
     }
   ]
 }

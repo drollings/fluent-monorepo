@@ -15,7 +15,7 @@
       ],
       "returns": "usize",
       "is_pub": true,
-      "line": 26
+      "line": 27
     },
     {
       "type": "fn_decl",
@@ -29,7 +29,7 @@
       ],
       "returns": "[]const types.Stage",
       "is_pub": true,
-      "line": 36
+      "line": 37
     },
     {
       "type": "fn_decl",
@@ -45,7 +45,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 77
+      "line": 78
     },
     {
       "type": "fn_private",
@@ -60,7 +60,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 167
+      "line": 168
     },
     {
       "type": "fn_private",
@@ -73,25 +73,25 @@
       ],
       "returns": "types.Stage",
       "is_pub": false,
-      "line": 219
+      "line": 220
     },
     {
       "type": "test_decl",
       "name": "estimateTokens: approximation",
       "is_pub": false,
-      "line": 234
+      "line": 235
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: code always kept",
       "is_pub": false,
-      "line": 240
+      "line": 241
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: prose included when budget allows",
       "is_pub": false,
-      "line": 262
+      "line": 263
     }
   ]
 }

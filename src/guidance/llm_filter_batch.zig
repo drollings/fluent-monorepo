@@ -23,8 +23,9 @@ const types = @import("types.zig");
 const Allocator = std.mem.Allocator;
 
 /// Approximate tokens for a string: 1 token ≈ 4 bytes.
+/// Delegates to the shared common.token_budget.estimate().
 pub fn estimateTokens(content: []const u8) usize {
-    return (content.len + 3) / 4;
+    return llm.token_budget.estimate(content);
 }
 
 /// Deterministic pre-filter: drop prose/insight/skill_doc stages that would

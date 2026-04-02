@@ -25,6 +25,9 @@ const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const freeSearchResult = GuidanceDb.freeSearchResult;
 const stepPrint = types.stepPrint;
+const StringInterner = llm.interner.StringInterner;
+const BitSetDrift = llm.drift.BitSetDrift;
+const hash_mod = @import("hash.zig");
 
 // =============================================================================
 // explain — shared types
@@ -171,7 +174,7 @@ const FilterMode = enum {
     skip,
 };
 
-/// Describes argument handling in ExplainArgs, managing ownership and invariants for structured input.
+/// Manages query parameters and options; owned by the engine; ensures consistent argument handling.
 const ExplainArgs = struct {
     query_str: ?[]const u8 = null,
     limit: usize = 10,
@@ -188,6 +191,8 @@ const ExplainArgs = struct {
     staged: bool = true,
     /// LLM relevance filtering mode.
     filter: FilterMode = .auto,
+    /// Disable deterministic DRIFT follow-up generation.
+    no_drift: bool = false,
 };
 
 /// Return true when the query is "short" (fast path, no LLM filter).
@@ -525,6 +530,8 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
             ea.model = args[i];
         } else if (std.mem.eql(u8, arg, "--no-llm")) {
             ea.no_llm = true;
+        } else if (std.mem.eql(u8, arg, "--no-drift")) {
+            ea.no_drift = true;
         } else if (std.mem.eql(u8, arg, "--guidance")) {
             i += 1;
             if (i >= args.len) {
@@ -556,10 +563,9 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         }
     }
 
-    const query_text = ea.query_str orelse {
-        std.debug.print("Error: query string required\n", .{});
-        return;
-    };
+    // TIER 0: empty query → hot files (no query_text required)
+    const query_text = ea.query_str orelse "";
+    const is_empty_query = std.mem.trim(u8, query_text, " \t\n\r").len == 0;
 
     // ── Resolve paths ─────────────────────────────────────────────────────────
     const cwd = try std.process.getCwdAlloc(allocator);
@@ -601,6 +607,29 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         return;
     };
     defer db.deinit();
+
+    // ── TIER 0: Empty query → hot files ─────────────────────────────────────
+    if (is_empty_query) {
+        const hot = db.listHotFiles(allocator, ea.limit) catch &.{};
+        defer {
+            for (hot) |r| freeSearchResult(allocator, r);
+            allocator.free(hot);
+        }
+        var ws: llm.WriterState = .{};
+        ws.initStdout();
+        const w = ws.writer();
+        try w.print("# Hot Files\n\n", .{});
+        if (hot.len == 0) {
+            try w.print("No hot files yet. Run `guidance explain <query>` to start tracking.\n", .{});
+        } else {
+            for (hot, 0..) |r, rank| {
+                try w.print("{d}. `{s}` — {s} (query_count: {d:.0})\n", .{ rank + 1, r.source, r.name, r.score });
+            }
+        }
+        try w.flush();
+        db.logQuery("", 0, hot.len, "TIER0");
+        return;
+    }
 
     // ── Staged pipeline (default) ──────────────────────────────────────────────
     if (ea.staged) {
@@ -1047,6 +1076,100 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
     return try terms.toOwnedSlice(allocator);
 }
 
+// ---------------------------------------------------------------------------
+// DRIFT helpers — Phase 7
+// ---------------------------------------------------------------------------
+
+const drift_stop_words = [_][]const u8{
+    "the",  "a",    "an",   "is",   "in",  "of",   "to",   "for",  "and",   "or",
+    "with", "from", "that", "this", "how", "does", "what", "when", "where", "why",
+    "use",  "get",  "set",  "its",  "are", "not",
+};
+
+/// Tokenize `text` into lowercase capability words, filtering stop words
+/// and tokens shorter than 3 characters. Appends to `out`.
+fn tokenizeCapabilityWords(
+    allocator: std.mem.Allocator,
+    text: []const u8,
+    out: *std.ArrayList([]const u8),
+) !void {
+    var it = std.mem.tokenizeAny(u8, text, " \t\n\r_-./");
+    while (it.next()) |raw| {
+        if (raw.len < 3) continue;
+        const lower = try std.ascii.allocLowerString(allocator, raw);
+        var is_stop = false;
+        for (drift_stop_words) |sw| {
+            if (std.mem.eql(u8, lower, sw)) {
+                is_stop = true;
+                break;
+            }
+        }
+        if (is_stop) {
+            allocator.free(lower);
+            continue;
+        }
+        try out.append(allocator, lower);
+    }
+}
+
+/// Compute deterministic DRIFT follow-up queries.
+///
+/// Tokenizes query into "needed" capabilities and result module/names into
+/// "available" capabilities. Returns allocator-owned slice of "Provide <cap>"
+/// strings for each missing capability. Always returns a heap-allocated slice
+/// (safe to free even when empty).
+fn computeDriftFollowUps(
+    allocator: std.mem.Allocator,
+    query_text: []const u8,
+    results: []const SearchResult,
+) ![]const []const u8 {
+    var interner = StringInterner.init(allocator);
+    defer interner.deinit();
+
+    // Collect needed words (from query)
+    var needed_words: std.ArrayList([]const u8) = .{};
+    defer {
+        for (needed_words.items) |w| allocator.free(w);
+        needed_words.deinit(allocator);
+    }
+    try tokenizeCapabilityWords(allocator, query_text, &needed_words);
+
+    if (needed_words.items.len == 0) return try allocator.alloc([]const u8, 0);
+
+    // Collect available words (from result modules and symbol names)
+    var avail_words: std.ArrayList([]const u8) = .{};
+    defer {
+        for (avail_words.items) |w| allocator.free(w);
+        avail_words.deinit(allocator);
+    }
+    for (results) |r| {
+        try tokenizeCapabilityWords(allocator, r.module, &avail_words);
+        try tokenizeCapabilityWords(allocator, r.name, &avail_words);
+    }
+
+    // Intern all words first to fix total capacity
+    for (needed_words.items) |w| _ = try interner.intern(w);
+    for (avail_words.items) |w| _ = try interner.intern(w);
+    const cap = @max(1, interner.count());
+
+    // Build needed bitset
+    var needed_bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, cap);
+    defer needed_bs.deinit(allocator);
+    for (needed_words.items) |w| {
+        if (interner.getIndex(w)) |idx| needed_bs.set(idx);
+    }
+
+    // Build available bitset
+    var avail_bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, cap);
+    defer avail_bs.deinit(allocator);
+    for (avail_words.items) |w| {
+        if (interner.getIndex(w)) |idx| avail_bs.set(idx);
+    }
+
+    const drift = BitSetDrift{ .interner = &interner };
+    return try drift.generateFollowUps(allocator, &needed_bs, &avail_bs);
+}
+
 /// Full staged explain pipeline.  Called when `--staged` is active (default).
 ///
 /// Pipeline:
@@ -1155,6 +1278,7 @@ fn cmdExplainStaged(
     // ── Fast path: no LLM ─────────────────────────────────────────────────────
     if (!use_llm or client_opt == null) {
         if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
+        for (stages_raw) |s| db.incrementQueryCountForFile(s.source);
         return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace);
     }
 
@@ -1179,6 +1303,9 @@ fn cmdExplainStaged(
         for (expansion_results) |r| freeSearchResult(allocator, r);
         allocator.free(expansion_results);
     }
+
+    // Increment query_count for files returned in search results (hot files tracking).
+    for (expansion_results) |r| db.incrementQueryCountForFile(r.source);
 
     var fp_list: std.ArrayList([]const u8) = .{};
     defer fp_list.deinit(allocator);
@@ -1221,19 +1348,82 @@ fn cmdExplainStaged(
     if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
 
     // M8: LLM synthesis (use fast model if available, else default).
+    // Check LLM synthesis cache before calling the model.
+    const query_hash = hash_mod.sha256Hex(allocator, query_text) catch null;
+    defer if (query_hash) |qh| allocator.free(qh);
+
+    const cached_summary: ?[]const u8 = if (query_hash) |qh|
+        db.loadCachedSynthesis(allocator, qh) catch null
+    else
+        null;
+    defer if (cached_summary) |cs| allocator.free(cs);
+
     const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
-    const synth_result = synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
-        return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace);
-    };
+    const synth_result = if (cached_summary == null)
+        synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
+            return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace);
+        }
+    else
+        synthesize_mod.SynthesisResult{ .summary = null, .followup_keywords = null };
     defer {
-        if (synth_result.summary) |s| allocator.free(s);
-        if (synth_result.followup_keywords) |kw| {
-            for (kw) |k| allocator.free(k);
-            allocator.free(kw);
+        if (cached_summary == null) {
+            if (synth_result.summary) |s| allocator.free(s);
+            if (synth_result.followup_keywords) |kw| {
+                for (kw) |k| allocator.free(k);
+                allocator.free(kw);
+            }
         }
     }
 
-    return emitStagedOutput(allocator, query_text, combined.items, synth_result.summary, synth_result.followup_keywords, workspace);
+    // Store successful synthesis in cache (best-effort, no error propagation).
+    if (cached_summary == null) {
+        if (synth_result.summary) |summary| {
+            if (query_hash) |qh| {
+                // Compute signature_hash from stage file paths for future invalidation.
+                var sig_buf: std.ArrayList(u8) = .{};
+                defer sig_buf.deinit(allocator);
+                const sig_writer = sig_buf.writer(allocator);
+                for (combined.items) |s| {
+                    sig_writer.writeAll(s.source) catch {};
+                    sig_writer.writeByte(0) catch {};
+                }
+                const sig_hash = hash_mod.sha256Hex(allocator, sig_buf.items) catch null;
+                defer if (sig_hash) |sh| allocator.free(sh);
+                db.storeSynthesisCache(qh, summary, sig_hash orelse qh);
+            }
+        }
+    }
+
+    // Use cached summary if available, otherwise use synthesis result.
+    const effective_summary = cached_summary orelse synth_result.summary;
+
+    // M8.5: DRIFT follow-ups — deterministic, no LLM required.
+    const drift_followups: []const []const u8 = if (!ea.no_drift)
+        computeDriftFollowUps(allocator, query_text, expansion_results) catch &.{}
+    else
+        &.{};
+    defer {
+        for (drift_followups) |q| allocator.free(q);
+        allocator.free(drift_followups);
+    }
+
+    // Merge LLM-generated and DRIFT follow-ups into a single slice.
+    // The merged slice borrows string pointers from both sources; only its
+    // spine needs to be freed.
+    const merged_followups: ?[]const []const u8 = if (drift_followups.len == 0)
+        synth_result.followup_keywords
+    else blk: {
+        const synth_len = if (synth_result.followup_keywords) |sk| sk.len else 0;
+        var all = try allocator.alloc([]const u8, synth_len + drift_followups.len);
+        if (synth_result.followup_keywords) |sk| @memcpy(all[0..synth_len], sk);
+        @memcpy(all[synth_len..], drift_followups);
+        break :blk all;
+    };
+    defer if (drift_followups.len > 0) {
+        if (merged_followups) |mf| allocator.free(mf);
+    };
+
+    return emitStagedOutput(allocator, query_text, combined.items, effective_summary, merged_followups, workspace);
 }
 
 /// Write formatted staged output to stdout and flush.
@@ -1840,6 +2030,110 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
     }
 
     return queries.toOwnedSlice(allocator);
+}
+
+// =============================================================================
+// guidance telemetry — query frequency stats
+// =============================================================================
+
+/// `guidance telemetry [--top-queries N] [--slowest N] [--tier-breakdown]`
+pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var limit: usize = 10;
+    var j: usize = 0;
+    while (j < args.len) : (j += 1) {
+        const arg = args[j];
+        if (std.mem.eql(u8, arg, "--top-queries") or std.mem.eql(u8, arg, "--slowest")) {
+            j += 1;
+            if (j < args.len) limit = std.fmt.parseInt(usize, args[j], 10) catch limit;
+        }
+        // --tier-breakdown: future work
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+    const cfg = config_mod.loadConfig(allocator, cwd) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    defer allocator.free(db_path);
+
+    std.fs.accessAbsolute(db_path, .{}) catch {
+        std.debug.print("No .guidance.db found at {s}\n", .{db_path});
+        return;
+    };
+
+    const embedder = try createEmbedderWithFallback(allocator, &cfg);
+    defer embedder.deinit();
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch return;
+    defer db.deinit();
+
+    const entries = try db.topQueries(allocator, limit);
+    defer {
+        for (entries) |e| {
+            allocator.free(e.query);
+            allocator.free(e.tier);
+        }
+        allocator.free(entries);
+    }
+
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const w = ws.writer();
+    try w.print("# Top Queries\n\n", .{});
+    if (entries.len == 0) {
+        try w.print("No queries logged yet.\n", .{});
+    } else {
+        try w.print("| Rank | Query | Count | Avg Latency (ms) | Tier |\n", .{});
+        try w.print("|------|-------|-------|-----------------|------|\n", .{});
+        for (entries, 0..) |e, idx| {
+            try w.print("| {d} | `{s}` | {d} | {d:.1} | {s} |\n", .{
+                idx + 1, e.query, e.count, e.avg_latency_ms, e.tier,
+            });
+        }
+    }
+}
+
+// =============================================================================
+// guidance cache-stats — LLM synthesis cache statistics
+// =============================================================================
+
+/// `guidance cache-stats`
+pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    _ = args;
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+    const cfg = config_mod.loadConfig(allocator, cwd) catch
+        try config_mod.loadConfig(allocator, cwd);
+    defer @constCast(&cfg).deinit();
+
+    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    defer allocator.free(db_path);
+
+    std.fs.accessAbsolute(db_path, .{}) catch {
+        std.debug.print("No .guidance.db found at {s}\n", .{db_path});
+        return;
+    };
+
+    const embedder = try createEmbedderWithFallback(allocator, &cfg);
+    defer embedder.deinit();
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch return;
+    defer db.deinit();
+
+    const stats = db.cacheStats();
+    std.debug.print("LLM synthesis cache: {d} entries, {d} bytes\n", .{ stats.entries, stats.bytes });
+}
+
+// =============================================================================
+// guidance serve — MCP server (STDIO JSON-RPC 2.0)
+// =============================================================================
+
+/// `guidance serve` — starts the MCP server on STDIO.
+/// Implemented in mcp.zig; this is the dispatch entry point.
+pub fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const mcp_mod = @import("mcp.zig");
+    try mcp_mod.serve(allocator, args);
 }
 
 const testing = std.testing;

@@ -381,6 +381,10 @@ pub const SyncProcessor = struct {
         const used_by = try self.findReverseDeps(rel_path);
         // used_by owned here; transferred to doc below.
 
+        // --- Cross-language equivalents ---
+        const equivalents = try self.findEquivalents(rel_path);
+        // equivalents owned here; transferred to doc below.
+
         var doc: types.GuidanceDoc = .{
             .meta = .{
                 .module = try self.pathToModule(rel_path),
@@ -391,6 +395,7 @@ pub const SyncProcessor = struct {
             .keywords = module_keywords,
             .skills = skills,
             .used_by = used_by,
+            .equivalents = equivalents,
             .members = merge_result.members,
         };
         defer self.store.freeGuidanceDoc(doc);
@@ -961,6 +966,79 @@ pub const SyncProcessor = struct {
                 return std.mem.lessThan(u8, a, b);
             }
         }.lessThan);
+
+        return found.toOwnedSlice(self.allocator);
+    }
+
+    /// Find cross-language equivalent files for `rel_path`.
+    ///
+    /// Heuristics (applied in order):
+    ///   1. Same directory, same stem, different extension:
+    ///      src/foo.zig ↔ src/foo.py
+    ///   2. src/ ↔ bin/ prefix swap:
+    ///      src/guidance/foo.zig ↔ bin/foo.py
+    ///
+    /// Returns an allocator-owned slice of relative paths (may be empty).
+    pub fn findEquivalents(self: *SyncProcessor, rel_path: []const u8) ![]const []const u8 {
+        var found: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (found.items) |p| self.allocator.free(p);
+            found.deinit(self.allocator);
+        }
+
+        const stem = blk: {
+            const base = std.fs.path.basename(rel_path);
+            const ext = std.fs.path.extension(base);
+            if (ext.len == 0) break :blk base;
+            break :blk base[0 .. base.len - ext.len];
+        };
+        const dir = std.fs.path.dirname(rel_path) orelse ".";
+
+        const peer_exts = [_][]const u8{ ".py", ".zig", ".ts", ".go", ".rs" };
+        const own_ext = std.fs.path.extension(rel_path);
+
+        // Heuristic 1: same directory, different extension.
+        for (peer_exts) |ext| {
+            if (std.mem.eql(u8, ext, own_ext)) continue;
+            const candidate = try std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ dir, stem, ext });
+            const abs = try std.fs.path.join(self.allocator, &.{ self.project_root, candidate });
+            defer self.allocator.free(abs);
+            std.fs.accessAbsolute(abs, .{}) catch {
+                self.allocator.free(candidate);
+                continue;
+            };
+            try found.append(self.allocator, candidate);
+        }
+
+        // Heuristic 2: src/ prefix ↔ bin/ prefix swap.
+        if (std.mem.startsWith(u8, rel_path, "src/")) {
+            const without_src = rel_path["src/".len..];
+            const src_basename = std.fs.path.basename(without_src);
+            const src_stem = blk: {
+                const ext2 = std.fs.path.extension(src_basename);
+                if (ext2.len == 0) break :blk src_basename;
+                break :blk src_basename[0 .. src_basename.len - ext2.len];
+            };
+            for (peer_exts) |ext| {
+                if (std.mem.eql(u8, ext, own_ext)) continue;
+                const candidate = try std.fmt.allocPrint(self.allocator, "bin/{s}{s}", .{ src_stem, ext });
+                const abs = try std.fs.path.join(self.allocator, &.{ self.project_root, candidate });
+                defer self.allocator.free(abs);
+                std.fs.accessAbsolute(abs, .{}) catch {
+                    self.allocator.free(candidate);
+                    continue;
+                };
+                // Skip if already found via heuristic 1.
+                const already = for (found.items) |p| {
+                    if (std.mem.eql(u8, p, candidate)) break true;
+                } else false;
+                if (already) {
+                    self.allocator.free(candidate);
+                    continue;
+                }
+                try found.append(self.allocator, candidate);
+            }
+        }
 
         return found.toOwnedSlice(self.allocator);
     }

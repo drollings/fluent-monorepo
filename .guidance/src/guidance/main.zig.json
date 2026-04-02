@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "a96cc6dfeb17808831d1342c6efe3dc448ff7ae5c02d70658ef6deda9a975691",
+      "match_hash": "ea6abf297afd62bd2bffcab3ec42b28ae0569d6b8c101093854f6c9be00915b3",
       "signature": "keyword_enum Command { ... }",
       "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.",
       "is_pub": false,
@@ -118,6 +118,24 @@
           "is_pub": false,
           "line": 62
         }
+    ,    {
+          "type": "enum_field",
+          "name": "telemetry",
+          "is_pub": false,
+          "line": 63
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"cache-stats\"",
+          "is_pub": false,
+          "line": 64
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "serve",
+          "is_pub": false,
+          "line": 65
+        }
       ],
       "line": 45
     },
@@ -129,7 +147,7 @@
       "returns": "void",
       "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 66
+      "line": 69
     },
     {
       "type": "fn_private",
@@ -138,7 +156,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 130
+      "line": 136
     },
     {
       "type": "fn_private",
@@ -151,7 +169,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 229
+      "line": 235
     },
     {
       "type": "fn_private",
@@ -164,7 +182,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 261
+      "line": 267
     }
   ]
 }

@@ -87,7 +87,9 @@ Then you you must read
 │   ├── guidance
 │   │   ├── schemas
 │   │   │   └── guidance.schema.json
-│   │   └── DESIGN.md
+│   │   ├── DESIGN.md
+│   │   ├── MCP.md
+│   │   └── VISION.md
 │   └── skills
 │       ├── fluent-wvr
 │       │   └── SKILL.md
@@ -120,6 +122,7 @@ Then you you must read
 │   │   ├── cli.zig
 │   │   ├── context.zig
 │   │   ├── dag_executor.zig                      # dag_executor.zig — M6.1 Parallel DAG Execution
+│   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                        # Embedding providers — convert text to vectors for semantic search.
 │   │   ├── error_context.zig                     # error_context.zig — Structured error context for non-builder code paths.
 │   │   ├── format.zig
@@ -145,6 +148,7 @@ Then you you must read
 │   │   ├── string.zig
 │   │   ├── target.zig
 │   │   ├── terminal.zig
+│   │   ├── token_budget.zig                      # token_budget.zig — Token Estimation (shared between guidance and coral).
 │   │   ├── types.zig                             # Represents a unique node identifier; managed via ownership model; ensures stable references.
 │   │   ├── url.zig                               # url.zig — Generic URL validation helpers
 │   │   └── wrapper.zig                           # wrapper.zig — Conditional and composable comptime wrappers (M9).
@@ -178,7 +182,7 @@ Then you you must read
 │   │   ├── csr_graph.zig                         # csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
-│   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
+│   │   ├── drift.zig                             # drift.zig — Re-exports BitSet DRIFT from src/common/drift.zig.
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
@@ -225,11 +229,13 @@ Then you you must read
 │   │   ├── llm_filter_batch.zig                  # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
 │   │   ├── main.zig                              # guidance — AST-guided SQLite vector search database generator.
 │   │   ├── marker.zig                            # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   ├── mcp.zig                               # mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).
 │   │   ├── pattern.zig
 │   │   ├── plugin.zig                            # LanguagePlugin — interface for language-specific AST providers.
 │   │   ├── plugin_registry.zig                   # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │   │   ├── provider_discovery.zig                # External language provider discovery for guidance.
 │   │   ├── query_engine.zig                      # query_engine.zig — explain, staged, show, test, check commands.
+│   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
 │   │   ├── scrub.zig                             # scrub.zig — Synthetic comment detection and scrubbing.
 │   │   ├── simhash.zig                           # simhash.zig — 64-bit SimHash for near-duplicate detection.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
@@ -310,6 +316,8 @@ Then you you must read
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION.md
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION_QWEN36.md
 ├── ROADMAP_GRAPHRAG_ADAPTATION.md
+├── ROADMAP_GUIDANCE_VISION.md
+├── ROADMAP_GUIDANCE_VISION_CHECKLIST.md
 ├── ROADMAP_SYNTHESIS.md
 ├── ROADMAP_SYNTHESIS_2_EXPLANATION.md
 ├── ROADMAP_SYNTHESIS_2_PRE.md

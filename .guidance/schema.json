@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GuidanceDoc",
+  "description": "Guidance JSON schema — canonical AST metadata format shared between Zig and Python providers",
+  "type": "object",
+  "required": ["meta", "members"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["module", "source", "language"],
+      "properties": {
+        "module":   { "type": "string", "minLength": 1 },
+        "source":   { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 1 }
+      }
+    },
+    "comment":      { "type": ["string", "null"] },
+    "detail":       { "type": ["string", "null"] },
+    "keywords":     { "type": "array", "items": { "type": "string" } },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref"],
+        "properties": {
+          "ref":     { "type": "string" },
+          "context": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "capabilities": { "type": "array", "items": { "type": "string" } },
+    "hashtags":     { "type": "array", "items": { "type": "string" } },
+    "used_by":      { "type": "array", "items": { "type": "string" } },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name":         { "type": "string", "minLength": 1 },
+          "type":         { "type": "string" },
+          "signature":    { "type": ["string", "null"] },
+          "line":         { "type": ["integer", "null"] },
+          "match_hash":   { "type": ["string", "null"] },
+          "comment":      { "type": ["string", "null"] },
+          "detail":       { "type": ["string", "null"] },
+          "keywords":     { "type": "array", "items": { "type": "string" } },
+          "skills":       { "type": "array" },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "equivalents":  { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

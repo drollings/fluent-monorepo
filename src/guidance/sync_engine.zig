@@ -26,6 +26,7 @@ const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const query_engine_mod = @import("query_engine.zig");
 const deps_mod = @import("deps.zig");
+const schema_validator_mod = @import("schema_validator.zig");
 const llm = @import("common");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -791,7 +792,7 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
 // gen
 // =============================================================================
 
-/// Manages configuration parameters for Zig compilation; owns struct state; mutable during compilation.
+/// Manages generation parameters for sync engine; owns configuration struct; ensures consistent initialization.
 const GenArgs = struct {
     file: ?[]const u8 = null, // single-file mode (--file)
     scan: ?[]const u8 = null, // directory scan mode (--scan)
@@ -827,6 +828,8 @@ const GenArgs = struct {
     skip_lint: bool = false,
     /// Skip the format phase.
     skip_fmt: bool = false,
+    /// Validate generated GuidanceDoc against schema after each file.
+    validate_schema: bool = false,
     /// Sleep duration (in seconds) after processing each file. Default: 20.
     /// Set to 0 to disable.
     timeout_seconds: u64 = 20,
@@ -874,6 +877,8 @@ const GenArgs = struct {
                 ga.compile_db = false;
             } else if (std.mem.eql(u8, arg, "--force")) {
                 ga.force = true;
+            } else if (std.mem.eql(u8, arg, "--validate-schema")) {
+                ga.validate_schema = true;
             } else if (std.mem.eql(u8, arg, "--all-languages")) {
                 ga.all_languages = true;
             } else if (std.mem.eql(u8, arg, "--skip-tests")) {
@@ -1286,6 +1291,16 @@ fn syncGuidanceDb(
     if (verbose) std.debug.print("gen: guidance.db written to {s}\n", .{guidance_db_path});
 }
 
+/// Open the guidance db at `db_path` and delete all llm_cache entries.
+/// Best-effort: failures are silently ignored.
+fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) void {
+    var noop: vector_mod.NoopEmbedding = .{};
+    var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch return;
+    defer db.deinit();
+    db.clearSynthesisCache();
+    std.debug.print("gen: cleared llm synthesis cache (--force)\n", .{});
+}
+
 /// Extract keywords from all guidance JSON files, rank by frequency, and generate
 /// optimized semantic aliases using LLM consolidation.
 /// NOTE: This preserves existing semantic-aliases.json if it exists.
@@ -1446,6 +1461,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
         if (ga.compile_db) {
             syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
+            if (ga.force) clearSynthesisCacheAt(allocator, paths.db_path);
         }
         return;
     }
@@ -1490,6 +1506,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         }
         if (ga.compile_db) {
             syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
+            if (ga.force) clearSynthesisCacheAt(allocator, paths.db_path);
         }
         return;
     }
@@ -1619,6 +1636,11 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         return;
     }
 
+    // ── Optional schema validation pass ─────────────────────────────────────
+    if (ga.validate_schema) {
+        validateAllJsonSchema(allocator, paths.json_dir, ga.verbose);
+    }
+
     if (ga.compile_db) {
         // Generate semantic aliases from keyword frequency analysis
         // json_dir is the .guidance directory
@@ -1626,6 +1648,45 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             std.debug.print("warning: semantic alias generation failed: {s}\n", .{@errorName(err)});
         };
         syncGuidanceDb(allocator, paths.json_dir, paths.db_path, &cfg, ga.verbose);
+        if (ga.force) clearSynthesisCacheAt(allocator, paths.db_path);
+    }
+}
+
+/// Walk `json_dir/src/` and validate every .json file against the GuidanceDoc schema.
+/// Prints a warning for each invalid file but does not abort the gen run.
+fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) void {
+    const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return;
+    defer allocator.free(src_dir_path);
+
+    var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch return;
+    defer src_dir.close();
+    var walker = src_dir.walk(allocator) catch return;
+    defer walker.deinit();
+
+    var store = json_store_mod.JsonStore.init(allocator);
+    var ok: usize = 0;
+    var bad: usize = 0;
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
+
+        const full = std.fs.path.join(allocator, &.{ src_dir_path, entry.path }) catch continue;
+        defer allocator.free(full);
+
+        const doc = store.loadGuidance(full) catch continue orelse continue;
+        defer store.freeGuidanceDoc(doc);
+
+        schema_validator_mod.validateGuidanceDoc(allocator, &doc) catch |err| {
+            std.debug.print("schema violation in {s}: {s}\n", .{ entry.path, @errorName(err) });
+            bad += 1;
+            continue;
+        };
+        ok += 1;
+    }
+
+    if (verbose or bad > 0) {
+        std.debug.print("schema validation: {d} ok, {d} violations\n", .{ ok, bad });
     }
 }
 
@@ -2854,3 +2915,4 @@ pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }
+

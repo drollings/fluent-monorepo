@@ -347,6 +347,7 @@ pub const JsonStore = struct {
         copy.params = try self.dupeParams(m.params);
         copy.tags = try self.dupeStrings(m.tags);
         copy.patterns = try self.dupePatterns(m.patterns);
+        copy.equivalents = try self.dupeStrings(m.equivalents);
 
         // Recursively deep-copy nested members.
         var nested: std.ArrayList(types.Member) = .{};
@@ -423,6 +424,8 @@ pub const JsonStore = struct {
             if (p.ref) |r| self.allocator.free(r);
         }
         self.allocator.free(member.patterns);
+        for (member.equivalents) |e| self.allocator.free(e);
+        self.allocator.free(member.equivalents);
         for (member.members) |m| self.freeMember(m);
         self.allocator.free(member.members);
     }
@@ -446,6 +449,8 @@ pub const JsonStore = struct {
         self.allocator.free(doc.hashtags);
         for (doc.used_by) |u| self.allocator.free(u);
         self.allocator.free(doc.used_by);
+        for (doc.equivalents) |e| self.allocator.free(e);
+        self.allocator.free(doc.equivalents);
         for (doc.members) |m| self.freeMember(m);
         self.allocator.free(doc.members);
     }

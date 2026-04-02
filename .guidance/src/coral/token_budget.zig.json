@@ -4,200 +4,25 @@
     "source": "src/coral/token_budget.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/main.zig"],
+  "used_by": ["src/common/root.zig", "src/coral/main.zig"],
   "members": [
     {
-      "type": "struct",
-      "name": "TokenEstimator",
-      "match_hash": "7a4c3f731c2a271afae1370990b1a77127d42a20bb528c6740b860445a5c48ae",
-      "signature": "keyword_struct TokenEstimator { ... }",
-      "is_pub": true,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "estimateTokens",
-          "match_hash": "0d8b1eb7413f42161a5ebdbdf14b16d043ff821c5b6b1293c91707878e4800b7",
-          "signature": "fn estimateTokens(_: Self, text: []const u8) -> usize",
-          "params": [
-            { "name": "_", "type": "Self" },
-            { "name": "text", "type": "[]const u8" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 43
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "estimateEmbeddingTokens",
-          "match_hash": "97474ac6815d6ad43303154766f74ea8b2db2bcc0ca0419b2f7e2c7b70afb13f",
-          "signature": "fn estimateEmbeddingTokens(self: Self, node: *const ContextNode) -> usize",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "node", "type": "*const ContextNode" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 52
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "estimateSliceTokens",
-          "match_hash": "468d10528d96aae811b9695dde715249d6e88f47d8f7be32807b22ead2c057e7",
-          "signature": "fn estimateSliceTokens(self: Self, texts: []const []const u8) -> usize",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "texts", "type": "[]const []const u8" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 61
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "fits",
-          "match_hash": "02beafaa6a96a55d94938e6f196c1be00f8ee470fb1955f8bae9fda9a3e4268b",
-          "signature": "fn fits(_: Self, text: []const u8, budget_tokens: usize) -> bool",
-          "params": [
-            { "name": "_", "type": "Self" },
-            { "name": "text", "type": "[]const u8" },
-            { "name": "budget_tokens", "type": "usize" }
-          ],
-          "returns": "bool",
-          "is_pub": true,
-          "line": 68
-        }
+      "type": "fn_decl",
+      "name": "estimateEmbeddingTokens",
+      "match_hash": "68f113986f6851d01f64ec34ee824729eba9edffd48b7ba7c5288797aeca1012",
+      "signature": "fn estimateEmbeddingTokens(node: *const ContextNode) -> usize",
+      "params": [
+        { "name": "node", "type": "*const ContextNode" }
       ],
-      "line": 36
-    },
-    {
-      "type": "struct",
-      "name": "ProportionalBudget",
-      "match_hash": "36b0c24ffa9758b911ff106821980e6649b981a14d09df49800e1dbedfe2bbfc",
-      "signature": "keyword_struct ProportionalBudget { ... }",
+      "returns": "usize",
       "is_pub": true,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "validate",
-          "match_hash": "b580c0140ec9eada047dd7f969f40cdfaec57caf3a0ee2a2ffaa5fc921430672",
-          "signature": "fn validate(self: Self) -> void",
-          "params": [
-            { "name": "self", "type": "Self" }
-          ],
-          "returns": "void",
-          "is_pub": true,
-          "line": 93
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "communityTokens",
-          "match_hash": "09dee3f868917935c6c4c7b681e9985a7c4145d6f4986e98dce5622fd536c24f",
-          "signature": "fn communityTokens(self: Self) -> usize",
-          "params": [
-            { "name": "self", "type": "Self" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 98
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "textTokens",
-          "match_hash": "5f26199bb8d7ebafb5408204c120bcf5eef7b8eb77ea30defbe0c17d687e546f",
-          "signature": "fn textTokens(self: Self) -> usize",
-          "params": [
-            { "name": "self", "type": "Self" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 102
-        }
-    ,    {
-          "type": "fn_decl",
-          "name": "entityTokens",
-          "match_hash": "d8dfea313a3256ae25e67aaf24ccc59090eac04063430c9edde2ef7d7a36213a",
-          "signature": "fn entityTokens(self: Self) -> usize",
-          "params": [
-            { "name": "self", "type": "Self" }
-          ],
-          "returns": "usize",
-          "is_pub": true,
-          "line": 106
-        }
-      ],
-      "line": 81
+      "line": 32
     },
     {
       "type": "test_decl",
-      "name": "TokenEstimator: empty string → 0 tokens",
+      "name": "estimateEmbeddingTokens includes overhead",
       "is_pub": false,
-      "line": 117
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: single char → 1 token",
-      "is_pub": false,
-      "line": 122
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: 4-char string → 1 token",
-      "is_pub": false,
-      "line": 127
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: 5-char string → 2 tokens",
-      "is_pub": false,
-      "line": 132
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: 100-char string → 25 tokens",
-      "is_pub": false,
-      "line": 137
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: fits within budget",
-      "is_pub": false,
-      "line": 143
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: estimateEmbeddingTokens includes overhead",
-      "is_pub": false,
-      "line": 149
-    },
-    {
-      "type": "test_decl",
-      "name": "TokenEstimator: estimateSliceTokens sums correctly",
-      "is_pub": false,
-      "line": 166
-    },
-    {
-      "type": "test_decl",
-      "name": "ProportionalBudget: validate passes on correct fractions",
-      "is_pub": false,
-      "line": 172
-    },
-    {
-      "type": "test_decl",
-      "name": "ProportionalBudget: validate fails when fractions don't sum to 1.0",
-      "is_pub": false,
-      "line": 177
-    },
-    {
-      "type": "test_decl",
-      "name": "ProportionalBudget: token allocation sums approximately to total",
-      "is_pub": false,
-      "line": 182
-    },
-    {
-      "type": "test_decl",
-      "name": "ProportionalBudget: community 15%, text 50%, entity 35% of 8000",
-      "is_pub": false,
-      "line": 191
+      "line": 46
     }
   ]
 }

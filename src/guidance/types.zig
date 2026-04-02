@@ -78,7 +78,7 @@ pub const Param = struct {
     default: ?[]const u8 = null,
 };
 
-/// One extracted declaration from a source file: kind, name, signature, doc comment, and nested members.
+/// Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const Member = struct {
     type: MemberType,
     name: []const u8,
@@ -98,6 +98,10 @@ pub const Member = struct {
     patterns: []const Pattern = &.{},
     is_pub: bool = false,
     members: []const Member = &.{},
+    /// Relative paths to files in other languages that implement the same interface.
+    /// Example: "src/foo.zig" → equivalents: ["bin/foo.py"]
+    /// Populated by sync when a sibling file with matching stem is found.
+    equivalents: []const []const u8 = &.{},
     /// 1-based line number of the declaration in the source file.
     /// Verified against the AST on each sync; corrected automatically when stale.
     line: ?u32 = null,
@@ -137,6 +141,8 @@ pub const GuidanceDoc = struct {
     hashtags: []const []const u8 = &.{},
     used_by: []const []const u8 = &.{},
     members: []const Member = &.{},
+    /// Relative paths to equivalent files in other languages (e.g. foo.zig ↔ foo.py).
+    equivalents: []const []const u8 = &.{},
 };
 
 /// Tracks file matches with ownership model; manages lifecycle; not thread-safe.
@@ -382,7 +388,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     try writer.writeAll("    \"language\": \"");
     try writeEscapedValue(writer, doc.meta.language);
     try writer.writeAll("\"\n");
-    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0;
+    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0;
     if (meta_has_more) {
         try writer.writeAll("  },\n");
     } else {
@@ -393,7 +399,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
         try writer.writeAll("  \"comment\": \"");
         try writeEscapedValue(writer, d);
         // Only write comma if there are more fields to follow
-        if (doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+        if (doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("\",\n");
         } else {
             try writer.writeAll("\"\n");
@@ -404,7 +410,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
         try writer.writeAll("  \"detail\": \"");
         try writeEscapedValue(writer, d);
         // Only write comma if there are more fields to follow
-        if (doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+        if (doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("\",\n");
         } else {
             try writer.writeAll("\"\n");
@@ -420,7 +426,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\"");
         }
         // Only write comma if there are more fields to follow
-        if (doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+        if (doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("],\n");
         } else {
             try writer.writeAll("]\n");
@@ -443,7 +449,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\n");
         }
         // Only write comma if there are more fields to follow
-        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.members.len > 0) {
+        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("  ],\n");
         } else {
             try writer.writeAll("  ]\n");
@@ -459,7 +465,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\"");
         }
         // Only write comma if there are more fields to follow
-        if (doc.used_by.len > 0 or doc.members.len > 0) {
+        if (doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("],\n");
         } else {
             try writer.writeAll("]\n");
@@ -475,6 +481,21 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\"");
         }
         // Only write comma if there are more fields to follow
+        if (doc.equivalents.len > 0 or doc.members.len > 0) {
+            try writer.writeAll("],\n");
+        } else {
+            try writer.writeAll("]\n");
+        }
+    }
+
+    if (doc.equivalents.len > 0) {
+        try writer.writeAll("  \"equivalents\": [");
+        for (doc.equivalents, 0..) |e, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.writeAll("\"");
+            try writeEscapedValue(writer, e);
+            try writer.writeAll("\"");
+        }
         if (doc.members.len > 0) {
             try writer.writeAll("],\n");
         } else {
@@ -713,3 +734,5 @@ test "jsonifyGuidanceDoc: doc with comment and keywords" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
     defer parsed.deinit();
 }
+
+

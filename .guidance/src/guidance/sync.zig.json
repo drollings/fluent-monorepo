@@ -80,7 +80,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 459
+          "line": 464
         }
     ,    {
           "type": "fn_private",
@@ -93,7 +93,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 496
+          "line": 501
         }
     ,    {
           "type": "fn_private",
@@ -106,7 +106,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 500
+          "line": 505
         }
     ,    {
           "type": "fn_private",
@@ -120,7 +120,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 522
+          "line": 527
         }
     ,    {
           "type": "fn_private",
@@ -132,7 +132,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 574
+          "line": 579
         }
     ,    {
           "type": "fn_private",
@@ -144,7 +144,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 584
+          "line": 589
         }
     ,    {
           "type": "fn_private",
@@ -159,7 +159,7 @@
           ],
           "returns": "[]const types.Skill",
           "is_pub": false,
-          "line": 597
+          "line": 602
         }
     ,    {
           "type": "fn_private",
@@ -173,7 +173,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 655
+          "line": 660
         }
     ,    {
           "type": "fn_private",
@@ -187,7 +187,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 700
+          "line": 705
         }
     ,    {
           "type": "fn_private",
@@ -200,7 +200,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 734
+          "line": 739
         }
     ,    {
           "type": "fn_decl",
@@ -213,7 +213,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 863
+          "line": 868
         }
     ,    {
           "type": "fn_decl",
@@ -227,7 +227,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 874
+          "line": 879
         }
     ,    {
           "type": "fn_private",
@@ -240,7 +240,20 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 908
+          "line": 913
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findEquivalents",
+          "match_hash": "dd373570de5dca32701802560e6d086a74c28faf406df3c3b82c8afa0ef5433d",
+          "signature": "fn findEquivalents(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*SyncProcessor" },
+            { "name": "rel_path", "type": "[]const u8" }
+          ],
+          "returns": "[]const []const u8",
+          "is_pub": true,
+          "line": 982
         }
       ],
       "line": 11

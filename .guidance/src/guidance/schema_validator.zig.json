@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "module": "src.guidance.schema_validator",
+    "source": "src/guidance/schema_validator.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/guidance/sync_engine.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "validateGuidanceDoc",
+      "match_hash": "dd3e46a25af384c944e93b65420a3571719832fbb5aacd04365466a76c5e03c5",
+      "signature": "fn validateGuidanceDoc(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc) -> ValidationError!void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "doc", "type": "*const types.GuidanceDoc" }
+      ],
+      "returns": "ValidationError!void",
+      "is_pub": true,
+      "line": 39
+    },
+    {
+      "type": "fn_decl",
+      "name": "writeJsonSchemaFile",
+      "match_hash": "49caf0f89602b0aca4798a949ae31a85a59f456211d75d98c346091b6c1b086f",
+      "signature": "fn writeJsonSchemaFile(allocator: std.mem.Allocator, path: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 68
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: valid minimal doc passes",
+      "is_pub": false,
+      "line": 143
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: missing module → MissingModule",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: missing source → MissingSource",
+      "is_pub": false,
+      "line": 157
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: unknown language → UnknownLanguage",
+      "is_pub": false,
+      "line": 164
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: member with empty name → MemberMissingName",
+      "is_pub": false,
+      "line": 171
+    },
+    {
+      "type": "test_decl",
+      "name": "validateGuidanceDoc: python language is valid",
+      "is_pub": false,
+      "line": 180
+    }
+  ]
+}

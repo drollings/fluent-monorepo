@@ -60,6 +60,9 @@ const Command = enum {
     scrub,
     todo,
     diary,
+    telemetry,
+    @"cache-stats",
+    serve,
 };
 
 /// Starts the Zig program execution by defining the entry point.
@@ -120,6 +123,9 @@ pub fn main() !void {
         .scrub => sync_engine_mod.cmdScrub(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
+        .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
+        .@"cache-stats" => query_engine_mod.cmdCacheStats(allocator, args[2..]),
+        .serve => query_engine_mod.cmdServe(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
@@ -294,5 +300,6 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+
 
 

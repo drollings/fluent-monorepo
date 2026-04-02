@@ -148,6 +148,14 @@ pub const isLocalHost = url_mod.isLocalHost;
 pub const isPrivateIp = url_mod.isPrivateIp;
 pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
+// ── Token budget estimation ───────────────────────────────────────────────────
+/// Lightweight token estimator (1 tok ≈ 4 bytes) shared by guidance and coral.
+pub const token_budget = @import("token_budget.zig");
+
+// ── BitSet DRIFT ──────────────────────────────────────────────────────────────
+/// Deterministic follow-up query generation (shared by guidance and coral).
+pub const drift = @import("drift.zig");
+
 // ── Resource limits ───────────────────────────────────────────────────────────
 /// Shared size/count caps for file reads, MCP requests, KNN scans, etc.
 pub const limits = @import("limits.zig");
