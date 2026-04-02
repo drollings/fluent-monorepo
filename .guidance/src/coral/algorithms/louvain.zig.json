@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "module": "src.coral.algorithms.louvain",
+    "source": "src/coral/algorithms/louvain.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "Louvain",
+      "match_hash": "a3cd1df66c6525e5eb1fbd286fd647009b8262f34313144d7786cfbea353d248",
+      "signature": "keyword_struct Louvain { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "d5ed8e3a4b5cb3b013eaefda6dff1521b1d6ba760798cb05517c98bff63b4443",
+          "signature": "fn init(config: LouvainConfig) -> Self",
+          "params": [
+            { "name": "config", "type": "LouvainConfig" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 45
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "run",
+          "match_hash": "0fea22cbaf5a74e5994d91abf94f8ee7789909139441a9a3543011842984f6ca",
+          "signature": "fn run(self: Self, arena: Allocator, graph: *const CSRGraph) -> []u32",
+          "params": [
+            { "name": "self", "type": "Self" },
+            { "name": "arena", "type": "Allocator" },
+            { "name": "graph", "type": "*const CSRGraph" }
+          ],
+          "returns": "[]u32",
+          "is_pub": true,
+          "line": 54
+        }
+      ],
+      "line": 40
+    },
+    {
+      "type": "fn_private",
+      "name": "relabelDense",
+      "match_hash": "4f687620052203a06c9712dd7123d67cb5cbdc84dbf8d82139cde7588d0922c6",
+      "signature": "fn relabelDense(arena: Allocator, communities: []u32, n: u32) -> []u32",
+      "params": [
+        { "name": "arena", "type": "Allocator" },
+        { "name": "communities", "type": "[]u32" },
+        { "name": "n", "type": "u32" }
+      ],
+      "returns": "[]u32",
+      "is_pub": false,
+      "line": 157
+    },
+    {
+      "type": "test_decl",
+      "name": "Louvain: empty graph",
+      "is_pub": false,
+      "line": 181
+    },
+    {
+      "type": "test_decl",
+      "name": "Louvain: isolated nodes each in own community",
+      "is_pub": false,
+      "line": 190
+    },
+    {
+      "type": "test_decl",
+      "name": "Louvain: valid partition output",
+      "is_pub": false,
+      "line": 208
+    },
+    {
+      "type": "test_decl",
+      "name": "Louvain: two strong cliques merge fewer communities",
+      "is_pub": false,
+      "line": 235
+    }
+  ]
+}

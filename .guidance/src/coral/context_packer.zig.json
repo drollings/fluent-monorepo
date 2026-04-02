@@ -1,0 +1,117 @@
+{
+  "meta": {
+    "module": "src.coral.context_packer",
+    "source": "src/coral/context_packer.zig",
+    "language": "zig"
+  },
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Stage",
+      "match_hash": "6d11e9c0f0f1b880759a7f5adf85a91769aae5650ba2f07511d7c198a88528c7",
+      "signature": "keyword_struct Stage { ... }",
+      "is_pub": true,
+      "line": 28
+    },
+    {
+      "type": "struct",
+      "name": "ContextPackConfig",
+      "match_hash": "70897db2e279ec57615803c5c2728b7cf3e0bc72822f5e23d65d186eb3de9649",
+      "signature": "keyword_struct ContextPackConfig { ... }",
+      "is_pub": true,
+      "line": 37
+    },
+    {
+      "type": "struct",
+      "name": "ContextPacker",
+      "match_hash": "516903c9d2bccdfc8fa7d88c5b40790a395ede610da81cebfd3c4aa9414d5fa2",
+      "signature": "keyword_struct ContextPacker { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "pack",
+          "match_hash": "cedac4132f119898f67c7952902176f211a9b9995f06747db44ebc0772a0250c",
+          "signature": "fn pack(self: *const Self, allocator: std.mem.Allocator, stages: []const Stage) -> []Stage",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "stages", "type": "[]const Stage" }
+          ],
+          "returns": "[]Stage",
+          "is_pub": true,
+          "line": 65
+        }
+      ],
+      "line": 55
+    },
+    {
+      "type": "fn_private",
+      "name": "estimateTokens",
+      "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
+      "signature": "fn estimateTokens(content: []const u8) -> usize",
+      "params": [
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "usize",
+      "is_pub": false,
+      "line": 126
+    },
+    {
+      "type": "fn_private",
+      "name": "makeStage",
+      "match_hash": "d08cd3b1b99d680e99e7bed71df0016b76322d8788602814ffe010e7e76fdaa5",
+      "signature": "fn makeStage(kind: StageKind, content: []const u8, relevance: f32) -> Stage",
+      "params": [
+        { "name": "kind", "type": "StageKind" },
+        { "name": "content", "type": "[]const u8" },
+        { "name": "relevance", "type": "f32" }
+      ],
+      "returns": "Stage",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": false,
+      "line": 136
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: empty input",
+      "is_pub": false,
+      "line": 140
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: head stages always included",
+      "is_pub": false,
+      "line": 147
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: code stages always included in body",
+      "is_pub": false,
+      "line": 171
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: token budget enforced on body",
+      "is_pub": false,
+      "line": 189
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: tail always included even over budget",
+      "is_pub": false,
+      "line": 214
+    },
+    {
+      "type": "test_decl",
+      "name": "ContextPacker: max_stages enforced",
+      "is_pub": false,
+      "line": 234
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "module": "src.coral.frozen_snapshot",
+    "source": "src/coral/frozen_snapshot.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "FrozenSnapshot",
+      "match_hash": "50edcf80179e0d578852c7d2375ed168ab17934deb858fac8093b98ba7381652",
+      "signature": "keyword_struct FrozenSnapshot { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "2729da69556b922b0eb7534fa0e99a81c581eac92ffcf5547fcb6a94a66c7647",
+          "signature": "fn init() -> Self",
+          "returns": "Self",
+          "is_pub": true,
+          "line": 29
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "load",
+          "match_hash": "8da8a6a81ded81f9548483846bf71f796a910cbed29faaded778d17c73070801",
+          "signature": "fn load(allocator: std.mem.Allocator, paths: []const []const u8) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "paths", "type": "[]const []const u8" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 40
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "loadSections",
+          "match_hash": "fb26704e68172a87eb207528f6de4165d08463bb8c010a2ff52a78a8a0fcb55a",
+          "signature": "fn loadSections(allocator: std.mem.Allocator, memory_paths: []const []const u8, skill_paths: []const []const u8, context_paths: []const []const u8) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "memory_paths", "type": "[]const []const u8" },
+            { "name": "skill_paths", "type": "[]const []const u8" },
+            { "name": "context_paths", "type": "[]const []const u8" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 52
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "formatForSystemPrompt",
+          "match_hash": "43ef3cb6ce7ff7cf4da31e579821d95b23441998ff28c2887cec861e86e7d085",
+          "signature": "fn formatForSystemPrompt(self: *const Self, allocator: std.mem.Allocator) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 76
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "9450bcb32205961f46e5992b23a25af0c0c456ae6706c50ef37e742cc8f2d489",
+          "signature": "fn deinit(self: *Self, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 104
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "readAndJoin",
+          "match_hash": "4720671f3f6f9cb3de98d7c8e9eaaeba37a052d58ce00c8bce0e62265cb19115",
+          "signature": "fn readAndJoin(allocator: std.mem.Allocator, paths: []const []const u8) -> []const u8",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "paths", "type": "[]const []const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 117
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "test_decl",
+      "name": "init produces empty snapshot",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "formatForSystemPrompt empty snapshot produces empty string",
+      "is_pub": false,
+      "line": 159
+    },
+    {
+      "type": "test_decl",
+      "name": "load reads file content",
+      "is_pub": false,
+      "line": 169
+    },
+    {
+      "type": "test_decl",
+      "name": "load skips missing files silently",
+      "is_pub": false,
+      "line": 188
+    },
+    {
+      "type": "test_decl",
+      "name": "load concatenates multiple files",
+      "is_pub": false,
+      "line": 196
+    },
+    {
+      "type": "test_decl",
+      "name": "formatForSystemPrompt includes section headers",
+      "is_pub": false,
+      "line": 219
+    },
+    {
+      "type": "test_decl",
+      "name": "loadSections with empty path lists",
+      "is_pub": false,
+      "line": 256
+    }
+  ]
+}

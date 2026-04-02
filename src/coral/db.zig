@@ -68,6 +68,13 @@ pub const ContextNode = struct {
     valid_to: ?f64,
     confidence: i32,
     provenance_id: i32,
+    /// Graph algorithm columns (computed at ingestion, never on query path).
+    degree: u32 = 0,
+    pagerank: f32 = 0.0,
+    community_id: ?i64 = null,
+    community_level: u8 = 0,
+    /// Parent community ID for hierarchical community support (P3.5). null = root.
+    community_parent_id: ?i64 = null,
 
     /// Create a new ContextNode with lod[0] = full_text (SharedString) and
     /// lod[4] = name (allocator-owned copy).  All other LOD slots are "".
@@ -425,8 +432,9 @@ pub const Library = struct {
         const sql =
             \\INSERT OR REPLACE INTO context_nodes
             \\    (id, lod0, lod1, lod2, lod3, lod4, lod5,
-            \\     embedding, valid_from, valid_to, confidence, provenance_id)
-            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            \\     embedding, valid_from, valid_to, confidence, provenance_id,
+            \\     degree, pagerank, community_id, community_level, community_parent_id)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
         ;
         const stmt = try self.prepare(sql);
         defer _ = c.sqlite3_finalize(stmt);
@@ -445,6 +453,19 @@ pub const Library = struct {
         }
         _ = c.sqlite3_bind_int64(stmt, 11, node.confidence);
         _ = c.sqlite3_bind_int64(stmt, 12, node.provenance_id);
+        _ = c.sqlite3_bind_int64(stmt, 13, node.degree);
+        _ = c.sqlite3_bind_double(stmt, 14, node.pagerank);
+        if (node.community_id) |cid| {
+            _ = c.sqlite3_bind_int64(stmt, 15, cid);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 15);
+        }
+        _ = c.sqlite3_bind_int64(stmt, 16, node.community_level);
+        if (node.community_parent_id) |cpid| {
+            _ = c.sqlite3_bind_int64(stmt, 17, cpid);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 17);
+        }
 
         _ = try step(stmt);
     }
@@ -458,7 +479,8 @@ pub const Library = struct {
     pub fn fetchNode(self: *Self, id: i64) !?ContextNode {
         const sql =
             \\SELECT lod0, lod1, lod2, lod3, lod4, lod5,
-            \\       embedding, valid_from, valid_to, confidence, provenance_id
+            \\       embedding, valid_from, valid_to, confidence, provenance_id,
+            \\       degree, pagerank, community_id, community_level, community_parent_id
             \\FROM context_nodes WHERE id = ?1
         ;
         const stmt = try self.prepare(sql);
@@ -478,6 +500,17 @@ pub const Library = struct {
             },
             .confidence = @intCast(c.sqlite3_column_int(stmt, 9)),
             .provenance_id = @intCast(c.sqlite3_column_int(stmt, 10)),
+            .degree = @intCast(c.sqlite3_column_int(stmt, 11)),
+            .pagerank = @floatCast(c.sqlite3_column_double(stmt, 12)),
+            .community_id = blk: {
+                if (c.sqlite3_column_type(stmt, 13) == c.SQLITE_NULL) break :blk null;
+                break :blk c.sqlite3_column_int64(stmt, 13);
+            },
+            .community_level = @intCast(c.sqlite3_column_int(stmt, 14)),
+            .community_parent_id = blk: {
+                if (c.sqlite3_column_type(stmt, 15) == c.SQLITE_NULL) break :blk null;
+                break :blk c.sqlite3_column_int64(stmt, 15);
+            },
         };
 
         // lod[0]: wrap in a SharedString so callers can share without copying.
@@ -664,6 +697,182 @@ pub const Library = struct {
         _ = c.sqlite3_bind_double(stmt, 3, distance);
         _ = c.sqlite3_bind_text(stmt, 4, et.ptr, @intCast(et.len), SQLITE_STATIC);
         _ = try step(stmt);
+    }
+
+    // ------------------------------------------------------------------
+    // Graph algorithm column updates (ingestion-time only)
+    // ------------------------------------------------------------------
+
+    /// Update context_nodes.degree for a single node.
+    pub fn updateNodeDegree(self: *Self, node_id: i64, degree: u32) !void {
+        const sql = "UPDATE context_nodes SET degree = ?1 WHERE id = ?2";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, degree);
+        _ = c.sqlite3_bind_int64(stmt, 2, node_id);
+        _ = try step(stmt);
+    }
+
+    /// Update context_nodes.pagerank for a single node.
+    pub fn updateNodePageRank(self: *Self, node_id: i64, pagerank: f32) !void {
+        const sql = "UPDATE context_nodes SET pagerank = ?1 WHERE id = ?2";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_double(stmt, 1, pagerank);
+        _ = c.sqlite3_bind_int64(stmt, 2, node_id);
+        _ = try step(stmt);
+    }
+
+    /// Update context_nodes.community_id and community_level for a single node.
+    pub fn updateNodeCommunity(self: *Self, node_id: i64, community_id: i64, level: u8) !void {
+        const sql = "UPDATE context_nodes SET community_id = ?1, community_level = ?2 WHERE id = ?3";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, community_id);
+        _ = c.sqlite3_bind_int64(stmt, 2, level);
+        _ = c.sqlite3_bind_int64(stmt, 3, node_id);
+        _ = try step(stmt);
+    }
+
+    /// Update neighbor_of.weight and optionally predicate_iri for an edge.
+    pub fn updateEdgeWeight(self: *Self, from_id: i64, to_id: i64, weight: f32, predicate_iri: ?[]const u8) !void {
+        const sql = "UPDATE neighbor_of SET weight = ?1, predicate_iri = ?2 WHERE from_id = ?3 AND to_id = ?4";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_double(stmt, 1, weight);
+        if (predicate_iri) |iri| {
+            _ = c.sqlite3_bind_text(stmt, 2, iri.ptr, @intCast(iri.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 2);
+        }
+        _ = c.sqlite3_bind_int64(stmt, 3, from_id);
+        _ = c.sqlite3_bind_int64(stmt, 4, to_id);
+        _ = try step(stmt);
+    }
+
+    /// Save or replace the serialized CSR graph BLOB in csr_cache.
+    pub fn saveCsrCache(
+        self: *Self,
+        data: []const u8,
+        node_count: u32,
+        edge_count: u32,
+        predicate_filter: ?[]const u8,
+    ) !void {
+        const sql =
+            \\INSERT OR REPLACE INTO csr_cache
+            \\    (id, data, node_count, edge_count, updated_at, predicate_filter)
+            \\VALUES (1, ?1, ?2, ?3, ?4, ?5)
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_blob(stmt, 1, data.ptr, @intCast(data.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, node_count);
+        _ = c.sqlite3_bind_int64(stmt, 3, edge_count);
+        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(std.time.timestamp()));
+        if (predicate_filter) |pf| {
+            _ = c.sqlite3_bind_text(stmt, 5, pf.ptr, @intCast(pf.len), SQLITE_STATIC);
+        } else {
+            _ = c.sqlite3_bind_null(stmt, 5);
+        }
+        _ = try step(stmt);
+    }
+
+    /// Load the serialized CSR BLOB from csr_cache.
+    /// Returns allocator-owned slice, or null if no cached CSR exists.
+    pub fn loadCsrCache(self: *Self, allocator: std.mem.Allocator) !?[]u8 {
+        const sql = "SELECT data FROM csr_cache WHERE id = 1 LIMIT 1";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        if (!try step(stmt)) return null;
+        const ptr: [*c]const u8 = @ptrCast(c.sqlite3_column_blob(stmt, 0));
+        const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
+        if (ptr == null or len == 0) return null;
+        const blob = try allocator.dupe(u8, ptr[0..len]);
+        return blob;
+    }
+
+    // ------------------------------------------------------------------
+    // Graph algorithm support (ingestion-time iterators)
+    // ------------------------------------------------------------------
+
+    /// Iterate over all edges in neighbor_of, calling `callback(from_id, to_id, weight)`.
+    /// Used by CSR construction and edge weight computation.
+    /// The callback receives arena-allocated temporaries if needed.
+    pub fn iterateNeighborOf(self: *Self, arena: std.mem.Allocator, callback: anytype) !void {
+        _ = arena;
+        const sql = "SELECT from_id, to_id, weight FROM neighbor_of";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (try step(stmt)) {
+            const from_id = c.sqlite3_column_int64(stmt, 0);
+            const to_id = c.sqlite3_column_int64(stmt, 1);
+            const weight: f32 = @floatCast(c.sqlite3_column_double(stmt, 2));
+            try callback.call(from_id, to_id, weight);
+        }
+    }
+
+    /// Iterate over (node_id, degree) pairs from GROUP BY query.
+    /// Used by DegreeCentrality.compute().
+    pub fn iterateDegrees(self: *Self, arena: std.mem.Allocator, callback: anytype) !void {
+        _ = arena;
+        const sql = "SELECT from_id, COUNT(*) as deg FROM neighbor_of GROUP BY from_id";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (try step(stmt)) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const deg: u32 = @intCast(c.sqlite3_column_int64(stmt, 1));
+            try callback.call(node_id, deg);
+        }
+    }
+
+    /// Return all node IDs as a dense array (arena-owned).
+    /// Used by CSR construction to map node IDs to dense indices.
+    pub fn allNodeIds(self: *Self, arena: std.mem.Allocator) ![]i64 {
+        const sql = "SELECT id FROM context_nodes ORDER BY id";
+        const stmt = try self.prepare(sql);
+        var ids: std.ArrayListUnmanaged(i64) = .{};
+        errdefer ids.deinit(arena);
+
+        while (try step(stmt)) {
+            try ids.append(arena, c.sqlite3_column_int64(stmt, 0));
+        }
+        return ids.toOwnedSlice(arena);
+    }
+
+    /// Count outgoing edges for a single node.
+    /// Used by DegreeCentrality.computeForNode().
+    pub fn countOutEdges(self: *Self, node_id: i64) !u32 {
+        const sql = "SELECT COUNT(*) FROM neighbor_of WHERE from_id = ?1";
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        if (!try step(stmt)) return 0;
+        return @intCast(c.sqlite3_column_int64(stmt, 0));
+    }
+
+    /// Iterate over edges with pre-fetched node degrees.
+    /// Used by EdgeWeights.compute() to compute PMI-inspired weights.
+    /// Callback receives (from_id, to_id, from_degree, to_degree).
+    pub fn iterateNeighborOfWithDegrees(self: *Self, arena: std.mem.Allocator, callback: anytype) !void {
+        _ = arena;
+        const sql =
+            \\SELECT n.from_id, n.to_id, cn1.degree, cn2.degree
+            \\FROM neighbor_of n
+            \\JOIN context_nodes cn1 ON cn1.id = n.from_id
+            \\JOIN context_nodes cn2 ON cn2.id = n.to_id
+        ;
+        const stmt = try self.prepare(sql);
+        defer _ = c.sqlite3_finalize(stmt);
+
+        while (try step(stmt)) {
+            const from_id = c.sqlite3_column_int64(stmt, 0);
+            const to_id = c.sqlite3_column_int64(stmt, 1);
+            const from_deg: u32 = @intCast(c.sqlite3_column_int64(stmt, 2));
+            const to_deg: u32 = @intCast(c.sqlite3_column_int64(stmt, 3));
+            try callback.call(from_id, to_id, from_deg, to_deg);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1071,6 +1280,80 @@ pub const Library = struct {
     }
 
     // ------------------------------------------------------------------
+    // Community hierarchy (P3.5)
+    // ------------------------------------------------------------------
+
+    pub const CommunityPathEntry = struct {
+        community_id: i64,
+        level: u8,
+    };
+
+    /// Find the root community for a given community_id.
+    /// Traverses community_hierarchy upward until reaching a node with no parent.
+    /// Returns (root_community_id, root_level) or null if community has no hierarchy.
+    pub fn getCommunityRoot(self: *Self, community_id: i64) !?CommunityPathEntry {
+        const stmt = try self.prepare(schema.QUERY_COMMUNITY_ROOT);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, community_id);
+
+        if (!try step(stmt)) return null;
+        const root_id = c.sqlite3_column_int64(stmt, 0);
+        const level: u8 = @intCast(c.sqlite3_column_int(stmt, 1));
+        return CommunityPathEntry{ .community_id = root_id, .level = level };
+    }
+
+    /// Get the full hierarchy path from a node to its root community.
+    /// Returns an arena-owned slice of (community_id, level) ordered leaf → root.
+    pub fn getCommunityPath(self: *Self, arena: std.mem.Allocator, node_id: i64) ![]CommunityPathEntry {
+        const stmt = try self.prepare(schema.QUERY_COMMUNITY_PATH);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+
+        var path: std.ArrayListUnmanaged(CommunityPathEntry) = .{};
+        while (try step(stmt)) {
+            const cid = c.sqlite3_column_int64(stmt, 0);
+            const lvl: u8 = @intCast(c.sqlite3_column_int(stmt, 1));
+            try path.append(arena, .{ .community_id = cid, .level = lvl });
+        }
+        return path.toOwnedSlice(arena);
+    }
+
+    /// Find all leaf communities (communities with no children) under a parent.
+    /// Returns an arena-owned slice of (community_id, level).
+    pub fn getLeafCommunities(self: *Self, arena: std.mem.Allocator, parent_community_id: i64) ![]CommunityPathEntry {
+        const stmt = try self.prepare(schema.QUERY_LEAF_COMMUNITIES);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, parent_community_id);
+
+        var leaves: std.ArrayListUnmanaged(CommunityPathEntry) = .{};
+        while (try step(stmt)) {
+            const cid = c.sqlite3_column_int64(stmt, 0);
+            const lvl: u8 = @intCast(c.sqlite3_column_int(stmt, 1));
+            try leaves.append(arena, .{ .community_id = cid, .level = lvl });
+        }
+        return leaves.toOwnedSlice(arena);
+    }
+
+    /// Find all nodes in the same top-level community as a given node.
+    /// Returns an arena-owned slice of (node_id, lod4_name).
+    pub const NodeInCommunity = struct { id: i64, lod4: []const u8 };
+    pub fn getNodesInSameRootCommunity(self: *Self, arena: std.mem.Allocator, node_id: i64) ![]NodeInCommunity {
+        const stmt = try self.prepare(schema.QUERY_NODES_IN_SAME_ROOT_COMMUNITY);
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+
+        var nodes: std.ArrayListUnmanaged(NodeInCommunity) = .{};
+        while (try step(stmt)) {
+            const id = c.sqlite3_column_int64(stmt, 0);
+            const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 1);
+            const len: usize = @intCast(c.sqlite3_column_bytes(stmt, 1));
+            const lod4 = try arena.dupe(u8, if (ptr != null) ptr[0..len] else "");
+            try nodes.append(arena, .{ .id = id, .lod4 = lod4 });
+        }
+        return nodes.toOwnedSlice(arena);
+    }
+
+    // ------------------------------------------------------------------
     // Provenance
     // ------------------------------------------------------------------
 
@@ -1273,6 +1556,27 @@ pub const ContextPacker = struct {
             2 => if (node.lod[2].len > 0) node.lod[2] else node.lod[4],
             else => node.lod[4],
         };
+    }
+
+    /// Select the LOD index for a node based on graph distance AND degree
+    /// importance (P3.2).  High-degree nodes receive more detail at the same
+    /// distance because they are structurally significant.
+    ///
+    /// Returns a LOD index in [0, 4]:
+    ///   0 = full text, 1 = summary, 2 = brief, 3 = tiny, 4 = name only.
+    ///
+    /// `avg_degree` is the average out-degree across all nodes in the graph.
+    /// Pass 1 if unavailable to disable importance weighting.
+    pub fn selectLodByDistance(_: *Self, node: ContextNode, graph_distance: u32, avg_degree: u32) u3 {
+        const degree = node.degree;
+        const safe_avg: f32 = if (avg_degree == 0) 1.0 else @floatFromInt(avg_degree);
+        const importance: f32 = @as(f32, @floatFromInt(degree)) / safe_avg;
+        const eff: f32 = @as(f32, @floatFromInt(graph_distance)) / (1.0 + importance);
+        if (eff < 1.0) return 0;
+        if (eff < 2.0) return 1;
+        if (eff < 3.0) return 2;
+        if (eff < 4.0) return 3;
+        return 4;
     }
 
     /// BFS from `semantic_center_id` using the neighbor_of table.
@@ -1875,6 +2179,29 @@ test "ContextPacker: selectLod distance 3 always returns name" {
     try testing.expectEqualStrings("n", packer.selectLod(node, 50));
 }
 
+test "ContextPacker: selectLodByDistance high-degree gets lower effective distance" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+    const lib = try testOpenLib(allocator);
+    defer lib.deinit();
+    var packer = ContextPacker.init(allocator, lib, 500);
+
+    // High-degree node (degree=10) at graph_distance=2, avg_degree=2.
+    // importance = 10/2 = 5.0; effective = 2 / 6.0 ≈ 0.33 → LOD 0 (full).
+    var high_deg = try ContextNode.init(1, "hi", "Full.", allocator);
+    defer high_deg.free(allocator);
+    high_deg.degree = 10;
+    try testing.expectEqual(@as(u3, 0), packer.selectLodByDistance(high_deg, 2, 2));
+
+    // Low-degree node (degree=1) at graph_distance=2, avg_degree=2.
+    // importance = 0.5; effective = 2 / 1.5 ≈ 1.33 → LOD 1 (summary).
+    var low_deg = try ContextNode.init(2, "lo", "Full.", allocator);
+    defer low_deg.free(allocator);
+    low_deg.degree = 1;
+    try testing.expectEqual(@as(u3, 1), packer.selectLodByDistance(low_deg, 2, 2));
+}
+
 test "Library: KNN search returns top-K hits sorted by distance" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer if (gpa.deinit() == .leak) @panic("leak");
@@ -2233,3 +2560,4 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
+

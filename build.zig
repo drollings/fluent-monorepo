@@ -98,6 +98,13 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // `coral_csr` — CSR graph module (csr_graph.zig). Standalone, no deps.
+    const coral_csr_module = b.createModule(.{
+        .root_source_file = b.path("src/coral/csr_graph.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // `coral_schema` — Binary IPC schema (BinaryContextNode, BinaryExecutionRequest, …).
     // Uses named module deps only (no relative imports) so it does not conflict
     // with coral_db_module when both appear in the same compilation (e.g. wasm_tests).
@@ -671,6 +678,172 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // -- Coral BitSet DRIFT tests (P0.2) --
+    const coral_drift_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/drift.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+
+    // -- Guidance identifier match tests (P0.4) --
+    const guidance_identifier_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/identifier_match.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Guidance batch LLM filter tests (P0.5) --
+    const guidance_llm_filter_batch_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/llm_filter_batch.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+
+    // -- Coral CSR graph tests (P1.1) --
+    const coral_csr_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/csr_graph.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral Union-Find tests (P1.6) --
+    const coral_union_find_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/union_find.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral Degree Centrality tests (P1.2) --
+    const coral_degree_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/degree_centrality.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral PageRank tests (P1.3) --
+    const coral_pagerank_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/pagerank.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "csr_graph", .module = coral_csr_module },
+            },
+        }),
+    });
+
+    // -- Coral Shortest Path (Dijkstra) tests (P1.4) --
+    const coral_shortest_path_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/shortest_path.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "csr_graph", .module = coral_csr_module },
+            },
+        }),
+    });
+
+    // -- Coral Louvain Community Detection tests (P1.5) --
+    const coral_louvain_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/louvain.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "csr_graph", .module = coral_csr_module },
+            },
+        }),
+    });
+
+    // -- Coral Edge Weights tests (P1.7) --
+    const coral_edge_weights_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithms/edge_weights.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral Session persistence tests (P2.1) --
+    const coral_session_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/session.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    coral_session_tests.linkLibC();
+    coral_session_tests.linkSystemLibrary("sqlite3");
+
+    // -- Coral Frozen Snapshot tests (P2.2) --
+    const coral_frozen_snapshot_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/frozen_snapshot.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // -- Coral Context Compressor tests (P2.3) --
+    const coral_context_compressor_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/context_compressor.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const coral_context_packer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/context_packer.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const coral_global_search_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/global_search.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const coral_algorithm_runner_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/algorithm_runner.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const coral_type_inference_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/type_inference.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     // -------------------------------------------------------------------------
     // Wire all test runs
     // -------------------------------------------------------------------------
@@ -714,6 +887,23 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(concurrency_channel_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_spawn_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_error_group_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_drift_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_identifier_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_llm_filter_batch_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_csr_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_union_find_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_degree_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_pagerank_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_shortest_path_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_louvain_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_edge_weights_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_session_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_frozen_snapshot_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_context_compressor_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_context_packer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_global_search_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_algorithm_runner_tests).step);
+    test_step.dependOn(&b.addRunArtifact(coral_type_inference_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

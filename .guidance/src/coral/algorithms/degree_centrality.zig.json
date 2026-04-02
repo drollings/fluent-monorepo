@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "module": "src.coral.algorithms.degree_centrality",
+    "source": "src/coral/algorithms/degree_centrality.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "test_decl",
+      "name": "DegreeCentrality: trivial — no calls on empty input",
+      "is_pub": false,
+      "line": 66
+    }
+  ]
+}

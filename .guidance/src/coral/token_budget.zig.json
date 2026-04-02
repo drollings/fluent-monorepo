@@ -70,52 +70,134 @@
       "line": 36
     },
     {
+      "type": "struct",
+      "name": "ProportionalBudget",
+      "match_hash": "36b0c24ffa9758b911ff106821980e6649b981a14d09df49800e1dbedfe2bbfc",
+      "signature": "keyword_struct ProportionalBudget { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "validate",
+          "match_hash": "b580c0140ec9eada047dd7f969f40cdfaec57caf3a0ee2a2ffaa5fc921430672",
+          "signature": "fn validate(self: Self) -> void",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 93
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "communityTokens",
+          "match_hash": "09dee3f868917935c6c4c7b681e9985a7c4145d6f4986e98dce5622fd536c24f",
+          "signature": "fn communityTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 98
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "textTokens",
+          "match_hash": "5f26199bb8d7ebafb5408204c120bcf5eef7b8eb77ea30defbe0c17d687e546f",
+          "signature": "fn textTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 102
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "entityTokens",
+          "match_hash": "d8dfea313a3256ae25e67aaf24ccc59090eac04063430c9edde2ef7d7a36213a",
+          "signature": "fn entityTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 106
+        }
+      ],
+      "line": 81
+    },
+    {
       "type": "test_decl",
       "name": "TokenEstimator: empty string → 0 tokens",
       "is_pub": false,
-      "line": 81
+      "line": 117
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: single char → 1 token",
       "is_pub": false,
-      "line": 86
+      "line": 122
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: 4-char string → 1 token",
       "is_pub": false,
-      "line": 91
+      "line": 127
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: 5-char string → 2 tokens",
       "is_pub": false,
-      "line": 96
+      "line": 132
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: 100-char string → 25 tokens",
       "is_pub": false,
-      "line": 101
+      "line": 137
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: fits within budget",
       "is_pub": false,
-      "line": 107
+      "line": 143
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: estimateEmbeddingTokens includes overhead",
       "is_pub": false,
-      "line": 113
+      "line": 149
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: estimateSliceTokens sums correctly",
       "is_pub": false,
-      "line": 130
+      "line": 166
+    },
+    {
+      "type": "test_decl",
+      "name": "ProportionalBudget: validate passes on correct fractions",
+      "is_pub": false,
+      "line": 172
+    },
+    {
+      "type": "test_decl",
+      "name": "ProportionalBudget: validate fails when fractions don't sum to 1.0",
+      "is_pub": false,
+      "line": 177
+    },
+    {
+      "type": "test_decl",
+      "name": "ProportionalBudget: token allocation sums approximately to total",
+      "is_pub": false,
+      "line": 182
+    },
+    {
+      "type": "test_decl",
+      "name": "ProportionalBudget: community 15%, text 50%, entity 35% of 8000",
+      "is_pub": false,
+      "line": 191
     }
   ]
 }

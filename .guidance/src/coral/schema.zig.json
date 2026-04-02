@@ -11,61 +11,61 @@
       "type": "test_decl",
       "name": "schema DDL constants are non-empty",
       "is_pub": false,
-      "line": 274
+      "line": 431
     },
     {
       "type": "test_decl",
       "name": "LOD_COUNT is 6",
       "is_pub": false,
-      "line": 283
+      "line": 440
     },
     {
       "type": "test_decl",
       "name": "schema DDL contains expected column names",
       "is_pub": false,
-      "line": 287
+      "line": 444
     },
     {
       "type": "test_decl",
       "name": "schema uses SQLite syntax",
       "is_pub": false,
-      "line": 314
+      "line": 471
     },
     {
       "type": "test_decl",
-      "name": "SCHEMA_DDL has 12 statements",
+      "name": "SCHEMA_DDL has 14 statements",
       "is_pub": false,
-      "line": 323
+      "line": 480
     },
     {
       "type": "test_decl",
       "name": "entity_types DDL is non-empty",
       "is_pub": false,
-      "line": 327
+      "line": 484
     },
     {
       "type": "test_decl",
       "name": "property_uses DDL is non-empty",
       "is_pub": false,
-      "line": 332
+      "line": 489
     },
     {
       "type": "test_decl",
       "name": "query templates are SQL",
       "is_pub": false,
-      "line": 339
+      "line": 496
     },
     {
       "type": "test_decl",
       "name": "new DDL constants are non-empty",
       "is_pub": false,
-      "line": 349
+      "line": 506
     },
     {
       "type": "test_decl",
       "name": "LOD columns are generically named",
       "is_pub": false,
-      "line": 355
+      "line": 512
     }
   ]
 }

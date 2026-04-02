@@ -72,6 +72,42 @@ pub const TokenEstimator = struct {
     }
 };
 
+// ---------------------------------------------------------------------------
+// ProportionalBudget — P3.1
+// ---------------------------------------------------------------------------
+
+/// Allocate a total token budget across three context sections.
+/// Fractions must sum to 1.0 (validated by `validate()`).
+pub const ProportionalBudget = struct {
+    total: usize,
+    /// Fraction for community-report context (default 15%).
+    community_reports: f32 = 0.15,
+    /// Fraction for source text units (default 50%).
+    text_units: f32 = 0.50,
+    /// Fraction for entity + relation context (default 35%).
+    entities_relations: f32 = 0.35,
+
+    const Self = @This();
+
+    /// Validate that the three fractions sum to 1.0 (within 0.1% tolerance).
+    pub fn validate(self: Self) !void {
+        const sum = self.community_reports + self.text_units + self.entities_relations;
+        if (@abs(sum - 1.0) > 0.001) return error.InvalidBudget;
+    }
+
+    pub fn communityTokens(self: Self) usize {
+        return @intFromFloat(@as(f32, @floatFromInt(self.total)) * self.community_reports);
+    }
+
+    pub fn textTokens(self: Self) usize {
+        return @intFromFloat(@as(f32, @floatFromInt(self.total)) * self.text_units);
+    }
+
+    pub fn entityTokens(self: Self) usize {
+        return @intFromFloat(@as(f32, @floatFromInt(self.total)) * self.entities_relations);
+    }
+};
+
 // =============================================================================
 // Tests — M7.1
 // =============================================================================
@@ -131,4 +167,30 @@ test "TokenEstimator: estimateSliceTokens sums correctly" {
     const est = TokenEstimator{};
     const texts = [_][]const u8{ "abcd", "abcd", "abcd" }; // 3 × 1 token
     try testing.expectEqual(@as(usize, 3), est.estimateSliceTokens(&texts));
+}
+
+test "ProportionalBudget: validate passes on correct fractions" {
+    const b = ProportionalBudget{ .total = 1000 };
+    try b.validate();
+}
+
+test "ProportionalBudget: validate fails when fractions don't sum to 1.0" {
+    const b = ProportionalBudget{ .total = 1000, .community_reports = 0.5, .text_units = 0.5, .entities_relations = 0.5 };
+    try testing.expectError(error.InvalidBudget, b.validate());
+}
+
+test "ProportionalBudget: token allocation sums approximately to total" {
+    const b = ProportionalBudget{ .total = 1000 };
+    try b.validate();
+    const allocated = b.communityTokens() + b.textTokens() + b.entityTokens();
+    // Allow for rounding; should be within 3 tokens of total.
+    try testing.expect(allocated >= 997);
+    try testing.expect(allocated <= 1000);
+}
+
+test "ProportionalBudget: community 15%, text 50%, entity 35% of 8000" {
+    const b = ProportionalBudget{ .total = 8000 };
+    try testing.expectEqual(@as(usize, 1200), b.communityTokens());
+    try testing.expectEqual(@as(usize, 4000), b.textTokens());
+    try testing.expectEqual(@as(usize, 2800), b.entityTokens());
 }

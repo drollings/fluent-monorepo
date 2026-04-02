@@ -1,0 +1,212 @@
+{
+  "meta": {
+    "module": "src.coral.context_compressor",
+    "source": "src/coral/context_compressor.zig",
+    "language": "zig"
+  },
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "members": [
+    {
+      "type": "enum",
+      "name": "MessageKind",
+      "match_hash": "8d272b92f381431220ed3e6bff53cad7912ce507170572a7eabfd82071543fe8",
+      "signature": "keyword_enum MessageKind { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "user",
+          "is_pub": false,
+          "line": 18
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "assistant",
+          "is_pub": false,
+          "line": 19
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "tool_call",
+          "is_pub": false,
+          "line": 20
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "tool_result",
+          "is_pub": false,
+          "line": 21
+        }
+      ],
+      "line": 17
+    },
+    {
+      "type": "struct",
+      "name": "Message",
+      "match_hash": "a7dfc8a7113368f5dbe343ace1cbd3cc8d3aa04f0264a3c8d674d9a9e9a55927",
+      "signature": "keyword_struct Message { ... }",
+      "is_pub": true,
+      "line": 25
+    },
+    {
+      "type": "fn_decl",
+      "name": "estimateTokens",
+      "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
+      "signature": "fn estimateTokens(content: []const u8) -> usize",
+      "params": [
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "usize",
+      "is_pub": true,
+      "line": 36
+    },
+    {
+      "type": "struct",
+      "name": "ContextCompressor",
+      "match_hash": "7adfa2e7df64879801c65f1a222d473a03ffb37bfaefb5e41055d275fb182f45",
+      "signature": "keyword_struct ContextCompressor { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "compress",
+          "match_hash": "70ca48eabbd6cf7982e7f70ea6b703dca7e8c78d5b4413a0a83ce61b1233b3cc",
+          "signature": "fn compress(self: *const Self, allocator: std.mem.Allocator, messages: []const Message) -> []Message",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "messages", "type": "[]const Message" }
+          ],
+          "returns": "[]Message",
+          "is_pub": true,
+          "line": 58
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "pruneToolResults",
+          "match_hash": "c93e6e60ebbb60bbc53aae37cfb43160a203d5fa48aa56a52dc432c9e728ef59",
+          "signature": "fn pruneToolResults(allocator: std.mem.Allocator, messages: []const Message, in: std.ArrayList(usize), protect_tail: usize) -> std.ArrayList(usize)",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "messages", "type": "[]const Message" },
+            { "name": "in", "type": "std.ArrayList(usize)" },
+            { "name": "protect_tail", "type": "usize" }
+          ],
+          "returns": "std.ArrayList(usize)",
+          "is_pub": false,
+          "line": 92
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "enforceTokenBudget",
+          "match_hash": "6410c4f30d47710b425265841350d985c24d709df8378fac46263f37632668b4",
+          "signature": "fn enforceTokenBudget(allocator: std.mem.Allocator, messages: []const Message, in: std.ArrayList(usize), max_tokens: usize) -> std.ArrayList(usize)",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "messages", "type": "[]const Message" },
+            { "name": "in", "type": "std.ArrayList(usize)" },
+            { "name": "max_tokens", "type": "usize" }
+          ],
+          "returns": "std.ArrayList(usize)",
+          "is_pub": false,
+          "line": 123
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "removeOrphanToolCalls",
+          "match_hash": "0033695e418a10d10eb7a583d75edff63714700d37427b57789c43926dc78939",
+          "signature": "fn removeOrphanToolCalls(allocator: std.mem.Allocator, messages: []const Message, in: std.ArrayList(usize)) -> std.ArrayList(usize)",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "messages", "type": "[]const Message" },
+            { "name": "in", "type": "std.ArrayList(usize)" }
+          ],
+          "returns": "std.ArrayList(usize)",
+          "is_pub": false,
+          "line": 160
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "findNextToolResult",
+          "match_hash": "577b22ccf1db19820066bef31fea42e225386574ec404b0cc59f699f504489bc",
+          "signature": "fn findNextToolResult(messages: []const Message, call_idx: usize) -> ?usize",
+          "params": [
+            { "name": "messages", "type": "[]const Message" },
+            { "name": "call_idx", "type": "usize" }
+          ],
+          "returns": "?usize",
+          "is_pub": false,
+          "line": 198
+        }
+      ],
+      "line": 45
+    },
+    {
+      "type": "fn_private",
+      "name": "makeMsg",
+      "match_hash": "fe85a8fedeecd5e6f666077afe72c170937b66ced1e689e62dcf1f74585ca163",
+      "signature": "fn makeMsg(role: []const u8, content: []const u8, kind: MessageKind) -> Message",
+      "params": [
+        { "name": "role", "type": "[]const u8" },
+        { "name": "content", "type": "[]const u8" },
+        { "name": "kind", "type": "MessageKind" }
+      ],
+      "returns": "Message",
+      "patterns": [
+        { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
+      ],
+      "is_pub": false,
+      "line": 213
+    },
+    {
+      "type": "test_decl",
+      "name": "estimateTokens basic",
+      "is_pub": false,
+      "line": 217
+    },
+    {
+      "type": "test_decl",
+      "name": "compress empty messages",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "test_decl",
+      "name": "compress under budget — no pruning",
+      "is_pub": false,
+      "line": 231
+    },
+    {
+      "type": "test_decl",
+      "name": "compress phase 2 — drop from beginning when over budget",
+      "is_pub": false,
+      "line": 242
+    },
+    {
+      "type": "test_decl",
+      "name": "compress phase 1 — prune bulky tool results outside protect_tail",
+      "is_pub": false,
+      "line": 259
+    },
+    {
+      "type": "test_decl",
+      "name": "compress phase 1 — small tool results inside protect_tail are kept",
+      "is_pub": false,
+      "line": 277
+    },
+    {
+      "type": "test_decl",
+      "name": "compress phase 3 — orphan tool_call removed when result pruned",
+      "is_pub": false,
+      "line": 295
+    },
+    {
+      "type": "test_decl",
+      "name": "compress protect_tail keeps recent messages intact",
+      "is_pub": false,
+      "line": 327
+    }
+  ]
+}

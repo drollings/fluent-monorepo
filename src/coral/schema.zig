@@ -32,7 +32,12 @@ pub const DDL_CONTEXT_NODES: []const u8 =
     \\    valid_from REAL NOT NULL DEFAULT 0.0,
     \\    valid_to REAL,
     \\    confidence INTEGER NOT NULL DEFAULT 0,
-    \\    provenance_id INTEGER NOT NULL DEFAULT 0
+    \\    provenance_id INTEGER NOT NULL DEFAULT 0,
+    \\    degree INTEGER NOT NULL DEFAULT 0,
+    \\    pagerank REAL NOT NULL DEFAULT 0.0,
+    \\    community_id INTEGER,
+    \\    community_level INTEGER NOT NULL DEFAULT 0,
+    \\    community_parent_id INTEGER
     \\)
 ;
 
@@ -81,13 +86,37 @@ pub const DDL_PROVIDES_CAPABILITY: []const u8 =
 /// NEIGHBOR_OF: semantic similarity / KNN-derived edge.
 /// distance: cosine distance [0.0, 2.0].
 /// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence" | "rdf_property"
+/// NEIGHBOR_OF: semantic similarity / KNN-derived edge.
+/// distance: cosine distance [0.0, 2.0].
+/// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence" | "rdf_property"
+/// weight: co-occurrence edge weight (default 1.0; updated by EdgeWeights algorithm).
+/// predicate_iri: optional RDF predicate IRI for typed edges from YAGO ingestion.
 pub const DDL_NEIGHBOR_OF: []const u8 =
     \\CREATE TABLE IF NOT EXISTS neighbor_of (
     \\    from_id INTEGER NOT NULL,
     \\    to_id INTEGER NOT NULL,
     \\    distance REAL NOT NULL DEFAULT 0.0,
     \\    edge_type TEXT NOT NULL DEFAULT 'neighbor_of',
+    \\    weight REAL NOT NULL DEFAULT 1.0,
+    \\    predicate_iri TEXT,
     \\    PRIMARY KEY (from_id, to_id)
+    \\)
+;
+
+// ---------------------------------------------------------------------------
+// §2.4b CSR Cache (serialized Compressed Sparse Row graph, optional)
+// ---------------------------------------------------------------------------
+
+/// Stores a serialized CSR graph BLOB for large graphs (>10K nodes).
+/// Only one row exists (id = 1); updated after ingestion when CSR is computed.
+pub const DDL_CSR_CACHE: []const u8 =
+    \\CREATE TABLE IF NOT EXISTS csr_cache (
+    \\    id INTEGER PRIMARY KEY CHECK (id = 1),
+    \\    data BLOB NOT NULL,
+    \\    node_count INTEGER NOT NULL,
+    \\    edge_count INTEGER NOT NULL,
+    \\    updated_at REAL NOT NULL,
+    \\    predicate_filter TEXT
     \\)
 ;
 
@@ -179,6 +208,21 @@ pub const DDL_PROPERTY_USES: []const u8 =
 ;
 
 // ---------------------------------------------------------------------------
+// §2.12 Community Hierarchy (P3.5 — multi-level community support)
+// ---------------------------------------------------------------------------
+
+/// Stores parent–child relationships between community IDs at different levels.
+/// Enables traversal from leaf community up to the root and back down.
+pub const DDL_COMMUNITY_HIERARCHY: []const u8 =
+    \\CREATE TABLE IF NOT EXISTS community_hierarchy (
+    \\    child_id INTEGER NOT NULL,
+    \\    parent_id INTEGER NOT NULL,
+    \\    level INTEGER NOT NULL,
+    \\    PRIMARY KEY (child_id, parent_id)
+    \\)
+;
+
+// ---------------------------------------------------------------------------
 // Canned SQL queries
 // ---------------------------------------------------------------------------
 
@@ -212,6 +256,81 @@ pub const QUERY_TRANSITIVE_DEPS: []const u8 =
 ;
 
 // ---------------------------------------------------------------------------
+// Community hierarchy traversal (P3.5)
+// ---------------------------------------------------------------------------
+
+/// Find the root community (level 0) for a given community ID.
+/// Traverses community_hierarchy upward until reaching a node with no parent.
+/// Bind parameter 1: community_id (i64).
+/// Returns (root_community_id, level).
+pub const QUERY_COMMUNITY_ROOT: []const u8 =
+    \\WITH RECURSIVE root_path(cid, lvl) AS (
+    \\    SELECT community_id, community_level FROM context_nodes WHERE community_id = ?1
+    \\    UNION
+    \\    SELECT ch.parent_id, cn.community_level
+    \\    FROM root_path rp
+    \\    JOIN community_hierarchy ch ON ch.child_id = rp.cid
+    \\    JOIN context_nodes cn ON cn.community_id = ch.parent_id
+    \\)
+    \\SELECT cid, lvl FROM root_path WHERE cid NOT IN (SELECT child_id FROM community_hierarchy)
+    \\LIMIT1
+;
+
+/// Find all nodes in the same top-level community as a given node.
+/// First finds the root community, then returns all nodes in that community.
+/// Bind parameter 1: node_id (i64).
+/// Returns (id, lod4) for all nodes in the same top-level community.
+pub const QUERY_NODES_IN_SAME_ROOT_COMMUNITY: []const u8 =
+    \\WITH RECURSIVE root_path(cid) AS (
+    \\    SELECT community_id FROM context_nodes WHERE id = ?1
+    \\    UNION
+    \\    SELECT ch.parent_id
+    \\    FROM root_path rp
+    \\    JOIN community_hierarchy ch ON ch.child_id = rp.cid
+    \\),
+    \\root_community AS (
+    \\    SELECT cid FROM root_path WHERE cid NOT IN (SELECT child_id FROM community_hierarchy) LIMIT 1
+    \\),
+    \\all_in_root AS (
+    \\    SELECT community_id FROM context_nodes WHERE community_id = (SELECT cid FROM root_community)
+    \\    UNION
+    \\    SELECT ch.child_id FROM community_hierarchy ch
+    \\    JOIN root_community rc ON ch.parent_id = rc.cid OR EXISTS (
+    \\        SELECT1 FROM community_hierarchy ch2 WHERE ch2.child_id = ch.parent_id
+    \\    )
+    \\)
+    \\SELECT cn.id, cn.lod4 FROM context_nodes cn
+    \\WHERE cn.community_id IN (SELECT community_id FROM all_in_root)
+    \\ORDER BY cn.degree DESC
+;
+
+/// Find all leaf communities (communities with no children) under a given community.
+/// Bind parameter 1: community_id (i64).
+/// Returns (community_id, community_level).
+pub const QUERY_LEAF_COMMUNITIES: []const u8 =
+    \\SELECT DISTINCT ch1.child_id, cn.community_level
+    \\FROM community_hierarchy ch1
+    \\JOIN context_nodes cn ON cn.community_id = ch1.child_id
+    \\WHERE ch1.parent_id = ?1
+    \\AND ch1.child_id NOT IN (SELECT parent_id FROM community_hierarchy)
+;
+
+/// Get the full community hierarchy path from a node to its root community.
+/// Bind parameter 1: node_id (i64).
+/// Returns (community_id, level) ordered from leaf to root.
+pub const QUERY_COMMUNITY_PATH: []const u8 =
+    \\WITH RECURSIVE community_path(cid, lvl) AS (
+    \\    SELECT community_id, community_level FROM context_nodes WHERE id = ?1
+    \\    UNION
+    \\    SELECT ch.parent_id, cn.community_level
+    \\    FROM community_path cp
+    \\    JOIN community_hierarchy ch ON ch.child_id = cp.cid
+    \\    JOIN context_nodes cn ON cn.community_id = ch.parent_id
+    \\)
+    \\SELECT cid, lvl FROM community_path ORDER BY lvl ASC
+;
+
+// ---------------------------------------------------------------------------
 // Full schema initialization sequence
 // ---------------------------------------------------------------------------
 
@@ -224,12 +343,14 @@ pub const SCHEMA_DDL = [_][]const u8{
     DDL_DEPENDS_ON,
     DDL_PROVIDES_CAPABILITY,
     DDL_NEIGHBOR_OF,
+    DDL_CSR_CACHE,
     DDL_WASM_TOOLS,
     DDL_PROVENANCE_REGISTRY,
     DDL_APPROVAL_WORKFLOW,
     DDL_CONTRADICTIONS,
     DDL_ENTITY_TYPES,
     DDL_PROPERTY_USES,
+    DDL_COMMUNITY_HIERARCHY,
 };
 
 // ---------------------------------------------------------------------------
@@ -237,7 +358,7 @@ pub const SCHEMA_DDL = [_][]const u8{
 // ---------------------------------------------------------------------------
 
 /// Current schema version. Increment when adding migrations.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// DDL for the schema version tracking table.
 pub const DDL_SCHEMA_VERSION: []const u8 =
@@ -252,6 +373,38 @@ pub const MIGRATION_2_3: []const u8 =
     \\ALTER TABLE wasm_tools ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0
 ;
 
+/// Migration 3 → 4: add graph algorithm columns to context_nodes and neighbor_of,
+/// plus the csr_cache table for serialized CSR graph storage.
+/// Additive columns with defaults — no data loss, backward compatible.
+pub const MIGRATION_3_4: []const u8 =
+    \\ALTER TABLE context_nodes ADD COLUMN degree INTEGER NOT NULL DEFAULT 0;
+    \\ALTER TABLE context_nodes ADD COLUMN pagerank REAL NOT NULL DEFAULT 0.0;
+    \\ALTER TABLE context_nodes ADD COLUMN community_id INTEGER;
+    \\ALTER TABLE context_nodes ADD COLUMN community_level INTEGER NOT NULL DEFAULT 0;
+    \\ALTER TABLE neighbor_of ADD COLUMN weight REAL NOT NULL DEFAULT 1.0;
+    \\ALTER TABLE neighbor_of ADD COLUMN predicate_iri TEXT;
+    \\CREATE TABLE IF NOT EXISTS csr_cache (
+    \\    id INTEGER PRIMARY KEY CHECK (id = 1),
+    \\    data BLOB NOT NULL,
+    \\    node_count INTEGER NOT NULL,
+    \\    edge_count INTEGER NOT NULL,
+    \\    updated_at REAL NOT NULL,
+    \\    predicate_filter TEXT
+    \\)
+;
+
+/// Migration 4 → 5: add community_parent_id to context_nodes and
+/// create community_hierarchy table for hierarchical community support.
+pub const MIGRATION_4_5: []const u8 =
+    \\ALTER TABLE context_nodes ADD COLUMN community_parent_id INTEGER;
+    \\CREATE TABLE IF NOT EXISTS community_hierarchy (
+    \\    child_id INTEGER NOT NULL,
+    \\    parent_id INTEGER NOT NULL,
+    \\    level INTEGER NOT NULL,
+    \\    PRIMARY KEY (child_id, parent_id)
+    \\)
+;
+
 /// Migrations applied sequentially from version 0 to SCHEMA_VERSION.
 /// Index i applies migration from version i to i+1.
 /// Empty string = no-op (initial schema already created by SCHEMA_DDL).
@@ -262,6 +415,10 @@ pub const MIGRATIONS = [_][]const u8{
     DDL_PROPERTY_USES,
     // 2 → 3: Add expires_at and access_count to wasm_tools
     MIGRATION_2_3,
+    // 3 → 4: Add graph algorithm columns + csr_cache table
+    MIGRATION_3_4,
+    // 4 → 5: Add community_parent_id + community_hierarchy table
+    MIGRATION_4_5,
 };
 
 // ---------------------------------------------------------------------------
@@ -320,8 +477,8 @@ test "schema uses SQLite syntax" {
     try testing.expect(std.mem.indexOf(u8, DDL_CONTEXT_NODES, "VECTOR(1536)") == null);
 }
 
-test "SCHEMA_DDL has 12 statements" {
-    try testing.expectEqual(@as(usize, 12), SCHEMA_DDL.len);
+test "SCHEMA_DDL has 14 statements" {
+    try testing.expectEqual(@as(usize, 14), SCHEMA_DDL.len);
 }
 
 test "entity_types DDL is non-empty" {

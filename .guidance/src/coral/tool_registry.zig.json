@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "module": "src.coral.tool_registry",
+    "source": "src/coral/tool_registry.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "Tool",
+      "match_hash": "5c058c61fff7b03c5bbb4edb910afd06a0213c9776ae1551f6a9ba2d124b2d08",
+      "signature": "keyword_struct Tool { ... }",
+      "is_pub": true,
+      "line": 24
+    },
+    {
+      "type": "struct",
+      "name": "ToolDefinition",
+      "match_hash": "7ab3384ef8de433e7b6f5a27ff8720e5151baa69967ecfe07138a1b6732acb7f",
+      "signature": "keyword_struct ToolDefinition { ... }",
+      "is_pub": true,
+      "line": 38
+    },
+    {
+      "type": "struct",
+      "name": "ToolRegistry",
+      "match_hash": "3980b06c383ece75483cbe5dbed7b11e6415d71cfb7b8ab0f126f9196d0c82a5",
+      "signature": "keyword_struct ToolRegistry { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
+          "signature": "fn deinit(self: *Self, allocator: Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 54
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "register",
+          "match_hash": "a3ca50b017656d1933417acce7d55344dc9f0cb2ed814fe1fe4eebfa764ef128",
+          "signature": "fn register(self: *Self, allocator: Allocator, tool: Tool) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "Allocator" },
+            { "name": "tool", "type": "Tool" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 60
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getDefinitions",
+          "match_hash": "7ee7ac8450b19f86be82703b331b033b145a42cc883ebcde4aaa6c94c66c55bc",
+          "signature": "fn getDefinitions(self: *const Self, arena: Allocator, toolset_filter: ?[]const []const u8, check_availability: bool) -> []ToolDefinition",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "arena", "type": "Allocator" },
+            { "name": "toolset_filter", "type": "?[]const []const u8" },
+            { "name": "check_availability", "type": "bool" }
+          ],
+          "returns": "[]ToolDefinition",
+          "is_pub": true,
+          "line": 71
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "count",
+          "match_hash": "4530c74400f9100048e974d022c090f26167ad4d851218c55ceb610c34d627ce",
+          "signature": "fn count(self: *const Self) -> usize",
+          "params": [
+            { "name": "self", "type": "*const Self" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 106
+        }
+      ],
+      "line": 49
+    },
+    {
+      "type": "fn_private",
+      "name": "alwaysAvailable",
+      "match_hash": "a3fc500f2981a440c459936054dd5df2e370da4228fa3699c6ae589bfd38b0ee",
+      "signature": "fn alwaysAvailable() -> bool",
+      "returns": "bool",
+      "is_pub": false,
+      "line": 117
+    },
+    {
+      "type": "fn_private",
+      "name": "neverAvailable",
+      "match_hash": "fdbb1c6933f00b7e6da48910844f041fb726521342cb39ff1e52e8225dcba614",
+      "signature": "fn neverAvailable() -> bool",
+      "returns": "bool",
+      "is_pub": false,
+      "line": 120
+    },
+    {
+      "type": "test_decl",
+      "name": "ToolRegistry: register and count",
+      "is_pub": false,
+      "line": 124
+    },
+    {
+      "type": "test_decl",
+      "name": "ToolRegistry: getDefinitions returns all when no filter",
+      "is_pub": false,
+      "line": 135
+    },
+    {
+      "type": "test_decl",
+      "name": "ToolRegistry: toolset filter includes only matching tools",
+      "is_pub": false,
+      "line": 148
+    },
+    {
+      "type": "test_decl",
+      "name": "ToolRegistry: availability check skips unavailable tools",
+      "is_pub": false,
+      "line": 164
+    },
+    {
+      "type": "test_decl",
+      "name": "ToolRegistry: availability=false skips check",
+      "is_pub": false,
+      "line": 178
+    }
+  ]
+}

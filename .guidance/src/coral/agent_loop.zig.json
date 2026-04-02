@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "module": "src.coral.agent_loop",
+    "source": "src/coral/agent_loop.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "AgentLoopTools",
+      "match_hash": "fabbe3cb41b4b33a0d2ca9c5cbd3c21b39ad030f81c95d9f1187fbfdee700d6b",
+      "signature": "keyword_struct AgentLoopTools { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "isReserved",
+          "match_hash": "3b588c9a396f9a41ae7eedfad79000dd4f15fbaf5f022f32eed64376788ffbfc",
+          "signature": "fn isReserved(tool_name: []const u8) -> bool",
+          "params": [
+            { "name": "tool_name", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 35
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "handle",
+          "match_hash": "9a3fbb54fff8a2af73e60ae5bd06a7815deb55b856aac92b96cf4680634fd9ab",
+          "signature": "fn handle(arena: Allocator, tool_name: []const u8, args_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "tool_name", "type": "[]const u8" },
+            { "name": "args_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 45
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleMemory",
+          "match_hash": "053c8c3c80ff787f09df72b9cad2912d57a29648f54c7965263f332b9df2673e",
+          "signature": "fn handleMemory(arena: Allocator, args_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "args_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 66
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleTodo",
+          "match_hash": "08b3b31c4b0b638012aff5ef286784c7f493c5c84de9a4cbfdcf1190616395bb",
+          "signature": "fn handleTodo(arena: Allocator, args_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "args_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 72
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleDelegate",
+          "match_hash": "d9cd99e0d640d1bffec6ed0cc34037dcb1e6a0d74b85e46cae45fbe5da4ee6ad",
+          "signature": "fn handleDelegate(arena: Allocator, args_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "args_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 78
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "handleClarify",
+          "match_hash": "a93428d3970606c01bed4c8565cb93798e40b26846bfd0738d66fe84ce0c2d59",
+          "signature": "fn handleClarify(arena: Allocator, args_json: []const u8) -> []const u8",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "args_json", "type": "[]const u8" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 84
+        }
+      ],
+      "line": 25
+    },
+    {
+      "type": "test_decl",
+      "name": "AgentLoopTools: isReserved recognises all reserved tools",
+      "is_pub": false,
+      "line": 97
+    },
+    {
+      "type": "test_decl",
+      "name": "AgentLoopTools: isReserved rejects unknown tools",
+      "is_pub": false,
+      "line": 104
+    },
+    {
+      "type": "test_decl",
+      "name": "AgentLoopTools: handle returns response for each reserved tool",
+      "is_pub": false,
+      "line": 110
+    },
+    {
+      "type": "test_decl",
+      "name": "AgentLoopTools: handle returns error for unknown tool",
+      "is_pub": false,
+      "line": 128
+    },
+    {
+      "type": "test_decl",
+      "name": "AgentLoopTools: RESERVED list has 4 entries",
+      "is_pub": false,
+      "line": 137
+    }
+  ]
+}

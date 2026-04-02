@@ -1,0 +1,118 @@
+{
+  "meta": {
+    "module": "src.coral.algorithms.shortest_path",
+    "source": "src/coral/algorithms/shortest_path.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "ShortestPath",
+      "match_hash": "62e67929dfbbc419d6af618a33be48b4c8dce6e0fdd0710f2381daab16843e84",
+      "signature": "keyword_struct ShortestPath { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "findPath",
+          "match_hash": "57f4e4c573e068a43ef68d5b374e14ccb406d5840d1be50847da12d0470971cc",
+          "signature": "fn findPath(arena: Allocator, graph: *const CSRGraph, source: u32, target: u32) -> ?[]u32",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "graph", "type": "*const CSRGraph" },
+            { "name": "source", "type": "u32" },
+            { "name": "target", "type": "u32" }
+          ],
+          "returns": "?[]u32",
+          "is_pub": true,
+          "line": 39
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "findAllReachable",
+          "match_hash": "98027b695d1eee18cc7b0399e8d3574c64f8180725f35621707d1ae120c186e7",
+          "signature": "fn findAllReachable(arena: Allocator, graph: *const CSRGraph, source: u32, max_distance: f32) -> []PathResult",
+          "params": [
+            { "name": "arena", "type": "Allocator" },
+            { "name": "graph", "type": "*const CSRGraph" },
+            { "name": "source", "type": "u32" },
+            { "name": "max_distance", "type": "f32" }
+          ],
+          "returns": "[]PathResult",
+          "is_pub": true,
+          "line": 71
+        }
+      ],
+      "line": 33
+    },
+    {
+      "type": "struct",
+      "name": "HeapEntry",
+      "match_hash": "2a0a01850273e3d7469776376fa2e9a02a28da006be95d149b41dae84399c196",
+      "signature": "keyword_struct HeapEntry { ... }",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_private",
+          "name": "lessThan",
+          "match_hash": "152b714b2e0ac31d1d43f1c541638911f17f87f7609f1da359cf9fab0c04af83",
+          "signature": "fn lessThan(_: void, a: HeapEntry, b: HeapEntry) -> std.math.Order",
+          "params": [
+            { "name": "_", "type": "void" },
+            { "name": "a", "type": "HeapEntry" },
+            { "name": "b", "type": "HeapEntry" }
+          ],
+          "returns": "std.math.Order",
+          "is_pub": false,
+          "line": 113
+        }
+      ],
+      "line": 109
+    },
+    {
+      "type": "fn_private",
+      "name": "runDijkstra",
+      "match_hash": "88c7e99a9e389d45c5d4e65f69170274b53c64cf47a78c1cfdce29c08a2e5572",
+      "signature": "fn runDijkstra(arena: Allocator, graph: *const CSRGraph, source: u32, target: ?u32) -> DijkstraResult",
+      "params": [
+        { "name": "arena", "type": "Allocator" },
+        { "name": "graph", "type": "*const CSRGraph" },
+        { "name": "source", "type": "u32" },
+        { "name": "target", "type": "?u32" }
+      ],
+      "returns": "DijkstraResult",
+      "is_pub": false,
+      "line": 118
+    },
+    {
+      "type": "test_decl",
+      "name": "ShortestPath.findPath: same node returns single-element path",
+      "is_pub": false,
+      "line": 170
+    },
+    {
+      "type": "test_decl",
+      "name": "ShortestPath.findPath: simple chain",
+      "is_pub": false,
+      "line": 182
+    },
+    {
+      "type": "test_decl",
+      "name": "ShortestPath.findPath: no path returns null",
+      "is_pub": false,
+      "line": 198
+    },
+    {
+      "type": "test_decl",
+      "name": "ShortestPath.findAllReachable: within max_distance",
+      "is_pub": false,
+      "line": 210
+    },
+    {
+      "type": "test_decl",
+      "name": "ShortestPath.findPath: weighted shortest path",
+      "is_pub": false,
+      "line": 228
+    }
+  ]
+}

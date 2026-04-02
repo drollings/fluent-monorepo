@@ -156,6 +156,15 @@ Then you you must read
 │   │   ├── root.zig                              # concurrency/root.zig — Public API re-exports for the concurrency layer.
 │   │   └── spawn.zig                             # spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).
 │   ├── coral
+│   │   ├── algorithms
+│   │   │   ├── degree_centrality.zig           # degree_centrality.zig — Node degree computation for Coral Context graph.
+│   │   │   ├── edge_weights.zig                # edge_weights.zig — Co-occurrence edge weight computation.
+│   │   │   ├── louvain.zig                     # louvain.zig — Louvain community detection (single-level).
+│   │   │   ├── pagerank.zig                    # pagerank.zig — PageRank via power iteration (optional, CLI-only).
+│   │   │   ├── shortest_path.zig               # shortest_path.zig — Dijkstra's shortest-path algorithm on CSRGraph.
+│   │   │   └── union_find.zig                  # union_find.zig — Union-Find with path compression and union by size.
+│   │   ├── agent_loop.zig                        # agent_loop.zig — Agent-Loop Reserved Tools (P4.2)
+│   │   ├── algorithm_runner.zig                  # algorithm_runner.zig — Algorithm Runner with Strict Ingestion/Query Separation (P3.6)
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── benchmark.zig                         # benchmark.zig — G5 Performance Benchmarks
@@ -163,23 +172,34 @@ Then you you must read
 │   │   ├── cache_test.zig                        # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                            # Coral project configuration loader.
+│   │   ├── context_compressor.zig                # context_compressor.zig — Context Compression for Token Budget Management
 │   │   ├── context_node_schema.zig
+│   │   ├── context_packer.zig                    # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
+│   │   ├── csr_graph.zig                         # csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
+│   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
+│   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
 │   │   ├── frontier_tool_compiler.zig            # frontier_tool_compiler.zig — Compiles LLM-generated source into WASM tools.
+│   │   ├── frozen_snapshot.zig                   # frozen_snapshot.zig — Frozen State Snapshot for Session Prompt Stability
+│   │   ├── global_search.zig                     # global_search.zig — GlobalSearch Map-Reduce over Communities (P3.4)
 │   │   ├── http_transport.zig                    # http_transport.zig — M4.1/M4.2 HTTP Transport Layer with SSE
 │   │   ├── http_transport_test.zig               # http_transport_test.zig — Unit tests for HTTP transport layer
 │   │   ├── main.zig
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
 │   │   ├── pattern.zig
+│   │   ├── quantized_embedding.zig               # quantized_embedding.zig — int8 Quantized Embeddings for Memory Efficiency
 │   │   ├── schema.zig                            # schema.zig — Coral Context SQLite Schema (DDL + Queries)
 │   │   ├── scrub.zig                             # scrub.zig — Comment quality filter for ast-guidance infill pipeline.
+│   │   ├── session.zig                           # session.zig — Coral Session Persistence (SQLite + FTS5)
 │   │   ├── targets.zig                           # targets.zig — Ingestion DAG Target Definitions
 │   │   ├── token_budget.zig                      # token_budget.zig — Token Estimation for Context Packing (M7.1)
+│   │   ├── tool_registry.zig                     # tool_registry.zig — Tool Registry Pattern (P4.1)
 │   │   ├── triage.zig                            # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
+│   │   ├── type_inference.zig                    # type_inference.zig — Type Inference Cache (P3.7)
 │   │   ├── verify.zig                            # verify.zig — Ingestion Verification and Integrity Checking
 │   │   └── yago_ingest.zig                       # yago_ingest.zig — YAGO 4.5 Baseline Ingestion (M3.2)
 │   ├── guidance
@@ -198,9 +218,11 @@ Then you you must read
 │   │   ├── git.zig
 │   │   ├── hash.zig
 │   │   ├── header_generator.zig                  # header_generator.zig — File header comment generation for guidance.
+│   │   ├── identifier_match.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
 │   │   ├── json_store.zig
 │   │   ├── line_verify.zig                       # line_verify.zig — Declaration-level line number verification for guidance.
 │   │   ├── llm_filter.zig                        # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
+│   │   ├── llm_filter_batch.zig                  # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
 │   │   ├── main.zig                              # guidance — AST-guided SQLite vector search database generator.
 │   │   ├── marker.zig                            # Mtime-based change detection for guidance's incremental RALPH loop.
 │   │   ├── pattern.zig
@@ -257,6 +279,7 @@ Then you you must read
 │   └── wasm
 │       ├── execution_request.zig                   # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
 │       └── wasm.zig                                # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
+├── tools
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c
@@ -266,13 +289,40 @@ Then you you must read
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
+├── CODEGRAFF.md
+├── CRITIQUE_EVALUATION.md
+├── GEMINI_FLUENT_WVR_CRITIQUE.md
+├── GUIDANCE_HERMES_COMPARISON.md
+├── GUIDANCE_HERMES_SYNTHESIS.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
+├── PROMPT.md
+├── PROMPT_VISION.md
 ├── pyproject.toml
 ├── README.md
+├── REPORT_GRAPHRAG.md
 ├── requirements.txt
-└── STRUCTURE.md
+├── REVIEW_20260328.md
+├── ROADMAP_COMPARISON_FINAL.md
+├── ROADMAP_COZO_GRAPHRAG_ADAPTATION.md
+├── ROADMAP_COZO_GRAPHRAG_ADAPTATION_QWEN36.md
+├── ROADMAP_GRAPHRAG_ADAPTATION.md
+├── ROADMAP_SYNTHESIS.md
+├── ROADMAP_SYNTHESIS_2_EXPLANATION.md
+├── ROADMAP_SYNTHESIS_2_PRE.md
+├── ROADMAP_SYNTHESIS_CHECKLIST.md
+├── ROADMAP_SYNTHESIS_OLD.md
+├── STRUCTURE.md
+├── TEST_EXPLAIN.md
+├── TEST_EXPLAIN_PROMPT.md
+├── TEST_EXPLAIN_RESULTS.md
+├── TODO_GAPS.md
+├── TODO_GAPS_20260329.md
+├── TODO_GAPS_20260329_CHECKLIST.md
+├── TODO_REVERSE_ENGINEER.md
+├── TODO_REVIEW_20260328.md
+└── TODO_REVIEW_20260328_CHECKLIST.md
 ```

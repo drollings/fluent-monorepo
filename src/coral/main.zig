@@ -15,6 +15,10 @@ const QueueReactor = @import("cache.zig").QueueReactor;
 const BatchIngestor = batch_mod.BatchIngestor;
 const YagoIngestor = yago_ingest_mod.YagoIngestor;
 const YagoConfig = yago_ingest_mod.YagoConfig;
+const CSRGraph = @import("csr_graph.zig").CSRGraph;
+const DegreeCentrality = @import("algorithms/degree_centrality.zig").DegreeCentrality;
+const PageRank = @import("algorithms/pagerank.zig").PageRank;
+const Louvain = @import("algorithms/louvain.zig").Louvain;
 
 pub const version = "0.1.0";
 
@@ -207,6 +211,162 @@ pub fn main() !void {
         return;
     }
 
+    // compute-degree subcommand: `coral compute-degree`
+    const want_compute_degree = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-degree");
+    if (want_compute_degree) {
+        const home = std.posix.getenv("HOME") orelse ".";
+        const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+        defer allocator.free(db_dir);
+        const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
+        defer allocator.free(db_path);
+
+        const lib = try Library.init(allocator, .sqlite, db_path);
+        defer lib.deinit();
+
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        const start = std.time.nanoTimestamp();
+        try DegreeCentrality.compute(arena.allocator(), lib);
+        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+
+        try stdout.print("Degree centrality computed in {d:.2}ms\n", .{elapsed_ms});
+        try stdout.flush();
+        return;
+    }
+
+    // compute-pagerank subcommand: `coral compute-pagerank [--damping D] [--tolerance T] [--max-iter N]`
+    const want_compute_pagerank = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-pagerank");
+    if (want_compute_pagerank) {
+        // Parse optional flags
+        var damping: f32 = 0.85;
+        var tolerance: f32 = 0.0001;
+        var max_iter: u32 = 20;
+        var i: usize = 1;
+        while (i < positional.items.len) : (i += 1) {
+            if (std.mem.eql(u8, positional.items[i], "--damping")) {
+                i += 1;
+                if (i < positional.items.len) {
+                    damping = std.fmt.parseFloat(f32, positional.items[i]) catch 0.85;
+                }
+            } else if (std.mem.eql(u8, positional.items[i], "--tolerance")) {
+                i += 1;
+                if (i < positional.items.len) {
+                    tolerance = std.fmt.parseFloat(f32, positional.items[i]) catch 0.0001;
+                }
+            } else if (std.mem.eql(u8, positional.items[i], "--max-iter")) {
+                i += 1;
+                if (i < positional.items.len) {
+                    max_iter = std.fmt.parseInt(u32, positional.items[i], 10) catch 20;
+                }
+            }
+        }
+
+        const home = std.posix.getenv("HOME") orelse ".";
+        const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+        defer allocator.free(db_dir);
+        const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
+        defer allocator.free(db_path);
+
+        const lib = try Library.init(allocator, .sqlite, db_path);
+        defer lib.deinit();
+
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        // Build CSR graph
+        const graph = try CSRGraph.build(arena.allocator(), lib, null, false);
+        if (graph.node_count == 0) {
+            try stdout.print("No nodes in database. Run ingest first.\n", .{});
+            try stdout.flush();
+            return;
+        }
+
+        // Run PageRank
+        const pr = PageRank.init(.{
+            .damping = damping,
+            .tolerance = tolerance,
+            .max_iterations = max_iter,
+        });
+        const start = std.time.nanoTimestamp();
+        const scores = try pr.run(arena.allocator(), &graph);
+        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+
+        // Persist scores
+        const all_ids = try lib.allNodeIds(arena.allocator());
+        for (all_ids, 0..) |node_id, idx| {
+            if (idx < scores.len) {
+                try lib.updateNodePageRank(node_id, scores[idx]);
+            }
+        }
+
+        try stdout.print("PageRank computed for {d} nodes in {d:.2}ms\n", .{ graph.node_count, elapsed_ms });
+        try stdout.flush();
+        return;
+    }
+
+    // compute-communities subcommand: `coral compute-communities [--resolution R] [--max-iter N]`
+    const want_compute_communities = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-communities");
+    if (want_compute_communities) {
+        var resolution: f32 = 1.0;
+        var max_iter: u32 = 10;
+        var i: usize = 1;
+        while (i < positional.items.len) : (i += 1) {
+            if (std.mem.eql(u8, positional.items[i], "--resolution")) {
+                i += 1;
+                if (i < positional.items.len) {
+                    resolution = std.fmt.parseFloat(f32, positional.items[i]) catch 1.0;
+                }
+            } else if (std.mem.eql(u8, positional.items[i], "--max-iter")) {
+                i += 1;
+                if (i < positional.items.len) {
+                    max_iter = std.fmt.parseInt(u32, positional.items[i], 10) catch 10;
+                }
+            }
+        }
+
+        const home = std.posix.getenv("HOME") orelse ".";
+        const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
+        defer allocator.free(db_dir);
+        const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
+        defer allocator.free(db_path);
+
+        const lib = try Library.init(allocator, .sqlite, db_path);
+        defer lib.deinit();
+
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        // Build CSR graph
+        const graph = try CSRGraph.build(arena.allocator(), lib, null, true);
+        if (graph.node_count == 0) {
+            try stdout.print("No nodes in database. Run ingest first.\n", .{});
+            try stdout.flush();
+            return;
+        }
+
+        // Run Louvain
+        const louvain = Louvain.init(.{
+            .resolution = resolution,
+            .max_iterations = max_iter,
+        });
+        const start = std.time.nanoTimestamp();
+        const communities = try louvain.run(arena.allocator(), &graph);
+        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+
+        // Persist communities
+        const all_ids = try lib.allNodeIds(arena.allocator());
+        for (all_ids, 0..) |node_id, idx| {
+            if (idx < communities.len) {
+                try lib.updateNodeCommunity(node_id, @intCast(communities[idx]), 0);
+            }
+        }
+
+        try stdout.print("Communities detected for {d} nodes in {d:.2}ms\n", .{ graph.node_count, elapsed_ms });
+        try stdout.flush();
+        return;
+    }
+
     if (args.llm_query) |query| {
         const config = llm.LlmConfig{
             .api_url = args.api_url,
@@ -322,6 +482,11 @@ fn printHelp(writer: anytype) !void {
         \\Subcommands:
         \\  coral mcp              Start MCP server (STDIO transport)
         \\  coral ingest           Ingest a Turtle/N-Triples file into ~/.coral/context.db
+        \\  coral compute-degree   Compute degree centrality and persist to database
+        \\  coral compute-pagerank [--damping D] [--tolerance T] [--max-iter N]
+        \\                         Compute PageRank scores and persist to database
+        \\  coral compute-communities [--resolution R] [--max-iter N]
+        \\                         Detect communities via Louvain and persist to database
         \\
         \\Options:
         \\  -h, --help          Show this help message
@@ -348,6 +513,8 @@ fn printHelp(writer: anytype) !void {
         \\  coral --llm-query "how do I add a new target?"
         \\  coral mcp                       Start MCP server on STDIO
         \\  coral ingest --file yago.ttl    Ingest YAGO 4.5 Turtle file (sparse, type-whitelisted)
+        \\  coral compute-pagerank          Compute PageRank for all nodes
+        \\  coral compute-communities      Detect communities via Louvain
         \\
     );
 }
@@ -361,4 +528,5 @@ test "coral: core module imports compile" {
     _ = @import("token_budget.zig"); // M7.1 TokenEstimator
     _ = @import("metrics.zig"); // M8.1 LatencyHistogram
     _ = @import("http_transport.zig"); // M4.1 HTTP/SSE transport
+    _ = @import("quantized_embedding.zig"); // P5.2 int8 embeddings
 }

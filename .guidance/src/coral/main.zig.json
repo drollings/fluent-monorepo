@@ -13,7 +13,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 22
+      "line": 26
     },
     {
       "type": "fn_private",
@@ -25,13 +25,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 316
+      "line": 476
     },
     {
       "type": "test_decl",
       "name": "coral: core module imports compile",
       "is_pub": false,
-      "line": 355
+      "line": 522
     }
   ]
 }

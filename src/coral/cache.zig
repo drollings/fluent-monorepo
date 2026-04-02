@@ -200,6 +200,126 @@ pub const L1Cache = struct {
 };
 
 // ---------------------------------------------------------------------------
+// P5.1 — L1HashCache: u64-keyed cache with RwLock for shared reads
+// ---------------------------------------------------------------------------
+
+/// Hash-keyed L1 cache entry.  Separate from L1Cache to preserve the existing
+/// string-keyed API while introducing the optimised integer-key path.
+const L1HashLruNodeData = struct {
+    key: u64,
+    list_node: std.DoublyLinkedList.Node = .{ .data = undefined },
+};
+
+const L1HashEntry = struct {
+    result: RoutingResult,
+    lru: *L1HashLruNodeData,
+};
+
+/// P5.1: Lock-optimised L1 cache.
+///
+/// - Keys are `u64` hashes computed from query strings (e.g. FNV-1a).
+///   This eliminates string duplication overhead on the hot read path.
+/// - Reads use a shared (RwLock.lockShared) lock — multiple concurrent
+///   readers proceed without blocking each other.
+/// - Promotions and writes use an exclusive lock.
+pub const L1HashCache = struct {
+    allocator: std.mem.Allocator,
+    entries: std.AutoHashMap(u64, L1HashEntry),
+    order: std.DoublyLinkedList = .{},
+    max_entries: usize,
+    mu: std.Thread.RwLock = .{},
+
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator, max_entries: usize) Self {
+        return .{
+            .allocator = allocator,
+            .entries = std.AutoHashMap(u64, L1HashEntry).init(allocator),
+            .max_entries = max_entries,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        var it = self.entries.iterator();
+        while (it.next()) |entry| {
+            L1Cache.freeRoutingResult(self.allocator, &entry.value_ptr.*.result);
+            self.allocator.destroy(entry.value_ptr.*.lru);
+        }
+        self.entries.deinit();
+        self.order = .{};
+    }
+
+    /// Shared-lock read — does NOT promote (avoids write lock on the hot path).
+    /// Returns a copy of the cached RoutingResult, or null on miss.
+    pub fn get(self: *Self, query_hash: u64) ?RoutingResult {
+        self.mu.lockShared();
+        defer self.mu.unlockShared();
+        const entry = self.entries.getPtr(query_hash) orelse return null;
+        return entry.result;
+    }
+
+    /// Exclusive-lock read with MRU promotion.  Use on paths that benefit from
+    /// accurate LRU eviction order (e.g. warm cache pre-fetch).
+    pub fn getWithPromotion(self: *Self, query_hash: u64) ?RoutingResult {
+        self.mu.lock();
+        defer self.mu.unlock();
+        const entry = self.entries.getPtr(query_hash) orelse return null;
+        self.order.remove(&entry.lru.list_node);
+        self.order.prepend(&entry.lru.list_node);
+        return entry.result;
+    }
+
+    /// Insert (or replace) `result` for `query_hash`, evicting LRU when full.
+    pub fn put(self: *Self, query_hash: u64, result: RoutingResult) !void {
+        const owned = try L1Cache.dupeRoutingResult(self.allocator, result);
+        errdefer {
+            var r = owned;
+            L1Cache.freeRoutingResult(self.allocator, &r);
+        }
+
+        self.mu.lock();
+        defer self.mu.unlock();
+
+        if (self.entries.getPtr(query_hash)) |existing| {
+            L1Cache.freeRoutingResult(self.allocator, &existing.result);
+            existing.result = owned;
+            self.order.remove(&existing.lru.list_node);
+            self.order.prepend(&existing.lru.list_node);
+            return;
+        }
+
+        while (self.entries.count() >= self.max_entries) {
+            if (self.order.pop()) |list_node| {
+                const lru_data: *L1HashLruNodeData = @alignCast(@fieldParentPtr("list_node", list_node));
+                if (self.entries.fetchRemove(lru_data.key)) |kv| {
+                    var evicted = kv.value.result;
+                    L1Cache.freeRoutingResult(self.allocator, &evicted);
+                }
+                self.allocator.destroy(lru_data);
+            } else break;
+        }
+
+        const lru_data = try self.allocator.create(L1HashLruNodeData);
+        errdefer self.allocator.destroy(lru_data);
+        lru_data.* = .{ .key = query_hash };
+        self.order.prepend(&lru_data.list_node);
+        try self.entries.put(query_hash, .{ .result = owned, .lru = lru_data });
+    }
+
+    /// FNV-1a 64-bit hash — stable, fast, suitable for cache keys.
+    pub fn hashQuery(query: []const u8) u64 {
+        const FNV_OFFSET: u64 = 14695981039346656037;
+        const FNV_PRIME: u64 = 1099511628211;
+        var h: u64 = FNV_OFFSET;
+        for (query) |byte| {
+            h ^= byte;
+            h *%= FNV_PRIME;
+        }
+        return h;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // P3.0 — QueueReactorBuilder (fluent builder)
 // ---------------------------------------------------------------------------
 

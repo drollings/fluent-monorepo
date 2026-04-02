@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "module": "src.coral.algorithms.edge_weights",
+    "source": "src/coral/algorithms/edge_weights.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "test_decl",
+      "name": "EdgeWeights.computeWeight: symmetric",
+      "is_pub": false,
+      "line": 56
+    },
+    {
+      "type": "test_decl",
+      "name": "EdgeWeights.computeWeight: unit degrees give weight 1.0",
+      "is_pub": false,
+      "line": 63
+    },
+    {
+      "type": "test_decl",
+      "name": "EdgeWeights.computeWeight: zero degree falls back to 1.0",
+      "is_pub": false,
+      "line": 68
+    },
+    {
+      "type": "test_decl",
+      "name": "EdgeWeights.computeWeight: higher degree gives lower weight",
+      "is_pub": false,
+      "line": 73
+    },
+    {
+      "type": "test_decl",
+      "name": "EdgeWeights.computeWeight: matches formula",
+      "is_pub": false,
+      "line": 79
+    }
+  ]
+}

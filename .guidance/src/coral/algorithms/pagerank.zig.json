@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "module": "src.coral.algorithms.pagerank",
+    "source": "src/coral/algorithms/pagerank.zig",
+    "language": "zig"
+  },
+  "members": [
+    {
+      "type": "struct",
+      "name": "PageRankConfig",
+      "match_hash": "56beac94d1434a063b2fe263ad1f1764bda6524005423e19c2ec2a5c2c63476b",
+      "signature": "keyword_struct PageRankConfig { ... }",
+      "is_pub": true,
+      "line": 29
+    },
+    {
+      "type": "struct",
+      "name": "PageRank",
+      "match_hash": "3149aef5f7f663d9420b279228a61efd3fad4aa4b542cf74d4c990421d851318",
+      "signature": "keyword_struct PageRank { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "a939b22a383b6e8ee81430bd4728902008dfc39ee15d8ce475a6fca75dbff8d6",
+          "signature": "fn init(config: PageRankConfig) -> Self",
+          "params": [
+            { "name": "config", "type": "PageRankConfig" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 41
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "run",
+          "match_hash": "384653f431176f7d40f8d8a9012a7485eb6b1f42862f3a9c6371354ac818aac0",
+          "signature": "fn run(self: Self, arena: Allocator, graph: *const CSRGraph) -> []f32",
+          "params": [
+            { "name": "self", "type": "Self" },
+            { "name": "arena", "type": "Allocator" },
+            { "name": "graph", "type": "*const CSRGraph" }
+          ],
+          "returns": "[]f32",
+          "is_pub": true,
+          "line": 49
+        }
+      ],
+      "line": 36
+    },
+    {
+      "type": "test_decl",
+      "name": "PageRank: single-node graph",
+      "is_pub": false,
+      "line": 117
+    },
+    {
+      "type": "test_decl",
+      "name": "PageRank: two-node cycle converges",
+      "is_pub": false,
+      "line": 138
+    },
+    {
+      "type": "test_decl",
+      "name": "PageRank: star graph — center has highest rank",
+      "is_pub": false,
+      "line": 163
+    }
+  ]
+}
