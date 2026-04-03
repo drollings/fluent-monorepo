@@ -35,7 +35,9 @@ pub fn spawn(
 
 fn runUnit(unit: AnyWorkUnit) void {
     unit.runFn(unit.ptr) catch |e| {
-        std.log.warn("work unit failed: {s}", .{@errorName(e)});
+        if (e != error.Cancelled) {
+            std.log.warn("work unit failed: {s}", .{@errorName(e)});
+        }
     };
 }
 

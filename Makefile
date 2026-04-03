@@ -173,7 +173,7 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 # Full RALPH loop: build → guidance check (test/lint/fmt/guidance/structure/db)
 # guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
-pre-commit: $(TARGET_BIN) ## Run full RALPH loop via guidance check
+pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
 	$(Q)$(TARGET_BIN) check
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
@@ -183,7 +183,3 @@ fmt: ## Format all Zig source files
 
 .PHONY: guidance
 guidance: $(TARGET_BIN) ## Build guidance binary
-
-.PHONY: pre-commit
-pre-commit: STRUCTURE.md ## Run all Zig unit tests
-

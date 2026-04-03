@@ -36,25 +36,25 @@
       "type": "test_decl",
       "name": "spawn: runs handler and signals wg",
       "is_pub": false,
-      "line": 58
+      "line": 60
     },
     {
       "type": "test_decl",
       "name": "spawn: 20 units on 4-thread pool — all complete",
       "is_pub": false,
-      "line": 74
+      "line": 76
     },
     {
       "type": "test_decl",
       "name": "spawn: cancelled unit completes without hanging",
       "is_pub": false,
-      "line": 106
+      "line": 108
     },
     {
       "type": "test_decl",
       "name": "spawn: GPA no leaks after pool.deinit",
       "is_pub": false,
-      "line": 124
+      "line": 126
     }
   ]
 }
