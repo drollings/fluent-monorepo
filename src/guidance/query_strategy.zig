@@ -139,7 +139,12 @@ fn identifierExecute(
     if (exact.len == 0) {
         // No exact match — fall through to concept strategy path.
         return staged_mod.executeStagedWithAliasesOriginal(
-            allocator, db, query, original_query, workspace, aliases,
+            allocator,
+            db,
+            query,
+            original_query,
+            workspace,
+            aliases,
         );
     }
 
@@ -183,7 +188,12 @@ fn identifierExecute(
     if (stages.items.len == 0) {
         stages.deinit(allocator);
         return staged_mod.executeStagedWithAliasesOriginal(
-            allocator, db, query, original_query, workspace, aliases,
+            allocator,
+            db,
+            query,
+            original_query,
+            workspace,
+            aliases,
         );
     }
 
@@ -239,7 +249,12 @@ fn capabilityExecute(
     _ = ptr;
     // Delegate to staged pipeline — it already handles capability routing well.
     return staged_mod.executeStagedWithAliasesOriginal(
-        allocator, db, query, original_query, workspace, aliases,
+        allocator,
+        db,
+        query,
+        original_query,
+        workspace,
+        aliases,
     );
 }
 
@@ -284,7 +299,12 @@ fn conceptExecute(
 ) anyerror![]types.Stage {
     _ = ptr;
     return staged_mod.executeStagedWithAliasesOriginal(
-        allocator, db, query, original_query, workspace, aliases,
+        allocator,
+        db,
+        query,
+        original_query,
+        workspace,
+        aliases,
     );
 }
 
@@ -318,7 +338,12 @@ pub fn executeWithStrategy(
     }
     // Ultimate fallback: staged pipeline.
     return staged_mod.executeStagedWithAliasesOriginal(
-        allocator, db, query, original_query, workspace, aliases,
+        allocator,
+        db,
+        query,
+        original_query,
+        workspace,
+        aliases,
     );
 }
 
@@ -332,7 +357,7 @@ pub fn buildDefaultStrategies(
     return .{
         identifier.strategy(), // priority 0
         capability.strategy(), // priority 2
-        concept.strategy(),    // priority 4
+        concept.strategy(), // priority 4
     };
 }
 
@@ -363,7 +388,7 @@ pub fn looksLikeIdentifier(query: []const u8) bool {
 /// Returns true if the query looks like a natural language question.
 fn looksLikeNaturalLanguageQuestion(query: []const u8) bool {
     const nl_prefixes = [_][]const u8{
-        "how ", "what ", "where ", "why ", "when ", "which ",
+        "how ",  "what ",    "where ",    "why ",  "when ", "which ",
         "show ", "explain ", "describe ", "find ", "list ",
     };
     // Case-insensitive prefix check using a stack buffer (no allocator needed).

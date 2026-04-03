@@ -27,13 +27,13 @@ pub const BuildSystem = enum {
     pub fn buildCommand(self: BuildSystem) []const u8 {
         return switch (self) {
             .zig_build => "zig build",
-            .make      => "make",
-            .cargo     => "cargo build",
-            .npm       => "npm run build",
-            .gradle    => "./gradlew build",
-            .cmake     => "cmake --build .",
-            .poetry    => "poetry build",
-            .unknown   => "unknown",
+            .make => "make",
+            .cargo => "cargo build",
+            .npm => "npm run build",
+            .gradle => "./gradlew build",
+            .cmake => "cmake --build .",
+            .poetry => "poetry build",
+            .unknown => "unknown",
         };
     }
 };
@@ -190,7 +190,7 @@ pub fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) !C
 
 fn detectBuildSystem(workspace: []const u8) BuildSystem {
     const marker_names = [_][]const u8{
-        "build.zig", "Makefile", "Cargo.toml", "package.json",
+        "build.zig",    "Makefile",       "Cargo.toml",     "package.json",
         "build.gradle", "CMakeLists.txt", "pyproject.toml",
     };
     const marker_systems = [_]BuildSystem{
@@ -210,8 +210,8 @@ fn detectBuildSystem(workspace: []const u8) BuildSystem {
 // =============================================================================
 
 const IGNORE_DIRS = [_][]const u8{
-    ".git", "zig-out", "zig-cache", "node_modules", "__pycache__",
-    ".guidance.db", "target", ".build", "dist", "build",
+    ".git",         "zig-out", "zig-cache", "node_modules", "__pycache__",
+    ".guidance.db", "target",  ".build",    "dist",         "build",
 };
 
 fn shouldIgnoreDir(name: []const u8) bool {
@@ -340,7 +340,7 @@ fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) ![
 
 const ENTRY_PREFIXES = [_][]const u8{ "cmd", "handle", "run", "serve", "start" };
 const ENTRY_SUFFIXES = [_][]const u8{ "Cli", "Handler", "Server", "Main" };
-const ENTRY_EXACT    = [_][]const u8{ "main", "run", "start" };
+const ENTRY_EXACT = [_][]const u8{ "main", "run", "start" };
 
 fn classifyEntryPoint(name: []const u8) @TypeOf(@as(EntryPoint, undefined).kind) {
     if (std.mem.eql(u8, name, "main")) return .main_fn;
@@ -398,12 +398,10 @@ fn detectEntryPoints(
         // Check guidance JSON for member names (fast path, best results)
         const json_name = try std.fmt.allocPrint(allocator, "{s}.json", .{e.path});
         defer allocator.free(json_name);
-        const guidance_path = try std.fs.path.join(allocator,
-            &.{ workspace, ".guidance", "src", json_name });
+        const guidance_path = try std.fs.path.join(allocator, &.{ workspace, ".guidance", "src", json_name });
         defer allocator.free(guidance_path);
 
-        const json_content = std.fs.cwd().readFileAlloc(allocator, guidance_path, 512 * 1024)
-            catch continue;
+        const json_content = std.fs.cwd().readFileAlloc(allocator, guidance_path, 512 * 1024) catch continue;
         defer allocator.free(json_content);
 
         // Simple JSON scan: look for "name": "..." patterns
@@ -442,7 +440,7 @@ fn detectEntryPoints(
 // =============================================================================
 
 const CAPABILITY_DIR_NAMES = [_][]const u8{ "capabilities", "docs/capabilities", "doc/capabilities" };
-const SKILL_DIR_NAMES      = [_][]const u8{ "skills", ".skills", "doc/skills", ".guidance/.skills", ".guidance/skills" };
+const SKILL_DIR_NAMES = [_][]const u8{ "skills", ".skills", "doc/skills", ".guidance/.skills", ".guidance/skills" };
 
 fn findCapabilityDirs(
     allocator: std.mem.Allocator,
@@ -473,7 +471,10 @@ fn findCapabilityDirs(
         // Check not already in list
         var found = false;
         for (dirs.items) |d| {
-            if (std.mem.eql(u8, d, cn)) { found = true; break; }
+            if (std.mem.eql(u8, d, cn)) {
+                found = true;
+                break;
+            }
         }
         if (!found) try dirs.append(allocator, try allocator.dupe(u8, cn));
     }

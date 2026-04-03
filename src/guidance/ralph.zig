@@ -83,7 +83,9 @@ pub const RalphContext = struct {
         ctx.cap_strategy = .{};
         ctx.concept_strategy = .{};
         ctx.strategies = query_strategy_mod.buildDefaultStrategies(
-            &ctx.id_strategy, &ctx.cap_strategy, &ctx.concept_strategy,
+            &ctx.id_strategy,
+            &ctx.cap_strategy,
+            &ctx.concept_strategy,
         );
         return ctx;
     }
@@ -113,12 +115,12 @@ pub fn step(
     user_input: []const u8,
 ) ![]types.Stage {
     return switch (ctx.state) {
-        .read  => ralphRead(ctx, allocator, user_input),
-        .ask   => ralphAsk(ctx, allocator, user_input),
+        .read => ralphRead(ctx, allocator, user_input),
+        .ask => ralphAsk(ctx, allocator, user_input),
         .learn => ralphLearn(ctx, allocator, user_input),
-        .plan  => ralphPlan(ctx, allocator, user_input),
-        .help  => ralphHelp(ctx, allocator, user_input),
-        .done  => allocator.alloc(types.Stage, 0),
+        .plan => ralphPlan(ctx, allocator, user_input),
+        .help => ralphHelp(ctx, allocator, user_input),
+        .done => allocator.alloc(types.Stage, 0),
     };
 }
 
@@ -136,7 +138,13 @@ fn ralphAsk(
     query: []const u8,
 ) ![]types.Stage {
     const stages = try query_strategy_mod.executeWithStrategy(
-        allocator, ctx.db, query, query, ctx.workspace, ctx.aliases, &ctx.strategies,
+        allocator,
+        ctx.db,
+        query,
+        query,
+        ctx.workspace,
+        ctx.aliases,
+        &ctx.strategies,
     );
     ctx.state = .learn;
     return stages;
@@ -415,4 +423,3 @@ test "QueryRecord: can be appended to ArrayList" {
     try std.testing.expectEqual(@as(usize, 1), history.items.len);
     try std.testing.expectEqualStrings("cmdExplain", history.items[0].query);
 }
-

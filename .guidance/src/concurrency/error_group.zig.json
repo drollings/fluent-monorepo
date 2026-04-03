@@ -150,7 +150,7 @@
       "type": "test_decl",
       "name": "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail",
       "is_pub": false,
-      "line": 295
+      "line": 304
     }
   ]
 }

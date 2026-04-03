@@ -1268,7 +1268,13 @@ fn cmdExplainStaged(
 
     // Pass original query for deterministic matching, effective query for vector search
     const stages_raw = try query_strategy_mod.executeWithStrategy(
-        allocator, db, effective_query, query_text, workspace, aliases_opt, &strategies,
+        allocator,
+        db,
+        effective_query,
+        query_text,
+        workspace,
+        aliases_opt,
+        &strategies,
     );
     defer {
         types.freeStages(allocator, stages_raw);

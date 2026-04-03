@@ -751,7 +751,7 @@
           "line": 2373
         }
     ,    {
-          "type": "fn_private",
+          "type": "fn_decl",
           "name": "findExactNameMatch",
           "match_hash": "547a9b42a079e8b6778ed39c028d3870b3ae730e6d7b7cccd3b029a558081307",
           "signature": "fn findExactNameMatch(self: *Self, allocator: std.mem.Allocator, name: []const u8, limit: usize) -> []SearchResult",
@@ -762,7 +762,7 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]SearchResult",
-          "is_pub": false,
+          "is_pub": true,
           "line": 2447
         }
     ,    {

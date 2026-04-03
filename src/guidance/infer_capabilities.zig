@@ -116,9 +116,7 @@ fn generateDescription(
     name: []const u8,
     files: []const []const u8,
 ) ![]u8 {
-    return std.fmt.allocPrint(allocator,
-        "Inferred capability '{s}' from {d} source file(s) by naming convention.",
-        .{ name, files.len });
+    return std.fmt.allocPrint(allocator, "Inferred capability '{s}' from {d} source file(s) by naming convention.", .{ name, files.len });
 }
 
 fn inferFromNaming(
@@ -215,7 +213,10 @@ fn inferFromImportGraph(
         // Only add if not already present.
         var found = false;
         for (gop.value_ptr.items) |existing| {
-            if (std.mem.eql(u8, existing, r.source)) { found = true; break; }
+            if (std.mem.eql(u8, existing, r.source)) {
+                found = true;
+                break;
+            }
         }
         if (!found) try gop.value_ptr.append(allocator, r.source);
     }
@@ -237,8 +238,7 @@ fn inferFromImportGraph(
             allocator.free(source_files);
         }
 
-        const description = try std.fmt.allocPrint(allocator,
-            "Inferred capability '{s}' from import cluster ({d} modules).", .{ name, files.items.len });
+        const description = try std.fmt.allocPrint(allocator, "Inferred capability '{s}' from import cluster ({d} modules).", .{ name, files.items.len });
         errdefer allocator.free(description);
 
         try caps.append(allocator, .{
@@ -278,8 +278,7 @@ fn inferFromModuleComments(
 
         const name = try allocator.dupe(u8, cap_name);
         errdefer allocator.free(name);
-        const description = try std.fmt.allocPrint(allocator,
-            "Inferred from module comment: {s}", .{comment[0..@min(120, comment.len)]});
+        const description = try std.fmt.allocPrint(allocator, "Inferred from module comment: {s}", .{comment[0..@min(120, comment.len)]});
         errdefer allocator.free(description);
 
         var source_files = try allocator.alloc([]const u8, 1);
@@ -348,8 +347,7 @@ fn inferFromFileGrouping(
             allocator.free(source_files);
         }
 
-        const description = try std.fmt.allocPrint(allocator,
-            "Capability inferred from directory '{s}' ({d} source files).", .{ dir, files.items.len });
+        const description = try std.fmt.allocPrint(allocator, "Capability inferred from directory '{s}' ({d} source files).", .{ dir, files.items.len });
         errdefer allocator.free(description);
 
         try caps.append(allocator, .{
@@ -440,13 +438,14 @@ fn extractCapabilityFromComment(comment: []const u8) ?[]const u8 {
     // Look for patterns like "— <noun phrase>" or "for <noun phrase>"
     const sep = "— ";
     if (std.mem.indexOf(u8, comment, sep)) |pos| {
-        const after = std.mem.trim(u8, comment[pos + sep.len..], " \t");
+        const after = std.mem.trim(u8, comment[pos + sep.len ..], " \t");
         const end = @min(after.len, 40);
         // Take first word or up to first punctuation.
         var word_end: usize = 0;
         while (word_end < end and
             std.ascii.isAlphanumeric(after[word_end]) or
-            (word_end < end and (after[word_end] == '-' or after[word_end] == '_'))) : (word_end += 1) {}
+            (word_end < end and (after[word_end] == '-' or after[word_end] == '_'))) : (word_end += 1)
+        {}
         if (word_end >= 3) return after[0..word_end];
     }
     return null;
@@ -485,5 +484,3 @@ test "isSupportedExtension: known extensions" {
     try std.testing.expect(!isSupportedExtension(".md"));
     try std.testing.expect(!isSupportedExtension(".json"));
 }
-
-

@@ -76,7 +76,9 @@ pub const CodebaseScanner = struct {
             .strategies = undefined,
         };
         s.strategies = query_strategy_mod.buildDefaultStrategies(
-            &s.id_strategy, &s.cap_strategy, &s.concept_strategy,
+            &s.id_strategy,
+            &s.cap_strategy,
+            &s.concept_strategy,
         );
         return s;
     }
@@ -111,7 +113,9 @@ pub const CodebaseScanner = struct {
         if (!self.hasCapabilityDocs()) {
             if (self.map) |*m| {
                 const caps = infer_capabilities_mod.inferCapabilities(
-                    self.allocator, m, db,
+                    self.allocator,
+                    m,
+                    db,
                 ) catch null;
                 if (caps) |c| self.inferred_capabilities = c;
             }
@@ -130,7 +134,13 @@ pub const CodebaseScanner = struct {
         aliases: ?vector_db_mod.SemanticAliases,
     ) ![]types.Stage {
         return query_strategy_mod.executeWithStrategy(
-            allocator, db, query, query, self.workspace, aliases, &self.strategies,
+            allocator,
+            db,
+            query,
+            query,
+            self.workspace,
+            aliases,
+            &self.strategies,
         );
     }
 
@@ -297,4 +307,3 @@ test "CodebaseScanner: scan on empty workspace returns low confidence" {
     // Just verify no crash and confidence is set.
     try std.testing.expect(scanner.confidence == .low or scanner.confidence == .medium);
 }
-

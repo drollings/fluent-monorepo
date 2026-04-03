@@ -532,6 +532,18 @@
     },
     {
       "type": "fn_private",
+      "name": "isStopword",
+      "match_hash": "44617372fd3eb20dea850971115881edc06989100c9503bdd55200a9622888fe",
+      "signature": "fn isStopword(tok: []const u8) -> bool",
+      "params": [
+        { "name": "tok", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 2145
+    },
+    {
+      "type": "fn_private",
       "name": "isCapabilityKeywordToken",
       "match_hash": "aa337edc5674c996b574d340870e7b0f973889af37109c2fc45e3c26e5e01086",
       "signature": "fn isCapabilityKeywordToken(tok: []const u8) -> bool",
@@ -540,7 +552,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2137
+      "line": 2155
     },
     {
       "type": "struct",
@@ -548,7 +560,7 @@
       "match_hash": "2210f615352782c2608bf5ab5db4b0ab08f528518e1965d0f0f4349e01398fa2",
       "signature": "keyword_struct CapabilityEntry { ... }",
       "is_pub": true,
-      "line": 2160
+      "line": 2181
     },
     {
       "type": "fn_decl",
@@ -561,7 +573,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2174
+      "line": 2195
     },
     {
       "type": "fn_decl",
@@ -576,7 +588,7 @@
       ],
       "returns": "struct {\n    new_count: usize,\n    updated_count: usize,\n    removed_count: usize,\n    unchanged_count: usize,\n}",
       "is_pub": true,
-      "line": 2431
+      "line": 2452
     },
     {
       "type": "fn_private",
@@ -589,7 +601,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2566
+      "line": 2587
     },
     {
       "type": "fn_private",
@@ -603,7 +615,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 2580
+      "line": 2601
     },
     {
       "type": "fn_private",
@@ -617,7 +629,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 2597
+      "line": 2618
     },
     {
       "type": "struct",
@@ -625,7 +637,7 @@
       "match_hash": "eec9e2de3754cb4bce2188e0c7731096dfc2538573fc3fe78537d6341359b1d9",
       "signature": "keyword_struct ConfidenceLevels { ... }",
       "is_pub": false,
-      "line": 2633
+      "line": 2654
     },
     {
       "type": "struct",
@@ -633,7 +645,7 @@
       "match_hash": "29d201554b48e88b23956cdfe71a68b7d05684135be686fefec8f8dc23c8e4eb",
       "signature": "keyword_struct DiscoveredSource { ... }",
       "is_pub": false,
-      "line": 2642
+      "line": 2663
     },
     {
       "type": "fn_private",
@@ -648,7 +660,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 2655
+      "line": 2676
     },
     {
       "type": "fn_decl",
@@ -661,7 +673,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2717
+      "line": 2738
     },
     {
       "type": "fn_private",
@@ -677,7 +689,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 3170
+      "line": 3191
     },
     {
       "type": "fn_private",
@@ -696,7 +708,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3233
+      "line": 3254
     },
     {
       "type": "fn_decl",
@@ -709,7 +721,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3294
+      "line": 3315
     },
     {
       "type": "fn_decl",
@@ -722,7 +734,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3465
+      "line": 3486
     },
     {
       "type": "fn_decl",
@@ -735,7 +747,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3627
+      "line": 3648
     },
     {
       "type": "fn_private",
@@ -747,7 +759,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 3723
+      "line": 3744
     },
     {
       "type": "fn_decl",
@@ -760,7 +772,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3750
+      "line": 3771
     },
     {
       "type": "fn_decl",
@@ -773,7 +785,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3814
+      "line": 3835
     },
     {
       "type": "fn_decl",
@@ -786,7 +798,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3863
+      "line": 3884
     },
     {
       "type": "fn_decl",
@@ -799,7 +811,7 @@
       ],
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 3917
+      "line": 3938
     },
     {
       "type": "fn_decl",
@@ -814,7 +826,7 @@
       ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 3922
+      "line": 3943
     },
     {
       "type": "fn_decl",
@@ -827,7 +839,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 3927
+      "line": 3948
     },
     {
       "type": "fn_decl",
@@ -839,7 +851,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 3932
+      "line": 3953
     },
     {
       "type": "fn_decl",
@@ -853,7 +865,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 3937
+      "line": 3958
     }
   ]
 }

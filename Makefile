@@ -153,7 +153,7 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
 	$(Q)echo "Building guidance binary..."
-	zig build guidance -Doptimize=ReleaseFast --summary all
+	zig build guidance --summary all
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install
@@ -174,7 +174,7 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 # guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
-	$(Q)$(TARGET_BIN) check
+	$(Q)$(TARGET_BIN) check --verbose
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
 .PHONY: fmt

@@ -282,11 +282,17 @@ fn guidanceJsonRelevance(ptr: *anyopaque, query_tokens: []const []const u8) f32 
         if (std.ascii.indexOfIgnoreCase(doc.meta.module, tok) != null) score += 0.2;
         // Check keywords
         for (doc.keywords) |kw| {
-            if (std.ascii.indexOfIgnoreCase(kw, tok) != null) { score += 0.3; break; }
+            if (std.ascii.indexOfIgnoreCase(kw, tok) != null) {
+                score += 0.3;
+                break;
+            }
         }
         // Check member names
         for (doc.members) |m| {
-            if (std.ascii.indexOfIgnoreCase(m.name, tok) != null) { score += 0.5; break; }
+            if (std.ascii.indexOfIgnoreCase(m.name, tok) != null) {
+                score += 0.5;
+                break;
+            }
         }
     }
 
@@ -299,12 +305,12 @@ fn guidanceJsonDeinit(ptr: *anyopaque) void {
 }
 
 const guidance_json_vtable: DocumentIndexer.VTable = .{
-    .doc_type        = guidanceJsonDocType,
-    .doc_id          = guidanceJsonDocId,
+    .doc_type = guidanceJsonDocType,
+    .doc_id = guidanceJsonDocId,
     .extract_metadata = guidanceJsonExtractMetadata,
-    .produce_stages  = guidanceJsonProduceStages,
-    .relevance       = guidanceJsonRelevance,
-    .deinit          = guidanceJsonDeinit,
+    .produce_stages = guidanceJsonProduceStages,
+    .relevance = guidanceJsonRelevance,
+    .deinit = guidanceJsonDeinit,
 };
 
 // =============================================================================
@@ -338,7 +344,7 @@ test "GuidanceJsonIndexer: docType returns guidance_json" {
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .comment = "Test module",
         .detail = "A comprehensive test module with many features.",
-        .keywords = &.{"test", "unit"},
+        .keywords = &.{ "test", "unit" },
     };
     const builder = GuidanceJsonIndexerBuilder{
         .allocator = allocator,
@@ -376,6 +382,3 @@ test "GuidanceJsonIndexer: produceStages includes detail prose" {
     try std.testing.expect(stages.len >= 1);
     try std.testing.expectEqual(types.StageKind.prose, stages[0].kind);
 }
-
-
-

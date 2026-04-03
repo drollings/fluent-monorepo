@@ -4,7 +4,8 @@
     "source": "src/guidance/synthesize.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/main.zig"],
+  "capabilities": ["coral-database", "ast-indexing"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_private",
@@ -44,7 +45,7 @@
       ],
       "returns": "[]const []const u8",
       "is_pub": true,
-      "line": 272
+      "line": 356
     },
     {
       "type": "fn_decl",
@@ -57,7 +58,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 288
+      "line": 372
     }
   ]
 }
