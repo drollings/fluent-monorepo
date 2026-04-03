@@ -8,9 +8,10 @@ AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
 ## Prime Directive
 
 1. **Current Zig knowledge**: Read `doc/skills/zig-current/SKILL.md` before writing any Zig
-2. **Project structure**: Run `make gen-status` or inspect `.guidance/src/` for guidance
-3. **Never guess**: use the JSON files in `.guidance/src/` to locate code
-4. **Config**: model names and provider registry live in `.guidance/guidance-config.json`
+2. **Project structure**: Inspect `STRUCTURE.md` and review documented
+capabilities in `doc/capabilities/**/CAPABILITY.md` 
+3. **Never guess**: use `guidance explain "<query text>" for guidance, using
+its "See Also" to pick relevant keywords, capability directories, and files
 
 ---
 
@@ -66,8 +67,8 @@ doc/
 
 **DO:**
 - Read the results of `guidance explain` for any skills
-- Ask: "What design pattern is used here?" before consulting skills
+- Ask: "What capabilitity is used here?" before consulting skills
 
 **DON'T:**
 - Assume skills apply without validating against source code
-- Skip source reading before implementation
+- Skip `guidance explain` with follow-up source reading before implementation
