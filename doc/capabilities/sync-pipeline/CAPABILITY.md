@@ -1,6 +1,11 @@
 ---
 name: sync-pipeline
 description: Incremental source file synchronisation pipeline that runs test, lint, format, and AST guidance generation for each changed file, using mtime and match_hash for cheap change detection.
+anchors:
+  - SyncProcessor
+  - syncDatabase
+  - matchHash
+  - fileNeedsProcessing
 ---
 
 # Sync Pipeline
@@ -50,3 +55,17 @@ guidance gen --scan src/        # directory scan
 guidance gen --force            # re-process all, ignore mtime
 guidance gen --infill           # fill missing LLM comments
 ```
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (7 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/guidance/sync.zig` | 1.0 | defines_anchor |
+| `src/guidance/marker.zig` | 1.0 | defines_anchor |
+| `src/vector/vector_db.zig` | 1.0 | defines_anchor |
+| `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
+| `src/vector/root.zig` | 0.9 | used_by |
+| `src/guidance/comment_sync.zig` | 0.9 | used_by |
+

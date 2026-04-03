@@ -1,6 +1,10 @@
 ---
 name: config-system
 description: Two-level configuration loader for guidance projects. Reads guidance-config.json from the project .guidance/ directory, falls back to ~/.config/guidance/, then to built-in defaults.
+anchors:
+  - ProjectConfig
+  - loadConfig
+  - buildFromParts
 ---
 
 # Config System
@@ -44,3 +48,15 @@ Model names use the format `"provider:modelname"`, e.g. `"local:code:latest"`. T
 
 - `src/guidance/config.zig` — `loadConfig`, `ProjectConfig`, `buildFromParts`
 - `.guidance/guidance-config.json` — project configuration file
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (5 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/guidance/config.zig` | 1.0 | defines_anchor |
+| `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
+| `src/coral/config.zig` | 0.7 | keyword_overlap |
+

@@ -7,14 +7,14 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "used_by": ["src/guidance/main.zig"],
+  "capabilities": ["config-system"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
       "name": "Provider",
       "match_hash": "4973097466b2be8f42fdcd73c4302f2502d3b857a74fc3d888e6b144fe668ee2",
       "signature": "keyword_struct Provider { ... }",
-      "comment": "Manages configuration structures for Zig projects, owns runtime settings, ensures consistent initialization and cleanup.",
       "is_pub": true,
       "members": [
         {
@@ -38,7 +38,6 @@
       "name": "LintCommand",
       "match_hash": "eb1b4c07333d26cf4189b2bd438bdd460d3d9c3120bd96f7bc28c9d9b27dd6ed",
       "signature": "keyword_struct LintCommand { ... }",
-      "comment": "Per-extension test command. `{file}` is substituted for the extension \"*\".",
       "is_pub": true,
       "members": [
         {
@@ -62,7 +61,6 @@
       "name": "ProjectConfig",
       "match_hash": "e24a06dce48aa2d9241b32d17d34e16b5e0bd4d7dfcb8a6b78d695f7d08fa5f7",
       "signature": "keyword_struct ProjectConfig { ... }",
-      "comment": "Resolved, absolute paths for a single guidance project instance.\nAll strings are owned by this struct; call deinit() to free them.",
       "is_pub": true,
       "members": [
         {
@@ -86,7 +84,6 @@
             { "name": "self", "type": "*const ProjectConfig" }
           ],
           "returns": "[]const u8",
-          "comment": "Return the model to use for comment infill: fast slot if set, else default.",
           "is_pub": true,
           "line": 163
         }
@@ -99,7 +96,6 @@
             { "name": "self", "type": "*const ProjectConfig" }
           ],
           "returns": "[]const u8",
-          "comment": "Return the model to use for thinking/reasoning tasks (module detail generation).\nReturns empty string if not configured.",
           "is_pub": true,
           "line": 170
         }
@@ -113,7 +109,6 @@
             { "name": "name", "type": "[]const u8" }
           ],
           "returns": "?Provider",
-          "comment": "Find a provider by name. Returns null if not found.",
           "is_pub": true,
           "line": 175
         }
@@ -126,7 +121,6 @@
             { "name": "model_ref", "type": "[]const u8" }
           ],
           "returns": "?struct { provider: []const u8, model: []const u8 }",
-          "comment": "Parse a model reference like \"local:code:latest\" into (provider_name, model_name).\nReturns null if the format is invalid.",
           "is_pub": true,
           "line": 184
         }
@@ -141,7 +135,6 @@
             { "name": "model_ref", "type": "[]const u8" }
           ],
           "returns": "?struct { url: []const u8, provider: Provider, is_thinking_endpoint: bool }",
-          "comment": "Resolve a model reference to its provider and full API URL.\nReturns the resolved URL and whether this is a thinking model endpoint.\nCaller owns the returned URL string.",
           "is_pub": true,
           "line": 195
         }
@@ -155,7 +148,6 @@
             { "name": "model_ref", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Return true when `model_ref` requires the Ollama thinking API.\n\nTwo cases are considered:\n\n  1. **Exact slot match** — `model_ref` is literally the value stored in\n     `models.thinking` (e.g. `\"ollama:deepseek-r1:7b\"` == `\"ollama:deepseek-r1:7b\"`).\n\n  2. **Same model, different provider alias** — the model-name segment\n     (everything after the first `:`) of `model_ref` equals the model-name\n     segment of `model_thinking`, *and* both refs have a provider prefix.\n     Example: `\"local:deepseek-r1:7b\"` matches `\"ollama:deepseek-r1:7b\"`\n     because `deepseek-r1:7b == deepseek-r1:7b`.\n\nEither case must force the caller to use the Ollama `/api/chat` endpoint\nand set `think = true`, because the thinking parameter is only supported\non that native endpoint.",
           "is_pub": true,
           "line": 224
         }
@@ -169,7 +161,6 @@
             { "name": "ext", "type": "[]const u8" }
           ],
           "returns": "?[]const []const u8",
-          "comment": "Return the lint argv template for `ext`, or null if none is configured.",
           "is_pub": true,
           "line": 250
         }
@@ -183,7 +174,6 @@
             { "name": "ext", "type": "[]const u8" }
           ],
           "returns": "?[]const []const u8",
-          "comment": "Return the format argv template for `ext`, or null if none is configured.",
           "is_pub": true,
           "line": 258
         }
@@ -200,7 +190,6 @@
         { "name": "cwd", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Load project configuration with the two-level fallback chain.\nOn success the caller owns the returned ProjectConfig and must call deinit().",
       "is_pub": true,
       "line": 272
     },
@@ -215,7 +204,6 @@
         { "name": "options", "type": "InitOptions" }
       ],
       "returns": "bool",
-      "comment": "Create a default configuration file at `{cwd}/{guidance_dir}/{CONFIG_FILENAME}`.\nReturns true when a new file was created, false if one already exists.",
       "is_pub": true,
       "line": 308
     },
@@ -229,7 +217,6 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Generate AGENTS.md content for guidance integration.\nReturns an owned slice that the caller must free.",
       "is_pub": true,
       "line": 388
     },
@@ -243,7 +230,6 @@
         { "name": "obj", "type": "std.json.ObjectMap" }
       ],
       "returns": "[]LintCommand",
-      "comment": "Parse a commands object (lint_commands, fmt_commands, test_commands) into LintCommand array.",
       "is_pub": false,
       "line": 465
     },
@@ -313,42 +299,41 @@
         { "name": "model_thinking", "type": "[]const u8" }
       ],
       "returns": "ProjectConfig",
-      "comment": "Build a minimal ProjectConfig for unit-testing `isThinkingModelRef`.\nAll fields not under test are given trivial values.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 888
+      "line": 891
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: exact slot match",
       "is_pub": false,
-      "line": 923
+      "line": 926
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: same model, different provider alias",
       "is_pub": false,
-      "line": 930
+      "line": 933
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: different model — not a thinking ref",
       "is_pub": false,
-      "line": 938
+      "line": 941
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: empty thinking slot — always false",
       "is_pub": false,
-      "line": 946
+      "line": 949
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: bare model ref (no provider prefix) — not treated as thinking",
       "is_pub": false,
-      "line": 954
+      "line": 957
     }
   ]
 }

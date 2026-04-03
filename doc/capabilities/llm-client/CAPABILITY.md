@@ -1,6 +1,12 @@
 ---
 name: llm-client
 description: Minimal LLM HTTP client (LlmClient) supporting OpenAI-compatible chat-completion endpoints and Ollama. Handles think-mode toggle for reasoning models, response post-processing (stripThinkBlock, isMalformedResponse), and malformed-response fallback. Used by guidance synthesis, local-model-decomposition, and coral L5 fallback.
+anchors:
+  - LlmClient
+  - LlmConfig
+  - LlmError
+  - stripThinkBlock
+  - isMalformedResponse
 ---
 
 # LLM Client
@@ -53,3 +59,17 @@ const clean = stripThinkBlock(raw);
 - `src/common/llm.zig` — `stripThinkBlock`, `isMalformedResponse`, `parseJsonArray`, string helpers
 - `src/common/local_model.zig` — primary consumer (`LocalDecomposer`)
 - `src/guidance/staged.zig` — guidance synthesis consumer
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (7 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/llm/root.zig` | 1.0 | defines_anchor |
+| `src/common/llm.zig` | 1.0 | defines_anchor |
+| `src/common/root.zig` | 0.9 | used_by |
+| `src/vector/vector_db.zig` | 0.9 | used_by |
+| `src/common/local_model.zig` | 0.7 | keyword_overlap |
+| `src/guidance/llm_filter.zig` | 0.4 | path_heuristic |
+| `src/guidance/llm_filter_batch.zig` | 0.4 | path_heuristic |
+

@@ -1,6 +1,12 @@
 ---
 name: wasm-tools
 description: L2 Workflow Cache tier using Extism (libextism) for sandboxed WASM tool execution. Binary IPC schema (BinaryExecutionRequest/BinaryExecutionResult) is fully defined. WasmTool registration and findWasmTool() matching are implemented. Extism execution path is a TODO stub (P3.3).
+anchors:
+  - BinaryExecutionRequest
+  - BinaryExecutionResult
+  - BinaryHeader
+  - WasmTool
+  - findWasmTool
 ---
 
 # WASM Tools
@@ -76,3 +82,14 @@ An arena-backed fluent builder for assembling the binary payload will be added i
 - `src/coral/context_node_schema.zig` — `BinaryHeader`, `BinaryContextNode`, `PayloadType`, schema constants
 - `src/coral/db.zig` — `Library.insertWasmTool`, `WasmTool` struct
 - `src/coral/cache.zig` — L2 `route()` stub, `findWasmTool()`
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (4 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/coral/context_node_schema.zig` | 1.0 | defines_anchor |
+| `src/coral/db.zig` | 1.0 | defines_anchor |
+| `src/wasm/execution_request.zig` | 0.4 | path_heuristic |
+| `src/wasm/wasm.zig` | 0.4 | path_heuristic |
+

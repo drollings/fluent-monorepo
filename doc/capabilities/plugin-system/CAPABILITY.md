@@ -1,6 +1,11 @@
 ---
 name: plugin-system
 description: External AST provider protocol for non-Zig languages. Guidance discovers provider executables via PATH or config, invokes them per-file, and merges their JSON output into the guidance index.
+anchors:
+  - LanguagePlugin
+  - PluginRegistry
+  - discoverProvider
+  - invokeProviderFile
 ---
 
 # Plugin System
@@ -47,3 +52,16 @@ A provider receives a source file path via stdin or argv, and outputs a guidance
 ```bash
 guidance gen --all-languages    # discover and invoke external providers
 ```
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (6 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/guidance/provider_discovery.zig` | 1.0 | defines_anchor |
+| `src/guidance/plugin.zig` | 1.0 | defines_anchor |
+| `src/guidance/plugin_registry.zig` | 1.0 | defines_anchor |
+| `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/plugins/zig_plugin.zig` | 0.4 | path_heuristic |
+| `src/guidance/plugins/markdown_plugin.zig` | 0.4 | path_heuristic |
+

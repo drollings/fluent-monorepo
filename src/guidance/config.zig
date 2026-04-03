@@ -837,10 +837,13 @@ fn buildFromParts(
     const json_base = try allocator.dupe(u8, guidance_root);
     errdefer allocator.free(json_base);
 
+    // skills_dir and capabilities_dir are resolved relative to CWD (repo root).
+    // The guidance binary always runs at the repository root, so all relative
+    // paths in guidance-config.json are project-root-relative.
     const skills_dir = if (std.fs.path.isAbsolute(skills_dir_rel))
         try allocator.dupe(u8, skills_dir_rel)
     else
-        try std.fs.path.join(allocator, &.{ guidance_root, skills_dir_rel });
+        try std.fs.path.join(allocator, &.{ cwd, skills_dir_rel });
     errdefer allocator.free(skills_dir);
 
     const inbox_dir = try std.fs.path.join(allocator, &.{ guidance_root, "inbox" });
@@ -849,7 +852,7 @@ fn buildFromParts(
     const capabilities_dir = if (std.fs.path.isAbsolute(capabilities_dir_rel))
         try allocator.dupe(u8, capabilities_dir_rel)
     else
-        try std.fs.path.join(allocator, &.{ guidance_root, capabilities_dir_rel });
+        try std.fs.path.join(allocator, &.{ cwd, capabilities_dir_rel });
     errdefer allocator.free(capabilities_dir);
 
     const db_path = try allocator.dupe(u8, db_path_rel);

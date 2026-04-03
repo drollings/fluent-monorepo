@@ -7,7 +7,11 @@ const enhancer_mod = @import("enhancer.zig");
 const llm = @import("common");
 const comment_parser = @import("comment_parser.zig");
 
-/// Drives the guidance sync pipeline: detects changed source files, parses AST, and writes updated JSON.
+/// Maps source file path (relative to project) to capability names.
+/// Owned by SyncProcessor and freed in deinit.
+const CapabilitiesMap = std.StringHashMapUnmanaged([][]const u8);
+
+/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access patterns.
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -27,6 +31,10 @@ pub const SyncProcessor = struct {
     /// For .zig files with no guidance JSON: create it with LLM-filled comments.
     /// Never replaces existing comments.
     regen_structure: bool = false,
+    /// M4: Capability-to-source mapping from discover-capability-sources.
+    /// Key: relative source path (e.g., "src/common/embeddings.zig")
+    /// Value: list of capability names (owned)
+    capabilities_map: ?CapabilitiesMap = null,
 
     pub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor {
         return .{
@@ -42,6 +50,128 @@ pub const SyncProcessor = struct {
     pub fn deinit(self: *SyncProcessor) void {
         if (self.enhancer) |*e| e.deinit();
         if (self.thinking_enhancer) |*e| e.deinit();
+        if (self.capabilities_map) |*cm| {
+            var it = cm.iterator();
+            while (it.next()) |entry| {
+                for (entry.value_ptr.*) |cap| self.allocator.free(cap);
+                self.allocator.free(entry.value_ptr.*);
+                self.allocator.free(@constCast(entry.key_ptr.*));
+            }
+            cm.deinit(self.allocator);
+        }
+    }
+
+    /// M4: Load capabilities map from capability_sources table in the database.
+    /// Call this before processing files to enable capability back-propagation.
+    pub fn loadCapabilitiesFromDb(self: *SyncProcessor, db_path: []const u8) void {
+        const vector_db_mod = @import("vector");
+        const GuidanceDb = vector_db_mod.GuidanceDb;
+
+        // Don't create the DB if it doesn't exist - let syncGuidanceDb handle creation.
+        // Otherwise we create an empty DB which causes guidanceDbIsUpToDate to skip syncing.
+        std.fs.accessAbsolute(db_path, .{}) catch {
+            if (self.debug) std.debug.print("[sync] db not found, skipping capabilities load\n", .{});
+            return;
+        };
+
+        var noop_embedder = llm.NoopEmbedding{};
+        const provider = noop_embedder.provider();
+        var db = GuidanceDb.init(self.allocator, db_path, provider) catch |err| {
+            if (self.debug) std.debug.print("[sync] warning: cannot open db for capabilities: {s}\n", .{@errorName(err)});
+            return;
+        };
+        defer db.deinit();
+
+        // Clear existing map
+        if (self.capabilities_map) |*cm| {
+            var it = cm.iterator();
+            while (it.next()) |entry| {
+                for (entry.value_ptr.*) |cap| self.allocator.free(cap);
+                self.allocator.free(entry.value_ptr.*);
+                self.allocator.free(@constCast(entry.key_ptr.*));
+            }
+            cm.deinit(self.allocator);
+            self.capabilities_map = null;
+        }
+
+        var cm: CapabilitiesMap = .{};
+        errdefer {
+            var it = cm.iterator();
+            while (it.next()) |entry| {
+                for (entry.value_ptr.*) |cap| self.allocator.free(cap);
+                self.allocator.free(entry.value_ptr.*);
+                self.allocator.free(@constCast(entry.key_ptr.*));
+            }
+            cm.deinit(self.allocator);
+        }
+
+        // Query all capability-source mappings
+        const entries = db.getAllCapabilitySources(self.allocator) catch |err| {
+            if (self.debug) std.debug.print("[sync] warning: cannot query capability sources: {s}\n", .{@errorName(err)});
+            return;
+        };
+        defer {
+            for (entries) |e| {
+                self.allocator.free(e.source_path);
+                self.allocator.free(e.capability_name);
+            }
+            self.allocator.free(entries);
+        }
+
+        // Build map: source_path -> []capability_name
+        for (entries) |entry| {
+            const gop = cm.getOrPut(self.allocator, entry.source_path) catch continue;
+            const owned_cap = self.allocator.dupe(u8, entry.capability_name) catch continue;
+
+            if (!gop.found_existing) {
+                // First capability for this source - create new entry
+                const owned_key = self.allocator.dupe(u8, entry.source_path) catch {
+                    self.allocator.free(owned_cap);
+                    continue;
+                };
+                var caps_slice: [1][]const u8 = .{owned_cap};
+                const caps = self.allocator.dupe([]const u8, &caps_slice) catch {
+                    self.allocator.free(owned_key);
+                    self.allocator.free(owned_cap);
+                    continue;
+                };
+                gop.key_ptr.* = owned_key;
+                gop.value_ptr.* = caps;
+            } else {
+                // Source already has capabilities - append new one
+                var caps_list: std.ArrayList([]const u8) = .{};
+                for (gop.value_ptr.*) |existing_cap| {
+                    caps_list.append(self.allocator, existing_cap) catch {};
+                }
+                caps_list.append(self.allocator, owned_cap) catch {
+                    self.allocator.free(owned_cap);
+                    caps_list.deinit(self.allocator);
+                    continue;
+                };
+                // Free old slice (but not the strings - they're transferred to caps_list)
+                self.allocator.free(gop.value_ptr.*);
+                gop.value_ptr.* = caps_list.toOwnedSlice(self.allocator) catch &.{};
+            }
+        }
+
+        self.capabilities_map = cm;
+        if (self.debug) {
+            var count: usize = 0;
+            var it = cm.iterator();
+            while (it.next()) |_| count += 1;
+            std.debug.print("[sync] loaded {d} source files with capabilities from db\n", .{count});
+        }
+    }
+
+    /// M4: Find capabilities for a source file from the loaded map.
+    /// Returns an empty slice if not found. Caller does NOT own the result.
+    pub fn findCapabilitiesForFile(self: *const SyncProcessor, rel_path: []const u8) []const []const u8 {
+        if (self.capabilities_map) |cm| {
+            if (cm.get(rel_path)) |caps| {
+                return caps;
+            }
+        }
+        return &.{};
     }
 
     fn stripComments(self: *SyncProcessor, members: []types.Member) void {
@@ -385,6 +515,16 @@ pub const SyncProcessor = struct {
         const equivalents = try self.findEquivalents(rel_path);
         // equivalents owned here; transferred to doc below.
 
+        // --- M4: Capabilities from discover-capability-sources ---
+        // Look up capabilities for this file from the loaded map.
+        const file_caps = self.findCapabilitiesForFile(rel_path);
+        var capabilities: []const []const u8 = &.{};
+        if (file_caps.len > 0) {
+            // Dupe strings for ownership transfer to doc
+            capabilities = try self.store.dupeStrings(file_caps);
+        }
+        // capabilities owned here; transferred to doc below.
+
         var doc: types.GuidanceDoc = .{
             .meta = .{
                 .module = try self.pathToModule(rel_path),
@@ -394,6 +534,7 @@ pub const SyncProcessor = struct {
             .detail = module_detail,
             .keywords = module_keywords,
             .skills = skills,
+            .capabilities = capabilities,
             .used_by = used_by,
             .equivalents = equivalents,
             .members = merge_result.members,

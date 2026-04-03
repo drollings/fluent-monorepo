@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "ea6abf297afd62bd2bffcab3ec42b28ae0569d6b8c101093854f6c9be00915b3",
+      "match_hash": "18e9b1af43069c628d49dd534bbf474faf1ab50d5efd8f9880b83019df13aa27",
       "signature": "keyword_enum Command { ... }",
       "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.",
       "is_pub": false,
@@ -102,39 +102,51 @@
         }
     ,    {
           "type": "enum_field",
-          "name": "scrub",
+          "name": "@\"sync-capabilities\"",
           "is_pub": false,
           "line": 60
         }
     ,    {
           "type": "enum_field",
-          "name": "todo",
+          "name": "@\"discover-capability-sources\"",
           "is_pub": false,
           "line": 61
         }
     ,    {
           "type": "enum_field",
-          "name": "diary",
+          "name": "scrub",
           "is_pub": false,
           "line": 62
         }
     ,    {
           "type": "enum_field",
-          "name": "telemetry",
+          "name": "todo",
           "is_pub": false,
           "line": 63
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"cache-stats\"",
+          "name": "diary",
           "is_pub": false,
           "line": 64
         }
     ,    {
           "type": "enum_field",
-          "name": "serve",
+          "name": "telemetry",
           "is_pub": false,
           "line": 65
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "@\"cache-stats\"",
+          "is_pub": false,
+          "line": 66
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "serve",
+          "is_pub": false,
+          "line": 67
         }
       ],
       "line": 45
@@ -147,7 +159,7 @@
       "returns": "void",
       "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 69
+      "line": 71
     },
     {
       "type": "fn_private",
@@ -156,7 +168,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 136
+      "line": 140
     },
     {
       "type": "fn_private",
@@ -169,7 +181,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 235
+      "line": 241
     },
     {
       "type": "fn_private",
@@ -182,7 +194,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 267
+      "line": 273
     }
   ]
 }

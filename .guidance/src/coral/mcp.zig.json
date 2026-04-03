@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["JSON-RPC", "Coral MCP", "STDIO", "QueueReactor", "Arena", "ContextNode", "Claude", "NullClaw", "Cursor"],
-  "used_by": ["src/coral/main.zig"],
+  "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "enum",

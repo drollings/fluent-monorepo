@@ -1,6 +1,11 @@
 ---
 name: coral-cache
 description: 5-tier cache hierarchy (L1 memory → L2 WASM → L3 graph → L4 KNN → L4.5 local decomposition → L5 LLM) for routing queries through the Coral knowledge base, implemented in QueueReactor with a fluent builder.
+anchors:
+  - QueueReactor
+  - QueueReactorBuilder
+  - L1Cache
+  - RoutingResult
 ---
 
 # Coral Cache
@@ -38,3 +43,54 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 - `src/coral/cache.zig` — `CacheTier`, `RoutingResult`, `L1Cache`, `QueueReactor`, `QueueReactorBuilder`
 - `src/coral/db.zig` — `Library.knnSearch`, `Library.traverseFrom` (L3/L4 backends)
 - `src/common/local_model.zig` — `LocalDecomposer` (L4.5)
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (44 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/coral/cache.zig` | 1.0 | defines_anchor |
+| `src/coral/main.zig` | 0.9 | used_by |
+| `src/coral/mcp.zig` | 0.9 | used_by |
+| `src/coral/context_compressor.zig` | 0.4 | path_heuristic |
+| `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
+| `src/coral/triage.zig` | 0.4 | path_heuristic |
+| `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
+| `src/coral/cli.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
+| `src/coral/context_packer.zig` | 0.4 | path_heuristic |
+| `src/coral/targets.zig` | 0.4 | path_heuristic |
+| `src/coral/db.zig` | 0.4 | path_heuristic |
+| `src/coral/token_budget.zig` | 0.4 | path_heuristic |
+| `src/coral/config.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier.zig` | 0.4 | path_heuristic |
+| `src/coral/global_search.zig` | 0.4 | path_heuristic |
+| `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
+| `src/coral/batch.zig` | 0.4 | path_heuristic |
+| `src/coral/executor.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
+| `src/coral/fixtures.zig` | 0.4 | path_heuristic |
+| `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
+| `src/coral/anonymize.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_test.zig` | 0.4 | path_heuristic |
+| `src/coral/pattern.zig` | 0.4 | path_heuristic |
+| `src/coral/schema.zig` | 0.4 | path_heuristic |
+| `src/coral/benchmark.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
+| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
+| `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
+| `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
+| `src/coral/scrub.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
+| `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
+| `src/coral/metrics.zig` | 0.4 | path_heuristic |
+| `src/coral/session.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
+| `src/coral/verify.zig` | 0.4 | path_heuristic |
+

@@ -191,7 +191,7 @@ pub const QueryResult = struct {
 // Staged explain pipeline types
 // ---------------------------------------------------------------------------
 
-/// Classifies the kind of content in a Stage.
+/// Defines a stage kind with fixed-size buffers, managed via init/deinit, not thread-safe.
 pub const StageKind = enum {
     /// Human-readable explanation from module or member comment.
     prose,
@@ -203,6 +203,8 @@ pub const StageKind = enum {
     insight,
     /// Excerpt from a SKILL.md document.
     skill_doc,
+    /// Excerpt from a CAPABILITY.md file.
+    capability_doc,
 };
 
 /// A single unit of information collected by the staged explain pipeline.
@@ -388,7 +390,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
     try writer.writeAll("    \"language\": \"");
     try writeEscapedValue(writer, doc.meta.language);
     try writer.writeAll("\"\n");
-    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0;
+    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0;
     if (meta_has_more) {
         try writer.writeAll("  },\n");
     } else {
@@ -399,7 +401,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
         try writer.writeAll("  \"comment\": \"");
         try writeEscapedValue(writer, d);
         // Only write comma if there are more fields to follow
-        if (doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
+        if (doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("\",\n");
         } else {
             try writer.writeAll("\"\n");
@@ -410,7 +412,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
         try writer.writeAll("  \"detail\": \"");
         try writeEscapedValue(writer, d);
         // Only write comma if there are more fields to follow
-        if (doc.keywords.len > 0 or doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
+        if (doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("\",\n");
         } else {
             try writer.writeAll("\"\n");
@@ -426,7 +428,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\"");
         }
         // Only write comma if there are more fields to follow
-        if (doc.skills.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
+        if (doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("],\n");
         } else {
             try writer.writeAll("]\n");
@@ -449,10 +451,27 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 
             try writer.writeAll("\n");
         }
         // Only write comma if there are more fields to follow
-        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
+        if (doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
             try writer.writeAll("  ],\n");
         } else {
             try writer.writeAll("  ]\n");
+        }
+    }
+
+    // M4: Write capabilities array
+    if (doc.capabilities.len > 0) {
+        try writer.writeAll("  \"capabilities\": [");
+        for (doc.capabilities, 0..) |cap, i| {
+            if (i > 0) try writer.writeAll(", ");
+            try writer.writeAll("\"");
+            try writeEscapedValue(writer, cap);
+            try writer.writeAll("\"");
+        }
+        // Only write comma if there are more fields to follow
+        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
+            try writer.writeAll("],\n");
+        } else {
+            try writer.writeAll("]\n");
         }
     }
 
@@ -734,5 +753,3 @@ test "jsonifyGuidanceDoc: doc with comment and keywords" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
     defer parsed.deinit();
 }
-
-

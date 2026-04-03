@@ -1,6 +1,11 @@
 ---
 name: explain-query
 description: Natural language codebase query engine that uses LanceDB hybrid vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
+anchors:
+  - cmdExplain
+  - executeStaged
+  - executeStagedWithAliases
+  - formatStaged
 ---
 
 # Explain Query
@@ -59,3 +64,15 @@ The hybrid search combines:
 - `src/vector/vector_db.zig` — `GuidanceDb`, `SemanticAliases`, `loadSemanticAliases`
 - `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (5 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/guidance/staged.zig` | 1.0 | defines_anchor |
+| `src/guidance/query_engine.zig` | 1.0 | defines_anchor |
+| `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
+| `src/vector/vector_db.zig` | 0.7 | keyword_overlap |
+

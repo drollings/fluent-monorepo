@@ -27,6 +27,7 @@ const structure_mod = @import("structure.zig");
 const query_engine_mod = @import("query_engine.zig");
 const deps_mod = @import("deps.zig");
 const schema_validator_mod = @import("schema_validator.zig");
+const doc_parser_mod = @import("doc_parser.zig");
 const llm = @import("common");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -1172,6 +1173,7 @@ fn guidanceDbIsUpToDate(
     const top_level = [_][]const u8{
         "semantic-aliases.json",
         "capability-mapping.json",
+        "capability-index.json",
         "guidance-config.json",
     };
     for (top_level) |name| {
@@ -1218,6 +1220,72 @@ fn guidanceDbIsUpToDate(
     return true;
 }
 
+/// M8.2: Auto-run sync-capabilities + discover-capability-sources when stale.
+///
+/// Checks whether `capability-index.json` is older than any CAPABILITY.md under
+/// `capabilities_dir`. If stale (or absent), runs both commands so that the DB
+/// sync picks up current anchors and source mappings.
+///
+/// Failures are logged as warnings — they do not abort the gen pipeline.
+fn syncCapabilitiesIfStale(
+    allocator: std.mem.Allocator,
+    json_dir: []const u8,
+    db_path: []const u8,
+    capabilities_dir: []const u8,
+    verbose: bool,
+) void {
+    const index_path = std.fs.path.join(allocator, &.{ json_dir, "capability-index.json" }) catch return;
+    defer allocator.free(index_path);
+
+    const index_mtime = marker_mod.fileMtime(index_path);
+
+    // Check if any CAPABILITY.md is newer than the index.
+    var stale = index_mtime == null; // missing index → always stale
+    if (!stale) {
+        const idx_mtime = index_mtime.?;
+        std.fs.accessAbsolute(capabilities_dir, .{}) catch return; // no cap dir → nothing to do
+        var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return;
+        defer cap_dir.close();
+        var walker = cap_dir.walk(allocator) catch return;
+        defer walker.deinit();
+        while (walker.next() catch null) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.basename, "CAPABILITY.md")) continue;
+            const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
+            defer allocator.free(full);
+            const m = marker_mod.fileMtime(full) orelse continue;
+            if (m > idx_mtime) {
+                stale = true;
+                break;
+            }
+        }
+    }
+
+    if (!stale) {
+        if (verbose) std.debug.print("[sync] capability-index.json is up to date\n", .{});
+        return;
+    }
+
+    if (verbose) std.debug.print("[sync] capability-index.json is stale — running sync-capabilities\n", .{});
+    stepPrint("gen: sync-capabilities\n", .{});
+
+    cmdSyncCapabilities(allocator, &[_][]const u8{}) catch |err| {
+        std.debug.print("[sync] WARN: sync-capabilities failed: {s}\n", .{@errorName(err)});
+        return;
+    };
+
+    if (verbose) std.debug.print("[sync] running discover-capability-sources\n", .{});
+    stepPrint("gen: discover-capability-sources\n", .{});
+
+    const db_abs = std.fs.realpathAlloc(allocator, db_path) catch db_path;
+    defer if (!std.mem.eql(u8, db_abs, db_path)) allocator.free(db_abs);
+
+    const discover_args = [_][]const u8{ "--db", db_abs };
+    cmdDiscoverCapabilitySources(allocator, &discover_args) catch |err| {
+        std.debug.print("[sync] WARN: discover-capability-sources failed: {s}\n", .{@errorName(err)});
+    };
+}
+
 /// Sync .guidance.db (SQLite vector database with in-process cosine similarity).
 /// Creates an embedding provider from config and calls vector_db.syncDatabase.
 /// Failures are logged as warnings but do not abort the gen pipeline.
@@ -1261,6 +1329,14 @@ fn syncGuidanceDb(
         break :blk allocator.dupe(u8, cfg.capabilities_dir) catch break :blk null;
     };
     defer if (cap_dir_abs) |p| allocator.free(p);
+
+    if (verbose) {
+        if (cap_dir_abs) |p| {
+            std.debug.print("gen: capabilities_dir: {s}\n", .{p});
+        } else {
+            std.debug.print("gen: capabilities_dir: not found or not accessible\n", .{});
+        }
+    }
 
     // Load semantic aliases for embedding-based query steering
     const aliases_path = std.fs.path.join(allocator, &.{ json_dir, "semantic-aliases.json" }) catch |err| {
@@ -1415,6 +1491,13 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     );
     defer processor.deinit();
     setupEnhancer(allocator, ga, &cfg, &processor);
+
+    // M4: Load capabilities from database before processing files.
+    // This enables back-propagation of capabilities into guidance JSON.
+    // Requires discover-capability-sources to have been run first.
+    if (ga.compile_db) {
+        processor.loadCapabilitiesFromDb(paths.db_path);
+    }
 
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {
@@ -1642,6 +1725,10 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     }
 
     if (ga.compile_db) {
+        // M8.2: Auto-sync capabilities before DB sync so capability embeddings
+        // and source mappings are always current.
+        syncCapabilitiesIfStale(allocator, paths.json_dir, paths.db_path, cfg.capabilities_dir, ga.verbose);
+
         // Generate semantic aliases from keyword frequency analysis
         // json_dir is the .guidance directory
         generateSemanticAliases(paths.json_dir, ga.verbose) catch |err| {
@@ -1909,21 +1996,18 @@ pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8
         const abs_path = try std.fmt.allocPrint(fa, "{s}/{s}", .{ cap_dir, entry.path });
         const content = std.fs.cwd().readFileAlloc(fa, abs_path, 512 * 1024) catch continue;
 
-        // Extract capability name from frontmatter.
-        var cap_name: []const u8 = std.fs.path.basename(std.fs.path.dirname(abs_path) orelse abs_path);
+        // Use doc_parser for unified frontmatter parsing (name, description, anchors)
+        const excerpt = doc_parser_mod.parseCapabilityDocContent(fa, content, false) catch continue;
+        defer doc_parser_mod.freeDocExcerpt(fa, excerpt);
+
+        const cap_name: []const u8 = excerpt.name orelse std.fs.path.basename(std.fs.path.dirname(abs_path) orelse abs_path);
+
+        // Body is content after frontmatter for keyword extraction
         var body: []const u8 = content;
-        if (std.mem.startsWith(u8, content, "---")) {
-            const end = std.mem.indexOf(u8, content[3..], "\n---") orelse 0;
+        if (std.mem.startsWith(u8, content, "---\n")) {
+            const end = std.mem.indexOf(u8, content[4..], "\n---\n") orelse 0;
             if (end > 0) {
-                body = content[end + 7 ..];
-                var fm_it = std.mem.splitScalar(u8, content[3 .. end + 3], '\n');
-                while (fm_it.next()) |line| {
-                    const trimmed = std.mem.trim(u8, line, " \r");
-                    if (std.mem.startsWith(u8, trimmed, "name:")) {
-                        cap_name = std.mem.trim(u8, trimmed["name:".len..], " ");
-                        break;
-                    }
-                }
+                body = content[4 + end + 5 ..];
             }
         }
 
@@ -1931,6 +2015,13 @@ pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8
         // Zig/Python identifiers (camelCase, PascalCase, snake_case, no punctuation).
         var kw_set: std.StringHashMapUnmanaged(void) = .{};
         defer kw_set.deinit(fa);
+
+        // Add anchors as keywords (these are high-confidence identifiers)
+        for (excerpt.anchors) |anchor| {
+            if (!kw_set.contains(anchor)) {
+                try kw_set.put(fa, try fa.dupe(u8, anchor), {});
+            }
+        }
 
         // Scan backtick spans and identifier-like tokens from the body.
         var tok_it = std.mem.tokenizeAny(u8, body, " \t\n\r`()[]{}:,;\"'");
@@ -2069,6 +2160,411 @@ fn isCapabilityKeywordToken(tok: []const u8) bool {
     return has_upper or has_underscore or has_dot or tok.len >= 4;
 }
 
+/// Capability index entry for `.guidance/capability-index.json`.
+pub const CapabilityEntry = struct {
+    name: []const u8,
+    description: ?[]const u8,
+    anchors: []const []const u8,
+    keywords: []const []const u8,
+    source: []const u8,
+};
+
+/// Sync capabilities to `.guidance/capability-index.json`.
+///
+/// Creates a structured capability index with anchors, keywords, and descriptions
+/// from all CAPABILITY.md files in `doc/capabilities/`.
+///
+/// Usage: guidance sync-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run] [--verbose]
+pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    var workspace: ?[]const u8 = null;
+    var dry_run = false;
+    var verbose = false;
+    var i: usize = 0;
+
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            guidance_dir_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--workspace") or std.mem.eql(u8, arg, "-w")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            workspace = args[i];
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            dry_run = true;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            verbose = true;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const ws = workspace orelse cwd;
+    const guidance_abs = try llm.resolvePath(allocator, ws, guidance_dir_arg);
+    defer allocator.free(guidance_abs);
+
+    const cap_dir = try std.fs.path.join(allocator, &.{ guidance_abs, "capabilities" });
+    defer allocator.free(cap_dir);
+
+    const index_path = try std.fs.path.join(allocator, &.{ guidance_abs, "capability-index.json" });
+    defer allocator.free(index_path);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const fa = arena.allocator();
+
+    if (verbose) {
+        std.debug.print("[sync-capabilities] scanning {s}\n", .{cap_dir});
+    }
+
+    // ------------------------------------------------------------------
+    // Step 1: Walk capabilities dir, parse each CAPABILITY.md.
+    // ------------------------------------------------------------------
+    var capabilities: std.ArrayList(CapabilityEntry) = .{};
+    defer {
+        for (capabilities.items) |cap| {
+            fa.free(cap.name);
+            if (cap.description) |d| fa.free(d);
+            for (cap.anchors) |a| fa.free(a);
+            fa.free(cap.anchors);
+            for (cap.keywords) |k| fa.free(k);
+            fa.free(cap.keywords);
+            fa.free(cap.source);
+        }
+        capabilities.deinit(fa);
+    }
+
+    var cap_d = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
+        std.debug.print("[sync-capabilities] cannot open {s}: {s}\n", .{ cap_dir, @errorName(err) });
+        return;
+    };
+    defer cap_d.close();
+
+    var walker = try cap_d.walk(fa);
+    defer walker.deinit();
+
+    var cap_count: usize = 0;
+    var cap_with_anchors: usize = 0;
+    var cap_without_anchors: usize = 0;
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, "CAPABILITY.md")) continue;
+
+        const abs_path = try std.fmt.allocPrint(fa, "{s}/{s}", .{ cap_dir, entry.path });
+        const content = std.fs.cwd().readFileAlloc(fa, abs_path, 512 * 1024) catch continue;
+
+        // Use doc_parser for unified frontmatter parsing
+        const excerpt = doc_parser_mod.parseCapabilityDocContent(fa, content, verbose) catch continue;
+        errdefer doc_parser_mod.freeDocExcerpt(fa, excerpt);
+
+        // Default name from directory if not in frontmatter
+        const cap_name = if (excerpt.name) |n| n else std.fs.path.basename(std.fs.path.dirname(abs_path) orelse abs_path);
+
+        // Body is content after frontmatter for keyword extraction
+        var body: []const u8 = content;
+        if (std.mem.startsWith(u8, content, "---\n")) {
+            const end = std.mem.indexOf(u8, content[4..], "\n---\n") orelse 0;
+            if (end > 0) {
+                body = content[4 + end + 5 ..];
+            }
+        }
+
+        // Extract keywords from body
+        var kw_set: std.StringHashMapUnmanaged(void) = .{};
+        defer kw_set.deinit(fa);
+
+        // Add anchors as keywords (high-confidence identifiers)
+        for (excerpt.anchors) |anchor| {
+            if (!kw_set.contains(anchor)) {
+                try kw_set.put(fa, try fa.dupe(u8, anchor), {});
+            }
+        }
+
+        // Scan body for identifier-like tokens
+        var tok_it = std.mem.tokenizeAny(u8, body, " \t\n\r`()[]{}:,;\"'");
+        while (tok_it.next()) |tok| {
+            if (tok.len < 2 or tok.len > 80) continue;
+            if (!isCapabilityKeywordToken(tok)) continue;
+            if (!kw_set.contains(tok)) {
+                try kw_set.put(fa, try fa.dupe(u8, tok), {});
+            }
+        }
+
+        // Build keyword list
+        var kw_list: std.ArrayList([]const u8) = .{};
+        var kwit = kw_set.keyIterator();
+        while (kwit.next()) |k| {
+            try kw_list.append(fa, try fa.dupe(u8, k.*));
+        }
+
+        // Build anchors list
+        var anchors_list: std.ArrayList([]const u8) = .{};
+        for (excerpt.anchors) |a| {
+            try anchors_list.append(fa, try fa.dupe(u8, a));
+        }
+
+        const cap_entry: CapabilityEntry = .{
+            .name = try fa.dupe(u8, cap_name),
+            .description = if (excerpt.description) |d| try fa.dupe(u8, d) else null,
+            .anchors = try anchors_list.toOwnedSlice(fa),
+            .keywords = try kw_list.toOwnedSlice(fa),
+            .source = try fa.dupe(u8, entry.path),
+        };
+
+        try capabilities.append(fa, cap_entry);
+        cap_count += 1;
+        if (cap_entry.anchors.len > 0) {
+            cap_with_anchors += 1;
+        } else {
+            cap_without_anchors += 1;
+        }
+
+        if (verbose) {
+            std.debug.print("[sync-capabilities] parsing {s} → {d} anchors, {d} keywords\n", .{
+                entry.path,
+                cap_entry.anchors.len,
+                cap_entry.keywords.len,
+            });
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Step 2: Build and write capability-index.json.
+    // ------------------------------------------------------------------
+    var index_obj = std.json.ObjectMap.init(fa);
+    try index_obj.put("version", .{ .integer = 1 });
+
+    const timestamp = std.time.nanoTimestamp();
+    const timestamp_str = try std.fmt.allocPrint(fa, "{}", .{timestamp});
+    try index_obj.put("generated", .{ .string = timestamp_str });
+
+    var capabilities_arr = std.json.Array.init(fa);
+    for (capabilities.items) |cap| {
+        var cap_obj = std.json.ObjectMap.init(fa);
+        try cap_obj.put("name", .{ .string = cap.name });
+        if (cap.description) |d| {
+            try cap_obj.put("description", .{ .string = d });
+        }
+
+        var anchors_arr = std.json.Array.init(fa);
+        for (cap.anchors) |a| {
+            try anchors_arr.append(.{ .string = a });
+        }
+        try cap_obj.put("anchors", .{ .array = anchors_arr });
+
+        var keywords_arr = std.json.Array.init(fa);
+        for (cap.keywords) |k| {
+            try keywords_arr.append(.{ .string = k });
+        }
+        try cap_obj.put("keywords", .{ .array = keywords_arr });
+
+        try cap_obj.put("source", .{ .string = cap.source });
+
+        // Get file mtime
+        const cap_path = try std.fs.path.join(fa, &.{ cap_dir, cap.source });
+        if (std.fs.openFileAbsolute(cap_path, .{})) |file| {
+            defer file.close();
+            const stat = file.stat() catch continue;
+            const mtime = @as(i64, @intCast(stat.mtime));
+            try cap_obj.put("mtime", .{ .integer = mtime });
+        } else |_| {
+            // file not readable, skip mtime
+        }
+
+        try capabilities_arr.append(.{ .object = cap_obj });
+    }
+    try index_obj.put("capabilities", .{ .array = capabilities_arr });
+
+    const json_out = try llm.jsonStringifyAlloc(fa, std.json.Value{ .object = index_obj });
+
+    if (dry_run) {
+        std.debug.print("[sync-capabilities] (dry-run) would write {d} bytes to {s}\n", .{ json_out.len, index_path });
+        return;
+    }
+
+    // ── Lifecycle detection (compare with previous index) ─────────────────
+    _ = reportCapabilityLifecycle(fa, index_path, capabilities.items, verbose) catch null;
+
+    const file = std.fs.cwd().createFile(index_path, .{}) catch |err| {
+        std.debug.print("[sync-capabilities] cannot write {s}: {s}\n", .{ index_path, @errorName(err) });
+        return;
+    };
+    defer file.close();
+    var wbuf: [8192]u8 = undefined;
+    var fw = file.writer(&wbuf);
+    try fw.interface.writeAll(json_out);
+    try fw.interface.flush();
+
+    std.debug.print("[sync-capabilities] wrote {s} ({d} capabilities)\n", .{ index_path, cap_count });
+
+    // ------------------------------------------------------------------
+    // Step 3: Quality assessment warnings.
+    // ------------------------------------------------------------------
+    if (cap_without_anchors > 0) {
+        std.debug.print("[sync-capabilities] WARN: {d} capabilities have no anchors — cannot auto-discover source files\n", .{cap_without_anchors});
+    }
+
+    // Check for empty descriptions
+    for (capabilities.items) |cap| {
+        if (cap.description == null or cap.description.?.len == 0) {
+            if (verbose) {
+                std.debug.print("[sync-capabilities] WARN: capability '{s}' has empty description\n", .{cap.name});
+            }
+        }
+    }
+
+    // Check for duplicate names
+    var seen_names: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_names.deinit(fa);
+    for (capabilities.items) |cap| {
+        if (seen_names.contains(cap.name)) {
+            std.debug.print("[sync-capabilities] WARN: duplicate capability name '{s}'\n", .{cap.name});
+        } else {
+            try seen_names.put(fa, cap.name, {});
+        }
+    }
+}
+
+/// Capability lifecycle detection (NEW, UPDATED, REMOVED, UNCHANGED).
+/// Compares current capabilities directory against previous capability-index.json.
+/// Reports lifecycle changes and orphaned capabilities.
+pub fn reportCapabilityLifecycle(
+    allocator: std.mem.Allocator,
+    prev_index_path: []const u8,
+    current_caps: []const CapabilityEntry,
+    verbose: bool,
+) !struct {
+    new_count: usize,
+    updated_count: usize,
+    removed_count: usize,
+    unchanged_count: usize,
+} {
+    var new_count: usize = 0;
+    var updated_count: usize = 0;
+    var removed_count: usize = 0;
+    var unchanged_count: usize = 0;
+
+    // Load previous index if exists
+    const prev_content = std.fs.cwd().readFileAlloc(allocator, prev_index_path, 2 * 1024 * 1024) catch null;
+    defer if (prev_content) |pc| allocator.free(pc);
+
+    var prev_caps: std.StringHashMapUnmanaged(struct {
+        mtime: i64,
+        anchors: []const []const u8,
+    }) = .{};
+    defer {
+        var it = prev_caps.iterator();
+        while (it.next()) |entry| {
+            allocator.free(entry.key_ptr.*);
+            for (entry.value_ptr.anchors) |a| allocator.free(a);
+            allocator.free(entry.value_ptr.anchors);
+        }
+        prev_caps.deinit(allocator);
+    }
+
+    if (prev_content) |pc| {
+        const parsed = std.json.parseFromSlice(std.json.Value, allocator, pc, .{ .ignore_unknown_fields = true }) catch null;
+        if (parsed) |p| {
+            defer p.deinit();
+            if (p.value == .object) {
+                if (p.value.object.get("capabilities")) |caps_val| {
+                    if (caps_val == .array) {
+                        for (caps_val.array.items) |cap_item| {
+                            if (cap_item != .object) continue;
+                            const cap_obj = cap_item.object;
+                            const name = (cap_obj.get("name") orelse continue).string;
+                            const mtime = if (cap_obj.get("mtime")) |m| m.integer else 0;
+
+                            var anchors_list: std.ArrayList([]const u8) = .{};
+                            if (cap_obj.get("anchors")) |a| {
+                                if (a == .array) {
+                                    for (a.array.items) |anchor| {
+                                        if (anchor == .string) {
+                                            try anchors_list.append(allocator, try allocator.dupe(u8, anchor.string));
+                                        }
+                                    }
+                                }
+                            }
+
+                            try prev_caps.put(allocator, try allocator.dupe(u8, name), .{
+                                .mtime = mtime,
+                                .anchors = try anchors_list.toOwnedSlice(allocator),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Track which previous capabilities we've seen
+    var seen_prev: std.StringHashMapUnmanaged(void) = .{};
+    defer seen_prev.deinit(allocator);
+
+    // Check each current capability against previous
+    for (current_caps) |cap| {
+        try seen_prev.put(allocator, cap.name, {});
+
+        const prev_entry = prev_caps.get(cap.name);
+        if (prev_entry == null) {
+            // NEW capability
+            new_count += 1;
+            if (verbose) {
+                std.debug.print("[capabilities] NEW: {s}\n", .{cap.name});
+            }
+        } else {
+            // Check if updated (mtime changed or anchors changed)
+            const prev = prev_entry.?;
+            const anchors_changed = blk: {
+                if (cap.anchors.len != prev.anchors.len) break :blk true;
+                for (cap.anchors, 0..) |a, i| {
+                    if (!std.mem.eql(u8, a, prev.anchors[i])) break :blk true;
+                }
+                break :blk false;
+            };
+
+            if (anchors_changed) {
+                updated_count += 1;
+                if (verbose) {
+                    std.debug.print("[capabilities] UPDATED: {s} (anchors changed)\n", .{cap.name});
+                }
+            } else {
+                unchanged_count += 1;
+            }
+        }
+    }
+
+    // Find removed capabilities
+    var prev_it = prev_caps.iterator();
+    while (prev_it.next()) |entry| {
+        const name = entry.key_ptr.*;
+        if (!seen_prev.contains(name)) {
+            removed_count += 1;
+            if (verbose) {
+                std.debug.print("[capabilities] REMOVED: {s}\n", .{name});
+            }
+        }
+    }
+
+    std.debug.print("[capabilities] lifecycle: {d} new, {d} updated, {d} removed, {d} unchanged\n", .{
+        new_count,
+        updated_count,
+        removed_count,
+        unchanged_count,
+    });
+
+    return .{
+        .new_count = new_count,
+        .updated_count = updated_count,
+        .removed_count = removed_count,
+        .unchanged_count = unchanged_count,
+    };
+}
+
 /// Run an arbitrary command (full argv, no template substitution).
 /// Returns true on exit code 0.
 fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
@@ -2131,6 +2627,536 @@ fn collectFilesWithExts(
     }
 
     return results.toOwnedSlice(allocator);
+}
+
+// ---------------------------------------------------------------------------
+// discover-capability-sources — anchor-based source discovery
+// ---------------------------------------------------------------------------
+
+/// Confidence levels for discovery reasons.
+const ConfidenceLevels = struct {
+    const defines_anchor: f32 = 1.0;
+    const used_by: f32 = 0.9;
+    const keyword_overlap: f32 = 0.7;
+    const pattern_match: f32 = 0.6;
+    const path_heuristic: f32 = 0.4;
+};
+
+/// A capability-source join discovered from AST analysis.
+const DiscoveredSource = struct {
+    capability_name: []const u8,
+    source_path: []const u8,
+    confidence: f32,
+    reason: []const u8,
+};
+
+/// Write (or replace) the auto-generated `## Sources` section at the bottom
+/// of a CAPABILITY.md file. The section is delimited by a `<!-- AUTO-SOURCES:`
+/// HTML comment marker so it can be safely regenerated without touching the
+/// human-authored content above it.
+///
+/// Called by `cmdDiscoverCapabilitySources` after the join table is upserted.
+fn updateCapabilitySourcesSection(
+    allocator: std.mem.Allocator,
+    cap_md_path: []const u8,
+    sources: []const DiscoveredSource,
+    verbose: bool,
+) !void {
+    // Read existing content.
+    const content = std.fs.cwd().readFileAlloc(allocator, cap_md_path, 512 * 1024) catch return;
+    defer allocator.free(content);
+
+    const marker = "<!-- AUTO-SOURCES:";
+    const marker_pos = std.mem.indexOf(u8, content, marker);
+    const base = if (marker_pos) |p| content[0..p] else content;
+    const base_trimmed = std.mem.trimRight(u8, base, " \t\r\n");
+
+    // Deduplicate by source_path, keeping highest confidence per path.
+    var seen_paths: std.StringHashMapUnmanaged(usize) = .{};
+    defer seen_paths.deinit(allocator);
+    var deduped: std.ArrayList(DiscoveredSource) = .{};
+    defer deduped.deinit(allocator);
+    for (sources) |src| {
+        if (seen_paths.get(src.source_path)) |idx| {
+            if (src.confidence > deduped.items[idx].confidence) {
+                deduped.items[idx] = src;
+            }
+        } else {
+            try seen_paths.put(allocator, src.source_path, deduped.items.len);
+            try deduped.append(allocator, src);
+        }
+    }
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(allocator);
+    const w = out.writer(allocator);
+
+    try out.appendSlice(allocator, base_trimmed);
+    try out.appendSlice(allocator, "\n\n<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->\n");
+    try w.print("## Sources ({d} file{s}, auto-discovered)\n\n", .{
+        deduped.items.len,
+        if (deduped.items.len == 1) @as([]const u8, "") else "s",
+    });
+    try out.appendSlice(allocator, "| File | Confidence | Reason |\n");
+    try out.appendSlice(allocator, "|------|-----------|--------|\n");
+    for (deduped.items) |src| {
+        try w.print("| `{s}` | {d:.1} | {s} |\n", .{ src.source_path, src.confidence, src.reason });
+    }
+    try out.appendSlice(allocator, "\n");
+
+    const file = std.fs.cwd().createFile(cap_md_path, .{}) catch return;
+    defer file.close();
+    var wbuf: [8192]u8 = undefined;
+    var fw = file.writer(&wbuf);
+    try fw.interface.writeAll(out.items);
+    try fw.interface.flush();
+
+    if (verbose) {
+        const dir_name = std.fs.path.basename(std.fs.path.dirname(cap_md_path) orelse cap_md_path);
+        std.debug.print("[capabilities] updated sources section in {s}/CAPABILITY.md ({d} files)\n", .{ dir_name, deduped.items.len });
+    }
+}
+
+/// Processes allocation arguments to discover capability sources for the sync engine.
+pub fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
+    var db_path: []const u8 = config_mod.DEFAULT_DB_PATH;
+    var verbose = false;
+    var i: usize = 0;
+
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
+        if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            guidance_dir_arg = args[i];
+        } else if (std.mem.eql(u8, arg, "--db") or std.mem.eql(u8, arg, "-o")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            db_path = args[i];
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            verbose = true;
+        }
+    }
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const guidance_abs = try llm.resolvePath(allocator, cwd, guidance_dir_arg);
+    defer allocator.free(guidance_abs);
+
+    const db_abs = try llm.resolvePath(allocator, cwd, db_path);
+    defer allocator.free(db_abs);
+
+    const cap_index_path = try std.fs.path.join(allocator, &.{ guidance_abs, "capability-index.json" });
+    defer allocator.free(cap_index_path);
+
+    const src_dir_path = try std.fs.path.join(allocator, &.{ guidance_abs, "src" });
+    defer allocator.free(src_dir_path);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const fa = arena.allocator();
+
+    if (verbose) {
+        std.debug.print("[discover] loading capability index from {s}\n", .{cap_index_path});
+    }
+
+    // Load capability index
+    const cap_index_content = std.fs.cwd().readFileAlloc(fa, cap_index_path, 2 * 1024 * 1024) catch |err| {
+        std.debug.print("[discover] ERROR: cannot read {s}: {s}\n", .{ cap_index_path, @errorName(err) });
+        std.debug.print("[discover] HINT: run 'guidance sync-capabilities' first\n", .{});
+        return;
+    };
+
+    const parsed = std.json.parseFromSlice(std.json.Value, fa, cap_index_content, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.debug.print("[discover] ERROR: cannot parse capability index: {s}\n", .{@errorName(err)});
+        return;
+    };
+    defer parsed.deinit();
+
+    const capabilities_arr = parsed.value.object.get("capabilities") orelse {
+        std.debug.print("[discover] ERROR: capability index missing 'capabilities' array\n", .{});
+        return;
+    };
+    if (capabilities_arr != .array) {
+        std.debug.print("[discover] ERROR: capabilities is not an array\n", .{});
+        return;
+    }
+
+    // Build anchor -> capability map
+    var anchor_to_cap: std.StringHashMapUnmanaged([]const u8) = .{};
+    defer anchor_to_cap.deinit(fa);
+
+    var cap_keywords: std.StringHashMapUnmanaged([]const []const u8) = .{};
+    defer cap_keywords.deinit(fa);
+
+    // M5.4: map capability name → source field (relative MD path within cap_dir)
+    var cap_name_to_md_rel: std.StringHashMapUnmanaged([]const u8) = .{};
+    defer cap_name_to_md_rel.deinit(fa);
+
+    for (capabilities_arr.array.items) |cap_item| {
+        if (cap_item != .object) continue;
+        const cap_obj = cap_item.object;
+        const cap_name = (cap_obj.get("name") orelse continue).string;
+        const anchors_arr = if (cap_obj.get("anchors")) |a| a.array else continue;
+
+        for (anchors_arr.items) |anchor| {
+            if (anchor != .string) continue;
+            try anchor_to_cap.put(fa, try fa.dupe(u8, anchor.string), try fa.dupe(u8, cap_name));
+        }
+
+        // Store keywords for this capability
+        const kw_val = cap_obj.get("keywords") orelse continue;
+        if (kw_val != .array) continue;
+        var kw_list: std.ArrayList([]const u8) = .{};
+        for (kw_val.array.items) |kw| {
+            if (kw != .string) continue;
+            try kw_list.append(fa, try fa.dupe(u8, kw.string));
+        }
+        try cap_keywords.put(fa, try fa.dupe(u8, cap_name), try kw_list.toOwnedSlice(fa));
+
+        // Store source path for auto-sources section updates (M5.4)
+        if (cap_obj.get("source")) |sv| {
+            if (sv == .string) {
+                try cap_name_to_md_rel.put(fa, try fa.dupe(u8, cap_name), try fa.dupe(u8, sv.string));
+            }
+        }
+    }
+
+    if (verbose) {
+        std.debug.print("[discover] loaded {d} anchors from {d} capabilities\n", .{ anchor_to_cap.size, capabilities_arr.array.items.len });
+    }
+
+    // Load guidance JSON files and extract members
+    var member_to_file: std.StringHashMapUnmanaged([]const u8) = .{};
+    defer member_to_file.deinit(fa);
+
+    var file_to_members: std.StringHashMapUnmanaged([]const []const u8) = .{};
+    defer file_to_members.deinit(fa);
+
+    var file_to_used_by: std.StringHashMapUnmanaged([]const []const u8) = .{};
+    defer file_to_used_by.deinit(fa);
+
+    var src_dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
+        std.debug.print("[discover] ERROR: cannot open {s}: {s}\n", .{ src_dir_path, @errorName(err) });
+        return;
+    };
+    defer src_dir.close();
+
+    var walker = try src_dir.walk(fa);
+    defer walker.deinit();
+
+    var file_count: usize = 0;
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
+
+        const json_path = try std.fs.path.join(fa, &.{ src_dir_path, entry.path });
+        const json_content = std.fs.cwd().readFileAlloc(fa, json_path, 10 * 1024 * 1024) catch continue;
+
+        const json_parsed = std.json.parseFromSlice(std.json.Value, fa, json_content, .{ .ignore_unknown_fields = true }) catch continue;
+        defer json_parsed.deinit();
+
+        if (json_parsed.value != .object) continue;
+        const json_obj = json_parsed.value.object;
+
+        // Get source from meta object
+        const rel_path = blk: {
+            const meta_val = json_obj.get("meta") orelse continue;
+            if (meta_val != .object) continue;
+            const source_val = meta_val.object.get("source") orelse continue;
+            if (source_val != .string) continue;
+            break :blk source_val.string;
+        };
+
+        var members: std.ArrayList([]const u8) = .{};
+        if (json_obj.get("members")) |m| {
+            if (m == .array) {
+                for (m.array.items) |member| {
+                    if (member != .object) continue;
+                    const name_val = member.object.get("name") orelse continue;
+                    if (name_val != .string) continue;
+                    try members.append(fa, try fa.dupe(u8, name_val.string));
+                }
+            }
+        }
+
+        if (members.items.len > 0) {
+            // First populate member_to_file, then toOwnedSlice
+            for (members.items) |mbr| {
+                try member_to_file.put(fa, mbr, try fa.dupe(u8, rel_path));
+            }
+            try file_to_members.put(fa, try fa.dupe(u8, rel_path), try members.toOwnedSlice(fa));
+        }
+
+        // Extract used_by
+        if (json_obj.get("used_by")) |ub| {
+            if (ub == .array) {
+                var used_by_list: std.ArrayList([]const u8) = .{};
+                for (ub.array.items) |u| {
+                    if (u != .string) continue;
+                    try used_by_list.append(fa, try fa.dupe(u8, u.string));
+                }
+                if (used_by_list.items.len > 0) {
+                    try file_to_used_by.put(fa, try fa.dupe(u8, rel_path), try used_by_list.toOwnedSlice(fa));
+                }
+            }
+        }
+
+        file_count += 1;
+    }
+
+    if (verbose) {
+        std.debug.print("[discover] indexed {d} guidance JSON files\n", .{file_count});
+    }
+
+    // Open database
+    var noop_embedder = common.NoopEmbedding{};
+    const provider = noop_embedder.provider();
+    var db = GuidanceDb.init(allocator, db_abs, provider) catch |err| {
+        std.debug.print("[discover] ERROR: cannot open database {s}: {s}\n", .{ db_abs, @errorName(err) });
+        return;
+    };
+    defer db.deinit();
+
+    // Build capability -> sources map
+    var cap_to_sources: std.StringHashMapUnmanaged(std.ArrayList(DiscoveredSource)) = .{};
+    defer {
+        var it = cap_to_sources.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.deinit(fa);
+        }
+        cap_to_sources.deinit(fa);
+    }
+
+    var cap_stats: struct {
+        anchor_defining: usize = 0,
+        used_by: usize = 0,
+        keyword_overlap: usize = 0,
+        path_heuristic: usize = 0,
+    } = .{};
+
+    // Initialize source lists for each capability
+    var cap_it = cap_keywords.iterator();
+    while (cap_it.next()) |entry| {
+        const sources_list: std.ArrayList(DiscoveredSource) = .{};
+        try cap_to_sources.put(fa, entry.key_ptr.*, sources_list);
+    }
+
+    // Pass 1: Anchor match (1.0)
+    var anchor_it = anchor_to_cap.iterator();
+    while (anchor_it.next()) |entry| {
+        const anchor = entry.key_ptr.*;
+        const cap_name = entry.value_ptr.*;
+
+        // Find file that defines this anchor
+        if (member_to_file.get(anchor)) |source_file| {
+            const ds: DiscoveredSource = .{
+                .capability_name = try fa.dupe(u8, cap_name),
+                .source_path = try fa.dupe(u8, source_file),
+                .confidence = ConfidenceLevels.defines_anchor,
+                .reason = "defines_anchor",
+            };
+            if (cap_to_sources.getPtr(cap_name)) |sources_list| {
+                try sources_list.append(fa, ds);
+            }
+            cap_stats.anchor_defining += 1;
+        }
+    }
+
+    // Pass 2: Reverse import traversal (0.9)
+    cap_it = cap_keywords.iterator();
+    while (cap_it.next()) |entry| {
+        const cap_name = entry.key_ptr.*;
+
+        // Find anchor-defining files for this capability
+        var anchor_files: std.StringHashMapUnmanaged(void) = .{};
+        defer anchor_files.deinit(fa);
+
+        anchor_it = anchor_to_cap.iterator();
+        while (anchor_it.next()) |ae| {
+            if (std.mem.eql(u8, ae.value_ptr.*, cap_name)) {
+                if (member_to_file.get(ae.key_ptr.*)) |af| {
+                    try anchor_files.put(fa, af, {});
+                }
+            }
+        }
+
+        // For each anchor-defining file, find files that import it (used_by)
+        var af_it = anchor_files.iterator();
+        while (af_it.next()) |af_entry| {
+            const anchor_file = af_entry.key_ptr.*;
+            if (file_to_used_by.get(anchor_file)) |users| {
+                for (users) |user_file| {
+                    const ds: DiscoveredSource = .{
+                        .capability_name = try fa.dupe(u8, cap_name),
+                        .source_path = try fa.dupe(u8, user_file),
+                        .confidence = ConfidenceLevels.used_by,
+                        .reason = "used_by",
+                    };
+                    if (cap_to_sources.getPtr(cap_name)) |sources_list| {
+                        // Check for duplicates
+                        var is_dup = false;
+                        for (sources_list.items) |existing| {
+                            if (std.mem.eql(u8, existing.source_path, user_file)) {
+                                is_dup = true;
+                                break;
+                            }
+                        }
+                        if (!is_dup) {
+                            try sources_list.append(fa, ds);
+                            cap_stats.used_by += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 3: Keyword overlap (0.7)
+    cap_it = cap_keywords.iterator();
+    while (cap_it.next()) |entry| {
+        const cap_name = entry.key_ptr.*;
+        const keywords = entry.value_ptr.*;
+
+        if (keywords.len < 3) continue; // Skip if less than 3 keywords
+
+        // For each guidance file, count keyword overlap
+        var file_it = file_to_members.iterator();
+        while (file_it.next()) |file_entry| {
+            const source_file = file_entry.key_ptr.*;
+            const file_members = file_entry.value_ptr.*;
+
+            // Count keyword overlap
+            var overlap: usize = 0;
+            for (keywords) |kw| {
+                for (file_members) |mbr| {
+                    if (std.mem.eql(u8, kw, mbr)) {
+                        overlap += 1;
+                        break;
+                    }
+                }
+            }
+
+            if (overlap >= 3) {
+                const ds: DiscoveredSource = .{
+                    .capability_name = try fa.dupe(u8, cap_name),
+                    .source_path = try fa.dupe(u8, source_file),
+                    .confidence = ConfidenceLevels.keyword_overlap,
+                    .reason = "keyword_overlap",
+                };
+                if (cap_to_sources.getPtr(cap_name)) |sources_list| {
+                    // Check for duplicates
+                    var is_dup = false;
+                    for (sources_list.items) |existing| {
+                        if (std.mem.eql(u8, existing.source_path, source_file)) {
+                            is_dup = true;
+                            break;
+                        }
+                    }
+                    if (!is_dup) {
+                        try sources_list.append(fa, ds);
+                        cap_stats.keyword_overlap += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Pass 5: Path heuristic (0.4)
+    cap_it = cap_keywords.iterator();
+    while (cap_it.next()) |entry| {
+        const cap_name = entry.key_ptr.*;
+        // Normalize capability name for path matching (kebab-case to words)
+        const cap_lower = try std.ascii.allocLowerString(fa, cap_name);
+        defer fa.free(cap_lower);
+
+        // Extract key part of capability name (e.g., "embedding" from "embedding-providers")
+        var cap_key: []const u8 = cap_lower;
+        if (std.mem.indexOf(u8, cap_lower, "-")) |dash_pos| {
+            cap_key = cap_lower[0..dash_pos];
+        }
+
+        var file_it = file_to_members.iterator();
+        while (file_it.next()) |file_entry| {
+            const source_file = file_entry.key_ptr.*;
+            const file_lower = try std.ascii.allocLowerString(fa, source_file);
+            defer fa.free(file_lower);
+
+            if (std.mem.indexOf(u8, file_lower, cap_key) != null) {
+                const ds: DiscoveredSource = .{
+                    .capability_name = try fa.dupe(u8, cap_name),
+                    .source_path = try fa.dupe(u8, source_file),
+                    .confidence = ConfidenceLevels.path_heuristic,
+                    .reason = "path_heuristic",
+                };
+                if (cap_to_sources.getPtr(cap_name)) |sources_list| {
+                    // Check for duplicates
+                    var is_dup = false;
+                    for (sources_list.items) |existing| {
+                        if (std.mem.eql(u8, existing.source_path, source_file)) {
+                            is_dup = true;
+                            break;
+                        }
+                    }
+                    if (!is_dup) {
+                        try sources_list.append(fa, ds);
+                        cap_stats.path_heuristic += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Upsert into database
+    var total_joins: usize = 0;
+    var cap_count: usize = 0;
+
+    var src_it = cap_to_sources.iterator();
+    while (src_it.next()) |entry| {
+        const cap_name = entry.key_ptr.*;
+        const sources_list = entry.value_ptr.*;
+
+        // Clear existing mappings for this capability
+        db.clearCapabilitySources(cap_name) catch {
+            // Non-fatal
+        };
+
+        // Insert new mappings
+        for (sources_list.items) |src| {
+            _ = db.upsertCapabilitySource(cap_name, src.source_path, src.confidence, src.reason) catch {
+                // Non-fatal
+                continue;
+            };
+            total_joins += 1;
+        }
+
+        cap_count += 1;
+
+        if (verbose and sources_list.items.len > 0) {
+            std.debug.print("[discover] {s}: {d} sources\n", .{ cap_name, sources_list.items.len });
+        }
+
+        // M5.4: Update auto-generated Sources section in the CAPABILITY.md file.
+        if (cap_name_to_md_rel.get(cap_name)) |md_rel| {
+            const cap_dir_path = try std.fs.path.join(fa, &.{ guidance_abs, "capabilities" });
+            const md_abs = try std.fs.path.join(fa, &.{ cap_dir_path, md_rel });
+            updateCapabilitySourcesSection(fa, md_abs, sources_list.items, verbose) catch |err| {
+                if (verbose) std.debug.print("[capabilities] WARN: cannot update sources in {s}: {s}\n", .{ md_rel, @errorName(err) });
+            };
+        }
+    }
+
+    std.debug.print("[discover] wrote {d} capability_sources joins ({d} capabilities, {d} unique source files)\n", .{ total_joins, cap_count, file_count });
+    if (verbose) {
+        std.debug.print("[discover] confidence distribution: 1.0={d}, 0.9={d}, 0.7={d}, 0.4={d}\n", .{
+            cap_stats.anchor_defining,
+            cap_stats.used_by,
+            cap_stats.keyword_overlap,
+            cap_stats.path_heuristic,
+        });
+    }
 }
 
 /// Run the per-file pipeline for one built-in source file:
@@ -2915,4 +3941,3 @@ pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }
-

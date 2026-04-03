@@ -153,7 +153,7 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
 	$(Q)echo "Building guidance binary..."
-	zig build guidance --summary all
+	zig build guidance -Doptimize=ReleaseFast --summary all
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install

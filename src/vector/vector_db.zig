@@ -667,6 +667,31 @@ pub const GuidanceDb = struct {
             }
         }
 
+        // ── Step 2k: capability_sources table (capability ↔ source file joins) ──
+        // Links capabilities to source files with confidence scores for discovery.
+        {
+            const cs_sql =
+                \\CREATE TABLE IF NOT EXISTS capability_sources (
+                \\  capability_name TEXT NOT NULL,
+                \\  source_path    TEXT NOT NULL,
+                \\  confidence     REAL NOT NULL,
+                \\  reason         TEXT NOT NULL,
+                \\  updated_at     INTEGER NOT NULL,
+                \\  PRIMARY KEY (capability_name, source_path)
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_cs_cap    ON capability_sources(capability_name);
+                \\CREATE INDEX IF NOT EXISTS idx_cs_source ON capability_sources(source_path);
+                \\CREATE INDEX IF NOT EXISTS idx_cs_conf   ON capability_sources(confidence);
+            ;
+            var cs_err: [*c]u8 = null;
+            const cs_rc = c.sqlite3_exec(self.db, cs_sql, null, null, &cs_err);
+            if (cs_rc != c.SQLITE_OK) {
+                logSqliteErr("migrate", "CREATE TABLE capability_sources", cs_rc, cs_err, self.db);
+                if (cs_err) |msg| c.sqlite3_free(msg);
+                // Non-fatal.
+            }
+        }
+
         // ── Step 5: schema version ──
         const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
         var stmt: ?*c.sqlite3_stmt = null;
@@ -745,11 +770,13 @@ pub const GuidanceDb = struct {
         cap_dir: []const u8,
         mapping_path: ?[]const u8,
     ) !void {
+        std.debug.print("[sync-capabilities] scanning {s}\n", .{cap_dir});
         var dir = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
-                log.info("capabilities dir not found: {s}", .{cap_dir});
+                std.debug.print("[sync-capabilities] dir not found: {s}\n", .{cap_dir});
                 return;
             }
+            std.debug.print("[sync-capabilities] error opening dir: {s}\n", .{@errorName(err)});
             return err;
         };
         defer dir.close();
@@ -1142,7 +1169,159 @@ pub const GuidanceDb = struct {
         return names.toOwnedSlice(allocator);
     }
 
-    // ── Per-file helpers ───────────────────────────────────────────
+    // ── Capability sources methods ─────────────────────────────────
+
+    /// Source file linked to a capability with confidence score.
+    pub const CapabilitySource = struct {
+        source_path: []const u8,
+        confidence: f32,
+        reason: []const u8,
+    };
+
+    /// Upsert a capability-source mapping into the capability_sources table.
+    /// Returns true if a new row was inserted, false if updated.
+    pub fn upsertCapabilitySource(
+        self: *Self,
+        capability_name: []const u8,
+        source_path: []const u8,
+        confidence: f32,
+        reason: []const u8,
+    ) !bool {
+        const timestamp: i64 = @intCast(std.time.nanoTimestamp());
+        const sql = "INSERT OR REPLACE INTO capability_sources" ++
+            "(capability_name, source_path, confidence, reason, updated_at)" ++
+            " VALUES (?1, ?2, ?3, ?4, ?5)";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, capability_name.ptr, @intCast(capability_name.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 2, source_path.ptr, @intCast(source_path.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 3, confidence);
+        _ = c.sqlite3_bind_text(stmt, 4, reason.ptr, @intCast(reason.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 5, timestamp);
+
+        if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
+        return true;
+    }
+
+    /// Get all source files for a capability with confidence >= min_confidence.
+    /// Caller owns the returned slice and each string; free with allocator.
+    pub fn getCapabilitySources(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        capability_name: []const u8,
+        min_confidence: f32,
+    ) ![]CapabilitySource {
+        const sql = "SELECT source_path, confidence, reason FROM capability_sources" ++
+            " WHERE capability_name = ?1 AND confidence >= ?2 ORDER BY confidence DESC";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(CapabilitySource, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, capability_name.ptr, @intCast(capability_name.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_double(stmt, 2, min_confidence);
+
+        var sources: std.ArrayList(CapabilitySource) = .{};
+        errdefer {
+            for (sources.items) |s| {
+                allocator.free(s.source_path);
+                allocator.free(s.reason);
+            }
+            sources.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const sp = try dupeCol(stmt.?, 0, allocator);
+            const conf: f32 = @floatCast(c.sqlite3_column_double(stmt.?, 1));
+            const reason = try dupeCol(stmt.?, 2, allocator);
+            try sources.append(allocator, .{
+                .source_path = sp,
+                .confidence = conf,
+                .reason = reason,
+            });
+        }
+
+        return sources.toOwnedSlice(allocator);
+    }
+
+    /// Clear all capability-source mappings for a specific capability.
+    /// Used when re-discovering sources after capability modification.
+    pub fn clearCapabilitySources(self: *Self, capability_name: []const u8) !void {
+        const sql = "DELETE FROM capability_sources WHERE capability_name = ?1";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, capability_name.ptr, @intCast(capability_name.len), SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt);
+    }
+
+    /// Get all capabilities that a source file belongs to.
+    /// Caller owns the returned slice and each string; free with allocator.
+    pub fn getCapabilitiesForSource(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        source_path: []const u8,
+    ) ![][]const u8 {
+        const sql = "SELECT capability_name FROM capability_sources WHERE source_path = ?1 ORDER BY confidence DESC";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc([]const u8, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        _ = c.sqlite3_bind_text(stmt, 1, source_path.ptr, @intCast(source_path.len), SQLITE_STATIC);
+
+        var caps: std.ArrayList([]const u8) = .{};
+        errdefer {
+            for (caps.items) |cap_item| allocator.free(cap_item);
+            caps.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            try caps.append(allocator, try dupeCol(stmt.?, 0, allocator));
+        }
+
+        return caps.toOwnedSlice(allocator);
+    }
+
+    /// Capability source entry returned by getAllCapabilitySources.
+    pub const CapabilitySourceEntry = struct {
+        source_path: []const u8,
+        capability_name: []const u8,
+    };
+
+    /// Get ALL capability-source mappings as (source_path, capability_name) pairs.
+    /// M4: Used to populate capabilities_map in SyncProcessor.
+    /// Caller owns the returned slice and each string; free with allocator.
+    pub fn getAllCapabilitySources(self: *Self, allocator: std.mem.Allocator) ![]CapabilitySourceEntry {
+        const sql = "SELECT source_path, capability_name FROM capability_sources ORDER BY source_path, confidence DESC";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(CapabilitySourceEntry, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var entries: std.ArrayList(CapabilitySourceEntry) = .{};
+        errdefer {
+            for (entries.items) |e| {
+                allocator.free(e.source_path);
+                allocator.free(e.capability_name);
+            }
+            entries.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const sp = try dupeCol(stmt.?, 0, allocator);
+            const cn = try dupeCol(stmt.?, 1, allocator);
+            try entries.append(allocator, .{ .source_path = sp, .capability_name = cn });
+        }
+
+        return entries.toOwnedSlice(allocator);
+    }
 
     fn fileIsUpToDate(self: *Self, file_path: []const u8, mtime: i64) !bool {
         const sql = "SELECT last_modified FROM ast_nodes WHERE file_path = ?1 LIMIT 1";

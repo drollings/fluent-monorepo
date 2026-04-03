@@ -1,6 +1,13 @@
 ---
 name: coral-database
 description: SQLite-backed knowledge graph storing ContextNodes with a 6-level LOD text pyramid, float embeddings as BLOBs, and graph edges. Supports KNN semantic search, recursive CTE graph traversal, duck-typing capability queries, and thread-safe concurrent access.
+anchors:
+  - Library
+  - ContextNode
+  - NodeId
+  - knnSearch
+  - insertNode
+  - traverseFrom
 ---
 
 # Coral Database
@@ -66,3 +73,73 @@ Graph edges between nodes are typed via `EdgeType`:
 - `src/coral/db.zig` — `Library`, `ContextNode`, `HydrationPipeline`, `ContextPacker`, `NodeId`
 - `src/coral/schema.zig` — SQL DDL, `LOD_COUNT = 6`, schema constants
 - `src/coral/context_node_schema.zig` — Binary IPC schema, `BINARY_SCHEMA_VERSION`, `BinaryHeader`, `PayloadType`
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (63 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/common/types.zig` | 1.0 | defines_anchor |
+| `src/coral/db.zig` | 1.0 | defines_anchor |
+| `src/common/root.zig` | 0.9 | used_by |
+| `src/guidance/ast_parser.zig` | 0.9 | used_by |
+| `src/guidance/comment_checker.zig` | 0.9 | used_by |
+| `src/guidance/comment_inserter.zig` | 0.9 | used_by |
+| `src/guidance/comment_sync.zig` | 0.9 | used_by |
+| `src/guidance/hash.zig` | 0.9 | used_by |
+| `src/guidance/header_generator.zig` | 0.9 | used_by |
+| `src/guidance/json_store.zig` | 0.9 | used_by |
+| `src/guidance/line_verify.zig` | 0.9 | used_by |
+| `src/guidance/llm_filter.zig` | 0.9 | used_by |
+| `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/pattern.zig` | 0.9 | used_by |
+| `src/guidance/plugin.zig` | 0.9 | used_by |
+| `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/guidance/staged.zig` | 0.9 | used_by |
+| `src/guidance/sync.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
+| `src/guidance/synthesize.zig` | 0.9 | used_by |
+| `src/coral/context_compressor.zig` | 0.4 | path_heuristic |
+| `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
+| `src/coral/triage.zig` | 0.4 | path_heuristic |
+| `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
+| `src/coral/cli.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
+| `src/coral/context_packer.zig` | 0.4 | path_heuristic |
+| `src/coral/targets.zig` | 0.4 | path_heuristic |
+| `src/coral/token_budget.zig` | 0.4 | path_heuristic |
+| `src/coral/config.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier.zig` | 0.4 | path_heuristic |
+| `src/coral/global_search.zig` | 0.4 | path_heuristic |
+| `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
+| `src/coral/batch.zig` | 0.4 | path_heuristic |
+| `src/coral/executor.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
+| `src/coral/cache.zig` | 0.4 | path_heuristic |
+| `src/coral/fixtures.zig` | 0.4 | path_heuristic |
+| `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
+| `src/coral/anonymize.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_test.zig` | 0.4 | path_heuristic |
+| `src/coral/pattern.zig` | 0.4 | path_heuristic |
+| `src/coral/schema.zig` | 0.4 | path_heuristic |
+| `src/coral/benchmark.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
+| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
+| `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
+| `src/coral/mcp.zig` | 0.4 | path_heuristic |
+| `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
+| `src/coral/scrub.zig` | 0.4 | path_heuristic |
+| `src/coral/main.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
+| `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
+| `src/coral/metrics.zig` | 0.4 | path_heuristic |
+| `src/coral/session.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
+| `src/coral/verify.zig` | 0.4 | path_heuristic |
+

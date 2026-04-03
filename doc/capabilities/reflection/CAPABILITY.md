@@ -1,6 +1,12 @@
 ---
 name: reflection
 description: Standalone Zig reflection module providing vtable-driven field access, role-based permission enforcement, typed/binary codecs, and enum registry. Zero-cost mixin Editable(T) enables string-driven get/set on any struct at runtime without heap allocation per-field.
+anchors:
+  - Editable
+  - DynamicEditable
+  - FieldMeta
+  - Accessor
+  - Constraint
 ---
 
 # Reflection
@@ -58,3 +64,20 @@ admin   — full access (broadest permissions)
 - `src/reflection/typed.zig` — `TypedAccessorTable(T)`, `TypedEditable`, `ValidationError`
 - `src/reflection/binary.zig` — `BinaryFieldCodec`
 - `src/reflection/enum_registry.zig` — `EnumRegistry`
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (10 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/reflection/accessor.zig` | 1.0 | defines_anchor |
+| `src/reflection/constraint.zig` | 1.0 | defines_anchor |
+| `src/reflection/root.zig` | 0.9 | used_by |
+| `src/reflection/typed.zig` | 0.9 | used_by |
+| `src/reflection/binary.zig` | 0.4 | path_heuristic |
+| `src/reflection/validate.zig` | 0.4 | path_heuristic |
+| `src/reflection/schema_version.zig` | 0.4 | path_heuristic |
+| `src/reflection/enum_registry.zig` | 0.4 | path_heuristic |
+| `src/reflection/sql.zig` | 0.4 | path_heuristic |
+| `src/reflection/permissions.zig` | 0.4 | path_heuristic |
+

@@ -4,6 +4,7 @@
     "source": "src/vector/vector_db.zig",
     "language": "zig"
   },
+  "capabilities": ["vector-search", "sync-pipeline", "llm-client", "explain-query"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {
@@ -218,7 +219,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 683
+          "line": 708
         }
     ,    {
           "type": "fn_decl",
@@ -233,7 +234,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 742
+          "line": 767
         }
     ,    {
           "type": "fn_private",
@@ -249,7 +250,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 821
+          "line": 848
         }
     ,    {
           "type": "fn_decl",
@@ -263,7 +264,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 926
+          "line": 953
         }
     ,    {
           "type": "fn_decl",
@@ -279,7 +280,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 969
+          "line": 996
         }
     ,    {
           "type": "fn_decl",
@@ -295,7 +296,78 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 1079
+          "line": 1106
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "upsertCapabilitySource",
+          "match_hash": "c725a6f6a96a6ed359357a78cacc4f10d359743ba6f3e3f31e038b4afab90ddb",
+          "signature": "fn upsertCapabilitySource(self: *Self, capability_name: []const u8, source_path: []const u8, confidence: f32, reason: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "capability_name", "type": "[]const u8" },
+            { "name": "source_path", "type": "[]const u8" },
+            { "name": "confidence", "type": "f32" },
+            { "name": "reason", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 1183
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getCapabilitySources",
+          "match_hash": "17ef924ab5fd135a933a64c3c7cf6bc1464a1844600de6b82116d19e4c8c3f35",
+          "signature": "fn getCapabilitySources(self: *Self, allocator: std.mem.Allocator, capability_name: []const u8, min_confidence: f32) -> []CapabilitySource",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "capability_name", "type": "[]const u8" },
+            { "name": "min_confidence", "type": "f32" }
+          ],
+          "returns": "[]CapabilitySource",
+          "is_pub": true,
+          "line": 1210
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "clearCapabilitySources",
+          "match_hash": "444bdb945be8a20c2010b752aead936d97277ed5550f22d06f739cf1424d5ab9",
+          "signature": "fn clearCapabilitySources(self: *Self, capability_name: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "capability_name", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 1252
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getCapabilitiesForSource",
+          "match_hash": "996d5263a2c3bd038b41f61d65f3e3a4a120722517529b7a61103e1f01f98ee4",
+          "signature": "fn getCapabilitiesForSource(self: *Self, allocator: std.mem.Allocator, source_path: []const u8) -> [][]const u8",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source_path", "type": "[]const u8" }
+          ],
+          "returns": "[][]const u8",
+          "is_pub": true,
+          "line": 1264
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getAllCapabilitySources",
+          "match_hash": "4592251c0cfd35b7aa92d3907db264be915c26e3710fd22740d0f5edb0e06fb9",
+          "signature": "fn getAllCapabilitySources(self: *Self, allocator: std.mem.Allocator) -> []CapabilitySourceEntry",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "[]CapabilitySourceEntry",
+          "is_pub": true,
+          "line": 1300
         }
     ,    {
           "type": "fn_private",
@@ -309,7 +381,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 1147
+          "line": 1326
         }
     ,    {
           "type": "fn_private",
@@ -325,7 +397,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1161
+          "line": 1340
         }
     ,    {
           "type": "fn_private",
@@ -338,7 +410,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1188
+          "line": 1367
         }
     ,    {
           "type": "fn_private",
@@ -352,7 +424,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1203
+          "line": 1382
         }
     ,    {
           "type": "fn_private",
@@ -367,7 +439,7 @@
           ],
           "returns": "[]i64",
           "is_pub": false,
-          "line": 1218
+          "line": 1397
         }
     ,    {
           "type": "fn_private",
@@ -381,7 +453,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1246
+          "line": 1425
         }
     ,    {
           "type": "fn_decl",
@@ -394,7 +466,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 1263
+          "line": 1442
         }
     ,    {
           "type": "fn_private",
@@ -407,7 +479,7 @@
           ],
           "returns": "[]u8",
           "is_pub": false,
-          "line": 1301
+          "line": 1480
         }
     ,    {
           "type": "fn_private",
@@ -419,7 +491,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 1327
+          "line": 1506
         }
     ,    {
           "type": "fn_private",
@@ -432,7 +504,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1343
+          "line": 1522
         }
     ,    {
           "type": "fn_private",
@@ -450,7 +522,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 1398
+          "line": 1577
         }
     ,    {
           "type": "fn_private",
@@ -464,7 +536,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1470
+          "line": 1649
         }
     ,    {
           "type": "fn_private",
@@ -479,7 +551,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1501
+          "line": 1680
         }
     ,    {
           "type": "fn_private",
@@ -492,7 +564,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1524
+          "line": 1703
         }
     ,    {
           "type": "fn_private",
@@ -506,7 +578,7 @@
           ],
           "returns": "?[]f32",
           "is_pub": false,
-          "line": 1559
+          "line": 1738
         }
     ,    {
           "type": "fn_private",
@@ -519,7 +591,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1604
+          "line": 1783
         }
     ,    {
           "type": "fn_private",
@@ -533,7 +605,7 @@
           ],
           "returns": "?[]u8",
           "is_pub": false,
-          "line": 1635
+          "line": 1814
         }
     ,    {
           "type": "fn_private",
@@ -550,7 +622,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1673
+          "line": 1852
         }
     ,    {
           "type": "fn_private",
@@ -566,7 +638,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1768
+          "line": 1947
         }
     ,    {
           "type": "fn_private",
@@ -584,7 +656,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 1819
+          "line": 1998
         }
     ,    {
           "type": "fn_decl",
@@ -597,7 +669,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 1928
+          "line": 2107
         }
     ,    {
           "type": "fn_decl",
@@ -613,7 +685,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1947
+          "line": 2126
         }
     ,    {
           "type": "fn_decl",
@@ -630,7 +702,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 1958
+          "line": 2137
         }
     ,    {
           "type": "fn_decl",
@@ -645,7 +717,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2085
+          "line": 2264
         }
     ,    {
           "type": "fn_decl",
@@ -661,7 +733,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2098
+          "line": 2277
         }
     ,    {
           "type": "fn_private",
@@ -676,7 +748,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2194
+          "line": 2373
         }
     ,    {
           "type": "fn_private",
@@ -691,7 +763,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2268
+          "line": 2447
         }
     ,    {
           "type": "fn_decl",
@@ -706,7 +778,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2306
+          "line": 2485
         }
     ,    {
           "type": "fn_decl",
@@ -721,7 +793,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 2427
+          "line": 2606
         }
     ,    {
           "type": "fn_private",
@@ -737,7 +809,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2545
+          "line": 2724
         }
     ,    {
           "type": "fn_private",
@@ -752,7 +824,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 2635
+          "line": 2814
         }
     ,    {
           "type": "fn_private",
@@ -768,7 +840,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 2730
+          "line": 2909
         }
     ,    {
           "type": "fn_private",
@@ -782,7 +854,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 2753
+          "line": 2932
         }
     ,    {
           "type": "fn_private",
@@ -794,7 +866,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2779
+          "line": 2958
         }
     ,    {
           "type": "fn_private",
@@ -807,7 +879,7 @@
           ],
           "returns": "SearchResult",
           "is_pub": false,
-          "line": 2813
+          "line": 2992
         }
     ,    {
           "type": "fn_private",
@@ -820,7 +892,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2840
+          "line": 3019
         }
     ,    {
           "type": "fn_private",
@@ -833,7 +905,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 2850
+          "line": 3029
         }
     ,    {
           "type": "fn_decl",
@@ -848,7 +920,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2861
+          "line": 3040
         }
     ,    {
           "type": "fn_decl",
@@ -864,7 +936,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 2886
+          "line": 3065
         }
     ,    {
           "type": "fn_decl",
@@ -878,7 +950,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 2958
+          "line": 3137
         }
     ,    {
           "type": "fn_decl",
@@ -893,7 +965,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3015
+          "line": 3194
         }
     ,    {
           "type": "fn_decl",
@@ -908,7 +980,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3038
+          "line": 3217
         }
     ,    {
           "type": "fn_decl",
@@ -924,7 +996,7 @@
           ],
           "returns": "[]KeywordMatch",
           "is_pub": true,
-          "line": 3058
+          "line": 3237
         }
     ,    {
           "type": "fn_decl",
@@ -938,7 +1010,7 @@
           ],
           "returns": "[]ModuleMatch",
           "is_pub": true,
-          "line": 3125
+          "line": 3304
         }
     ,    {
           "type": "fn_decl",
@@ -952,7 +1024,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 3168
+          "line": 3347
         }
     ,    {
           "type": "fn_decl",
@@ -967,7 +1039,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3190
+          "line": 3369
         }
     ,    {
           "type": "fn_private",
@@ -979,7 +1051,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 3216
+          "line": 3395
         }
     ,    {
           "type": "fn_decl",
@@ -992,7 +1064,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3268
+          "line": 3447
         }
     ,    {
           "type": "fn_decl",
@@ -1007,7 +1079,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 3280
+          "line": 3459
         }
     ,    {
           "type": "fn_decl",
@@ -1019,7 +1091,7 @@
           ],
           "returns": "?EmbeddingStats",
           "is_pub": true,
-          "line": 3342
+          "line": 3521
         }
     ,    {
           "type": "fn_decl",
@@ -1032,7 +1104,7 @@
           ],
           "returns": "[]AliasEmbeddingEntry",
           "is_pub": true,
-          "line": 3392
+          "line": 3571
         }
     ,    {
           "type": "fn_decl",
@@ -1045,7 +1117,7 @@
           ],
           "returns": "[]KeywordEmbeddingEntry",
           "is_pub": true,
-          "line": 3417
+          "line": 3596
         }
     ,    {
           "type": "fn_decl",
@@ -1058,7 +1130,7 @@
           ],
           "returns": "[]EmbeddingCacheEntry",
           "is_pub": true,
-          "line": 3442
+          "line": 3621
         }
     ,    {
           "type": "fn_decl",
@@ -1071,7 +1143,7 @@
           ],
           "returns": "[]AstNodeEmbeddingEntry",
           "is_pub": true,
-          "line": 3467
+          "line": 3646
         }
     ,    {
           "type": "fn_decl",
@@ -1087,7 +1159,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3498
+          "line": 3677
         }
     ,    {
           "type": "fn_decl",
@@ -1101,7 +1173,7 @@
           ],
           "returns": "[]TelemetryEntry",
           "is_pub": true,
-          "line": 3527
+          "line": 3706
         }
     ,    {
           "type": "fn_decl",
@@ -1115,7 +1187,7 @@
           ],
           "returns": "[]SearchResult",
           "is_pub": true,
-          "line": 3559
+          "line": 3738
         }
     ,    {
           "type": "fn_decl",
@@ -1128,7 +1200,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3592
+          "line": 3771
         }
     ,    {
           "type": "fn_decl",
@@ -1141,7 +1213,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3606
+          "line": 3785
         }
     ,    {
           "type": "fn_decl",
@@ -1155,7 +1227,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 3621
+          "line": 3800
         }
     ,    {
           "type": "fn_decl",
@@ -1170,7 +1242,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3638
+          "line": 3817
         }
     ,    {
           "type": "fn_decl",
@@ -1182,7 +1254,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3660
+          "line": 3839
         }
     ,    {
           "type": "fn_decl",
@@ -1195,7 +1267,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 3666
+          "line": 3845
         }
     ,    {
           "type": "fn_decl",
@@ -1207,7 +1279,7 @@
           ],
           "returns": "struct { entries: i64, bytes: i64 }",
           "is_pub": true,
-          "line": 3678
+          "line": 3857
         }
       ],
       "line": 320
@@ -1218,7 +1290,7 @@
       "match_hash": "9dcaa78f52ca3b30cdb002b512b9d53db0aa97434c75833e7b34aa10d6df0329",
       "signature": "keyword_struct ParsedMember { ... }",
       "is_pub": false,
-      "line": 3699
+      "line": 3878
     },
     {
       "type": "struct",
@@ -1226,7 +1298,7 @@
       "match_hash": "a1b877e8d81db260185f98dfbe8b981183c9e06f76858f4204f4c6c12b724adf",
       "signature": "keyword_struct ParsedDoc { ... }",
       "is_pub": false,
-      "line": 3708
+      "line": 3887
     },
     {
       "type": "fn_private",
@@ -1238,7 +1310,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 3726
+      "line": 3905
     },
     {
       "type": "fn_private",
@@ -1252,7 +1324,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3734
+      "line": 3913
     },
     {
       "type": "fn_private",
@@ -1265,7 +1337,7 @@
       ],
       "returns": "ParsedDoc",
       "is_pub": false,
-      "line": 3765
+      "line": 3944
     },
     {
       "type": "fn_private",
@@ -1277,7 +1349,7 @@
       ],
       "returns": "ParsedMember",
       "is_pub": false,
-      "line": 3881
+      "line": 4060
     },
     {
       "type": "fn_private",
@@ -1290,7 +1362,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 3923
+      "line": 4102
     },
     {
       "type": "fn_private",
@@ -1304,7 +1376,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 3943
+      "line": 4122
     },
     {
       "type": "fn_private",
@@ -1318,7 +1390,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 3966
+      "line": 4145
     },
     {
       "type": "fn_private",
@@ -1332,7 +1404,7 @@
       ],
       "returns": "?[]u8",
       "is_pub": false,
-      "line": 3973
+      "line": 4152
     },
     {
       "type": "fn_private",
@@ -1348,73 +1420,73 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 3981
+      "line": 4160
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 3997
+      "line": 4176
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 4021
+      "line": 4200
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 4071
+      "line": 4250
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 4112
+      "line": 4291
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText descriptor-bag format",
       "is_pub": false,
-      "line": 4160
+      "line": 4339
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 4187
+      "line": 4366
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 4203
+      "line": 4382
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 4211
+      "line": 4390
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
       "is_pub": false,
-      "line": 4226
+      "line": 4405
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder fluent setters return updated values",
       "is_pub": false,
-      "line": 4244
+      "line": 4423
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
       "is_pub": false,
-      "line": 4264
+      "line": 4443
     }
   ]
 }

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "AI-generated comments", "comment detection", "LLM", "code quality", "syntax analysis", "pattern matching", "synthetic code", "code refactoring", "Zig module"],
-  "used_by": ["src/coral/main.zig"],
+  "used_by": ["src/coral/main.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_decl",

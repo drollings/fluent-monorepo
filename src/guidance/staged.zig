@@ -12,6 +12,7 @@ const vector_db_mod = @import("vector");
 const types = @import("types.zig");
 const llm = @import("common");
 const line_verify = @import("line_verify.zig");
+const doc_parser = @import("doc_parser.zig");
 
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -282,6 +283,214 @@ pub fn executeStagedWithAliasesOriginal(
         });
     }
 
+    // ── Capability doc stages (M7.3) ──────────────────────────────────────────
+    // Emit a capability_doc stage for each matched capability so formatStaged()
+    // can render "## Capability: name" blocks with description, anchors, and
+    // top source files. This requires loading the capability-index.json.
+    if (matched_cap_names.len > 0) {
+        const cap_index_path = std.fmt.allocPrint(
+            allocator,
+            "{s}/.guidance/capability-index.json",
+            .{workspace},
+        ) catch null;
+        defer if (cap_index_path) |p| allocator.free(p);
+
+        if (cap_index_path) |index_path| {
+            if (std.fs.cwd().readFileAlloc(allocator, index_path, 2 * 1024 * 1024)) |index_content| {
+                defer allocator.free(index_content);
+                if (std.json.parseFromSlice(std.json.Value, allocator, index_content, .{ .ignore_unknown_fields = true })) |parsed| {
+                    defer parsed.deinit();
+                    if (parsed.value == .object) {
+                        const caps_val = parsed.value.object.get("capabilities") orelse
+                            std.json.Value{ .null = {} };
+                        if (caps_val == .array) {
+                            for (matched_cap_names) |cap_name| {
+                                // Find this capability in the index
+                                for (caps_val.array.items) |cap_item| {
+                                    if (cap_item != .object) continue;
+                                    const cap_obj = cap_item.object;
+                                    const idx_name = (cap_obj.get("name") orelse continue).string;
+                                    if (!std.mem.eql(u8, idx_name, cap_name)) continue;
+
+                                    // Build capability_doc content
+                                    var cbuf: std.ArrayList(u8) = .{};
+                                    errdefer cbuf.deinit(allocator);
+
+                                    // Description
+                                    if (cap_obj.get("description")) |dv| {
+                                        if (dv == .string and dv.string.len > 0) {
+                                            try cbuf.appendSlice(allocator, dv.string);
+                                            try cbuf.appendSlice(allocator, "\n\n");
+                                        }
+                                    }
+
+                                    // Anchors
+                                    if (cap_obj.get("anchors")) |av| {
+                                        if (av == .array and av.array.items.len > 0) {
+                                            try cbuf.appendSlice(allocator, "**Anchors**: ");
+                                            for (av.array.items, 0..) |anchor, j| {
+                                                if (anchor != .string) continue;
+                                                if (j > 0) try cbuf.appendSlice(allocator, ", ");
+                                                try cbuf.appendSlice(allocator, anchor.string);
+                                            }
+                                            try cbuf.appendSlice(allocator, "\n");
+                                        }
+                                    }
+
+                                    // Top source files from capability_sources
+                                    const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
+                                    defer {
+                                        for (cap_sources) |cs| {
+                                            allocator.free(cs.source_path);
+                                            allocator.free(cs.reason);
+                                        }
+                                        allocator.free(cap_sources);
+                                    }
+                                    if (cap_sources.len > 0) {
+                                        try cbuf.appendSlice(allocator, "**Sources**: ");
+                                        const take = @min(4, cap_sources.len);
+                                        for (cap_sources[0..take], 0..) |cs, j| {
+                                            if (j > 0) try cbuf.appendSlice(allocator, ", ");
+                                            try cbuf.writer(allocator).print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                        }
+                                        try cbuf.appendSlice(allocator, "\n");
+                                    }
+
+                                    if (cbuf.items.len > 0) {
+                                        try stages.append(allocator, .{
+                                            .kind = .capability_doc,
+                                            .content = try cbuf.toOwnedSlice(allocator),
+                                            .source = try allocator.dupe(u8, cap_name),
+                                        });
+                                    } else {
+                                        cbuf.deinit(allocator);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else |_| {}
+            } else |_| {}
+        }
+    }
+
+    // ── Capability-guided expansion (M7) ───────────────────────────────────────
+    // For each matched capability, query capability_sources and add source files
+    // at confidence >= 0.7 that are not already in the search results.
+    if (matched_cap_names.len > 0) {
+        // Derive guidance_dir from workspace
+        const guidance_dir = std.fmt.allocPrint(allocator, "{s}/.guidance", .{workspace}) catch workspace;
+        defer if (!std.mem.eql(u8, guidance_dir, workspace)) allocator.free(@as([]const u8, @constCast(guidance_dir)));
+
+        // Build seen_sources set from existing stages
+        var seen_sources: std.StringHashMapUnmanaged(void) = .{};
+        defer {
+            var kit = seen_sources.keyIterator();
+            while (kit.next()) |k| allocator.free(k.*);
+            seen_sources.deinit(allocator);
+        }
+
+        for (stages.items) |s| {
+            if (s.kind == .code or s.kind == .prose) {
+                if (!seen_sources.contains(s.source)) {
+                    try seen_sources.put(allocator, try allocator.dupe(u8, s.source), {});
+                }
+            }
+        }
+
+        // Track files added from capability expansion for verbose output
+        var cap_expansion_count: usize = 0;
+
+        for (matched_cap_names) |cap_name| {
+            const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
+            defer {
+                for (cap_sources) |cs| {
+                    allocator.free(cs.source_path);
+                    allocator.free(cs.reason);
+                }
+                allocator.free(cap_sources);
+            }
+
+            for (cap_sources) |cs| {
+                // Skip if already seen
+                if (seen_sources.contains(cs.source_path)) continue;
+
+                // Try to load guidance JSON for this source.
+                // source_path is already project-relative (e.g. "src/common/embeddings.zig"),
+                // so the JSON lives at {guidance_dir}/{source_path}.json.
+                const json_path = std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ guidance_dir, cs.source_path }) catch continue;
+                defer allocator.free(json_path);
+
+                const json_content = std.fs.cwd().readFileAllocOptions(allocator, json_path, 2 * 1024 * 1024, null, .@"1", 0) catch continue;
+                defer allocator.free(json_content);
+
+                const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch continue;
+                defer parsed.deinit();
+
+                if (parsed.value != .object) continue;
+                const obj = parsed.value.object;
+
+                var added_prose = false;
+
+                // Add module detail if available
+                if (obj.get("detail")) |detail_val| {
+                    if (detail_val == .string and detail_val.string.len >= 50) {
+                        try seen_sources.put(allocator, try allocator.dupe(u8, cs.source_path), {});
+                        try stages.append(allocator, .{
+                            .kind = .prose,
+                            .content = try allocator.dupe(u8, detail_val.string),
+                            .source = try std.fmt.allocPrint(allocator, "{s} (cap:{s})", .{ cs.source_path, cap_name }),
+                        });
+                        cap_expansion_count += 1;
+                        added_prose = true;
+                    }
+                }
+
+                // Add top member comments if available
+                if (obj.get("members")) |members_val| {
+                    if (members_val == .array) {
+                        for (members_val.array.items[0..@min(3, members_val.array.items.len)]) |member| {
+                            if (member != .object) continue;
+                            const m_obj = member.object;
+                            const m_name = m_obj.get("name") orelse continue;
+                            const m_comment = m_obj.get("comment") orelse continue;
+                            if (m_name == .string and m_comment == .string and m_comment.string.len >= 10) {
+                                try stages.append(allocator, .{
+                                    .kind = .prose,
+                                    .content = try allocator.dupe(u8, m_comment.string),
+                                    .source = try std.fmt.allocPrint(allocator, "{s}:{s} (cap:{s})", .{ cs.source_path, m_name.string, cap_name }),
+                                });
+                                added_prose = true;
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: when there is no prose (no detail, no member comments),
+                // emit a metadata stage listing public member names. This surfaces
+                // the file as relevant even before LLM comments are generated.
+                if (!added_prose) {
+                    const meta_stage = buildMetadataStage(allocator, json_path, cs.source_path) catch null;
+                    if (meta_stage) |ms| {
+                        try seen_sources.put(allocator, try allocator.dupe(u8, cs.source_path), {});
+                        try stages.append(allocator, ms);
+                        cap_expansion_count += 1;
+                    }
+                }
+
+                // Limit expansion to prevent too many stages
+                if (cap_expansion_count >= 5) break;
+            }
+            if (cap_expansion_count >= 5) break;
+        }
+
+        // Verbose output
+        if (cap_expansion_count > 0) {
+            std.debug.print("[explain] capability expansion: added {d} stages from {d} matched capabilities\n", .{ cap_expansion_count, matched_cap_names.len });
+        }
+    }
+
     return stages.toOwnedSlice(allocator);
 }
 
@@ -429,6 +638,14 @@ pub fn formatStaged(
         try w.writeAll("\n```\n\n");
     }
 
+    // ── Capability doc stages (M7.3) ─────────────────────────────────────────
+    for (stages) |s| {
+        if (s.kind != .capability_doc) continue;
+        try w.print("## Capability: {s}\n\n", .{s.source});
+        try w.print("{s}\n", .{std.mem.trim(u8, s.content, "\t\n\r")});
+        try w.writeByte('\n');
+    }
+
     // ── Skill doc stages ──────────────────────────────────────────────────────
     var skill_header_written = false;
     for (stages) |s| {
@@ -479,6 +696,7 @@ pub fn formatStaged(
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_kw.contains(p)) continue;
+                    if (seen_kw.count() >= 10) continue; // cap at 10 items
                     try seen_kw.put(allocator, p, {});
                     if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
                     try all_keywords.appendSlice(allocator, p);
@@ -820,39 +1038,10 @@ fn loadSkillNamesFromJson(
 
 /// Parse the first description / first paragraph from the content of a SKILL.md file.
 ///
-/// Priority:
-///   1. `description:` value in YAML front matter (if present).
-///   2. First non-empty, non-heading body line after the front matter.
-///   3. First paragraph (up to blank line) when there is no front matter.
-///
+/// Delegates to doc_parser.parseSkillDocContent for unified parsing logic.
 /// Returns an owned string; `content` is not modified.
 pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
-    // YAML front matter — look for `description:`.
-    if (std.mem.startsWith(u8, content, "---\n")) {
-        const fm_close = std.mem.indexOf(u8, content[4..], "\n---\n");
-        if (fm_close) |fmc| {
-            const fm_body = content[4 .. 4 + fmc];
-            var fm_lines = std.mem.splitScalar(u8, fm_body, '\n');
-            while (fm_lines.next()) |fl| {
-                if (std.mem.startsWith(u8, fl, "description:")) {
-                    const val = std.mem.trim(u8, fl["description:".len..], " \t\r");
-                    if (val.len > 0) return try allocator.dupe(u8, val[0..@min(val.len, 300)]);
-                }
-            }
-            // No description: — first non-empty body line after front matter.
-            const after = content[4 + fmc + 5 ..];
-            var body = std.mem.splitScalar(u8, after, '\n');
-            while (body.next()) |bl| {
-                const t = std.mem.trim(u8, bl, " \t\r");
-                if (t.len > 0 and !std.mem.startsWith(u8, t, "#"))
-                    return try allocator.dupe(u8, t[0..@min(t.len, 300)]);
-            }
-        }
-    }
-
-    // No front matter — first paragraph (up to blank line), max 600 chars.
-    const para_end = std.mem.indexOf(u8, content, "\n\n") orelse content.len;
-    return try allocator.dupe(u8, content[0..@min(para_end, 600)]);
+    return doc_parser.parseSkillDocContent(allocator, content);
 }
 
 /// Load the first paragraph / description from a SKILL.md file.
@@ -1005,4 +1194,44 @@ test "parseSkillDocContent: no front matter returns first paragraph up to blank 
     defer if (result) |r| allocator.free(r);
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("First paragraph text.", result.?);
+}
+
+test "formatStaged: capability_doc stage renders Capability section" {
+    const allocator = std.testing.allocator;
+    const stages = [_]types.Stage{.{
+        .kind = .capability_doc,
+        .content = "Pluggable embedding system.\n\n**Anchors**: EmbeddingProvider\n**Sources**: src/common/embeddings.zig (1.0)\n",
+        .source = "embedding-providers",
+        .line = null,
+    }};
+    const result = try formatStaged(allocator, "embed", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, "## Capability: embedding-providers") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "EmbeddingProvider") != null);
+}
+
+test "formatStaged: See Also is capped at 10 unique keywords" {
+    const allocator = std.testing.allocator;
+    // Build metadata stage with 15 keywords
+    const stages = [_]types.Stage{.{
+        .kind = .metadata,
+        .content = "keywords: a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15",
+        .source = "src/foo.zig",
+        .line = null,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
+    defer allocator.free(result);
+    // Should contain See Also but only up to 10 items
+    const see_also_start = std.mem.indexOf(u8, result, "See Also") orelse {
+        try std.testing.expect(false); // must have See Also section
+        return;
+    };
+    const see_also_line_end = std.mem.indexOfScalar(u8, result[see_also_start..], '\n') orelse result.len - see_also_start;
+    const see_also_line = result[see_also_start .. see_also_start + see_also_line_end];
+    // Count commas in the line — 9 commas = 10 items (max)
+    var comma_count: usize = 0;
+    for (see_also_line) |ch| if (ch == ',') {
+        comma_count += 1;
+    };
+    try std.testing.expect(comma_count <= 9);
 }

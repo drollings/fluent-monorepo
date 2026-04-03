@@ -57,6 +57,8 @@ const Command = enum {
     @"sync-comments",
     @"migrate-comments",
     @"map-capabilities",
+    @"sync-capabilities",
+    @"discover-capability-sources",
     scrub,
     todo,
     diary,
@@ -120,6 +122,8 @@ pub fn main() !void {
         .@"sync-comments" => sync_engine_mod.cmdSyncComments(allocator, args[2..]),
         .@"migrate-comments" => sync_engine_mod.cmdMigrateComments(allocator, args[2..]),
         .@"map-capabilities" => sync_engine_mod.cmdMapCapabilities(allocator, args[2..]),
+        .@"sync-capabilities" => sync_engine_mod.cmdSyncCapabilities(allocator, args[2..]),
+        .@"discover-capability-sources" => sync_engine_mod.cmdDiscoverCapabilitySources(allocator, args[2..]),
         .scrub => sync_engine_mod.cmdScrub(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
@@ -162,6 +166,8 @@ fn printHelp() !void {
         \\  sync-comments    Insert/update /// doc comments in Zig source files
         \\  migrate-comments Migrate JSON comment fields to source /// comments
         \\  map-capabilities Regenerate capability-mapping.json from CAPABILITY.md files
+        \\  sync-capabilities Parse CAPABILITY.md anchors → .guidance/capability-index.json
+        \\  discover-capability-sources  Discover source files for capabilities via anchors
         \\  scrub            Blank synthetic LLM-generated comments in guidance JSON files
         \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary            Append a timestamped entry to the current work item DIARY.md
@@ -292,6 +298,8 @@ pub const loadChangedMembersPub = sync_engine_mod.loadChangedMembersPub;
 pub const chunkIsIgnoredPub = sync_engine_mod.chunkIsIgnoredPub;
 pub const chunkFilePathPub = sync_engine_mod.chunkFilePathPub;
 pub const splitDiffByFilePub = sync_engine_mod.splitDiffByFilePub;
+pub const reportCapabilityLifecyclePub = sync_engine_mod.reportCapabilityLifecycle;
+pub const CapabilityEntryPub = sync_engine_mod.CapabilityEntry;
 pub const isExactNameMatchPub = query_engine_mod.isExactNameMatchPub;
 pub const loadSkillsFromJsonPub = query_engine_mod.loadSkillsFromJsonPub;
 pub const loadUsedByFromJsonPub = query_engine_mod.loadUsedByFromJsonPub;
@@ -300,6 +308,3 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
-
-
-

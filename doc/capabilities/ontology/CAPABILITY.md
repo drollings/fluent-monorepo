@@ -1,6 +1,11 @@
 ---
 name: ontology
 description: YAGO 4.5 ontology processing layer that maps RDF triples to Coral ContextNodes, applies rdfs/OWL inference rules, provides schema migration utilities, and enforces the YAGO_TYPE_WHITELIST to keep ingested graphs within size budgets.
+anchors:
+  - TripleMapper
+  - MappingConfig
+  - FlushResult
+  - YAGO_TYPE_WHITELIST
 ---
 
 # Ontology
@@ -47,3 +52,15 @@ Rules are applied before `flush()` writes to the Library, so inferred triples ar
 - `src/ontology/yago.zig` — YAGO 4.5 type/predicate helpers
 - `src/ontology/migration.zig` — SQLite schema migration
 - `src/ontology/root.zig` — umbrella re-exports
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (5 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/ontology/mapper.zig` | 1.0 | defines_anchor |
+| `src/ontology/root.zig` | 0.9 | used_by |
+| `src/ontology/migration.zig` | 0.4 | path_heuristic |
+| `src/ontology/inference.zig` | 0.4 | path_heuristic |
+| `src/ontology/yago.zig` | 0.4 | path_heuristic |
+

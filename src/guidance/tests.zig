@@ -17,6 +17,10 @@ comptime {
     _ = @import("header_generator.zig");
     _ = @import("comment_sync.zig");
     _ = @import("comment_cache.zig");
+    // M9: Pull in doc_parser tests (parseDocContent, anchors, frontmatter)
+    _ = @import("doc_parser.zig");
+    // M9: Pull in staged tests (formatStaged, capability_doc, See Also cap)
+    _ = @import("staged.zig");
 }
 
 // ---------------------------------------------------------------------------
@@ -1239,8 +1243,8 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
     // json_base == guidance_root
     try std.testing.expectEqualStrings(cfg.guidance_root, cfg.json_base);
 
-    // skills_dir = {guidance_root}/.skills
-    const expected_skills = try std.fs.path.join(allocator, &.{ expected_root, "skills" });
+    // skills_dir = {cwd}/skills (resolved from repo root, not guidance_root)
+    const expected_skills = try std.fs.path.join(allocator, &.{ tmp_path, "skills" });
     defer allocator.free(expected_skills);
     try std.testing.expectEqualStrings(expected_skills, cfg.skills_dir);
 
@@ -1577,4 +1581,120 @@ test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
     try std.testing.expectEqual(@as(usize, 2), chunks.items.len);
     try std.testing.expect(!main.chunkIsIgnoredPub(chunks.items[0], guidance_dir)); // src/main.zig — keep
     try std.testing.expect(main.chunkIsIgnoredPub(chunks.items[1], guidance_dir)); // .guidance/ — ignore
+}
+
+// ---------------------------------------------------------------------------
+// M9: Capability lifecycle detection tests
+// ---------------------------------------------------------------------------
+
+test "reportCapabilityLifecycle: all new when previous index missing" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const current = [_]main.CapabilityEntryPub{
+        .{
+            .name = "foo",
+            .description = "Foo capability",
+            .anchors = &.{"FooStruct"},
+            .keywords = &.{"foo"},
+            .source = "foo/CAPABILITY.md",
+        },
+        .{
+            .name = "bar",
+            .description = "Bar capability",
+            .anchors = &.{"BarFn"},
+            .keywords = &.{"bar"},
+            .source = "bar/CAPABILITY.md",
+        },
+    };
+
+    // Use a path that doesn't exist — all caps are NEW
+    const result = try main.reportCapabilityLifecyclePub(
+        allocator,
+        "/nonexistent/path/capability-index.json",
+        &current,
+        false,
+    );
+    try std.testing.expectEqual(@as(usize, 2), result.new_count);
+    try std.testing.expectEqual(@as(usize, 0), result.updated_count);
+    try std.testing.expectEqual(@as(usize, 0), result.removed_count);
+    try std.testing.expectEqual(@as(usize, 0), result.unchanged_count);
+}
+
+test "reportCapabilityLifecycle: removed caps detected from previous index" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Write a fake previous index to a temp file
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const prev_json =
+        \\{"version":1,"capabilities":[{"name":"old-cap","anchors":["OldStruct"],"source":"old-cap/CAPABILITY.md"}]}
+    ;
+    const idx_file = try tmp.dir.createFile("capability-index.json", .{});
+    defer idx_file.close();
+    var wbuf: [512]u8 = undefined;
+    var fw = idx_file.writer(&wbuf);
+    try fw.interface.writeAll(prev_json);
+    try fw.interface.flush();
+
+    const idx_path = try tmp.dir.realpathAlloc(allocator, "capability-index.json");
+    defer allocator.free(idx_path);
+
+    // Current: "old-cap" gone, "new-cap" added
+    const current = [_]main.CapabilityEntryPub{
+        .{
+            .name = "new-cap",
+            .description = "New capability",
+            .anchors = &.{"NewStruct"},
+            .keywords = &.{"new"},
+            .source = "new-cap/CAPABILITY.md",
+        },
+    };
+
+    const result = try main.reportCapabilityLifecyclePub(allocator, idx_path, &current, false);
+    try std.testing.expectEqual(@as(usize, 1), result.new_count); // new-cap is new
+    try std.testing.expectEqual(@as(usize, 1), result.removed_count); // old-cap removed
+    try std.testing.expectEqual(@as(usize, 0), result.unchanged_count);
+}
+
+test "reportCapabilityLifecycle: updated cap detected when anchors change" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const prev_json =
+        \\{"version":1,"capabilities":[{"name":"my-cap","anchors":["OldAnchor"],"source":"my-cap/CAPABILITY.md"}]}
+    ;
+    const idx_file = try tmp.dir.createFile("capability-index.json", .{});
+    defer idx_file.close();
+    var wbuf: [512]u8 = undefined;
+    var fw = idx_file.writer(&wbuf);
+    try fw.interface.writeAll(prev_json);
+    try fw.interface.flush();
+
+    const idx_path = try tmp.dir.realpathAlloc(allocator, "capability-index.json");
+    defer allocator.free(idx_path);
+
+    // Same cap name but different anchors → UPDATED
+    const current = [_]main.CapabilityEntryPub{
+        .{
+            .name = "my-cap",
+            .description = "My capability",
+            .anchors = &.{"NewAnchor"}, // changed
+            .keywords = &.{"cap"},
+            .source = "my-cap/CAPABILITY.md",
+        },
+    };
+
+    const result = try main.reportCapabilityLifecyclePub(allocator, idx_path, &current, false);
+    try std.testing.expectEqual(@as(usize, 0), result.new_count);
+    try std.testing.expectEqual(@as(usize, 1), result.updated_count);
+    try std.testing.expectEqual(@as(usize, 0), result.removed_count);
 }

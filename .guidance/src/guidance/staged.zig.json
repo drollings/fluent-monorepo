@@ -4,6 +4,7 @@
     "source": "src/guidance/staged.zig",
     "language": "zig"
   },
+  "capabilities": ["explain-query", "coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig"],
   "members": [
     {
@@ -19,7 +20,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 28
+      "line": 29
     },
     {
       "type": "fn_decl",
@@ -35,7 +36,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 38
+      "line": 39
     },
     {
       "type": "fn_decl",
@@ -52,7 +53,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 49
+      "line": 50
     },
     {
       "type": "fn_decl",
@@ -72,7 +73,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 295
+      "line": 504
     },
     {
       "type": "fn_decl",
@@ -89,7 +90,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 387
+      "line": 596
     },
     {
       "type": "fn_decl",
@@ -106,7 +107,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 564
+      "line": 782
     },
     {
       "type": "fn_private",
@@ -118,7 +119,7 @@
       ],
       "returns": "types.MemberType",
       "is_pub": false,
-      "line": 602
+      "line": 820
     },
     {
       "type": "fn_decl",
@@ -134,7 +135,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 620
+      "line": 838
     },
     {
       "type": "fn_decl",
@@ -149,7 +150,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 642
+      "line": 860
     },
     {
       "type": "fn_private",
@@ -163,7 +164,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": false,
-      "line": 659
+      "line": 877
     },
     {
       "type": "fn_private",
@@ -176,7 +177,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 775
+      "line": 993
     },
     {
       "type": "fn_private",
@@ -189,7 +190,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 786
+      "line": 1004
     },
     {
       "type": "fn_decl",
@@ -202,7 +203,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 829
+      "line": 1043
     },
     {
       "type": "fn_decl",
@@ -216,67 +217,79 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 860
+      "line": 1049
     },
     {
       "type": "test_decl",
       "name": "formatStaged: empty stages output contains header and separator",
       "is_pub": false,
-      "line": 884
+      "line": 1073
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage with line emits source path and line number",
       "is_pub": false,
-      "line": 892
+      "line": 1081
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage without line still emits code block",
       "is_pub": false,
-      "line": 906
+      "line": 1095
     },
     {
       "type": "test_decl",
       "name": "formatStaged: summary appears before separator",
       "is_pub": false,
-      "line": 920
+      "line": 1109
     },
     {
       "type": "test_decl",
       "name": "formatStaged: followup keywords produce Suggested Queries section",
       "is_pub": false,
-      "line": 931
+      "line": 1120
     },
     {
       "type": "test_decl",
       "name": "formatStaged: skill_doc stage produces Knowledge Base section",
       "is_pub": false,
-      "line": 941
+      "line": 1130
     },
     {
       "type": "test_decl",
       "name": "formatStaged: metadata stage with keywords prefix produces References section",
       "is_pub": false,
-      "line": 955
+      "line": 1144
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter with description returns description",
       "is_pub": false,
-      "line": 969
+      "line": 1158
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter without description returns first non-empty body line",
       "is_pub": false,
-      "line": 985
+      "line": 1174
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: no front matter returns first paragraph up to blank line",
       "is_pub": false,
-      "line": 1001
+      "line": 1190
+    },
+    {
+      "type": "test_decl",
+      "name": "formatStaged: capability_doc stage renders Capability section",
+      "is_pub": false,
+      "line": 1199
+    },
+    {
+      "type": "test_decl",
+      "name": "formatStaged: See Also is capped at 10 unique keywords",
+      "is_pub": false,
+      "line": 1213
     }
   ]
 }

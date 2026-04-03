@@ -1,6 +1,13 @@
 ---
 name: vector-search
 description: Cosine similarity search over AST node embeddings stored in .guidance.db, enabling natural-language queries that find semantically related code even without exact keyword matches.
+anchors:
+  - GuidanceDb
+  - vectorSearch
+  - keywordSearch
+  - hybridSearch
+  - SemanticAliases
+  - cosineSimilarity
 ---
 
 # Vector Search
@@ -63,3 +70,16 @@ const aliases = try loadSemanticAliases(allocator, ".guidance/semantic-aliases.j
 - Embedding cache (`embedding_cache` table) avoids redundant API calls on re-sync
 - `test_decl` nodes are excluded from vector scan to save similarity budget
 - Partial index `WHERE embedding IS NOT NULL` keeps the scan fast
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (6 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/vector/vector_db.zig` | 1.0 | defines_anchor |
+| `src/vector/math.zig` | 1.0 | defines_anchor |
+| `src/guidance/vector_db.zig` | 1.0 | defines_anchor |
+| `src/vector/root.zig` | 0.9 | used_by |
+| `src/vector/hnsw.zig` | 0.4 | path_heuristic |
+| `src/vector/simhash.zig` | 0.4 | path_heuristic |
+

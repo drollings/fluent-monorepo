@@ -1,6 +1,10 @@
 ---
 name: local-model-decomposition
 description: L4.5 cache tier that calls a local LLM to decompose a complex query into up to 5 ordered sub-tasks, routes each sub-task through QueueReactor recursively (max depth enforced), merges and deduplicates results, and caches the solution so future identical queries hit L1 or L4.
+anchors:
+  - LocalDecomposer
+  - DecomposerConfig
+  - decompose
 ---
 
 # Local Model Decomposition
@@ -47,3 +51,11 @@ The node ID is derived from a SHA-256 hash of the query, making re-inserts idemp
 - `src/common/local_model.zig` — `LocalDecomposer`, `DecomposerConfig`
 - `src/coral/cache.zig` — `QueueReactor.localDecompose()`, `CacheTier.l4_5_decompose`, `persistSolution()`
 - `src/llm/root.zig` — `LlmClient`, `LlmConfig`
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (1 file, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/common/local_model.zig` | 1.0 | defines_anchor |
+

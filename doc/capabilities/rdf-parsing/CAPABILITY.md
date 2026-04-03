@@ -1,6 +1,11 @@
 ---
 name: rdf-parsing
 description: Zig RDF parsing module covering Turtle (lexer + recursive-descent parser), N-Quads streaming parser, and IRI normalization. Produces Triple/Term values used by the ontology mapper to ingest YAGO 4.5 and other RDF datasets.
+anchors:
+  - Parser
+  - Triple
+  - Term
+  - NQuadsParser
 ---
 
 # RDF Parsing
@@ -41,3 +46,15 @@ pub const Triple = struct {
 - `src/rdf/nquads.zig` — `NQuadsParser` (streaming)
 - `src/rdf/normalize.zig` — IRI normalization, blank-node handling
 - `src/rdf/root.zig` — umbrella re-exports `Parser`, `Triple`, `Term`
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (5 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/rdf/parser.zig` | 1.0 | defines_anchor |
+| `src/rdf/nquads.zig` | 1.0 | defines_anchor |
+| `src/rdf/normalize.zig` | 0.9 | used_by |
+| `src/rdf/root.zig` | 0.9 | used_by |
+| `src/rdf/lexer.zig` | 0.4 | path_heuristic |
+

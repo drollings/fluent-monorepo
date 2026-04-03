@@ -90,6 +90,10 @@ Then you you must read
 │   │   ├── DESIGN.md
 │   │   ├── MCP.md
 │   │   └── VISION.md
+│   ├── prompts
+│   │   ├── TEST_EXPLAIN.md
+│   │   ├── TEST_EXPLAIN_PROMPT.md
+│   │   └── TEST_EXPLAIN_RESULTS.md
 │   └── skills
 │       ├── fluent-wvr
 │       │   └── SKILL.md
@@ -218,6 +222,7 @@ Then you you must read
 │   │   ├── comment_sync.zig                      # comment_sync.zig — Source-code-first comment sync workflow for guidance.
 │   │   ├── config.zig                            # guidance project configuration loader.
 │   │   ├── deps.zig
+│   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
 │   │   ├── git.zig
 │   │   ├── hash.zig
@@ -292,11 +297,13 @@ Then you you must read
 │       ├── sqlite3.h
 │       └── sqlite3ext.h
 ├── AGENTS.md
+├── ASSESSMENT.md
 ├── build.zig
 ├── build.zig.zon
 ├── CLAUDE.md
 ├── CODEGRAFF.md
 ├── CRITIQUE_EVALUATION.md
+├── EXPLAIN_BENCHMARK_20260402_QWEN36.md
 ├── GEMINI_FLUENT_WVR_CRITIQUE.md
 ├── GUIDANCE_HERMES_COMPARISON.md
 ├── GUIDANCE_HERMES_SYNTHESIS.md
@@ -306,27 +313,30 @@ Then you you must read
 ├── Makefile
 ├── mise.toml
 ├── PROMPT.md
+├── PROMPT_ROADMAP.md
 ├── PROMPT_VISION.md
 ├── pyproject.toml
 ├── README.md
 ├── REPORT_GRAPHRAG.md
 ├── requirements.txt
 ├── REVIEW_20260328.md
+├── ROADMAP_20260402_AIDER.md
 ├── ROADMAP_COMPARISON_FINAL.md
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION.md
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION_QWEN36.md
 ├── ROADMAP_GRAPHRAG_ADAPTATION.md
 ├── ROADMAP_GUIDANCE_VISION.md
 ├── ROADMAP_GUIDANCE_VISION_CHECKLIST.md
+├── ROADMAP_QUALITY_GUIDANCE_20260402.md
+├── ROADMAP_QUALITY_GUIDANCE_20260402_CHECKLIST.md
 ├── ROADMAP_SYNTHESIS.md
 ├── ROADMAP_SYNTHESIS_2_EXPLANATION.md
 ├── ROADMAP_SYNTHESIS_2_PRE.md
 ├── ROADMAP_SYNTHESIS_CHECKLIST.md
 ├── ROADMAP_SYNTHESIS_OLD.md
+├── SECONDBRAIN.md
+├── session-ses_2aea.md
 ├── STRUCTURE.md
-├── TEST_EXPLAIN.md
-├── TEST_EXPLAIN_PROMPT.md
-├── TEST_EXPLAIN_RESULTS.md
 ├── TODO_GAPS.md
 ├── TODO_GAPS_20260329.md
 ├── TODO_GAPS_20260329_CHECKLIST.md

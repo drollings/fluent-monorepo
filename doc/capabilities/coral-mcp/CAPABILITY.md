@@ -1,6 +1,12 @@
 ---
 name: coral-mcp
 description: JSON-RPC 2.0 MCP server over STDIO for Coral. Exposes coral_query, coral_insert_node, and coral_explain tools to Claude Code, NullClaw, and Cursor. Each request gets an isolated arena; only the serialized response escapes to the caller.
+anchors:
+  - McpServer
+  - ToolDef
+  - coral_query
+  - coral_insert_node
+  - coral_explain
 ---
 
 # Coral MCP Server
@@ -47,3 +53,55 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 - `src/coral/cache.zig` — `QueueReactor.route()` (called by `coral_query`)
 - `src/coral/db.zig` — `Library.insertNode`, `Library.traverseFrom` (called by `coral_insert_node`, `coral_explain`)
 - `src/coral/main.zig` — `coral mcp` subcommand entry point
+
+<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
+## Sources (45 files, auto-discovered)
+
+| File | Confidence | Reason |
+|------|-----------|--------|
+| `src/coral/mcp.zig` | 1.0 | defines_anchor |
+| `src/coral/main.zig` | 0.9 | used_by |
+| `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/coral/context_compressor.zig` | 0.4 | path_heuristic |
+| `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
+| `src/coral/triage.zig` | 0.4 | path_heuristic |
+| `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
+| `src/coral/cli.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
+| `src/coral/context_packer.zig` | 0.4 | path_heuristic |
+| `src/coral/targets.zig` | 0.4 | path_heuristic |
+| `src/coral/db.zig` | 0.4 | path_heuristic |
+| `src/coral/token_budget.zig` | 0.4 | path_heuristic |
+| `src/coral/config.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier.zig` | 0.4 | path_heuristic |
+| `src/coral/global_search.zig` | 0.4 | path_heuristic |
+| `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
+| `src/coral/batch.zig` | 0.4 | path_heuristic |
+| `src/coral/executor.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
+| `src/coral/cache.zig` | 0.4 | path_heuristic |
+| `src/coral/fixtures.zig` | 0.4 | path_heuristic |
+| `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
+| `src/coral/anonymize.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_test.zig` | 0.4 | path_heuristic |
+| `src/coral/pattern.zig` | 0.4 | path_heuristic |
+| `src/coral/schema.zig` | 0.4 | path_heuristic |
+| `src/coral/benchmark.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
+| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
+| `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
+| `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
+| `src/coral/scrub.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
+| `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
+| `src/coral/metrics.zig` | 0.4 | path_heuristic |
+| `src/coral/session.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
+| `src/coral/verify.zig` | 0.4 | path_heuristic |
+
