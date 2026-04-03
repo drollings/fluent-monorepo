@@ -335,7 +335,6 @@ Then you you must read
 ├── ROADMAP_SYNTHESIS_CHECKLIST.md
 ├── ROADMAP_SYNTHESIS_OLD.md
 ├── SECONDBRAIN.md
-├── session-ses_2aea.md
 ├── STRUCTURE.md
 ├── TODO_GAPS.md
 ├── TODO_GAPS_20260329.md

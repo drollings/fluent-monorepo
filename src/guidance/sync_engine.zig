@@ -1277,11 +1277,7 @@ fn syncCapabilitiesIfStale(
     if (verbose) std.debug.print("[sync] running discover-capability-sources\n", .{});
     stepPrint("gen: discover-capability-sources\n", .{});
 
-    const db_abs = std.fs.realpathAlloc(allocator, db_path) catch db_path;
-    defer if (!std.mem.eql(u8, db_abs, db_path)) allocator.free(db_abs);
-
-    const discover_args = [_][]const u8{ "--db", db_abs };
-    cmdDiscoverCapabilitySources(allocator, &discover_args) catch |err| {
+    cmdDiscoverCapabilitySources(allocator, &[_][]const u8{ "--db", db_path }) catch |err| {
         std.debug.print("[sync] WARN: discover-capability-sources failed: {s}\n", .{@errorName(err)});
     };
 }

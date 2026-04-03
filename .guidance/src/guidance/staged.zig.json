@@ -73,7 +73,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 504
+      "line": 547
     },
     {
       "type": "fn_decl",
@@ -90,7 +90,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 596
+      "line": 639
     },
     {
       "type": "fn_decl",
@@ -107,7 +107,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 782
+      "line": 825
     },
     {
       "type": "fn_private",
@@ -119,7 +119,7 @@
       ],
       "returns": "types.MemberType",
       "is_pub": false,
-      "line": 820
+      "line": 863
     },
     {
       "type": "fn_decl",
@@ -135,7 +135,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 838
+      "line": 881
     },
     {
       "type": "fn_decl",
@@ -150,7 +150,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 860
+      "line": 903
     },
     {
       "type": "fn_private",
@@ -164,7 +164,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": false,
-      "line": 877
+      "line": 920
     },
     {
       "type": "fn_private",
@@ -177,7 +177,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 993
+      "line": 1036
     },
     {
       "type": "fn_private",
@@ -190,7 +190,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 1004
+      "line": 1047
     },
     {
       "type": "fn_decl",
@@ -203,7 +203,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1043
+      "line": 1086
     },
     {
       "type": "fn_decl",
@@ -217,79 +217,79 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1049
+      "line": 1092
     },
     {
       "type": "test_decl",
       "name": "formatStaged: empty stages output contains header and separator",
       "is_pub": false,
-      "line": 1073
+      "line": 1116
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage with line emits source path and line number",
       "is_pub": false,
-      "line": 1081
+      "line": 1124
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage without line still emits code block",
       "is_pub": false,
-      "line": 1095
+      "line": 1138
     },
     {
       "type": "test_decl",
       "name": "formatStaged: summary appears before separator",
       "is_pub": false,
-      "line": 1109
+      "line": 1152
     },
     {
       "type": "test_decl",
       "name": "formatStaged: followup keywords produce Suggested Queries section",
       "is_pub": false,
-      "line": 1120
+      "line": 1163
     },
     {
       "type": "test_decl",
       "name": "formatStaged: skill_doc stage produces Knowledge Base section",
       "is_pub": false,
-      "line": 1130
+      "line": 1173
     },
     {
       "type": "test_decl",
       "name": "formatStaged: metadata stage with keywords prefix produces References section",
       "is_pub": false,
-      "line": 1144
+      "line": 1187
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter with description returns description",
       "is_pub": false,
-      "line": 1158
+      "line": 1201
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter without description returns first non-empty body line",
       "is_pub": false,
-      "line": 1174
+      "line": 1217
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: no front matter returns first paragraph up to blank line",
       "is_pub": false,
-      "line": 1190
+      "line": 1233
     },
     {
       "type": "test_decl",
       "name": "formatStaged: capability_doc stage renders Capability section",
       "is_pub": false,
-      "line": 1199
+      "line": 1242
     },
     {
       "type": "test_decl",
       "name": "formatStaged: See Also is capped at 10 unique keywords",
       "is_pub": false,
-      "line": 1213
+      "line": 1256
     }
   ]
 }

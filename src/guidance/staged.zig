@@ -69,6 +69,49 @@ pub fn executeStagedWithAliasesOriginal(
         allocator.free(matched_cap_names);
     }
 
+    // ── M7.2: Capability score boosting ───────────────────────────────────────
+    // Boost scores for results whose source file is a capability source.
+    // boost = 1.0 + (confidence * 0.3), so range is 1.0–1.3
+    if (matched_cap_names.len > 0) {
+        var cap_confidence: std.StringHashMapUnmanaged(f32) = .{};
+        defer {
+            var it = cap_confidence.iterator();
+            while (it.next()) |entry| allocator.free(entry.key_ptr.*);
+            cap_confidence.deinit(allocator);
+        }
+
+        for (matched_cap_names) |cap_name| {
+            const sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch continue;
+            defer {
+                for (sources) |cs| {
+                    allocator.free(cs.source_path);
+                    allocator.free(cs.reason);
+                }
+                allocator.free(sources);
+            }
+            for (sources) |cs| {
+                if (cap_confidence.get(cs.source_path)) |existing| {
+                    if (cs.confidence > existing) {
+                        cap_confidence.put(allocator, cs.source_path, cs.confidence) catch continue;
+                    }
+                } else {
+                    const key = allocator.dupe(u8, cs.source_path) catch continue;
+                    cap_confidence.put(allocator, key, cs.confidence) catch {
+                        allocator.free(key);
+                        continue;
+                    };
+                }
+            }
+        }
+
+        for (results, 0..) |r, i| {
+            if (cap_confidence.get(r.source)) |conf| {
+                const boost = 1.0 + conf * 0.3;
+                results[i].score *= boost;
+            }
+        }
+    }
+
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
         types.freeStages(allocator, stages.items);
