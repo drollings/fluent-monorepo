@@ -1,0 +1,38 @@
+# Benchmark queries for guidance test
+# Format: one query per line, lines starting with # are comments
+# Short queries (fast path, no LLM)
+database
+AST parser
+LLM integration
+sync guidance
+query text search
+plugin system architecture
+JSON store
+configuration loading
+hash function
+dependencies imports
+design patterns
+error handling
+memory allocation
+file matching
+gitignore filtering
+triage functionality
+structure generation
+command line arguments
+test infrastructure
+types data structures
+sqlite database schema
+source code extraction
+semantic aliases
+staged pipeline
+zig plugin
+markdown plugin
+Workspace root
+# Long queries (LLM synthesis path)
+How does the staged query pipeline work?
+What design patterns are used in this codebase?
+Where is the LLM client defined?
+How do I add a new language plugin?
+enhancer AI documentation generation
+Using embeddings for full text search
+How does this code use Cosine similarity?

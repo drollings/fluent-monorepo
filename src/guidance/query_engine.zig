@@ -1718,7 +1718,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (resolved_url_buf) |buf| allocator.free(buf);
 
     if (!no_llm) {
-        const model_ref = model orelse cfg.model_default;
+        const model_ref = model orelse (if (cfg.model_thinking.len > 0) cfg.model_thinking else cfg.model_default);
 
         // Use centralized helper for thinking model support
         const resolved = resolveLlmConfigForThinking(
@@ -1746,12 +1746,15 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
     defer if (llm_client_opt) |*c| c.deinit();
 
-    // Load module-level comments to generate hypothetical queries, or use single query
+    // Load queries: from benchmarks.txt, single query arg, or generate from module comments
     const queries = if (single_query) |sq| blk: {
         var single: std.ArrayList(TestQuery) = .{};
         try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
         break :blk try single.toOwnedSlice(allocator);
-    } else try generateTestQueries(allocator, gdir_abs);
+    } else blk: {
+        const from_file = loadBenchmarkQueries(allocator, gdir_abs) catch null;
+        break :blk from_file orelse try generateTestQueries(allocator, gdir_abs);
+    };
     defer {
         for (queries) |q| {
             allocator.free(q.query);
@@ -1766,6 +1769,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var total_acc: u32 = 0;
     var total_rel: u32 = 0;
     var total_cmpl: u32 = 0;
+    var total_nav: u32 = 0;
     var excellent_count: usize = 0;
     var good_count: usize = 0;
     var weak_count: usize = 0;
@@ -1812,6 +1816,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         var acc: ?u8 = null;
         var rel: ?u8 = null;
         var cmpl: ?u8 = null;
+        var nav: ?u8 = null;
         var obs_buf: [512]u8 = undefined;
         var obs_len: usize = 0;
         var llm_evaluated = false;
@@ -1839,23 +1844,29 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             }
 
             const eval_prompt = try std.fmt.allocPrint(allocator,
-                \\You are a code search evaluation assistant. Evaluate search results for a codebase query.
+                \\You are a code intelligence evaluator for AI subagent workflows. Assess whether search results provide actionable code navigation for an AI assistant that needs to understand, modify, or extend the codebase.
                 \\
+                \\Query and results:
                 \\{s}
                 \\
-                \\Evaluate on these dimensions (0-10):
-                \\- Accuracy: Do results match the query intent?
-                \\- Relevance: Is the best result ranked first?
-                \\- Completeness: Are key relevant items found?
+                \\Rate each dimension (0-10):
+                \\- Accuracy: Results directly match what the query asks for. No false positives.
+                \\- Relevance: Top results are the most important/defining code for the query. First result is the best entry point.
+                \\- Completeness: All critical code locations, types, and functions needed to understand the topic are found. No major gaps.
+                \\- Navigation Quality: Results provide file paths, line numbers, function signatures, and context that enable an AI to immediately read and understand the relevant code.
                 \\
-                \\Be strict but fair. Good results should score 7-10. Poor matches should score 0-4.
-                \\For no results, score 0 for all dimensions unless the query is for non-existent code.
+                \\Score 9-10: Excellent code intelligence — AI can navigate directly to implementation with confidence.
+                \\Score 7-8: Good results with minor gaps or noise.
+                \\Score 5-6: Partial coverage, significant noise, or missing critical locations.
+                \\Score 3-4: Mostly irrelevant or incomplete for subagent use.
+                \\Score 0-2: No useful results or wrong topic entirely.
                 \\
                 \\Respond EXACTLY in this format (no other text):
                 \\Accuracy: <0-10>
                 \\Relevance: <0-10>
                 \\Completeness: <0-10>
-                \\Observation: <one sentence>
+                \\Navigation: <0-10>
+                \\Observation: <one sentence assessing subagent utility>
             , .{results_buf.items});
             defer allocator.free(eval_prompt);
 
@@ -1879,6 +1890,8 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         if (rel == null) rel = parseScoreFromLine(trimmed);
                     } else if (std.mem.indexOf(u8, trimmed, "Completeness") != null) {
                         if (cmpl == null) cmpl = parseScoreFromLine(trimmed);
+                    } else if (std.mem.indexOf(u8, trimmed, "Navigation") != null) {
+                        if (nav == null) nav = parseScoreFromLine(trimmed);
                     } else if (std.mem.indexOf(u8, trimmed, "Observation")) |_| {
                         if (std.mem.indexOf(u8, trimmed, ":")) |colon| {
                             var obs_start = colon + 1;
@@ -1892,7 +1905,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                         }
                     }
                 }
-                llm_evaluated = (acc != null and rel != null and cmpl != null);
+                llm_evaluated = (acc != null and rel != null and cmpl != null and nav != null);
             }
         }
 
@@ -1903,18 +1916,22 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const acc_val = acc orelse 0;
         const rel_val = rel orelse 0;
         const cmpl_val = cmpl orelse 0;
+        const nav_val = nav orelse 0;
         const acc_display = if (acc) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
         defer allocator.free(acc_display);
         const rel_display = if (rel) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
         defer allocator.free(rel_display);
         const cmpl_display = if (cmpl) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
         defer allocator.free(cmpl_display);
+        const nav_display = if (nav) |v| try std.fmt.allocPrint(allocator, "{d}", .{v}) else try std.fmt.allocPrint(allocator, "-", .{});
+        defer allocator.free(nav_display);
 
         // Only count toward statistics if actually evaluated
         if (llm_evaluated) {
             total_acc += acc_val;
             total_rel += rel_val;
             total_cmpl += cmpl_val;
+            total_nav += nav_val;
 
             if (acc_val >= 9) {
                 excellent_count += 1;
@@ -1930,6 +1947,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("| Accuracy | {s}/10 |\n", .{acc_display});
         std.debug.print("| Relevance | {s}/10 |\n", .{rel_display});
         std.debug.print("| Completeness | {s}/10 |\n", .{cmpl_display});
+        std.debug.print("| Navigation | {s}/10 |\n", .{nav_display});
         std.debug.print("| Results | {d} |\n", .{results.len});
         std.debug.print("| Evaluation | {s} |\n\n", .{eval_status});
 
@@ -1957,10 +1975,12 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             std.debug.print("| **Average Accuracy** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_acc)) / @as(f32, @floatFromInt(evaluated_count))});
             std.debug.print("| **Average Relevance** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_rel)) / @as(f32, @floatFromInt(evaluated_count))});
             std.debug.print("| **Average Completeness** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_cmpl)) / @as(f32, @floatFromInt(evaluated_count))});
+            std.debug.print("| **Average Navigation** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_nav)) / @as(f32, @floatFromInt(evaluated_count))});
         } else {
             std.debug.print("| **Average Accuracy** | -/10 |\n", .{});
             std.debug.print("| **Average Relevance** | -/10 |\n", .{});
             std.debug.print("| **Average Completeness** | -/10 |\n", .{});
+            std.debug.print("| **Average Navigation** | -/10 |\n", .{});
         }
         std.debug.print("| **Excellent (9-10)** | {d}/{d} ({d}%) |\n", .{ excellent_count, evaluated_count, if (evaluated_count > 0) @as(usize, @intFromFloat(@as(f32, @floatFromInt(excellent_count)) / @as(f32, @floatFromInt(evaluated_count)) * 100)) else 0 });
         std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, evaluated_count });
@@ -1982,6 +2002,36 @@ fn parseScoreFromLine(line: []const u8) ?u8 {
     if (i == start) return null;
     const v = std.fmt.parseInt(u8, line[start..i], 10) catch return null;
     return @min(10, v);
+}
+
+/// Load benchmark queries from {guidance_dir}/benchmarks.txt.
+/// One query per line; blank lines and # comments are skipped.
+/// Returns an error if the file cannot be opened.
+fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
+    const path = try std.fs.path.join(allocator, &.{ guidance_dir, "benchmarks.txt" });
+    defer allocator.free(path);
+
+    var file = std.fs.cwd().openFile(path, .{}) catch |err| return err;
+    defer file.close();
+
+    const content = try file.readToEndAlloc(allocator, 512 * 1024);
+    defer allocator.free(content);
+
+    var queries: std.ArrayList(TestQuery) = .{};
+    errdefer {
+        for (queries.items) |q| allocator.free(q.query);
+        queries.deinit(allocator);
+    }
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+        if (std.mem.startsWith(u8, trimmed, "#")) continue;
+        try queries.append(allocator, .{ .query = try allocator.dupe(u8, trimmed) });
+    }
+
+    return queries.toOwnedSlice(allocator);
 }
 
 /// Generate test queries from module-level comments in guidance JSON files.
