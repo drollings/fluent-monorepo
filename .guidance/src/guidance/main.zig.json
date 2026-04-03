@@ -11,9 +11,9 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "18e9b1af43069c628d49dd534bbf474faf1ab50d5efd8f9880b83019df13aa27",
+      "match_hash": "064045dc7940efde685df09e56ce183000ee2b779a733a07d3c09ebe8c6daa30",
       "signature": "keyword_enum Command { ... }",
-      "comment": "Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.",
+      "comment": "Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.",
       "is_pub": false,
       "members": [
         {
@@ -84,69 +84,51 @@
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"sync-comments\"",
+          "name": "scrub",
           "is_pub": false,
           "line": 57
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"migrate-comments\"",
+          "name": "todo",
           "is_pub": false,
           "line": 58
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"map-capabilities\"",
+          "name": "diary",
           "is_pub": false,
           "line": 59
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"sync-capabilities\"",
+          "name": "telemetry",
           "is_pub": false,
           "line": 60
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"discover-capability-sources\"",
+          "name": "@\"cache-stats\"",
           "is_pub": false,
           "line": 61
         }
     ,    {
           "type": "enum_field",
-          "name": "scrub",
+          "name": "serve",
           "is_pub": false,
           "line": 62
         }
     ,    {
           "type": "enum_field",
-          "name": "todo",
+          "name": "ralph",
           "is_pub": false,
           "line": 63
         }
     ,    {
           "type": "enum_field",
-          "name": "diary",
+          "name": "scan",
           "is_pub": false,
           "line": 64
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "telemetry",
-          "is_pub": false,
-          "line": 65
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "@\"cache-stats\"",
-          "is_pub": false,
-          "line": 66
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "serve",
-          "is_pub": false,
-          "line": 67
         }
       ],
       "line": 45
@@ -159,7 +141,21 @@
       "returns": "void",
       "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 71
+      "line": 68
+    },
+    {
+      "type": "fn_private",
+      "name": "cmdRalph",
+      "match_hash": "7495cf0a6ad6b22b3838b5ad4211c48ab06c3aa0183602baf6c1a51740097cf6",
+      "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
+      "returns": "void",
+      "comment": "M6: RALPH loop — run a single query through Read→Ask→Learn→Plan stages.",
+      "is_pub": false,
+      "line": 135
     },
     {
       "type": "fn_private",
@@ -168,7 +164,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 140
+      "line": 139
     },
     {
       "type": "fn_private",
@@ -181,7 +177,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 241
+      "line": 236
     },
     {
       "type": "fn_private",
@@ -194,7 +190,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 273
+      "line": 268
     }
   ]
 }

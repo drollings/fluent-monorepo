@@ -215,6 +215,7 @@ Then you you must read
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   └── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   ├── ast_parser.zig
+│   │   ├── codebase_map.zig                      # codebase_map.zig — Structural discovery layer for `guidance explain`.
 │   │   ├── comment_cache.zig                     # comment_cache.zig — In-process cache for generated doc comments.
 │   │   ├── comment_checker.zig                   # comment_checker.zig — Comment staleness detection for guidance.
 │   │   ├── comment_inserter.zig                  # comment_inserter.zig — Insert and replace doc comments in Zig source files.
@@ -223,11 +224,13 @@ Then you you must read
 │   │   ├── config.zig                            # guidance project configuration loader.
 │   │   ├── deps.zig
 │   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
+│   │   ├── document_indexer.zig                  # document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
 │   │   ├── git.zig
 │   │   ├── hash.zig
 │   │   ├── header_generator.zig                  # header_generator.zig — File header comment generation for guidance.
 │   │   ├── identifier_match.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
+│   │   ├── infer_capabilities.zig                # infer_capabilities.zig — M4: InferCapabilities — Capability Discovery Without CAPABILITY.md
 │   │   ├── json_store.zig
 │   │   ├── line_verify.zig                       # line_verify.zig — Declaration-level line number verification for guidance.
 │   │   ├── llm_filter.zig                        # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
@@ -240,9 +243,13 @@ Then you you must read
 │   │   ├── plugin_registry.zig                   # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │   │   ├── provider_discovery.zig                # External language provider discovery for guidance.
 │   │   ├── query_engine.zig                      # query_engine.zig — explain, staged, show, test, check commands.
+│   │   ├── query_strategy.zig                    # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
+│   │   ├── ralph.zig                             # ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
+│   │   ├── scanner.zig                           # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
 │   │   ├── scrub.zig                             # scrub.zig — Synthetic comment detection and scrubbing.
 │   │   ├── simhash.zig                           # simhash.zig — 64-bit SimHash for near-duplicate detection.
+│   │   ├── stage_builder.zig                     # stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                         # STRUCTURE.md generator.
 │   │   ├── sync.zig
@@ -321,6 +328,9 @@ Then you you must read
 ├── requirements.txt
 ├── REVIEW_20260328.md
 ├── ROADMAP_20260402_AIDER.md
+├── ROADMAP_20260403_FLUENT_GUIDANCE.md
+├── ROADMAP_20260403_FLUENT_GUIDANCE_CHECKLIST.md
+├── ROADMAP_20260403_RECOMMEND.md
 ├── ROADMAP_COMPARISON_FINAL.md
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION.md
 ├── ROADMAP_COZO_GRAPHRAG_ADAPTATION_QWEN36.md

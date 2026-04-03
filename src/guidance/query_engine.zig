@@ -14,6 +14,7 @@ const config_mod = @import("config.zig");
 const plugin_mod = @import("plugin.zig");
 const plugin_registry = @import("plugin_registry.zig");
 const staged_mod = @import("staged.zig");
+const query_strategy_mod = @import("query_strategy.zig");
 const llm_filter_mod = @import("llm_filter.zig");
 const synthesize_mod = @import("synthesize.zig");
 const marker_mod = @import("marker.zig");
@@ -1259,8 +1260,16 @@ fn cmdExplainStaged(
 
     const effective_query = expanded_query orelse query_text;
 
+    // M2: Route through QueryStrategy VTable for intent-based dispatch.
+    var id_strategy: query_strategy_mod.IdentifierLookupStrategy = .{};
+    var cap_strategy: query_strategy_mod.CapabilityQueryStrategy = .{};
+    var concept_strategy: query_strategy_mod.ConceptQueryStrategy = .{};
+    const strategies = query_strategy_mod.buildDefaultStrategies(&id_strategy, &cap_strategy, &concept_strategy);
+
     // Pass original query for deterministic matching, effective query for vector search
-    const stages_raw = try staged_mod.executeStagedWithAliasesOriginal(allocator, db, effective_query, query_text, workspace, aliases_opt);
+    const stages_raw = try query_strategy_mod.executeWithStrategy(
+        allocator, db, effective_query, query_text, workspace, aliases_opt, &strategies,
+    );
     defer {
         types.freeStages(allocator, stages_raw);
         allocator.free(stages_raw);
@@ -1273,6 +1282,11 @@ fn cmdExplainStaged(
         std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
         std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
         return;
+    }
+
+    // M7: not_found sentinel — emit directly, skip synthesis and cache.
+    if (stages_raw[0].kind == .not_found) {
+        return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace);
     }
 
     // ── Fast path: no LLM ─────────────────────────────────────────────────────
@@ -1298,6 +1312,10 @@ fn cmdExplainStaged(
     const working_stages: []const types.Stage = stages_filtered orelse stages_raw;
 
     // M7: Follow-up expansion — re-search to gather used_by for expansion inputs.
+    // M4: Expand to top-3 results with score filtering (score >= 0.35).
+    const SEE_ALSO_TOP_N: usize = 3;
+    const SEE_ALSO_MIN_SCORE: f64 = 0.35;
+
     const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
     defer {
         for (expansion_results) |r| freeSearchResult(allocator, r);
@@ -1313,7 +1331,10 @@ fn cmdExplainStaged(
     defer src_list.deinit(allocator);
     var ub_list: std.ArrayList([]const []const u8) = .{};
     defer ub_list.deinit(allocator);
-    for (expansion_results) |r| {
+
+    // M4: Only include results with score >= SEE_ALSO_MIN_SCORE, up to SEE_ALSO_TOP_N
+    for (expansion_results[0..@min(SEE_ALSO_TOP_N, expansion_results.len)]) |r| {
+        if (r.score < SEE_ALSO_MIN_SCORE) continue;
         try fp_list.append(allocator, r.file_path);
         try src_list.append(allocator, r.source);
         try ub_list.append(allocator, r.used_by);
@@ -2134,6 +2155,82 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
 pub fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const mcp_mod = @import("mcp.zig");
     try mcp_mod.serve(allocator, args);
+}
+
+// =============================================================================
+// guidance ralph — M6: RALPH loop single-query runner
+// =============================================================================
+
+/// `guidance ralph <query>` — run the query through Read→Ask→Learn→Plan stages
+/// and emit the result as markdown. Uses the same DB setup as cmdExplain.
+pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    const ralph_mod = @import("ralph.zig");
+
+    if (args.len == 0) {
+        std.debug.print("Usage: guidance ralph <query>\n", .{});
+        return;
+    }
+
+    // Join args into the query (supports multi-word without quotes).
+    var query_buf: std.ArrayList(u8) = .{};
+    defer query_buf.deinit(allocator);
+    for (args, 0..) |a, i| {
+        if (i > 0) try query_buf.append(allocator, ' ');
+        try query_buf.appendSlice(allocator, a);
+    }
+    const query = query_buf.items;
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+
+    const cfg = config_mod.loadConfig(allocator, cwd) catch {
+        std.debug.print("Error: Could not load guidance config. Run `guidance init` first.\n", .{});
+        return;
+    };
+    defer @constCast(&cfg).deinit();
+
+    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    defer allocator.free(db_path);
+
+    const guidance_dir = try llm.resolvePath(allocator, cwd, cfg.guidance_dir);
+    defer allocator.free(guidance_dir);
+
+    var noop_embed: vector_mod.NoopEmbedding = .{};
+    const embedder = createEmbedderWithFallback(allocator, &cfg) catch noop_embed.provider();
+    defer embedder.deinit();
+
+    var db = GuidanceDb.init(allocator, db_path, embedder) catch {
+        std.debug.print("Error: could not open guidance database at {s}\n", .{db_path});
+        std.debug.print("Run `guidance gen` to create it first.\n", .{});
+        return;
+    };
+    defer db.deinit();
+
+    var aliases_opt = loadAliases(allocator, guidance_dir);
+    defer if (aliases_opt) |*a| a.deinit();
+
+    const stages = ralph_mod.runQuery(allocator, &db, query, cwd, aliases_opt) catch |err| {
+        std.debug.print("RALPH error: {}\n", .{err});
+        return;
+    };
+    defer {
+        types.freeStages(allocator, stages);
+        allocator.free(stages);
+    }
+
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+    try stdout.print("# RALPH: {s}\n\n", .{query});
+    for (stages) |s| {
+        switch (s.kind) {
+            .prose, .not_found => try stdout.print("{s}\n\n", .{s.content}),
+            .metadata => try stdout.print("---\n{s}\n", .{s.content}),
+            .code => try stdout.print("```\n{s}\n```\n\n", .{s.content}),
+            else => {},
+        }
+    }
+    try stdout.flush();
 }
 
 const testing = std.testing;

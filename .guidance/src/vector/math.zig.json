@@ -17,6 +17,7 @@
         { "name": "b", "type": "[]const f32" }
       ],
       "returns": "f32",
+      "comment": "Cosine similarity between two vectors. Returns 0.0–1.0.\nReturns 0.0 for empty, mismatched, or degenerate inputs.",
       "is_pub": true,
       "line": 11
     },
@@ -30,6 +31,7 @@
         { "name": "v", "type": "[]const f32" }
       ],
       "returns": "[]u8",
+      "comment": "Serialize f32 vector to bytes (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 44
     },
@@ -43,14 +45,16 @@
         { "name": "bytes", "type": "[]const u8" }
       ],
       "returns": "[]f32",
+      "comment": "Deserialize bytes to f32 vector (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 54
     },
     {
       "type": "struct",
       "name": "ScoredResult",
-      "match_hash": "14e4c6cfca89b2ca7bbff4130ca4975455160b0ad8e30624d72e0083c8235340",
+      "match_hash": "28eb14d797980a74572d28b7b3a0926bccf9f470489d77efd6894903b9c39102",
       "signature": "keyword_struct ScoredResult { ... }",
+      "comment": "Represents a scored result with fixed-size buffers; managed via ownership model; ensures data integrity across operations.",
       "is_pub": true,
       "line": 67
     },
@@ -68,8 +72,9 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
+      "comment": "Merges two sets of results using weights and limits, returning a combined ScoredResult slice.",
       "is_pub": true,
-      "line": 90
+      "line": 88
     },
     {
       "type": "fn_decl",
@@ -87,50 +92,51 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
+      "comment": "Three-way hybrid merge using Reciprocal Rank Fusion (RRF).\n\nRRF is the standard approach for fusing heterogeneous result streams.\nHandles vector, keyword, and capability results with different score distributions.\n\nRRF score = Σ(1 / (k + rank) * weight) for each list containing the item\n\nDeduplicates by id. Results sorted by RRF score descending.\nCaller owns the returned slice and must free it.",
       "is_pub": true,
-      "line": 172
+      "line": 177
     },
     {
       "type": "test_decl",
       "name": "cosine identical vectors",
       "is_pub": false,
-      "line": 274
+      "line": 279
     },
     {
       "type": "test_decl",
       "name": "cosine orthogonal vectors",
       "is_pub": false,
-      "line": 280
+      "line": 285
     },
     {
       "type": "test_decl",
       "name": "cosine empty returns zero",
       "is_pub": false,
-      "line": 287
+      "line": 292
     },
     {
       "type": "test_decl",
       "name": "vec bytes roundtrip",
       "is_pub": false,
-      "line": 292
+      "line": 297
     },
     {
       "type": "test_decl",
       "name": "hybrid merge deduplicates",
       "is_pub": false,
-      "line": 306
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "hybrid merge respects limit",
       "is_pub": false,
-      "line": 318
+      "line": 323
     },
     {
       "type": "test_decl",
       "name": "hybrid merge three-way combines all scores",
       "is_pub": false,
-      "line": 328
+      "line": 333
     }
   ]
 }

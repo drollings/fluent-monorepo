@@ -49,6 +49,26 @@ pub fn synthesize(
 ) !SynthesisResult {
     const is_direct = isDirectLookup(query);
 
+    // Count words in query to determine synthesis depth
+    var word_count: usize = 0;
+    var word_it = std.mem.tokenizeAny(u8, query, " \t\n\r");
+    while (word_it.next()) |_| word_count += 1;
+    const is_long_query = word_count >= 5;
+
+    // M8: Collect source file paths from stages for grounding
+    var sources: std.ArrayList([]const u8) = .{};
+    defer sources.deinit(allocator);
+    {
+        var seen_src: std.StringHashMapUnmanaged(void) = .{};
+        defer seen_src.deinit(allocator);
+        for (stages) |s| {
+            if (!seen_src.contains(s.source)) {
+                try seen_src.put(allocator, s.source, {});
+                try sources.append(allocator, s.source);
+            }
+        }
+    }
+
     // Collect detail content (from module documentation)
     var detail_buf: std.ArrayList(u8) = .{};
     defer detail_buf.deinit(allocator);
@@ -97,7 +117,11 @@ pub fn synthesize(
     }
 
     if (detail_buf.items.len == 0 and prose_buf.items.len == 0) {
-        return .{ .summary = null, .followup_keywords = null };
+        // For long queries, still attempt synthesis with just the query text
+        // and code snippets (if any). Don't bail out early.
+        if (!is_long_query and code_buf.items.len == 0) {
+            return .{ .summary = null, .followup_keywords = null };
+        }
     }
 
     var full_prompt: std.ArrayList(u8) = .{};
@@ -181,13 +205,63 @@ pub fn synthesize(
         };
     }
 
-    // ── Comprehensive answer for context query ─────────────────────────────────
-    try fw.print(
-        \\You are a code documentation assistant. Write a concise technical answer.
-        \\
-        \\Query: {s}
-        \\
-    , .{query});
+    // ── Comprehensive answer for context query ───────────────────────────────
+    // is_long_query already computed at function start
+
+    // M8: Build source list for grounding (prevents hallucination)
+    var sources_buf: std.ArrayList(u8) = .{};
+    defer sources_buf.deinit(allocator);
+    if (sources.items.len > 0) {
+        const sw = sources_buf.writer(allocator);
+        try sw.writeAll("Source files referenced:\n");
+        for (sources.items) |src| {
+            try sw.print("- {s}\n", .{src});
+        }
+    }
+
+    if (is_long_query) {
+        // Enhanced synthesis for long queries with structured sections + grounding
+        try fw.print(
+            \\You are a technical documentation expert. Explain how the code works in detail.
+            \\
+            \\Query: {s}
+            \\
+            \\IMPORTANT: Base your answer ONLY on the source content provided below.
+            \\Do NOT invent functions, structs, or components that are not explicitly listed.
+            \\Use the actual names from the source files.
+            \\
+            \\{s}
+            \\
+            \\Provide a comprehensive answer with the following structure:
+            \\
+            \\## Overview
+            \\1-2 sentences explaining what this is and its purpose.
+            \\
+            \\## Key Components
+            \\- List 3-5 main components (use names from the source files above)
+            \\
+            \\## How It Works
+            \\2-3 paragraphs explaining the flow, algorithms, and interactions.
+            \\Include specific technical details from the source content.
+            \\
+            \\## Data Flow
+            \\Brief description of how data moves through the system.
+            \\
+        , .{ query, sources_buf.items });
+    } else {
+        // Brief synthesis for short queries + grounding
+        try fw.print(
+            \\You are a code documentation assistant. Write a concise technical answer.
+            \\
+            \\Query: {s}
+            \\
+            \\IMPORTANT: Base your answer ONLY on the source content provided below.
+            \\Do NOT invent components not listed.
+            \\
+            \\{s}
+            \\
+        , .{ query, sources_buf.items });
+    }
 
     if (detail_buf.items.len > 0) {
         try fw.print("\n## Module Documentation\n\n{s}\n", .{detail_buf.items});
@@ -201,18 +275,28 @@ pub fn synthesize(
         try fw.print("\n## Source Code\n\n{s}\n", .{code_buf.items});
     }
 
-    try fw.writeAll(
-        \\
-        \\Write a concise answer (200-400 words). Cover:
-        \\- What it does (1-2 sentences)
-        \\- Key components (bullet list, max 4 items)
-        \\- How it works (1-2 paragraphs)
-        \\
-        \\Be precise and technical. No fluff. Use bullets, not prose paragraphs.
-        \\After your answer, suggest 2-3 related keywords.
-        \\Format: KEYWORDS: keyword1, keyword2, keyword3
-        \\
-    );
+    if (is_long_query) {
+        try fw.writeAll(
+            \\
+            \\Be thorough and technical. Use specific terms from the source code above.
+            \\After your answer, suggest 2-3 related search queries.
+            \\Format: KEYWORDS: keyword1, keyword2, keyword3
+            \\
+        );
+    } else {
+        try fw.writeAll(
+            \\
+            \\Write a concise answer (200-400 words). Cover:
+            \\- What it does (1-2 sentences)
+            \\- Key components (bullet list, max 4 items)
+            \\- How it works (1-2 paragraphs)
+            \\
+            \\Be precise and technical. No fluff. Use bullets, not prose paragraphs.
+            \\After your answer, suggest 2-3 related keywords.
+            \\Format: KEYWORDS: keyword1, keyword2, keyword3
+            \\
+        );
+    }
 
     // Use fast model with moderate max_tokens for concise output
     const raw_opt = client.complete(full_prompt.items, 600, 0.3, null) catch return .{ .summary = null, .followup_keywords = null };

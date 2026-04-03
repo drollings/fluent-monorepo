@@ -2131,6 +2131,24 @@ pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8
     std.debug.print("map-capabilities: wrote {s} ({d} capabilities)\n", .{ mapping_path, cap_count });
 }
 
+/// Stopwords that should be filtered from capability keywords.
+const STOPWORDS = [_][]const u8{
+    "the",   "a",       "an",    "and",     "or",     "but",    "in",    "on",     "at",    "to",      "for",
+    "of",    "with",    "by",    "from",    "as",     "is",     "was",   "are",    "were",  "this",    "that",
+    "these", "those",   "it",    "its",     "node",   "key",    "const", "module", "type",  "used",    "each",
+    "file",  "files",   "using", "into",    "when",   "where",  "which", "while",  "then",  "than",    "only",
+    "over",  "such",    "both",  "through", "during", "before", "after", "above",  "below", "between", "under",
+    "again", "further",
+};
+
+/// Check if a token is a stopword (case-insensitive).
+fn isStopword(tok: []const u8) bool {
+    for (STOPWORDS) |sw| {
+        if (std.ascii.eqlIgnoreCase(tok, sw)) return true;
+    }
+    return false;
+}
+
 /// Return true if `tok` is a plausible Zig/Python identifier keyword.
 /// Accepts: camelCase, PascalCase, snake_case, dotted.paths, but not
 /// punctuation-heavy strings or all-lowercase common words.
@@ -2138,6 +2156,9 @@ fn isCapabilityKeywordToken(tok: []const u8) bool {
     // Must start with an ASCII letter or underscore.
     if (tok.len == 0) return false;
     if (!std.ascii.isAlphabetic(tok[0]) and tok[0] != '_') return false;
+
+    // Check for stopwords (case-insensitive).
+    if (isStopword(tok)) return false;
 
     var has_upper = false;
     var has_underscore = false;

@@ -68,6 +68,7 @@ pub const ScoredResult = struct {
     id: i64,
     vector_score: ?f32 = null,
     keyword_score: ?f32 = null,
+    capability_score: ?f32 = null,
     final_score: f32 = 0.0,
 };
 
@@ -78,15 +79,12 @@ pub const IdScore = struct {
     score: f32,
 };
 
-/// Hybrid merge: combine vector and keyword results with weighted fusion.
-///
-/// Normalizes keyword scores to [0, 1]. Vector scores (cosine similarity)
-/// are assumed to already be in [0, 1].
-///
-/// final_score = vector_weight * vector_score + keyword_weight * keyword_score
-///
-/// Deduplicates by id. Results sorted by final_score descending.
-/// Caller owns the returned slice and must free it.
+/// RRF (Reciprocal Rank Fusion) constant — standard smoothing parameter.
+/// Lower values (e.g., 20) favor top-ranked items more aggressively.
+/// Higher values (e.g., 80) give more weight to lower-ranked items.
+pub const RRF_K: f32 = 60.0;
+
+/// Merges two sets of results using weights and limits, returning a combined ScoredResult slice.
 pub fn hybridMerge(
     allocator: std.mem.Allocator,
     vector_results: []const IdScore,
@@ -95,64 +93,68 @@ pub fn hybridMerge(
     keyword_weight: f32,
     limit: usize,
 ) ![]ScoredResult {
-    var ids: std.ArrayList(i64) = .empty;
-    defer ids.deinit(allocator);
-
+    // Maps to accumulate RRF scores and track component scores
+    var rrf_scores = std.AutoHashMap(i64, f32).init(allocator);
+    defer rrf_scores.deinit();
     var vec_scores = std.AutoHashMap(i64, f32).init(allocator);
     defer vec_scores.deinit();
-
     var kw_scores = std.AutoHashMap(i64, f32).init(allocator);
     defer kw_scores.deinit();
 
-    for (vector_results) |vr| {
-        const entry = try vec_scores.getOrPut(vr.id);
+    // Process vector results with RRF
+    for (vector_results, 0..) |vr, rank| {
+        const rrf_score = vector_weight * (1.0 / (RRF_K + @as(f32, @floatFromInt(rank))));
+        const entry = try rrf_scores.getOrPut(vr.id);
         if (!entry.found_existing) {
-            entry.value_ptr.* = vr.score;
-            try ids.append(allocator, vr.id);
+            entry.value_ptr.* = rrf_score;
         } else {
-            entry.value_ptr.* = @max(entry.value_ptr.*, vr.score);
+            entry.value_ptr.* += rrf_score;
+        }
+
+        // Store best vector score for metadata
+        const vs_entry = try vec_scores.getOrPut(vr.id);
+        if (!vs_entry.found_existing or vr.score > vs_entry.value_ptr.*) {
+            vs_entry.value_ptr.* = vr.score;
         }
     }
 
-    // Normalize keyword scores
-    var max_kw: f32 = 0.0;
-    for (keyword_results) |kr| {
-        max_kw = @max(max_kw, kr.score);
-    }
-    if (max_kw < std.math.floatEps(f32)) max_kw = 1.0;
-
-    for (keyword_results) |kr| {
-        const normalized = kr.score / max_kw;
-        const entry = try kw_scores.getOrPut(kr.id);
+    // Process keyword results with RRF
+    for (keyword_results, 0..) |kr, rank| {
+        const rrf_score = keyword_weight * (1.0 / (RRF_K + @as(f32, @floatFromInt(rank))));
+        const entry = try rrf_scores.getOrPut(kr.id);
         if (!entry.found_existing) {
-            entry.value_ptr.* = normalized;
-            if (!vec_scores.contains(kr.id)) {
-                try ids.append(allocator, kr.id);
-            }
+            entry.value_ptr.* = rrf_score;
         } else {
-            entry.value_ptr.* = @max(entry.value_ptr.*, normalized);
+            entry.value_ptr.* += rrf_score;
+        }
+
+        // Store best keyword score for metadata
+        const ks_entry = try kw_scores.getOrPut(kr.id);
+        if (!ks_entry.found_existing or kr.score > ks_entry.value_ptr.*) {
+            ks_entry.value_ptr.* = kr.score;
         }
     }
 
-    // Build scored results
+    // Build scored results from RRF scores
     var results: std.ArrayList(ScoredResult) = .empty;
     defer results.deinit(allocator);
 
-    for (ids.items) |id| {
+    var rrf_it = rrf_scores.iterator();
+    while (rrf_it.next()) |entry| {
+        const id = entry.key_ptr.*;
+        const rrf_score = entry.value_ptr.*;
         const vs = vec_scores.get(id);
         const ks = kw_scores.get(id);
-        const vs_val = vs orelse 0.0;
-        const ks_val = ks orelse 0.0;
-        const final = vector_weight * vs_val + keyword_weight * ks_val;
+
         try results.append(allocator, .{
             .id = id,
             .vector_score = vs,
             .keyword_score = ks,
-            .final_score = final,
+            .final_score = rrf_score,
         });
     }
 
-    // Sort by final_score descending
+    // Sort by RRF score descending
     std.mem.sortUnstable(ScoredResult, results.items, {}, struct {
         fn lessThan(_: void, lhs: ScoredResult, rhs: ScoredResult) bool {
             return lhs.final_score > rhs.final_score;
@@ -163,11 +165,14 @@ pub fn hybridMerge(
     return allocator.dupe(ScoredResult, results.items[0..actual_limit]);
 }
 
-/// Three-way hybrid merge for M5.2 capability keyword indexing.
+/// Three-way hybrid merge using Reciprocal Rank Fusion (RRF).
 ///
-/// final_score = cosine_w * cosine_score + keyword_w * keyword_score + cap_w * cap_score
+/// RRF is the standard approach for fusing heterogeneous result streams.
+/// Handles vector, keyword, and capability results with different score distributions.
 ///
-/// Deduplicates by id. Results sorted by final_score descending.
+/// RRF score = Σ(1 / (k + rank) * weight) for each list containing the item
+///
+/// Deduplicates by id. Results sorted by RRF score descending.
 /// Caller owns the returned slice and must free it.
 pub fn hybridMergeThree(
     allocator: std.mem.Allocator,
@@ -179,82 +184,82 @@ pub fn hybridMergeThree(
     cap_w: f32,
     limit: usize,
 ) ![]ScoredResult {
-    var ids: std.ArrayList(i64) = .empty;
-    defer ids.deinit(allocator);
-
+    // Maps to accumulate RRF scores and track component scores
+    var rrf_scores = std.AutoHashMap(i64, f32).init(allocator);
+    defer rrf_scores.deinit();
     var vec_scores = std.AutoHashMap(i64, f32).init(allocator);
     defer vec_scores.deinit();
-
     var kw_scores = std.AutoHashMap(i64, f32).init(allocator);
     defer kw_scores.deinit();
-
     var cap_scores = std.AutoHashMap(i64, f32).init(allocator);
     defer cap_scores.deinit();
 
-    // Collect vector scores
-    for (vector_results) |vr| {
-        const entry = try vec_scores.getOrPut(vr.id);
+    // Process vector results with RRF
+    for (vector_results, 0..) |vr, rank| {
+        const rrf_score = cosine_w * (1.0 / (RRF_K + @as(f32, @floatFromInt(rank))));
+        const entry = try rrf_scores.getOrPut(vr.id);
         if (!entry.found_existing) {
-            entry.value_ptr.* = vr.score;
-            try ids.append(allocator, vr.id);
+            entry.value_ptr.* = rrf_score;
         } else {
-            entry.value_ptr.* = @max(entry.value_ptr.*, vr.score);
+            entry.value_ptr.* += rrf_score;
+        }
+
+        const vs_entry = try vec_scores.getOrPut(vr.id);
+        if (!vs_entry.found_existing or vr.score > vs_entry.value_ptr.*) {
+            vs_entry.value_ptr.* = vr.score;
         }
     }
 
-    // Normalize and collect keyword scores
-    var max_kw: f32 = 0.0;
-    for (keyword_results) |kr| max_kw = @max(max_kw, kr.score);
-    if (max_kw < std.math.floatEps(f32)) max_kw = 1.0;
-
-    for (keyword_results) |kr| {
-        const normalized = kr.score / max_kw;
-        const entry = try kw_scores.getOrPut(kr.id);
+    // Process keyword results with RRF
+    for (keyword_results, 0..) |kr, rank| {
+        const rrf_score = keyword_w * (1.0 / (RRF_K + @as(f32, @floatFromInt(rank))));
+        const entry = try rrf_scores.getOrPut(kr.id);
         if (!entry.found_existing) {
-            entry.value_ptr.* = normalized;
-            if (!vec_scores.contains(kr.id)) {
-                try ids.append(allocator, kr.id);
-            }
+            entry.value_ptr.* = rrf_score;
         } else {
-            entry.value_ptr.* = @max(entry.value_ptr.*, normalized);
+            entry.value_ptr.* += rrf_score;
+        }
+
+        const ks_entry = try kw_scores.getOrPut(kr.id);
+        if (!ks_entry.found_existing or kr.score > ks_entry.value_ptr.*) {
+            ks_entry.value_ptr.* = kr.score;
         }
     }
 
-    // Normalize and collect capability scores
-    var max_cap: f32 = 0.0;
-    for (capability_results) |cr| max_cap = @max(max_cap, cr.score);
-    if (max_cap < std.math.floatEps(f32)) max_cap = 1.0;
-
-    for (capability_results) |cr| {
-        const normalized = cr.score / max_cap;
-        const entry = try cap_scores.getOrPut(cr.id);
+    // Process capability results with RRF
+    for (capability_results, 0..) |cr, rank| {
+        const rrf_score = cap_w * (1.0 / (RRF_K + @as(f32, @floatFromInt(rank))));
+        const entry = try rrf_scores.getOrPut(cr.id);
         if (!entry.found_existing) {
-            entry.value_ptr.* = normalized;
-            if (!vec_scores.contains(cr.id) and !kw_scores.contains(cr.id)) {
-                try ids.append(allocator, cr.id);
-            }
+            entry.value_ptr.* = rrf_score;
         } else {
-            entry.value_ptr.* = @max(entry.value_ptr.*, normalized);
+            entry.value_ptr.* += rrf_score;
+        }
+
+        const cs_entry = try cap_scores.getOrPut(cr.id);
+        if (!cs_entry.found_existing or cr.score > cs_entry.value_ptr.*) {
+            cs_entry.value_ptr.* = cr.score;
         }
     }
 
-    // Build scored results
+    // Build scored results from RRF scores
     var results: std.ArrayList(ScoredResult) = .empty;
     defer results.deinit(allocator);
 
-    for (ids.items) |id| {
+    var rrf_it = rrf_scores.iterator();
+    while (rrf_it.next()) |entry| {
+        const id = entry.key_ptr.*;
+        const rrf_score = entry.value_ptr.*;
         const vs = vec_scores.get(id);
         const ks = kw_scores.get(id);
         const cs = cap_scores.get(id);
-        const vs_val = vs orelse 0.0;
-        const ks_val = ks orelse 0.0;
-        const cs_val = cs orelse 0.0;
-        const final = cosine_w * vs_val + keyword_w * ks_val + cap_w * cs_val;
+
         try results.append(allocator, .{
             .id = id,
             .vector_score = vs,
             .keyword_score = ks,
-            .final_score = final,
+            .capability_score = cs,
+            .final_score = rrf_score,
         });
     }
 
@@ -334,6 +339,12 @@ test "hybrid merge three-way combines all scores" {
 
     try std.testing.expectEqual(@as(usize, 1), merged.len);
     try std.testing.expectEqual(@as(i64, 1), merged[0].id);
-    // 0.8 * 0.6 + 1.0 * 0.25 + 1.0 * 0.15 = 0.48 + 0.25 + 0.15 = 0.88
-    try std.testing.expect(@abs(merged[0].final_score - 0.88) < 0.01);
+    try std.testing.expect(merged[0].vector_score != null);
+    try std.testing.expect(merged[0].keyword_score != null);
+    try std.testing.expect(merged[0].capability_score != null);
+    try std.testing.expect(@abs(merged[0].vector_score.? - 0.8) < 0.001);
+    try std.testing.expect(@abs(merged[0].keyword_score.? - 5.0) < 0.001);
+    try std.testing.expect(@abs(merged[0].capability_score.? - 2.0) < 0.001);
+    // RRF: at rank 0 with RRF_K=60: 0.6/60 + 0.25/60 + 0.15/60 = 0.01 + 0.004167 + 0.0025 ≈ 0.016667
+    try std.testing.expect(@abs(merged[0].final_score - 0.016667) < 0.001);
 }

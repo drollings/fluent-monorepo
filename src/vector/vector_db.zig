@@ -35,7 +35,7 @@ pub const SCHEMA_VERSION: u32 = 2;
 
 /// Minimum cosine similarity to include a result from vectorSearch().
 /// Below this threshold the match is semantic noise for 384-dim embeddings.
-pub const MIN_VECTOR_THRESHOLD: f32 = 0.28;
+pub const MIN_VECTOR_THRESHOLD: f32 = 0.35; // was 0.28
 
 // ---------------------------------------------------------------------------
 // Semantic aliases for query expansion
@@ -2157,7 +2157,7 @@ pub const GuidanceDb = struct {
 
         if (query_emb) |emb| {
             // Phase 1a: Embedding-based alias key matching — expand query tokens.
-            const similar_keys = self.findSimilarAliasKeys(allocator, emb, 0.75, 3) catch &[_][]const u8{};
+            const similar_keys = self.findSimilarAliasKeys(allocator, emb, 0.65, 3) catch &[_][]const u8{}; // was 0.75
             defer {
                 for (similar_keys) |k| allocator.free(k);
                 allocator.free(similar_keys);
@@ -2444,7 +2444,7 @@ pub const GuidanceDb = struct {
 
     /// Find exact case-sensitive name match in AST.
     /// Returns results if the name exists in the database.
-    fn findExactNameMatch(
+    pub fn findExactNameMatch(
         self: *Self,
         allocator: std.mem.Allocator,
         name: []const u8,
@@ -2548,11 +2548,11 @@ pub const GuidanceDb = struct {
         }.lt);
 
         // Adaptive threshold: discard results that are far below the top score.
-        // Formula: max(0.25, 0.75 × top_score).
-        // Example: top=0.80 → cutoff=0.60 (drops marginal results).
-        //          top=0.30 → cutoff=0.25 (nearly no pruning for weak top results).
+        // Formula: max(0.30, 0.60 × top_score).  // was max(0.25, 0.75 × top_score)
+        // Example: top=0.80 → cutoff=0.48 (was 0.60, less aggressive pruning).
+        //          top=0.30 → cutoff=0.30 (was 0.25, slightly higher floor).
         if (scored.items.len > 0) {
-            const adaptive_cutoff: f32 = @max(0.25, 0.75 * scored.items[0].score);
+            const adaptive_cutoff: f32 = @max(0.30, 0.60 * scored.items[0].score); // was 0.75
             // scored is sorted descending; find the first item below cutoff.
             var keep: usize = scored.items.len;
             for (scored.items, 0..) |sr, i| {

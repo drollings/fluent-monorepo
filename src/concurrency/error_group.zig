@@ -256,16 +256,18 @@ test "ErrorGroup: first error cancels context; subsequent units observe cancella
 
 test "ErrorGroup: wait blocks until all units complete (including post-error)" {
     var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = testing.allocator, .n_jobs = 2 });
+    try pool.init(.{ .allocator = testing.allocator, .n_jobs = 4 });
     defer pool.deinit();
 
     var counter = std.atomic.Value(usize).init(0);
+    var counter_mu = std.Thread.Mutex{};
     var ctx = Context.background();
     var group = ErrorGroup.init(testing.allocator, &pool, &ctx);
     defer group.deinit();
 
     const SlowHandler = struct {
         counter: *std.atomic.Value(usize),
+        counter_mu: *std.Thread.Mutex,
         delay_ns: u64,
         should_fail: bool = false,
 
@@ -273,7 +275,11 @@ test "ErrorGroup: wait blocks until all units complete (including post-error)" {
             _ = arena;
             _ = c;
             std.Thread.sleep(self.delay_ns);
-            _ = self.counter.fetchAdd(1, .monotonic);
+            {
+                self.counter_mu.lock();
+                defer self.counter_mu.unlock();
+                _ = self.counter.fetchAdd(1, .monotonic);
+            }
             if (self.should_fail) return error.SlowFail;
         }
     };
@@ -281,15 +287,18 @@ test "ErrorGroup: wait blocks until all units complete (including post-error)" {
     for (0..4) |i| {
         const unit = try WorkUnit(SlowHandler).init(
             testing.allocator,
-            .{ .counter = &counter, .delay_ns = 1 * std.time.ns_per_ms, .should_fail = i == 1 },
+            .{ .counter = &counter, .counter_mu = &counter_mu, .delay_ns = 10 * std.time.ns_per_ms, .should_fail = i == 1 },
             &ctx,
         );
         group.go(unit.toAny());
     }
 
     _ = group.wait();
-    // All 4 units must have run (even slow ones after the error).
-    try testing.expectEqual(@as(usize, 4), counter.load(.acquire));
+    {
+        counter_mu.lock();
+        defer counter_mu.unlock();
+        try testing.expectEqual(@as(usize, 4), counter.load(.acquire));
+    }
 }
 
 test "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail" {

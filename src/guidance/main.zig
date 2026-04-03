@@ -41,7 +41,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
+/// Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.
 const Command = enum {
     init,
     gen,
@@ -54,17 +54,14 @@ const Command = enum {
     check,
     show,
     @"test",
-    @"sync-comments",
-    @"migrate-comments",
-    @"map-capabilities",
-    @"sync-capabilities",
-    @"discover-capability-sources",
     scrub,
     todo,
     diary,
     telemetry,
     @"cache-stats",
     serve,
+    ralph,
+    scan,
 };
 
 /// Starts the Zig program execution by defining the entry point.
@@ -119,22 +116,24 @@ pub fn main() !void {
         .check => sync_engine_mod.cmdCheck(allocator, args[2..]),
         .show => query_engine_mod.cmdShow(allocator, args[2..]),
         .@"test" => query_engine_mod.cmdTest(allocator, args[2..]),
-        .@"sync-comments" => sync_engine_mod.cmdSyncComments(allocator, args[2..]),
-        .@"migrate-comments" => sync_engine_mod.cmdMigrateComments(allocator, args[2..]),
-        .@"map-capabilities" => sync_engine_mod.cmdMapCapabilities(allocator, args[2..]),
-        .@"sync-capabilities" => sync_engine_mod.cmdSyncCapabilities(allocator, args[2..]),
-        .@"discover-capability-sources" => sync_engine_mod.cmdDiscoverCapabilitySources(allocator, args[2..]),
         .scrub => sync_engine_mod.cmdScrub(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
         .@"cache-stats" => query_engine_mod.cmdCacheStats(allocator, args[2..]),
         .serve => query_engine_mod.cmdServe(allocator, args[2..]),
+        .ralph => cmdRalph(allocator, args[2..]),
+        .scan => @import("scanner.zig").cmdScan(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
         else => return err,
     };
+}
+
+/// M6: RALPH loop — run a single query through Read→Ask→Learn→Plan stages.
+fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    return query_engine_mod.cmdRalph(allocator, args);
 }
 
 fn printHelp() !void {
@@ -164,10 +163,6 @@ fn printHelp() !void {
         \\  show            Show vector embeddings from .guidance.db (Markdown)
         \\  test            Benchmark explain queries against module-level comments
         \\  sync-comments    Insert/update /// doc comments in Zig source files
-        \\  migrate-comments Migrate JSON comment fields to source /// comments
-        \\  map-capabilities Regenerate capability-mapping.json from CAPABILITY.md files
-        \\  sync-capabilities Parse CAPABILITY.md anchors → .guidance/capability-index.json
-        \\  discover-capability-sources  Discover source files for capabilities via anchors
         \\  scrub            Blank synthetic LLM-generated comments in guidance JSON files
         \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary            Append a timestamped entry to the current work item DIARY.md
@@ -308,3 +303,4 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+

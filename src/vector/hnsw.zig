@@ -91,7 +91,13 @@ pub const HnswIndex = struct {
         self.nodes.deinit(self.allocator);
     }
 
-    /// Add a node with its vector to the index.
+    /// Add a node with its vector to the index using proper HNSW construction.
+    ///
+    /// Proper HNSW insert:
+    /// 1. Assign random layer
+    /// 2. Search for k nearest neighbors at each layer (from top down)
+    /// 3. Connect new node to neighbors (bidirectional)
+    /// 4. Update neighbor connectivity if they exceed M connections
     pub fn add(self: *Self, id: i64, vector: []const f32) !void {
         if (vector.len != self.dimensions) return error.DimensionMismatch;
         if (self.nodes.contains(id)) return error.DuplicateId;
@@ -118,24 +124,126 @@ pub const HnswIndex = struct {
             try node.connections.append(self.allocator, &[_]i64{});
         }
 
-        // Insert into index.
+        // Handle first node case.
+        if (self.entry_point == null) {
+            try self.nodes.put(self.allocator, id, node);
+            self.count += 1;
+            self.entry_point = id;
+            return;
+        }
+
+        // Insert into index before connecting (so search can find it if needed).
         try self.nodes.put(self.allocator, id, node);
         self.count += 1;
 
-        // Capture old entry point before potentially updating.
-        const old_entry_point = self.entry_point;
-
-        // Set as entry point if first node or higher layer.
-        if (self.entry_point == null or level > self.nodes.getPtr(self.entry_point.?).?.max_layer) {
+        // Update entry point if new node has higher layer.
+        const current_ep_layer = self.nodes.getPtr(self.entry_point.?).?.max_layer;
+        if (level > current_ep_layer) {
             self.entry_point = id;
         }
 
-        // Connect to neighbors (simplified: just connect to old entry point for now).
-        // Full HNSW construction would search each layer and connect to closest neighbors.
-        if (old_entry_point != null) {
-            // Add bidirectional connection at layer 0.
-            try self.connect(id, old_entry_point.?, 0);
+        // HNSW construction: search and connect at each layer.
+        var current_ep = self.entry_point.?;
+
+        // Phase 1: Search from top layer down to layer 1 to find entry point for layer 0.
+        var layer: usize = @max(current_ep_layer, level);
+        while (layer > 0) : (layer -= 1) {
+            if (layer <= level) {
+                // Search at this layer and connect to neighbors.
+                const neighbors = try self.searchLayer(self.allocator, vector, current_ep, layer, @min(self.m, self.ef_construction));
+                defer self.allocator.free(neighbors);
+
+                // Connect to closest M neighbors at this layer.
+                const m_layer = if (layer == 0) self.m * 2 else self.m; // More connections at base layer
+                const num_connections = @min(m_layer, neighbors.len);
+
+                for (neighbors[0..num_connections]) |neighbor| {
+                    try self.connectBidirectional(id, neighbor.id, layer);
+                }
+            }
+
+            // Update entry point for next layer down.
+            if (layer > 0) {
+                const neighbors = try self.searchLayer(self.allocator, vector, current_ep, layer, 1);
+                defer self.allocator.free(neighbors);
+                if (neighbors.len > 0) {
+                    current_ep = neighbors[0].id;
+                }
+            }
         }
+
+        // Phase 2: Layer 0 - connect to M*2 closest neighbors.
+        const base_neighbors = try self.searchLayer(self.allocator, vector, current_ep, 0, @min(self.m * 2, self.ef_construction));
+        defer self.allocator.free(base_neighbors);
+
+        const num_base_connections = @min(self.m * 2, base_neighbors.len);
+        for (base_neighbors[0..num_base_connections]) |neighbor| {
+            if (neighbor.id != id) {
+                try self.connectBidirectional(id, neighbor.id, 0);
+            }
+        }
+    }
+
+    /// Search a specific layer for nearest neighbors to query.
+    /// Uses greedy beam search with ef candidates.
+    fn searchLayer(self: *Self, allocator: std.mem.Allocator, query: []const f32, entry_point: i64, layer: usize, ef: usize) ![]SearchResult {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const aa = arena.allocator();
+
+        // Min-heap for candidates (closest first).
+        var candidates = std.PriorityQueue(Candidate, void, Candidate.lessThan).init(aa, {});
+        // Sorted list of best ef candidates seen so far.
+        var w: std.ArrayList(SearchResult) = .{};
+        var visited = std.AutoHashMap(i64, void).init(aa);
+
+        // Seed with entry point.
+        const ep_node = self.nodes.getPtr(entry_point) orelse return &[_]SearchResult{};
+        const ep_dist = self.distance(query, ep_node.vector);
+        try candidates.add(.{ .id = entry_point, .distance = ep_dist });
+        try visited.put(entry_point, {});
+        try w.append(aa, .{ .id = entry_point, .distance = ep_dist });
+
+        while (candidates.count() > 0) {
+            const c = candidates.remove();
+
+            // Stopping condition: if c is farther than worst in w, we're done.
+            if (w.items.len >= ef and c.distance > w.items[w.items.len - 1].distance) break;
+
+            const node = self.nodes.getPtr(c.id) orelse continue;
+            if (layer >= node.connections.items.len) continue;
+
+            for (node.connections.items[layer]) |neighbor_id| {
+                if (visited.contains(neighbor_id)) continue;
+                try visited.put(neighbor_id, {});
+
+                const nb = self.nodes.getPtr(neighbor_id) orelse continue;
+                const dist = self.distance(query, nb.vector);
+
+                if (w.items.len < ef or dist < w.items[w.items.len - 1].distance) {
+                    try candidates.add(.{ .id = neighbor_id, .distance = dist });
+
+                    // Insert into w in sorted order.
+                    const pos = blk: {
+                        var i: usize = 0;
+                        while (i < w.items.len and w.items[i].distance <= dist) : (i += 1) {}
+                        break :blk i;
+                    };
+                    try w.insert(aa, pos, .{ .id = neighbor_id, .distance = dist });
+                    if (w.items.len > ef) _ = w.pop();
+                }
+            }
+        }
+
+        // Copy results to output allocator.
+        const out = try allocator.dupe(SearchResult, w.items);
+        return out;
+    }
+
+    /// Add bidirectional connection between two nodes at a layer.
+    fn connectBidirectional(self: *Self, id1: i64, id2: i64, layer: usize) !void {
+        try self.connect(id1, id2, layer);
+        try self.connect(id2, id1, layer);
     }
 
     /// Result entry returned by search().

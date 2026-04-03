@@ -191,7 +191,7 @@ pub const QueryResult = struct {
 // Staged explain pipeline types
 // ---------------------------------------------------------------------------
 
-/// Defines a stage kind with fixed-size buffers, managed via init/deinit, not thread-safe.
+/// Defines a stage kind for Zig projects, managing configuration and transitions with a fixed ownership model.
 pub const StageKind = enum {
     /// Human-readable explanation from module or member comment.
     prose,
@@ -205,6 +205,9 @@ pub const StageKind = enum {
     skill_doc,
     /// Excerpt from a CAPABILITY.md file.
     capability_doc,
+    /// M7: Sentinel — no relevant results found for this query.
+    /// The pipeline should skip synthesis and cache when this kind appears.
+    not_found,
 };
 
 /// A single unit of information collected by the staged explain pipeline.
@@ -753,3 +756,4 @@ test "jsonifyGuidanceDoc: doc with comment and keywords" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
     defer parsed.deinit();
 }
+

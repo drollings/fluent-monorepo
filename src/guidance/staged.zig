@@ -47,6 +47,94 @@ pub fn executeStagedWithAliases(
 }
 
 /// Executes a Zig stage with original aliases, processing the provided query and returning the resulting stage.
+// ── M7: Not-Found confidence thresholds ──────────────────────────────────────
+// Scores from Phase 1 (exact name match) are 1.0.
+// Scores from Phase 2/3 (vector/hybrid) are in the RRF range ~0.004–0.04.
+// Below NOT_FOUND_RRF_THRESHOLD, nothing relevant was found.
+const NOT_FOUND_RRF_THRESHOLD: f64 = 0.004;
+
+/// M7: Build "not found" stages when search results are below confidence threshold.
+/// Returns an owned slice of stages; caller must call types.freeStages() + allocator.free().
+fn buildNotFoundStages(
+    allocator: std.mem.Allocator,
+    query: []const u8,
+    db: *GuidanceDb,
+) ![]types.Stage {
+    var stages: std.ArrayList(types.Stage) = .{};
+    errdefer {
+        types.freeStages(allocator, stages.items);
+        stages.deinit(allocator);
+    }
+
+    // Stage 1: Not-found prose message
+    const msg = try std.fmt.allocPrint(allocator,
+        "No code found matching '{s}' in this codebase. " ++
+        "The query did not match any indexed source files with sufficient confidence.\n\n" ++
+        "Try:\n" ++
+        "- A more specific identifier (e.g. a function or struct name)\n" ++
+        "- A different keyword from the codebase vocabulary\n" ++
+        "- Running `guidance gen` if the code was recently added",
+        .{query});
+    try stages.append(allocator, .{
+        .kind = .not_found,
+        .content = msg,
+        .source = try allocator.dupe(u8, "guidance"),
+    });
+
+    // Stage 2: Suggest nearest capability names (low threshold — broad suggestions)
+    const caps = db.findMatchedCapabilityNamesForQuery(allocator, query, 0.20, 3) catch &[_][]const u8{};
+    defer {
+        for (caps) |cap| allocator.free(cap);
+        allocator.free(caps);
+    }
+    if (caps.len > 0) {
+        var buf: std.ArrayList(u8) = .{};
+        defer buf.deinit(allocator);
+        const bw = buf.writer(allocator);
+        try bw.writeAll("Related capabilities you might mean:\n");
+        for (caps) |cap| {
+            try bw.print("- `{s}`\n", .{cap});
+        }
+        try stages.append(allocator, .{
+            .kind = .metadata,
+            .content = try buf.toOwnedSlice(allocator),
+            .source = try allocator.dupe(u8, "guidance"),
+        });
+    }
+
+    return stages.toOwnedSlice(allocator);
+}
+
+/// M7: Check if any result is relevant to the original query tokens.
+/// Returns true if at least one result name or source contains a query token.
+fn anyResultIsRelevant(results: []const SearchResult, original_query: []const u8) bool {
+    // Extract meaningful tokens from the query (skip stop words, short words)
+    var tok_it = std.mem.tokenizeAny(u8, original_query, " \t\n\r_-");
+    while (tok_it.next()) |tok| {
+        if (tok.len < 3) continue;
+        // Skip common stop words that don't identify content
+        const stop_words = [_][]const u8{ "how", "the", "what", "does", "this", "that",
+            "where", "which", "work", "make", "into", "with", "using", "use" };
+        var is_stop = false;
+        for (stop_words) |sw| {
+            if (std.ascii.eqlIgnoreCase(tok, sw)) { is_stop = true; break; }
+        }
+        if (is_stop) continue;
+
+        // Check if any result name, source, module, or comment contains this token
+        for (results) |r| {
+            if (std.ascii.indexOfIgnoreCase(r.name, tok) != null) return true;
+            if (std.ascii.indexOfIgnoreCase(r.source, tok) != null) return true;
+            if (std.ascii.indexOfIgnoreCase(r.module, tok) != null) return true;
+            if (r.comment) |c| {
+                if (std.ascii.indexOfIgnoreCase(c, tok) != null) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/// Executes a Zig stage with original query and aliases, returning the processed stage.
 pub fn executeStagedWithAliasesOriginal(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -60,6 +148,27 @@ pub fn executeStagedWithAliasesOriginal(
     defer {
         for (results) |r| GuidanceDb.freeSearchResult(allocator, r);
         allocator.free(results);
+    }
+
+    // ── M7: Negative answer path ──────────────────────────────────────────────
+    // For multi-word queries: if no result name or source contains any key query
+    // token AND no Phase-1 exact match was found (score < 0.9), return "not found".
+    //
+    // Phase 1 (exact name match) sets score = 1.0 — always relevant, skip check.
+    // Phase 2/3 (vector/hybrid RRF) sets score in [0.004, 0.04] — unreliable alone.
+    // We use token overlap as the primary signal, score only to detect Phase 1.
+    {
+        var orig_tok_count: usize = 0;
+        var tc = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
+        while (tc.next()) |_| orig_tok_count += 1;
+
+        const is_multi_word = orig_tok_count >= 2;
+        // If top result score >= 0.9, Phase 1 exact match was found — definitely relevant.
+        const no_exact_match = results.len == 0 or results[0].score < 0.9;
+
+        if (is_multi_word and no_exact_match and !anyResultIsRelevant(results, original_query)) {
+            return buildNotFoundStages(allocator, original_query, db);
+        }
     }
 
     // ── Capability routing: which capabilities influenced the search ──────────
@@ -660,6 +769,13 @@ pub fn formatStaged(
     }
 
     try w.writeAll("---\n\n");
+
+    // ── M7: not_found sentinel — render directly and return early ─────────────
+    for (stages) |s| {
+        if (s.kind != .not_found) continue;
+        try w.print("{s}\n\n", .{std.mem.trim(u8, s.content, " \t\n\r")});
+        return out.toOwnedSlice(allocator);
+    }
 
     // ── Emit CODE stages only (prose/insight used for synthesis, not display) ──
     var seen_code_srcs: std.StringHashMapUnmanaged(void) = .{};
@@ -1278,3 +1394,4 @@ test "formatStaged: See Also is capped at 10 unique keywords" {
     };
     try std.testing.expect(comma_count <= 9);
 }
+
