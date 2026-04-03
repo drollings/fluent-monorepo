@@ -22,11 +22,9 @@ const llm = @import("common");
 
 pub const version = "0.1.0";
 
-/// Global verbose flag — set by `--verbose` / `--debug` anywhere in argv.
-/// Sub-module logFn reads this via the root std_options closure below.
 var verbose_mode: bool = false;
+var debug_mode: bool = false;
 
-/// Custom log implementation — filters debug messages based on verbose flag.
 pub const std_options: std.Options = .{
     .logFn = struct {
         fn log(
@@ -35,7 +33,7 @@ pub const std_options: std.Options = .{
             comptime format: []const u8,
             args: anytype,
         ) void {
-            if (level == .debug and !verbose_mode) return;
+            if (level == .debug and !debug_mode) return;
             std.log.defaultLog(level, scope, format, args);
         }
     }.log,
@@ -73,11 +71,11 @@ pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    // Check for --verbose flag anywhere in args (global flag)
     for (args) |arg| {
-        if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+        if (std.mem.eql(u8, arg, "--verbose")) {
             verbose_mode = true;
-            break;
+        } else if (std.mem.eql(u8, arg, "--debug")) {
+            debug_mode = true;
         }
     }
 
@@ -203,7 +201,7 @@ fn printHelp() !void {
         \\
         \\Structure options:
         \\  --guidance-dir DIR    Guidance JSON directory (default: .guidance)
-        \\  --no-ai               Skip AI infill pre-pass
+        \\  --no-llm               Skip AI infill pre-pass
         \\  --api-url URL         LLM endpoint
         \\  -m, --model NAME      Model for AI infill
         \\
@@ -235,7 +233,7 @@ fn printHelp() !void {
 
 fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
-    var no_ai: bool = false;
+    var no_llm: bool = false;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -243,12 +241,12 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
             i += 1;
             if (i >= args.len) return;
             json_dir_arg = args[i];
-        } else if (std.mem.eql(u8, arg, "--no-ai")) {
-            no_ai = true;
+        } else if (std.mem.eql(u8, arg, "--no-llm")) {
+            no_llm = true;
         }
     }
-    const _no_ai = no_ai;
-    _ = _no_ai;
+    const _no_llm = no_llm;
+    _ = _no_llm;
 
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -303,4 +301,3 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
-

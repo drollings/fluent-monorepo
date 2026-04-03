@@ -158,7 +158,8 @@ $(TARGET_BIN): $(ZIG_SRC_FILES)
 
 .PHONY: install
 install: $(TARGET_BIN)
-	cp $(TARGET_BIN) $(shell dirname $(shell which guidance 2>/dev/null || echo $(INSTALLDIR)/guidance))/guidance
+	$(Q)cp $(TARGET_BIN) $(shell dirname $(shell which $(TARGET_BIN) 2>/dev/null || echo $(INSTALLDIR)))/$(TARGET_BIN)
+	$(Q)echo "Installed build in $(INSTALLDIR)/$(TARGET_BIN)
 
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
 # Delegated: guidance check always regenerates STRUCTURE.md after guidance.
@@ -174,7 +175,7 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 # guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
-	$(Q)$(TARGET_BIN) check --verbose
+	$(Q)$(TARGET_BIN) check
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
 .PHONY: fmt

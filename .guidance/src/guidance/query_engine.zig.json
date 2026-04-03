@@ -606,7 +606,7 @@
       "returns": "?u8",
       "comment": "Parse a 0-10 score from an LLM evaluation response line of the form:\n\"Label: <digits>[/10]\" — also handles markdown decorations like \"**\", \"-\".\nReturns null when no score digit can be extracted after the first colon.",
       "is_pub": false,
-      "line": 2042
+      "line": 2052
     },
     {
       "type": "fn_private",
@@ -620,7 +620,7 @@
       "returns": "[]TestQuery",
       "comment": "Load benchmark queries from {guidance_dir}/benchmarks.txt.\nOne query per line; blank lines and # comments are skipped.\nReturns an error if the file cannot be opened.",
       "is_pub": false,
-      "line": 2058
+      "line": 2068
     },
     {
       "type": "fn_private",
@@ -634,7 +634,7 @@
       "returns": "[]TestQuery",
       "comment": "Generate test queries from module-level comments in guidance JSON files.",
       "is_pub": false,
-      "line": 2086
+      "line": 2096
     },
     {
       "type": "fn_decl",
@@ -648,7 +648,7 @@
       "returns": "void",
       "comment": "`guidance telemetry [--top-queries N] [--slowest N] [--tier-breakdown]`",
       "is_pub": true,
-      "line": 2165
+      "line": 2175
     },
     {
       "type": "fn_decl",
@@ -662,7 +662,7 @@
       "returns": "void",
       "comment": "`guidance cache-stats`",
       "is_pub": true,
-      "line": 2227
+      "line": 2237
     },
     {
       "type": "fn_decl",
@@ -676,7 +676,7 @@
       "returns": "void",
       "comment": "`guidance serve` — starts the MCP server on STDIO.\nImplemented in mcp.zig; this is the dispatch entry point.",
       "is_pub": true,
-      "line": 2259
+      "line": 2269
     },
     {
       "type": "fn_decl",
@@ -690,55 +690,55 @@
       "returns": "void",
       "comment": "`guidance ralph <query>` — run the query through Read→Ask→Learn→Plan stages\nand emit the result as markdown. Uses the same DB setup as cmdExplain.",
       "is_pub": true,
-      "line": 2270
+      "line": 2280
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2342
+      "line": 2352
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2347
+      "line": 2357
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is short",
       "is_pub": false,
-      "line": 2352
+      "line": 2362
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2357
+      "line": 2367
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2362
+      "line": 2372
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2367
+      "line": 2377
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2377
+      "line": 2387
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are short",
       "is_pub": false,
-      "line": 2383
+      "line": 2393
     }
   ]
 }

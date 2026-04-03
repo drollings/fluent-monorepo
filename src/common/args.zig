@@ -5,7 +5,7 @@ const std = @import("std");
 pub const CommonArgs = struct {
     // Intelligence / LLM
     debug: bool = false,
-    no_ai: bool = false,
+    no_llm: bool = false,
     api_url: []const u8 = "http://localhost:11434/v1/chat/completions",
     model: []const u8 = "local:code:latest",
     /// True when --api-url was explicitly provided on the command line.
@@ -55,15 +55,14 @@ pub fn parseCommonArgs(
             result.show_version = true;
         } else if (std.mem.eql(u8, arg, "--debug")) {
             result.debug = true;
-        } else if (std.mem.eql(u8, arg, "--no-ai")) {
-            result.no_ai = true;
+        } else if (std.mem.eql(u8, arg, "--no-llm")) {
+            result.no_llm = true;
         } else if (std.mem.eql(u8, arg, "-n") or std.mem.eql(u8, arg, "--dry-run")) {
             result.dry_run = true;
         } else if (std.mem.eql(u8, arg, "--force")) {
             result.force = true;
         } else if (std.mem.eql(u8, arg, "--verbose")) {
             result.verbose = true;
-            result.debug = true; // verbose implies debug output
         } else if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--list")) {
             result.show_list = true;
         } else if (std.mem.eql(u8, arg, "--graph")) {

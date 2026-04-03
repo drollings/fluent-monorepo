@@ -103,7 +103,6 @@ Then you you must read
 │   │   ├── PROMPT_VISION.md
 │   │   ├── REPORT_GRAPHRAG.md
 │   │   ├── REVIEW_20260328.md
-│   │   ├── ROADMAP_20260402_AIDER.md
 │   │   ├── ROADMAP_20260403_FLUENT_GUIDANCE.md
 │   │   ├── ROADMAP_20260403_FLUENT_GUIDANCE_CHECKLIST.md
 │   │   ├── ROADMAP_20260403_RECOMMEND.md
@@ -351,5 +350,6 @@ Then you you must read
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
+├── ROADMAP_20260402_AIDER.md
 └── STRUCTURE.md
 ```

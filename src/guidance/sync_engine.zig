@@ -815,8 +815,8 @@ const GenArgs = struct {
     sync_comments: bool = false,
     /// Generate //! file headers for files that lack them (used with --sync-comments).
     sync_headers: bool = false,
-    /// Disable all LLM calls (no_ai=true disables automatic comment sync).
-    no_ai: bool = false,
+    /// Disable all LLM calls (no_llm=true disables automatic comment sync).
+    no_llm: bool = false,
     /// Set false via --no-db to skip database generation.
     compile_db: bool = true,
     /// Re-process all files even when guidance JSON is fresh.
@@ -872,8 +872,8 @@ const GenArgs = struct {
                 ga.sync_comments = true;
             } else if (std.mem.eql(u8, arg, "--sync-headers")) {
                 ga.sync_headers = true;
-            } else if (std.mem.eql(u8, arg, "--no-ai")) {
-                ga.no_ai = true;
+            } else if (std.mem.eql(u8, arg, "--no-llm")) {
+                ga.no_llm = true;
             } else if (std.mem.eql(u8, arg, "--no-db")) {
                 ga.compile_db = false;
             } else if (std.mem.eql(u8, arg, "--force")) {
@@ -1439,9 +1439,9 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     // captured in the subsequent JSON sync pass.
     //
     // Condition: run when --sync-comments is explicitly passed, OR when AI is
-    // not explicitly disabled (--no-ai).  When the LLM is unreachable,
+    // not explicitly disabled (--no-llm).  When the LLM is unreachable,
     // generateMemberComment returns null and no changes are made (no-op).
-    if (ga.sync_comments or !ga.no_ai) {
+    if (ga.sync_comments or !ga.no_llm) {
         var csp = comment_sync_mod.CommentSyncProcessor.init(
             allocator,
             paths.workspace,
@@ -3319,7 +3319,7 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
     var dry_run = false;
     var debug_mode = false;
     var gen_headers = false;
-    var no_ai = false;
+    var no_llm = false;
     var api_url: []const u8 = config_mod.DEFAULT_API_URL;
     var api_url_set = false;
     var model: []const u8 = config_mod.DEFAULT_MODEL;
@@ -3355,8 +3355,8 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
             debug_mode = true;
         } else if (std.mem.eql(u8, arg, "--headers")) {
             gen_headers = true;
-        } else if (std.mem.eql(u8, arg, "--no-ai")) {
-            no_ai = true;
+        } else if (std.mem.eql(u8, arg, "--no-llm")) {
+            no_llm = true;
         } else if (std.mem.eql(u8, arg, "--api-url")) {
             i += 1;
             if (i >= args.len) {
@@ -3391,8 +3391,8 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
     var processor = comment_sync_mod.CommentSyncProcessor.init(allocator, ws, src_json_dir, debug_mode, dry_run);
     processor.generate_headers = gen_headers;
 
-    // Wire up the LLM enhancer unless --no-ai was passed.
-    if (!no_ai) {
+    // Wire up the LLM enhancer unless --no-llm was passed.
+    if (!no_llm) {
         var cfg = config_mod.loadConfig(allocator, ws) catch
             try config_mod.loadConfig(allocator, cwd);
         defer cfg.deinit();
@@ -3402,7 +3402,7 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
             .model = model,
             .model_override = model_override,
             .verbose = debug_mode,
-            .no_ai = false,
+            .no_llm = false,
         };
         setupCspEnhancer(allocator, ga_for_enh, &cfg, &processor);
     }

@@ -71,7 +71,7 @@ fn createEmbedderWithFallback(
 
 /// Construct an LlmConfig from the parsed ExplainArgs.
 fn makeLlmConfig(ea: ExplainArgs) llm.LlmConfig {
-    return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.verbose };
+    return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.debug };
 }
 
 /// Central control point for LLM configuration with thinking model support.
@@ -188,6 +188,7 @@ const ExplainArgs = struct {
     /// Skip LLM synthesis; emit structural output only.
     no_llm: bool = false,
     verbose: bool = false,
+    debug: bool = false,
     /// Use new staged pipeline (default: true).  --staged=false → legacy path.
     staged: bool = true,
     /// LLM relevance filtering mode.
@@ -655,7 +656,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
                     break :blk llm.LlmConfig{
                         .api_url = ea.api_url,
                         .model = ea.model,
-                        .debug = ea.verbose,
+                        .debug = ea.debug,
                     };
                 };
                 resolved_url_to_free = resolved.resolved_url;
@@ -663,7 +664,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
                     .api_url = resolved.api_url,
                     .model = resolved.model,
                     .think = resolved.think,
-                    .debug = ea.verbose,
+                    .debug = ea.debug,
                 };
             };
 
@@ -1219,7 +1220,7 @@ fn cmdExplainStaged(
             .api_url = llm_config.api_url,
             .model = fast_model_ref,
             .think = null, // fast model never uses thinking
-            .debug = ea.verbose,
+            .debug = ea.debug,
         };
         fast_client_opt = llm.LlmClient.init(allocator, fast_config) catch null;
     }
@@ -1635,6 +1636,7 @@ const TestQuery = struct {
     observations: []const u8 = "",
 };
 
+/// Tracks benchmark metrics with a fixed-size buffer pool; managed centrally; not thread-safe.
 const BenchmarkResult = struct {
     query: common.SharedString.Ref,
     acc: u8,
@@ -1653,12 +1655,18 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var model: ?[]const u8 = null;
     var single_query: ?[]const u8 = null;
     var num_limit: ?usize = null;
+    var verbose = false;
+    var debug = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--no-llm")) {
             no_llm = true;
+        } else if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
+            verbose = true;
+        } else if (std.mem.eql(u8, arg, "--debug")) {
+            debug = true;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
             i += 1;
             if (i >= args.len) {
@@ -1807,7 +1815,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("## Query: `{s}`\n\n", .{tq.query});
 
         // Run explain
-        var ea: ExplainArgs = .{ .no_llm = no_llm, .limit = 10 };
+        var ea: ExplainArgs = .{ .no_llm = no_llm, .limit = 10, .verbose = verbose, .debug = debug };
         if (db_path) |p| ea.db_path = p;
         if (workspace) |w| ea.workspace = w;
         if (guidance_dir) |g| ea.guidance = g;
