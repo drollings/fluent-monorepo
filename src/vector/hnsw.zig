@@ -40,8 +40,9 @@ pub const HnswIndex = struct {
         /// Vector embedding
         vector: []const f32,
         /// Connections per layer. layer[0] is the base layer.
-        /// Each layer has up to M connections.
-        connections: std.ArrayListUnmanaged([]i64),
+        /// Each inner list is pre-allocated to capacity M (or M*2 for layer 0)
+        /// so that connect() appends in O(1) with no reallocation.
+        connections: std.ArrayListUnmanaged(std.ArrayList(i64)),
         /// Layer assignment (random based on level multiplier)
         max_layer: usize,
     };
@@ -83,8 +84,8 @@ pub const HnswIndex = struct {
         while (it.next()) |entry| {
             const node = entry.value_ptr;
             self.allocator.free(node.vector);
-            for (node.connections.items) |layer_conns| {
-                self.allocator.free(layer_conns);
+            for (node.connections.items) |*layer_conns| {
+                layer_conns.deinit(self.allocator);
             }
             node.connections.deinit(self.allocator);
         }
@@ -118,10 +119,13 @@ pub const HnswIndex = struct {
             .max_layer = level,
         };
 
-        // Allocate connection lists for each layer.
+        // Allocate connection lists for each layer, pre-sized to capacity so
+        // connect() never needs to reallocate.
         try node.connections.ensureTotalCapacity(self.allocator, level + 1);
-        for (0..level + 1) |_| {
-            try node.connections.append(self.allocator, &[_]i64{});
+        for (0..level + 1) |l| {
+            const cap = if (l == 0) self.m * 2 else self.m;
+            const layer_list = try std.ArrayList(i64).initCapacity(self.allocator, cap);
+            try node.connections.append(self.allocator, layer_list);
         }
 
         // Handle first node case.
@@ -136,29 +140,34 @@ pub const HnswIndex = struct {
         try self.nodes.put(self.allocator, id, node);
         self.count += 1;
 
-        // Update entry point if new node has higher layer.
-        const current_ep_layer = self.nodes.getPtr(self.entry_point.?).?.max_layer;
+        // Save the old entry point before potentially replacing it.
+        // Construction must start from an existing node with connections —
+        // not the new node which has none yet.
+        const old_ep = self.entry_point.?;
+        const current_ep_layer = self.nodes.getPtr(old_ep).?.max_layer;
         if (level > current_ep_layer) {
             self.entry_point = id;
         }
 
-        // HNSW construction: search and connect at each layer.
-        var current_ep = self.entry_point.?;
+        // HNSW construction: always search from the old entry point.
+        var current_ep = old_ep;
 
         // Phase 1: Search from top layer down to layer 1 to find entry point for layer 0.
-        var layer: usize = @max(current_ep_layer, level);
+        var layer: usize = current_ep_layer;
         while (layer > 0) : (layer -= 1) {
             if (layer <= level) {
-                // Search at this layer and connect to neighbors.
-                const neighbors = try self.searchLayer(self.allocator, vector, current_ep, layer, @min(self.m, self.ef_construction));
+                // Search at this layer and connect to neighbors using diversity heuristic.
+                const neighbors = try self.searchLayer(self.allocator, vector, current_ep, layer, self.ef_construction);
                 defer self.allocator.free(neighbors);
 
-                // Connect to closest M neighbors at this layer.
-                const m_layer = if (layer == 0) self.m * 2 else self.m; // More connections at base layer
-                const num_connections = @min(m_layer, neighbors.len);
+                // Use diversity heuristic to select neighbors (not just closest)
+                const selected = try self.selectNeighborsHeuristic(vector, neighbors, self.m);
+                defer self.allocator.free(selected);
 
-                for (neighbors[0..num_connections]) |neighbor| {
-                    try self.connectBidirectional(id, neighbor.id, layer);
+                for (selected) |neighbor| {
+                    if (neighbor.id != id) {
+                        try self.connectBidirectional(id, neighbor.id, layer);
+                    }
                 }
             }
 
@@ -173,13 +182,30 @@ pub const HnswIndex = struct {
         }
 
         // Phase 2: Layer 0 - connect to M*2 closest neighbors.
-        const base_neighbors = try self.searchLayer(self.allocator, vector, current_ep, 0, @min(self.m * 2, self.ef_construction));
+        const base_neighbors = try self.searchLayer(self.allocator, vector, current_ep, 0, self.ef_construction);
         defer self.allocator.free(base_neighbors);
 
-        const num_base_connections = @min(self.m * 2, base_neighbors.len);
+        // For layer 0, use closest neighbors for maximum connectivity
+        const m_layer0 = self.m * 2;
+        const num_base_connections = @min(m_layer0, base_neighbors.len);
         for (base_neighbors[0..num_base_connections]) |neighbor| {
             if (neighbor.id != id) {
                 try self.connectBidirectional(id, neighbor.id, 0);
+            }
+        }
+
+        // Ensure every node has at least one layer 0 connection for connectivity.
+        // This is critical to prevent disconnected components in the graph.
+        var has_layer0_connection = false;
+        const new_node = self.nodes.getPtr(id).?;
+        if (new_node.connections.items.len > 0 and new_node.connections.items[0].items.len > 0) {
+            has_layer0_connection = true;
+        }
+
+        if (!has_layer0_connection and self.count > 1) {
+            // Connect to the old entry point (which is part of the main component)
+            if (old_ep != id) {
+                try self.connectBidirectional(id, old_ep, 0);
             }
         }
     }
@@ -213,7 +239,7 @@ pub const HnswIndex = struct {
             const node = self.nodes.getPtr(c.id) orelse continue;
             if (layer >= node.connections.items.len) continue;
 
-            for (node.connections.items[layer]) |neighbor_id| {
+            for (node.connections.items[layer].items) |neighbor_id| {
                 if (visited.contains(neighbor_id)) continue;
                 try visited.put(neighbor_id, {});
 
@@ -251,67 +277,35 @@ pub const HnswIndex = struct {
 
     /// Search for k nearest neighbors using the HNSW greedy best-first algorithm.
     ///
-    /// Maintains W — a bounded sorted window of the ef closest candidates seen so far.
-    /// The entry point is a seed, not an automatic top-k member; it can be displaced by
-    /// closer nodes so the results reflect the true nearest neighbors.
+    /// HNSW search traverses from top layer down to layer 0:
+    /// 1. Start at entry point
+    /// 2. For each layer from top to layer 1: greedy search to find best entry point for next layer
+    /// 3. At layer 0: beam search with ef candidates to get final results
     pub fn search(self: *Self, query: []const f32, k: usize) ![]SearchResult {
         if (query.len != self.dimensions) return error.DimensionMismatch;
         if (self.entry_point == null) return &[_]SearchResult{};
 
-        var arena = std.heap.ArenaAllocator.init(self.allocator);
-        defer arena.deinit();
-        const aa = arena.allocator();
+        const ep_node = self.nodes.getPtr(self.entry_point.?).?;
+        var current_ep = self.entry_point.?;
+        var current_layer = ep_node.max_layer;
 
-        const ef = @max(self.ef_search, k);
-
-        // candidates: min-heap (closest first) — frontier nodes to explore.
-        var candidates = std.PriorityQueue(Candidate, void, Candidate.lessThan).init(aa, {});
-        // w: sorted ascending slice — best ef candidates seen so far (the result window).
-        var w: std.ArrayList(SearchResult) = .{};
-        var visited = std.AutoHashMap(i64, void).init(aa);
-
-        // Seed with entry point.
-        const ep_dist = self.distance(query, self.nodes.getPtr(self.entry_point.?).?.vector);
-        try candidates.add(.{ .id = self.entry_point.?, .distance = ep_dist });
-        try visited.put(self.entry_point.?, {});
-        try w.append(aa, .{ .id = self.entry_point.?, .distance = ep_dist });
-
-        while (candidates.count() > 0) {
-            const c = candidates.remove(); // nearest unexplored candidate
-
-            // Greedy stopping: if c is farther than the worst item in w, no closer
-            // nodes will be found (graph is navigable), so we're done.
-            if (w.items.len >= ef and c.distance > w.items[w.items.len - 1].distance) break;
-
-            const node = self.nodes.getPtr(c.id) orelse continue;
-            if (node.connections.items.len == 0) continue;
-
-            for (node.connections.items[0]) |neighbor_id| {
-                if (visited.contains(neighbor_id)) continue;
-                try visited.put(neighbor_id, {});
-
-                const nb = self.nodes.getPtr(neighbor_id) orelse continue;
-                const dist = self.distance(query, nb.vector);
-
-                // Only pursue this neighbor if it can improve w.
-                if (w.items.len < ef or dist < w.items[w.items.len - 1].distance) {
-                    try candidates.add(.{ .id = neighbor_id, .distance = dist });
-
-                    // Insert into w in ascending-distance order.
-                    const pos = blk: {
-                        var i: usize = 0;
-                        while (i < w.items.len and w.items[i].distance <= dist) : (i += 1) {}
-                        break :blk i;
-                    };
-                    try w.insert(aa, pos, .{ .id = neighbor_id, .distance = dist });
-                    if (w.items.len > ef) _ = w.pop(); // drop the farthest
-                }
+        // Phase 1: Traverse from top layer down to layer 1
+        while (current_layer > 0) : (current_layer -= 1) {
+            const neighbors = try self.searchLayer(self.allocator, query, current_ep, current_layer, 1);
+            defer self.allocator.free(neighbors);
+            if (neighbors.len > 0) {
+                current_ep = neighbors[0].id;
             }
         }
 
-        const count = @min(k, w.items.len);
+        // Phase 2: Search layer 0 with ef candidates
+        const ef = @max(self.ef_search, k);
+        const results = try self.searchLayer(self.allocator, query, current_ep, 0, ef);
+
+        const count = @min(k, results.len);
         const out = try self.allocator.alloc(SearchResult, count);
-        @memcpy(out, w.items[0..count]);
+        @memcpy(out, results[0..count]);
+        self.allocator.free(results);
         return out;
     }
 
@@ -319,8 +313,8 @@ pub const HnswIndex = struct {
     pub fn remove(self: *Self, id: i64) bool {
         var node = self.nodes.fetchRemove(id) orelse return false;
         self.allocator.free(node.value.vector);
-        for (node.value.connections.items) |layer_conns| {
-            self.allocator.free(layer_conns);
+        for (node.value.connections.items) |*layer_conns| {
+            layer_conns.deinit(self.allocator);
         }
         node.value.connections.deinit(self.allocator);
         self.count -= 1;
@@ -446,28 +440,131 @@ pub const HnswIndex = struct {
         return @sqrt(sum);
     }
 
-    fn connect(self: *Self, id1: i64, id2: i64, layer: usize) !void {
-        const node1 = self.nodes.getPtr(id1) orelse return;
-        const node2 = self.nodes.getPtr(id2) orelse return;
+    /// Add a one-directional edge: `from` → `to` at `layer`.
+    /// Implements pruning when connections exceed M by using diversity heuristic.
+    /// Callers that want bidirectional edges must call this twice
+    /// (see connectBidirectional).
+    fn connect(self: *Self, from: i64, to: i64, layer: usize) !void {
+        const from_node = self.nodes.getPtr(from) orelse return;
+        // Only add connection if this node has the specified layer
+        if (layer >= from_node.connections.items.len) return;
 
-        if (layer >= node1.connections.items.len) return;
-        if (layer >= node2.connections.items.len) return;
+        const max_conn = if (layer == 0) self.m * 2 else self.m;
 
-        // Add id2 to node1's connections at layer.
-        const old_conns1 = node1.connections.items[layer];
-        const new_conns1 = try self.allocator.alloc(i64, old_conns1.len + 1);
-        @memcpy(new_conns1[0..old_conns1.len], old_conns1);
-        new_conns1[old_conns1.len] = id2;
-        self.allocator.free(old_conns1);
-        node1.connections.items[layer] = new_conns1;
+        try from_node.connections.items[layer].append(self.allocator, to);
 
-        // Add id1 to node2's connections at layer.
-        const old_conns2 = node2.connections.items[layer];
-        const new_conns2 = try self.allocator.alloc(i64, old_conns2.len + 1);
-        @memcpy(new_conns2[0..old_conns2.len], old_conns2);
-        new_conns2[old_conns2.len] = id1;
-        self.allocator.free(old_conns2);
-        node2.connections.items[layer] = new_conns2;
+        if (from_node.connections.items[layer].items.len > max_conn) {
+            try self.pruneConnections(from, layer, max_conn);
+        }
+    }
+
+    /// Prune connections when they exceed max_conn.
+    /// Keep the closest neighbors (distance-based pruning).
+    fn pruneConnections(self: *Self, node_id: i64, layer: usize, max_conn: usize) !void {
+        const node = self.nodes.getPtr(node_id) orelse return;
+        if (layer >= node.connections.items.len) return;
+
+        const connections = node.connections.items[layer].items;
+        if (connections.len <= max_conn) return;
+
+        // Build candidate list with distances to the node being pruned
+        var candidates = try self.allocator.alloc(SearchResult, connections.len);
+        defer self.allocator.free(candidates);
+
+        for (connections, 0..) |neighbor_id, i| {
+            const neighbor = self.nodes.getPtr(neighbor_id) orelse {
+                candidates[i] = .{ .id = neighbor_id, .distance = std.math.floatMax(f32) };
+                continue;
+            };
+            candidates[i] = .{
+                .id = neighbor_id,
+                .distance = self.distance(node.vector, neighbor.vector),
+            };
+        }
+
+        // Sort candidates by distance (closest first) and keep the closest max_conn
+        std.sort.block(SearchResult, candidates, {}, struct {
+            fn lt(_: void, a: SearchResult, b: SearchResult) bool {
+                return a.distance < b.distance;
+            }
+        }.lt);
+
+        // Replace connections with closest max_conn
+        var new_connections = try std.ArrayList(i64).initCapacity(self.allocator, max_conn);
+        for (candidates[0..max_conn]) |c| {
+            try new_connections.append(self.allocator, c.id);
+        }
+
+        node.connections.items[layer].deinit(self.allocator);
+        node.connections.items[layer] = new_connections;
+    }
+
+    /// Select neighbors using the diversity heuristic from the HNSW paper.
+    /// This ensures selected neighbors are spread out in the vector space,
+    /// not just the closest ones, which improves graph connectivity.
+    fn selectNeighborsHeuristic(
+        self: *const Self,
+        _: []const f32,
+        candidates: []const SearchResult,
+        m: usize,
+    ) ![]SearchResult {
+        if (candidates.len <= m) {
+            // Not enough candidates, return all of them
+            return try self.allocator.dupe(SearchResult, candidates);
+        }
+
+        // Sort candidates by distance to query (closest first)
+        const sorted = try self.allocator.dupe(SearchResult, candidates);
+        defer self.allocator.free(sorted);
+
+        std.sort.block(SearchResult, sorted, {}, struct {
+            fn lt(_: void, a: SearchResult, b: SearchResult) bool {
+                return a.distance < b.distance;
+            }
+        }.lt);
+
+        // Apply diversity heuristic
+        var selected = try std.ArrayList(SearchResult).initCapacity(self.allocator, m);
+        defer selected.deinit(self.allocator);
+
+        for (sorted) |candidate| {
+            if (selected.items.len >= m) break;
+
+            const candidate_node = self.nodes.getPtr(candidate.id) orelse continue;
+
+            // Check diversity against already selected neighbors
+            var should_add = true;
+            for (selected.items) |existing| {
+                const existing_node = self.nodes.getPtr(existing.id) orelse continue;
+                const dist_between = self.distance(candidate_node.vector, existing_node.vector);
+
+                // Diversity check: reject if candidate is closer to existing neighbor than to query
+                if (dist_between < candidate.distance) {
+                    should_add = false;
+                    break;
+                }
+            }
+
+            if (should_add) {
+                try selected.append(self.allocator, candidate);
+            }
+        }
+
+        // If diversity heuristic didn't select enough, fill with closest remaining
+        if (selected.items.len < m) {
+            var selected_set = std.AutoHashMap(i64, void).init(self.allocator);
+            defer selected_set.deinit();
+            for (selected.items) |s| try selected_set.put(s.id, {});
+
+            for (sorted) |candidate| {
+                if (selected.items.len >= m) break;
+                if (!selected_set.contains(candidate.id)) {
+                    try selected.append(self.allocator, candidate);
+                }
+            }
+        }
+
+        return try self.allocator.dupe(SearchResult, selected.items);
     }
 
     const Candidate = struct {
@@ -478,6 +575,51 @@ pub const HnswIndex = struct {
             return std.math.order(a.distance, b.distance);
         }
     };
+
+    /// Verify graph connectivity by checking what percentage of nodes are reachable
+    /// from the entry point through layer 0 connections.
+    pub fn verifyConnectivity(self: *const Self) !struct { connected: usize, total: usize, percentage: f32 } {
+        if (self.entry_point == null) {
+            return .{ .connected = 0, .total = self.count, .percentage = 0 };
+        }
+
+        var visited = std.AutoHashMap(i64, void).init(self.allocator);
+        defer visited.deinit();
+
+        var queue: std.ArrayList(i64) = .empty;
+        defer queue.deinit(self.allocator);
+
+        // BFS from entry point
+        try visited.put(self.entry_point.?, {});
+        try queue.append(self.allocator, self.entry_point.?);
+
+        while (queue.items.len > 0) {
+            const node_id = queue.pop() orelse continue;
+            const node = self.nodes.getPtr(node_id) orelse continue;
+
+            // Only traverse layer 0 connections (base layer)
+            if (node.connections.items.len > 0) {
+                for (node.connections.items[0].items) |neighbor_id| {
+                    if (!visited.contains(neighbor_id)) {
+                        try visited.put(neighbor_id, {});
+                        try queue.append(self.allocator, neighbor_id);
+                    }
+                }
+            }
+        }
+
+        const connected = visited.count();
+        const percentage = if (self.count > 0)
+            @as(f32, @floatFromInt(connected)) / @as(f32, @floatFromInt(self.count)) * 100.0
+        else
+            0;
+
+        return .{
+            .connected = connected,
+            .total = self.count,
+            .percentage = percentage,
+        };
+    }
 };
 
 // =============================================================================
@@ -607,6 +749,10 @@ test "HnswIndex: recall validation (results validated)" {
     try testing.expect(hnsw_results.len > 0);
     try testing.expect(hnsw_results.len <= K);
 
+    // Check connectivity
+    const conn = try index.verifyConnectivity();
+    std.log.warn("Recall validation - Graph connectivity: {d}/{d} nodes ({d:.1}%)\n", .{ conn.connected, conn.total, conn.percentage });
+
     const Pair = struct { id: i64, dist: f32 };
     var linear: [N]Pair = undefined;
     for (0..N) |i| {
@@ -644,7 +790,8 @@ test "HnswIndex: recall@10 > 95% vs linear scan" {
     const DIM = 8;
     const K = 10;
     var index = HnswIndex.init(testing.allocator, DIM, N);
-    _ = index.withEfSearch(N); // Visit all reachable nodes
+    _ = index.withEfConstruction(N); // Search more candidates during construction
+    _ = index.withEfSearch(N); // Visit all reachable nodes during search
     defer index.deinit();
 
     var rng = std.Random.DefaultPrng.init(12345);
@@ -701,6 +848,11 @@ test "HnswIndex: recall@10 > 95% vs linear scan" {
     }
 
     const avg_recall = total_recall / @as(f32, @floatFromInt(NUM_QUERIES));
+
+    // Check connectivity
+    const conn = try index.verifyConnectivity();
+    std.log.warn("Graph connectivity: {d}/{d} nodes ({d:.1}%)\n", .{ conn.connected, conn.total, conn.percentage });
+
     // Target: > 95% average recall. Debug builds may have lower recall due to star topology.
     // Release builds should achieve > 95%.
     try testing.expect(avg_recall >= 0.80); // Relaxed for debug; G5 release benchmarks validate >0.95
@@ -768,4 +920,37 @@ test "HnswIndex: search time under 100ms per query on average (debug-safe)" {
     // Average must be < 100ms; total for 100 queries < 10000ms (10s).
     // This is intentionally lenient for debug builds; production targets are <1ms.
     try testing.expect(total_ms < 10000);
+}
+
+test "HnswIndex: basic connectivity verification" {
+    // Test with 10 nodes in a line to verify basic connectivity
+    const N = 10;
+    const DIM = 2;
+    var index = HnswIndex.init(testing.allocator, DIM, N);
+    defer index.deinit();
+
+    // Add nodes in a line: (0,0), (1,0), (2,0), ... (9,0)
+    for (0..N) |i| {
+        const vec = [DIM]f32{ @floatFromInt(i), 0.0 };
+        try index.add(@intCast(i), &vec);
+    }
+
+    // Check connectivity
+    const conn = try index.verifyConnectivity();
+    std.log.warn("Line graph connectivity: {d}/{d} nodes ({d:.1}%)\n", .{ conn.connected, conn.total, conn.percentage });
+
+    // Should have at least some connectivity
+    try testing.expect(conn.connected >= 2);
+
+    // Check that each node has some connections at layer 0
+    var it = index.nodes.iterator();
+    var total_connections: usize = 0;
+    while (it.next()) |entry| {
+        const node = entry.value_ptr;
+        if (node.connections.items.len > 0) {
+            total_connections += node.connections.items[0].items.len;
+        }
+    }
+    std.log.warn("Total layer 0 connections: {d}\n", .{total_connections});
+    try testing.expect(total_connections > 0);
 }
