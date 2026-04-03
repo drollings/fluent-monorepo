@@ -152,14 +152,14 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 # ── Binary ───────────────────────────────────────────────────────────────────
 
 $(TARGET_BIN): $(ZIG_SRC_FILES)
-	$(Q)echo "Building guidance binary..."
-	zig build guidance --summary all
+	$(Q)echo "Building $@"
+	$(Q)zig build guidance --summary failures
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install
 install: $(TARGET_BIN)
-	$(Q)cp $(TARGET_BIN) $(shell dirname $(shell which $(TARGET_BIN) 2>/dev/null || echo $(INSTALLDIR)))/$(TARGET_BIN)
-	$(Q)echo "Installed build in $(INSTALLDIR)/$(TARGET_BIN)
+	$(Q)cp $(TARGET_BIN) $(shell dirname $(shell which guidance 2>/dev/null || echo $(INSTALLDIR)))/guidance
+	$(Q)echo "Installed build in $(INSTALLDIR)/guidance"
 
 # ── STRUCTURE.md ─────────────────────────────────────────────────────────────
 # Delegated: guidance check always regenerates STRUCTURE.md after guidance.
@@ -175,12 +175,11 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 # guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
+	$(Q)echo "Building all binaries"
+	$(Q)zig build --summary failures
 	$(Q)$(TARGET_BIN) check
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
 .PHONY: fmt
 fmt: ## Format all Zig source files
 	$(Q)zig fmt $(SRC_DIR)/
-
-.PHONY: guidance
-guidance: $(TARGET_BIN) ## Build guidance binary

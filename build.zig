@@ -196,6 +196,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
+                .{ .name = "csr_graph", .module = coral_csr_module },
             },
         }),
     });

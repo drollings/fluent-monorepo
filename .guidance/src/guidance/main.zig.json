@@ -4,134 +4,131 @@
     "source": "src/guidance/main.zig",
     "language": "zig"
   },
-  "skills": [
-    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
-  ],
+  "capabilities": ["plugin-system", "explain-query", "coral-database", "config-system", "ast-indexing"],
   "members": [
     {
       "type": "enum",
       "name": "Command",
       "match_hash": "064045dc7940efde685df09e56ce183000ee2b779a733a07d3c09ebe8c6daa30",
       "signature": "keyword_enum Command { ... }",
-      "comment": "Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 46
+          "line": 44
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 47
+          "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 48
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 49
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 50
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "deps",
           "is_pub": false,
-          "line": 51
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 52
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 53
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 54
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 55
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 56
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "scrub",
           "is_pub": false,
-          "line": 57
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 58
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 59
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 60
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "@\"cache-stats\"",
           "is_pub": false,
-          "line": 61
+          "line": 59
         }
     ,    {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 62
+          "line": 60
         }
     ,    {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 63
+          "line": 61
         }
     ,    {
           "type": "enum_field",
           "name": "scan",
           "is_pub": false,
-          "line": 64
+          "line": 62
         }
       ],
-      "line": 45
+      "line": 43
     },
     {
       "type": "fn_decl",
@@ -139,9 +136,8 @@
       "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
       "signature": "fn main() -> void",
       "returns": "void",
-      "comment": "Starts the Zig program execution by defining the entry point.",
       "is_pub": true,
-      "line": 68
+      "line": 66
     },
     {
       "type": "fn_private",
@@ -153,9 +149,8 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "M6: RALPH loop — run a single query through Read→Ask→Learn→Plan stages.",
       "is_pub": false,
-      "line": 135
+      "line": 133
     },
     {
       "type": "fn_private",
@@ -164,7 +159,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 139
+      "line": 137
     },
     {
       "type": "fn_private",
@@ -177,7 +172,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 236
+      "line": 234
     },
     {
       "type": "fn_private",
@@ -190,7 +185,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 268
+      "line": 266
     }
   ]
 }

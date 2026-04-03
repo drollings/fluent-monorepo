@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "Coral", "MCP", "Database", "Allocator", "Reactor", "Command-Line", "API", "Modular", "Performance"],
+  "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "members": [
     {
       "type": "fn_decl",

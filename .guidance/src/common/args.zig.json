@@ -9,10 +9,11 @@
     {
       "type": "struct",
       "name": "CommonArgs",
-      "match_hash": "98a28a70852ae1cb8ab49bf9bf8d7a0d37fb79100709824dfb8cabe94c5af13b",
+      "match_hash": "e7b27209767c4e9b12c8b77607bdb0978a42681b5ba1a149b4c497120e959c3f",
       "signature": "keyword_struct CommonArgs { ... }",
+      "comment": "Manages common argument structures; owned by the module; ensures consistent initialization and cleanup.",
       "is_pub": true,
-      "line": 5
+      "line": 4
     },
     {
       "type": "fn_decl",
@@ -25,50 +26,51 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "CommonArgs",
+      "comment": "Parse a flat args slice (excluding argv[0]) into a `CommonArgs`.\nPositional arguments are returned as a sub-slice of `args`; the caller\nmust keep `args` alive for the lifetime of the returned struct.\n\nUnknown flags are skipped (permissive mode for command-specific flags).\nA flag that requires a value but is the last arg produces `error.MissingValue`.",
       "is_pub": true,
-      "line": 42
+      "line": 41
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: basic flags",
       "is_pub": false,
-      "line": 107
+      "line": 105
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: model and api-url with set flags",
       "is_pub": false,
-      "line": 120
+      "line": 118
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: positional arguments collected",
       "is_pub": false,
-      "line": 133
+      "line": 131
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: --file and --llm-query",
       "is_pub": false,
-      "line": 146
+      "line": 144
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: unknown flags are skipped (permissive mode)",
       "is_pub": false,
-      "line": 157
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: missing value for -m returns error",
       "is_pub": false,
-      "line": 168
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: defaults when no args given",
       "is_pub": false,
-      "line": 177
+      "line": 175
     }
   ]
 }

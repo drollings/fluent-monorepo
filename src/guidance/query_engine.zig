@@ -2402,3 +2402,4 @@ test "isShortQuery: regular two-word queries are short" {
     try testing.expect(isShortQuery("parse file"));
     try testing.expect(isShortQuery("load config"));
 }
+

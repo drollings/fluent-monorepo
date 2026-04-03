@@ -1,7 +1,6 @@
 const std = @import("std");
 
-/// Flags and values parsed from the command line.
-/// All string slices point into the original `args` slice — no allocation.
+/// Manages common argument structures; owned by the module; ensures consistent initialization and cleanup.
 pub const CommonArgs = struct {
     // Intelligence / LLM
     debug: bool = false,
@@ -187,3 +186,4 @@ test "parseCommonArgs: defaults when no args given" {
     try testing.expectEqualStrings("local:code:latest", args.model);
     try testing.expectEqual(@as(usize, 0), args.positional.len);
 }
+

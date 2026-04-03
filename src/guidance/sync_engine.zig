@@ -3958,3 +3958,4 @@ pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }
+
