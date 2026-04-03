@@ -16,9 +16,9 @@
     }
   },
   "models": {
-    "default": "ollama:fast:latest",
+    "default": "ollama:gpt:latest",
     "fast": "ollama:fast:latest",
-    "thinking": "ollama:fast:latest",
+    "thinking": "ollama:gpt:latest",
     "embed": "ollama:embed:latest"
   },
   "embed": {

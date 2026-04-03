@@ -15,6 +15,7 @@
       "name": "ExcerptEntry",
       "match_hash": "5dfacfdcd3c37ae2c97ab657ba39170612792e61a68e3af15ebf04c763eea4e4",
       "signature": "keyword_struct ExcerptEntry { ... }",
+      "comment": "A pruned source block shown below a search result: owns `label` and `code`, borrows `file_path` and `lang`.",
       "is_pub": false,
       "line": 39
     },
@@ -23,6 +24,7 @@
       "name": "FileMatchItem",
       "match_hash": "23f4c35f666d8d1733d5bc6bd1a46ae8a310ee4ba0e02e7348956137e83daef3",
       "signature": "keyword_struct FileMatchItem { ... }",
+      "comment": "Manages file match items with ownership and invariants; ensures consistent state across operations.",
       "is_pub": false,
       "line": 46
     },
@@ -36,6 +38,7 @@
         { "name": "cfg", "type": "*const config_mod.ProjectConfig" }
       ],
       "returns": "vector_mod.EmbeddingProvider",
+      "comment": "Create an embedding provider, falling back to NoopEmbedding when the\nconfigured provider fails to initialise.  The caller must call\n`embedder.deinit()` when done.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -51,6 +54,7 @@
         { "name": "ea", "type": "ExplainArgs" }
       ],
       "returns": "llm.LlmConfig",
+      "comment": "Construct an LlmConfig from the parsed ExplainArgs.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -69,6 +73,7 @@
         { "name": "explicit_api_url", "type": "?[]const u8" }
       ],
       "returns": "struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 }",
+      "comment": "Central control point for LLM configuration with thinking model support.\n\nIf model matches the thinking slot:\n  - Force Ollama /api/chat endpoint (required for think parameter)\n  - Set think = true\n\nReturns owned memory in resolved_url (caller must free).",
       "is_pub": true,
       "line": 84
     },
@@ -77,23 +82,27 @@
       "name": "FilterMode",
       "match_hash": "b6e7f3c92b9a8ceefd9472c0ec9d6e132e54976671b224277d1288a7fb25a4f4",
       "signature": "keyword_enum FilterMode { ... }",
+      "comment": "Dispatch to single-file, explicit-scan, or full-workspace processing.\nWhether LLM relevance filtering should be applied on the staged path.",
       "is_pub": false,
       "members": [
         {
           "type": "enum_field",
           "name": "auto",
+          "comment": "Auto-detect: apply LLM filter only for long queries (5+ words).",
           "is_pub": false,
           "line": 171
         }
     ,    {
           "type": "enum_field",
           "name": "force",
+          "comment": "Always apply LLM filter (even for short queries).",
           "is_pub": false,
           "line": 173
         }
     ,    {
           "type": "enum_field",
           "name": "skip",
+          "comment": "Never apply LLM filter (always fast path).",
           "is_pub": false,
           "line": 175
         }
@@ -105,6 +114,7 @@
       "name": "ExplainArgs",
       "match_hash": "ab6f5e0921e25df5937380294ec254a9834daff4c5a5c948bc4d1c81c7191ed1",
       "signature": "keyword_struct ExplainArgs { ... }",
+      "comment": "Manages query parameters and options; owned by the engine; ensures consistent argument handling.",
       "is_pub": false,
       "line": 179
     },
@@ -117,6 +127,7 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when the query is \"short\" (fast path, no LLM filter).\nShort queries: 2 or fewer words, AND not ending with \"?\", AND not starting\nwith question words (if, how, where, when, does, why, what).",
       "is_pub": false,
       "line": 202
     },
@@ -132,6 +143,7 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]SkillExcerpt",
+      "comment": "Phase A: Load skill excerpts for the top search result's JSON guidance file.\nReturns owned slice; caller must free each `.name` and `.excerpt`, then free the slice.",
       "is_pub": false,
       "line": 238
     },
@@ -147,6 +159,7 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]ExcerptEntry",
+      "comment": "Phase B: Collect up to 3 source excerpts, preferring exact-name matches.\nReturns owned slice; caller must free each `.label` and `.code`, then free the slice.",
       "is_pub": false,
       "line": 276
     },
@@ -162,6 +175,7 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]FileMatchItem",
+      "comment": "Phase C: Grep top result files for search-term matches.\nReturns owned slice; caller must free each `.lines`, then free the slice.",
       "is_pub": false,
       "line": 341
     },
@@ -181,6 +195,7 @@
         { "name": "file_matches", "type": "[]const FileMatchItem" }
       ],
       "returns": "void",
+      "comment": "Phase E: Render the legacy explain output to stdout.",
       "is_pub": false,
       "line": 381
     },
@@ -194,6 +209,7 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Processes a Zig command string, validating arguments and preparing output.",
       "is_pub": true,
       "line": 492
     },
@@ -207,6 +223,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Load `used_by` array from a guidance JSON file.\nReturns an owned slice of owned strings, or null on failure / empty.",
       "is_pub": false,
       "line": 761
     },
@@ -220,6 +237,7 @@
         { "name": "terms", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when `name` (case-insensitive) exactly equals any search term.",
       "is_pub": false,
       "line": 781
     },
@@ -233,6 +251,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Load skills listed in a guidance JSON file as a newline-separated string.\nReturns an owned allocation or null if the file is absent or has no skills.",
       "is_pub": false,
       "line": 794
     },
@@ -246,6 +265,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Load public non-test member names from a guidance JSON file.\nReturns an owned slice of owned strings, or null on failure.",
       "is_pub": false,
       "line": 830
     },
@@ -261,6 +281,7 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Load the first paragraph (or `description:` front-matter value) of a SKILL.md.\nSearches `<guidance_dir>/skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.\nReturns an owned allocation or null if not found.",
       "is_pub": false,
       "line": 867
     },
@@ -276,6 +297,7 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extract the source block starting at `start_line` (1-based).\nStops at the next col-0 top-level declaration or after MAX_LINES, whichever\ncomes first.  Then prunes trailing blank and comment-only lines.\nReturns an owned allocation; caller must free.",
       "is_pub": false,
       "line": 894
     },
@@ -291,6 +313,7 @@
         { "name": "max_results", "type": "usize" }
       ],
       "returns": "[]usize",
+      "comment": "Grep a file for search terms (case-insensitive substring, skipping comment lines).\nReturns owned slice of matching line numbers (caller frees).",
       "is_pub": false,
       "line": 906
     },
@@ -308,6 +331,7 @@
         { "name": "excerpts_in", "type": "[]const ExcerptEntry" }
       ],
       "returns": "?[]const u8",
+      "comment": "Build LLM synthesis: skill context + member index + excerpts → prompt → summary.\nStrips \"absence\" sentences.  Returns owned string or null on failure.",
       "is_pub": false,
       "line": 940
     },
@@ -321,6 +345,7 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "?vector_db_mod.SemanticAliases",
+      "comment": "Load semantic aliases from the guidance directory.",
       "is_pub": false,
       "line": 1036
     },
@@ -335,6 +360,7 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Extract key technical terms from a long query using LLM.\nReturns owned slice of owned strings. Caller must free.",
       "is_pub": false,
       "line": 1044
     },
@@ -349,6 +375,7 @@
         { "name": "out", "type": "*std.ArrayList([]const u8)" }
       ],
       "returns": "void",
+      "comment": "Tokenize `text` into lowercase capability words, filtering stop words\nand tokens shorter than 3 characters. Appends to `out`.",
       "is_pub": false,
       "line": 1092
     },
@@ -363,6 +390,7 @@
         { "name": "results", "type": "[]const SearchResult" }
       ],
       "returns": "[]const []const u8",
+      "comment": "Compute deterministic DRIFT follow-up queries.\n\nTokenizes query into \"needed\" capabilities and result module/names into\n\"available\" capabilities. Returns allocator-owned slice of \"Provide <cap>\"\nstrings for each missing capability. Always returns a heap-allocated slice\n(safe to free even when empty).",
       "is_pub": false,
       "line": 1122
     },
@@ -382,6 +410,7 @@
         { "name": "ea", "type": "ExplainArgs" }
       ],
       "returns": "void",
+      "comment": "Full staged explain pipeline.  Called when `--staged` is active (default).\n\nPipeline:\n  Short query (≤3 words) or --no-llm or --filter=skip:\n    executeStaged() → formatStaged() → output\n  Long query (4+ words) with LLM:\n    executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output",
       "is_pub": false,
       "line": 1181
     },
@@ -399,6 +428,7 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Write formatted staged output to stdout and flush.",
       "is_pub": false,
       "line": 1457
     },
@@ -412,6 +442,7 @@
         { "name": "terms", "type": "[]const []const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a list of name bytes exactly matches a list of term bytes, returning true or false.",
       "is_pub": true,
       "line": 1474
     },
@@ -425,6 +456,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Loads skill data from a JSON path into a Zig array of bytes.",
       "is_pub": true,
       "line": 1479
     },
@@ -438,6 +470,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Loads used data from a JSON path into a Zig array of arrays of bytes.",
       "is_pub": true,
       "line": 1484
     },
@@ -451,6 +484,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[][]const u8",
+      "comment": "Loads public member names from a JSON path into a Zig array of arrays.",
       "is_pub": true,
       "line": 1489
     },
@@ -466,6 +500,7 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Loads a skill parameter pack into a Zig slice, handling allocation and data parsing.",
       "is_pub": true,
       "line": 1494
     },
@@ -481,6 +516,7 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Extracts and explains a specified excerpt from a Zig source file, returning its contents.",
       "is_pub": true,
       "line": 1499
     },
@@ -496,6 +532,7 @@
         { "name": "max_results", "type": "usize" }
       ],
       "returns": "[]usize",
+      "comment": "Analyzes a file path and returns matching result indices.",
       "is_pub": true,
       "line": 1504
     },
@@ -508,6 +545,7 @@
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Checks if a query string is short enough for a public query, returning true or false.",
       "is_pub": true,
       "line": 1509
     },
@@ -521,6 +559,7 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Displays a specified query result using the allocator and argument list.",
       "is_pub": true,
       "line": 1518
     },
@@ -529,8 +568,18 @@
       "name": "TestQuery",
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
+      "comment": "A scored test query used in the explain accuracy test suite.",
       "is_pub": false,
       "line": 1630
+    },
+    {
+      "type": "struct",
+      "name": "BenchmarkResult",
+      "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
+      "signature": "keyword_struct BenchmarkResult { ... }",
+      "comment": "Tracks benchmark metrics with a fixed-size buffer pool; managed centrally; not thread-safe.",
+      "is_pub": false,
+      "line": 1639
     },
     {
       "type": "fn_decl",
@@ -542,8 +591,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "Validates command arguments and processes them in the Zig engine.",
       "is_pub": true,
-      "line": 1639
+      "line": 1648
     },
     {
       "type": "fn_private",
@@ -554,8 +604,9 @@
         { "name": "line", "type": "[]const u8" }
       ],
       "returns": "?u8",
+      "comment": "Parse a 0-10 score from an LLM evaluation response line of the form:\n\"Label: <digits>[/10]\" — also handles markdown decorations like \"**\", \"-\".\nReturns null when no score digit can be extracted after the first colon.",
       "is_pub": false,
-      "line": 1994
+      "line": 2042
     },
     {
       "type": "fn_private",
@@ -567,8 +618,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "[]TestQuery",
+      "comment": "Load benchmark queries from {guidance_dir}/benchmarks.txt.\nOne query per line; blank lines and # comments are skipped.\nReturns an error if the file cannot be opened.",
       "is_pub": false,
-      "line": 2010
+      "line": 2058
     },
     {
       "type": "fn_private",
@@ -580,8 +632,9 @@
         { "name": "guidance_dir", "type": "[]const u8" }
       ],
       "returns": "[]TestQuery",
+      "comment": "Generate test queries from module-level comments in guidance JSON files.",
       "is_pub": false,
-      "line": 2038
+      "line": 2086
     },
     {
       "type": "fn_decl",
@@ -593,8 +646,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance telemetry [--top-queries N] [--slowest N] [--tier-breakdown]`",
       "is_pub": true,
-      "line": 2117
+      "line": 2165
     },
     {
       "type": "fn_decl",
@@ -606,8 +660,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance cache-stats`",
       "is_pub": true,
-      "line": 2179
+      "line": 2227
     },
     {
       "type": "fn_decl",
@@ -619,8 +674,9 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance serve` — starts the MCP server on STDIO.\nImplemented in mcp.zig; this is the dispatch entry point.",
       "is_pub": true,
-      "line": 2211
+      "line": 2259
     },
     {
       "type": "fn_decl",
@@ -632,56 +688,57 @@
         { "name": "args", "type": "[]const []const u8" }
       ],
       "returns": "void",
+      "comment": "`guidance ralph <query>` — run the query through Read→Ask→Learn→Plan stages\nand emit the result as markdown. Uses the same DB setup as cmdExplain.",
       "is_pub": true,
-      "line": 2222
+      "line": 2270
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2294
+      "line": 2342
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2299
+      "line": 2347
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is short",
       "is_pub": false,
-      "line": 2304
+      "line": 2352
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2309
+      "line": 2357
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2314
+      "line": 2362
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2319
+      "line": 2367
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2329
+      "line": 2377
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are short",
       "is_pub": false,
-      "line": 2335
+      "line": 2383
     }
   ]
 }

@@ -1635,6 +1635,14 @@ const TestQuery = struct {
     observations: []const u8 = "",
 };
 
+const BenchmarkResult = struct {
+    query: common.SharedString.Ref,
+    acc: u8,
+    rel: u8,
+    cmpl: u8,
+    nav: u8,
+};
+
 /// Validates command arguments and processes them in the Zig engine.
 pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var no_llm = false;
@@ -1644,6 +1652,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var api_url: ?[]const u8 = null;
     var model: ?[]const u8 = null;
     var single_query: ?[]const u8 = null;
+    var num_limit: ?usize = null;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -1685,6 +1694,16 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 return;
             }
             model = args[i];
+        } else if (std.mem.eql(u8, arg, "--num") or std.mem.eql(u8, arg, "-n")) {
+            i += 1;
+            if (i >= args.len) {
+                std.debug.print("Error: --num requires a value\n", .{});
+                return;
+            }
+            num_limit = std.fmt.parseInt(usize, args[i], 10) catch {
+                std.debug.print("Error: --num must be a positive integer\n", .{});
+                return;
+            };
         } else if (!std.mem.startsWith(u8, arg, "-")) {
             // First non-flag argument is the query
             single_query = arg;
@@ -1747,7 +1766,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (llm_client_opt) |*c| c.deinit();
 
     // Load queries: from benchmarks.txt, single query arg, or generate from module comments
-    const queries = if (single_query) |sq| blk: {
+    const all_queries = if (single_query) |sq| blk: {
         var single: std.ArrayList(TestQuery) = .{};
         try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
         break :blk try single.toOwnedSlice(allocator);
@@ -1755,12 +1774,13 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const from_file = loadBenchmarkQueries(allocator, gdir_abs) catch null;
         break :blk from_file orelse try generateTestQueries(allocator, gdir_abs);
     };
+    const queries = if (num_limit) |n| all_queries[0..@min(n, all_queries.len)] else all_queries;
     defer {
-        for (queries) |q| {
+        for (all_queries) |q| {
             allocator.free(q.query);
             if (q.observations.len > 0) allocator.free(q.observations);
         }
-        allocator.free(queries);
+        allocator.free(all_queries);
     }
 
     std.debug.print("# Explain Benchmark Results\n\n", .{});
@@ -1773,6 +1793,14 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var excellent_count: usize = 0;
     var good_count: usize = 0;
     var weak_count: usize = 0;
+
+    var benchmark_results: std.ArrayList(BenchmarkResult) = .empty;
+    defer {
+        for (benchmark_results.items) |*result| {
+            result.query.deinit(allocator);
+        }
+        benchmark_results.deinit(allocator);
+    }
 
     // Run each query
     for (queries) |tq| {
@@ -1933,6 +1961,14 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             total_cmpl += cmpl_val;
             total_nav += nav_val;
 
+            try benchmark_results.append(allocator, .{
+                .query = try common.SharedString.Ref.init(allocator, tq.query),
+                .acc = acc_val,
+                .rel = rel_val,
+                .cmpl = cmpl_val,
+                .nav = nav_val,
+            });
+
             if (acc_val >= 9) {
                 excellent_count += 1;
             } else if (acc_val >= 7) {
@@ -1965,26 +2001,47 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // Summary
     const n = queries.len;
     const evaluated_count = excellent_count + good_count + weak_count;
-    if (n > 0) {
-        std.debug.print("# Summary Statistics\n\n", .{});
-        std.debug.print("| Metric | Value |\n", .{});
-        std.debug.print("|--------|-------|\n", .{});
-        std.debug.print("| **Total Queries** | {d} |\n", .{n});
-        std.debug.print("| **LLM Evaluated** | {d} |\n", .{evaluated_count});
-        if (evaluated_count > 0) {
-            std.debug.print("| **Average Accuracy** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_acc)) / @as(f32, @floatFromInt(evaluated_count))});
-            std.debug.print("| **Average Relevance** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_rel)) / @as(f32, @floatFromInt(evaluated_count))});
-            std.debug.print("| **Average Completeness** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_cmpl)) / @as(f32, @floatFromInt(evaluated_count))});
-            std.debug.print("| **Average Navigation** | {d:.1}/10 |\n", .{@as(f32, @floatFromInt(total_nav)) / @as(f32, @floatFromInt(evaluated_count))});
-        } else {
-            std.debug.print("| **Average Accuracy** | -/10 |\n", .{});
-            std.debug.print("| **Average Relevance** | -/10 |\n", .{});
-            std.debug.print("| **Average Completeness** | -/10 |\n", .{});
-            std.debug.print("| **Average Navigation** | -/10 |\n", .{});
+    if (n > 0 and evaluated_count > 0) {
+        std.debug.print("# Benchmark Results\n\n", .{});
+
+        std.mem.sort(BenchmarkResult, benchmark_results.items, {}, struct {
+            fn less(_: void, a: BenchmarkResult, b: BenchmarkResult) bool {
+                const avg_a = @as(f32, @floatFromInt(a.rel + a.acc + a.cmpl)) / 3.0;
+                const avg_b = @as(f32, @floatFromInt(b.rel + b.acc + b.cmpl)) / 3.0;
+                return avg_a > avg_b;
+            }
+        }.less);
+
+        std.debug.print("| Query | Relevance | Accuracy | Completeness | Avg |\n", .{});
+        std.debug.print("|-------|-----------|----------|--------------|-----|\n", .{});
+
+        var total_row_rel: f32 = 0;
+        var total_row_acc: f32 = 0;
+        var total_row_cmpl: f32 = 0;
+        for (benchmark_results.items) |result| {
+            const avg = @as(f32, @floatFromInt(result.rel + result.acc + result.cmpl)) / 3.0;
+            total_row_rel += @as(f32, @floatFromInt(result.rel));
+            total_row_acc += @as(f32, @floatFromInt(result.acc));
+            total_row_cmpl += @as(f32, @floatFromInt(result.cmpl));
+            std.debug.print("| {s} | {d} | {d} | {d} | {d:.1} |\n", .{
+                result.query.slice(),
+                result.rel,
+                result.acc,
+                result.cmpl,
+                avg,
+            });
         }
-        std.debug.print("| **Excellent (9-10)** | {d}/{d} ({d}%) |\n", .{ excellent_count, evaluated_count, if (evaluated_count > 0) @as(usize, @intFromFloat(@as(f32, @floatFromInt(excellent_count)) / @as(f32, @floatFromInt(evaluated_count)) * 100)) else 0 });
-        std.debug.print("| **Good (7-8)** | {d}/{d} |\n", .{ good_count, evaluated_count });
-        std.debug.print("| **Weak (<7)** | {d}/{d} |\n", .{ weak_count, evaluated_count });
+
+        const final_avg_rel = total_row_rel / @as(f32, @floatFromInt(evaluated_count));
+        const final_avg_acc = total_row_acc / @as(f32, @floatFromInt(evaluated_count));
+        const final_avg_cmpl = total_row_cmpl / @as(f32, @floatFromInt(evaluated_count));
+        const final_avg = (final_avg_rel + final_avg_acc + final_avg_cmpl) / 3.0;
+        std.debug.print("| **Average** | **{d:.1}** | **{d:.1}** | **{d:.1}** | **{d:.1}** |\n", .{
+            final_avg_rel,
+            final_avg_acc,
+            final_avg_cmpl,
+            final_avg,
+        });
     }
 }
 
