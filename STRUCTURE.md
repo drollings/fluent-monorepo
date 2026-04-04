@@ -195,7 +195,7 @@ Then you you must read
 │   │   ├── target.zig
 │   │   ├── terminal.zig
 │   │   ├── token_budget.zig                                # token_budget.zig — Token Estimation (shared between guidance and coral).
-│   │   ├── types.zig                                       # Represents a unique node identifier; managed via ownership model; ensures stable references.
+│   │   ├── types.zig                                       # Represents a unique node identifier with fixed ownership; managed via init/deinit; not thread-safe.
 │   │   ├── url.zig                                         # url.zig — Generic URL validation helpers
 │   │   └── wrapper.zig                                     # wrapper.zig — Conditional and composable comptime wrappers (M9).
 │   ├── concurrency

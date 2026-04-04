@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1775336016674014583",
+  "generated": "1775337763549592662",
   "capabilities": [
     {
       "name": "config-system",
@@ -76,8 +76,7 @@
         "providers",
         "chain."
       ],
-      "source": "config-system/CAPABILITY.md",
-      "mtime": 1775335802760147447
+      "source": "config-system/CAPABILITY.md"
     },
     {
       "name": "plugin-system",
@@ -163,8 +162,7 @@
         "meta",
         "fn_decl"
       ],
-      "source": "plugin-system/CAPABILITY.md",
-      "mtime": 1775335802748147422
+      "source": "plugin-system/CAPABILITY.md"
     },
     {
       "name": "embedding-providers",
@@ -255,8 +253,7 @@
         "none",
         "Sources"
       ],
-      "source": "embedding-providers/CAPABILITY.md",
-      "mtime": 1775335802850147631
+      "source": "embedding-providers/CAPABILITY.md"
     },
     {
       "name": "local-model-decomposition",
@@ -379,8 +376,7 @@
         "bridges",
         "How"
       ],
-      "source": "local-model-decomposition/CAPABILITY.md",
-      "mtime": 1775335802869147670
+      "source": "local-model-decomposition/CAPABILITY.md"
     },
     {
       "name": "explain-query",
@@ -523,8 +519,7 @@
         "Skip",
         "collecting"
       ],
-      "source": "explain-query/CAPABILITY.md",
-      "mtime": 1775335802754147434
+      "source": "explain-query/CAPABILITY.md"
     },
     {
       "name": "reflection",
@@ -658,8 +653,7 @@
         "Accessor",
         "MCP"
       ],
-      "source": "reflection/CAPABILITY.md",
-      "mtime": 1775335802749147424
+      "source": "reflection/CAPABILITY.md"
     },
     {
       "name": "vector-search",
@@ -819,8 +813,7 @@
         "pass",
         "EmbeddingProvider"
       ],
-      "source": "vector-search/CAPABILITY.md",
-      "mtime": 1775335802866147663
+      "source": "vector-search/CAPABILITY.md"
     },
     {
       "name": "ontology",
@@ -937,8 +930,7 @@
         "check",
         "upgrade"
       ],
-      "source": "ontology/CAPABILITY.md",
-      "mtime": 1775335802866147663
+      "source": "ontology/CAPABILITY.md"
     },
     {
       "name": "coral-ingestion",
@@ -1069,8 +1061,7 @@
         "entities",
         "ingestor"
       ],
-      "source": "coral-ingestion/CAPABILITY.md",
-      "mtime": 1775335802753147432
+      "source": "coral-ingestion/CAPABILITY.md"
     },
     {
       "name": "coral-cache",
@@ -1187,8 +1178,7 @@
         "promotion",
         "execution"
       ],
-      "source": "coral-cache/CAPABILITY.md",
-      "mtime": 1775335802872147676
+      "source": "coral-cache/CAPABILITY.md"
     },
     {
       "name": "ast-indexing",
@@ -1289,8 +1279,7 @@
         "meta",
         "fn_decl"
       ],
-      "source": "ast-indexing/CAPABILITY.md",
-      "mtime": 1775335802874147681
+      "source": "ast-indexing/CAPABILITY.md"
     },
     {
       "name": "coral-mcp",
@@ -1410,8 +1399,7 @@
         "Arena",
         "MCP"
       ],
-      "source": "coral-mcp/CAPABILITY.md",
-      "mtime": 1775335802868147668
+      "source": "coral-mcp/CAPABILITY.md"
     },
     {
       "name": "coral-database",
@@ -1622,8 +1610,7 @@
         "EmbeddingProvider",
         "root"
       ],
-      "source": "coral-database/CAPABILITY.md",
-      "mtime": 1775335802758147443
+      "source": "coral-database/CAPABILITY.md"
     },
     {
       "name": "target-registry",
@@ -1830,8 +1817,7 @@
         "allocation",
         "Accessor"
       ],
-      "source": "target-registry/CAPABILITY.md",
-      "mtime": 1775335802759147444
+      "source": "target-registry/CAPABILITY.md"
     },
     {
       "name": "rdf-parsing",
@@ -1906,8 +1892,7 @@
         "rdf.normalize",
         "canonicalization"
       ],
-      "source": "rdf-parsing/CAPABILITY.md",
-      "mtime": 1775335802874147681
+      "source": "rdf-parsing/CAPABILITY.md"
     },
     {
       "name": "sync-pipeline",
@@ -2016,8 +2001,7 @@
         "parse",
         "Sources"
       ],
-      "source": "sync-pipeline/CAPABILITY.md",
-      "mtime": 1775335802869147670
+      "source": "sync-pipeline/CAPABILITY.md"
     },
     {
       "name": "llm-client",
@@ -2135,8 +2119,7 @@
         "patterns",
         "synthesis"
       ],
-      "source": "llm-client/CAPABILITY.md",
-      "mtime": 1775335802869147670
+      "source": "llm-client/CAPABILITY.md"
     },
     {
       "name": "wasm-tools",
@@ -2296,8 +2279,7 @@
         "Arena",
         "execution"
       ],
-      "source": "wasm-tools/CAPABILITY.md",
-      "mtime": 1775335802872147676
+      "source": "wasm-tools/CAPABILITY.md"
     }
   ]
 }
