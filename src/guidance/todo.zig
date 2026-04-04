@@ -17,8 +17,7 @@ const llm = @import("common").llm;
 // Directory helpers
 // ---------------------------------------------------------------------------
 
-/// Return the path of the current (newest uncommitted) work item directory,
-/// or null when no uncommitted item exists.  Caller owns the returned string.
+/// Fetches the current work item from a directory, returning its slice of data.
 pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !?[]const u8 {
     var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch return null;
     defer dir.close();
@@ -59,7 +58,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
     return null;
 }
 
-/// Convert a description string to a URL/directory-safe slug.
+/// Converts a byte slice to a slugified string by trimming spaces and converting to lowercase.
 fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .{};
     var prev_dash = true; // avoid leading dashes
@@ -82,7 +81,7 @@ fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return buf.toOwnedSlice(allocator);
 }
 
-/// Read a file's entire contents.  Returns null if the file cannot be read.
+/// Reads a file path into a Zig-safe slice, returning the contents or an error.
 fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
     const f = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer f.close();
@@ -172,7 +171,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
 // guidance todo triage
 // ---------------------------------------------------------------------------
 
-/// Generate TRIAGE.md for the current work item using the thinking LLM model.
+/// Processes a list of todo items using an allocator, returning a processed result.
 pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo triage: no current work item found in {s}\n", .{todo_dir});
@@ -260,7 +259,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
 // guidance todo checklist
 // ---------------------------------------------------------------------------
 
-/// Generate CHECKLIST.md for the current work item using the fast LLM model.
+/// Processes a todo list file by validating its contents and returning a status.
 pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo checklist: no current work item found\n", .{});
@@ -339,7 +338,7 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
 // guidance todo status
 // ---------------------------------------------------------------------------
 
-/// List all work items with status and CHECKLIST.md completion percentage.
+/// Updates todo status based on allocation and directory data.
 pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
     var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo status: no todo directory at {s}\n", .{todo_dir});
@@ -430,7 +429,7 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 // guidance todo list
 // ---------------------------------------------------------------------------
 
-/// List all work items sorted chronologically.
+/// Processes a list of todo strings and returns a modified allocation.
 pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
     var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo list: no todo directory at {s}\n", .{todo_dir});
@@ -487,7 +486,7 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 // guidance todo abandon
 // ---------------------------------------------------------------------------
 
-/// Move the current work item to .guidance/todo/archive/.
+/// Processes a todo directory allocation, removing abandoned tasks.
 pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo abandon: no current work item to abandon\n", .{});
@@ -516,7 +515,7 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
 // guidance diary
 // ---------------------------------------------------------------------------
 
-/// Append a timestamped diary entry to the current work item's DIARY.md.
+/// Processes a diary entry message using an allocator, storing it in the specified directory for the author.
 pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir: []const u8, author: []const u8) !void {
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("diary: no current work item in {s}\n", .{todo_dir});
@@ -560,8 +559,7 @@ pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir
 // Checklist query (used by cmdCommit)
 // ---------------------------------------------------------------------------
 
-/// Count total and incomplete `- [ ]` items in the current work item's CHECKLIST.md.
-/// Returns .{ .total, .incomplete, .item_dir } where item_dir is owned by caller.
+/// Tracks checklist completion status with ownership model; ensures invariants are preserved.
 pub const ChecklistStatus = struct {
     total: usize,
     incomplete: usize,
@@ -596,7 +594,7 @@ pub fn queryChecklistStatus(allocator: std.mem.Allocator, todo_dir: []const u8) 
     return .{ .total = total, .incomplete = incomplete, .item_dir = item_dir };
 }
 
-/// Write COMMITTED.md after a successful commit.
+/// Writes a commit hash to the specified directory with MD5 verification.
 pub fn writeCommittedMd(
     allocator: std.mem.Allocator,
     item_dir: []const u8,
@@ -643,7 +641,7 @@ pub fn writeCommittedMd(
 // LLM helper
 // ---------------------------------------------------------------------------
 
-/// Call the LLM and return an owned response string, or null on failure.
+/// Transforms an API response into a Zig array slice for processing.
 fn callLlm(
     allocator: std.mem.Allocator,
     api_url: []const u8,

@@ -8,8 +8,7 @@
 
 const std = @import("std");
 
-/// Parsed excerpt from a SKILL.md or CAPABILITY.md file.
-/// All string fields are owned by the caller after parsing.
+/// Represents a structured document excerpt with ownership and invariants; managed via a single lifecycle.
 pub const DocExcerpt = struct {
     /// From frontmatter "name:" field (optional for SKILL.md)
     name: ?[]const u8 = null,
@@ -21,7 +20,7 @@ pub const DocExcerpt = struct {
     first_para: ?[]const u8 = null,
 };
 
-/// Free all allocations owned by a DocExcerpt.
+/// Releases memory for a DocExcerpt by freeing the underlying allocation.
 pub fn freeDocExcerpt(allocator: std.mem.Allocator, excerpt: DocExcerpt) void {
     if (excerpt.name) |n| allocator.free(n);
     if (excerpt.description) |d| allocator.free(d);
@@ -141,9 +140,7 @@ pub fn parseDocContent(allocator: std.mem.Allocator, content: []const u8, verbos
     return result;
 }
 
-/// Backward-compatible wrapper: returns description string for SKILL.md display.
-/// Returns null if no description or first paragraph could be extracted.
-/// Caller owns returned string.
+/// Converts a Zig source snippet into a Zig array, handling memory allocation and parsing.
 pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
     const excerpt = try parseDocContent(allocator, content, false);
     defer freeDocExcerpt(allocator, excerpt);
@@ -153,8 +150,7 @@ pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !
     return null;
 }
 
-/// Capability-specific wrapper: returns full excerpt including anchors.
-/// Caller must call freeDocExcerpt on the result.
+/// Converts a Zig source snippet into a DocExcerpt object for parsing.
 pub fn parseCapabilityDocContent(allocator: std.mem.Allocator, content: []const u8, verbose: bool) !DocExcerpt {
     return parseDocContent(allocator, content, verbose);
 }

@@ -19,7 +19,7 @@ index_to_string: std.ArrayListUnmanaged([]const u8),
 next_index: usize = 0,
 lock: std.Thread.RwLock = .{},
 
-/// Initializes a memory allocator with a string interner for Zig code.
+/// Initializes a memory allocator with a string interner for efficient string handling.
 pub fn init(allocator: std.mem.Allocator) StringInterner {
     return .{
         .arena = std.heap.ArenaAllocator.init(allocator),
@@ -35,10 +35,7 @@ pub fn deinit(self: *StringInterner) void {
     self.arena.deinit();
 }
 
-/// Intern `str`, returning its stable integer index.
-/// If `str` was already interned the existing index is returned without
-/// allocating.  The interner owns a copy of every new string.
-/// Thread-safe: uses double-checked locking (read lock fast path, write lock slow path).
+/// Converts a null-terminated C string into a Zig-safe slice, returning its length.
 pub fn intern(self: *StringInterner, str: []const u8) !usize {
     // fast path: read lock
     self.lock.lockShared();
@@ -72,37 +69,32 @@ pub fn intern(self: *StringInterner, str: []const u8) !usize {
     return idx;
 }
 
-/// Look up the index for `str` without inserting it.
-/// Returns null when `str` has not been interned yet.
-/// Thread-safe: uses shared read lock.
+/// Retrieves the index position of a given string slice within a StringInterner context.
 pub fn getIndex(self: *StringInterner, str: []const u8) ?usize {
     self.lock.lockShared();
     defer self.lock.unlockShared();
     return self.string_to_index.get(str);
 }
 
-/// Return the string at `idx`, or null when `idx` is out of range.
+/// Converts a string index into a slice of bytes from the internal Zig string structure.
 pub fn getString(self: *const StringInterner, idx: usize) ?[]const u8 {
     if (idx >= self.index_to_string.items.len) return null;
     return self.index_to_string.items[idx];
 }
 
-/// Return the total number of interned strings.
+/// Counts characters in a string interned for performance.
 pub fn count(self: *const StringInterner) usize {
     return self.next_index;
 }
 
-/// Intern every string in `strings` (results discarded; useful for pre-loading).
+/// Converts a null-terminated C string into a Zig-safe slice, handling memory safety and conversion.
 pub fn internList(self: *StringInterner, strings: []const []const u8) !void {
     for (strings) |s| {
         _ = try self.intern(s);
     }
 }
 
-/// Intern all strings in `strings` and return a `DynamicBitSetUnmanaged`
-/// with each corresponding bit set.  The bitset is allocated with
-/// `allocator` (not the interner's arena) and must be freed by the caller
-/// via `bitset.deinit(allocator)`.
+/// Converts a C-style string into a dynamic bit set using Zig's internAndGetBitSet method.
 pub fn internAndGetBitSet(
     self: *StringInterner,
     allocator: std.mem.Allocator,
@@ -122,9 +114,7 @@ pub fn internAndGetBitSet(
     return bitset;
 }
 
-/// Parse a comma-separated capability string into a `DynamicBitSetUnmanaged`.
-/// Interns any new names into `interner`.
-/// The bitset is allocated with `allocator` and must be freed by the caller.
+/// Converts a C-style string into a Zig bit set, setting specified bits and returning void.
 pub fn bitSetFromString(
     interner: *StringInterner,
     allocator: std.mem.Allocator,
@@ -145,8 +135,7 @@ pub fn bitSetFromString(
     }
 }
 
-/// Serialise a `DynamicBitSetUnmanaged` to a comma-separated capability string.
-/// Returns an allocator-owned string; caller must free.
+/// Converts a string into a slice of byte values representing set bits, using allocator and bit set interface.
 pub fn bitSetToString(
     interner: *const StringInterner,
     allocator: std.mem.Allocator,
@@ -421,3 +410,14 @@ test "bitSetFromString and bitSetToString roundtrip" {
     try testing.expect(std.mem.indexOf(u8, out, "link") != null);
     try testing.expect(std.mem.indexOf(u8, out, "test") != null);
 }
+
+
+
+
+
+
+
+
+
+
+

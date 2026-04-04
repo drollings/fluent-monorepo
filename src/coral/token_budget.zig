@@ -25,10 +25,7 @@ pub const ProportionalBudget = common_budget.ProportionalBudget;
 // Coral-specific extension: ContextNode token estimation
 // ---------------------------------------------------------------------------
 
-/// Estimate the total number of tokens required to represent `node`'s
-/// LOD payload (all six levels) plus the fixed per-node schema overhead.
-///
-/// This is the budget cost for including one node in an LLM context window.
+/// Calculates the estimated embedding token count for a given context node.
 pub fn estimateEmbeddingTokens(node: *const ContextNode) usize {
     var total: usize = NODE_SCHEMA_OVERHEAD_TOKENS;
     for (node.lod) |level_text| {

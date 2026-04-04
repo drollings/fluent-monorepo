@@ -1,10 +1,10 @@
-/// Represents a unique node identifier; managed via ownership model; ensures stable references.
+/// Defines a unique identifier for nodes, managed centrally with ownership and invariants.
 pub const NodeId = enum(i64) { _ };
 
-/// Uniquely identifies an agent session.
+/// Defines a unique session identifier with strict ownership and invariants; managed centrally for consistency.
 pub const SessionId = enum(i64) { _ };
 
-/// Uniquely identifies a Target in the DAG registry.
+/// Defines a target identifier for Zig's enum, managing ownership and ensuring type safety across modules.
 pub const TargetId = enum(i64) { _ };
 
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ pub fn intFromSessionId(id: SessionId) i64 {
     return @intFromEnum(id);
 }
 
-/// Converts an integer to its corresponding TargetId identifier.
+/// Converts an integer to a TargetId identifier.
 pub fn targetIdFromInt(i: i64) TargetId {
     return @enumFromInt(i);
 }
@@ -76,3 +76,12 @@ test "NodeId and SessionId are distinct types" {
     comptime try testing.expect(NodeId != TargetId);
     comptime try testing.expect(SessionId != TargetId);
 }
+
+
+
+
+
+
+
+
+

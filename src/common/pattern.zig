@@ -13,8 +13,7 @@ const containsCI = str_mod.containsIgnoreCase;
 const containsAny = str_mod.containsAny;
 const containsAnyWord = str_mod.containsAnyWord;
 
-/// Returns true if `needle` appears in `haystack` as a word boundary match (case-insensitive).
-/// A word boundary is any non-alphanumeric character or the start/end of string.
+/// Checks if a needle substring exists within the haystack array of bytes.
 pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
@@ -33,7 +32,7 @@ pub const PatternType = enum {
     GoF,
 };
 
-/// Defines a pattern for structured data handling, manages ownership, and ensures invariant state across operations.
+/// Defines a pattern with fixed-size buffers, shared ownership, and no thread safety guarantees.
 pub const Pattern = struct {
     name: []const u8,
     type: PatternType,
@@ -109,7 +108,7 @@ pub fn detectDecorator(source: []const u8) bool {
     return delegates;
 }
 
-/// Checks if a given source slice matches a proxy pattern, returning true or false.
+/// Checks if a given source slice matches the proxy pattern, returning true or false.
 pub fn detectProxy(source: []const u8) bool {
     const has_subject = containsAny(source, &[_][]const u8{ "_real:", "_subject:", "_target:", "_delegate:", "_proxied:" });
     if (!has_subject) return false;
@@ -184,3 +183,13 @@ test "detectObserver" {
     ));
     try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
 }
+
+
+
+
+
+
+
+
+
+

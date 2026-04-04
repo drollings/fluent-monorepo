@@ -14,7 +14,7 @@
     {
       "type": "struct",
       "name": "EmbeddingProvider",
-      "match_hash": "8ab13cba3c6c03acab59515b05fd9c6839bf3a9f7cd1f83cfcdf2757f6186bf8",
+      "match_hash": "93c598769a574729cfdf346870eb8b95968aa234f48bff00af25c55db93eef5a",
       "signature": "keyword_struct EmbeddingProvider { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -24,7 +24,7 @@
         {
           "type": "fn_decl",
           "name": "make",
-          "match_hash": "b4274a83762efb75a8650de093cf6537806521b1ef4b64f3da16feb412c7e72c",
+          "match_hash": "abb70ddc43023a3da1bae1c56436b576cdc98ab5a0e7283dcd734a0afd75ad85",
           "signature": "fn make(ptr: *anyopaque, vtable: *const VTable) -> EmbeddingProvider",
           "params": [
             { "name": "ptr", "type": "*anyopaque" },
@@ -40,7 +40,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getName",
-          "match_hash": "838473841a2c48a0e9228f36440126f7f952f77e063057d4f048f15385f95657",
+          "match_hash": "ab232161dcf0eecf3195e5ea9998791656ab04c71df2946f187e74fe3881a5ae",
           "signature": "fn getName(self: EmbeddingProvider) -> []const u8",
           "params": [
             { "name": "self", "type": "EmbeddingProvider" }
@@ -52,7 +52,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getDimensions",
-          "match_hash": "e51c12fd4f727741faa13cecaf87c571fc884137f83f01d338b3daa437353b4b",
+          "match_hash": "cf91faa03f38bc0b8149b6694424084598621ca812b1849d0678f3ac36b1438a",
           "signature": "fn getDimensions(self: EmbeddingProvider) -> u32",
           "params": [
             { "name": "self", "type": "EmbeddingProvider" }
@@ -64,7 +64,7 @@
     ,    {
           "type": "fn_decl",
           "name": "embed",
-          "match_hash": "7284091b5dfdcd07d48d7edad0315d6d32c7b5e0e055577ee304d242cfac5bad",
+          "match_hash": "43563eb76f4528412e115ee9a015c796e8ce9b5c39a18d54e2748c370243a023",
           "signature": "fn embed(self: EmbeddingProvider, allocator: std.mem.Allocator, text: []const u8) -> []f32",
           "params": [
             { "name": "self", "type": "EmbeddingProvider" },
@@ -78,7 +78,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "9725b124a22f8c70559ec633e1d924bc2ef505457c692efef955f4e1a3aac1bf",
+          "match_hash": "0b94c3034fb54eea075b44dee61f7938f9db2a684d8ce086a73e60dfa67f6059",
           "signature": "fn deinit(self: EmbeddingProvider) -> void",
           "params": [
             { "name": "self", "type": "EmbeddingProvider" }
@@ -93,14 +93,14 @@
     {
       "type": "struct",
       "name": "NoopEmbedding",
-      "match_hash": "0f5ba6a17a9be2d2f81406e55fc10971c23bb15fffb2c6a0053857c580553091",
+      "match_hash": "e8a395ca64962f20ecbc0cd903499747f240c7d357962b398a935c68b487c666",
       "signature": "keyword_struct NoopEmbedding { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_private",
           "name": "implName",
-          "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
+          "match_hash": "00f1fa485d6d7052899c06ae76cc2f4f81f61ab89439f326551a9461898cb584",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -112,7 +112,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDimensions",
-          "match_hash": "830c732514f31488a60e54fc79b0e2ddda15ebf03d50c93cce944edf850dded8",
+          "match_hash": "8b3d941f8d8e9ca83d4a746dba774a7777eb3e01f58830749ee6f891e6f9cd00",
           "signature": "fn implDimensions(_: *anyopaque) -> u32",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -124,7 +124,7 @@
     ,    {
           "type": "fn_private",
           "name": "implEmbed",
-          "match_hash": "5d8603ff383bcf92f1b7ea77dadd6dec8c935589d78bacc30992c9110d0d974a",
+          "match_hash": "9f51e08b8f73f06722b4d4c6e4cfae3d7fb342dc6034bdfa653667bb63273e44",
           "signature": "fn implEmbed(_: *anyopaque, allocator: std.mem.Allocator, _: []const u8) -> anyerror![]f32",
           "params": [
             { "name": "_", "type": "*anyopaque" },
@@ -138,7 +138,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDeinit",
-          "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
+          "match_hash": "e4e39f9482dad007b52f3d1cebeff45fba2650fe6b1a7e0d366bf9a9198d2f45",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -150,7 +150,7 @@
     ,    {
           "type": "fn_decl",
           "name": "provider",
-          "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
+          "match_hash": "962c4b5655bd27cf43f89e4faf67b15eeeed44aa51225809706448587a08dd18",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -165,14 +165,14 @@
     {
       "type": "struct",
       "name": "OllamaEmbedding",
-      "match_hash": "91f1dde1988d80563d8dd8b4e31b8f6950a251f8a34bc7e55a11b4771abf2c99",
+      "match_hash": "963c733eaddb28927755485effcb5eb85c7bd8701fc502a94bbe85b430d518b5",
       "signature": "keyword_struct OllamaEmbedding { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "d692d61afff8ac31585aab33a9e5112452ae002cc0f4a45c7f571385e7a8bf8e",
+          "match_hash": "bdef40655f097deaf0bbded5fe1ccb20307bb7e38aa67cbd045878a69f5ca8c7",
           "signature": "fn init(allocator: std.mem.Allocator, model: ?[]const u8, base_url: ?[]const u8, dims: ?u32) -> *Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -187,7 +187,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinitSelf",
-          "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
+          "match_hash": "526398c140b32d96e205b55eb810bd87f7ef411f5219dbe452698f4b3684b41b",
           "signature": "fn deinitSelf(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -199,7 +199,7 @@
     ,    {
           "type": "fn_private",
           "name": "buildUrl",
-          "match_hash": "4828b1765b4c2c18871c4c0550a26bb8e3e4ece3a8c29714865446005671db1f",
+          "match_hash": "d2257e2d8695c093f331e1d91d9ccef1a7a45f3fb3cf08cb908be926d7cb08eb",
           "signature": "fn buildUrl(self: *const Self, allocator: std.mem.Allocator) -> []u8",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -212,7 +212,7 @@
     ,    {
           "type": "fn_private",
           "name": "implName",
-          "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
+          "match_hash": "00f1fa485d6d7052899c06ae76cc2f4f81f61ab89439f326551a9461898cb584",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -224,7 +224,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDimensions",
-          "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
+          "match_hash": "17d1697ada50d480b4c1e72ba7933aca5f9ae8f2510f3a0e2f297526a95b19bf",
           "signature": "fn implDimensions(ptr: *anyopaque) -> u32",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -236,7 +236,7 @@
     ,    {
           "type": "fn_private",
           "name": "implEmbed",
-          "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
+          "match_hash": "0df490e05e3d1599e43a921e11fd59705c59dc779e72d5930b8b1d4d279cf8dd",
           "signature": "fn implEmbed(ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) -> anyerror![]f32",
           "params": [
             { "name": "ptr", "type": "*anyopaque" },
@@ -250,7 +250,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDeinit",
-          "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
+          "match_hash": "e4e39f9482dad007b52f3d1cebeff45fba2650fe6b1a7e0d366bf9a9198d2f45",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -262,7 +262,7 @@
     ,    {
           "type": "fn_decl",
           "name": "provider",
-          "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
+          "match_hash": "962c4b5655bd27cf43f89e4faf67b15eeeed44aa51225809706448587a08dd18",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -277,7 +277,7 @@
     {
       "type": "fn_decl",
       "name": "parseOllamaResponse",
-      "match_hash": "fe564fea578ea45e95c15e03e80ec2eca656ce3506493b04740c1d2934f131dd",
+      "match_hash": "0678260814c670e8d80b2f6ec47904271b59a4b5748a8f547c829f7177001271",
       "signature": "fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> []f32",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -290,14 +290,14 @@
     {
       "type": "struct",
       "name": "OpenAiEmbedding",
-      "match_hash": "0b8d31a696791580c4333ed7ac464cbb946406767976ab7a20c76bcf71cdec84",
+      "match_hash": "1db16674ade1743dbb73bc0d6637d9c7b89efe25d787633859b3265153fc8c4b",
       "signature": "keyword_struct OpenAiEmbedding { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "321e062d17072c6308647d6388b8dd36193297c16018548fa1ae88702cac1316",
+          "match_hash": "c8d1bb6d1d60d916a2bb6f98aedb243e127bd1df70ab7a041a9be942350376fd",
           "signature": "fn init(allocator: std.mem.Allocator, base_url: []const u8, api_key: []const u8, model: []const u8, dims: u32) -> *Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -313,7 +313,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinitSelf",
-          "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
+          "match_hash": "526398c140b32d96e205b55eb810bd87f7ef411f5219dbe452698f4b3684b41b",
           "signature": "fn deinitSelf(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -325,7 +325,7 @@
     ,    {
           "type": "fn_private",
           "name": "embeddingsUrl",
-          "match_hash": "be0462ccd4878425a12848483f8a147713a870f024609fb8810366f93161f9cf",
+          "match_hash": "4a0fa1d8adb586e71b4f87417cb74c6c4e7e7d7f88664d8e69d0f212f6f94e07",
           "signature": "fn embeddingsUrl(self: *const Self, allocator: std.mem.Allocator) -> []u8",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -338,7 +338,7 @@
     ,    {
           "type": "fn_private",
           "name": "implName",
-          "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
+          "match_hash": "00f1fa485d6d7052899c06ae76cc2f4f81f61ab89439f326551a9461898cb584",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -350,7 +350,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDimensions",
-          "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
+          "match_hash": "17d1697ada50d480b4c1e72ba7933aca5f9ae8f2510f3a0e2f297526a95b19bf",
           "signature": "fn implDimensions(ptr: *anyopaque) -> u32",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -362,7 +362,7 @@
     ,    {
           "type": "fn_private",
           "name": "implEmbed",
-          "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
+          "match_hash": "0df490e05e3d1599e43a921e11fd59705c59dc779e72d5930b8b1d4d279cf8dd",
           "signature": "fn implEmbed(ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) -> anyerror![]f32",
           "params": [
             { "name": "ptr", "type": "*anyopaque" },
@@ -376,7 +376,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDeinit",
-          "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
+          "match_hash": "e4e39f9482dad007b52f3d1cebeff45fba2650fe6b1a7e0d366bf9a9198d2f45",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -388,7 +388,7 @@
     ,    {
           "type": "fn_decl",
           "name": "provider",
-          "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
+          "match_hash": "962c4b5655bd27cf43f89e4faf67b15eeeed44aa51225809706448587a08dd18",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -403,7 +403,7 @@
     {
       "type": "fn_decl",
       "name": "parseOpenAiResponse",
-      "match_hash": "07e942a3f138de935f27e37dbeee413047b56588e8135f16c377751c397cb9f5",
+      "match_hash": "1c382fd57aad97563b2ba8d83a67c7dd783ad2f847472bacd1505b5f3951c5f0",
       "signature": "fn parseOpenAiResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> []f32",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -416,7 +416,7 @@
     {
       "type": "fn_decl",
       "name": "createEmbeddingProvider",
-      "match_hash": "f4541a49074bdd4a13ca18f33d2460fa69d532c4e3cc42a30b505e84db89e18b",
+      "match_hash": "88ad1d22f5c9f06fdf24cc562cd1738eecc5687b4690b9dac347d804ff4f3280",
       "signature": "fn createEmbeddingProvider(allocator: std.mem.Allocator, provider_name: []const u8, api_key: ?[]const u8, model: []const u8, dims: u32) -> EmbeddingProvider",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

@@ -5,7 +5,7 @@
 /// The cache is invalidated when the match_hash changes.
 const std = @import("std");
 
-/// Cache key for a generated comment.
+/// Manages key-value pairs with fixed-size storage; owned by the module; ensures consistent key access.
 const Key = struct {
     file_path: []const u8,
     member_name: []const u8,
@@ -18,10 +18,7 @@ const Entry = struct {
     match_hash: []const u8,
 };
 
-/// In-process comment generation cache.
-///
-/// All strings stored in the cache are owned by the cache; they are freed when
-/// the cache is deinitialized.
+/// Manages cached comments with fixed-size storage; owned by the system; ensures consistent access patterns.
 pub const CommentCache = struct {
     allocator: std.mem.Allocator,
     /// Key: "$file_path\x00$member_name" — stores Entry.

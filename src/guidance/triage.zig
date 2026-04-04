@@ -31,7 +31,7 @@ pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]
     return "TODO";
 }
 
-/// Assess risk level deterministically from content and file count.
+/// Evaluates risk based on content and affected count, returning a processed slice.
 pub fn assessRisk(content: []const u8, affected_count: usize) []const u8 {
     const has_high = llm.containsIgnoreCase(content, "delete") or
         llm.containsIgnoreCase(content, " remove ") or
@@ -59,8 +59,7 @@ pub const DEFAULT_STEPS =
     \\7. Move to COMPLETE.md when tests pass
 ;
 
-/// Extract path-like tokens from content matching common project directories.
-/// Returns a deduplicated slice of owned paths (caller must free each + the slice).
+/// Identifies and returns affected file slices based on allocation and project data.
 pub fn findAffectedFiles(
     allocator: std.mem.Allocator,
     content: []const u8,

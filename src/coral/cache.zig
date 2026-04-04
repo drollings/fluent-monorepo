@@ -30,7 +30,7 @@ const HydrationPipeline = coral_db.HydrationPipeline;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = hashutil.EmbeddingProvider;
 
-/// Identifies which routing tier resolved a query; numeric value matches tier latency ordering (L1=fastest).
+/// Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.
 pub const CacheTier = enum(u8) {
     l1_memory = 1,
     l2_workflow = 2,
@@ -215,13 +215,7 @@ const L1HashEntry = struct {
     lru: *L1HashLruNodeData,
 };
 
-/// P5.1: Lock-optimised L1 cache.
-///
-/// - Keys are `u64` hashes computed from query strings (e.g. FNV-1a).
-///   This eliminates string duplication overhead on the hot read path.
-/// - Reads use a shared (RwLock.lockShared) lock — multiple concurrent
-///   readers proceed without blocking each other.
-/// - Promotions and writes use an exclusive lock.
+/// Manages L1 cache storage with fixed-size buckets; owns data structures; key invariants ensure consistent access patterns.
 pub const L1HashCache = struct {
     allocator: std.mem.Allocator,
     entries: std.AutoHashMap(u64, L1HashEntry),
@@ -926,8 +920,7 @@ pub const QueueReactor = struct {
 // Task 7.1 — ParallelRouter
 // ---------------------------------------------------------------------------
 
-/// Routes a batch of queries in parallel using the reactor's thread pool.
-/// Falls back to sequential routing if no thread pool is configured.
+/// Manages parallel routing configurations; owned by the application; ensures consistent state across threads.
 pub const ParallelRouter = struct {
     const Self = @This();
 

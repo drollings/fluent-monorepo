@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "IdentifierKind",
-      "match_hash": "1db4a3b68cfbce4a6485a7c76bb0db3350217c8e45078088e9651bf83b7cfd23",
+      "match_hash": "a7546ba3481668f057eb1ef8fba2d3f0a46e90d725db3b560c64376c844558e7",
       "signature": "keyword_enum IdentifierKind { ... }",
       "is_pub": true,
       "members": [
@@ -49,7 +49,7 @@
     {
       "type": "struct",
       "name": "IdentifierMatch",
-      "match_hash": "a1d8c39ce2971104a13c321ca6f37599bd63675b70f0618d6b2e9f92071f8250",
+      "match_hash": "69be725a7b8c87fa64940d109b70f1609cdc661bbd7c1f4b06f55977b82c5544",
       "signature": "keyword_struct IdentifierMatch { ... }",
       "is_pub": true,
       "line": 31
@@ -57,31 +57,31 @@
     {
       "type": "fn_decl",
       "name": "detectIdentifierPattern",
-      "match_hash": "809a63d310b48829bac0db0c7b76dcd05655b07ccf83e8cf2b88b4eabef3c719",
+      "match_hash": "d34730182252eaf528133a3e85d3abe0e850c912ea83677f5d580ad15745cee9",
       "signature": "fn detectIdentifierPattern(query: []const u8) -> ?IdentifierMatch",
       "params": [
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "?IdentifierMatch",
       "is_pub": true,
-      "line": 43
+      "line": 42
     },
     {
       "type": "fn_decl",
       "name": "isPascalCase",
-      "match_hash": "ee13e6822b929b781c3365d1ae8cd2642a10f4389fc90c90c5e6db52d9b9d533",
+      "match_hash": "e503f562d844a137fca362a841527979d30585e6291bcf578372fd3b91328669",
       "signature": "fn isPascalCase(s: []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 97
+      "line": 95
     },
     {
       "type": "fn_decl",
       "name": "shouldSkipLLMSynthesis",
-      "match_hash": "edb19eb02c82cb0a4dd606ac2535696bdbde212136bea4199940d1060af7d95c",
+      "match_hash": "ed49c1a505c539bbf6869b8078566b74cb6786d1a85e992968afadc7b69ce01a",
       "signature": "fn shouldSkipLLMSynthesis(query: []const u8, exact_match: bool) -> bool",
       "params": [
         { "name": "query", "type": "[]const u8" },
@@ -89,85 +89,85 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 102
+      "line": 100
     },
     {
       "type": "test_decl",
       "name": "isPascalCase: true for uppercase first char",
       "is_pub": false,
-      "line": 123
+      "line": 121
     },
     {
       "type": "test_decl",
       "name": "isPascalCase: false for lowercase or empty",
       "is_pub": false,
-      "line": 130
+      "line": 128
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: null for natural language",
       "is_pub": false,
-      "line": 137
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: single snake_case function",
       "is_pub": false,
-      "line": 144
+      "line": 142
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: single PascalCase struct",
       "is_pub": false,
-      "line": 151
+      "line": 149
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: module.struct two-segment",
       "is_pub": false,
-      "line": 158
+      "line": 156
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: module.function two-segment",
       "is_pub": false,
-      "line": 165
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: three-segment method",
       "is_pub": false,
-      "line": 172
+      "line": 170
     },
     {
       "type": "test_decl",
       "name": "detectIdentifierPattern: file path",
       "is_pub": false,
-      "line": 178
+      "line": 176
     },
     {
       "type": "test_decl",
       "name": "shouldSkipLLMSynthesis: empty query",
       "is_pub": false,
-      "line": 185
+      "line": 183
     },
     {
       "type": "test_decl",
       "name": "shouldSkipLLMSynthesis: exact match bypasses LLM",
       "is_pub": false,
-      "line": 190
+      "line": 188
     },
     {
       "type": "test_decl",
       "name": "shouldSkipLLMSynthesis: identifier bypasses LLM",
       "is_pub": false,
-      "line": 194
+      "line": 192
     },
     {
       "type": "test_decl",
       "name": "shouldSkipLLMSynthesis: natural language does not bypass",
       "is_pub": false,
-      "line": 200
+      "line": 198
     }
   ]
 }

@@ -6,6 +6,7 @@ const common = @import("common");
 pub const sha256Hex = common.sha256Hex;
 
 /// Computes a hash from allocator, name, and parameters, returning the resulting hash value.
+/// The hash is based ONLY on code signature (name, params, returns) - no comment content.
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};
     defer sig_buf.deinit(allocator);
@@ -25,7 +26,8 @@ pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const t
     return sha256Hex(allocator, sig_buf.items);
 }
 
-/// Generates a hash for a given Zig struct using its allocator and base data.
+/// Generates a hash for a given struct using allocator and base data.
+/// The hash is based ONLY on code signature (name, field_names) - no comment content.
 pub fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const []const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};
     defer sig_buf.deinit(allocator);
@@ -40,30 +42,6 @@ pub fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const
     try writer.writeByte(')');
 
     return sha256Hex(allocator, sig_buf.items);
-}
-
-/// Compute match_hash for a member: includes signature and comment.
-/// When comment changes, match_hash changes, triggering regeneration check.
-/// Format: SHA-256(signature || "|||COMMENT|||" || comment) if comment present,
-///         SHA-256(signature) otherwise.
-pub fn computeMemberHash(allocator: std.mem.Allocator, member: types.Member) ![]const u8 {
-    const sig = member.signature orelse member.name;
-
-    if (member.comment) |c| {
-        if (c.len > 0) {
-            var buf: std.ArrayList(u8) = .{};
-            defer buf.deinit(allocator);
-            const writer = buf.writer(allocator);
-
-            try writer.writeAll(sig);
-            try writer.writeAll("|||COMMENT|||");
-            try writer.writeAll(c);
-
-            return sha256Hex(allocator, buf.items);
-        }
-    }
-
-    return sha256Hex(allocator, sig);
 }
 
 /// Converts a null-terminated C string into a normalized Zig type slice.
@@ -133,91 +111,4 @@ test "structHash same fields produce same hash" {
     defer std.testing.allocator.free(hash2);
 
     try std.testing.expectEqualSlices(u8, hash1, hash2);
-}
-
-test "computeMemberHash without comment produces hash of signature" {
-    const member = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = null,
-    };
-    const hash = try computeMemberHash(std.testing.allocator, member);
-    defer std.testing.allocator.free(hash);
-
-    // Should be equal to hash of signature alone
-    const sig_hash = try sha256Hex(std.testing.allocator, member.signature.?);
-    defer std.testing.allocator.free(sig_hash);
-
-    try std.testing.expectEqualSlices(u8, hash, sig_hash);
-}
-
-test "computeMemberHash with comment differs from signature-only hash" {
-    const member_no_comment = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = null,
-    };
-    const member_with_comment = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = "Computes the result.",
-    };
-
-    const hash1 = try computeMemberHash(std.testing.allocator, member_no_comment);
-    defer std.testing.allocator.free(hash1);
-
-    const hash2 = try computeMemberHash(std.testing.allocator, member_with_comment);
-    defer std.testing.allocator.free(hash2);
-
-    // Hashes should differ because one has a comment
-    try std.testing.expect(!std.mem.eql(u8, hash1, hash2));
-}
-
-test "computeMemberHash same comment produces same hash" {
-    const member1 = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = "Does something.",
-    };
-    const member2 = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = "Does something.",
-    };
-
-    const hash1 = try computeMemberHash(std.testing.allocator, member1);
-    defer std.testing.allocator.free(hash1);
-
-    const hash2 = try computeMemberHash(std.testing.allocator, member2);
-    defer std.testing.allocator.free(hash2);
-
-    try std.testing.expectEqualSlices(u8, hash1, hash2);
-}
-
-test "computeMemberHash different comments produce different hashes" {
-    const member1 = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = "First comment.",
-    };
-    const member2 = types.Member{
-        .type = .fn_decl,
-        .name = "myFunc",
-        .signature = "fn myFunc(x: i32) i32",
-        .comment = "Second comment.",
-    };
-
-    const hash1 = try computeMemberHash(std.testing.allocator, member1);
-    defer std.testing.allocator.free(hash1);
-
-    const hash2 = try computeMemberHash(std.testing.allocator, member2);
-    defer std.testing.allocator.free(hash2);
-
-    try std.testing.expect(!std.mem.eql(u8, hash1, hash2));
 }

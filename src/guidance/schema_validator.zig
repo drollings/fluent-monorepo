@@ -31,11 +31,7 @@ const KNOWN_LANGUAGES = [_][]const u8{
     "cpp",
 };
 
-/// Validate `doc` against the GuidanceDoc schema.
-///
-/// Returns the first `ValidationError` encountered, or void on success.
-/// Call site example:
-///   try schema_validator.validateGuidanceDoc(allocator, &doc);
+/// Validates a GuidanceDoc structure using an allocator and returns no error if successful.
 pub fn validateGuidanceDoc(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc) ValidationError!void {
     _ = allocator; // reserved for future richer error messages
 
@@ -59,12 +55,7 @@ pub fn validateGuidanceDoc(allocator: std.mem.Allocator, doc: *const types.Guida
     }
 }
 
-/// Write a JSON Schema file (draft-07) for the GuidanceDoc format.
-///
-/// The generated file can be used by `bin/guidance-py` and other tools
-/// to validate their output against the canonical schema.
-///
-/// Writes to `path` (absolute). Creates or overwrites the file.
+/// Writes a JSON schema to a file using an allocator and path parameters.
 pub fn writeJsonSchemaFile(allocator: std.mem.Allocator, path: []const u8) !void {
     const schema =
         \\{

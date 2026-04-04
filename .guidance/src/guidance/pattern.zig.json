@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "detectPatterns",
-      "match_hash": "473d0bc25b9f263131ff787378b43f73b034dd8c8c8931e22e7600e70b2c8c37",
+      "match_hash": "0a4577f36773a7f8f72b215a04a76dbc121f4d1d3d757dab1eb94c9c160a618a",
       "signature": "fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) -> []types.Pattern",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -20,12 +20,12 @@
       ],
       "returns": "[]types.Pattern",
       "is_pub": true,
-      "line": 9
+      "line": 7
     },
     {
       "type": "fn_decl",
       "name": "detectPatternNames",
-      "match_hash": "dcb58c686f9a213c04aed1ce8282f40345e930edab703ac130a6570148226ba2",
+      "match_hash": "b7842e51e0a172b72af0b247074e725aa6862a8fb1a1ebd83839e77fa75ea563",
       "signature": "fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -34,7 +34,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 113
+      "line": 111
     }
   ]
 }

@@ -18,7 +18,7 @@ pub const LlmConfig = llm_root.LlmConfig;
 // Config
 // ---------------------------------------------------------------------------
 
-/// Manages decomposer configuration with fixed buffers; ensures ownership and invariants are preserved.
+/// Manages decomposer configuration with fixed buffers; owned by the model; ensures consistent state across operations.
 pub const DecomposerConfig = struct {
     /// LLM API config (endpoint + model).
     llm: LlmConfig,
@@ -32,7 +32,7 @@ pub const DecomposerConfig = struct {
 // LocalDecomposer
 // ---------------------------------------------------------------------------
 
-/// Breaks a complex query into sub-queries using a local (Ollama-compatible) LLM; used as the L4.5 tier.
+/// Manages local model state with fixed buffers; owned by the local context; ensures consistent state across calls.
 pub const LocalDecomposer = struct {
     allocator: std.mem.Allocator,
     config: DecomposerConfig,
@@ -88,8 +88,7 @@ pub const LocalDecomposer = struct {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Strip <think>...</think> blocks (identical to common/llm.zig version but
-/// inlined here to avoid importing the full common module root from common/).
+/// Removes unwanted characters from the input text slice.
 fn stripThinkBlock(text: []const u8) []const u8 {
     if (std.mem.indexOf(u8, text, "<think>")) |start| {
         if (std.mem.indexOfPos(u8, text, start + 7, "</think>")) |end| {
@@ -102,7 +101,7 @@ fn stripThinkBlock(text: []const u8) []const u8 {
     return text;
 }
 
-/// Return true if `text` does not look like a JSON array.
+/// Checks if the provided text is a valid JSON array, returning true if malformed.
 fn isMalformedJsonArray(text: []const u8) bool {
     const t = std.mem.trim(u8, text, " \t\r\n");
     if (t.len == 0) return true;
@@ -111,8 +110,7 @@ fn isMalformedJsonArray(text: []const u8) bool {
     return false;
 }
 
-/// Parse a JSON array of strings from `text` into `arena`-allocated slice.
-/// At most `limit` entries are returned.
+/// Converts a JSON array string into a Zig 2D slice, handling null-terminated input.
 fn parseJsonArray(arena: std.mem.Allocator, text: []const u8, limit: usize) ![][]const u8 {
     var parsed = try std.json.parseFromSlice(std.json.Value, arena, text, .{});
     defer parsed.deinit();

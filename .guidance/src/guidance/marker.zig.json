@@ -12,7 +12,7 @@
     {
       "type": "fn_decl",
       "name": "fileNeedsProcessing",
-      "match_hash": "b526235a30c8c21f2653a5630d8aed4adad1cb4edc7e3316e18431ff71f919e7",
+      "match_hash": "741994d2347925ee0aec700196ba7697a09f9d303162cfe5fe3324145b203186",
       "signature": "fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) -> bool",
       "params": [
         { "name": "src_abs", "type": "[]const u8" },
@@ -20,36 +20,36 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 57
+      "line": 51
     },
     {
       "type": "fn_decl",
       "name": "fileMtime",
-      "match_hash": "cc7b532687c5ba2e7739740fe9e69621e2b34b09b18db587033c52e004805a95",
+      "match_hash": "9d7f18099576b614cce864311101636e537881f91887ee32524d3396886ecd61",
       "signature": "fn fileMtime(path: []const u8) -> ?i128",
       "params": [
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "?i128",
       "is_pub": true,
-      "line": 78
+      "line": 60
     },
     {
       "type": "fn_decl",
       "name": "touchTestMarker",
-      "match_hash": "bb2145b4d939f413c260fea37d699671045554089dd092a32a5098bc0398555c",
+      "match_hash": "2f9470f024f7649f6f652e98c2275b056596f591e5be6c1272d74bbca9f4487f",
       "signature": "fn touchTestMarker(marker_path: []const u8) -> void",
       "params": [
         { "name": "marker_path", "type": "[]const u8" }
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 120
+      "line": 101
     },
     {
       "type": "fn_decl",
       "name": "touchFileAfter",
-      "match_hash": "05c519a4d7d5e3e624410207eccc611466c64fff97b9522b546987a8b11253cb",
+      "match_hash": "d954c6e16a38ae974a9e43c6071da2d5d63cf428538399032821a2bc265ccab6",
       "signature": "fn touchFileAfter(target_path: []const u8, ref_path: []const u8) -> void",
       "params": [
         { "name": "target_path", "type": "[]const u8" },
@@ -57,49 +57,73 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 132
+      "line": 109
+    },
+    {
+      "type": "fn_decl",
+      "name": "touchFileNow",
+      "match_hash": "5261b410fa2711bb97a3ac433fa43389a8b0cd8a3f9c3d5540b8151ee7850a4b",
+      "signature": "fn touchFileNow(target_path: []const u8) -> void",
+      "params": [
+        { "name": "target_path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 123
+    },
+    {
+      "type": "fn_decl",
+      "name": "touchFileNowPlusOne",
+      "match_hash": "dcf24c8861fb59420bc1cdcb884b9613fdd9a0e6bd0858b794ceace75397e6af",
+      "signature": "fn touchFileNowPlusOne(target_path: []const u8) -> void",
+      "params": [
+        { "name": "target_path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 133
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: absent JSON → stale",
       "is_pub": false,
-      "line": 149
+      "line": 145
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON written after source → fresh",
       "is_pub": false,
-      "line": 169
+      "line": 165
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)",
       "is_pub": false,
-      "line": 195
+      "line": 191
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON older by >1s → needs processing",
       "is_pub": false,
-      "line": 226
+      "line": 222
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: no marker → false",
       "is_pub": false,
-      "line": 258
+      "line": 254
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: marker newer than source → true",
       "is_pub": false,
-      "line": 279
+      "line": 275
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: source newer than marker → false",
       "is_pub": false,
-      "line": 301
+      "line": 297
     }
   ]
 }

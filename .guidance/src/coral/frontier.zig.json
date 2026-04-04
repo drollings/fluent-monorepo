@@ -10,29 +10,29 @@
     {
       "type": "struct",
       "name": "MinimizedContext",
-      "match_hash": "b5d2d05155a4042e3f64ad24e42ac419f5c1f5e38ef8a75268a80bc5b782b9e1",
+      "match_hash": "5eb559e6caf5ffec00d2e8f235933f28e267b53dcb2ad6b52fa5339a3b49f5e7",
       "signature": "keyword_struct MinimizedContext { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b180d10dbb7a830417871bebdc081e4537c3c3691966390c41348af40b746225",
+          "match_hash": "718c8966b9cb1218bfd74a24d7dd6ed93741d9fd8523e6f8ae23c92cd3e1716c",
           "signature": "fn deinit(self: *MinimizedContext) -> void",
           "params": [
             { "name": "self", "type": "*MinimizedContext" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 37
+          "line": 36
         }
       ],
-      "line": 27
+      "line": 26
     },
     {
       "type": "fn_decl",
       "name": "minimizeContext",
-      "match_hash": "d3612f78e4ada4e2adacb5302083cca2ea8f590e7a42e71268de2bb0550a27c7",
+      "match_hash": "3b94858d962188032b73aea2fbd9352db6821f1f8977678cc2f60ec24f0c0811",
       "signature": "fn minimizeContext(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, focal_id: i64, token_budget: usize) -> MinimizedContext",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -43,12 +43,12 @@
       ],
       "returns": "MinimizedContext",
       "is_pub": true,
-      "line": 48
+      "line": 43
     },
     {
       "type": "fn_decl",
       "name": "buildPrompt",
-      "match_hash": "9ec359327a100852d98626f1ab1c2869117cae64575f4832317ee6b187db22a8",
+      "match_hash": "cd6080b12aa0bb475cd9a2d7813c75b6f4a1127c58229b4d427dd3acccde1b02",
       "signature": "fn buildPrompt(allocator: std.mem.Allocator, ctx: MinimizedContext) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -56,54 +56,54 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 92
+      "line": 77
     },
     {
       "type": "fn_decl",
       "name": "validateSolution",
-      "match_hash": "9ac003cf747af09298bf0e78b6c3b7f00eb3fe8406aa2d728c080997a0808689",
+      "match_hash": "e51a713e53303483b7ad61e00cbafe09e818b217c725958b93c22ece164ae98f",
       "signature": "fn validateSolution(solution: []const u8) -> ValidationResult",
       "params": [
         { "name": "solution", "type": "[]const u8" }
       ],
       "returns": "ValidationResult",
       "is_pub": true,
-      "line": 120
+      "line": 100
     },
     {
       "type": "test_decl",
       "name": "validateSolution: empty returns invalid",
       "is_pub": false,
-      "line": 148
+      "line": 128
     },
     {
       "type": "test_decl",
       "name": "validateSolution: refusal returns invalid",
       "is_pub": false,
-      "line": 153
+      "line": 133
     },
     {
       "type": "test_decl",
       "name": "validateSolution: think block returns invalid",
       "is_pub": false,
-      "line": 158
+      "line": 138
     },
     {
       "type": "test_decl",
       "name": "validateSolution: valid prose returns valid",
       "is_pub": false,
-      "line": 163
+      "line": 143
     },
     {
       "type": "test_decl",
       "name": "buildPrompt: contains query and context",
       "is_pub": false,
-      "line": 168
+      "line": 148
     },
     {
       "type": "fn_decl",
       "name": "indexSolution",
-      "match_hash": "60f7206da0827e91d3cb29b81d874a635ee6105236341c4fd82a368c14c01902",
+      "match_hash": "88e19c86751207c5082d4368255bf4aad798b94dfd6f9122c6dcf2393b9b9193",
       "signature": "fn indexSolution(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -113,24 +113,24 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 205
+      "line": 182
     },
     {
       "type": "test_decl",
       "name": "indexSolution: smoke test with in-memory library",
       "is_pub": false,
-      "line": 255
+      "line": 232
     },
     {
       "type": "test_decl",
       "name": "indexSolution: idempotent on repeated call",
       "is_pub": false,
-      "line": 265
+      "line": 242
     },
     {
       "type": "fn_decl",
       "name": "indexSolutionWithTool",
-      "match_hash": "67e6bc67baac4dd582d098c9eb620b6b40529cf09bb0c719afe3e3f3ed279fbe",
+      "match_hash": "e6b427b5381043d9223cd06695964a7c6e935d584ebf09b5332042a41d336cc1",
       "signature": "fn indexSolutionWithTool(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8, generator: ?*wasm_mod.ToolGenerator) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -141,19 +141,19 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 298
+      "line": 268
     },
     {
       "type": "test_decl",
       "name": "indexSolutionWithTool: null generator falls back to ContextNode indexing",
       "is_pub": false,
-      "line": 360
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "indexSolutionWithTool: no code block still indexes node",
       "is_pub": false,
-      "line": 377
+      "line": 347
     }
   ]
 }

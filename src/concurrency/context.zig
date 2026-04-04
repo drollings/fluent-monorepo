@@ -22,10 +22,7 @@
 
 const std = @import("std");
 
-/// Cancellation and deadline context.  Stack-allocate; must outlive all work
-/// units that hold a `*const Context` pointer to it.
-///
-/// Size invariant: 24 bytes (state: 4 + padding: 4 + deadline: 16).
+/// Manages shared context with ownership and invariants; ensures safe access across threads.
 pub const Context = struct {
     /// Bit 0: cancelled flag.  Bits 1–16: u16 error code from `anyerror`.
     state: std.atomic.Value(u32),
@@ -214,3 +211,4 @@ test "Context: GPA no leaks — background, withTimeout, cancel" {
     const ctx2 = Context.withTimeout(60 * std.time.ns_per_s);
     try testing.expect(!ctx2.isExpired());
 }
+

@@ -10,29 +10,29 @@
     {
       "type": "struct",
       "name": "ProjectConfig",
-      "match_hash": "112d778ac3a1ff96e2480b8e7b3662c3cd85050e690ee0b05869375536ab52bc",
+      "match_hash": "e77c1e9d5e9c2fcd4a100659b574ca9150760bad151b1d5978060537738fa800",
       "signature": "keyword_struct ProjectConfig { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "0d733086fc310087a87c77d4df8de8e6fdd519d0d8f23e54c30dc15813702b2d",
+          "match_hash": "c087612d9808462451417b12823ee23aed744315d0012af37072233d5cd60e33",
           "signature": "fn deinit(self: *ProjectConfig) -> void",
           "params": [
             { "name": "self", "type": "*ProjectConfig" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 80
+          "line": 79
         }
       ],
-      "line": 51
+      "line": 50
     },
     {
       "type": "fn_decl",
       "name": "loadConfig",
-      "match_hash": "53efcfcfabf4e8ee70407bfd7cdb60f9f9aa72c1953b6f61276da13983501c4f",
+      "match_hash": "709d0fb4613a153b64116203ff4bad0c0b775fad8170976d2fba6f36f97e4a07",
       "signature": "fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -40,12 +40,12 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": true,
-      "line": 98
+      "line": 96
     },
     {
       "type": "fn_private",
       "name": "tryLoadFile",
-      "match_hash": "0de89c8da404f3038eb34d0745b9fc9c90b3eea5de888d0306227d1741e37b18",
+      "match_hash": "339cb6be026b60d4db7aec9d6d67bc8519fbe36d78e6d76f6bb5dae9fe25095e",
       "signature": "fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -54,12 +54,12 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 132
+      "line": 129
     },
     {
       "type": "fn_private",
       "name": "buildDefault",
-      "match_hash": "da1283b255a7178eac8e62031745bba0c68bfbfce83c5c5c82991441ae0ab33a",
+      "match_hash": "f5687d418eb748947913c92e87ddc29c2f5265542ac87a0feb15a2de6f5c3ef2",
       "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -67,12 +67,12 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 209
+      "line": 206
     },
     {
       "type": "fn_private",
       "name": "buildFromParts",
-      "match_hash": "6c1708ec9a6cea5e0f527d87ede44965504675ab306b97290a127bbd95244e6a",
+      "match_hash": "d2a66a8e872c2bc820886f394925f31e4a2e6786435b3c422cfb031d4d7650ca",
       "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -84,7 +84,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 223
+      "line": 220
     }
   ]
 }

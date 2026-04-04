@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "spawn",
-      "match_hash": "b6250aa9aa819a9f1661df8ce2021517fd728b892c14123dd66e64f3fb843cda",
+      "match_hash": "1d5637bc0b5b0c252d7c7855b4ea28e8349e126410dabcbde1e949976923a838",
       "signature": "fn spawn(pool: *std.Thread.Pool, wg: *std.Thread.WaitGroup, unit: AnyWorkUnit) -> void",
       "params": [
         { "name": "pool", "type": "*std.Thread.Pool" },
@@ -19,43 +19,43 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 28
+      "line": 23
     },
     {
       "type": "fn_private",
       "name": "runUnit",
-      "match_hash": "0f2b8e26654f27d04856a0a1204c420c56b5fc8c1d7faf57f982a2710335c751",
+      "match_hash": "787f1453f8619b45ab3085489ffd86b3e33d55ad7a8d077705e8aded86ce108e",
       "signature": "fn runUnit(unit: AnyWorkUnit) -> void",
       "params": [
         { "name": "unit", "type": "AnyWorkUnit" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 37
+      "line": 32
     },
     {
       "type": "test_decl",
       "name": "spawn: runs handler and signals wg",
       "is_pub": false,
-      "line": 61
+      "line": 56
     },
     {
       "type": "test_decl",
       "name": "spawn: 20 units on 4-thread pool — all complete",
       "is_pub": false,
-      "line": 77
+      "line": 72
     },
     {
       "type": "test_decl",
       "name": "spawn: cancelled unit completes without hanging",
       "is_pub": false,
-      "line": 109
+      "line": 104
     },
     {
       "type": "test_decl",
       "name": "spawn: GPA no leaks after pool.deinit",
       "is_pub": false,
-      "line": 127
+      "line": 122
     }
   ]
 }

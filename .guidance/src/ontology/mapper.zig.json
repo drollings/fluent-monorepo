@@ -11,14 +11,14 @@
     {
       "type": "struct",
       "name": "PendingNode",
-      "match_hash": "68275999eaa85cc31b5000c7d8ebd4be0398afbafc9ed2eb3ca18dddd2ec0e50",
+      "match_hash": "552993a8dd72eadbeafe43936237f14f2d9313df12a0d7c948d5ba42c3d5da05",
       "signature": "keyword_struct PendingNode { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "0908ad809c2a7a9122a4f9ae5b693ab3e8a18c2c3240cde27e64126ed56c8f9c",
+          "match_hash": "3fb654675fd08177fbec194f5bfde29d56ad8ab21a7fc68875999fbef813431a",
           "signature": "fn init(allocator: std.mem.Allocator, id: i64) -> PendingNode",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "ea78ccbc6df08f540a360d82f08855b77abfcbb89dabc620730cd84776d15d8c",
+          "match_hash": "32ae56aa64b8be4e5a3fe6adccf3777b8971e1055c08c569e90900c791366f12",
           "signature": "fn deinit(self: *PendingNode) -> void",
           "params": [
             { "name": "self", "type": "*PendingNode" }
@@ -43,7 +43,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toContextNode",
-          "match_hash": "6c43ee1330847ca35ff152189085e3bcc9e8a64887087e0cc5abbd142e7201e5",
+          "match_hash": "14031fbe679db61d793c9245f6e2908f30e5b39887dbc5599399cdb2ce12fdb4",
           "signature": "fn toContextNode(self: *const PendingNode, allocator: std.mem.Allocator) -> ContextNode",
           "params": [
             { "name": "self", "type": "*const PendingNode" },
@@ -59,7 +59,7 @@
     {
       "type": "struct",
       "name": "PendingEdge",
-      "match_hash": "d1bc9f4803a87485b5705b4cafb6330658f20967ea556996da2e11db43ec24db",
+      "match_hash": "d5e3cff403ea50ad99ebdf669dde6a6d78efefb19d02211027f4562113bf4434",
       "signature": "keyword_struct PendingEdge { ... }",
       "is_pub": true,
       "line": 90
@@ -67,7 +67,7 @@
     {
       "type": "struct",
       "name": "PendingContradiction",
-      "match_hash": "0abd7979f8fc6b42320521af20b9c6cdccc551a84e197ba4488186e9d33a23a1",
+      "match_hash": "2e77000c6c5305d6d29936f2716a83937ce8387c22edd798845805fc36a1313d",
       "signature": "keyword_struct PendingContradiction { ... }",
       "is_pub": true,
       "line": 101
@@ -75,14 +75,14 @@
     {
       "type": "struct",
       "name": "TripleMapper",
-      "match_hash": "9c2805b3b1e99fd1f7502b85cb17ee6edec7263ffe2e9d3108d333ba7e0f0de6",
+      "match_hash": "16be7d613810083aa7e8d8b3580ebf3302c30b7da305ef950c6405e983c0c178",
       "signature": "keyword_struct TripleMapper { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "b793c62e6d8bf868d8d200ed85001b0fe67f4bf5fbb994485117ab4c14036929",
+          "match_hash": "b3772df6e03c4d610baf8e8bbe6720fa386821b8dd46c7581f5def464957ea69",
           "signature": "fn init(allocator: std.mem.Allocator, config: MappingConfig) -> TripleMapper",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -95,7 +95,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b943bf43593ecf4f264eb1c8ec99e4de0a62ef83c6d7d9ba1e0825b4bdc3b912",
+          "match_hash": "bf6208d24cf4ce4bf90c852c943c404f5d48f034765c15a397c152d732b31b6f",
           "signature": "fn deinit(self: *TripleMapper) -> void",
           "params": [
             { "name": "self", "type": "*TripleMapper" }
@@ -107,7 +107,7 @@
     ,    {
           "type": "fn_decl",
           "name": "processTriple",
-          "match_hash": "7c897d0dadaf8e925540c7d4ca2599e424a0129d3c3d42df33c1760941260d94",
+          "match_hash": "bf8de1ebc6832b728d9029e73c7f87abe24e4593107ed281f9495df7e6eb6556",
           "signature": "fn processTriple(self: *TripleMapper, triple: Triple) -> void",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -120,7 +120,7 @@
     ,    {
           "type": "fn_decl",
           "name": "flush",
-          "match_hash": "2b8c230c5ee4483de731c04110f19070e30e3a7cad9bd26c4b993523b2515408",
+          "match_hash": "7c46f346c92bb44b133ccd0a324f9bb112e0213e261b67a8c02edd51701f1610",
           "signature": "fn flush(self: *TripleMapper, library: *Library) -> FlushResult",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -133,7 +133,7 @@
     ,    {
           "type": "fn_private",
           "name": "detectAndRecordContradiction",
-          "match_hash": "8dc03945c4ab9e8e267771f79049a9573ccbcf41bc39cdca7ee44cdba1e7d13e",
+          "match_hash": "bfd73bda95d12ac461afa90a63279b2124d3d60b93732bfeae743a2d3bef881d",
           "signature": "fn detectAndRecordContradiction(self: *TripleMapper, node: *const PendingNode, subject_id: i64, predicate: []const u8, lod_index: usize, new_value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -150,7 +150,7 @@
     ,    {
           "type": "fn_private",
           "name": "termKey",
-          "match_hash": "973b7b2486005f11c79948b9703a4bfa86ab7fe0ab04eb33b79552be60473a07",
+          "match_hash": "95d48fc5a0dbfe8292a34fb2c60536465bb509c01cd600d28ec32c4ef8859eef",
           "signature": "fn termKey(self: *TripleMapper, term: Term) -> []const u8",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -163,7 +163,7 @@
     ,    {
           "type": "fn_private",
           "name": "termToId",
-          "match_hash": "36cf94605a97c3daeaef83a8d94eaacc508148323eca06fd780a5ec3187f9e17",
+          "match_hash": "3d229fb27ef2cc8954222db1503796c4afc612e6a5ce82cddcebdbbc187ca304",
           "signature": "fn termToId(self: *TripleMapper, term: Term) -> i64",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -176,7 +176,7 @@
     ,    {
           "type": "fn_private",
           "name": "termToIRI",
-          "match_hash": "7d3c7c8ebfe714ca47f092429dfde8e989a7e7cbf87eb9731dc0336673d7afbf",
+          "match_hash": "28d2af6c90fbe3b564768f2ca14b01791684bb81ff96f75c9aa5760ef2306bb3",
           "signature": "fn termToIRI(self: *TripleMapper, term: Term) -> []const u8",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -189,7 +189,7 @@
     ,    {
           "type": "fn_private",
           "name": "getOrCreateNode",
-          "match_hash": "163d7522428149deaef5279731fcfca94710919db261b1cae229c9df8ac31b57",
+          "match_hash": "031592cd2b6485542275a2526324f7e49a11e1f67eb03cdd7ce785598896e96d",
           "signature": "fn getOrCreateNode(self: *TripleMapper, term: Term, id: i64) -> *PendingNode",
           "params": [
             { "name": "self", "type": "*TripleMapper" },
@@ -206,7 +206,7 @@
     {
       "type": "struct",
       "name": "FlushResult",
-      "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
+      "match_hash": "fdae83545b3d3ca9e773098044ada2943305a0891ba51515716f860b07a8e8ab",
       "signature": "keyword_struct FlushResult { ... }",
       "is_pub": true,
       "line": 353
@@ -214,7 +214,7 @@
     {
       "type": "fn_private",
       "name": "shouldUseLang",
-      "match_hash": "4043278801090d4e423dc0093d686a54ec272427ea7c041e2514e05b96d11835",
+      "match_hash": "aa9c368a02fb14ffe35976b0c28c389582c98e10cf2c82e1ed3137ad698170f6",
       "signature": "fn shouldUseLang(actual: ?[]const u8, preferred: []const u8) -> bool",
       "params": [
         { "name": "actual", "type": "?[]const u8" },

@@ -5,7 +5,7 @@
 /// Falls back gracefully to keyword-only when no embedding is provided.
 const std = @import("std");
 
-/// Search result from either keyword or vector path.
+/// Manages search result data structures; owned by the module; ensures consistent data invariants.
 pub const SearchResult = struct {
     id: i64,
     score: f32,
@@ -20,17 +20,14 @@ pub const SearchConfig = struct {
     keyword_weight: f32 = 0.35,
 };
 
-/// Search mode selector.
+/// Manages guidance search modes with fixed buffers; owned by the system; ensures consistent state across operations.
 pub const GuidanceSearchMode = enum {
     keyword_only,
     hybrid,
     embedding_only,
 };
 
-/// Merge keyword and optional vector results via weighted score fusion.
-/// Both lists should be ordered by descending relevance (best first).
-/// Returns a sorted, deduplicated result list (best score first).
-/// Caller owns the returned slice.
+/// Executes a hybrid search across allocator, keyword and vector results with configurable limits.
 pub fn hybridSearch(
     allocator: std.mem.Allocator,
     keyword_results: []const SearchResult,

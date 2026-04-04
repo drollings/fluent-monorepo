@@ -9,14 +9,14 @@
     {
       "type": "struct",
       "name": "SimHash",
-      "match_hash": "e3274ca7a5257785f11796fe2d0dc63b7737a2f58a3655adabea56777e3894dc",
+      "match_hash": "cdd6098425d211bd31b7936bf8ae97e385071266fd96ea500b06ab1453b2d92d",
       "signature": "keyword_struct SimHash { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "compute",
-          "match_hash": "785c49db5d3f3d9e2a977904f05ba0e2b95153aec514e7763c75b3e2ebd2f2e5",
+          "match_hash": "195727d42f56ab61618a2f0e9b4af30dd1b5cce0bd02061ccc0c4babae2b402c",
           "signature": "fn compute(tokens: []const []const u8, shingle_size: usize) -> u64",
           "params": [
             { "name": "tokens", "type": "[]const []const u8" },
@@ -29,7 +29,7 @@
     ,    {
           "type": "fn_decl",
           "name": "distance",
-          "match_hash": "1439c4dc351903a498f131e042ae1534cfc6ddb10a1625284e10f6c0248a4e90",
+          "match_hash": "447393b9b756986d02ff11c0256920ef4048c7a8f430ee99502893deae21699d",
           "signature": "fn distance(a: u64, b: u64) -> u16",
           "params": [
             { "name": "a", "type": "u64" },
@@ -42,7 +42,7 @@
     ,    {
           "type": "fn_decl",
           "name": "similar",
-          "match_hash": "fedc68695102ba6fca9b9fc3d78c8f20c09c267db605a38f5ee1a54186601a71",
+          "match_hash": "db3c3ef4a35a86b58e93a63f75197727a1b3c67e2c7c33f5af9d72f5a6436782",
           "signature": "fn similar(a: u64, b: u64, threshold: u16) -> bool",
           "params": [
             { "name": "a", "type": "u64" },
@@ -56,7 +56,7 @@
     ,    {
           "type": "fn_private",
           "name": "hashShingle",
-          "match_hash": "2068d01c0f42b023e0431e6fad10628fed04be2a0d18e1e020bfffeb3a28ed78",
+          "match_hash": "332bb00c266121cf141692a7a32fcffa4085d33e9c762942268d1ddaa4e5a6bd",
           "signature": "fn hashShingle(tokens: []const []const u8) -> u64",
           "params": [
             { "name": "tokens", "type": "[]const []const u8" }

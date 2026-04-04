@@ -19,7 +19,7 @@ const ParsedFile = plugin_mod.ParsedFile;
 
 const EXTENSIONS = [_][]const u8{ ".md", ".markdown", ".mdx" };
 
-/// Returns the singleton MarkdownPlugin descriptor.
+/// Transforms the plugin configuration into a LanguagePlugin instance.
 pub fn plugin() LanguagePlugin {
     return .{
         .name = "markdown",
@@ -33,7 +33,7 @@ pub fn plugin() LanguagePlugin {
 // Implementation
 // ---------------------------------------------------------------------------
 
-/// Converts a markdown file into a Zig source file by parsing its content.
+/// Converts a markdown file into a Zig source code representation.
 fn parseMarkdown(
     arena: std.mem.Allocator,
     source: [:0]const u8,
@@ -128,9 +128,7 @@ fn parseMarkdown(
     };
 }
 
-/// Extract Markdown link targets as "imports" — useful for used_by analysis.
-/// Only extracts `[text](path)` style links whose target does not start with
-/// http/https (i.e. local file links).
+/// Extracts Markdown links from the provided source, returning an empty slice on failure.
 fn extractMarkdownLinks(
     arena: std.mem.Allocator,
     source: [:0]const u8,
@@ -164,8 +162,7 @@ fn extractMarkdownLinks(
     return links.toOwnedSlice(arena);
 }
 
-/// Derive a dot-separated module name from a Markdown file path.
-/// "docs/README.md" → "docs.README"
+/// Transforms a markdown file path into a Zig module slice for processing.
 fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) ![]const u8 {
     var path = file_path;
     if (std.mem.startsWith(u8, path, "./")) path = path[2..];

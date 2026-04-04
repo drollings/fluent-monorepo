@@ -10,43 +10,43 @@
     {
       "type": "fn_decl",
       "name": "isSyntheticComment",
-      "match_hash": "c77d79df2f20ec26deb56d66af4e13ef54eda66e7941b9b53a563e649b86efc0",
+      "match_hash": "9e7984418b6e13ede71ec72638a7046de7db9781c8fafb4ce075af98fdf348fd",
       "signature": "fn isSyntheticComment(comment: []const u8) -> bool",
       "params": [
         { "name": "comment", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 12
+      "line": 11
     },
     {
       "type": "fn_private",
       "name": "endsWithIncomplete",
-      "match_hash": "4d4e401fe2ac3194c31cea08547691d5d5a87dd2394082562ad2800d49bf413b",
+      "match_hash": "2f49fa4007be9c4b724c2200ff9eb56fba0c2ba86ac5e96a4ed6863fd2ddbfcb",
       "signature": "fn endsWithIncomplete(s: []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 78
+      "line": 76
     },
     {
       "type": "fn_private",
       "name": "hasNumericTypeRef",
-      "match_hash": "37b84feab81c00171179748d250e0a1b5ab2b2b6086816114bbb788b09b0e571",
+      "match_hash": "698c1f52cadd48952f9fa1a05ce055d542aded959f2919471723703a7eafd16a",
       "signature": "fn hasNumericTypeRef(s: []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 92
+      "line": 89
     },
     {
       "type": "fn_decl",
       "name": "containsIgnoreCase",
-      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
+      "match_hash": "b52ace2914746aeba9a95fe8557080e7e1edf230c423b4bd089d1a96d8fda4c9",
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -54,91 +54,91 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 109
+      "line": 106
     },
     {
       "type": "fn_decl",
       "name": "scrubJsonValue",
-      "match_hash": "a07d2510cc914218efb8e77b5d7224f6767d5505b1c156cb371d49e7c2877e0d",
+      "match_hash": "7c60c747a62c6d6e78e86b69b5d6f18e8fcf62c5edac5ebaaa1da7f1f1804bbc",
       "signature": "fn scrubJsonValue(value: *std.json.Value) -> bool",
       "params": [
         { "name": "value", "type": "*std.json.Value" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 121
+      "line": 116
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: empty and whitespace",
       "is_pub": false,
-      "line": 150
+      "line": 145
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: bracket-only skill tag",
       "is_pub": false,
-      "line": 156
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: LLM thinking markers",
       "is_pub": false,
-      "line": 162
+      "line": 157
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: ends with question mark",
       "is_pub": false,
-      "line": 170
+      "line": 165
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: dangling preposition",
       "is_pub": false,
-      "line": 176
+      "line": 171
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: hedged opening",
       "is_pub": false,
-      "line": 183
+      "line": 178
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: directive leakage",
       "is_pub": false,
-      "line": 190
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: numeric type ref noise",
       "is_pub": false,
-      "line": 198
+      "line": 193
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: real comments pass",
       "is_pub": false,
-      "line": 204
+      "line": 199
     },
     {
       "type": "test_decl",
       "name": "scrubJsonValue: blanks synthetic module comment",
       "is_pub": false,
-      "line": 213
+      "line": 208
     },
     {
       "type": "test_decl",
       "name": "scrubJsonValue: blanks synthetic member comment",
       "is_pub": false,
-      "line": 227
+      "line": 222
     },
     {
       "type": "test_decl",
       "name": "scrubJsonValue: preserves real comment",
       "is_pub": false,
-      "line": 242
+      "line": 237
     }
   ]
 }

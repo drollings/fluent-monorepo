@@ -32,7 +32,7 @@ pub const Message = struct {
 // Token estimation
 // ---------------------------------------------------------------------------
 
-/// Approximate token count for a string: 1 token ≈ 4 characters.
+/// Calculates the estimated number of tokens in a Zig source file for compression analysis.
 pub fn estimateTokens(content: []const u8) usize {
     return (content.len + 3) / 4;
 }

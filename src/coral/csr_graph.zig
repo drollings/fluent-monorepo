@@ -28,7 +28,7 @@ const Allocator = std.mem.Allocator;
 pub const CSR_MAGIC: u32 = 0x4752_5343; // 'C','S','R','G'
 pub const CSR_VERSION: u32 = 1;
 
-/// BLOB header.  `extern struct align(1)` guarantees deterministic byte layout.
+/// Manages serialized CSR data with fixed buffers; encapsulates ownership and invariants.
 pub const SerializedCSR = extern struct {
     magic: u32 align(1),
     version: u32 align(1),

@@ -43,13 +43,7 @@ const std = @import("std");
 
 // ── SchemaVersion ─────────────────────────────────────────────────────────────
 
-/// A (major, minor) schema version pair.
-///
-/// - `major` bumped for breaking changes (field removed, type changed).
-/// - `minor` bumped for additive changes (new field with default).
-///
-/// Stored as two u16 words (4 bytes total) so it can be embedded in wire
-/// formats or persisted alongside schema data.
+/// Defines the version schema; ensures schema invariants and versioning rules are enforced.
 pub const SchemaVersion = struct {
     major: u16,
     minor: u16 = 0,
@@ -85,11 +79,7 @@ pub const SCHEMA_CURRENT: SchemaVersion = .{ .major = 1, .minor = 0 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Return an error if `stored` is not compatible with `current`.
-///
-/// Typical usage in a loader:
-///
-///   try checkCompatible(header_version, SCHEMA_CURRENT);
+/// Validates compatibility between stored and current SchemaVersion objects.
 pub fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) error{SchemaMismatch}!void {
     if (!stored.compatible(current)) return error.SchemaMismatch;
 }

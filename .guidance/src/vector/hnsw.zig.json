@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "HnswIndex",
-      "match_hash": "33dce003ad91faa1b2a4919adc830e0110e5bf61924e963712856996003339e7",
+      "match_hash": "60a0b15393992a25b89afa952412f3d4b3dae706fddbe8a9793f74c8611163b9",
       "signature": "keyword_struct HnswIndex { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "634d0adc1eb1d599195ffa9e94b3168611fdc51d48380f4f62da635944180414",
+          "match_hash": "84c6fdc8482a500d935b27a8d555ff0a502fc6a38a43b92346304b76e0b85e7e",
           "signature": "fn init(allocator: std.mem.Allocator, dimensions: usize, max_elements: usize) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "withM",
-          "match_hash": "fc228cf5dcd7a735c3f40799d49f7f98b6d28af107b5f58ffa9c37274d1016e8",
+          "match_hash": "41a4451f75d841bf8fc41679adce27ad206d5d8684e10120a59974a660a2ddf5",
           "signature": "fn withM(self: *Self, m: usize) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -44,7 +44,7 @@
     ,    {
           "type": "fn_decl",
           "name": "withEfConstruction",
-          "match_hash": "a8c4c17da872ab26d329b92df9a8ba50db3ed079fca2a4db5771e22861cf4799",
+          "match_hash": "b1df42e7e662cbefa4a2f3a25c6efe9df0319552aea684658b707676cb28cf32",
           "signature": "fn withEfConstruction(self: *Self, ef: usize) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -57,7 +57,7 @@
     ,    {
           "type": "fn_decl",
           "name": "withEfSearch",
-          "match_hash": "c57c251f4e8cd46a8d0fa9c1d1f8a879575d7ac3381b553667a78304e4df9ad8",
+          "match_hash": "2ba39fcdbf426c05182cdb4bfcb502c63e06e9410cc00abf5b7163a1453d25d7",
           "signature": "fn withEfSearch(self: *Self, ef: usize) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -70,7 +70,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "3c739d31879b487723e06c77311a8a1705bc59ebfbc140c88661a3cd06f0b75c",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -82,7 +82,7 @@
     ,    {
           "type": "fn_decl",
           "name": "add",
-          "match_hash": "40996eddc0812cace7600a320d9a205717fd3db7c2cacd84b8f1921a45af90d9",
+          "match_hash": "8be8cbec778b8e4bd6c8ea6682ad8d30921bab22e0932e0a5e5726093c5555cb",
           "signature": "fn add(self: *Self, id: i64, vector: []const f32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -96,7 +96,7 @@
     ,    {
           "type": "fn_private",
           "name": "searchLayer",
-          "match_hash": "c09838d41e159d87f2448d3d1f6235db54a512f1cae02c1ea38db906172302cd",
+          "match_hash": "98a97fe0694b4c6c7da95cfd9c93fdcb3dce90c7585687568e078de948c91979",
           "signature": "fn searchLayer(self: *Self, allocator: std.mem.Allocator, query: []const f32, entry_point: i64, layer: usize, ef: usize) -> []SearchResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -113,7 +113,7 @@
     ,    {
           "type": "fn_private",
           "name": "connectBidirectional",
-          "match_hash": "98611a7eba9c14e6b54b2c89be7d35f479be865bf3d071175655ec61345083ed",
+          "match_hash": "195b7d9fa391d8328b5056fedc9906df52396f0b3e0d4cb76c25deba81a2dc3d",
           "signature": "fn connectBidirectional(self: *Self, id1: i64, id2: i64, layer: usize) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -128,7 +128,7 @@
     ,    {
           "type": "fn_decl",
           "name": "search",
-          "match_hash": "1bfa8d94afa46446e2029d13423b35a6a988eeaa70b5cbf89ab001a8ed516ed5",
+          "match_hash": "25bf3d7efefd41d69cbc53608cc1af9bd8579fe89e0e8c164b32487c00fe8531",
           "signature": "fn search(self: *Self, query: []const f32, k: usize) -> []SearchResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -142,7 +142,7 @@
     ,    {
           "type": "fn_decl",
           "name": "remove",
-          "match_hash": "49f480b560014b3aca06f8019ea9bec44c3769357d66a5e461ac36297fb83bd6",
+          "match_hash": "50b8b46480c230867d75e76caa6496ee37908a9f71790deaa2b1cb8956628f1a",
           "signature": "fn remove(self: *Self, id: i64) -> bool",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -155,7 +155,7 @@
     ,    {
           "type": "fn_private",
           "name": "writeU32",
-          "match_hash": "45965214684dfb9c33bbb0452e10ab76628f98e8a693579364c838a418249654",
+          "match_hash": "cb6b3696d8a01fd0307328a810ec46b26247946812f4cf1e159df1b87da46526",
           "signature": "fn writeU32(file: std.fs.File, v: u32) -> void",
           "params": [
             { "name": "file", "type": "std.fs.File" },
@@ -168,7 +168,7 @@
     ,    {
           "type": "fn_private",
           "name": "writeI64",
-          "match_hash": "618c2c5d8ec5e8add96dabd548dc62c03a5bd28f717a3855d2672b2cabc0d364",
+          "match_hash": "a758f4d39c6c0635366cb2ac97007180cad6acd51677bcb127f2cac38dc9be6b",
           "signature": "fn writeI64(file: std.fs.File, v: i64) -> void",
           "params": [
             { "name": "file", "type": "std.fs.File" },
@@ -181,7 +181,7 @@
     ,    {
           "type": "fn_private",
           "name": "writeU64",
-          "match_hash": "429e68c425700922284ecf49c8dc28cff507081206b5b9493aae728a85dfbd0b",
+          "match_hash": "598dbba9646d611e472aea69672410e040380c16a7745e87f421d30b1a3293ca",
           "signature": "fn writeU64(file: std.fs.File, v: u64) -> void",
           "params": [
             { "name": "file", "type": "std.fs.File" },
@@ -194,7 +194,7 @@
     ,    {
           "type": "fn_private",
           "name": "readExact",
-          "match_hash": "264f335d3391cdb9464c770a9d8cdea6ce59e9fc23c342f9f3ff067ed02662e2",
+          "match_hash": "e12133e9c0357938f1d9b4eaacccf9490267e3e253f2949986f033acb2f61f75",
           "signature": "fn readExact(file: std.fs.File, buf: []u8) -> void",
           "params": [
             { "name": "file", "type": "std.fs.File" },
@@ -207,7 +207,7 @@
     ,    {
           "type": "fn_private",
           "name": "readU32",
-          "match_hash": "d081691361c5cd0c198d4a5ddc2182b5908176b2c652ce27764e49b926942af7",
+          "match_hash": "d13cd465fc1292bba312ac091228f6eaa9e5bcb7722b42f5f0740d8c2bc20822",
           "signature": "fn readU32(file: std.fs.File) -> u32",
           "params": [
             { "name": "file", "type": "std.fs.File" }
@@ -219,7 +219,7 @@
     ,    {
           "type": "fn_private",
           "name": "readI64",
-          "match_hash": "46aba62b2d0653552dac7fd0475e1017ab40754db4dd873729f4be007efd9df8",
+          "match_hash": "d8b9060cf12e18d14f6c2f552a953db7123ec65f4d3f98da8f1149df3967ff01",
           "signature": "fn readI64(file: std.fs.File) -> i64",
           "params": [
             { "name": "file", "type": "std.fs.File" }
@@ -231,7 +231,7 @@
     ,    {
           "type": "fn_private",
           "name": "readU64",
-          "match_hash": "6857305a504556ce093034dc77fa2e583c5ac4e08178855a89887930d0ac8def",
+          "match_hash": "f47c53314de44282b0b06f9e87de577cdc957822b17ae5127e80695b3166dc98",
           "signature": "fn readU64(file: std.fs.File) -> u64",
           "params": [
             { "name": "file", "type": "std.fs.File" }
@@ -243,7 +243,7 @@
     ,    {
           "type": "fn_decl",
           "name": "save",
-          "match_hash": "726ca8029472f3cb12cc9fb96f91bf235733cd937042b25ec87f1fc539068d96",
+          "match_hash": "18fa69d7f6012040820d8db87ef6d178b3f1347940253266c6d54298e63ae18b",
           "signature": "fn save(self: *const Self, path: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -256,7 +256,7 @@
     ,    {
           "type": "fn_decl",
           "name": "load",
-          "match_hash": "2a4f1550e42766bf519e2155d6a869d10bf0e716fdb702001f6c0da264b3a555",
+          "match_hash": "1328e3ee63e873438001c427cff9510f9422f5d6cb8bbc01161c89f5a6b449dd",
           "signature": "fn load(self: *Self, path: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -269,7 +269,7 @@
     ,    {
           "type": "fn_private",
           "name": "randomLevel",
-          "match_hash": "b917a8e8f61ae8849bc761112fcec4a3a093abdf333139bf280027315d433085",
+          "match_hash": "985741d66d8714e74e1ce6d27ba1515207787b5603810fc04475373387d42bd8",
           "signature": "fn randomLevel(self: *Self) -> usize",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -281,7 +281,7 @@
     ,    {
           "type": "fn_private",
           "name": "distance",
-          "match_hash": "36d8572ffef9f17adb6255657b3e248d23057d6f2cda71ecd859847f08901025",
+          "match_hash": "07099be7eba21147061949ae980b34bb2293807ba79c710a34894db44d37670e",
           "signature": "fn distance(self: *const Self, a: []const f32, b: []const f32) -> f32",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -295,7 +295,7 @@
     ,    {
           "type": "fn_private",
           "name": "connect",
-          "match_hash": "80b2e66268db148fd71169d3def6d2e15ec7abd381c3c0cb67426ad082cb666f",
+          "match_hash": "2d648d814179056f82fe7af4f7f9f6d2fe309adb8e0d38119ee072ca61aa5db2",
           "signature": "fn connect(self: *Self, from: i64, to: i64, layer: usize) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -310,7 +310,7 @@
     ,    {
           "type": "fn_private",
           "name": "pruneConnections",
-          "match_hash": "266586b34be5e52f324c8fd3429ae35e98850d26adbd5e470c69aedd7d01e636",
+          "match_hash": "b26325d901cb3b0d0de4c0fbf5812bad35e7e9712acbe4e0b994e3687db1a57f",
           "signature": "fn pruneConnections(self: *Self, node_id: i64, layer: usize, max_conn: usize) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -325,7 +325,7 @@
     ,    {
           "type": "fn_private",
           "name": "selectNeighborsHeuristic",
-          "match_hash": "6016d5491dcdea326cb1be519f8aa66e87cc24c0fd14652e24c7a2850d62a1e8",
+          "match_hash": "c303abfed38731641872ac61fa7c6099618bb19a1a18cda09de15677b3ec7758",
           "signature": "fn selectNeighborsHeuristic(self: *const Self, _: []const f32, candidates: []const SearchResult, m: usize) -> []SearchResult",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -340,7 +340,7 @@
     ,    {
           "type": "fn_decl",
           "name": "verifyConnectivity",
-          "match_hash": "3f8ce2e5af2c9cbdce543f3d94722ca6a79e3f3aee888d54e890acf3c18d6a8a",
+          "match_hash": "b998934c755b54a67cc9ab30cc69d22e0a3093391d5126a3afadcca59b682011",
           "signature": "fn verifyConnectivity(self: *const Self) -> struct { connected: usize, total: usize, percentage: f32 }",
           "params": [
             { "name": "self", "type": "*const Self" }

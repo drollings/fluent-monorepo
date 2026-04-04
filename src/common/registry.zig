@@ -51,7 +51,7 @@ pub fn add(self: *TargetRegistry, tgt: *Target) !void {
     self.updateProviderMap(tgt);
 }
 
-/// Retrieves a target registry entry by name, returning a pointer to its registry data.
+/// Retrieves a registry entry by name, returning a pointer to the target registry.
 pub fn get(self: *const TargetRegistry, name: []const u8) ?*Target {
     return self.targets.get(name);
 }
@@ -100,7 +100,7 @@ fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
     }
 }
 
-/// Retrieves provider addresses for a specified registry bit index.
+/// Retrieves provider addresses for a given registry bit index.
 pub fn getProviders(self: *const TargetRegistry, bit_index: usize) ?[]*Target {
     if (self.provider_map.get(bit_index)) |list| {
         return list.items;
@@ -119,7 +119,7 @@ pub fn count(self: *const TargetRegistry) usize {
     return self.targets.count();
 }
 
-/// Retrieves essential target registry entries with allocator support.
+/// Retrieves essential target registry entries from the provided allocator.
 pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
     var essentials: std.ArrayList(*Target) = .{};
     errdefer essentials.deinit(allocator);
@@ -286,14 +286,7 @@ pub const TargetBuilder = struct {
     }
 };
 
-/// Return a fluent TargetBuilder for adding a new target to this registry.
-///
-/// Errors during Target allocation are deferred to `register()` so the entire
-/// chain can be expressed as a single `try` expression:
-///
-///   try registry.target("build", .file)
-///       .depends(&.{"compile"})
-///       .register();
+/// Transforms a Zig target registry entry into a TargetBuilder instance with specified name and type.
 pub fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) TargetBuilder {
     const arena = std.heap.ArenaAllocator.init(self.allocator);
     const t = self.allocator.create(Target) catch |e| {
@@ -316,10 +309,7 @@ pub fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) 
 // Distance 0 = exact match; returned immediately.
 // Returns null if the registry is empty or all targets have distance MaxInt.
 
-/// Compute popCount(needed & ~provides): unmet capability count.
-///
-/// Iterates over set bits in `needed` and counts those not present in
-/// `provides`.  No temporary allocations required.
+/// Calculates the distance between two bit sets using an allocator and provides the result.
 fn capabilityDistance(
     allocator: std.mem.Allocator,
     needed: *const std.bit_set.DynamicBitSetUnmanaged,
@@ -338,14 +328,7 @@ fn capabilityDistance(
     return unmet;
 }
 
-/// Find the Target that best satisfies `needed` by bitwise popCount distance.
-///
-/// Returns an exact match (distance=0) immediately when found.
-/// Returns the closest partial match otherwise.
-/// Returns null when the registry is empty or no target has any provides bits.
-///
-/// `allocator` is used only for temporary bit-set arithmetic; no allocations
-/// escape this function.
+/// Resolves a target registry entry using its capability and allocator, returning a pointer to the registered target.
 pub fn resolveByCapability(
     self: *const TargetRegistry,
     allocator: std.mem.Allocator,
@@ -907,3 +890,21 @@ test "TargetBuilder: err field is null on successful register" {
     try testing.expect(b.err_any == null);
     try b.command("rm -rf build").register();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

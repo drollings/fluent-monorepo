@@ -32,12 +32,7 @@ pub const CommonArgs = struct {
     positional: []const []const u8 = &[_][]const u8{},
 };
 
-/// Parse a flat args slice (excluding argv[0]) into a `CommonArgs`.
-/// Positional arguments are returned as a sub-slice of `args`; the caller
-/// must keep `args` alive for the lifetime of the returned struct.
-///
-/// Unknown flags are skipped (permissive mode for command-specific flags).
-/// A flag that requires a value but is the last arg produces `error.MissingValue`.
+/// Converts a C-style array of arguments into a CommonArgs structure, handling null-terminated input.
 pub fn parseCommonArgs(
     args: []const []const u8,
     positional_buf: *std.ArrayListUnmanaged([]const u8),

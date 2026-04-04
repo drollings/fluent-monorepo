@@ -61,8 +61,7 @@ pub const DEFAULT_STEPS =
     \\7. Move to COMPLETE.md when tests pass
 ;
 
-/// Extract path-like tokens from content matching common project directories.
-/// Returns a deduplicated slice of owned paths (caller must free each + the slice).
+/// Identifies and returns affected file slices from the given content using an allocator.
 pub fn findAffectedFiles(
     allocator: std.mem.Allocator,
     content: []const u8,

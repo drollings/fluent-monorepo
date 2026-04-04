@@ -65,7 +65,7 @@ pub const CapabilityKeyword = struct {
     relevance: f32,
 };
 
-/// Loaded semantic aliases (owned by caller).
+/// Manages semantic aliases for vector DB; owns dynamic structs; key invariant is consistent keying.
 pub const SemanticAliases = struct {
     aliases: []SemanticAlias,
     allocator: std.mem.Allocator,
@@ -131,8 +131,7 @@ pub const SemanticAliases = struct {
     }
 };
 
-/// Load semantic aliases from a JSON file.
-/// Returns null if file doesn't exist.
+/// Loads semantic aliases from a file path into a SemanticAliases struct.
 pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?SemanticAliases {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
@@ -192,7 +191,7 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
 // Public entry points
 // ---------------------------------------------------------------------------
 
-/// Synchronizes the database by loading data from the specified path using the allocator and embedding provider.
+/// Synchronizes database state using provided allocator, paths, and embedding provider.
 pub fn syncDatabase(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -316,7 +315,7 @@ pub const DbSyncBuilder = struct {
 // GuidanceDb — the database handle
 // ---------------------------------------------------------------------------
 
-/// Manages guidance data structures with fixed-size buffers; owned by the system; ensures consistent state across operations.
+/// Manages a fixed-size buffer pool for efficient data access; owned by the system; ensures consistent memory layout.
 pub const GuidanceDb = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
@@ -3874,7 +3873,7 @@ pub const GuidanceDb = struct {
 // JSON parsing — internal structure
 // ---------------------------------------------------------------------------
 
-/// Represents parsed member data with ownership and invariants; managed via parsing pipeline.
+/// Manages parsed member data structures; owns a fixed-size buffer pool; not thread-safe.
 const ParsedMember = struct {
     node_type: []const u8,
     name: []const u8,
@@ -3900,16 +3899,13 @@ const ParsedDoc = struct {
 // Capability helpers — module-level (no GuidanceDb state required)
 // ---------------------------------------------------------------------------
 
-/// Extract the capability name from an absolute CAPABILITY.md path.
-/// Example: "doc/capabilities/vector-search/CAPABILITY.md" → "vector-search"
+/// Converts a file path string into a Zig capability name slice.
 fn capabilityNameFromPath(file_path: []const u8) []const u8 {
     const dir = std.fs.path.dirname(file_path) orelse return file_path;
     return std.fs.path.basename(dir);
 }
 
-/// Load capability_keywords section from capability-mapping.json into map.
-/// All map keys and values are allocated on `alloc`.
-/// JSON structure: { "capability_keywords": { "cap-name": ["kw1","kw2",...] } }
+/// Loads a capability keywords map from a file path into an unmanaged map for use in Zig code.
 fn loadCapabilityKeywordsMap(
     alloc: std.mem.Allocator,
     mapping_path: []const u8,
@@ -4122,7 +4118,7 @@ fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u
     return buf.toOwnedSlice(allocator);
 }
 
-/// Converts a SQL statement's column usage into a slice of byte slices, handling allocator and SQLite3_stmt parameters.
+/// Converts a SQL statement into a slice of byte slices for column parsing.
 fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![][]const u8 {
     if (c.sqlite3_column_type(stmt, col) == c.SQLITE_NULL) return &.{};
     const raw = c.sqlite3_column_text(stmt, col);
@@ -4146,7 +4142,7 @@ fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocato
     return try out.toOwnedSlice(allocator);
 }
 
-/// Converts a SQLite column value to a Zig byte slice, handling nulls and allocator context.
+/// Converts a SQLite column value to a Zig byte slice, handling conversion and allocation.
 fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![]u8 {
     const raw = c.sqlite3_column_text(stmt, col);
     const len: usize = @intCast(c.sqlite3_column_bytes(stmt, col));
@@ -4163,7 +4159,7 @@ fn dupeColNullable(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocat
     return try allocator.dupe(u8, @as([*]const u8, @ptrCast(raw))[0..len]);
 }
 
-/// Handles SQLite errors by logging details and returning an error code.
+/// Handles SQLite errors by logging details and returning the error code.
 fn logSqliteErr(context: []const u8, sql: []const u8, rc: c_int, err_msg: [*c]u8, db: ?*c.sqlite3) void {
     if (err_msg) |msg| {
         log.warn("sqlite {s} failed (rc={d}, sql={s}): {s}", .{ context, rc, sql, std.mem.span(msg) });

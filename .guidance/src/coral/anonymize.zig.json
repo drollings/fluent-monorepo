@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "AnonymizationPattern",
-      "match_hash": "ea4f86634c6a6f0d5263c6f5a1e92fa336582c5e20ba6408d5b4d5ac99e748ca",
+      "match_hash": "c4ebb74d2449114d8c4fb7c6b79a84bf4c58b6c59f0f7c7457f1a5350294f71b",
       "signature": "keyword_enum AnonymizationPattern { ... }",
       "is_pub": true,
       "members": [
@@ -89,7 +89,7 @@
     ,    {
           "type": "fn_decl",
           "name": "placeholder",
-          "match_hash": "4aea789f50a3c879ccfb34ff7d92675fc38b6f5875f40e33734e3b0032d4bd4e",
+          "match_hash": "3f45f91f852e9252244f914bf3d028182be54917f3ac064d503b46920be88370",
           "signature": "fn placeholder(self: AnonymizationPattern) -> []const u8",
           "params": [
             { "name": "self", "type": "AnonymizationPattern" }
@@ -104,7 +104,7 @@
     {
       "type": "fn_decl",
       "name": "anonymizeContext",
-      "match_hash": "54cac12ad7353c9d582873a1e112d41b368eb70f113c9fbe5866ecb9b0814ca9",
+      "match_hash": "d884fe1ca7d445c3e191b71908713f14f2bf205b36545af0210a8f048fc1837a",
       "signature": "fn anonymizeContext(allocator: std.mem.Allocator, context: []const u8, patterns: []const AnonymizationPattern) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -113,12 +113,12 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 43
+      "line": 42
     },
     {
       "type": "fn_private",
       "name": "replacePattern",
-      "match_hash": "1c141a67a62f0521b473bcfcdaaa53943271b3be9ad660aed32d4c0f50cda39e",
+      "match_hash": "5199b4e72679afba60c06eabda64fb632330ca7eb70d35650aba9a9a1d4fb911",
       "signature": "fn replacePattern(allocator: std.mem.Allocator, input: []const u8, pattern: AnonymizationPattern) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -127,12 +127,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 59
+      "line": 57
     },
     {
       "type": "fn_private",
       "name": "replaceEmails",
-      "match_hash": "58132a48634fc28914f1a8b07c86dbfecb273ae69b7e06ec9debd60c09b82c7f",
+      "match_hash": "d4b38fed7dfd2c9279ece469feaf2e44d43ce94d75de6b8fc1d1be83cc016bb7",
       "signature": "fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -140,24 +140,24 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 81
+      "line": 79
     },
     {
       "type": "fn_private",
       "name": "isEmailChar",
-      "match_hash": "0d6a2214fa911d8a7def12f36bf1ce21c341dbd8bc1e493e87420e52faeec631",
+      "match_hash": "91796c46d8bd0c43af954d9de67e100f4aaf7271dfb778bbc30e7db417b527c7",
       "signature": "fn isEmailChar(ch: u8) -> bool",
       "params": [
         { "name": "ch", "type": "u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 118
+      "line": 116
     },
     {
       "type": "fn_private",
       "name": "replacePhones",
-      "match_hash": "ef991e2e24cc27864cc46b3d4a0c26d7e2a008a7d7505823c9dfc443f025ed0c",
+      "match_hash": "751b5d0ca2e6ce45b3be260068622de5685956cdb8470d80a28e3644f54b441d",
       "signature": "fn replacePhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -165,12 +165,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 123
+      "line": 121
     },
     {
       "type": "fn_private",
       "name": "replaceCreditCards",
-      "match_hash": "000fdf74fc72a2895f0ac12fd5c4921aefedebe06a4fdeaedc9f28289100af31",
+      "match_hash": "e962f649678536d95ac01965bfb682cca1542c70d8e39b373bf2f77d2d1bad7f",
       "signature": "fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -178,12 +178,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 153
+      "line": 151
     },
     {
       "type": "fn_private",
       "name": "replaceIntlPhones",
-      "match_hash": "e64e0b02d41ebfae76253241777ee8c3f068e06ada1d09517d2b6fae81e202b9",
+      "match_hash": "c55e7252b25c70598a1cf7419e67f6d1a49dcfbe3a57c8c6e3787fd89d6c2350",
       "signature": "fn replaceIntlPhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -191,12 +191,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 183
+      "line": 180
     },
     {
       "type": "fn_private",
       "name": "replaceSsnUs",
-      "match_hash": "78540c096c1413b766085bf0a67cc31f65435ed4e0dab6dd25b6f218cccceeb6",
+      "match_hash": "f2d6ecadb36009ade5e8969813fb8177e7f96b7505149e6c352cb79af4159d40",
       "signature": "fn replaceSsnUs(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -204,12 +204,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 218
+      "line": 215
     },
     {
       "type": "fn_private",
       "name": "replaceSsnUk",
-      "match_hash": "75adad53054d8ed6ac4cbdb11b49653de26654c024c94a60c03fbdc9cce60a09",
+      "match_hash": "1571955205e75c8423961c257e5da3f01ffb023530c19552f469203f9f3b00c7",
       "signature": "fn replaceSsnUk(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -217,12 +217,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 248
+      "line": 245
     },
     {
       "type": "fn_private",
       "name": "replaceSsnCa",
-      "match_hash": "a92a60362a700afa3fda0e489b414de61fa14f467796f77441c7a5db9baa88f5",
+      "match_hash": "0abe994a1001a45036cf0d5bac827918d62d1ca6e7c5a226fb4bcfd9b127b5a3",
       "signature": "fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -230,24 +230,24 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 281
+      "line": 278
     },
     {
       "type": "fn_private",
       "name": "isNDigits",
-      "match_hash": "56cbb914f4ae5cb36f2950490fc6d10468b7ba597a3bc8faf27749cc55fd4ce4",
+      "match_hash": "de8fa8b7aa689c090e85a2ebbd73ca90e042c45e83ac7cb17325463fb0fcb86d",
       "signature": "fn isNDigits(s: []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 309
+      "line": 306
     },
     {
       "type": "fn_private",
       "name": "replaceIpv4",
-      "match_hash": "ce52e842864b8b93241834c7dd38b9acfb3bea3f6343fb5689f3f07732a213ea",
+      "match_hash": "16a655c3d1c9e2b86c296849ef42dffff2b859e7d8b3811d8f81fa7efad87b9e",
       "signature": "fn replaceIpv4(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -255,24 +255,24 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 315
+      "line": 312
     },
     {
       "type": "fn_private",
       "name": "looksLikeIpv4",
-      "match_hash": "9160a75f42b35bab69be2a48efccf950e8450778ac5447ba1df48d2d052ad4e5",
+      "match_hash": "b2a6be48c3b9ca5da7a4ae5441458253beda69dfb9b2274d309cc538c93950d7",
       "signature": "fn looksLikeIpv4(s: []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 347
+      "line": 344
     },
     {
       "type": "fn_private",
       "name": "replaceIpv6",
-      "match_hash": "5af31d98a99863a0c9f2bfb38ccbf450e4c0b35ef6dd9cd605ac17b7a010aaee",
+      "match_hash": "8259413e904a93882acd0642a6013294d124ac86edc70eeb55f4d6304f573cf4",
       "signature": "fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -280,24 +280,24 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 367
+      "line": 363
     },
     {
       "type": "fn_private",
       "name": "isHexChar",
-      "match_hash": "15d3a006694f7894335944477ba0106338144591caddaddf84fc8c9a1af3ee3f",
+      "match_hash": "22ac3f8cccc35670bec66bfca90cd7ed9de836a97d3e96edfeae814120358e11",
       "signature": "fn isHexChar(c: u8) -> bool",
       "params": [
         { "name": "c", "type": "u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 398
+      "line": 394
     },
     {
       "type": "fn_private",
       "name": "replaceBearerTokens",
-      "match_hash": "7da19ca16ab65153ca1520bdd1c686bd907da65719676bb64282240bbf36645e",
+      "match_hash": "b81c60e246d8d2851fcca4d5dbf060b3fae574205baa01bdb3b77f951458102d",
       "signature": "fn replaceBearerTokens(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -305,12 +305,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 403
+      "line": 399
     },
     {
       "type": "fn_private",
       "name": "replaceAwsKeys",
-      "match_hash": "af328bc4bb455eae767c8c22d96c127aa366e0ebf537e83a97f954e52751628e",
+      "match_hash": "da926693605604a9d07805437a429e47d3fb90deabc614ac06ef9b9948b610ea",
       "signature": "fn replaceAwsKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -318,12 +318,12 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 434
+      "line": 430
     },
     {
       "type": "fn_private",
       "name": "replaceGenericApiKeys",
-      "match_hash": "8288cfbf74447a86821ece6dda2072232ddcdd89494149fe7506bc29e8a4b623",
+      "match_hash": "bd4d5ecd8454c09214f11c4df46e42cd81679e7c0b38dc8d33b2fe19b21b8553",
       "signature": "fn replaceGenericApiKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -331,79 +331,79 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 468
+      "line": 463
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces email",
       "is_pub": false,
-      "line": 503
+      "line": 498
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces US phone",
       "is_pub": false,
-      "line": 515
+      "line": 510
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: no PII passes through unchanged",
       "is_pub": false,
-      "line": 526
+      "line": 521
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: multiple patterns applied in order",
       "is_pub": false,
-      "line": 538
+      "line": 533
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces international phone E.164",
       "is_pub": false,
-      "line": 550
+      "line": 545
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces US SSN",
       "is_pub": false,
-      "line": 562
+      "line": 557
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces Canadian SIN",
       "is_pub": false,
-      "line": 574
+      "line": 569
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces IPv4",
       "is_pub": false,
-      "line": 585
+      "line": 580
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces AWS key",
       "is_pub": false,
-      "line": 597
+      "line": 592
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces Bearer token",
       "is_pub": false,
-      "line": 609
+      "line": 604
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: replaces generic API key (32+ chars)",
       "is_pub": false,
-      "line": 620
+      "line": 615
     },
     {
       "type": "test_decl",
       "name": "anonymizeContext: no false positive on short alphanumeric",
       "is_pub": false,
-      "line": 631
+      "line": 626
     }
   ]
 }

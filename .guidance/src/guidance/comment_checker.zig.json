@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "checkCommentStaleness",
-      "match_hash": "37744bc224799b7a49a582d882442b485dc4058abdd6fcef231cabc10875cb6b",
+      "match_hash": "15ac0b7aa86196c9bcf6015af8786921826fb591c52719aa0c202200e19b9a7b",
       "signature": "fn checkCommentStaleness(existing_comment: []const u8, member: types.Member, source_context: []const u8) -> CheckResult",
       "params": [
         { "name": "existing_comment", "type": "[]const u8" },
@@ -25,7 +25,7 @@
     {
       "type": "fn_decl",
       "name": "isHashStale",
-      "match_hash": "b5c72a8c04c36d5a6cfeea7b281fc127c195ce018ca623db0a7a76bd0fb43be8",
+      "match_hash": "a25245772eb0b2dd7e93f2c55ac08cac9489a7e6d169245126464bd3c9a3e808",
       "signature": "fn isHashStale(stored_hash: ?[]const u8, current_hash: ?[]const u8) -> bool",
       "params": [
         { "name": "stored_hash", "type": "?[]const u8" },
@@ -33,55 +33,55 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 46
+      "line": 45
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - valid comment",
       "is_pub": false,
-      "line": 56
+      "line": 55
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - empty comment",
       "is_pub": false,
-      "line": 62
+      "line": 61
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - leaked prompt",
       "is_pub": false,
-      "line": 68
+      "line": 67
     },
     {
       "type": "test_decl",
       "name": "checkCommentStaleness - too long",
       "is_pub": false,
-      "line": 74
+      "line": 73
     },
     {
       "type": "test_decl",
       "name": "isHashStale - different hashes",
       "is_pub": false,
-      "line": 82
+      "line": 81
     },
     {
       "type": "test_decl",
       "name": "isHashStale - same hash",
       "is_pub": false,
-      "line": 86
+      "line": 85
     },
     {
       "type": "test_decl",
       "name": "isHashStale - null hash",
       "is_pub": false,
-      "line": 90
+      "line": 89
     },
     {
       "type": "test_decl",
       "name": "isHashStale triggers regeneration path",
       "is_pub": false,
-      "line": 95
+      "line": 94
     }
   ]
 }

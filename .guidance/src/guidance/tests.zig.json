@@ -161,7 +161,7 @@
     {
       "type": "fn_private",
       "name": "makeMember",
-      "match_hash": "b60c40782f5a498acdb9cda7acf9f90081c7208f806770e41ddeeaa362bce2d5",
+      "match_hash": "25cbd83aa36f367dd126a4ecf7e2a42a912f3769367f4d73ba82194abbaf5a7c",
       "signature": "fn makeMember(name: []const u8, hash: ?[]const u8, doc: ?[]const u8) -> types.Member",
       "params": [
         { "name": "name", "type": "[]const u8" },
@@ -262,7 +262,7 @@
     {
       "type": "fn_private",
       "name": "writeTempGuidance",
-      "match_hash": "5ac17250e2bf3840b2edec34110a8d12b1c9c3f0be5ecc14bb92d97e772a7519",
+      "match_hash": "1f0c54eeeaafbf08befaf70c67560949fbb8c61307c41cc4f5119ef86fd96d84",
       "signature": "fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filename: []const u8, module: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -277,7 +277,7 @@
     {
       "type": "fn_private",
       "name": "writeGuidanceJson",
-      "match_hash": "5c11d6de5766ea3e674e135ed080b2e59fc12958e917c25fa40cb12febc09774",
+      "match_hash": "a04fa5892027ce969556798a80d6da70b4848dfb7a01d152292d781be3758fd7",
       "signature": "fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8, has_member: bool) -> void",
       "params": [
         { "name": "dir", "type": "std.fs.Dir" },

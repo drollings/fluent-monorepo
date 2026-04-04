@@ -12,7 +12,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-/// Metadata extracted from a single source file.
+/// Represents a parsed file structure with ownership and invariants; manages parsing state internally.
 pub const ParsedFile = struct {
     /// Module name derived from the file path (e.g. "src.foo.bar").
     module: []const u8,
@@ -26,10 +26,7 @@ pub const ParsedFile = struct {
     members: []const types.Member,
 };
 
-/// A language plugin provides file-level parsing for a set of extensions.
-///
-/// All function pointers accept an arena allocator — the caller guarantees
-/// the arena lives at least as long as the returned data.
+/// Manages language plugin configurations; owns a stateful structure; ensures consistent initialization and cleanup.
 pub const LanguagePlugin = struct {
     /// Human-readable name (e.g. "zig", "python").
     name: []const u8,

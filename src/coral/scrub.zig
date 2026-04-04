@@ -15,14 +15,12 @@
 const std = @import("std");
 const llm = @import("common");
 
-/// Returns `true` if the comment text appears to be malformed/incomplete
-/// (from LLM generation). Delegates to common/llm.isMalformedResponse.
+/// Checks if the provided text slice is malformed by verifying its structure and validity.
 pub fn isMalformedResponse(text: []const u8) bool {
     return llm.isMalformedResponse(text);
 }
 
-/// Returns `true` if `comment` is a synthetic placeholder that should be
-/// replaced by a fresh LLM infill pass.
+/// Checks if a comment slice is synthetic by validating its structure and content.
 pub fn isSyntheticComment(comment: []const u8) bool {
     const trimmed = std.mem.trim(u8, comment, " \t\r\n");
 

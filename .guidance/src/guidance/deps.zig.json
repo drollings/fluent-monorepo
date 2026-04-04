@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "DepsGenerator",
-      "match_hash": "73555f33f8b73cbb3299eaa772733959adf90116f68f1ca1e56d531ea7ef4c15",
+      "match_hash": "904b146131c24b119f4060b8b8db555c2046f18edb51aaae80039ac21916edb5",
       "signature": "keyword_struct DepsGenerator { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "24bd056e4e9b3e61c6cc85b6a293f643597cbab6e12920d0fb614e20d3b4842c",
+          "match_hash": "592069acebe818aff66d73f0152a20fb29f065190c0bc868c246e48afab91973",
           "signature": "fn init(allocator: std.mem.Allocator, cwd: []const u8) -> DepsGenerator",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -30,7 +30,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generateDependencies",
-          "match_hash": "8531917540982084b0da135867307ac2dca17c4ee00852929b90192fdbba6977",
+          "match_hash": "0e2008fdeb57742d8d2e25fa3606291cdf1e6c03fd589939c2420bc211eb3061",
           "signature": "fn generateDependencies(self: *DepsGenerator, src_dir: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*DepsGenerator" },
@@ -43,7 +43,7 @@
     ,    {
           "type": "fn_private",
           "name": "resolveImport",
-          "match_hash": "f695d2a0af64352c011f05f656a57913c65468e00799bc527230d5e9116189a9",
+          "match_hash": "5d3681edfbde404596f033db53b53c0d0d6729fa4a928c2244c2ca364ae07829",
           "signature": "fn resolveImport(self: *DepsGenerator, from_file: []const u8, import_path: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*DepsGenerator" },
@@ -57,7 +57,7 @@
     ,    {
           "type": "fn_private",
           "name": "resolveImportPath",
-          "match_hash": "72613788832cd8b49f6648e02a1c4521c5adf9bc8b912b82fb4f87968725bf57",
+          "match_hash": "28a326e179dea2c6f6384b9b1314cf7562ca9a1297a9c50a0eede5a4887330a4",
           "signature": "fn resolveImportPath(self: *DepsGenerator, import_path: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*DepsGenerator" },

@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "McpHandler",
-      "match_hash": "aa50b351ffc3cc5fc5073eeae139f90defa37093ce2793a1179810d9d083ccc2",
+      "match_hash": "1d67189cd3b5a6067055a734b8b0b592fa970e0f6922148915591546ecc039b7",
       "signature": "keyword_struct McpHandler { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "handleJsonRpc",
-          "match_hash": "2503e0f9d7b8318e6b20de29bb31546d7ac9718752df7b33e25d0cd7322942a0",
+          "match_hash": "b6c51a095aed78d5745a26ac665a738a0c78276be11f687476ffc028e400c96c",
           "signature": "fn handleJsonRpc(self: McpHandler, json: []const u8, allocator: std.mem.Allocator) -> []const u8",
           "params": [
             { "name": "self", "type": "McpHandler" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "8d51f14888d023682a48794099097104911040c4363c249f4d9420f16b4d34ed",
+          "match_hash": "191abbeb4b0dc5cb8274c3eccb867972248bd0d748846a9f7ab8cc1e51fcd401",
           "signature": "fn deinit(self: McpHandler) -> void",
           "params": [
             { "name": "self", "type": "McpHandler" }
@@ -46,7 +46,7 @@
     {
       "type": "struct",
       "name": "SseEvent",
-      "match_hash": "d4c954e6a0662040ddc15993b5da796411776930215df889b7b6f8fa0e3d4a91",
+      "match_hash": "e4c670e441e0828e185652f7e088bf12a0fc1355aa679c5656260850afdbe561",
       "signature": "keyword_struct SseEvent { ... }",
       "is_pub": true,
       "line": 40
@@ -54,14 +54,14 @@
     {
       "type": "struct",
       "name": "HttpTransport",
-      "match_hash": "bbdc7e8c07c48cb47e5ad2c51dd9b598c41f1ba80a9e462648a8652782fd5626",
+      "match_hash": "66e09b20f8774d1969201fdcc13458ec258feb94249fd83b5c72e5b72a20bcd5",
       "signature": "keyword_struct HttpTransport { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "1c54d6d433010aa6726dcdc3300660a8c03aae196a2976fbcf5d4feed76d91cf",
+          "match_hash": "354259bde2af444c19b5e1c888d3d43d832fe7e049c4b9c0b72f7e529970b9a7",
           "signature": "fn init(allocator: std.mem.Allocator, mcp_handler: McpHandler, bind_address: []const u8, port: u16) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -76,7 +76,7 @@
     ,    {
           "type": "fn_decl",
           "name": "listen",
-          "match_hash": "c65b53c6dc3a5dc944286bc0533efc6454bfee11859ab10cff987ff3cbaca5a6",
+          "match_hash": "788dd545c7d695695b168b8d530eeb5c2486d16b02ec69dee5197bc3ade7239c",
           "signature": "fn listen(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -88,7 +88,7 @@
     ,    {
           "type": "fn_decl",
           "name": "listenWithReady",
-          "match_hash": "2e7ebfc537db5d5583551f4ab18eb6382056789d2b1d83844153630b5e3794f7",
+          "match_hash": "003a3b810afa23bd5e0b619ffbfdbe404c3467c494c28ea8c02da70744e7f031",
           "signature": "fn listenWithReady(self: *Self, ready_signal: *std.Thread.ResetEvent) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -101,7 +101,7 @@
     ,    {
           "type": "fn_decl",
           "name": "requestShutdown",
-          "match_hash": "aefd311743a435d0ba585178164f9b56ab1b312f1d0a2c92a66f2ba70951334a",
+          "match_hash": "999f35f19063dcc5492d26c1f961a0c738d611e9857a9bb9e6e7fdba9c3d13d6",
           "signature": "fn requestShutdown(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -113,7 +113,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleConnection",
-          "match_hash": "f089c7451d699682eac4c2f0574ae98fe9d62b7d48cdf06a592daf0b7801e96a",
+          "match_hash": "506ac2db072c7daa72becf4519bf50acb60c227fe69834dcc4412468f055b6b1",
           "signature": "fn handleConnection(self: *Self, conn: net.Server.Connection, read_buf: []u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -127,7 +127,7 @@
     ,    {
           "type": "fn_private",
           "name": "getHeader",
-          "match_hash": "d5124b0cc2bfcbf70dacc43677d7e79e5287a50f56139cf11f5bb181b7a0476e",
+          "match_hash": "d7bcdd835abdf2dc13018bcbd8061b5ed8291ba270c19d473db638e17b4f3d00",
           "signature": "fn getHeader(head_buffer: []const u8, name: []const u8) -> ?[]const u8",
           "params": [
             { "name": "head_buffer", "type": "[]const u8" },
@@ -140,7 +140,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleRequest",
-          "match_hash": "514be28a29ae7529452b47695b7c98fa298db62bfe7605734b8ef45760531358",
+          "match_hash": "524a12ce2af29e10e7b1c59b5e9e5f356f4e75e483915ed046d99919f25a8709",
           "signature": "fn handleRequest(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -154,7 +154,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleMcpRequest",
-          "match_hash": "64cf3a0b59e22aad9d2c3a75b7740e073b05253ee49dd621dd64cfdf0970989a",
+          "match_hash": "105659f3ddc7dd6bd5cddcfca385870d91d35f0a2a4fd379092bc48b62257e68",
           "signature": "fn handleMcpRequest(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -168,7 +168,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleMcpRequestSse",
-          "match_hash": "99ff98956317e8591fd2cb0abdfa999f66fab114c3d73de48cdd6295ac5d173f",
+          "match_hash": "4b31d779c1fb17288247316fa0647a4e59e38f1cfc18d27a41d308469939f6a5",
           "signature": "fn handleMcpRequestSse(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -182,7 +182,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendSseEvent",
-          "match_hash": "59615c580060c727f56f8f52c215dc11304d2510cb48eac0c5e10527a93c409d",
+          "match_hash": "aec9f4d314eb142ad46c51c6ad009daa8b2e74f86aa500708102cf14402abb3e",
           "signature": "fn sendSseEvent(self: *Self, request: *http.Server.Request, event: SseEvent) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -196,7 +196,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendHealthCheck",
-          "match_hash": "510685a812af0b10985cd8447791a117b11c99529b84216823e85dade51b75bb",
+          "match_hash": "a88db55c4444ded3929f1872fb3eece5506f6e376deeae7832b1dfacc5d57bca",
           "signature": "fn sendHealthCheck(self: *Self, request: *http.Server.Request) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -209,7 +209,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendMetrics",
-          "match_hash": "9396e0dd08e9a30e017cc7d8e98e61c6b3265bbe17badcaebfbe10d476f95a44",
+          "match_hash": "e17016cf98d0b992a81f3b4abe7b5d0a265a9f76466c95ba0320acf21c307e1a",
           "signature": "fn sendMetrics(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -223,7 +223,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendCorsPreflight",
-          "match_hash": "07c3c519353cf6c77a68b359d574290c0c7edb52e6ceebff9b83828d5a95ee90",
+          "match_hash": "0cb483e92889e9411e7dc356997242b0a96e030c55ae3373149b2cc7fe8785fa",
           "signature": "fn sendCorsPreflight(self: *Self, request: *http.Server.Request) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -236,7 +236,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendJson",
-          "match_hash": "fdc9610c6aec19ccf61ae4babc4ac4933057079c0ef0d9b06746c836d899b957",
+          "match_hash": "8a80e87220d1c1a88af1fa0de2e66970af6493471f28ed6b1ad9a6c844fa9eac",
           "signature": "fn sendJson(self: *Self, request: *http.Server.Request, json: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -250,7 +250,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendError",
-          "match_hash": "3c879e1b626f857b3b1cdf75861c4d4f65bdba1fc58a0bed07338dbfad39c6b1",
+          "match_hash": "50f34c56001941d4f1b24893907ba6b37f0722787980ada469bd30660ea26c3d",
           "signature": "fn sendError(self: *Self, request: *http.Server.Request, code: u16, message: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -265,7 +265,7 @@
     ,    {
           "type": "fn_private",
           "name": "sendNotFound",
-          "match_hash": "a020850961a23a738b69094d5c85d2ecff6bc2f064d4075714b49b4649f29eb1",
+          "match_hash": "7087d9bc966b39960455eba946de16a01e3580b920e57628e351820ed51f192f",
           "signature": "fn sendNotFound(self: *Self, request: *http.Server.Request) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -278,7 +278,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -305,14 +305,14 @@
     {
       "type": "struct",
       "name": "TestMcpHandler",
-      "match_hash": "79159eccd6f7ea7d2b59b66220e6340f32d62f93ffe52af33e03960fb787adf5",
+      "match_hash": "e8133a02bd2fd2e13ed5c19c64fb802ae8d8084f735d94cc23005773067b44ee",
       "signature": "keyword_struct TestMcpHandler { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_private",
           "name": "handleJsonRpc",
-          "match_hash": "8d7b8805463e4865dbb83f70e0f91015a3d8b636fcfecde39c3e1b9b82c8ce27",
+          "match_hash": "90dbccc68ddc6f2147c38b5057c80fd4d5437de5b21cd7c065d7445e4da5f4d7",
           "signature": "fn handleJsonRpc(ptr: *anyopaque, json: []const u8, allocator: std.mem.Allocator) -> anyerror![]const u8",
           "params": [
             { "name": "ptr", "type": "*anyopaque" },
@@ -326,7 +326,7 @@
     ,    {
           "type": "fn_private",
           "name": "deinit",
-          "match_hash": "a35bba476da2212c402bb4a75af8dced3441d64f7f92e37705c3a8f3060b3b6e",
+          "match_hash": "e0d2daa3eee60d4651c1cc642d6015af2e89052387a55e703872870c6dad8744",
           "signature": "fn deinit(ptr: *anyopaque) -> void",
           "params": [
             { "name": "ptr", "type": "*anyopaque" }
@@ -338,7 +338,7 @@
     ,    {
           "type": "fn_private",
           "name": "initVTable",
-          "match_hash": "3c10d26ec19f9fd0242ad153aa40d42a437bde32ebbdacc8f7495a4ff819b28c",
+          "match_hash": "1d90ab973c3385081aba88fff7b47844b2b46fee64ab6aa59baecd190418f0e3",
           "signature": "fn initVTable() -> McpHandler.VTable",
           "returns": "McpHandler.VTable",
           "is_pub": false,

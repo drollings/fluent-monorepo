@@ -7,7 +7,7 @@ pub const TerminalError = error{
     OutOfMemory,
 };
 
-/// Retrieves the system's window size in Zig using the standard library.
+/// Retrieves the system's window size in Zig, returning a standard POSIX winsize.
 fn getWinsize() ?std.posix.winsize {
     const stdout = std.fs.File.stdout();
     if (!std.posix.isatty(stdout.handle)) return null;
@@ -35,7 +35,7 @@ pub fn isTerminal() bool {
     return std.posix.isatty(stdout.handle);
 }
 
-/// Validates a boolean question input and returns true or false based on the provided value.
+/// Validates a boolean question input, returning true or false based on the provided value.
 pub fn confirm(question: []const u8, default: bool) !bool {
     var ws: io.WriterState = .{};
     ws.initStdout();
@@ -61,7 +61,7 @@ pub fn confirm(question: []const u8, default: bool) !bool {
     return default;
 }
 
-/// Retrieves a response from an allocator using a Zig array and question parameters.
+/// Retrieves a response from an allocator using a Zig array, handling allocation and parsing.
 pub fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const u8) ![]const u8 {
     var ws: io.WriterState = .{};
     ws.initStdout();
@@ -87,7 +87,7 @@ pub fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const 
     return try allocator.dupe(u8, default);
 }
 
-/// Retrieves an integer from an allocator using a Zig array, returning the value or an error.
+/// Retrieves an integer value from an allocator using a Zig array, returning the specified int or -1 on failure.
 pub fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64) !i64 {
     _ = allocator;
     var ws: io.WriterState = .{};
@@ -248,3 +248,13 @@ test "ProgressBar init and advance" {
     bar.set(50);
     try testing.expectEqual(@as(usize, 50), bar.current);
 }
+
+
+
+
+
+
+
+
+
+

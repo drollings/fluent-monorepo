@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "simhash",
-      "match_hash": "5f4cb8f0d6c02a46423225c84527f82c85cbfd1ca2e8978b7da2c1316cac362a",
+      "match_hash": "a83a2670bdeea7b25da9caa5c420cd83bd53fa8877a57c01e38d9c07dad7fd59",
       "signature": "fn simhash(embedding: []const f32) -> u64",
       "params": [
         { "name": "embedding", "type": "[]const f32" }
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "hammingDistance",
-      "match_hash": "ab79fe9c5a257fc37a6db7ee2ff23f5ec4389a5fe08187f76a6e534099b13f0c",
+      "match_hash": "1b78f4b72df746fa160b08f1db65eace261115a543ba46ac8f90e7e2a03985cd",
       "signature": "fn hammingDistance(a: u64, b: u64) -> u7",
       "params": [
         { "name": "a", "type": "u64" },
@@ -30,73 +30,73 @@
       ],
       "returns": "u7",
       "is_pub": true,
-      "line": 52
+      "line": 50
     },
     {
       "type": "fn_decl",
       "name": "maxHamming",
-      "match_hash": "0bc27977902f5362aa54698e501725e9588233bb30ef6acfd75186e754f07980",
+      "match_hash": "32cee50822d135f3c94b70e62f914ce2f53331ef4e5d098d55dc57b9fea6a00b",
       "signature": "fn maxHamming(cosine_threshold: f32) -> u7",
       "params": [
         { "name": "cosine_threshold", "type": "f32" }
       ],
       "returns": "u7",
       "is_pub": true,
-      "line": 66
+      "line": 55
     },
     {
       "type": "test_decl",
       "name": "simhash: deterministic for identical input",
       "is_pub": false,
-      "line": 79
+      "line": 68
     },
     {
       "type": "test_decl",
       "name": "simhash: zero embedding gives 0",
       "is_pub": false,
-      "line": 89
+      "line": 78
     },
     {
       "type": "test_decl",
       "name": "simhash: orthogonal embeddings differ in ~32 bits",
       "is_pub": false,
-      "line": 95
+      "line": 84
     },
     {
       "type": "test_decl",
       "name": "hammingDistance: same hash → 0",
       "is_pub": false,
-      "line": 105
+      "line": 94
     },
     {
       "type": "test_decl",
       "name": "hammingDistance: all bits differ → 64",
       "is_pub": false,
-      "line": 109
+      "line": 98
     },
     {
       "type": "test_decl",
       "name": "hammingDistance: single bit differs → 1",
       "is_pub": false,
-      "line": 113
+      "line": 102
     },
     {
       "type": "test_decl",
       "name": "maxHamming: higher threshold → fewer allowed bits",
       "is_pub": false,
-      "line": 117
+      "line": 106
     },
     {
       "type": "test_decl",
       "name": "maxHamming: threshold 1.0 → 0 bits",
       "is_pub": false,
-      "line": 123
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "simhash: short embedding (shorter than DIMS) doesn't panic",
       "is_pub": false,
-      "line": 127
+      "line": 116
     }
   ]
 }

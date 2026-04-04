@@ -153,7 +153,7 @@ pub const Louvain = struct {
     }
 };
 
-/// Relabel community IDs to a dense range [0, k).
+/// Transforms dense community assignments into a sparse representation by relabeling nodes.
 fn relabelDense(arena: Allocator, communities: []u32, n: u32) ![]u32 {
     var remap = std.AutoHashMap(u32, u32).init(arena);
     var next_id: u32 = 0;

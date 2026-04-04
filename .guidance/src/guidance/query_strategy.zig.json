@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "QueryIntent",
-      "match_hash": "64c523f38cad7e8220ed26c466b880c687ab4994ae7411c64098f17405a9cfbc",
+      "match_hash": "f80ec7f50062465a5cb04ea34cef23e770595d675e1b6d69b175c1c26bf484a2",
       "signature": "keyword_enum QueryIntent { ... }",
       "is_pub": true,
       "members": [
@@ -45,14 +45,14 @@
     {
       "type": "struct",
       "name": "QueryStrategy",
-      "match_hash": "651235b10aa42a7af482a0f6e639f53ef2494b369441dc654fe010273da81a3f",
+      "match_hash": "ee64fb8cf8c7aa2c29ccf15b7e904bc5658014aa9fc6e2475a325c9d86536266",
       "signature": "keyword_struct QueryStrategy { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "matches",
-          "match_hash": "9102028d5860501a1402b23c21e21ba15e0a64efe8c507d9420b33a0a4360cdd",
+          "match_hash": "98b0a85e03568ca46a81725bd4746d174a0bf521cba0f909ddabf07cdf79d37c",
           "signature": "fn matches(self: QueryStrategy, query: []const u8, db: *GuidanceDb) -> bool",
           "params": [
             { "name": "self", "type": "QueryStrategy" },
@@ -61,12 +61,12 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 73
+          "line": 71
         }
     ,    {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "8e45e268c8f8244d7d98a8f920ab155e8ee047cbaca1839cd2f2a93e069bdb37",
+          "match_hash": "7c728ffb8591aa6efbde0cbfb35119e2caba8469b4f1fc9b13f142bf6f90d05a",
           "signature": "fn execute(self: QueryStrategy, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
           "params": [
             { "name": "self", "type": "QueryStrategy" },
@@ -79,39 +79,39 @@
           ],
           "returns": "[]types.Stage",
           "is_pub": true,
-          "line": 77
+          "line": 75
         }
     ,    {
           "type": "fn_decl",
           "name": "intent",
-          "match_hash": "add9b99605d895208164ba3671a5a98a260d7fb5983405962e619b65f6bc1aeb",
+          "match_hash": "1d9b610e727c7bbbfe90f0f5db81b0f667822a7ffa6b4ef0ef4f4e9d15280298",
           "signature": "fn intent(self: QueryStrategy) -> QueryIntent",
           "params": [
             { "name": "self", "type": "QueryStrategy" }
           ],
           "returns": "QueryIntent",
           "is_pub": true,
-          "line": 89
+          "line": 87
         }
     ,    {
           "type": "fn_decl",
           "name": "priority",
-          "match_hash": "48a4c41f36ae1338fb7cea835790d6ac7898fbb2ecbb5310484ae10bb36e3dee",
+          "match_hash": "c4b0ec3a041781cfbabd1d6759cc13b4347a66ad98fa7a1b0c78f096e390c86d",
           "signature": "fn priority(self: QueryStrategy) -> u8",
           "params": [
             { "name": "self", "type": "QueryStrategy" }
           ],
           "returns": "u8",
           "is_pub": true,
-          "line": 93
+          "line": 91
         }
       ],
-      "line": 45
+      "line": 43
     },
     {
       "type": "fn_private",
       "name": "identifierMatches",
-      "match_hash": "9bdf1be75a0fcfb6ad6d30c4a8b6226d83b7760498ea9e1f6d57f7e2263d01b0",
+      "match_hash": "de7fefef9b47d088e57f345d29fcdfa80be14f9de65198d143b084f4d60cf46e",
       "signature": "fn identifierMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) -> bool",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -120,12 +120,12 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 118
+      "line": 116
     },
     {
       "type": "fn_private",
       "name": "identifierExecute",
-      "match_hash": "3354d1ebe2c72fc97a9212150351fb53372c7bd6aa0843e89b66943dbf8df870",
+      "match_hash": "0c63843db5aed27ebbb8f38ff5320390426b98a851b5ff25d7ced44229802495",
       "signature": "fn identifierExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -138,12 +138,12 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 125
+      "line": 123
     },
     {
       "type": "fn_private",
       "name": "capabilityMatches",
-      "match_hash": "6137e02aad75237c77cf6ebe69ed3b0bd28e7c5459a6407fdca46ce9c7013232",
+      "match_hash": "8f8910acdf4dc05b715eaca65a83566a050a8c699dc7a6544c1352672845845a",
       "signature": "fn capabilityMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) -> bool",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -152,12 +152,12 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 172
+      "line": 170
     },
     {
       "type": "fn_private",
       "name": "capabilityExecute",
-      "match_hash": "acfe4de6f6dd7ae6690cb63d92c1dfc93cdf20e00d8c33e4305e5459c8923b18",
+      "match_hash": "8bf8b9cb19931612cf0556a09e3002f183a9d50141afa4d067e8f1c734ca8372",
       "signature": "fn capabilityExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -170,12 +170,12 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 189
+      "line": 187
     },
     {
       "type": "fn_private",
       "name": "conceptMatches",
-      "match_hash": "a0f079eed4e4ae30fd248b4f51017b44a09589429df5e9fbbc9d4e4e0a950ed3",
+      "match_hash": "7e93bb45ca90a7017f3c5f58cdc861ffe3bbff0b1cc1b7782459b743d196e872",
       "signature": "fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) -> bool",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -184,12 +184,12 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 231
+      "line": 229
     },
     {
       "type": "fn_private",
       "name": "conceptExecute",
-      "match_hash": "f3415486576299cfcc739383b65372b191286daa173bc60489e73a26a92824bf",
+      "match_hash": "fcf28dae0948b8d307ecb7b4d38b0d4b79f621f17f21c6a45fa3ed6c7c2b4f83",
       "signature": "fn conceptExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -202,12 +202,12 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 242
+      "line": 240
     },
     {
       "type": "fn_decl",
       "name": "executeWithStrategy",
-      "match_hash": "20d134f79c946ba6b66e16b97d9b32a6d894de5689951f3187beef5eae069f51",
+      "match_hash": "3969261e78623c53eaf6709c8cc483867cc2adb4358dfe63a7e0e52116fa9b90",
       "signature": "fn executeWithStrategy(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases, strategies: []const QueryStrategy) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -220,12 +220,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 275
+      "line": 272
     },
     {
       "type": "fn_decl",
       "name": "buildDefaultStrategies",
-      "match_hash": "b20862b533c8f054e87998d568ae1631553088cbf2b8920519ad2830f750fa38",
+      "match_hash": "9bc35f8c20cee02407fc859e55becdc179163da16b0a3771dcc6ed283540884b",
       "signature": "fn buildDefaultStrategies(identifier: *IdentifierLookupStrategy, capability: *CapabilityQueryStrategy, concept: *ConceptQueryStrategy) -> [3]QueryStrategy",
       "params": [
         { "name": "identifier", "type": "*IdentifierLookupStrategy" },
@@ -234,49 +234,49 @@
       ],
       "returns": "[3]QueryStrategy",
       "is_pub": true,
-      "line": 303
+      "line": 299
     },
     {
       "type": "fn_decl",
       "name": "looksLikeIdentifier",
-      "match_hash": "9599a60a845f4a9c12667a8f3b632524021279a756150c9fca06d3134e06cca9",
+      "match_hash": "9333a1ad3d142d84c2ed4b6c73cb13663c7ef8a3c87f7b7f8c15fd090c2a705b",
       "signature": "fn looksLikeIdentifier(query: []const u8) -> bool",
       "params": [
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 321
+      "line": 316
     },
     {
       "type": "fn_private",
       "name": "looksLikeNaturalLanguageQuestion",
-      "match_hash": "0ec55bc9a237bab0f5245956a6f7b4b3e807ab101616530db815fb63d2a51b78",
+      "match_hash": "c39ee158512f4e80709b5e82859346130d6f9e3efae7bd9df696b87ac489c53a",
       "signature": "fn looksLikeNaturalLanguageQuestion(query: []const u8) -> bool",
       "params": [
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 340
+      "line": 335
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: single camelCase identifier",
       "is_pub": false,
-      "line": 360
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects multi-word queries",
       "is_pub": false,
-      "line": 367
+      "line": 362
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects empty and too-long",
       "is_pub": false,
-      "line": 373
+      "line": 368
     }
   ]
 }

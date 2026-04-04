@@ -3,9 +3,7 @@ const types = @import("types.zig");
 const common = @import("common");
 const pattern = common.pattern;
 
-/// Detect design patterns from a Zig AST node's source text.
-/// Uses text-based heuristics from common.pattern module.
-/// Both the tree and the node index are used to extract source text for inspection.
+/// Analyzes a Zig AST node to detect patterns using the provided allocator.
 pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) ![]types.Pattern {
     var patterns: std.ArrayList(types.Pattern) = .{};
     errdefer {
@@ -109,7 +107,7 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
     return try patterns.toOwnedSlice(allocator);
 }
 
-/// Detects pattern names in a Zig AST node, returning their slice of byte values.
+/// Detects pattern names in a Zig AST node using an allocator and returns their slice.
 pub fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) ![][]const u8 {
     const full_patterns = try detectPatterns(allocator, tree, node);
     defer {

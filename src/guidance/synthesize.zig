@@ -13,7 +13,7 @@ pub const SynthesisResult = struct {
     followup_keywords: ?[][]const u8,
 };
 
-/// Check if query is a direct lookup (single identifier token)
+/// Checks if a query matches a direct lookup in the Zig data structure, returning true or false.
 fn isDirectLookup(query: []const u8) bool {
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     if (trimmed.len == 0) return false;
@@ -36,11 +36,7 @@ fn isDirectLookup(query: []const u8) bool {
     return true;
 }
 
-/// Synthesize an answer proportionate to query detail.
-/// - Direct lookup (single identifier): brief summary under 400 chars
-/// - Context query: comprehensive answer with sections
-///
-/// Returns a SynthesisResult with owned strings; caller must free summary and followup_keywords.
+/// Transforms a Zig slice into a synthesized Zig result using an allocator and stage pipeline.
 pub fn synthesize(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -350,9 +346,7 @@ pub fn synthesize(
     };
 }
 
-/// Extract all prose content from stages as a slice of string views.
-/// The returned strings are views into the stage content (not duped).
-/// Returns an owned slice of slices (the outer slice must be freed, not the inner strings).
+/// Extracts prose source slices from a Zig allocation context, returning a flat array of byte slices.
 pub fn extractProseSources(
     allocator: std.mem.Allocator,
     stages: []const types.Stage,
@@ -367,8 +361,7 @@ pub fn extractProseSources(
     return out.toOwnedSlice(allocator);
 }
 
-/// Remove lines containing "absence" phrases from LLM output.
-/// Returns an owned copy with those lines stripped.
+/// Removes empty or absent sentence segments from the input text using an allocator.
 pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
     // All comparisons are case-insensitive via llm.containsAny.
     const absence_kws = [_][]const u8{

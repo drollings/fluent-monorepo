@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "CommonArgs",
-      "match_hash": "e7b27209767c4e9b12c8b77607bdb0978a42681b5ba1a149b4c497120e959c3f",
+      "match_hash": "cf2dee57ff04686b61fdce89eb1ec7f58cdaa051600ad8bb55bf83ac6b0a5491",
       "signature": "keyword_struct CommonArgs { ... }",
       "is_pub": true,
       "line": 4
@@ -17,7 +17,7 @@
     {
       "type": "fn_decl",
       "name": "parseCommonArgs",
-      "match_hash": "477daa7c5586aea94d2fa1ad61b817bb0cb944838d403657117a800fdd26ce62",
+      "match_hash": "a008b5fcf00535d2000ce540243f66eaf04e2e9d7fccc3de9c873b539e12243b",
       "signature": "fn parseCommonArgs(args: []const []const u8, positional_buf: *std.ArrayListUnmanaged([]const u8), allocator: std.mem.Allocator) -> CommonArgs",
       "params": [
         { "name": "args", "type": "[]const []const u8" },
@@ -26,49 +26,49 @@
       ],
       "returns": "CommonArgs",
       "is_pub": true,
-      "line": 41
+      "line": 36
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: basic flags",
       "is_pub": false,
-      "line": 105
+      "line": 100
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: model and api-url with set flags",
       "is_pub": false,
-      "line": 118
+      "line": 113
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: positional arguments collected",
       "is_pub": false,
-      "line": 131
+      "line": 126
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: --file and --llm-query",
       "is_pub": false,
-      "line": 144
+      "line": 139
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: unknown flags are skipped (permissive mode)",
       "is_pub": false,
-      "line": 155
+      "line": 150
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: missing value for -m returns error",
       "is_pub": false,
-      "line": 166
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: defaults when no args given",
       "is_pub": false,
-      "line": 175
+      "line": 170
     }
   ]
 }

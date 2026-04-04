@@ -22,9 +22,7 @@ pub const perm_coder = permissions_mod.perm_coder;
 // § 1b  Type metadata enums
 // ============================================================
 
-/// Broad type category attached to each Accessor.
-/// Used by binary IPC and the WASM schema descriptor to encode field types
-/// without requiring comptime dispatch at the call site.
+/// Defines a type tag for enum-like accessors, managing invariants and ownership without thread safety.
 pub const TypeTag = enum(u8) {
     int,
     float,
@@ -41,7 +39,7 @@ pub const TypeTag = enum(u8) {
     unknown,
 };
 
-/// Who owns the memory behind a field value.
+/// Defines ownership semantics for Zig's accessor types, ensuring controlled access and invariants.
 pub const OwnershipMode = enum(u8) {
     /// The struct field holds a plain value; no heap allocation involved.
     value,
@@ -55,8 +53,7 @@ pub const OwnershipMode = enum(u8) {
     rc,
 };
 
-/// SQL column type for database persistence.
-/// Used by sql.zig to generate schema-aware INSERT/SELECT statements.
+/// Defines a SQL type with accessor methods; manages schema and invariants; owned by the module.
 pub const SqlType = enum(u8) {
     integer,
     real,
@@ -546,8 +543,7 @@ pub fn Editable(comptime Host: type) type {
 // § 4b  Schema description utilities
 // ============================================================
 
-/// Generate JSON Schema from an accessor slice.
-/// Used by both Editable.describeSchema and DynamicEditable.describeSchema.
+/// Converts accessor metadata into a schema description using the provided allocator and accessors.
 pub fn describeSchemaFromAccessors(
     allocator: std.mem.Allocator,
     type_name: []const u8,
@@ -611,7 +607,7 @@ pub fn describeSchemaFromAccessors(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Write a single field's JSON Schema property.
+/// Converts a Zig field description into a JSON-formatted string using an accessor and indentation.
 fn describeFieldToJson(writer: anytype, accessor: Accessor, indent: usize) !void {
     var i: usize = 0;
     while (i < indent) : (i += 1) {
@@ -792,7 +788,7 @@ fn describeFieldToJson(writer: anytype, accessor: Accessor, indent: usize) !void
     try writer.writeAll("}");
 }
 
-/// Convert TypeTag to JSON Schema type string.
+/// Converts a TypeTag into a JSON schema array of bytes.
 fn typeTagToJsonSchema(tag: TypeTag) []const u8 {
     return switch (tag) {
         .int => "integer",
@@ -811,8 +807,7 @@ fn typeTagToJsonSchema(tag: TypeTag) []const u8 {
     };
 }
 
-/// Write role permission set as comma-separated role names.
-/// operation: "read" or "write"
+/// Describes role permissions by processing a list of operations and writing results to a writer.
 fn describeRoleSet(writer: anytype, perms: RolePermissions, comptime operation: []const u8) !void {
     const role_names: [6][]const u8 = .{ "coder", "creator", "staff", "world", "script", "player" };
     const roles: [6]Role = .{ .coder, .creator, .staff, .world, .script, .player };
@@ -832,7 +827,7 @@ fn describeRoleSet(writer: anytype, perms: RolePermissions, comptime operation: 
     }
 }
 
-/// Write escaped JSON string.
+/// Converts a null-terminated byte slice into a Zig-safe string, handling escaped characters.
 fn writeEscapedJsonString(writer: anytype, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
@@ -850,7 +845,7 @@ fn writeEscapedJsonString(writer: anytype, s: []const u8) !void {
 // § 5  DynamicEditable  (runtime-defined schemas, e.g. dynamic SQLite rows)
 // ============================================================
 
-/// Runtime field editor backed by a raw byte buffer and a slice of Accessors.
+/// Tracks dynamic editable fields; manages access and ownership; ensures consistent state across instances.
 pub const DynamicEditable = struct {
     buffer: []u8,
     accessors: []const Accessor,

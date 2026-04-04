@@ -26,8 +26,7 @@ pub const ExecutorKind = union(enum) {
     wasm: WasmExecutor,
 };
 
-/// Configuration for a WASM-backed executor.
-/// Owned strings must be freed by the target's `deinit`.
+/// Manages Wasm execution context, owns runtime state; ensures safe initialization and cleanup.
 pub const WasmExecutor = struct {
     /// Raw WASM binary (allocator-owned).
     wasm_bytes: []const u8,
@@ -79,7 +78,7 @@ pub fn init(
     };
 }
 
-/// Releases allocated memory by deallocating the Zig object.
+/// Releases allocated memory by cleaning up Zig resources.
 pub fn deinit(self: *Target, allocator: std.mem.Allocator) void {
     self.depends.deinit(allocator);
     self.provides.deinit(allocator);
@@ -124,7 +123,7 @@ pub fn addCommand(self: *Target, allocator: std.mem.Allocator, cmd: []const u8) 
     try self.commands.append(allocator, cmd);
 }
 
-/// Checks if a target is abstract by verifying its structure and return a boolean result.
+/// Checks if a target is abstract, returning true or false based on type constraints.
 pub fn isAbstract(self: *const Target) bool {
     return self.target_type == .abstract and
         self.commands.items.len == 0 and
@@ -143,7 +142,7 @@ pub fn dependsSatisfiedBy(self: *const Target, allocator: std.mem.Allocator, ava
     return missing.count() == 0;
 }
 
-/// Validates dependencies for missing functionality; returns a bit set object.
+/// Validates dependencies for missing data structures; returns a bit set if all checks pass.
 pub fn missingDepends(
     self: *const Target,
     allocator: std.mem.Allocator,
@@ -161,7 +160,7 @@ pub fn missingDepends(
     return missing;
 }
 
-/// Calculates the distance between two targets using bit set operations.
+/// Calculates the distance between two bit sets in a target structure.
 pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBitSetUnmanaged) usize {
     var dist: usize = 0;
     var iter = self.depends.iterator(.{});
@@ -173,7 +172,7 @@ pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBi
     return dist;
 }
 
-/// Formats a target string using specified format options and writer.
+/// Formats a target string using the provided format options and writer.
 pub fn format(
     self: *const Target,
     comptime fmt: []const u8,
@@ -693,3 +692,16 @@ test "TargetSchema: GPA no leaks" {
     const p = try view.get("provides", .coder);
     allocator.free(p);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

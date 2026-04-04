@@ -14,7 +14,7 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "2da10f83b20efe6f434a9bde374b64a04c72195613d272846083f483cdf66be1",
+      "match_hash": "60a5b0892fc7e976a1d8fabe030372394b15b75bbeb81817835c4dd8557432ac",
       "signature": "fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner) -> DependencyResolver",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -28,7 +28,7 @@
     {
       "type": "fn_decl",
       "name": "initWithOptions",
-      "match_hash": "f4ba481250d17c4aa5a6ba7a7b0987375e79dcdc0c889873d3da9855b30c5ae0",
+      "match_hash": "3fdb39da55a9de6f8f5bc0b0df37645a10a89cc57f55cba0cda00c52f5549dc2",
       "signature": "fn initWithOptions(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner, options: ResolverOptions) -> DependencyResolver",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -43,14 +43,14 @@
     {
       "type": "struct",
       "name": "ResolvedBuild",
-      "match_hash": "dfa71d3221c7ad7dec562ceb97e30683f592d08b0c879fc6786ceb9923507cd4",
+      "match_hash": "7d9e96ea577cb5f4ec6d7cf51ba19806f7aab4f10b425a3990eecc5dbc256327",
       "signature": "keyword_struct ResolvedBuild { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "c98365d9e94424c1cc10bb22421245fdcc417d2c07f7107c534f59e19130c314",
+          "match_hash": "160f7801c0f5db558f2dd745534432147e47dd338da3c74210de661f9725122d",
           "signature": "fn deinit(self: *ResolvedBuild) -> void",
           "params": [
             { "name": "self", "type": "*ResolvedBuild" }
@@ -65,7 +65,7 @@
     {
       "type": "fn_decl",
       "name": "resolve",
-      "match_hash": "64a2a1474fae1419d6fe2f65a3d5e6f5f3eef7be5ad7c8993d1b0dc43a3257b8",
+      "match_hash": "f7b3d98e93f40dcbe5461899871f0af4f2242f2e9de1a791033ca42190a36a94",
       "signature": "fn resolve(self: *DependencyResolver, target_names: []const []const u8) -> ResolvedBuild",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -78,7 +78,7 @@
     {
       "type": "fn_decl",
       "name": "resolveAbstractDependencies",
-      "match_hash": "4bed822d0c18fd14293295282d245ce9e1afb2fce84a7e474134ae17464e0640",
+      "match_hash": "c6364518fe525e89f4b94f675cbc1849aa25f006d16629f1fae73b257f07992e",
       "signature": "fn resolveAbstractDependencies(self: *DependencyResolver, target_names: []const []const u8, provided: *std.bit_set.DynamicBitSetUnmanaged) -> ResolvedBuild",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -92,7 +92,7 @@
     {
       "type": "fn_private",
       "name": "topoSort",
-      "match_hash": "5cd7dc9c21f317ec519363c488036810d14d0fb3346ef515b02bc16c6dd538db",
+      "match_hash": "9e9c47e2e4a932b0e47cb3139ae2eb6c3c3a64459c073eebc47c000cb23bd420",
       "signature": "fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Target)) -> ResolvedBuild",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -105,7 +105,7 @@
     {
       "type": "fn_private",
       "name": "collectDependencies",
-      "match_hash": "f57581c9b6876d98c067f4fef58aaa062cc57ad16a3b5ef010d6face07cda6cc",
+      "match_hash": "4bb709883345b664bd3d2710205328589156cacc3209812d1f39256ce10e7bbe",
       "signature": "fn collectDependencies(self: *DependencyResolver, target: *Target, collected: *std.AutoHashMap(usize, *Target)) -> void",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -119,7 +119,7 @@
     {
       "type": "fn_private",
       "name": "collectDependenciesWithAbstracts",
-      "match_hash": "0c8575788c283d71b846c5bded9d2f6296ebd9dce3f9b1181ff22ded88e61096",
+      "match_hash": "2810a9e13b4072e74e9710c5746665aa6c1f13e994f8ed7ffa8266b62221c0f2",
       "signature": "fn collectDependenciesWithAbstracts(self: *DependencyResolver, target: *Target, collected: *std.AutoHashMap(usize, *Target), provided: *std.bit_set.DynamicBitSetUnmanaged) -> void",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -134,14 +134,14 @@
     {
       "type": "struct",
       "name": "ResolvedLevels",
-      "match_hash": "b3ceb8b8d33608e61ecc6e0f2e2a17f168fc7ec0e3be4a81563bf483c4c2ea90",
+      "match_hash": "23f590e0a244f4b6dc2a79d2230e286bc7a57984573b7f1d228958a447b8ffd9",
       "signature": "keyword_struct ResolvedLevels { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "87a8fbb55ac75257a9dd4e69d1de2d88a1021869558a60e84557fb4f8244b09b",
+          "match_hash": "6290414798b4f04d7cddfe01fb53888069929b0d43e1a5f97ea859271cfafcc5",
           "signature": "fn deinit(self: *ResolvedLevels) -> void",
           "params": [
             { "name": "self", "type": "*ResolvedLevels" }
@@ -156,7 +156,7 @@
     {
       "type": "fn_decl",
       "name": "getLevels",
-      "match_hash": "8820ea5a38542af20c732f26303b539f2303c8556e249cc918568dd5fa4eab81",
+      "match_hash": "6eeae0dfcfc3002a6775858766f85ec0a88bbf3ecd389ab7f84bc7c0af8e3f39",
       "signature": "fn getLevels(self: *const DependencyResolver, targets: []*Target) -> ResolvedLevels",
       "params": [
         { "name": "self", "type": "*const DependencyResolver" },
@@ -169,7 +169,7 @@
     {
       "type": "fn_decl",
       "name": "visualizeGraph",
-      "match_hash": "beb60e9e19aed6d332b8a694d7b343789010bef5b3f161bcda7068669d2f6209",
+      "match_hash": "8af2090359e3f84a39f69fbc907f4b4b02c94a64b57871695c97788df5e96349",
       "signature": "fn visualizeGraph(self: *DependencyResolver, target_names: []const []const u8, allocator: std.mem.Allocator) -> []u8",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -183,7 +183,7 @@
     {
       "type": "fn_private",
       "name": "printTree",
-      "match_hash": "518217695cd43030c42ae65d5c8685260737caee70ccfcaea5d21d76d8eeb27b",
+      "match_hash": "59b5d5f2eb9ff57881035a1fa77525d5e5e1b0878d3e4dc36dcf0c9015d9cb20",
       "signature": "fn printTree(self: *DependencyResolver, target: *Target, visited: *std.AutoHashMap(usize, void), prefix: []const u8, is_last: bool, writer) -> void",
       "params": [
         { "name": "self", "type": "*DependencyResolver" },
@@ -200,7 +200,7 @@
     {
       "type": "fn_private",
       "name": "makeTarget",
-      "match_hash": "0f353e2d10beb08950b171658494dd3877c654d87d34a7450a2646a1b4895d25",
+      "match_hash": "694448c6116893fbb079eaac6259f02707f67e95ffd3016b3d77694e93033abf",
       "signature": "fn makeTarget(allocator: std.mem.Allocator, interner: *StringInterner, name: []const u8, target_type: @import(\"target.zig\").TargetType) -> *Target",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

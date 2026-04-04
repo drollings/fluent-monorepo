@@ -22,8 +22,7 @@ const wasm_mod = @import("wasm");
 // MinimizedContext
 // ---------------------------------------------------------------------------
 
-/// A compact context bundle ready for frontier LLM prompting.
-/// Both `query` and `packed_text` are allocator-owned (PII-anonymized copies).
+/// Manages minimal context for efficient execution; owned by the module; ensures fixed buffer sizes and invariant state.
 pub const MinimizedContext = struct {
     /// Anonymized, allocator-owned copy of the original query.
     query: []const u8,
@@ -40,11 +39,7 @@ pub const MinimizedContext = struct {
     }
 };
 
-/// Minimize context before a frontier LLM call.
-///
-/// Uses ContextPacker to select LOD levels weighted by BFS graph distance,
-/// then trims to `token_budget` tokens (rough estimate: chars / 4).
-/// Both query and packed context are PII-anonymized before returning.
+/// Optimizes memory allocation context for Zig code using provided allocator and library parameters.
 pub fn minimizeContext(
     allocator: std.mem.Allocator,
     library: *coral_db.Library,
@@ -78,17 +73,7 @@ pub fn minimizeContext(
 // Prompt builder
 // ---------------------------------------------------------------------------
 
-/// Build a frontier LLM prompt from a MinimizedContext.
-/// Returns an allocator-owned string; caller must free.
-///
-/// Prompt structure:
-/// ```
-/// You are a knowledge assistant. Use the provided context to answer the query.
-/// Context:
-/// <packed_text>
-/// Query: <query>
-/// Answer:
-/// ```
+/// Constructs a prompt slice from an allocator and context parameters.
 pub fn buildPrompt(
     allocator: std.mem.Allocator,
     ctx: MinimizedContext,
@@ -111,12 +96,7 @@ pub const ValidationResult = struct {
     reason: []const u8 = "",
 };
 
-/// Validate a solution string at the perimeter (LLM output boundary).
-///
-/// Checks:
-/// 1. Non-empty
-/// 2. Not a "sorry, I can't" refusal
-/// 3. Not a raw think-block remnant
+/// Validates a Zig solution slice, returning a ValidationResult indicating success or error.
 pub fn validateSolution(solution: []const u8) ValidationResult {
     const trimmed = std.mem.trim(u8, solution, " \t\r\n");
     if (trimmed.len == 0) {
@@ -198,10 +178,7 @@ test "buildPrompt: contains query and context" {
 //
 // Node id is derived from a hash of the query so re-indexing is idempotent.
 
-/// Index a validated LLM solution as a ContextNode for future L4 KNN retrieval.
-///
-/// Safe to call multiple times with the same query — uses a hash-derived id so
-/// the INSERT OR REPLACE is a no-op on subsequent calls.
+/// Processes a Zig query result, returning an index map for the given allocator and library.
 pub fn indexSolution(
     allocator: std.mem.Allocator,
     library: *coral_db.Library,
@@ -287,14 +264,7 @@ test "indexSolution: idempotent on repeated call" {
 // deployments where no compiler is available; the source is stored as a
 // ContextNode for deferred compilation later.
 
-/// Index a validated LLM solution, attempting WASM compilation first.
-///
-/// Workflow:
-///   1. Extract first fenced code block from `response`.
-///   2. If `generator` is provided and source is valid Zig or AS, compile to WASM.
-///   3. Verify the compiled tool runs without traps.
-///   4. Store as a WasmTool in the library's wasm_tools table.
-///   5. Fall through to plain `indexSolution` regardless of compilation outcome.
+/// Retrieves an index solution using the provided allocator, library, query, and tool generator.
 pub fn indexSolutionWithTool(
     allocator: std.mem.Allocator,
     library: *coral_db.Library,

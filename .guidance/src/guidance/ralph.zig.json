@@ -14,7 +14,7 @@
     {
       "type": "enum",
       "name": "RalphState",
-      "match_hash": "0505543ba0b2c8da21cbad10c7c7c96e6164882c7437f5c6fb1e8cf328339869",
+      "match_hash": "2d37234f698c75919d6ae5f331f4d12cbda2c6e4abdf232cf27b1042d281862f",
       "signature": "keyword_enum RalphState { ... }",
       "is_pub": true,
       "members": [
@@ -60,7 +60,7 @@
     {
       "type": "struct",
       "name": "QueryRecord",
-      "match_hash": "3a2e445f9ae27135593d28e4b2f37fed9f4e66f15db3fd428f99ab740ecb1b2b",
+      "match_hash": "ee9e65c9b5b287e8486f28e9bc75c7e82bb27873fda9a874858c8ef93d06d248",
       "signature": "keyword_struct QueryRecord { ... }",
       "is_pub": true,
       "line": 34
@@ -68,7 +68,7 @@
     {
       "type": "struct",
       "name": "Relationship",
-      "match_hash": "b41bceb6511640054bef6bc47316d1f6c1dcbaa61f7e7306637c9feecd628d40",
+      "match_hash": "f12160fd900b68bbe6989d19809d014f52cd272d928e6e73c88e4a8cf97e71fd",
       "signature": "keyword_struct Relationship { ... }",
       "is_pub": true,
       "line": 42
@@ -76,7 +76,7 @@
     {
       "type": "struct",
       "name": "RalphContext",
-      "match_hash": "397deadaeb48c7948039630437cb8ab801924a132350611ee4b73dd2fbe209e1",
+      "match_hash": "9bc17b4956460e606fadcb84fcdeec766faadbac7e3681cfa70c21f355526998",
       "signature": "keyword_struct RalphContext { ... }",
       "patterns": [
         { "name": "State Persistence", "type": "Domain", "ref": "guidance/skills/domain_patterns/SKILL.md#state-persistence" }
@@ -86,7 +86,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "4ca977d19b8f3c93d735892f1a2f758def1ce465231e477b84702e9b82333120",
+          "match_hash": "55f2d06e889505fabdeebe3b1e5a8309e998a3a8341451945787ce612477901f",
           "signature": "fn init(allocator: std.mem.Allocator, workspace: []const u8, db: *GuidanceDb, aliases: ?vector_db_mod.SemanticAliases) -> *RalphContext",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -96,27 +96,27 @@
           ],
           "returns": "*RalphContext",
           "is_pub": true,
-          "line": 67
+          "line": 66
         }
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "516d0cffe977de8df0c07777a785a1d1458388f879470b4f8876df3f2ecf5551",
+          "match_hash": "3e61b2e3d579ec0d09564d6c6be4d27964356ca09f663e3c0ba74d2a7d2a8784",
           "signature": "fn deinit(ctx: *RalphContext) -> void",
           "params": [
             { "name": "ctx", "type": "*RalphContext" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 93
+          "line": 92
         }
       ],
-      "line": 51
+      "line": 50
     },
     {
       "type": "fn_decl",
       "name": "step",
-      "match_hash": "ed674e7f33d647a7ed121e45b9b263567085e1d6810b9719f2da6bf89ce61389",
+      "match_hash": "0912c3adb65e820623619363a4ff15698bcc2e6eb5e6d80348801e854ffc2aa1",
       "signature": "fn step(ctx: *RalphContext, allocator: std.mem.Allocator, user_input: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -125,12 +125,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 112
+      "line": 110
     },
     {
       "type": "fn_private",
       "name": "ralphRead",
-      "match_hash": "8e477070b5655d1c10e2f2f25a17497694230696f098707d8d52547b9f522172",
+      "match_hash": "f0605c9f73a6f6975a2de8e165a1669b8e6744bbada8c4cb7d27729370482bcf",
       "signature": "fn ralphRead(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -139,12 +139,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 128
+      "line": 126
     },
     {
       "type": "fn_private",
       "name": "ralphAsk",
-      "match_hash": "e0c3a302855b94302dcee5f73374bda53f067d2595314a7de72119458568ca65",
+      "match_hash": "f1298e448a8a2095bb277069d232acfed743300b172b81ff36b47430a4add31b",
       "signature": "fn ralphAsk(ctx: *RalphContext, allocator: std.mem.Allocator, query: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -153,12 +153,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 135
+      "line": 133
     },
     {
       "type": "fn_private",
       "name": "ralphLearn",
-      "match_hash": "5fa75f8adcdcd21151ad4fd255fd6ef71f72a69483ca580f4e8dbbb687dfdef3",
+      "match_hash": "dcf9c4e74bf21df5fcec8a37dace91179234b78efad808140b3a7acd8a84ea0c",
       "signature": "fn ralphLearn(ctx: *RalphContext, allocator: std.mem.Allocator, query: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -167,12 +167,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 154
+      "line": 152
     },
     {
       "type": "fn_private",
       "name": "ralphPlan",
-      "match_hash": "bcdf861188045c3c6111ed693626ef528bb65809e9354d4c28e2a51ac96c5923",
+      "match_hash": "fe7fa3f139e5abdbbc3d29b1a98a505fb6ebd8cceabc12157a2fe3f0638d8c3f",
       "signature": "fn ralphPlan(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -181,12 +181,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 173
+      "line": 171
     },
     {
       "type": "fn_private",
       "name": "ralphHelp",
-      "match_hash": "5c08671c769e4c805c685dd0edba3f76b8447de27801cd9f2dabaff9f1fb9c2a",
+      "match_hash": "c6ec22a6b80d2cd7e261f5d37742cdfbce59a7010de127f99b1f1fefc78ad7e4",
       "signature": "fn ralphHelp(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
       "params": [
         { "name": "ctx", "type": "*RalphContext" },
@@ -195,12 +195,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 183
+      "line": 181
     },
     {
       "type": "fn_private",
       "name": "formatReadSummary",
-      "match_hash": "fea5ad4cade0a12226866f3ebfbc11c2538ba267604becc1961d9a3756636c65",
+      "match_hash": "c2a18c8c2bb8b98f4d23e0da9dccd1410c83614636d897ca2c5158a42c14059c",
       "signature": "fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -208,12 +208,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 197
+      "line": 195
     },
     {
       "type": "fn_private",
       "name": "formatPlanSuggestions",
-      "match_hash": "03f58f69cd16032ea281d50e6dfad2c61eb53e250fbd9726dd69e765f3a650f1",
+      "match_hash": "0bd14d8ead878edec2903dcba3ae86a5b2542e3bf692233752183138dfbe11a8",
       "signature": "fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -221,24 +221,24 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 251
+      "line": 249
     },
     {
       "type": "fn_private",
       "name": "formatHelpStages",
-      "match_hash": "c7f908d2cc8d11d6f0fa0a012f2c56ff3ee813865c84bb030adb762e30e45349",
+      "match_hash": "87f2be5dc1331a9ba73e14e0323ab31bd33c64d638184273943ee8f6fdb4ffb0",
       "signature": "fn formatHelpStages(allocator: std.mem.Allocator) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 299
+      "line": 297
     },
     {
       "type": "fn_private",
       "name": "classifyIntent",
-      "match_hash": "f23b3c65d2a244f747b54394f7fb45f8bcea45b3fe6b19c635f14197f2b5e15f",
+      "match_hash": "ba996e0f39eb26eb4ca173feaa9e96fc2bcb5e9cdf9460258564b7648f6aff21",
       "signature": "fn classifyIntent(query: []const u8, strategies: []const QueryStrategy, db: *GuidanceDb) -> QueryIntent",
       "params": [
         { "name": "query", "type": "[]const u8" },
@@ -247,12 +247,12 @@
       ],
       "returns": "QueryIntent",
       "is_pub": false,
-      "line": 329
+      "line": 327
     },
     {
       "type": "fn_decl",
       "name": "runQuery",
-      "match_hash": "d4cd79032769e56fce7ee56bf697d568120ebae2c1fee48b49ed1944f036c377",
+      "match_hash": "081871ed44b737db8cfd94c086e5709b008fe6671f35ca876d46102e46cb3a46",
       "signature": "fn runQuery(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -263,19 +263,19 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 343
+      "line": 339
     },
     {
       "type": "test_decl",
       "name": "RalphState: transitions in order",
       "is_pub": false,
-      "line": 406
+      "line": 402
     },
     {
       "type": "test_decl",
       "name": "QueryRecord: can be appended to ArrayList",
       "is_pub": false,
-      "line": 412
+      "line": 408
     }
   ]
 }

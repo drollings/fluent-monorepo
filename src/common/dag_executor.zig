@@ -7,7 +7,7 @@
 /// Safety: All shared state protected by mutex.
 const std = @import("std");
 
-/// DAG node with dependency tracking.
+/// Represents a fixed-size buffer in the dag executor, managed by the system, with shared ownership and no thread safety.
 pub const DagNode = struct {
     id: i64,
     /// IDs of nodes this node depends on (must complete before this)
@@ -25,7 +25,7 @@ pub const DagNode = struct {
     };
 };
 
-/// Result of executing a single DAG node.
+/// Represents a result structure from a Dag protocol execution, managing ownership and invariants.
 pub const DagResult = struct {
     node_id: i64,
     success: bool,
@@ -33,7 +33,7 @@ pub const DagResult = struct {
     error_message: ?[]const u8,
 };
 
-/// Callbacks for node execution.
+/// Manages callback registration and invocation; owns DagCallbacks instance; ensures callbacks are properly tracked and invoked.
 pub const DagCallbacks = struct {
     ctx: *anyopaque,
     vtable: *const VTable,
@@ -60,7 +60,7 @@ pub const DagCallbacks = struct {
     }
 };
 
-/// Parallel DAG executor using thread pool.
+/// Manages DagExecutor logic, owns execution context, ensures consistent state across runs.
 pub const DagExecutor = struct {
     const Self = @This();
 
@@ -328,3 +328,7 @@ test "DagExecutor: single node" {
     try testing.expectEqual(@as(i64, 1), results[0].node_id);
     try testing.expect(results[0].success);
 }
+
+
+
+

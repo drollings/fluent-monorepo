@@ -10,19 +10,19 @@
     {
       "type": "fn_decl",
       "name": "estimateTokens",
-      "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
+      "match_hash": "3b37a98ab7caffde730523ccae4c1b19bc867cbc8a0dca3fcfba22ad3b1effcd",
       "signature": "fn estimateTokens(content: []const u8) -> usize",
       "params": [
         { "name": "content", "type": "[]const u8" }
       ],
       "returns": "usize",
       "is_pub": true,
-      "line": 27
+      "line": 26
     },
     {
       "type": "fn_decl",
       "name": "preFilterByBudget",
-      "match_hash": "39661cee5b8cd3f9eb37f6bb4e0082837865c39ca71a4ee6dbe1892dcf5cc203",
+      "match_hash": "b7b8e47d8731dc40026a2a3a21b2fc2a12ad5ea405f7aabab66766f680ff882c",
       "signature": "fn preFilterByBudget(allocator: Allocator, stages: []const types.Stage, budget: usize) -> []const types.Stage",
       "params": [
         { "name": "allocator", "type": "Allocator" },
@@ -31,12 +31,12 @@
       ],
       "returns": "[]const types.Stage",
       "is_pub": true,
-      "line": 37
+      "line": 31
     },
     {
       "type": "fn_decl",
       "name": "filterStagesBatch",
-      "match_hash": "ce6cb4bc93619f24f8ed0acdad41347b780f700c408afe47d4cdfd04ad01d99c",
+      "match_hash": "2cc232fcfb968a26c115a30ecfbf0cd62d79ec40fdeb306c74627e08970d8f44",
       "signature": "fn filterStagesBatch(allocator: Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage, budget: usize) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "Allocator" },
@@ -47,12 +47,12 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 78
+      "line": 65
     },
     {
       "type": "fn_private",
       "name": "askRelevantBatch",
-      "match_hash": "f3fe27af696bbec7759a400a3df9454e77bc545bf76bc9d246c5ec6beca1aa66",
+      "match_hash": "f6f92db0e7d002ce40b2df7a54d9025b36ffceceb55f1cbf5f9be021a9e67309",
       "signature": "fn askRelevantBatch(allocator: Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> []usize",
       "params": [
         { "name": "allocator", "type": "Allocator" },
@@ -62,12 +62,12 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 168
+      "line": 153
     },
     {
       "type": "fn_private",
       "name": "dupeStage",
-      "match_hash": "1175848e07eef2749758deb990af4965b7e78a11b164cacb4dc1153f8cb4bac6",
+      "match_hash": "47f69faa17cab469cfda7cb8b7ae836888e8d7c5959765b0ddbee46222f62d19",
       "signature": "fn dupeStage(allocator: Allocator, s: types.Stage) -> types.Stage",
       "params": [
         { "name": "allocator", "type": "Allocator" },
@@ -75,25 +75,25 @@
       ],
       "returns": "types.Stage",
       "is_pub": false,
-      "line": 221
+      "line": 206
     },
     {
       "type": "test_decl",
       "name": "estimateTokens: approximation",
       "is_pub": false,
-      "line": 236
+      "line": 221
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: code always kept",
       "is_pub": false,
-      "line": 242
+      "line": 227
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: prose included when budget allows",
       "is_pub": false,
-      "line": 264
+      "line": 249
     }
   ]
 }

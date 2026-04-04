@@ -26,7 +26,7 @@ pub const YAGO_VERSION = "4.5";
 // Ontology class
 // ---------------------------------------------------------------------------
 
-/// A YAGO 4.5 ontology class: IRI, human-readable label, optional superclass, and associated property IRIs.
+/// Represents a fixed-size buffer pool with ownership and lifecycle management; key invariant is shared access control.
 pub const OntologyClass = struct {
     iri: []const u8,
     label: []const u8,
@@ -37,7 +37,7 @@ pub const OntologyClass = struct {
 // ---------------------------------------------------------------------------
 // Property range types
 // ---------------------------------------------------------------------------
-/// Value-range classification for an ontology property.
+/// Defines a range of property values with fixed bounds; managed centrally; key invariant is valid range enforcement.
 pub const PropertyRange = enum {
     iri, // object property (points to another entity)
     string, // plain string literal
@@ -49,7 +49,7 @@ pub const PropertyRange = enum {
     any, // unconstrained
 };
 
-/// A YAGO 4.5 property descriptor: IRI, label, optional domain class, value range, and logical flags.
+/// Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const OntologyProperty = struct {
     iri: []const u8,
     label: []const u8,
@@ -144,8 +144,7 @@ pub const ALL_CLASSES = [_]*const OntologyClass{
     &CLASS_CONCEPT,
 };
 
-/// Returns the IRI of every class in ALL_CLASSES, suitable for type-filter
-/// during ingestion. Out slice must have capacity >= ALL_CLASSES.len.
+/// Converts a list of IRI strings into a filtered slice, returning a unique set of valid URIs.
 pub fn whitelistIRIs(out: [][]const u8) usize {
     var i: usize = 0;
     for (ALL_CLASSES) |cls| {
@@ -156,7 +155,7 @@ pub fn whitelistIRIs(out: [][]const u8) usize {
     return i;
 }
 
-/// Look up a class by IRI. Returns null if unknown.
+/// Searchs an IRI string for a matching OntologyClass and returns a pointer to it.
 pub fn lookupClass(iri: []const u8) ?*const OntologyClass {
     for (ALL_CLASSES) |cls| {
         if (std.mem.eql(u8, cls.iri, iri)) return cls;
@@ -164,8 +163,7 @@ pub fn lookupClass(iri: []const u8) ?*const OntologyClass {
     return null;
 }
 
-/// Collect superclass chain for a given class IRI (including self).
-/// Out slice must have enough capacity. Returns number written.
+/// Transforms a list of IRI elements into a structured Zig output, handling conversion and chaining.
 pub fn superclassChain(iri: []const u8, out: [][]const u8) usize {
     var count: usize = 0;
     var current: ?[]const u8 = iri;
@@ -179,13 +177,7 @@ pub fn superclassChain(iri: []const u8, out: [][]const u8) usize {
     return count;
 }
 
-/// Returns true when `child_iri` is `parent_iri` or a (transitive) subclass of it.
-/// Walks the static `superclass` chain in ALL_CLASSES.
-///
-/// Example: `isSubclassOf(NS_SCHEMA ++ "Scientist", NS_SCHEMA ++ "Person")` → true
-///
-/// Used in QueueReactor capability matching: if a tool requires "Person" and
-/// the query entity is a "Scientist", the tool matches via subsumption.
+/// Checks if a given IRI is a subclass of another IRI, returning true or false.
 pub fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) bool {
     if (std.mem.eql(u8, child_iri, parent_iri)) return true;
     var current: ?[]const u8 = child_iri;
@@ -326,7 +318,7 @@ const ALL_PROPERTIES = [_]*const OntologyProperty{
     &PROP_WIKIPEDIA,
 };
 
-/// Look up a property by IRI.
+/// Searchs an IRI string for a matching OntologyProperty and returns it.
 pub fn lookupProperty(iri: []const u8) ?*const OntologyProperty {
     for (ALL_PROPERTIES) |prop| {
         if (std.mem.eql(u8, prop.iri, iri)) return prop;

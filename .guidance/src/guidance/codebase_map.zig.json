@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "BuildSystem",
-      "match_hash": "19e4d80da29ad8679d50123e05b08b89eae8d845600d8f2c8fce2d2de9770597",
+      "match_hash": "8136485d6cdceed6eac827f03a81f528f45f582d8ec2f492fb1ec8b2f1b4cc00",
       "signature": "keyword_enum BuildSystem { ... }",
       "is_pub": true,
       "members": [
@@ -65,7 +65,7 @@
     ,    {
           "type": "fn_decl",
           "name": "buildCommand",
-          "match_hash": "bef4d01ad547913e2260d7120c59d1f3e242e65cc2f38e0e75e6edc0ca0bc96a",
+          "match_hash": "6423187d393f643e73dc90e47e2c60f72d88f4d4d770814c3439a0cb7c698566",
           "signature": "fn buildCommand(self: BuildSystem) -> []const u8",
           "params": [
             { "name": "self", "type": "BuildSystem" }
@@ -80,7 +80,7 @@
     {
       "type": "struct",
       "name": "EntryPoint",
-      "match_hash": "88e6cf9624b20eb994643674e088176e0af2f0a7c4f789394f45444e4ff92dd7",
+      "match_hash": "537608eafe94801c334e324ceeec72e9e7ad6ae29a76d7375a6dba24aef6c9a7",
       "signature": "keyword_struct EntryPoint { ... }",
       "is_pub": true,
       "line": 42
@@ -88,7 +88,7 @@
     {
       "type": "struct",
       "name": "DirectoryEntry",
-      "match_hash": "98ef9beb5f3c304c8342a041f28559ba2c853f4ee8605c4b785b70ee39b3a959",
+      "match_hash": "e8b0823a9b492e938570788bf0938a9e489b5dd19c676f097eea768c261ae02e",
       "signature": "keyword_struct DirectoryEntry { ... }",
       "is_pub": true,
       "line": 54
@@ -96,29 +96,29 @@
     {
       "type": "struct",
       "name": "CodebaseMap",
-      "match_hash": "1462ef1d44dfd58738c027b770d905fb259fcc95b3080ec26089078573862e7a",
+      "match_hash": "522cd3fc075a1dcaef93292bbb8783c922850530fb796d6e5932ff8ced7ff6a6",
       "signature": "keyword_struct CodebaseMap { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "5c8bce72b6f39a4e25a2ea8d70ca5c2c27511085723aa2f30759a9013017a42f",
+          "match_hash": "69594298d5400c9628b9809c2e4ae4f49aee8e4c6f10c00686700760c2b5ad28",
           "signature": "fn deinit(self: *CodebaseMap) -> void",
           "params": [
             { "name": "self", "type": "*CodebaseMap" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 94
+          "line": 93
         }
       ],
-      "line": 70
+      "line": 69
     },
     {
       "type": "fn_decl",
       "name": "discoverStructure",
-      "match_hash": "44a0fde08a51e503017ed01ba078664d864629279bb8feb8301e3f604f457ad0",
+      "match_hash": "b22e01857d8dc633d8d547b4855261261c61f1098ae8825f05416f07d9c331cb",
       "signature": "fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) -> CodebaseMap",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -126,36 +126,36 @@
       ],
       "returns": "CodebaseMap",
       "is_pub": true,
-      "line": 129
+      "line": 126
     },
     {
       "type": "fn_private",
       "name": "detectBuildSystem",
-      "match_hash": "191735ae1a230e45f66020591db17b83e25b1dc0241f0b66f48988bc46f48193",
+      "match_hash": "6ceec3ae5aa05c0de723b28c5d7478442709bed3a6d3fc2e858bbacb00cad6ce",
       "signature": "fn detectBuildSystem(workspace: []const u8) -> BuildSystem",
       "params": [
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "BuildSystem",
       "is_pub": false,
-      "line": 192
+      "line": 189
     },
     {
       "type": "fn_private",
       "name": "shouldIgnoreDir",
-      "match_hash": "d625f8f3758fcf74ac14e016f2530028662f5b09842f7e06a748a455d89c57f4",
+      "match_hash": "c3ee4e646cfa77a2fd103015436659bf1f274f8d6e94866bbb7e47a1dc6cc8c8",
       "signature": "fn shouldIgnoreDir(name: []const u8) -> bool",
       "params": [
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 219
+      "line": 216
     },
     {
       "type": "fn_private",
       "name": "walkFilesystem",
-      "match_hash": "252196a2551ba51a324900c6a45b43e114fcbf079b8d30b2682fcebafd543664",
+      "match_hash": "f9496a9ac6604f91a86a6aec6b17c40985da56b2d16cae3eb9a108f8b884734f",
       "signature": "fn walkFilesystem(allocator: std.mem.Allocator, workspace: []const u8, tree: *std.ArrayList(DirectoryEntry)) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -164,12 +164,12 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 231
+      "line": 228
     },
     {
       "type": "fn_private",
       "name": "walkDir",
-      "match_hash": "7978ba689bca3d1aebb9b82a23cc914a0afdb007b8c20172c8277bb1edcbee7e",
+      "match_hash": "353cd9b9f721545e144342cf61e084c4a0fee6e1ef2a2c7e81baffbf8066c979",
       "signature": "fn walkDir(allocator: std.mem.Allocator, dir: std.fs.Dir, rel_prefix: []const u8, tree: *std.ArrayList(DirectoryEntry), depth: u32) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -180,12 +180,12 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 242
+      "line": 239
     },
     {
       "type": "fn_private",
       "name": "countLanguages",
-      "match_hash": "0fa6f89863d0a241d07e5f00c91b581a5a7f72656b8d5ceec734b0ea9ad0f5e9",
+      "match_hash": "de342ed52a4176d2f2da4a4e5979d770671610816e6eeaeeec83e98d2dc70b42",
       "signature": "fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) -> []LanguageCount",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -193,36 +193,36 @@
       ],
       "returns": "[]LanguageCount",
       "is_pub": false,
-      "line": 296
+      "line": 293
     },
     {
       "type": "fn_private",
       "name": "classifyEntryPoint",
-      "match_hash": "56133862fde9aee6b43f8ff603ade3c40e02dc87b8182ec0a47efeb6eec7741b",
+      "match_hash": "db8bf0a4e5a0491db4fb52a8c3a679561a6d91d7f838eb36f5b6407c4f9a590d",
       "signature": "fn classifyEntryPoint(name: []const u8) -> @TypeOf(@as(EntryPoint, undefined).kind)",
       "params": [
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "@TypeOf(@as(EntryPoint, undefined).kind)",
       "is_pub": false,
-      "line": 351
+      "line": 348
     },
     {
       "type": "fn_private",
       "name": "isEntryPointName",
-      "match_hash": "386b2b04d46f478432b46fc47c7194e99432a0eb996b1a83b2362b8db9cac7c9",
+      "match_hash": "b46fcfae8298a541db1431574f4b0b50df15683f50c488ee4846183ab09bd337",
       "signature": "fn isEntryPointName(name: []const u8) -> bool",
       "params": [
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 362
+      "line": 359
     },
     {
       "type": "fn_private",
       "name": "detectEntryPoints",
-      "match_hash": "8c0187a6cf42432d52fdf97f52d8eeb0a1d93701696390117cdc6a821bbc05b4",
+      "match_hash": "732aff0eb47ce496cff3ffa49fdb1cba74b9d88e125f88c88fd53e27e4c500ad",
       "signature": "fn detectEntryPoints(allocator: std.mem.Allocator, tree: []const DirectoryEntry, workspace: []const u8) -> []EntryPoint",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -231,12 +231,12 @@
       ],
       "returns": "[]EntryPoint",
       "is_pub": false,
-      "line": 377
+      "line": 373
     },
     {
       "type": "fn_private",
       "name": "findCapabilityDirs",
-      "match_hash": "9659a7d998233056408ea92ec38262f0938be9e5ee3eb82013a91c9a6e27fe19",
+      "match_hash": "21e2d73b4c4a61a090f09f4a11e424b55ec915a9fad0a4a46b3c7e46429dcec5",
       "signature": "fn findCapabilityDirs(allocator: std.mem.Allocator, workspace: []const u8, tree: []const DirectoryEntry) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -245,12 +245,12 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 453
+      "line": 449
     },
     {
       "type": "fn_private",
       "name": "findSkillDirs",
-      "match_hash": "910d6a5716495ddb197815f883a0cea9fbc6aeb6e0be820b22c52912fd154106",
+      "match_hash": "2c40da29df218d3ce07c3190ebd5a8751ba926a8a7cf73fe36c83c8893aa7a74",
       "signature": "fn findSkillDirs(allocator: std.mem.Allocator, workspace: []const u8, tree: []const DirectoryEntry) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -259,12 +259,12 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 494
+      "line": 490
     },
     {
       "type": "fn_private",
       "name": "extractReadmeDescription",
-      "match_hash": "7a292c6ebc2b6861bb5452c608fd12bec248efbb94253dde347f2e35a169b567",
+      "match_hash": "b1e0a1140d09dac1de613b97b344fa9943bfb8fc57fba8cb775d7b356cc4b921",
       "signature": "fn extractReadmeDescription(allocator: std.mem.Allocator, workspace: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -272,19 +272,19 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 521
+      "line": 517
     },
     {
       "type": "test_decl",
       "name": "detectBuildSystem: returns zig_build for this repo",
       "is_pub": false,
-      "line": 570
+      "line": 566
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier via ENTRY_EXACT: main is an entry point",
       "is_pub": false,
-      "line": 578
+      "line": 574
     }
   ]
 }

@@ -17,7 +17,7 @@ const std = @import("std");
 const http = std.http;
 const net = std.net;
 
-/// MCP handler interface — must implement handleJsonRpc.
+/// Manages McP transport logic, owns buffers, handles connection lifecycle without thread safety.
 pub const McpHandler = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -36,7 +36,7 @@ pub const McpHandler = struct {
     }
 };
 
-/// SSE event for streaming responses.
+/// Manages SSE event data structures; owned by the module; ensures consistent state across runs.
 pub const SseEvent = struct {
     event: []const u8 = "message",
     data: []const u8,
@@ -434,7 +434,7 @@ test "McpHandler VTable interface compiles" {
 // Run with `zig test --test-filter "integration"` to enable.
 // =============================================================================
 
-/// Test MCP handler that echoes back the request with a fixed response.
+/// Manages HTTP transport logic for Zig, owns transport state, ensures consistent initialization and cleanup.
 const TestMcpHandler = struct {
     response: []const u8,
     called: bool = false,

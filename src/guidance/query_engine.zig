@@ -35,23 +35,21 @@ const hash_mod = @import("hash.zig");
 // =============================================================================
 
 const SkillExcerpt = struct { name: []const u8, excerpt: []const u8 };
-/// A pruned source block shown below a search result: owns `label` and `code`, borrows `file_path` and `lang`.
+/// Manages structured excerpt data for query processing; owned by the engine; key invariant is consistent structure.
 const ExcerptEntry = struct {
     file_path: []const u8, // borrowed from SearchResult
     label: []const u8, // owned: "src/foo.zig:42"
     code: []const u8, // owned: pruned source block
     lang: []const u8, // borrowed constant
 };
-/// Manages file match items with ownership and invariants; ensures consistent state across operations.
+/// Manages file match metadata; owns data structures; ensures consistent state across operations.
 const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 
 // =============================================================================
 // explain — small path/config helpers
 // =============================================================================
 
-/// Create an embedding provider, falling back to NoopEmbedding when the
-/// configured provider fails to initialise.  The caller must call
-/// `embedder.deinit()` when done.
+/// Creates an embedding provider using an allocator and configuration, returning a vector slice.
 fn createEmbedderWithFallback(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,
@@ -69,18 +67,12 @@ fn createEmbedderWithFallback(
     };
 }
 
-/// Construct an LlmConfig from the parsed ExplainArgs.
+/// Creates an LLM configuration object from explanation arguments.
 fn makeLlmConfig(ea: ExplainArgs) llm.LlmConfig {
     return .{ .api_url = ea.api_url, .model = ea.model, .debug = ea.debug };
 }
 
-/// Central control point for LLM configuration with thinking model support.
-///
-/// If model matches the thinking slot:
-///   - Force Ollama /api/chat endpoint (required for think parameter)
-///   - Set think = true
-///
-/// Returns owned memory in resolved_url (caller must free).
+/// Resolves LLM config for thinking with allocator, config, model, and URL parameters.
 pub fn resolveLlmConfigForThinking(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,
@@ -164,8 +156,7 @@ pub fn resolveLlmConfigForThinking(
     };
 }
 
-/// Dispatch to single-file, explicit-scan, or full-workspace processing.
-/// Whether LLM relevance filtering should be applied on the staged path.
+/// Manages filter mode configurations with ownership and invariants; central to query engine logic.
 const FilterMode = enum {
     /// Auto-detect: apply LLM filter only for long queries (5+ words).
     auto,
@@ -197,9 +188,7 @@ const ExplainArgs = struct {
     no_drift: bool = false,
 };
 
-/// Return true when the query is "short" (fast path, no LLM filter).
-/// Short queries: 2 or fewer words, AND not ending with "?", AND not starting
-/// with question words (if, how, where, when, does, why, what).
+/// Checks if a query string is short enough to be considered valid.
 fn isShortQuery(query: []const u8) bool {
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     if (trimmed.len == 0) return true;
@@ -234,8 +223,7 @@ fn isShortQuery(query: []const u8) bool {
 // explain — phase helpers
 // =============================================================================
 
-/// Phase A: Load skill excerpts for the top search result's JSON guidance file.
-/// Returns owned slice; caller must free each `.name` and `.excerpt`, then free the slice.
+/// Collects skill excerpts from a JSON path, using allocator, top path, guidance direction, and workspace parameters.
 fn collectSkillExcerpts(
     allocator: std.mem.Allocator,
     top_json_path: []const u8,
@@ -272,8 +260,7 @@ fn collectSkillExcerpts(
     return out.toOwnedSlice(allocator);
 }
 
-/// Phase B: Collect up to 3 source excerpts, preferring exact-name matches.
-/// Returns owned slice; caller must free each `.label` and `.code`, then free the slice.
+/// Collects source excerpts matching search terms from memory allocator results.
 fn collectSourceExcerpts(
     allocator: std.mem.Allocator,
     results: []const SearchResult,
@@ -337,8 +324,7 @@ fn collectSourceExcerpts(
     return out.toOwnedSlice(allocator);
 }
 
-/// Phase C: Grep top result files for search-term matches.
-/// Returns owned slice; caller must free each `.lines`, then free the slice.
+/// Filters search results to return top matching files based on provided terms.
 fn grepTopFiles(
     allocator: std.mem.Allocator,
     results: []const SearchResult,
@@ -378,7 +364,7 @@ fn grepTopFiles(
     return out.toOwnedSlice(allocator);
 }
 
-/// Phase E: Render the legacy explain output to stdout.
+/// Renders explanation output using provided data structures and allocator.
 fn renderExplainOutput(
     allocator: std.mem.Allocator,
     query_text: []const u8,
@@ -757,8 +743,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
 // explain helpers
 // ---------------------------------------------------------------------------
 
-/// Load `used_by` array from a guidance JSON file.
-/// Returns an owned slice of owned strings, or null on failure / empty.
+/// Loads used data from a JSON path into a Zig array of slices.
 fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
@@ -778,7 +763,7 @@ fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Return true when `name` (case-insensitive) exactly equals any search term.
+/// Checks if a list of characters exactly matches a list of terms, returning true or false.
 fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
     // Fast path — avoid allocation for short names.
     var buf: [128]u8 = undefined;
@@ -790,8 +775,7 @@ fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
     return false;
 }
 
-/// Load skills listed in a guidance JSON file as a newline-separated string.
-/// Returns an owned allocation or null if the file is absent or has no skills.
+/// Loads skill data from a JSON string into a Zig array of byte slices.
 fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
     var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
@@ -826,8 +810,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Load public non-test member names from a guidance JSON file.
-/// Returns an owned slice of owned strings, or null on failure.
+/// Loads public member names from a JSON path into a Zig array of arrays.
 fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
@@ -862,9 +845,7 @@ fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Load the first paragraph (or `description:` front-matter value) of a SKILL.md.
-/// Searches `<guidance_dir>/skills/<name>/SKILL.md` and `<cwd>/doc/skills/<name>/SKILL.md`.
-/// Returns an owned allocation or null if not found.
+/// Loads a skill parameter slice from the guidance directory using the provided allocator and returns it.
 fn loadSkillPara(
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -888,10 +869,7 @@ fn loadSkillPara(
     return null;
 }
 
-/// Extract the source block starting at `start_line` (1-based).
-/// Stops at the next col-0 top-level declaration or after MAX_LINES, whichever
-/// comes first.  Then prunes trailing blank and comment-only lines.
-/// Returns an owned allocation; caller must free.
+/// Extracts and explains a specified excerpt from a Zig source file, returning its contents.
 fn explainExtractExcerpt(
     allocator: std.mem.Allocator,
     src: []const u8,
@@ -902,8 +880,7 @@ fn explainExtractExcerpt(
     return llm.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
 }
 
-/// Grep a file for search terms (case-insensitive substring, skipping comment lines).
-/// Returns owned slice of matching line numbers (caller frees).
+/// Explains grep-like behavior for a file, returning matching result indices.
 fn explainGrepFile(
     allocator: std.mem.Allocator,
     file_path: []const u8,
@@ -936,8 +913,7 @@ fn explainGrepFile(
     return line_numbers.toOwnedSlice(allocator);
 }
 
-/// Build LLM synthesis: skill context + member index + excerpts → prompt → summary.
-/// Strips "absence" sentences.  Returns owned string or null on failure.
+/// Constructs a summary slice from LLM query results using provided allocator, client, and text data.
 fn buildLlmSummary(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -1033,15 +1009,14 @@ fn buildLlmSummary(
 // Staged explain implementation  (M3/M5-M9)
 // =============================================================================
 
-/// Load semantic aliases from the guidance directory.
+/// Loads semantic aliases from a guidance directory into a vector_db_mod structure.
 fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?vector_db_mod.SemanticAliases {
     const alias_path = std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" }) catch return null;
     defer allocator.free(alias_path);
     return vector_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
 }
 
-/// Extract key technical terms from a long query using LLM.
-/// Returns owned slice of owned strings. Caller must free.
+/// Extracts key terms from a query string into a structured Zig array of slices.
 fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) !?[][]const u8 {
     const prompt = try std.fmt.allocPrint(allocator,
         \\Extract 3-5 key technical terms from this query. Return only a comma-separated list, no other text.
@@ -1088,8 +1063,7 @@ const drift_stop_words = [_][]const u8{
     "use",  "get",  "set",  "its",  "are", "not",
 };
 
-/// Tokenize `text` into lowercase capability words, filtering stop words
-/// and tokens shorter than 3 characters. Appends to `out`.
+/// Converts a C string into a list of tokenized capability words using the allocator.
 fn tokenizeCapabilityWords(
     allocator: std.mem.Allocator,
     text: []const u8,
@@ -1114,12 +1088,7 @@ fn tokenizeCapabilityWords(
     }
 }
 
-/// Compute deterministic DRIFT follow-up queries.
-///
-/// Tokenizes query into "needed" capabilities and result module/names into
-/// "available" capabilities. Returns allocator-owned slice of "Provide <cap>"
-/// strings for each missing capability. Always returns a heap-allocated slice
-/// (safe to free even when empty).
+/// Processes query results to generate drift follow-up indices using allocator and text data.
 fn computeDriftFollowUps(
     allocator: std.mem.Allocator,
     query_text: []const u8,
@@ -1172,13 +1141,7 @@ fn computeDriftFollowUps(
     return try drift.generateFollowUps(allocator, &needed_bs, &avail_bs);
 }
 
-/// Full staged explain pipeline.  Called when `--staged` is active (default).
-///
-/// Pipeline:
-///   Short query (≤3 words) or --no-llm or --filter=skip:
-///     executeStaged() → formatStaged() → output
-///   Long query (4+ words) with LLM:
-///     executeStaged() → llmFilter() → expandFollowUps() → synthesize() → formatStaged() → output
+/// Processes a query text to generate explanation data using the provided LLM configuration.
 fn cmdExplainStaged(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -1454,7 +1417,7 @@ fn cmdExplainStaged(
     return emitStagedOutput(allocator, query_text, combined.items, effective_summary, merged_followups, workspace);
 }
 
-/// Write formatted staged output to stdout and flush.
+/// Processes query data into staged output stages for efficient rendering.
 fn emitStagedOutput(
     allocator: std.mem.Allocator,
     query_text: []const u8,
@@ -1471,42 +1434,42 @@ fn emitStagedOutput(
     try stdout.writeAll(output);
     try stdout.flush();
 }
-/// Checks if a list of name bytes exactly matches a list of term bytes, returning true or false.
+/// Checks if a list of name terms exactly matches a query result, returning true if they align perfectly.
 pub fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) bool {
     return isExactNameMatch(name, terms);
 }
 
-/// Loads skill data from a JSON path into a Zig array of bytes.
+/// Loads skill data from a JSON path into a Zig array of byte slices.
 pub fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
     return loadSkillsFromJson(allocator, json_path);
 }
 
-/// Loads used data from a JSON path into a Zig array of arrays of bytes.
+/// Loads used data from a JSON path into a Zig array of slices.
 pub fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     return loadUsedByFromJson(allocator, json_path);
 }
 
-/// Loads public member names from a JSON path into a Zig array of arrays.
+/// Loads public member names from a JSON path into a Zig array of arrays of bytes.
 pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     return loadPublicMemberNames(allocator, json_path);
 }
 
-/// Loads a skill parameter pack into a Zig slice, handling allocation and data parsing.
+/// Loads a skill parameter pack into a Zig array, returning the parsed data.
 pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
     return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
 }
 
-/// Extracts and explains a specified excerpt from a Zig source file, returning its contents.
+/// Explains the extraction of a publication excerpt from a Zig source code snippet, taking allocator, line number, and node type into account.
 pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
     return explainExtractExcerpt(allocator, src, start_line, node_type);
 }
 
-/// Analyzes a file path and returns matching result indices.
+/// Explains grep results for file paths, returning matching indices.
 pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) ![]usize {
     return explainGrepFile(allocator, file_path, terms, max_results);
 }
 
-/// Checks if a query string is short enough for a public query, returning true or false.
+/// Checks if a query string is short enough for public use, returning true or false.
 pub fn isShortQueryPub(query: []const u8) bool {
     return isShortQuery(query);
 }
@@ -1627,7 +1590,7 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // test command
 // =============================================================================
 
-/// A scored test query used in the explain accuracy test suite.
+/// Manages query keywords with ownership model; ensures invariants are preserved during initialization and cleanup.
 const TestQuery = struct {
     query: []const u8,
     accuracy: u8 = 0,
@@ -1645,7 +1608,7 @@ const BenchmarkResult = struct {
     nav: u8,
 };
 
-/// Validates command arguments and processes them in the Zig engine.
+/// Validates command arguments and processes them, returning success or error status.
 pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var no_llm = false;
     var db_path: ?[]const u8 = null;
@@ -2053,9 +2016,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
-/// Parse a 0-10 score from an LLM evaluation response line of the form:
-/// "Label: <digits>[/10]" — also handles markdown decorations like "**", "-".
-/// Returns null when no score digit can be extracted after the first colon.
+/// Converts a Zig line string into a numeric score value.
 fn parseScoreFromLine(line: []const u8) ?u8 {
     const colon = std.mem.indexOfScalar(u8, line, ':') orelse return null;
     var i = colon + 1;
@@ -2069,9 +2030,7 @@ fn parseScoreFromLine(line: []const u8) ?u8 {
     return @min(10, v);
 }
 
-/// Load benchmark queries from {guidance_dir}/benchmarks.txt.
-/// One query per line; blank lines and # comments are skipped.
-/// Returns an error if the file cannot be opened.
+/// Loads benchmark query data from a file into a Zig test query slice.
 fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
     const path = try std.fs.path.join(allocator, &.{ guidance_dir, "benchmarks.txt" });
     defer allocator.free(path);
@@ -2099,7 +2058,7 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
     return queries.toOwnedSlice(allocator);
 }
 
-/// Generate test queries from module-level comments in guidance JSON files.
+/// Generates test queries for the guidance engine using provided allocator and directory data.
 fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
     var queries: std.ArrayList(TestQuery) = .{};
     errdefer {
@@ -2178,7 +2137,7 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
 // guidance telemetry — query frequency stats
 // =============================================================================
 
-/// `guidance telemetry [--top-queries N] [--slowest N] [--tier-breakdown]`
+/// Processes telemetry data using an allocator and returns no value on success.
 pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var limit: usize = 10;
     var j: usize = 0;
@@ -2240,7 +2199,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
 // guidance cache-stats — LLM synthesis cache statistics
 // =============================================================================
 
-/// `guidance cache-stats`
+/// Processes cache statistics using an allocator and returns no value.
 pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !void {
     _ = args;
 
@@ -2271,8 +2230,7 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
 // guidance serve — MCP server (STDIO JSON-RPC 2.0)
 // =============================================================================
 
-/// `guidance serve` — starts the MCP server on STDIO.
-/// Implemented in mcp.zig; this is the dispatch entry point.
+/// Handles allocation and execution of the Zig command with specified arguments.
 pub fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const mcp_mod = @import("mcp.zig");
     try mcp_mod.serve(allocator, args);
@@ -2282,8 +2240,7 @@ pub fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // guidance ralph — M6: RALPH loop single-query runner
 // =============================================================================
 
-/// `guidance ralph <query>` — run the query through Read→Ask→Learn→Plan stages
-/// and emit the result as markdown. Uses the same DB setup as cmdExplain.
+/// Processes a Zig command string, validating arguments and preparing execution context.
 pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const ralph_mod = @import("ralph.zig");
 

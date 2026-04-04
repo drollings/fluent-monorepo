@@ -15,7 +15,7 @@ const std = @import("std");
 const time = std.time;
 const Allocator = std.mem.Allocator;
 
-/// Benchmark result for a single metric.
+/// Tracks benchmark outcomes with a fixed-size buffer pool; managed by owner; not thread-safe.
 pub const BenchmarkResult = struct {
     name: []const u8,
     iterations: usize,
@@ -39,7 +39,7 @@ pub const BenchmarkResult = struct {
     }
 };
 
-/// Benchmark harness that runs a function multiple times and collects statistics.
+/// Tracks performance metrics for benchmarking; managed by the host; immutable data structure.
 pub const Benchmark = struct {
     name: []const u8,
     warmup_iterations: usize = 10,
@@ -90,7 +90,7 @@ pub const Benchmark = struct {
     }
 };
 
-/// Benchmark suite for Coral Context components.
+/// Tracks Coral benchmarks with a fixed-size structure; managed via ownership; not thread-safe.
 pub const CoralBenchmarks = struct {
     allocator: Allocator,
     results: std.ArrayList(BenchmarkResult),
@@ -367,7 +367,7 @@ pub const CoralBenchmarks = struct {
     }
 };
 
-/// Memory benchmark for arena allocation overhead.
+/// Measures memory allocation overhead during benchmarking loops.
 pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
     var total_ns: u64 = 0;
     var i: usize = 0;
@@ -393,7 +393,7 @@ pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
 // Main benchmark entry point
 // =============================================================================
 
-/// Executes the Zig benchmark test by running the provided function.
+/// Executes the Zig benchmark test by calling the main function, which runs the benchmark suite.
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();

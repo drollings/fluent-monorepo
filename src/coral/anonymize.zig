@@ -38,8 +38,7 @@ pub const AnonymizationPattern = enum {
     }
 };
 
-/// Anonymize a context string by replacing detected PII patterns.
-/// Returns an allocator-owned string; caller must free.
+/// Anonymizes context data by applying provided patterns to each byte in the input slice.
 pub fn anonymizeContext(
     allocator: std.mem.Allocator,
     context: []const u8,
@@ -54,8 +53,7 @@ pub fn anonymizeContext(
     return result;
 }
 
-/// Replace occurrences of `pattern` in `input`.
-/// Returns an allocator-owned string.
+/// Replaces specified patterns in a Zig string using an allocator and returns the modified slice.
 fn replacePattern(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -77,7 +75,7 @@ fn replacePattern(
     };
 }
 
-/// Replace email-like tokens (word@word.tld) with [EMAIL].
+/// Replaces email addresses in the input slice using an allocator for memory management.
 fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -114,12 +112,12 @@ fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Checks if a character is a valid email character in the Zig source.
+/// Checks if a character is a valid email character in the Zig code snippet.
 fn isEmailChar(ch: u8) bool {
     return std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '-' or ch == '+' or ch == '.';
 }
 
-/// Replace US phone patterns (10-digit with optional separators) with [PHONE].
+/// Replaces phone numbers in the input slice with a placeholder, returning a modified slice.
 fn replacePhones(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -149,7 +147,7 @@ fn replacePhones(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace credit card patterns (16 digits with optional spaces/dashes) with [CARD].
+/// Replaces credit card data in the input slice using an allocator for memory management.
 fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -178,8 +176,7 @@ fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace international phone numbers (E.164, UK +44, EU formats) with [PHONE].
-/// Detects: +<country_code><digits> where total digit count is 7-15.
+/// Replaces all integer phone numbers in the input slice with a placeholder, returning a modified slice.
 fn replaceIntlPhones(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -214,7 +211,7 @@ fn replaceIntlPhones(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace US SSN (NNN-NN-NNNN) with [SSN].
+/// Replaces SSN values in the input slice using an allocator, returning a modified slice.
 fn replaceSsnUs(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -244,7 +241,7 @@ fn replaceSsnUs(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace UK NINO (AA999999A format) with [NINO].
+/// Replaces specified UNSCK patterns in a Zig string using an allocator.
 fn replaceSsnUk(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -277,7 +274,7 @@ fn replaceSsnUk(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace Canadian SIN (NNN-NNN-NNN) with [SIN].
+/// Replaces SSN characters in a Zig string using an allocator and returns the modified slice.
 fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -305,13 +302,13 @@ fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Returns true if every byte in `s` is an ASCII digit.
+/// Checks if a slice contains only numeric characters.
 fn isNDigits(s: []const u8) bool {
     for (s) |c| if (!std.ascii.isDigit(c)) return false;
     return s.len > 0;
 }
 
-/// Replace IPv4 addresses (d.d.d.d) with [IP].
+/// Replaces IPv4 addresses in the input slice using an allocator.
 fn replaceIpv4(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -362,8 +359,7 @@ fn looksLikeIpv4(s: []const u8) bool {
     return part_count == 3;
 }
 
-/// Replace IPv6 addresses (hex groups separated by colons) with [IP].
-/// Detects: at least two colon-separated hex groups totalling 4+ hex chars.
+/// Replaces IPv6 addresses in the input slice using an allocator.
 fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -399,7 +395,7 @@ fn isHexChar(c: u8) bool {
     return std.ascii.isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }
 
-/// Replace "Bearer <token>" with "Bearer [BEARER_TOKEN]".
+/// Replaces bearer tokens in the input slice using an allocator for memory management.
 fn replaceBearerTokens(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     const prefix = "Bearer ";
     var out: std.ArrayListUnmanaged(u8) = .{};
@@ -430,7 +426,7 @@ fn replaceBearerTokens(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace AWS access key IDs (AKIA followed by 16 uppercase alphanumeric chars).
+/// Replaces AWS keys in the input slice with a placeholder, returning a modified slice.
 fn replaceAwsKeys(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     const prefix = "AKIA";
     var out: std.ArrayListUnmanaged(u8) = .{};
@@ -463,8 +459,7 @@ fn replaceAwsKeys(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Replace generic API keys: 32+ consecutive alphanumeric chars preceded and
-/// followed by a non-alphanumeric boundary (quote, space, =, etc.).
+/// Replaces placeholder API keys in memory allocations with sanitized values.
 fn replaceGenericApiKeys(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);

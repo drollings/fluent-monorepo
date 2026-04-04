@@ -28,8 +28,7 @@ pub const ExecutionContext = struct {
 /// Default path to the YAGO 4.5 tiny TTL file (relative to CWD).
 const YAGO_TINY_TTL_PATH = "data/yago-4.5.0.2-tiny/yago-tiny.ttl";
 
-/// yago_map handler: ingest the YAGO TTL file into the Library via BatchIngestor.
-/// Skipped in test builds (file I/O is a side effect; tests use the in-memory lib directly).
+/// Processes a YAGO map structure, allocating memory and returning no value on success or error.
 fn handleYagoMap(allocator: std.mem.Allocator, ctx: *anyopaque) anyerror!void {
     if (comptime builtin.is_test) return;
     const exec_ctx: *ExecutionContext = @ptrCast(@alignCast(ctx));
@@ -44,7 +43,7 @@ const HANDLER_OVERRIDES = [_]HandlerOverride{
     .{ .name = targets.TARGET_MAP, .handler = handleYagoMap },
 };
 
-/// Executes YAGO pipeline targets in dependency order.
+/// Manages Dag executor state, owns buffers, not thread-safe.
 pub const DagExecutor = struct {
     const Self = @This();
 

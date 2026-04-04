@@ -24,7 +24,7 @@ const GuidanceDb = vector_db_mod.GuidanceDb;
 // InferredCapability
 // =============================================================================
 
-/// Confidence method used to infer this capability.
+/// Defines an inference method for capability analysis, managing ownership and ensuring correctness in inference workflows.
 pub const InferenceMethod = enum {
     naming_convention,
     import_cluster,
@@ -32,8 +32,7 @@ pub const InferenceMethod = enum {
     file_grouping,
 };
 
-/// A capability inferred from codebase structure.
-/// All string fields are allocator-owned; call freeInferredCapability().
+/// Tracks inferred capabilities for inference tasks, managed centrally with ownership model; key invariant is accurate capability representation.
 pub const InferredCapability = struct {
     name: []const u8,
     description: []const u8,
@@ -60,8 +59,7 @@ pub fn freeInferredCapabilities(allocator: std.mem.Allocator, caps: []InferredCa
 // Main entry point
 // =============================================================================
 
-/// Infer capabilities using four passes in decreasing confidence order.
-/// Returns an owned slice; caller must free with freeInferredCapabilities().
+/// Analyzes allocation data to infer system capabilities, returning a list of detected capability types.
 pub fn inferCapabilities(
     allocator: std.mem.Allocator,
     map: *const CodebaseMap,
@@ -92,7 +90,7 @@ pub fn inferCapabilities(
 // Pass 1: Naming conventions
 // =============================================================================
 
-/// Extract the prefix from a file stem: "vector_db" → "vector", "ast_parser" → "ast".
+/// Extracts the leading byte of a Zig string slice, returning it as a u8.
 fn extractPrefix(stem: []const u8) []const u8 {
     // Find first separator: underscore, hyphen, or number boundary.
     for (stem, 0..) |c, i| {
@@ -103,14 +101,14 @@ fn extractPrefix(stem: []const u8) []const u8 {
     return stem;
 }
 
-/// Extract the stem (filename without extension) from a path.
+/// Converts a path array into a stemmed string slice, removing non-alphanumeric characters.
 fn pathStem(path: []const u8) []const u8 {
     const base = std.fs.path.basename(path);
     const ext_pos = std.mem.lastIndexOfScalar(u8, base, '.') orelse return base;
     return base[0..ext_pos];
 }
 
-/// Generate a human-readable description for an inferred capability.
+/// Generates a descriptive slice from allocation and file data.
 fn generateDescription(
     allocator: std.mem.Allocator,
     name: []const u8,
@@ -119,7 +117,7 @@ fn generateDescription(
     return std.fmt.allocPrint(allocator, "Inferred capability '{s}' from {d} source file(s) by naming convention.", .{ name, files.len });
 }
 
-/// Analyzes code names to infer capabilities, returning a map of inferred types.
+/// Analyzes code names to infer capability types, returning a map of inferred capabilities.
 fn inferFromNaming(
     allocator: std.mem.Allocator,
     map: *const CodebaseMap,
@@ -257,7 +255,7 @@ fn inferFromImportGraph(
 // Pass 3: Module comment analysis
 // =============================================================================
 
-/// Extracts capability information from module comments, updating the provided list of inferred capabilities.
+/// Analyzes module comments to infer capabilities, returning a list of inferred types.
 fn inferFromModuleComments(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -368,8 +366,7 @@ fn inferFromFileGrouping(
 // Deduplication
 // =============================================================================
 
-/// Merge capabilities with the same name, keeping the highest confidence.
-/// Returns a new owned slice; input items are consumed (their memory is taken or freed).
+/// Removes duplicate inferred capability entries from the list.
 fn deduplicateCapabilities(
     allocator: std.mem.Allocator,
     caps: []InferredCapability,
@@ -407,8 +404,7 @@ fn deduplicateCapabilities(
 // Helpers
 // =============================================================================
 
-/// Convert a raw prefix/stem to a kebab-case capability name.
-/// "vectorDb" → "vector-db", "vector_search" → "vector-search"
+/// Converts a raw memory slice to a human-readable capability name using an allocator.
 fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .{};
     errdefer out.deinit(allocator);
@@ -427,7 +423,7 @@ fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Returns true if the file extension is a supported source language.
+/// Checks if a given byte slice represents a supported Zig extension identifier.
 fn isSupportedExtension(ext: []const u8) bool {
     const supported = [_][]const u8{ ".zig", ".py", ".rs", ".go", ".ts", ".js", ".c", ".cpp", ".h" };
     for (supported) |s| {
@@ -436,8 +432,7 @@ fn isSupportedExtension(ext: []const u8) bool {
     return false;
 }
 
-/// Heuristically extract a capability name from a module comment.
-/// Returns null if the comment doesn't describe a clear capability.
+/// Extracts capability data from a Zig comment string and returns it as a slice.
 fn extractCapabilityFromComment(comment: []const u8) ?[]const u8 {
     // Look for patterns like "— <noun phrase>" or "for <noun phrase>"
     const sep = "— ";

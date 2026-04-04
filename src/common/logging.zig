@@ -37,11 +37,7 @@ const std = @import("std");
 
 // ── LogContext ────────────────────────────────────────────────────────────────
 
-/// Request-scoped metadata propagated via thread-local storage.
-///
-/// All fields are optional slices pointing into the caller's memory — the
-/// LogContext struct does NOT own or copy any strings.  Callers must ensure
-/// the backing strings outlive the context.
+/// Manages logging context with fixed buffers; owned by the module; ensures consistent log output.
 pub const LogContext = struct {
     request_id: ?[]const u8 = null,
     user_id: ?[]const u8 = null,
@@ -96,10 +92,7 @@ pub const LogContext = struct {
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
 
-/// A timing scope for a named operation.
-///
-/// Logs start and end via `std.log.debug` only when a LogContext is active
-/// (i.e., `LogContext.get() != null`).  Zero overhead otherwise.
+/// Manages scope boundaries with fixed-size buffers; owned by the module; ensures safe initialization/deinit.
 pub const Scope = struct {
     name: []const u8,
     start_ns: i128,
@@ -134,13 +127,7 @@ pub const Scope = struct {
 
 // ── callLogged ────────────────────────────────────────────────────────────────
 
-/// Call `func` with `args` wrapped in a named Scope.
-///
-/// The return type is inferred from the function — error unions propagate
-/// normally, so callers use `try callLogged(...)` when needed.
-///
-/// Example:
-///   const vec = try callLogged("embed", provider.embed, .{ allocator, text });
+/// Converts a Zig array to a function call signature, returning its type info.
 pub inline fn callLogged(
     comptime name: []const u8,
     func: anytype,
@@ -264,3 +251,6 @@ test "LogContext: GPA no leaks" {
     try testing.expect(ctx != null);
     LogContext.clear();
 }
+
+
+

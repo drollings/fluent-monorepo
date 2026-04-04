@@ -105,7 +105,7 @@ const DijkstraResult = struct {
     predecessors: []u32,
 };
 
-/// Manages heap allocations for priority queues; owns memory; ensures efficient access via heap entries.
+/// Manages heap memory allocations; owns a pool of fixed-size buffers; not thread-safe.
 const HeapEntry = struct {
     node: u32,
     dist: f32,

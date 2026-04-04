@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "Tool",
-      "match_hash": "5c058c61fff7b03c5bbb4edb910afd06a0213c9776ae1551f6a9ba2d124b2d08",
+      "match_hash": "78af18ec3c19abf105b0d13bd9e35a1b25eb0d197bc6b6c031232819218c0b2e",
       "signature": "keyword_struct Tool { ... }",
       "is_pub": true,
       "line": 24
@@ -17,7 +17,7 @@
     {
       "type": "struct",
       "name": "ToolDefinition",
-      "match_hash": "7ab3384ef8de433e7b6f5a27ff8720e5151baa69967ecfe07138a1b6732acb7f",
+      "match_hash": "5ad6259d93a25deff41e350717f26e732fb7be39f8c3915ed8a4aa1c6ee82f10",
       "signature": "keyword_struct ToolDefinition { ... }",
       "is_pub": true,
       "line": 38
@@ -25,14 +25,14 @@
     {
       "type": "struct",
       "name": "ToolRegistry",
-      "match_hash": "3980b06c383ece75483cbe5dbed7b11e6415d71cfb7b8ab0f126f9196d0c82a5",
+      "match_hash": "0b5fad4a18f1df52bda20dfbe192ac1b4b27213cac5453c2c595c39ba12dcfa4",
       "signature": "keyword_struct ToolRegistry { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
+          "match_hash": "9e5b97ab2a39bc4024c8928f536527e3423cdaf03264344af794ba9c2b6dee02",
           "signature": "fn deinit(self: *Self, allocator: Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -45,7 +45,7 @@
     ,    {
           "type": "fn_decl",
           "name": "register",
-          "match_hash": "a3ca50b017656d1933417acce7d55344dc9f0cb2ed814fe1fe4eebfa764ef128",
+          "match_hash": "0e883c1b70d82cbbe083e7d350a73a548aef63edf5069873e72c9ca1b007ec51",
           "signature": "fn register(self: *Self, allocator: Allocator, tool: Tool) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -59,7 +59,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getDefinitions",
-          "match_hash": "7ee7ac8450b19f86be82703b331b033b145a42cc883ebcde4aaa6c94c66c55bc",
+          "match_hash": "8c1ff4a5c1dde3c976576630535938fd7d8ca915f607067cf136fb35db892b35",
           "signature": "fn getDefinitions(self: *const Self, arena: Allocator, toolset_filter: ?[]const []const u8, check_availability: bool) -> []ToolDefinition",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -74,7 +74,7 @@
     ,    {
           "type": "fn_decl",
           "name": "count",
-          "match_hash": "4530c74400f9100048e974d022c090f26167ad4d851218c55ceb610c34d627ce",
+          "match_hash": "396c354d21ab1beaf584d70a23f4d228b32ccc5edb0b05047f093d383c5b0a42",
           "signature": "fn count(self: *const Self) -> usize",
           "params": [
             { "name": "self", "type": "*const Self" }
@@ -89,7 +89,7 @@
     {
       "type": "fn_private",
       "name": "alwaysAvailable",
-      "match_hash": "a3fc500f2981a440c459936054dd5df2e370da4228fa3699c6ae589bfd38b0ee",
+      "match_hash": "c7b4d9f91995198c2b071f747e3e20db1e6e377a65c0ba9c5d5254a713e82b26",
       "signature": "fn alwaysAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,
@@ -98,7 +98,7 @@
     {
       "type": "fn_private",
       "name": "neverAvailable",
-      "match_hash": "fdbb1c6933f00b7e6da48910844f041fb726521342cb39ff1e52e8225dcba614",
+      "match_hash": "9992bea9ceb612c0855eaacd6a79d363a0a5082dc8a8834946803f4c4e44fe2f",
       "signature": "fn neverAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,

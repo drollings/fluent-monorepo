@@ -10,123 +10,123 @@
     {
       "type": "struct",
       "name": "AtomicRefCount",
-      "match_hash": "a0e40bcc75a966b8987ef8f0f6fc0d85f3ccf7a2745bba3e9e1f7554cd1d4771",
+      "match_hash": "10049ed8e6f85df8fb5ec46a9d86e7d17a83f2b97ef3e8d2f9c128864ec9c684",
       "signature": "keyword_struct AtomicRefCount { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_private",
           "name": "init",
-          "match_hash": "19152065f27efdd4707fe6a2cdbf4ff64d48850f54b621de5fbf6bfa98896d12",
+          "match_hash": "bbd5e129269e6df4b33dca2c60f8031afc7eaf163d3ef959d936bc0c50d76ee5",
           "signature": "fn init() -> AtomicRefCount",
           "returns": "AtomicRefCount",
           "is_pub": false,
-          "line": 54
+          "line": 50
         }
     ,    {
           "type": "fn_private",
           "name": "inc",
-          "match_hash": "bcd3554714d4fba18dd44f524bbca423d56e929b564a1821191d04788360d721",
+          "match_hash": "0cf4bd6e001bcbe0fc6dc7c9b8a1bfc599e848bf9f49f6eeddb81ef35348933c",
           "signature": "fn inc(self: *AtomicRefCount) -> usize",
           "params": [
             { "name": "self", "type": "*AtomicRefCount" }
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 59
+          "line": 55
         }
     ,    {
           "type": "fn_private",
           "name": "dec",
-          "match_hash": "649836632eeb9982190e4f79354d8445b2cbabde9e05caaadf0cce84c1de015d",
+          "match_hash": "664cdec0be1e9b7df96dd86746d798c9514ede541bc9e46d142d4ee08e291b31",
           "signature": "fn dec(self: *AtomicRefCount) -> bool",
           "params": [
             { "name": "self", "type": "*AtomicRefCount" }
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 65
+          "line": 61
         }
     ,    {
           "type": "fn_private",
           "name": "load",
-          "match_hash": "ec29704be00b9b524755d17ef9e39e1141f444e4d1010b4c982eb8aa51ba29bc",
+          "match_hash": "62abfa393620362075b61c184385a19aa1ca3841d2ad1aa1d75b278ab22dedaf",
           "signature": "fn load(self: *const AtomicRefCount) -> usize",
           "params": [
             { "name": "self", "type": "*const AtomicRefCount" }
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 70
+          "line": 66
         }
       ],
-      "line": 51
+      "line": 47
     },
     {
       "type": "fn_decl",
       "name": "RefCounted",
-      "match_hash": "0b08d7947d7d2eec4df288ea621a5c768c852a7f28ca5ff76926df3aedbc79ba",
+      "match_hash": "7995b73dec152fbc41153342216712dec50d2678c3dcfe068a50b3ab8a5988cd",
       "signature": "fn RefCounted(T: type) -> type",
       "params": [
         { "name": "T", "type": "type" }
       ],
       "returns": "type",
       "is_pub": true,
-      "line": 81
+      "line": 74
     },
     {
       "type": "test_decl",
       "name": "RefCounted: init creates with refcount 1",
       "is_pub": false,
-      "line": 139
+      "line": 132
     },
     {
       "type": "test_decl",
       "name": "RefCounted: clone increments refcount",
       "is_pub": false,
-      "line": 146
+      "line": 139
     },
     {
       "type": "test_decl",
       "name": "RefCounted: deinit decrements but does not free until last",
       "is_pub": false,
-      "line": 157
+      "line": 150
     },
     {
       "type": "test_decl",
       "name": "RefCounted: shared value is the same allocation",
       "is_pub": false,
-      "line": 168
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "RefCounted: valueMut mutates shared value",
       "is_pub": false,
-      "line": 179
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "RefCounted: multiple clones maintain correct count",
       "is_pub": false,
-      "line": 189
+      "line": 182
     },
     {
       "type": "test_decl",
       "name": "RefCounted: GPA no leaks",
       "is_pub": false,
-      "line": 206
+      "line": 199
     },
     {
       "type": "test_decl",
       "name": "AtomicRefCount: starts at 1",
       "is_pub": false,
-      "line": 217
+      "line": 210
     },
     {
       "type": "test_decl",
       "name": "AtomicRefCount: inc then dec to zero returns true",
       "is_pub": false,
-      "line": 222
+      "line": 215
     }
   ]
 }

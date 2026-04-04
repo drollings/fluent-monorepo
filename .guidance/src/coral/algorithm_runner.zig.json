@@ -9,14 +9,14 @@
     {
       "type": "struct",
       "name": "AlgorithmRunner",
-      "match_hash": "46304863376a71572a075f928670c7ccd10415efe7a12c8f487b70f2c3558f20",
+      "match_hash": "b02551dc386602249d986bed2f4d21166f26f793a721a28a304950bec747b7a1",
       "signature": "keyword_struct AlgorithmRunner { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "dc8193f2329de4cba062f9d4a39b8ef1b560544bd596feffb21e860f3de229be",
+          "match_hash": "633e466ef844e951581e0c9647b9a0959b071e419d6cabbeaf9989507c58b956",
           "signature": "fn init(config: AlgorithmRunnerConfig) -> Self",
           "params": [
             { "name": "config", "type": "AlgorithmRunnerConfig" }
@@ -28,7 +28,7 @@
     ,    {
           "type": "fn_decl",
           "name": "markDirty",
-          "match_hash": "60bd812ee58e167fbbc2b7f0c7da877f52b2975589eb4e1ffc4cd06beb83b303",
+          "match_hash": "c994a8c81c0322672217d8541acd7f39fc695db4606036f7a1ccb96a8ceb5fc1",
           "signature": "fn markDirty(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -40,7 +40,7 @@
     ,    {
           "type": "fn_decl",
           "name": "computeDegrees",
-          "match_hash": "2c56fb1d89eaee2f997cbf47168c73e387c1d04a204663dc33a7d7d45c38a82b",
+          "match_hash": "c39be1601dbc0ba1ddf16517b81d54f3ea9f77f5be63cfd9cb2dbb984200e73e",
           "signature": "fn computeDegrees(self: *Self, arena: Allocator, library) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -54,7 +54,7 @@
     ,    {
           "type": "fn_decl",
           "name": "computePageRank",
-          "match_hash": "baf4fc332d1631bf8e1e08af92813da5b7eddeb7e042e49d04b4ef8672b4af6d",
+          "match_hash": "326b84edb5b0a4ca4408feff7ea49aed441279306d73d29a67cd1aa5cf5b1bda",
           "signature": "fn computePageRank(self: *Self, arena: Allocator, library) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_decl",
           "name": "computeCommunities",
-          "match_hash": "e0b9a55dc8fab1a790e43a11e239e8c97271efa5b4740549f408b9a42cdf9533",
+          "match_hash": "562ec8262e4b2596512a7895ba73d84b7f1594e9ddf93c2916f780370ccc229a",
           "signature": "fn computeCommunities(self: *Self, arena: Allocator, library) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -82,7 +82,7 @@
     ,    {
           "type": "fn_decl",
           "name": "serializeCSR",
-          "match_hash": "37e0a0ba4fdbb8ae45c0d0f38ec1005a26664301fc5721f3605b111ebe8768b6",
+          "match_hash": "e57b30e686d49e3a760312b2e016cc620159cfb8e22dd3a0e634945864432e35",
           "signature": "fn serializeCSR(self: *Self, arena: Allocator, library) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -96,7 +96,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getDegree",
-          "match_hash": "a9b8fb98ace71ece2c191e1f3fb91e564f374e511cb9cfcf9b57097c29698022",
+          "match_hash": "b209e15d477e4987142dd0b1f8fb36db324a1ed41b3752f0de00efd2e488216e",
           "signature": "fn getDegree(_: Self, degree: u32) -> u32",
           "params": [
             { "name": "_", "type": "Self" },
@@ -109,7 +109,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getPageRank",
-          "match_hash": "6a2da8aca751879de07c2a6798e28df3eac8c14147d0ac0ca8c6422200426876",
+          "match_hash": "74d3845d1a64821bcd0390bde6c8b6a996651042ae8b03106d94db35144e21a3",
           "signature": "fn getPageRank(_: Self, pagerank: f32) -> f32",
           "params": [
             { "name": "_", "type": "Self" },
@@ -122,7 +122,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getCommunity",
-          "match_hash": "261d4a3ae8ca3b7b2680e5dfdf7737897744b6b84080f1c0d0adf3ef34a40667",
+          "match_hash": "cb70ef3efb13a882fb3e19380feba11ea3465b1fa7495809220d08568a501a9c",
           "signature": "fn getCommunity(_: Self, community_id: ?i64) -> ?i64",
           "params": [
             { "name": "_", "type": "Self" },

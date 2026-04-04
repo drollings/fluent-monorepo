@@ -22,8 +22,7 @@ pub const BUCKET_COUNT: usize = BUCKET_MS.len + 1; // +1 for the +Inf bucket
 // LatencyHistogram
 // ---------------------------------------------------------------------------
 
-/// A single-tier latency histogram with atomic counters.
-/// All fields are public so they can be reset atomically in tests.
+/// Tracks latency distributions; managed by owner; key invariant is accurate measurement intervals.
 pub const LatencyHistogram = struct {
     /// Bucket counts: index i accumulates observations where
     /// BUCKET_MS[i-1] < latency_ms ≤ BUCKET_MS[i].
@@ -87,7 +86,7 @@ pub const LatencyHistogram = struct {
 // CoralMetrics — per-tier histogram collection + resolution counters
 // ---------------------------------------------------------------------------
 
-/// Tracks coral health metrics with a fixed-size buffer; managed via ownership model; ensures data integrity.
+/// Tracks coral metrics with a fixed-size buffer pool; managed via init/deinit; not thread-safe.
 pub const CoralMetrics = struct {
     l1_hit: LatencyHistogram = LatencyHistogram.init(),
     l2_hit: LatencyHistogram = LatencyHistogram.init(),

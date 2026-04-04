@@ -50,7 +50,7 @@ pub const ConfidenceTier = enum {
 // CodebaseScanner
 // =============================================================================
 
-/// Generic codebase scanner. All fields are allocator-owned; call deinit() when done.
+/// Manages scanner state and codebase analysis; owns scanning logic; not thread-safe.
 pub const CodebaseScanner = struct {
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -219,7 +219,7 @@ pub const CodebaseScanner = struct {
 // cmdScan — CLI entry point
 // =============================================================================
 
-/// `guidance scan [--workspace <dir>]` — scan and report on the codebase.
+/// Reads a C string and returns a Zig-safe slice, handling allocation and parsing.
 pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const config_mod = @import("config.zig");
     const llm = @import("common");

@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "sha256Hex",
-      "match_hash": "98b120e54d8a1f37f6ea4184403e2ba54d40978f844a3b75cf831084f6a2f941",
+      "match_hash": "1963baeb6e5cde9f80c993902283df00620bed64d8d4e2e0a4ff3e9b7f55677f",
       "signature": "fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -18,12 +18,12 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 10
+      "line": 9
     },
     {
       "type": "fn_decl",
       "name": "contentHashWithModel",
-      "match_hash": "288bff6b2e6c209d05406740f608b8cbfac401e3b28a1377577b68bf1afe20d5",
+      "match_hash": "bef5d2081bbe79bc154ac2cb5b21c2b0a2225eb2844e696949e582b635223ad2",
       "signature": "fn contentHashWithModel(content: []const u8, model: []const u8) -> [16]u8",
       "params": [
         { "name": "content", "type": "[]const u8" },
@@ -31,12 +31,12 @@
       ],
       "returns": "[16]u8",
       "is_pub": true,
-      "line": 25
+      "line": 19
     },
     {
       "type": "enum",
       "name": "HashAlgorithm",
-      "match_hash": "3cb9be44bf1a157270fe1a89d38832a410ab6085d3a1bfc89b8754c07d47dab3",
+      "match_hash": "037d6adad3652aae7098d7a6c97132bfea4959b2040d2e3460fd363110de0b6a",
       "signature": "keyword_enum HashAlgorithm { ... }",
       "is_pub": true,
       "members": [
@@ -44,39 +44,39 @@
           "type": "enum_field",
           "name": "sha256",
           "is_pub": false,
-          "line": 48
+          "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "sha512",
           "is_pub": false,
-          "line": 49
+          "line": 43
         }
     ,    {
           "type": "enum_field",
           "name": "blake3",
           "is_pub": false,
-          "line": 50
+          "line": 44
         }
     ,    {
           "type": "fn_decl",
           "name": "digestLength",
-          "match_hash": "93a180c79da0c34235a63b27bd49fd8a1528fcf5a53c459a5107beb83a3e4ea0",
+          "match_hash": "26d56f15f1d58644b9fe9db98805ef9d4c584f43a1403ccbffa54393cf2c017d",
           "signature": "fn digestLength(self: HashAlgorithm) -> usize",
           "params": [
             { "name": "self", "type": "HashAlgorithm" }
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 52
+          "line": 46
         }
       ],
-      "line": 47
+      "line": 41
     },
     {
       "type": "fn_decl",
       "name": "hashFile",
-      "match_hash": "61c729bc72a35398f4e6edc8d8c320584a044481b690f8e85f4e4d1ea18e64ec",
+      "match_hash": "332e24e1dab9dfc22b0a4486b05e71ab725962f30b6827aed035d176cd4fbaf7",
       "signature": "fn hashFile(allocator: std.mem.Allocator, path: []const u8, algorithm: HashAlgorithm) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -85,20 +85,20 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 63
+      "line": 56
     },
     {
       "type": "struct",
       "name": "BatchHashResult",
-      "match_hash": "cf64cfb3f02d2a51975bb70cb19680210a82df4724a5ce8633ca50243cf936dd",
+      "match_hash": "4cfcaced0a3daf20811d798734dbf0c59e6a89623a6e856ee7d06888a35b118c",
       "signature": "keyword_struct BatchHashResult { ... }",
       "is_pub": true,
-      "line": 114
+      "line": 107
     },
     {
       "type": "fn_decl",
       "name": "hashBatch",
-      "match_hash": "06f1abfa3c9f5fdf68128081223af5275da1700cbfb10e9691438573e5b8fe8d",
+      "match_hash": "3531f033a12a3ec27d79d368214f0816ecf6419d474941b8d761032f8077d814",
       "signature": "fn hashBatch(allocator: std.mem.Allocator, paths: []const []const u8, algorithm: HashAlgorithm, progress_callback: ?*const fn (usize, usize) void) -> []BatchHashResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -108,12 +108,12 @@
       ],
       "returns": "[]BatchHashResult",
       "is_pub": true,
-      "line": 123
+      "line": 114
     },
     {
       "type": "fn_decl",
       "name": "hashString",
-      "match_hash": "a7d3b62b9d41e8664bfcfc8cb55e79150277332b4717712c91dad2de148351e9",
+      "match_hash": "f70abed21b1d6c381a24286fd25617557e4ebb038c86c061f2a8a3bf89d4a792",
       "signature": "fn hashString(allocator: std.mem.Allocator, data: []const u8, algorithm: HashAlgorithm) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -122,24 +122,24 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 149
+      "line": 139
     },
     {
       "type": "fn_decl",
       "name": "blake3Hash",
-      "match_hash": "c8da3a121508cdc3f6140a3d06b8cbf70149a1dca6e9f2f2e9a5e697bc6d3066",
+      "match_hash": "0016b1ef846bbbf2ca4eca2dc4294b05ee4b48ad93b260ab7f46e3b153769ca0",
       "signature": "fn blake3Hash(data: []const u8) -> [32]u8",
       "params": [
         { "name": "data", "type": "[]const u8" }
       ],
       "returns": "[32]u8",
       "is_pub": true,
-      "line": 177
+      "line": 167
     },
     {
       "type": "fn_decl",
       "name": "blake3Hex",
-      "match_hash": "5c65ee9a160e92e51ae716d35357970c81d569dd46306adee0d31cf56fb08245",
+      "match_hash": "3b1af4ea73a0083c0e0b28cac4305a31cfc53bbc78db99dbcdaffe8212a73718",
       "signature": "fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -147,31 +147,31 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 184
+      "line": 174
     },
     {
       "type": "struct",
       "name": "HashState",
-      "match_hash": "40c2851e653bf88d9148cc4d5ea81c5c5afa95242e7aa1ae7d0fc376a794384a",
+      "match_hash": "9efbb48e62300b984cd66b6df0c78da040b4ea7a3450b62304fd66e3dd890e86",
       "signature": "keyword_struct HashState { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f8a392ee1ae2a1c21582aab262307ca209ff39b95d71bee6f2d14f772a301112",
+          "match_hash": "31fae7734db726f970bd799cc0e28642691ac79e9da329a462389fc09bc508c2",
           "signature": "fn init(algorithm: HashAlgorithm) -> HashState",
           "params": [
             { "name": "algorithm", "type": "HashAlgorithm" }
           ],
           "returns": "HashState",
           "is_pub": true,
-          "line": 198
+          "line": 187
         }
     ,    {
           "type": "fn_decl",
           "name": "update",
-          "match_hash": "c09ff821a044807e570cfe6999121541d1a9967e74f1fa5815c2429c8bf1a46a",
+          "match_hash": "fbbd59fa4dbe745c7f02df796d5ac44a763a40f3637abf8f2d2d08e91729bfc1",
           "signature": "fn update(self: *HashState, data: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*HashState" },
@@ -179,12 +179,12 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 206
+          "line": 195
         }
     ,    {
           "type": "fn_decl",
           "name": "final",
-          "match_hash": "eae7c1e5ffb8e2789fe803a7574e06faf6a088e2c9d6bfcda121c598a81f1980",
+          "match_hash": "82e1faa816654c96aca85341c402e9df34dd1ee5cbc9572ec832b0b7ee23ba59",
           "signature": "fn final(self: *HashState, allocator: std.mem.Allocator) -> []const u8",
           "params": [
             { "name": "self", "type": "*HashState" },
@@ -192,70 +192,70 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 215
+          "line": 204
         }
       ],
-      "line": 192
+      "line": 181
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 243
+      "line": 232
     },
     {
       "type": "test_decl",
       "name": "sha256Hex is deterministic",
       "is_pub": false,
-      "line": 249
+      "line": 238
     },
     {
       "type": "test_decl",
       "name": "sha256Hex differs for different inputs",
       "is_pub": false,
-      "line": 257
+      "line": 246
     },
     {
       "type": "test_decl",
       "name": "contentHashWithModel is deterministic and model-sensitive",
       "is_pub": false,
-      "line": 265
+      "line": 254
     },
     {
       "type": "test_decl",
       "name": "hashString: sha256",
       "is_pub": false,
-      "line": 273
+      "line": 262
     },
     {
       "type": "test_decl",
       "name": "hashString: blake3",
       "is_pub": false,
-      "line": 279
+      "line": 268
     },
     {
       "type": "test_decl",
       "name": "blake3Hash returns 32 bytes",
       "is_pub": false,
-      "line": 285
+      "line": 274
     },
     {
       "type": "test_decl",
       "name": "blake3Hex produces 64-char hex",
       "is_pub": false,
-      "line": 290
+      "line": 279
     },
     {
       "type": "test_decl",
       "name": "HashState incremental matches single-pass sha256",
       "is_pub": false,
-      "line": 296
+      "line": 285
     },
     {
       "type": "test_decl",
       "name": "HashAlgorithm digestLength",
       "is_pub": false,
-      "line": 312
+      "line": 301
     }
   ]
 }

@@ -46,8 +46,7 @@ pub const YAGO_TYPE_WHITELIST: []const []const u8 = blk: {
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Resolved, absolute paths for a single Coral project instance.
-/// All strings are owned by this struct; call deinit() to free them.
+/// Manages project configuration settings with a fixed-size structure; owned by the project; ensures consistent initialization and deinitialization.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
@@ -93,8 +92,7 @@ pub const ProjectConfig = struct {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Load project configuration with the two-level fallback chain.
-/// On success the caller owns the returned ProjectConfig and must call deinit().
+/// Loads a configuration string into a ProjectConfig object using an allocator and returns it.
 pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     // 1. Project-local config.
     {
@@ -127,8 +125,7 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Attempt to load and parse a config file.  Returns error on any failure so
-/// the caller can silently fall through to the next source.
+/// Attempts to load a file into a project configuration, returning the loaded settings or an error.
 fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) !ProjectConfig {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();

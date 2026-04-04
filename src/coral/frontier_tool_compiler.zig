@@ -10,7 +10,7 @@
 /// for deferred compilation.
 const std = @import("std");
 
-/// A code block extracted from an LLM response.
+/// Represents extracted code structure with ownership and invariants; manages compilation pipeline.
 pub const ExtractedCode = struct {
     language: []const u8, // "zig", "rust", "typescript", etc.
     source: []const u8, // allocator-owned
@@ -21,10 +21,7 @@ pub const ExtractedCode = struct {
     }
 };
 
-/// Extract the first fenced code block from an LLM response.
-/// Looks for ```zig, ```rust, or ``` blocks.
-/// Returns null if no code block found.
-/// Caller owns the returned ExtractedCode; call deinit() to free.
+/// Extracts the first code block from the LLM response using an allocator and returns the extracted slice.
 pub fn extractFirstCodeBlock(
     allocator: std.mem.Allocator,
     llm_response: []const u8,
@@ -53,8 +50,7 @@ pub fn extractFirstCodeBlock(
     };
 }
 
-/// Validate extracted source code (basic sanity checks).
-/// Returns true if source looks like valid code (non-empty, not just whitespace).
+/// Validates a Zig source slice for correctness and returns true if valid.
 pub fn validateSource(source: []const u8) bool {
     const trimmed = std.mem.trim(u8, source, " \t\n\r");
     return trimmed.len > 0;

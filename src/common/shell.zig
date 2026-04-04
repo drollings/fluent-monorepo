@@ -5,9 +5,7 @@
 /// to spawn external processes.
 const std = @import("std");
 
-/// Run an arbitrary command (full argv, no template substitution).
-/// Returns true on exit code 0.
-/// Inherits stdout/stderr to parent.
+/// Executes a Zig command using the provided allocator and argument list, returning success or error status.
 pub fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
     var child = std.process.Child.init(argv, allocator);
     child.stdin_behavior = .Ignore;
@@ -18,8 +16,7 @@ pub fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool 
     return term == .Exited and term.Exited == 0;
 }
 
-/// Add a path to a list if not a duplicate. Verifies existence in project_root.
-/// Returns true if added, false if duplicate or not found.
+/// Validates and adds a unique path in a Zig project structure using an allocator and list data.
 pub fn addUniquePath(
     allocator: std.mem.Allocator,
     list: *std.ArrayList([]const u8),
@@ -61,3 +58,5 @@ test "addUniquePath deduplicates paths" {
     const added2 = try addUniquePath(std.testing.allocator, &list, "test/path", "");
     try std.testing.expect(!added2);
 }
+
+

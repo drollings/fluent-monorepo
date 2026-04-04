@@ -34,7 +34,7 @@ const GENERIC_WORDS = std.StaticStringMap(void).initComptime(.{
     .{ "infrastructure", {} }, .{ "processing", {} }, .{ "handler", {} },    .{ "handlers", {} },
 });
 
-/// Result returned by each enhancement call.
+/// Holds enrichment results with ownership and invariants; managed via struct pattern.
 pub const EnrichmentResult = struct {
     /// The generated or preserved description text (≤240 chars enforced by prompt).
     /// Owned by the caller; free with allocator.free().
@@ -61,7 +61,7 @@ pub const SemanticPhrasesResult = struct {
     }
 };
 
-/// Enhances code with runtime checks; managed centrally; ensures invariants are preserved.
+/// Manages static configuration structures; owned by the module; ensures consistent initialization state.
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
@@ -824,8 +824,7 @@ pub const Enhancer = struct {
     }
 };
 
-/// Extract content between <phrases>...</phrases> tags.
-/// Returns null if tags not found or content is empty/whitespace.
+/// Extracts phrases from a Zig string and returns them as a slice.
 fn extractPhrasesTag(text: []const u8) ?[]const u8 {
     const start = std.mem.indexOf(u8, text, "<phrases>") orelse return null;
     const end = std.mem.indexOf(u8, text[start..], "</phrases>") orelse return null;

@@ -30,10 +30,7 @@ const yago_schema = ontology.yago;
 // Namespace whitelist filter
 // ---------------------------------------------------------------------------
 
-/// `FilterFn` compatible with `BatchConfig.filter_fn`.
-/// Returns true (accept) when the triple's subject IRI starts with any of
-/// the YAGO/schema.org/RDF namespaces, or the subject is a blank node.
-/// Returns false (skip) for subjects from unrecognised namespaces.
+/// Checks if a triple matches the expected namespace pattern and returns true or false.
 pub fn yagoNamespaceFilter(triple: Triple) bool {
     const subj_iri = switch (triple.subject) {
         .iri => |s| s,
@@ -83,13 +80,7 @@ pub const YagoConfig = struct {
 // YagoIngestor
 // ---------------------------------------------------------------------------
 
-/// YAGO-specific ingestion wrapper.
-///
-/// Usage:
-///   var ingestor = YagoIngestor.init(allocator, .{});
-///   var ci = CapabilityInference.init(allocator);
-///   defer ci.deinit();
-///   const stats = try ingestor.ingestFile("yago-types.ttl", lib, &ci);
+/// Manages YagoIngestor's keyword structure with fixed buffers; owns state, not thread-safe.
 pub const YagoIngestor = struct {
     const Self = @This();
 
@@ -191,7 +182,7 @@ pub const YagoIngestor = struct {
 // Hierarchy bootstrap from static YAGO class registry
 // ---------------------------------------------------------------------------
 
-/// Constructs a baseline hierarchy structure from input data using Zig's capabilities.
+/// Constructs a baseline hierarchy structure from the provided capability inference data.
 pub fn buildBaselineHierarchy(ci: *CapabilityInference) !void {
     for (yago_schema.ALL_CLASSES) |cls| {
         if (cls.superclass) |parent_iri| {

@@ -33,10 +33,7 @@ pub const InferenceRule = struct {
     trigger_predicate: []const u8,
 };
 
-/// Ontology inference engine.
-///
-/// Call `addRule` to register rules, then `infer(triples)` to materialise
-/// derived triples.  The engine is stateless between `infer` calls.
+/// Manages inference logic with a structured keyword structure, owns inference pipelines, and enforces invariants on ownership and state.
 pub const InferenceEngine = struct {
     allocator: std.mem.Allocator,
     rules: std.ArrayList(InferenceRule),
@@ -91,12 +88,7 @@ pub const InferenceEngine = struct {
 // subClassOf transitivity: A subClassOf B, B subClassOf C → A subClassOf C
 // ---------------------------------------------------------------------------
 
-/// Build the transitive closure of `rdfs:subClassOf` edges using iterative
-/// forward chaining.  New triples are appended to `derived`.
-///
-/// Algorithm: repeat until no new triples are produced.
-///   For each triple (A, subClassOf, B) and (B, subClassOf, C):
-///     if (A, subClassOf, C) not already in known set → emit it.
+/// Checks transitivity between subclasses using an allocator and predicate, returning a boolean result.
 fn inferSubclassTransitivity(
     allocator: std.mem.Allocator,
     base: []const Triple,
@@ -176,7 +168,7 @@ fn tripleSubjectIri(t: Triple) ?[]const u8 {
     };
 }
 
-/// Transforms a triple into a structured triplet mapping by applying a triple IRI transformation.
+/// Transforms a triple object into a list of triples, handling possible transformations.
 fn tripleObjectIri(t: Triple) ?[]const u8 {
     return switch (t.object) {
         .iri => |s| s,
@@ -184,7 +176,7 @@ fn tripleObjectIri(t: Triple) ?[]const u8 {
     };
 }
 
-/// Allocate a new Triple with owned IRI strings.
+/// Constructs a triple from IRI components, returning a structured representation.
 fn buildSubclassTriple(
     allocator: std.mem.Allocator,
     subject_iri: []const u8,

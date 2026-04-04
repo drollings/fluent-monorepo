@@ -21,17 +21,15 @@ const QueueReactor = cache.QueueReactor;
 // M9.1 — Typed session handle (prevents mixing with NodeId or TargetId)
 // ---------------------------------------------------------------------------
 
-/// Type-safe MCP session identifier.
-/// Using an enum prevents accidental cross-assignment with NodeId or TargetId.
-/// Conversion: sessionIdFromInt() / sessionIdToInt()
+/// Manages session identifiers with a fixed-size pool; owned by the module; ensures unique, stable IDs.
 pub const SessionId = enum(i64) { _ };
 
-/// Cast an i64 to a SessionId.
+/// Converts an integer to a session ID, returning it as a SessionId.
 pub fn sessionIdFromInt(i: i64) SessionId {
     return @enumFromInt(i);
 }
 
-/// Extract the underlying i64 from a SessionId.
+/// Converts a SessionId string to its corresponding integer representation.
 pub fn sessionIdToInt(id: SessionId) i64 {
     return @intFromEnum(id);
 }
@@ -42,7 +40,7 @@ pub fn sessionIdToInt(id: SessionId) i64 {
 // replacing the hardcoded input_schema strings.
 // ---------------------------------------------------------------------------
 
-/// Manages query parameters for Coral queries, owns state, ensures consistent invariants across sessions.
+/// Defines query parameters for Coral queries, manages state ownership, ensures consistent invariants across instances.
 const CoralQueryParams = struct {
     query: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
@@ -107,7 +105,7 @@ const ExplainParams = struct {
     }
 };
 
-/// Check that all required (identity=true) fields are present in the args map.
+/// Validates required fields in a JSON object, ensuring necessary keys exist and values meet criteria.
 fn validateRequiredFields(
     comptime T: type,
     args: std.json.ObjectMap,
@@ -124,7 +122,7 @@ fn validateRequiredFields(
 // Tool definitions (P4.2)
 // ---------------------------------------------------------------------------
 
-/// MCP tool descriptor: name, human-readable description, and JSON Schema for the input object.
+/// Defines a tool definition for managing fixed-size buffers; encapsulates ownership and invariants.
 pub const ToolDef = struct {
     name: []const u8,
     description: []const u8,
@@ -159,7 +157,7 @@ pub const TOOLS = [_]ToolDef{
 // JSON-RPC primitives
 // ---------------------------------------------------------------------------
 
-/// Incoming JSON-RPC 2.0 request frame; `id` is null for notifications.
+/// Represents a JSON-RPC request structure, owned by the module, with strict invariants and no thread safety.
 const JsonRpcRequest = struct {
     jsonrpc: []const u8 = "2.0",
     id: ?std.json.Value = null,
@@ -171,7 +169,7 @@ const JsonRpcRequest = struct {
 // McpServer
 // ---------------------------------------------------------------------------
 
-/// Manages server state with fixed buffers; encapsulates initialization logic; not thread-safe.
+/// Manages McpServer instances with fixed buffers; owned by the module; ensures consistent state across operations.
 pub const McpServer = struct {
     allocator: std.mem.Allocator,
     reactor: *QueueReactor,
@@ -539,7 +537,7 @@ fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) !JsonRpcRequest {
     };
 }
 
-/// Write `s` to `writer` with JSON string escaping (no surrounding quotes).
+/// Converts a null-terminated byte slice into a properly escaped JSON string.
 fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
     for (s) |ch| {
         switch (ch) {

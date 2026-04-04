@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "ExtractedCode",
-      "match_hash": "bca993c3d3e668acaeb814cceab74f17c4ffe2ab6d7f87280b5a46cfc6a15660",
+      "match_hash": "a67299a332a2e6c1e7cacb092b6a0c3ee0ce40d6a3534020d1d8fcdb8a763d65",
       "signature": "keyword_struct ExtractedCode { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "e2a3a459cb01d474f140fbea3127f7d117963903ba146cc9186a49d386d18889",
+          "match_hash": "d48e0faf75c20d02c066275ce0bcadad28c02b22954a6690a3fb9541148060b4",
           "signature": "fn deinit(self: *ExtractedCode) -> void",
           "params": [
             { "name": "self", "type": "*ExtractedCode" }
@@ -32,7 +32,7 @@
     {
       "type": "fn_decl",
       "name": "extractFirstCodeBlock",
-      "match_hash": "398f3579457ceb6e1b25729e69f9ebfc78ae6c97bbe023fdf8f231eee9d41410",
+      "match_hash": "71d732b10ec9519b5de875cf244dd386708e65c14f1e7b414c247d1a1e987c7d",
       "signature": "fn extractFirstCodeBlock(allocator: std.mem.Allocator, llm_response: []const u8) -> ?ExtractedCode",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -40,49 +40,49 @@
       ],
       "returns": "?ExtractedCode",
       "is_pub": true,
-      "line": 28
+      "line": 25
     },
     {
       "type": "fn_decl",
       "name": "validateSource",
-      "match_hash": "57727eb56d1e8c646ed1a7668eaa4a3b9914c77d3ebe2c634f496c6236e4403f",
+      "match_hash": "bca6ae8b30dc4b0cfa224591649210c133bee438c558bcd278db988949d1dc36",
       "signature": "fn validateSource(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 58
+      "line": 54
     },
     {
       "type": "test_decl",
       "name": "extractFirstCodeBlock: extracts zig block",
       "is_pub": false,
-      "line": 68
+      "line": 64
     },
     {
       "type": "test_decl",
       "name": "extractFirstCodeBlock: returns null for no code block",
       "is_pub": false,
-      "line": 86
+      "line": 82
     },
     {
       "type": "test_decl",
       "name": "extractFirstCodeBlock: empty fence returns null",
       "is_pub": false,
-      "line": 93
+      "line": 89
     },
     {
       "type": "test_decl",
       "name": "validateSource: empty returns false",
       "is_pub": false,
-      "line": 104
+      "line": 100
     },
     {
       "type": "test_decl",
       "name": "validateSource: non-empty returns true",
       "is_pub": false,
-      "line": 109
+      "line": 105
     }
   ]
 }

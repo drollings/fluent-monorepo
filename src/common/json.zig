@@ -9,8 +9,7 @@ const std = @import("std");
 // Allocating serialization
 // =============================================================================
 
-/// Serialize `value` to pretty-printed JSON (2-space indent).
-/// Returns an owned allocation; caller must free.
+/// Converts a value to a memory-safe Zig slice using an allocator.
 pub fn jsonStringifyAlloc(allocator: std.mem.Allocator, value: anytype) ![]u8 {
     var out: std.io.Writer.Allocating = .init(allocator);
     const writer = &out.writer;
@@ -24,8 +23,7 @@ pub fn jsonStringifyAlloc(allocator: std.mem.Allocator, value: anytype) ![]u8 {
 // JSON string escaping
 // =============================================================================
 
-/// Write `s` to `writer` with all JSON-special characters escaped.
-/// Handles `"`, `\`, `\n`, `\r`, `\t`.  Suitable for building JSON by hand.
+/// Writes a null-terminated byte slice to a writer, escaping characters as needed.
 pub fn writeEscaped(writer: anytype, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
@@ -39,10 +37,7 @@ pub fn writeEscaped(writer: anytype, s: []const u8) !void {
     }
 }
 
-/// Append `text` to `buf`, escaping all JSON-special characters including
-/// C0 control characters (encoded as `\uXXXX`).
-/// More thorough than `writeEscaped`; use when the input may contain
-/// arbitrary binary data.
+/// Appends escaped characters to a Zig buffer, handling null-termination properly.
 pub fn appendEscaped(
     buf: *std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,

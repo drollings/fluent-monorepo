@@ -10,10 +10,7 @@ const std = @import("std");
 
 pub const BUFFER_SIZE = 4096;
 
-/// A buffered writer wrapping a `std.fs.File`.
-/// Callers declare storage on the stack and call `initStdout()` on the
-/// local variable **after** it is at its final address.  Never copy a
-/// `WriterState` after initialisation — the internal pointer would dangle.
+/// Manages writer state for Zig IO, owns buffers, supports initialization/deinit, not thread-safe.
 pub const WriterState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
     fw: std.fs.File.Writer = undefined,
@@ -29,7 +26,7 @@ pub const WriterState = struct {
     }
 };
 
-/// A buffered reader wrapping a `std.fs.File`.
+/// Manages streaming data with a fixed buffer; encapsulates ownership and state; not thread-safe.
 pub const ReaderState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
     fr: std.fs.File.Reader = undefined,
@@ -91,9 +88,7 @@ test "WriterState buf pointer stays valid after initStdout (no dangling)" {
 // Directory creation
 // =============================================================================
 
-/// Create a directory tree from an absolute path (idempotent).
-/// All intermediate directories are created if they don't exist.
-/// `PathAlreadyExists` is treated as success.
+/// Converts a relative path slice into an absolute path string.
 pub fn makePathAbsolute(abs_path: []const u8) !void {
     var buf: [4096]u8 = undefined;
     var pos: usize = 0;
@@ -169,29 +164,21 @@ test "makePathAbsolute is idempotent for existing paths" {
 /// Default maximum file size for readFileAlloc (10 MB).
 pub const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-/// Read entire file content into an allocated buffer.
-/// Returns null if file doesn't exist or on read error.
-/// Caller must free the returned slice.
+/// Reads a file into a memory-allocated Zig slice, handling allocation and error cases.
 pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
     return file.readToEndAlloc(allocator, max_size) catch null;
 }
 
-/// Read entire file content into an allocated buffer.
-/// Returns error if file doesn't exist or on read error.
-/// Caller must free the returned slice.
+/// Reads a file using an allocator, returning its contents or an error on failure.
 pub fn readFileAllocErr(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ![]const u8 {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
     return try file.readToEndAlloc(allocator, max_size);
 }
 
-/// Strip `root` from the front of `abs`, returning the relative tail.
-///
-/// Returns a slice directly into `abs` — no allocation.
-/// The leading separator is also stripped, so the result never starts with `/`.
-/// When `abs` does not start with `root`, `abs` is returned unchanged.
+/// Removes leading zig path prefix from a given root slice.
 pub fn stripPathPrefix(abs: []const u8, root: []const u8) []const u8 {
     if (std.mem.startsWith(u8, abs, root)) {
         var rel = abs[root.len..];
@@ -201,9 +188,7 @@ pub fn stripPathPrefix(abs: []const u8, root: []const u8) []const u8 {
     return abs;
 }
 
-/// Resolve a path: return as-is if absolute, otherwise join with base.
-/// Handles "." special case by returning base directly.
-/// Returns an owned allocation the caller must free.
+/// Resolves a path string into a Zig-safe slice using an allocator.
 pub fn resolvePath(allocator: std.mem.Allocator, base: []const u8, path: []const u8) ![]const u8 {
     if (std.fs.path.isAbsolute(path)) return try allocator.dupe(u8, path);
     if (std.mem.eql(u8, path, ".")) return try allocator.dupe(u8, base);
@@ -252,8 +237,7 @@ test "resolvePath handles dot by returning base" {
     try std.testing.expectEqualStrings("/base", result);
 }
 
-/// Read a file's entire contents, returning null on any error.
-/// Convenience wrapper around readFileAlloc for optional semantics.
+/// Reads a file path into an owned Zig slice, returning its contents as bytes.
 pub fn readFileOpt(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
     return readFileAlloc(allocator, path, max_size);
 }
@@ -262,3 +246,11 @@ test "readFileOpt returns null for non-existent file" {
     const result = readFileOpt(std.testing.allocator, "/nonexistent/path/file.txt", 1024);
     try std.testing.expect(result == null);
 }
+
+
+
+
+
+
+
+

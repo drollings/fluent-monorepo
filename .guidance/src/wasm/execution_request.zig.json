@@ -13,7 +13,7 @@
     {
       "type": "struct",
       "name": "ExecutionRequestBuilder",
-      "match_hash": "0d968c99a01af47350bc500a71744dc2ecad152599fd1303c2dd03a9080480f0",
+      "match_hash": "7454411a2d89fb3eece20ac0907b28c6a523c5bdb3874ed74374aacba6433da3",
       "signature": "keyword_struct ExecutionRequestBuilder { ... }",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
@@ -23,31 +23,31 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "4cf7ef047edd8c359228c38b52c1f94c509665d7e1cc3508be970d1f9e73bb3f",
+          "match_hash": "10089975963808a6bc41ef5928eb306107a473d03d0413cbf2f0574b21dc8661",
           "signature": "fn init(allocator: std.mem.Allocator) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 52
+          "line": 43
         }
     ,    {
           "type": "fn_private",
           "name": "hasError",
-          "match_hash": "de405ebe7cff74ecfcda42fb4d488fd27cf4ce79bad096d95852a0c795e3f32f",
+          "match_hash": "0018fd1f4df5f3fb100897381095796e95ae124751fc9328818535e0e18711b5",
           "signature": "fn hasError(self: *Self) -> bool",
           "params": [
             { "name": "self", "type": "*Self" }
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 59
+          "line": 50
         }
     ,    {
           "type": "fn_private",
           "name": "setError",
-          "match_hash": "5bd4a1e702ea9367f13dde307e0198d0a649f57021b60ef8e7abaa80c4c54806",
+          "match_hash": "0f97ab7752e43a3398da294574093888f79ee99140a0e96818fc2fbf43b46475",
           "signature": "fn setError(self: *Self, phase: BuilderPhase, field: []const u8, constraint: []const u8, cause: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -58,12 +58,12 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 63
+          "line": 54
         }
     ,    {
           "type": "fn_decl",
           "name": "targetId",
-          "match_hash": "53af54688c13bac2a2accb1c277afa2bce9d3def39dd4d118657b7e572d383d3",
+          "match_hash": "1ac89976a293f3e8dafd54b509c12e4b51ba157e12e3156f8005ab5001e50991",
           "signature": "fn targetId(self: *Self, id: i64) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -71,12 +71,12 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 76
+          "line": 67
         }
     ,    {
           "type": "fn_decl",
           "name": "input",
-          "match_hash": "b728d08ea826796a36588c3cd60a519d451b1fce49e5731569aa3d214cb2fdcc",
+          "match_hash": "4072298bbcf320685270d0e6e5f6bff4b8fa87b6142bfd5e8e2aaac2e0585886",
           "signature": "fn input(self: *Self, bytes: []const u8) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -84,12 +84,12 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 87
+          "line": 78
         }
     ,    {
           "type": "fn_decl",
           "name": "flag",
-          "match_hash": "c44ead5911ba8fe422e4c64dcbb60f62766500e4817f9673b4231adba5fe4a9a",
+          "match_hash": "df2c6197dd3b47ce542b67d002b1a6fe19031946c9a8af83133101341d38127d",
           "signature": "fn flag(self: *Self, f: u32) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -97,12 +97,12 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 101
+          "line": 92
         }
     ,    {
           "type": "fn_decl",
           "name": "providesBitset",
-          "match_hash": "cfd1bc5938787d80e2b65943fb5d47bdde0456f8f068bc253501c893ec3e10b6",
+          "match_hash": "bda1256e0e655a2aff797cc9c70fd0419171b3c17661c25fe3a98947834ac6f1",
           "signature": "fn providesBitset(self: *Self, bs: std.bit_set.DynamicBitSetUnmanaged) -> *Self",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -110,74 +110,74 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 108
+          "line": 99
         }
     ,    {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "0ea9a1c3174c18a2f82820e6e08f9a1d61941093fbc0f589e17041178fe2ade7",
+          "match_hash": "c38c16b17bbe8c7e12e3a3aa8bff9ab50e49f3aaf054840acbccaf8863135464",
           "signature": "fn build(self: *Self) -> []u8",
           "params": [
             { "name": "self", "type": "*Self" }
           ],
           "returns": "[]u8",
           "is_pub": true,
-          "line": 118
+          "line": 109
         }
       ],
-      "line": 39
+      "line": 30
     },
     {
       "type": "struct",
       "name": "WasmExecution",
-      "match_hash": "d6923271740a99e04ecc17ba7391a81cfebfa0fdee0173fbb1a5651fe55f5859",
+      "match_hash": "84052ade363f3d95fbd31e405cbbed57311f2ae675d72143125855c48b550179",
       "signature": "keyword_struct WasmExecution { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "32ff24002aaa6a951d4ccc13abc36589462e9394fc315239599a7980435ad363",
+          "match_hash": "d50f43ecb862ab0e39d51fe0a742b0ce1d93b3a2bbee5fadfbd0f2d9694614c2",
           "signature": "fn deinit(self: *WasmExecution) -> void",
           "params": [
             { "name": "self", "type": "*WasmExecution" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 183
+          "line": 174
         }
       ],
-      "line": 174
+      "line": 165
     },
     {
       "type": "test_decl",
       "name": "ExecutionRequestBuilder: round-trip target_id and input",
       "is_pub": false,
-      "line": 242
+      "line": 233
     },
     {
       "type": "test_decl",
       "name": "ExecutionRequestBuilder: flag accumulation",
       "is_pub": false,
-      "line": 262
+      "line": 253
     },
     {
       "type": "test_decl",
       "name": "ExecutionRequestBuilder: error on zero target_id",
       "is_pub": false,
-      "line": 278
+      "line": 269
     },
     {
       "type": "test_decl",
       "name": "ExecutionRequestBuilder: error on missing target_id",
       "is_pub": false,
-      "line": 283
+      "line": 274
     },
     {
       "type": "test_decl",
       "name": "ExecutionRequestBuilder: empty input builds valid payload",
       "is_pub": false,
-      "line": 288
+      "line": 279
     }
   ]
 }

@@ -34,7 +34,7 @@ pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const DEFAULT_EMBEDDING_CACHE_LIMIT: u32 = 400;
 pub const CONFIG_FILENAME = "guidance-config.json";
 
-/// Manages configuration structures for Zig projects, owns runtime settings, ensures consistent initialization and cleanup.
+/// Manages dynamic resource allocation; owned by the provider; ensures consistent state across operations.
 pub const Provider = struct {
     name: []const u8,
     base_url: []const u8,
@@ -47,7 +47,7 @@ pub const Provider = struct {
     }
 };
 
-/// Per-extension test command. `{file}` is substituted for the extension "*".
+/// Manages linting rules with a structured command; owns invariants like rule state; supports ownership model.
 pub const LintCommand = struct {
     extension: []const u8,
     argv: []const []const u8,
@@ -63,8 +63,7 @@ pub const LintCommand = struct {
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Resolved, absolute paths for a single guidance project instance.
-/// All strings are owned by this struct; call deinit() to free them.
+/// Manages project configuration settings with a structured approach; owns invariants and lifecycle; not thread-safe.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
@@ -267,8 +266,7 @@ pub const ProjectConfig = struct {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Load project configuration with the two-level fallback chain.
-/// On success the caller owns the returned ProjectConfig and must call deinit().
+/// Loads configuration data into a ProjectConfig object using an allocator and file path.
 pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     // 1. Project-local config.
     {
@@ -303,8 +301,7 @@ pub const InitOptions = struct {
     db_path: ?[]const u8 = null,
 };
 
-/// Create a default configuration file at `{cwd}/{guidance_dir}/{CONFIG_FILENAME}`.
-/// Returns true when a new file was created, false if one already exists.
+/// Initializes configuration with allocator, current directory, and options, returning success or error.
 pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOptions) !bool {
     const guidance_dir = options.guidance_dir orelse DEFAULT_GUIDANCE_DIR;
     const db_path = options.db_path orelse DEFAULT_DB_PATH;
@@ -385,8 +382,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
     return false;
 }
 
-/// Generate AGENTS.md content for guidance integration.
-/// Returns an owned slice that the caller must free.
+/// Generates MD content strings from allocation and guidance data.
 pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .{};
     errdefer buf.deinit(allocator);
@@ -495,7 +491,7 @@ pub const AGENTS_INSERTION: []const u8 =
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Parse a commands object (lint_commands, fmt_commands, test_commands) into LintCommand array.
+/// Converts a JSON object map into a list of Zig command checks.
 fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![]LintCommand {
     var commands: std.ArrayList(LintCommand) = .{};
     errdefer {
@@ -923,8 +919,7 @@ fn buildFromParts(
 // Tests
 // =============================================================================
 
-/// Build a minimal ProjectConfig for unit-testing `isThinkingModelRef`.
-/// All fields not under test are given trivial values.
+/// Creates a test configuration project config from an allocator and model data.
 fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) !ProjectConfig {
     return buildFromParts(
         allocator,

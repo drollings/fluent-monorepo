@@ -16,7 +16,7 @@ const Literal = parser_mod.Literal;
 // Hashing
 // ---------------------------------------------------------------------------
 
-/// Deterministic i64 hash of an IRI string using Blake3 (64-bit truncation).
+/// Converts a list of UInt8 IRI strings into a hashable i64 value.
 pub fn hashIRI(iri: []const u8) i64 {
     var out: [32]u8 = undefined;
     std.crypto.hash.Blake3.hash(iri, &out, .{});
@@ -24,8 +24,7 @@ pub fn hashIRI(iri: []const u8) i64 {
     return @bitCast(std.mem.readInt(u64, out[0..8], .little));
 }
 
-/// Scope-qualified i64 hash for a blank node.
-/// Two blank nodes with the same local id but different scopes get different hashes.
+/// Computes a hash for a blank node using its IDs and scope parameters.
 pub fn hashBlankNode(scope: []const u8, id: []const u8) i64 {
     var h = std.crypto.hash.Blake3.init(.{});
     // Length-prefix each part to avoid collision between "a"+"bc" and "ab"+"c"
@@ -57,7 +56,7 @@ pub const XsdType = enum {
     other,
 };
 
-/// Manages a typed value set with union semantics; owned by the caller; ensures consistent key-value storage.
+/// Represents a typed union of keywords, managing ownership and invariants for type safety.
 pub const TypedValue = union(XsdType) {
     string: void, // value already held by caller
     lang_string: void,
@@ -71,7 +70,7 @@ pub const TypedValue = union(XsdType) {
 
 const XSD = "http://www.w3.org/2001/XMLSchema#";
 
-/// Detect the XSD type from a datatype IRI.
+/// Detects the XML Schema definition type from a given datatype slice, returning the corresponding XsdType value.
 pub fn detectXsdType(datatype: ?[]const u8) XsdType {
     const dt = datatype orelse return .string;
     if (std.mem.eql(u8, dt, XSD ++ "string")) return .string;
@@ -88,8 +87,7 @@ pub fn detectXsdType(datatype: ?[]const u8) XsdType {
     return .other;
 }
 
-/// Parse a literal's value string into a TypedValue.
-/// Returns .string / .lang_string / .other when parsing is not applicable.
+/// Converts a null-terminated C string into a normalized Zig TypedValue.
 pub fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const u8) TypedValue {
     if (lang != null) return .lang_string;
     const xsd_type = detectXsdType(datatype);
@@ -120,7 +118,7 @@ pub fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const
     };
 }
 
-/// BlankNodeScope — tracks blank node ID → NodeId mapping within one file/scope.
+/// Represents a blank node scope in Zig, managing node structures with fixed-size buffers; owned by the system, immutable once initialized.
 pub const BlankNodeScope = struct {
     allocator: std.mem.Allocator,
     scope_id: []const u8, // e.g. file path or document IRI
@@ -222,3 +220,10 @@ test "normalize dateTime stub" {
     const tv = normalizeLiteral("2024-01-01T00:00:00Z", null, XSD ++ "dateTime");
     try testing.expectEqual(XsdType.date_time, @as(XsdType, tv));
 }
+
+
+
+
+
+
+

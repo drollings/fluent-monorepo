@@ -20,7 +20,7 @@ const Allocator = std.mem.Allocator;
 // Public types
 // ---------------------------------------------------------------------------
 
-/// Tracks community summaries with fixed-size buffers; managed by owner; key invariant is data consistency.
+/// Tracks community summaries with fixed-size buffers; managed by owner; key invariant is data integrity.
 pub const CommunitySummary = struct {
     community_id: u32,
     /// Summarised text produced by the local model.
@@ -53,7 +53,7 @@ pub const GlobalSearchConfig = struct {
 // GlobalSearch
 // ---------------------------------------------------------------------------
 
-/// Manages global search keywords with a fixed-size structure; owned by the application; key invariant is consistent key-value mapping.
+/// Manages global search keywords with a fixed-size structure; owned by the game; key invariant is consistent key-value mapping.
 pub const GlobalSearch = struct {
     config: GlobalSearchConfig,
 

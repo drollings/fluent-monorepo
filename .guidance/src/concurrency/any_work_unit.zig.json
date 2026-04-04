@@ -10,34 +10,34 @@
     {
       "type": "struct",
       "name": "AnyWorkUnit",
-      "match_hash": "67403497f6caab9210ebaa3895756b5e425c64346b47b8a8598003614a2e29cf",
+      "match_hash": "c7e45d815d3bbf404c2bae7f62a5b8276569084fe645b61c79cc95624b6aab56",
       "signature": "keyword_struct AnyWorkUnit { ... }",
       "is_pub": true,
-      "line": 31
+      "line": 28
     },
     {
       "type": "fn_decl",
       "name": "WorkUnit",
-      "match_hash": "b860208ee6013840bdb8a59ca55fc477281500d16dc72e23fbf5d9911ae046d4",
+      "match_hash": "e5dac5c725fb88ad7761225ab416611cd957b97ee3d5df9934ca21b06e4b9c1c",
       "signature": "fn WorkUnit(Handler: type) -> type",
       "params": [
         { "name": "Handler", "type": "type" }
       ],
       "returns": "type",
       "is_pub": true,
-      "line": 55
+      "line": 44
     },
     {
       "type": "struct",
       "name": "TestHandler",
-      "match_hash": "2e9c6128c494e5fe4757c2936c32856bbb05ae0879e389efed7760201ddd2a2a",
+      "match_hash": "958fa3ec47e24dbe231ade74d0b72f460ba2161e71318a0ff7508a51c11cd871",
       "signature": "keyword_struct TestHandler { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "2edf92a313d2d55c9587f2250a74c4589510bbde49b608046a87ad427edc922d",
+          "match_hash": "8e23f16797e9e10d73b6af64afb0cd23236f5c75046fa6ffecd5713f7b81448d",
           "signature": "fn execute(self: *TestHandler, arena: std.mem.Allocator, ctx: *const Context) -> void",
           "params": [
             { "name": "self", "type": "*TestHandler" },
@@ -46,46 +46,46 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 128
+          "line": 117
         }
       ],
-      "line": 124
+      "line": 113
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: runFn executes handler and frees memory",
       "is_pub": false,
-      "line": 136
+      "line": 125
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: runFn defers arena deinit even when handler errors",
       "is_pub": false,
-      "line": 151
+      "line": 140
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: runFn returns Cancelled and frees when context is cancelled",
       "is_pub": false,
-      "line": 166
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: deinitFn cleans up without executing",
       "is_pub": false,
-      "line": 182
+      "line": 171
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: GPA no leaks — success, error, cancelled paths",
       "is_pub": false,
-      "line": 197
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: thread transfer — create on A, run on B",
       "is_pub": false,
-      "line": 224
+      "line": 213
     }
   ]
 }

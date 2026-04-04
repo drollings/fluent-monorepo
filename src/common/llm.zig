@@ -56,10 +56,7 @@ pub const LlmClient = llm.LlmClient;
 // These validators operate on LLM output text and use string utilities
 // that are part of this module — keeping them here avoids circular deps.
 
-/// Strip a matched open/close tag pair from `text`.
-/// - If the close tag is found: returns the content after it, trimming leading whitespace.
-/// - If the close tag is absent (truncated): returns the content before the open tag.
-/// - If the open tag is absent: returns `text` unchanged.
+/// Removes tags from a Zig string slice, returning a cleaned version.
 fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) []const u8 {
     const tag_start = std.mem.indexOf(u8, text, open) orelse return text;
     if (std.mem.indexOfPos(u8, text, tag_start + open.len, close)) |close_start| {
@@ -72,8 +69,7 @@ fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) []const 
     return std.mem.trim(u8, text[0..tag_start], " \t\r\n");
 }
 
-/// Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.
-/// For unclosed tags, strips everything from the open tag to end-of-string.
+/// Removes unwanted blocks from the input text slice.
 pub fn stripThinkBlock(text: []const u8) []const u8 {
     if (std.mem.indexOf(u8, text, "<think>") != null)
         return stripTagBlock(text, "<think>", "</think>");
@@ -82,7 +78,7 @@ pub fn stripThinkBlock(text: []const u8) []const u8 {
     return text;
 }
 
-/// Strip LLM reasoning preamble from the start of a response.
+/// Removes leading zeros from a Zig string slice, returning a trimmed version.
 pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return allocator.dupe(u8, trimmed);
@@ -119,8 +115,7 @@ const llm_preamble_patterns = [_][]const u8{
     "let's craft", "let's count", "let me think", "i need to ",
 };
 
-/// Return true when an LLM response is malformed or unusable as a comment.
-/// Call this after stripThinkBlock / stripPreamble.  No allocations.
+/// Checks if the provided text slice meets Zig's format requirements and returns true for malformed inputs.
 pub fn isMalformedResponse(text: []const u8) bool {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return true;
@@ -180,8 +175,7 @@ pub fn llmIsOverlyGeneric(body: []const u8) bool {
     return false;
 }
 
-/// Extract the content of the first <comment>...</comment> tag in an LLM response.
-/// Returns a slice into `text` (no allocation).  Returns null when no tag is found.
+/// Extracts the comment tag from a Zig string slice, returning its slice.
 pub fn extractCommentTag(text: []const u8) ?[]const u8 {
     const open = "<comment>";
     const close = "</comment>";

@@ -12,7 +12,7 @@
     {
       "type": "fn_decl",
       "name": "containsWord",
-      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
+      "match_hash": "42e0003d20a6bda2eaa94f218d350ec0ead739372dacb316e631d2bfbcd9fcc7",
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -20,44 +20,44 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 18
+      "line": 17
     },
     {
       "type": "struct",
       "name": "Pattern",
-      "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
+      "match_hash": "7137640323cf8906013ae623ec6de6cdbe2dae7c91b98bd80b9fb2dd30816559",
       "signature": "keyword_struct Pattern { ... }",
       "is_pub": true,
-      "line": 37
+      "line": 36
     },
     {
       "type": "fn_decl",
       "name": "detectRingBuffer",
-      "match_hash": "9477893f25e6435db22494632f8e4d5e31223d08eeabed1de270669c13b81a64",
+      "match_hash": "aa8b3b180d306d3285a29eeb7080f1c0e64bd8a11aa443bd061b4968adf3d109",
       "signature": "fn detectRingBuffer(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 47
+      "line": 46
     },
     {
       "type": "fn_decl",
       "name": "detectStatePersistence",
-      "match_hash": "3ddd4263130a7eecf359f3aef26624298d0036a707b7716918ff06fa3f190399",
+      "match_hash": "2fef5b1a50807640703190a59b0dbd4219b75b4ca0559742cc7a76965b3ecc91",
       "signature": "fn detectStatePersistence(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 53
+      "line": 52
     },
     {
       "type": "fn_decl",
       "name": "detectFactory",
-      "match_hash": "953abe697aff33457e4b0474b4609130a51e70554833a5bb20d0aab2f20a8aa0",
+      "match_hash": "844d37103462f8353e07fb507c59d4a43a7b28143124d3461d883ad186a6b2c0",
       "signature": "fn detectFactory(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -69,12 +69,12 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": true,
-      "line": 59
+      "line": 58
     },
     {
       "type": "fn_decl",
       "name": "detectSingleton",
-      "match_hash": "91fe859cef29e2d1fbc3dfdb6cee98044e6d80715900276b8f601149dab22a82",
+      "match_hash": "9e3c75d77de75c1ff7e60a7bb3a91ca891bce8474c42128a9ab6f7dcf61dc9a3",
       "signature": "fn detectSingleton(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -83,12 +83,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 67
+      "line": 66
     },
     {
       "type": "fn_decl",
       "name": "detectBuilder",
-      "match_hash": "be0c50bc7a48fca0c860cdd449a7de44968c0b9ddf9f28ccc388bc5596ecec18",
+      "match_hash": "6d9a2ddbf4e03cad22d360eb2287b72c2256bf3549dfdd9cc3a684df0a94f94d",
       "signature": "fn detectBuilder(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -97,12 +97,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 76
+      "line": 75
     },
     {
       "type": "fn_decl",
       "name": "detectAdapter",
-      "match_hash": "3fb09b90f18ac56601cd330d784f6fca85369ef48afc5e801587e50af8ca6ab2",
+      "match_hash": "95dca660d9329ddcd35a4831cfb6ec9573da8ba29410a3f2990e4c7d11338322",
       "signature": "fn detectAdapter(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -111,36 +111,36 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 97
+      "line": 96
     },
     {
       "type": "fn_decl",
       "name": "detectDecorator",
-      "match_hash": "bb3fe13b849d84955e3c2ab093ac3ffaf2e09febf6a217e3b72598b7213e2acb",
+      "match_hash": "6c0ebbe1ad7c113e149e1a0dd293a52537e0efbe06b49c5bb8c23776c5aefb01",
       "signature": "fn detectDecorator(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 105
+      "line": 104
     },
     {
       "type": "fn_decl",
       "name": "detectProxy",
-      "match_hash": "a248fe5edd106caada4abfbef82197c53479b4151b5e65d3f53e45dce3386a32",
+      "match_hash": "ddf5370e7066afd2a2fe9b9ea01966e6299e867f39344416bc4560abc38ba59f",
       "signature": "fn detectProxy(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 113
+      "line": 112
     },
     {
       "type": "fn_decl",
       "name": "detectStrategy",
-      "match_hash": "fdabf1ceed287d4d843a446646d49627576ebdfced7be5154834e8f047789a4d",
+      "match_hash": "cd4bc53cb68e569f2d1723bea744a79f134f6850ee8256745e0f84141044ebda",
       "signature": "fn detectStrategy(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -149,12 +149,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 121
+      "line": 120
     },
     {
       "type": "fn_decl",
       "name": "detectObserver",
-      "match_hash": "91bb14bfd4f037559062b7d658c57ea1821046b359296e7f5b627ff7428a9c6c",
+      "match_hash": "3464929eeaffc50e3206af9e8907ae059c69f52720658f54e37b25245357e814",
       "signature": "fn detectObserver(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -163,12 +163,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 130
+      "line": 129
     },
     {
       "type": "fn_decl",
       "name": "detectTemplateMethod",
-      "match_hash": "a160acc806e431bce34fa0a7cc5dd6bb4b83602a771a926d8e6a4db10d0ac755",
+      "match_hash": "6c2706cfe62dfb42dfc40de261b4860f91950908cafb93cc7cae2671edc0f26e",
       "signature": "fn detectTemplateMethod(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, source: []const u8) -> bool",
       "params": [
         { "name": "tree", "type": "*const std.zig.Ast" },
@@ -177,31 +177,31 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 141
+      "line": 140
     },
     {
       "type": "test_decl",
       "name": "containsWord whole-word match",
       "is_pub": false,
-      "line": 159
+      "line": 158
     },
     {
       "type": "test_decl",
       "name": "detectRingBuffer",
       "is_pub": false,
-      "line": 167
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "detectFactory",
       "is_pub": false,
-      "line": 173
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "detectObserver",
       "is_pub": false,
-      "line": 179
+      "line": 178
     }
   ]
 }

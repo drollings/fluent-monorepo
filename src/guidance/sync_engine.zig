@@ -37,7 +37,7 @@ const stepPrint = types.stepPrint;
 // init — create default configuration
 // =============================================================================
 
-/// Manages initialization arguments for Zig's guidance system, owns state, ensures invariant correctness.
+/// Manages initialization arguments for sync engine; owns configuration; ensures consistent state across invocations.
 const InitArgs = struct {
     guidance_dir: ?[]const u8 = null,
     db_path: ?[]const u8 = null,
@@ -183,7 +183,7 @@ fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) ![]u8 {
     return output;
 }
 
-/// Split a unified diff into per-file chunks starting at each "diff --git" header.
+/// Splits a diff array into output slices using a specified allocator.
 fn splitDiffByFile(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     var start: usize = 0;
     var pos: usize = 0;
@@ -199,7 +199,7 @@ fn splitDiffByFile(diff: []const u8, out: *std.ArrayList([]const u8), allocator:
     if (start < diff.len) try out.append(allocator, diff[start..]);
 }
 
-/// Extract the file path from "diff --git a/<path> b/<path>".
+/// Converts a byte slice into a Zig-safe file path string.
 fn chunkFilePath(chunk: []const u8) []const u8 {
     const prefix = "diff --git a/";
     const first_nl = std.mem.indexOfScalar(u8, chunk, '\n') orelse chunk.len;
@@ -210,8 +210,7 @@ fn chunkFilePath(chunk: []const u8) []const u8 {
     return after[0..sp];
 }
 
-/// Return true for auto-generated guidance JSON files (not real code changes).
-/// Uses guidance_dir (e.g. ".guidance") to identify which paths to ignore.
+/// Checks if a chunk is valid JSON format for guidance processing.
 fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) bool {
     const path = chunkFilePath(chunk);
     const prefix = std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{guidance_dir}) catch return false;
@@ -219,7 +218,7 @@ fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) bool {
     return std.mem.startsWith(u8, path, prefix) and std.mem.endsWith(u8, path, ".json");
 }
 
-/// Parse `@@ -X,Y +A,B @@` hunk headers; returns owned [start, end) pairs in new-file coords.
+/// Converts a chunk of bytes into an array of 2-byte ranges for synchronization.
 fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     var ranges: std.ArrayList([2]u32) = .{};
     errdefer ranges.deinit(allocator);
@@ -241,7 +240,7 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
-/// Snapshot of a member's name, line, comment, and signature at the point a commit is prepared.
+/// Manages commit metadata structures; owns state; ensures consistent invariants across operations.
 const CommitMemberInfo = struct {
     name: []const u8, // owned
     line: ?u32,
@@ -255,7 +254,7 @@ const CommitMemberInfo = struct {
     }
 };
 
-/// Extract a ?u32 line number from a JSON member object value (.line field).
+/// Determines the line number of a JSON object, returning a u32 value.
 fn memberLineNum(obj: std.json.ObjectMap) ?u32 {
     const lv = obj.get("line") orelse return null;
     return switch (lv) {
@@ -265,7 +264,7 @@ fn memberLineNum(obj: std.json.ObjectMap) ?u32 {
     };
 }
 
-/// Return true when `line` falls within any hunk range expanded by `context`.
+/// Checks if a line falls within any of the provided hunk ranges and returns true or false.
 fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) bool {
     for (hunk_ranges) |range| {
         const lo = if (range[0] > context) range[0] - context else 0;
@@ -275,8 +274,7 @@ fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) bool {
     return false;
 }
 
-/// Append a CommitMemberInfo to `out` when the JSON member object is valid and
-/// its line falls within `hunk_ranges` (or when hunk_ranges is empty).
+/// Checks if a member value falls within specified hunk ranges and appends it to the output list.
 fn appendMemberIfInRange(
     allocator: std.mem.Allocator,
     member: std.json.Value,
@@ -303,7 +301,7 @@ fn appendMemberIfInRange(
     });
 }
 
-/// Load guidance JSON for rel_path and return members whose lines overlap hunk_ranges.
+/// Loads changed member information from a Zig source file using allocator and path details.
 fn loadChangedMembers(
     allocator: std.mem.Allocator,
     guidance_root: []const u8,
@@ -343,7 +341,7 @@ fn loadChangedMembers(
     return result.toOwnedSlice(allocator);
 }
 
-/// Generates a commit message string using provided file diffs and metadata for version control.
+/// Generates a commit message string using provided file diffs and metadata.
 fn generateCommitMessage(
     allocator: std.mem.Allocator,
     diff: []const u8,
@@ -530,7 +528,7 @@ fn generateCommitMessage(
     return try allocator.dupe(u8, "* Update codebase");
 }
 
-/// Converts a Zig message array into a temporary commit message slice.
+/// Writes a Zig message to a temporary buffer using the provided allocator.
 fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(allocator, "/tmp/explain_gen_commit_{d}.txt", .{std.time.timestamp()});
     const file = try std.fs.createFileAbsolute(path, .{});
@@ -772,8 +770,7 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
-/// Read `models.commit` or `models.default` from guidance-config.json.
-/// Returns an owned slice; caller must free. Returns error when absent.
+/// Loads a commit model configuration from memory allocator and returns its slice.
 fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]const u8 {
     const path = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, config_mod.CONFIG_FILENAME });
     defer allocator.free(path);
@@ -929,7 +926,7 @@ const GenArgs = struct {
     }
 };
 
-/// Resolved absolute paths for a gen run. All fields are owned; call deinit().
+/// Manages resolved path generation logic; owns path data structures; ensures consistent state across invocations.
 const ResolvedGenPaths = struct {
     workspace: []const u8,
     json_dir: []const u8,
@@ -942,9 +939,7 @@ const ResolvedGenPaths = struct {
     }
 };
 
-/// Resolve workspace, json_dir, and db_path (→ .guidance.db) to absolute
-/// paths.  db_path is the SQLite vector database; it defaults to the value
-/// in guidance-config.json, or DEFAULT_GUIDANCE_DB_PATH if not set.
+/// Resolves GenPaths using an allocator, GenArgs, and current directory path.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
     const workspace = try llm.resolvePath(allocator, cwd, ga.workspace orelse cwd);
     errdefer allocator.free(workspace);
@@ -956,11 +951,7 @@ fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
 }
 
-/// Wire up the LLM enhancer on a `CommentSyncProcessor`.
-///
-/// Allocates an `Enhancer` on the heap (required because `CommentSyncProcessor`
-/// holds a `?*Enhancer` pointer).  The returned pointer must be freed with
-/// `teardownCspEnhancer` after the processor is done.
+/// Initializes a CSP enhancer configuration using provided allocator, arguments, and project settings.
 fn setupCspEnhancer(
     allocator: std.mem.Allocator,
     ga: GenArgs,
@@ -1018,7 +1009,7 @@ fn setupCspEnhancer(
     csp.enhancer = enh_ptr;
 }
 
-/// Release the heap-allocated enhancer previously set by `setupCspEnhancer`.
+/// Cleans up the CSP enhancer by releasing allocated resources.
 fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) void {
     if (csp.enhancer) |enh_ptr| {
         enh_ptr.deinit();
@@ -1027,10 +1018,7 @@ fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.Comm
     }
 }
 
-/// Wire up the LLM enhancer for automatic comment generation.
-/// Model selection: fast slot (if set) > default slot.
-/// Uses resolveLlmConfigForThinking to ensure thinking models use /api/chat endpoint.
-/// Logs a warning and leaves processor.enhancer null if initialisation fails.
+/// Initializes a sync enhancer with allocator, configuration, and processor parameters.
 fn setupEnhancer(
     allocator: std.mem.Allocator,
     ga: GenArgs,
@@ -1123,9 +1111,7 @@ fn setupEnhancer(
     }
 }
 
-/// Dispatch to single-file, explicit-scan, or full-workspace processing.
-/// Fails fast and propagates the first error encountered.
-/// Returns the count of source files processed.
+/// Processes files using an allocator, synchronization processor, and resolves paths, returning processed count.
 fn processFiles(
     allocator: std.mem.Allocator,
     processor: *sync_mod.SyncProcessor,
@@ -1162,15 +1148,7 @@ fn processFiles(
     return total;
 }
 
-/// Returns true when `db_path` is newer than every dependency that `syncGuidanceDb`
-/// consumes:
-///   • every .json file under `json_dir/src/`
-///   • `json_dir/semantic-aliases.json`
-///   • `json_dir/capability-mapping.json`
-///   • `json_dir/guidance-config.json`
-///   • every file under `capabilities_dir` (when non-null)
-///
-/// Returns false (→ sync needed) when the db is absent or any dep is newer.
+/// Checks if the guidance database is up-to-date using provided storage, paths, and capabilities.
 fn guidanceDbIsUpToDate(
     allocator: std.mem.Allocator,
     db_path: []const u8,
@@ -1230,13 +1208,7 @@ fn guidanceDbIsUpToDate(
     return true;
 }
 
-/// M8.2: Auto-run sync-capabilities + discover-capability-sources when stale.
-///
-/// Checks whether `capability-index.json` is older than any CAPABILITY.md under
-/// `capabilities_dir`. If stale (or absent), runs both commands so that the DB
-/// sync picks up current anchors and source mappings.
-///
-/// Failures are logged as warnings — they do not abort the gen pipeline.
+/// Checks and updates Zig capabilities if they're outdated using provided paths and allocator.
 fn syncCapabilitiesIfStale(
     allocator: std.mem.Allocator,
     json_dir: []const u8,
@@ -1292,9 +1264,7 @@ fn syncCapabilitiesIfStale(
     };
 }
 
-/// Sync .guidance.db (SQLite vector database with in-process cosine similarity).
-/// Creates an embedding provider from config and calls vector_db.syncDatabase.
-/// Failures are logged as warnings but do not abort the gen pipeline.
+/// Synchronizes guidance database with Zig allocator and configuration parameters.
 fn syncGuidanceDb(
     allocator: std.mem.Allocator,
     json_dir: []const u8,
@@ -1373,8 +1343,7 @@ fn syncGuidanceDb(
     if (verbose) std.debug.print("gen: guidance.db written to {s}\n", .{guidance_db_path});
 }
 
-/// Open the guidance db at `db_path` and delete all llm_cache entries.
-/// Best-effort: failures are silently ignored.
+/// Clears the synthesis cache using the provided allocator and database path.
 fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) void {
     var noop: vector_mod.NoopEmbedding = .{};
     var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch return;
@@ -1383,9 +1352,7 @@ fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) void
     std.debug.print("gen: cleared llm synthesis cache (--force)\n", .{});
 }
 
-/// Extract keywords from all guidance JSON files, rank by frequency, and generate
-/// optimized semantic aliases using LLM consolidation.
-/// NOTE: This preserves existing semantic-aliases.json if it exists.
+/// Generates semantic aliases from a guidance directory, returning a Zig slice.
 fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -1780,8 +1747,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     }
 }
 
-/// Walk `json_dir/src/` and validate every .json file against the GuidanceDoc schema.
-/// Prints a warning for each invalid file but does not abort the gen run.
+/// Validates JSON schema files against specified allocator and directory, returning success or error details.
 fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) void {
     const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return;
     defer allocator.free(src_dir_path);
@@ -1818,10 +1784,7 @@ fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, ver
     }
 }
 
-/// Post-processing phase for comment synchronization.
-/// Scans JSON files for members with comment_generated=true, writes comments
-/// to source, runs fmt, and corrects line numbers.
-/// Returns the count of files that were modified.
+/// Processes a sync engine Zig comment, updating state with allocator, directory, workspace, config, and verbosity flags.
 fn postProcessCommentSync(
     allocator: std.mem.Allocator,
     json_dir: []const u8,
@@ -2161,11 +2124,7 @@ pub fn guidanceJsonPath(
 // map-capabilities — regenerate capability-mapping.json from CAPABILITY.md files
 // ---------------------------------------------------------------------------
 
-/// Map CAPABILITY.md files to source files by analysing AST JSON content.
-/// Updates .guidance/capability-mapping.json with fresh keyword and source mappings.
-/// Preserves the "mapping" (file→capability) section; regenerates "capability_keywords".
-///
-/// Usage: guidance map-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run]
+/// Transforms allocation parameters into a Zig command map, handling allocator and argument inputs.
 pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
     var workspace: ?[]const u8 = null;
@@ -2377,7 +2336,7 @@ const STOPWORDS = [_][]const u8{
     "again", "further",
 };
 
-/// Check if a token is a stopword (case-insensitive).
+/// Checks if a given token is a stopword and returns true or false.
 fn isStopword(tok: []const u8) bool {
     for (STOPWORDS) |sw| {
         if (std.ascii.eqlIgnoreCase(tok, sw)) return true;
@@ -2385,9 +2344,7 @@ fn isStopword(tok: []const u8) bool {
     return false;
 }
 
-/// Return true if `tok` is a plausible Zig/Python identifier keyword.
-/// Accepts: camelCase, PascalCase, snake_case, dotted.paths, but not
-/// punctuation-heavy strings or all-lowercase common words.
+/// Checks if a token is a capability keyword token, returning true or false.
 fn isCapabilityKeywordToken(tok: []const u8) bool {
     // Must start with an ASCII letter or underscore.
     if (tok.len == 0) return false;
@@ -2413,7 +2370,7 @@ fn isCapabilityKeywordToken(tok: []const u8) bool {
     return has_upper or has_underscore or has_dot or tok.len >= 4;
 }
 
-/// Capability index entry for `.guidance/capability-index.json`.
+/// Manages synchronization primitives; owned by the engine; ensures consistent state across operations.
 pub const CapabilityEntry = struct {
     name: []const u8,
     description: ?[]const u8,
@@ -2422,12 +2379,7 @@ pub const CapabilityEntry = struct {
     source: []const u8,
 };
 
-/// Sync capabilities to `.guidance/capability-index.json`.
-///
-/// Creates a structured capability index with anchors, keywords, and descriptions
-/// from all CAPABILITY.md files in `doc/capabilities/`.
-///
-/// Usage: guidance sync-capabilities [--guidance-dir DIR] [--workspace DIR] [--dry-run] [--verbose]
+/// Processes allocation parameters to validate and return sync capabilities for the Zig engine.
 pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
     var workspace: ?[]const u8 = null;
@@ -2682,9 +2634,7 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
     }
 }
 
-/// Capability lifecycle detection (NEW, UPDATED, REMOVED, UNCHANGED).
-/// Compares current capabilities directory against previous capability-index.json.
-/// Reports lifecycle changes and orphaned capabilities.
+/// Tracks changes in capability counts during allocation lifecycle, returning updated statistics.
 pub fn reportCapabilityLifecycle(
     allocator: std.mem.Allocator,
     prev_index_path: []const u8,
@@ -2818,10 +2768,7 @@ pub fn reportCapabilityLifecycle(
     };
 }
 
-/// Substitute `{file}` tokens in `argv_template` with `file_path`, then run
-/// the resulting command via `runCommand`.
-///
-/// Returns true on exit code 0, false otherwise.
+/// Executes a command using the provided allocator and file paths, returning success or error status.
 fn runPhaseCommand(
     allocator: std.mem.Allocator,
     argv_template: []const []const u8,
@@ -2835,10 +2782,7 @@ fn runPhaseCommand(
     return common.shell.runCommand(allocator, argv.items);
 }
 
-/// Walk `dir_abs` recursively and collect all files whose extension matches
-/// any member of `exts` (e.g. `.{".zig"}`).
-/// Returns an owned slice of owned absolute paths; caller must free each and
-/// then the slice.
+/// Extracts files from a directory, filtering by specified extensions.
 fn collectFilesWithExts(
     allocator: std.mem.Allocator,
     dir_abs: []const u8,
@@ -2874,7 +2818,7 @@ fn collectFilesWithExts(
 // discover-capability-sources — anchor-based source discovery
 // ---------------------------------------------------------------------------
 
-/// Confidence levels for discovery reasons.
+/// Manages confidence level metadata; owned by the sync engine; ensures invariant accuracy across runs.
 const ConfidenceLevels = struct {
     const defines_anchor: f32 = 1.0;
     const used_by: f32 = 0.9;
@@ -2883,7 +2827,7 @@ const ConfidenceLevels = struct {
     const path_heuristic: f32 = 0.4;
 };
 
-/// A capability-source join discovered from AST analysis.
+/// Manages discovery metadata for sync engine; owns discovery state; ensures consistent ownership.
 const DiscoveredSource = struct {
     capability_name: []const u8,
     source_path: []const u8,
@@ -2891,12 +2835,7 @@ const DiscoveredSource = struct {
     reason: []const u8,
 };
 
-/// Write (or replace) the auto-generated `## Sources` section at the bottom
-/// of a CAPABILITY.md file. The section is delimited by a `<!-- AUTO-SOURCES:`
-/// HTML comment marker so it can be safely regenerated without touching the
-/// human-authored content above it.
-///
-/// Called by `cmdDiscoverCapabilitySources` after the join table is upserted.
+/// Updates the capability sources section with allocated memory paths and discovered sources.
 fn updateCapabilitySourcesSection(
     allocator: std.mem.Allocator,
     cap_md_path: []const u8,
@@ -3516,7 +3455,7 @@ fn runBuiltinLanguagePipeline(
 // sync-comments — insert/update /// doc comments in source files
 // =============================================================================
 
-/// Processes a Zig source file to extract and return sync-comment data.
+/// Processes a Zig source file to extract and return sync-comment lines.
 pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var workspace: ?[]const u8 = null;
     var guidance_dir: ?[]const u8 = null;
@@ -3848,8 +3787,7 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
 // scrub — blank synthetic LLM-generated comments in guidance JSON files
 // ---------------------------------------------------------------------------
 
-/// Walk .guidance/src/**/*.json and blank any synthetic comments in-place.
-/// Usage: guidance scrub [--guidance-dir DIR] [--dry-run]
+/// Processes memory allocation parameters to scrub data in sync engine.
 pub fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var dry_run = false;
     var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
@@ -3945,7 +3883,7 @@ pub fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) !void {
     });
 }
 
-/// Count and scrub synthetic comments in a Value tree; returns count blanked.
+/// Calculates the number of valid JSON tokens in a given value.
 fn scrubCount(value: *std.json.Value) usize {
     if (value.* != .object) return 0;
     var count: usize = 0;
@@ -3971,8 +3909,7 @@ fn scrubCount(value: *std.json.Value) usize {
 // todo — work item lifecycle
 // ---------------------------------------------------------------------------
 
-/// Dispatch to todo subcommands.
-/// Usage: guidance todo <new|triage|checklist|status|list|abandon> [args...]
+/// Processes a Zig command string, validates input, and prepares execution context.
 pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -4035,8 +3972,7 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // diary — append timestamped entry to current work item DIARY.md
 // ---------------------------------------------------------------------------
 
-/// Append a timestamped entry to the current work item's DIARY.md.
-/// Usage: guidance diary "<message>"
+/// Processes a Zig command string, validates arguments, and executes the corresponding command.
 pub fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
         std.debug.print("Usage: guidance diary \"<message>\"\n", .{});
@@ -4081,11 +4017,7 @@ pub fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // check — orchestrate the full RALPH loop
 // =============================================================================
 
-/// `guidance check` runs the complete RALPH loop:
-///   test → lint → fmt → guidance (all languages) → structure → db
-///
-/// It is the recommended entry point for pre-commit hooks and CI.
-/// Incremental detection is always active: only stale files are processed.
+/// Validates allocation parameters and processes the provided arguments.
 pub fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var ga: GenArgs = .{ .all_languages = true, .compile_db = true };
     var run_structure = true;
@@ -4111,12 +4043,16 @@ pub fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
             if (i < args.len) {
                 ga.timeout_seconds = std.fmt.parseInt(u64, args[i], 2) catch ga.timeout_seconds;
             }
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            ga.dry_run = true;
+            ga.skip_tests = true;
+            run_structure = false;
         }
     }
 
     try cmdGenImpl(allocator, ga);
 
-    if (run_structure) {
+    if (run_structure and !ga.dry_run) {
         const cwd = try std.process.getCwdAlloc(allocator);
         defer allocator.free(cwd);
 
@@ -4144,7 +4080,7 @@ pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2
     return parseHunkRanges(allocator, chunk);
 }
 
-/// Loads changed member information from a Zig file using allocator, guidance root, relative paths, and hunk ranges.
+/// Loads changed member information from a Zig file using an allocator, returning a slice of CommitMemberInfo.
 pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) ![]CommitMemberInfo {
     return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
 }

@@ -25,7 +25,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const CSRGraph = @import("csr_graph").CSRGraph;
 
-/// Defines PageRank configuration parameters, manages configuration state, and ensures consistent ownership model.
+/// Manages PageRank configuration settings, owns a fixed-size buffer pool, and ensures consistent state across operations.
 pub const PageRankConfig = struct {
     damping: f32 = 0.85,
     tolerance: f32 = 0.0001,

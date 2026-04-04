@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "NodeId",
-      "match_hash": "cf1285d8b2f6e3870ce23b57bb88ff3a0823297dcc6605152ccfd8ff96a2d04a",
+      "match_hash": "0a939632518a29bd97b41c23af0106478121c659173fe362c07dee05734abab1",
       "signature": "keyword_enum NodeId { ... }",
       "is_pub": true,
       "members": [
@@ -26,7 +26,7 @@
     {
       "type": "enum",
       "name": "SessionId",
-      "match_hash": "0938b85de2db2df59d2034ce6022e077eaaffbd7ea740825bf235eae0f545234",
+      "match_hash": "b4ef50750ddd29c7c32b3ef95f36aee1a7c53310bc28bc54b6f0c66ac867914a",
       "signature": "keyword_enum SessionId { ... }",
       "is_pub": true,
       "members": [
@@ -42,7 +42,7 @@
     {
       "type": "enum",
       "name": "TargetId",
-      "match_hash": "ea30e6fbe3c27e832a1d49626aa2ecdc4a960ddd1c759bcb44b52e70bfaf2926",
+      "match_hash": "87e8cb9ff9191102a40705eb6ad87161f06700d36eae21eaa4e8d4e3679f7593",
       "signature": "keyword_enum TargetId { ... }",
       "is_pub": true,
       "members": [
@@ -58,7 +58,7 @@
     {
       "type": "fn_decl",
       "name": "nodeIdFromInt",
-      "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
+      "match_hash": "5ff96f90a0e406072bf1c0d4ce076c790ec63087e0edf4ebeac2785239ba5d4f",
       "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
       "params": [
         { "name": "i", "type": "i64" }
@@ -70,7 +70,7 @@
     {
       "type": "fn_decl",
       "name": "intFromNodeId",
-      "match_hash": "2ce2dd243b59899c2e03589e9c3c13a5b7c179e63ab07cddabf927366a571ecf",
+      "match_hash": "c781016be44123083f00112105b903eafeb0191b6eb76dc59f5e978dcd2497f6",
       "signature": "fn intFromNodeId(id: NodeId) -> i64",
       "params": [
         { "name": "id", "type": "NodeId" }
@@ -82,7 +82,7 @@
     {
       "type": "fn_decl",
       "name": "sessionIdFromInt",
-      "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
+      "match_hash": "8a8e250e7cafab9dd161d3b606db5a765e6f62f611a3482eee4f75114fb93f30",
       "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
       "params": [
         { "name": "i", "type": "i64" }
@@ -94,7 +94,7 @@
     {
       "type": "fn_decl",
       "name": "intFromSessionId",
-      "match_hash": "96e79a9b2013cc135d9df264c468d6fd4d1cafe26c3ac99265fd3d91df3cc84c",
+      "match_hash": "5ac7698721025c46b39134f2d4fc567409c16b22444648feab80ba1f29a1d8fc",
       "signature": "fn intFromSessionId(id: SessionId) -> i64",
       "params": [
         { "name": "id", "type": "SessionId" }
@@ -106,7 +106,7 @@
     {
       "type": "fn_decl",
       "name": "targetIdFromInt",
-      "match_hash": "45457661b9c35ca6a7d4a821da6a0417391ff2df7b283830693c21776dcbbf29",
+      "match_hash": "e8e831a7665599bc01f9ead669a123dbe7e7efcb9c088add6e53c4d70d5950b7",
       "signature": "fn targetIdFromInt(i: i64) -> TargetId",
       "params": [
         { "name": "i", "type": "i64" }
@@ -118,7 +118,7 @@
     {
       "type": "fn_decl",
       "name": "intFromTargetId",
-      "match_hash": "5fb4af2f92867f0f56a38f1c327bb990e1ae6b948c629d376a33166610e60283",
+      "match_hash": "d821cf4f7f4837bd0a3461a5d00e4d19ffb41475e70509f614744f05fa509cd6",
       "signature": "fn intFromTargetId(id: TargetId) -> i64",
       "params": [
         { "name": "id", "type": "TargetId" }

@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "Stage",
-      "match_hash": "6d11e9c0f0f1b880759a7f5adf85a91769aae5650ba2f07511d7c198a88528c7",
+      "match_hash": "6be1f267dfabce3bdffdc7984dc412c60d3e3b937db48079b56726d448c068a2",
       "signature": "keyword_struct Stage { ... }",
       "is_pub": true,
       "line": 28
@@ -20,7 +20,7 @@
     {
       "type": "struct",
       "name": "ContextPackConfig",
-      "match_hash": "70897db2e279ec57615803c5c2728b7cf3e0bc72822f5e23d65d186eb3de9649",
+      "match_hash": "2d6b48ccaf6c0a6759b85ab2dcf060e006bc7dd558fd78520c24372532fc50ea",
       "signature": "keyword_struct ContextPackConfig { ... }",
       "is_pub": true,
       "line": 37
@@ -28,14 +28,14 @@
     {
       "type": "struct",
       "name": "ContextPacker",
-      "match_hash": "516903c9d2bccdfc8fa7d88c5b40790a395ede610da81cebfd3c4aa9414d5fa2",
+      "match_hash": "6bc6d0b60309839325d791033befe4ddb1ef14d01cf2cf96edbd342f9e18537d",
       "signature": "keyword_struct ContextPacker { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "pack",
-          "match_hash": "cedac4132f119898f67c7952902176f211a9b9995f06747db44ebc0772a0250c",
+          "match_hash": "9491c0c5db65ef028366e7385b088c9014656c940ec11b051f665235ae80d64f",
           "signature": "fn pack(self: *const Self, allocator: std.mem.Allocator, stages: []const Stage) -> []Stage",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -52,7 +52,7 @@
     {
       "type": "fn_private",
       "name": "estimateTokens",
-      "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
+      "match_hash": "24bbdb5362796cc08ec0076c0113baf3f633747dc1c4aa0d4e9fd6254e52dbe8",
       "signature": "fn estimateTokens(content: []const u8) -> usize",
       "params": [
         { "name": "content", "type": "[]const u8" }
@@ -64,7 +64,7 @@
     {
       "type": "fn_private",
       "name": "makeStage",
-      "match_hash": "d08cd3b1b99d680e99e7bed71df0016b76322d8788602814ffe010e7e76fdaa5",
+      "match_hash": "25a5145605665edc722841324de1fce9df3aa05f52f907facef8f903309fff41",
       "signature": "fn makeStage(kind: StageKind, content: []const u8, relevance: f32) -> Stage",
       "params": [
         { "name": "kind", "type": "StageKind" },

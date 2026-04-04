@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "apiHash",
-      "match_hash": "2aa05478b4dfb9c54404c97df32953f2334af3e8b8278b71d6e0bfdeb45f65c6",
+      "match_hash": "773282a5776a8d654885b970ec02af1fda475568ff36ab4e724b021bdad5e631",
       "signature": "fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -26,7 +26,7 @@
     {
       "type": "fn_decl",
       "name": "structHash",
-      "match_hash": "be4864c26caa58f41e7e92aacd8e6d8ab22ca0f22f5a43ab66740fe7551517f5",
+      "match_hash": "61063b1569ad6e7cac3e5004e46da6378978363feae4f75e88d5eaa76ac97614",
       "signature": "fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -40,7 +40,7 @@
     {
       "type": "fn_decl",
       "name": "computeMemberHash",
-      "match_hash": "a4561261240f88ee101c776bff1e84d22f91d93755f02b1260bdc40358a1f66a",
+      "match_hash": "791af43193565639b9100fa4c11a12b23d337a3001dba9fe802e1f5daea8075b",
       "signature": "fn computeMemberHash(allocator: std.mem.Allocator, member: types.Member) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -48,73 +48,88 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 49
+      "line": 46
+    },
+    {
+      "type": "fn_decl",
+      "name": "computeStructMemberHash",
+      "match_hash": "bedcd31d03ae32a42bb7bc72b9901a987cb211083e86d6ef26d4502d1892b82f",
+      "signature": "fn computeStructMemberHash(allocator: std.mem.Allocator, name: []const u8, field_names: []const []const u8, comment: ?[]const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "name", "type": "[]const u8" },
+        { "name": "field_names", "type": "[]const []const u8" },
+        { "name": "comment", "type": "?[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 69
     },
     {
       "type": "fn_decl",
       "name": "normalizeType",
-      "match_hash": "d97c07e53a23308dca3de66cf277938cda4abd9f3dd65713d492afbbfb9fc3ca",
+      "match_hash": "a07ca07b9ca31129d059809541387353552b826b119391b51fc2304ac45853aa",
       "signature": "fn normalizeType(type_str: []const u8) -> []const u8",
       "params": [
         { "name": "type_str", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 70
+      "line": 93
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 76
+      "line": 99
     },
     {
       "type": "test_decl",
       "name": "apiHash is deterministic",
       "is_pub": false,
-      "line": 82
+      "line": 105
     },
     {
       "type": "test_decl",
       "name": "apiHash differs for different names",
       "is_pub": false,
-      "line": 96
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "structHash differs when field names change",
       "is_pub": false,
-      "line": 107
+      "line": 130
     },
     {
       "type": "test_decl",
       "name": "structHash same fields produce same hash",
       "is_pub": false,
-      "line": 127
+      "line": 150
     },
     {
       "type": "test_decl",
-      "name": "computeMemberHash without comment produces hash of signature",
+      "name": "computeMemberHash without comment uses apiHash format",
       "is_pub": false,
-      "line": 138
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "computeMemberHash with comment differs from signature-only hash",
       "is_pub": false,
-      "line": 155
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "computeMemberHash same comment produces same hash",
       "is_pub": false,
-      "line": 179
+      "line": 203
     },
     {
       "type": "test_decl",
       "name": "computeMemberHash different comments produce different hashes",
       "is_pub": false,
-      "line": 202
+      "line": 226
     }
   ]
 }

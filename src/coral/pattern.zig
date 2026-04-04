@@ -8,16 +8,14 @@ pub const PatternType = enum {
     GoF,
 };
 
-/// A detected design pattern with name, type, and optional skill reference.
+/// Defines a pattern structure for Zig with fixed-size buffers, managed via init/deinit; encapsulates invariants and ownership.
 pub const Pattern = struct {
     name: []const u8,
     type: PatternType,
     ref: ?[]const u8 = null,
 };
 
-/// Detect design patterns from a Zig AST node's source text.
-/// Uses text-based heuristics from common.pattern module.
-/// Both the tree and the node index are used to extract source text for inspection.
+/// Scans a Zig AST node for detected patterns using an allocator and returns a slice of Pattern objects.
 pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) ![]Pattern {
     var patterns: std.ArrayList(Pattern) = .{};
     errdefer {

@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "ErrorGroup",
-      "match_hash": "9b667b3ce7b5f63876d1d6e8428724c578266bb3521f188a9c1a40ed4df3fffc",
+      "match_hash": "3b0e596972216300fb8cbb173cd9df81223bb3fba8db198ec9d6e5c3fecf6beb",
       "signature": "keyword_struct ErrorGroup { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "1b83e274d9a184c38d808affc31de80841b4c62088667bfd9317b3cdd3891fdd",
+          "match_hash": "c156fce9e461b4dcbadadc944b002040d13a042d7d6e07b64989962c6f79ad55",
           "signature": "fn init(allocator: std.mem.Allocator, pool: *std.Thread.Pool, ctx: *Context) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "31a546e348bdec971ae231a6d0f043120455f7f49c91bbd2000c6af50e129e58",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -43,7 +43,7 @@
     ,    {
           "type": "fn_decl",
           "name": "go",
-          "match_hash": "854c8a939096d2fe4ed3c37453e12c576985456b93550dc06670b227bbb4dc5a",
+          "match_hash": "6ca06d940bfbd5efd0907fa358de34c41c2112469efadf1184f56fed0950dec6",
           "signature": "fn go(self: *Self, unit: AnyWorkUnit) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -56,7 +56,7 @@
     ,    {
           "type": "fn_decl",
           "name": "wait",
-          "match_hash": "b8f23e88d9f612602549471a07cf80739b291dd95022695f6ef911d72594cd02",
+          "match_hash": "2b90f72201ff1e963af4b1121750c6b5f4bebf73fee83edcf9339af1ae305a16",
           "signature": "fn wait(self: *Self) -> ?anyerror",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_decl",
           "name": "waitAll",
-          "match_hash": "3472aff982aa8c8e5e3bb63b89e371a0f19bd7227f8cae462ad955e65dfb1836",
+          "match_hash": "e02f7684672864f9033e386231f95b1a05b8f7bec839b4b01958b7adb3f2b4cd",
           "signature": "fn waitAll(self: *Self) -> []anyerror",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -80,7 +80,7 @@
     ,    {
           "type": "fn_private",
           "name": "recordError",
-          "match_hash": "2d7330a957dfdb96f217c43b27a7f18f980cec699915ea2cccd069ee5a8d89d0",
+          "match_hash": "bd8da7abbc0ee192964d982316854ffdb6f3efdd99f32cae6854d496a77b5952",
           "signature": "fn recordError(self: *Self, e: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -96,14 +96,14 @@
     {
       "type": "struct",
       "name": "CountOrFailHandler",
-      "match_hash": "440824bdababd90222eaf7b41e8e7955de588962151ef5b9c9dd7c97287e2c4e",
+      "match_hash": "69d2739550402d462012557cfeeb297c717a92f747d70ae65be58f59add2ed4a",
       "signature": "keyword_struct CountOrFailHandler { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "79fd0939bae3a0647e8d06e8d05a991e5067b549328125680be4f810d032e0a9",
+          "match_hash": "a45ebaec53a519ac9c644a9aacad37dd26425f6210c12f47088bb625d8b397ea",
           "signature": "fn execute(self: *CountOrFailHandler, arena: std.mem.Allocator, ctx: *const Context) -> void",
           "params": [
             { "name": "self", "type": "*CountOrFailHandler" },

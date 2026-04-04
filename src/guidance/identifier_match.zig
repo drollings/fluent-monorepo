@@ -38,8 +38,7 @@ pub const IdentifierMatch = struct {
     file: ?[]const u8,
 };
 
-/// Detect whether `query` is an identifier pattern.
-/// Returns `null` when the query is natural language (has spaces, is a question, etc.).
+/// Checks a byte array for a specific identifier pattern and returns an IdentifierMatch result.
 pub fn detectIdentifierPattern(query: []const u8) ?IdentifierMatch {
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     if (trimmed.len == 0) return null;
@@ -92,13 +91,12 @@ pub fn detectIdentifierPattern(query: []const u8) ?IdentifierMatch {
     };
 }
 
-/// Return true when `s` starts with an uppercase ASCII letter.
-/// PascalCase convention: ContextNode, CSRGraph, Library, etc.
+/// Checks if a slice of bytes represents a valid PascalCase string, returning true if all uppercase letters are at the start.
 pub fn isPascalCase(s: []const u8) bool {
     return s.len > 0 and std.ascii.isUpper(s[0]);
 }
 
-/// Checks if a query matches an exact match, returning true or false accordingly.
+/// Checks if a query should be skipped based on exact match and LLMS synthesis rules.
 pub fn shouldSkipLLMSynthesis(query: []const u8, exact_match: bool) bool {
     // TIER 0: empty → list recent
     if (query.len == 0) return true;

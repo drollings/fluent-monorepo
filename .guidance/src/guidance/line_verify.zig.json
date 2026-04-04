@@ -11,14 +11,14 @@
     {
       "type": "struct",
       "name": "VerificationResult",
-      "match_hash": "6877bfc585bf63b1d23da0f0153cdbb01176635331ffb16f55873e2034b25df0",
+      "match_hash": "8613676447db122614e2f148cb9a9de1b947a27cb48827cce5724c0a62d824a1",
       "signature": "keyword_struct VerificationResult { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "e7398e381182d688314972bc4837b27153a1021176a409d68995226bc9407a05",
+          "match_hash": "93e311554ef7a57691fad8f377b045ddbe35c690b6391bc2c0c9ec429c2c14f9",
           "signature": "fn deinit(self: VerificationResult, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "VerificationResult" },
@@ -34,7 +34,7 @@
     {
       "type": "fn_decl",
       "name": "verifyMemberLine",
-      "match_hash": "149f5be67ecbb2ace4b467a95b137f5ddd1a733444a3f0b1719897de883c7bfd",
+      "match_hash": "7f60b1399005bd1544fdb505a4f29c99feddd6b6e4ea3fdffe870c56f304bcef",
       "signature": "fn verifyMemberLine(allocator: std.mem.Allocator, source: []const u8, member: types.Member) -> VerificationResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -43,12 +43,12 @@
       ],
       "returns": "VerificationResult",
       "is_pub": true,
-      "line": 27
+      "line": 24
     },
     {
       "type": "fn_private",
       "name": "lineMatchesDecl",
-      "match_hash": "cde5ecf2ac3035e4c314d3076c95b958a68e24359f740d4875d3da2b54910df3",
+      "match_hash": "ff52ca32214ed5484d4e2b125e7744ef8ceafacf78d942689e4e2441ab332246",
       "signature": "fn lineMatchesDecl(source: []const u8, line_no: u32, name: []const u8, member_type: types.MemberType) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -58,12 +58,12 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 52
+      "line": 48
     },
     {
       "type": "fn_private",
       "name": "declPatternInLine",
-      "match_hash": "7096c975c9540a791972f4db7c4057b2eb6e2a29306600d53968b4cb7f153150",
+      "match_hash": "4d89305b919a34e6f8e0b9836a265f031d25fdbb43b183111bb25812615100b0",
       "signature": "fn declPatternInLine(line: []const u8, name: []const u8, member_type: types.MemberType) -> bool",
       "params": [
         { "name": "line", "type": "[]const u8" },
@@ -72,12 +72,12 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 63
+      "line": 59
     },
     {
       "type": "fn_private",
       "name": "containsWord",
-      "match_hash": "aa9ffd3eb1096fdd9e3fae2ac1a088356aff7c6642c305bd270c2b0b4d8d89b2",
+      "match_hash": "200c84b4c83783e7e81c4c76c7c19f3f2bcc9995f845bb7aeef6f32410b30be0",
       "signature": "fn containsWord(line: []const u8, word: []const u8) -> bool",
       "params": [
         { "name": "line", "type": "[]const u8" },
@@ -85,24 +85,24 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 105
+      "line": 100
     },
     {
       "type": "fn_private",
       "name": "isIdentChar",
-      "match_hash": "5dfc5553ba75c2cfbcc874413249ab0c755744e83f25f595007fe3ef6932b7c9",
+      "match_hash": "f9d06ae151e2663e3aef0d6c6f3fc2d33388047f7b14632dcc244cd61549aa80",
       "signature": "fn isIdentChar(c: u8) -> bool",
       "params": [
         { "name": "c", "type": "u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 120
+      "line": 115
     },
     {
       "type": "fn_private",
       "name": "searchForDecl",
-      "match_hash": "774590af55f235c36c9f51ebc15490a883263be75402b43dc9709e8c50a0a436",
+      "match_hash": "5692b8794bd384429d9a4b673cde7f5a9ec292cfd36e586f4b74ab5b67ef9cc8",
       "signature": "fn searchForDecl(allocator: std.mem.Allocator, source: []const u8, name: []const u8, member_type: types.MemberType) -> ?VerificationResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -112,37 +112,37 @@
       ],
       "returns": "?VerificationResult",
       "is_pub": false,
-      "line": 126
+      "line": 120
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - correct line",
       "is_pub": false,
-      "line": 153
+      "line": 147
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - stale line number",
       "is_pub": false,
-      "line": 172
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - member not found",
       "is_pub": false,
-      "line": 194
+      "line": 188
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - struct detection",
       "is_pub": false,
-      "line": 210
+      "line": 204
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - no line recorded",
       "is_pub": false,
-      "line": 229
+      "line": 223
     }
   ]
 }

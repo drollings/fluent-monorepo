@@ -10,23 +10,23 @@
     {
       "type": "struct",
       "name": "LatencyHistogram",
-      "match_hash": "51d063c5a4cb70941f88efd03150653d87d5e30b7399074eaed68cdd085eb191",
+      "match_hash": "af726d461d8c14089810ba2c0728130ee789be64207070431abea8fd6ead1851",
       "signature": "keyword_struct LatencyHistogram { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "6e5a0260d97c4f2219e22ccd129c365ccc6d80e790199f9375c9213a76fe39a6",
+          "match_hash": "baa3e7bd5fda181bc057a977ce16d0dfde0429f2cbb29cce84bcf7a5be897797",
           "signature": "fn init() -> LatencyHistogram",
           "returns": "LatencyHistogram",
           "is_pub": true,
-          "line": 37
+          "line": 36
         }
     ,    {
           "type": "fn_decl",
           "name": "observe",
-          "match_hash": "71d81e2725e2360e172ccc59957c8162077eb9ba9fe91b6b83a7628a5370f92c",
+          "match_hash": "154c43556fe3fb45c18bdb26b01737d4a95551d2d3973f055d9fce385188d5c9",
           "signature": "fn observe(self: *LatencyHistogram, latency_ms: u64) -> void",
           "params": [
             { "name": "self", "type": "*LatencyHistogram" },
@@ -34,12 +34,12 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 44
+          "line": 43
         }
     ,    {
           "type": "fn_decl",
           "name": "cumulativeBucket",
-          "match_hash": "0d252a674e881e4280fd512fd812c6a71032efe9b44430b253a942f8861ab6ec",
+          "match_hash": "c7a6e5f6cf9aa5c4a3e27a0f5515a6e0326039c8aed318f0ceaa9f3024fbeb51",
           "signature": "fn cumulativeBucket(self: *const LatencyHistogram, idx: usize) -> u64",
           "params": [
             { "name": "self", "type": "*const LatencyHistogram" },
@@ -47,12 +47,12 @@
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 60
+          "line": 59
         }
     ,    {
           "type": "fn_decl",
           "name": "estimatePercentile",
-          "match_hash": "db5ada9d3127e4e477482a1c6d80af96ff5726a28a1b70d79cd164e91d6f0f8f",
+          "match_hash": "ad35ccf2c042ac9a6244dc9ec09946d63dc3d4f3ce2e287ca602ea9e35e7bc13",
           "signature": "fn estimatePercentile(self: *const LatencyHistogram, p: f64) -> u64",
           "params": [
             { "name": "self", "type": "*const LatencyHistogram" },
@@ -60,106 +60,106 @@
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 72
+          "line": 71
         }
       ],
-      "line": 27
+      "line": 26
     },
     {
       "type": "struct",
       "name": "CoralMetrics",
-      "match_hash": "02b76d030885f789de5b94a1846c366834de62f59bc9ad5e7dd1750d64a410b3",
+      "match_hash": "f33da2d120da5897c0a4c5a0a34d14bdf4aa00e859d20d93dcc787f4ac29f1db",
       "signature": "keyword_struct CoralMetrics { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "l1Hits",
-          "match_hash": "1dd46a868b3a57f07dfc0c644f41296fe82a699fd4d9ed271b3b4ace52a12171",
+          "match_hash": "bb5022aac70f71998e14413a3e39ae03ecea80865ca0ff038604a8e8646d71cb",
           "signature": "fn l1Hits(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 100
+          "line": 99
         }
     ,    {
           "type": "fn_decl",
           "name": "l2Hits",
-          "match_hash": "7871583ad308217e250e84cd6dad50b10378ba6fae405e80a5c06cd2ebba90a1",
+          "match_hash": "dea98a906bd3d62c6846514fcbd2272cdf4facb4fc164498551c2bf9fc8f1af6",
           "signature": "fn l2Hits(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 103
+          "line": 102
         }
     ,    {
           "type": "fn_decl",
           "name": "l3Hits",
-          "match_hash": "0bd20dfe7fefc128cb49e860ebf7ec444e6880f9f70c28c75e786c423506ff7c",
+          "match_hash": "41e01d36baab810b110de9659b796fb636c2a0645d5113e70427f91d8b00f640",
           "signature": "fn l3Hits(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 106
+          "line": 105
         }
     ,    {
           "type": "fn_decl",
           "name": "l4Hits",
-          "match_hash": "e2654f2daadf44896cc2e4b3be133f78ff8036aad13f112cbb4ca6f3f2fc836e",
+          "match_hash": "1852792286955a9d2609189fac1577205d26054586d8744cfcf5e8445b73a819",
           "signature": "fn l4Hits(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 109
+          "line": 108
         }
     ,    {
           "type": "fn_decl",
           "name": "l5Hits",
-          "match_hash": "9131a86631b1dbc7e3097f0e92196a40fdd7034ab9f35fa88c1492bc021bb8a4",
+          "match_hash": "8ccf131f5213bada4e2e1549372392ba4882107d4b9dba885df235f73d2685b7",
           "signature": "fn l5Hits(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 112
+          "line": 111
         }
     ,    {
           "type": "fn_decl",
           "name": "misses",
-          "match_hash": "7a6b1125d9dbfc4772a80f32ef13c6c3cd331fb3a4d42197cb1591f1c4a4a975",
+          "match_hash": "0c16a69da08cc052fb871bdeb3321b12224d3dc82128765202cc0a8255a88433",
           "signature": "fn misses(self: *const CoralMetrics) -> u64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 115
+          "line": 114
         }
     ,    {
           "type": "fn_decl",
           "name": "deterministicRate",
-          "match_hash": "3a125e33fde646f63500f3dae059a03babaa626a96ed39484ad2eb5388789556",
+          "match_hash": "531995e9d1e8226bcf53bea2ae6eb240286543ab390953b9c0c1c65ae13cad72",
           "signature": "fn deterministicRate(self: *const CoralMetrics) -> f64",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" }
           ],
           "returns": "f64",
           "is_pub": true,
-          "line": 121
+          "line": 120
         }
     ,    {
           "type": "fn_decl",
           "name": "formatPrometheus",
-          "match_hash": "c74a8827a1ce859256c63cc7a6060054fa229415aa6e7a7add8985746ee1e172",
+          "match_hash": "ed290092e2674b96686e39afd20c66a92a1d751273d2046f5ce6d991159e6bb9",
           "signature": "fn formatPrometheus(self: *const CoralMetrics, writer) -> void",
           "params": [
             { "name": "self", "type": "*const CoralMetrics" },
@@ -167,76 +167,76 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 137
+          "line": 136
         }
       ],
-      "line": 91
+      "line": 90
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: observe increments count and sum",
       "is_pub": false,
-      "line": 183
+      "line": 182
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: observe routes to correct bucket",
       "is_pub": false,
-      "line": 191
+      "line": 190
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: large value goes to +Inf bucket",
       "is_pub": false,
-      "line": 201
+      "line": 200
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: cumulative bucket includes earlier buckets",
       "is_pub": false,
-      "line": 207
+      "line": 206
     },
     {
       "type": "test_decl",
       "name": "CoralMetrics: deterministicRate zero when empty",
       "is_pub": false,
-      "line": 215
+      "line": 214
     },
     {
       "type": "test_decl",
       "name": "CoralMetrics: deterministicRate 1.0 when only L1 hits",
       "is_pub": false,
-      "line": 220
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "CoralMetrics: deterministicRate 0.5 when equal L1 and L5",
       "is_pub": false,
-      "line": 227
+      "line": 226
     },
     {
       "type": "test_decl",
       "name": "CoralMetrics: formatPrometheus emits deterministic_rate line",
       "is_pub": false,
-      "line": 234
+      "line": 233
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: estimatePercentile returns 0 when empty",
       "is_pub": false,
-      "line": 247
+      "line": 246
     },
     {
       "type": "test_decl",
       "name": "LatencyHistogram: estimatePercentile p50 with known observations",
       "is_pub": false,
-      "line": 252
+      "line": 251
     },
     {
       "type": "test_decl",
       "name": "CoralMetrics: thread-safe concurrent observe",
       "is_pub": false,
-      "line": 265
+      "line": 264
     }
   ]
 }

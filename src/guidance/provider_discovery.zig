@@ -16,7 +16,7 @@
 const std = @import("std");
 const common = @import("common");
 
-/// A discovered external language provider.
+/// Manages provider discovery structures with fixed-size buffers; owned by the provider; ensures consistent state across initialization and cleanup.
 pub const Provider = struct {
     /// Human-readable language name derived from the extension (e.g. "py", "rs").
     name: []const u8,
@@ -32,13 +32,7 @@ pub const Provider = struct {
     }
 };
 
-/// Discover the provider binary for a given file extension.
-///
-/// `workspace` is the absolute path to the project root.
-/// `ext` must include the leading dot (e.g. ".py").
-///
-/// Returns null when no provider binary is found on disk.
-/// On success the returned Provider owns its string fields; call deinit().
+/// Determines the provider to be discovered using the provided allocator and workspace data.
 pub fn discoverProvider(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -76,14 +70,7 @@ pub fn discoverProvider(
     return null;
 }
 
-/// Invoke a provider to process a single source file.
-///
-/// Calls: `{provider.binary} sync --file {src_abs} --output {json_dir}`
-///
-/// Extra arguments (e.g. `--infill`) are appended after the fixed flags.
-/// Stdout and stderr are inherited so provider output is visible to the user.
-///
-/// Returns true on success (exit code 0), false on non-zero exit.
+/// Handles invocation of provider files with allocation, source data, directory, and arguments.
 pub fn invokeProviderFile(
     allocator: std.mem.Allocator,
     provider: Provider,
@@ -105,12 +92,7 @@ pub fn invokeProviderFile(
     return runCommand(allocator, argv.items);
 }
 
-/// Invoke a provider to scan an entire source directory.
-///
-/// Calls: `{provider.binary} sync --scan {scan_dir} --output {json_dir}`
-///
-/// Extra arguments (e.g. `--infill`) are appended after the fixed flags.
-/// Returns true on success (exit code 0), false on non-zero exit.
+/// Executes a provider scan using an allocator, directory paths, and JSON options, returning a boolean result.
 pub fn invokeProviderScan(
     allocator: std.mem.Allocator,
     provider: Provider,
@@ -136,7 +118,7 @@ pub fn invokeProviderScan(
 // File system helpers
 // ---------------------------------------------------------------------------
 
-/// Returns true when `path` is an accessible executable file.
+/// Checks if a given path is a valid executable file format, returning true or false.
 fn isExecutable(path: []const u8) bool {
     // std.fs.accessAbsolute with execute mode (.read_only is available; we
     // check for file existence + non-directory as a best-effort approach,
@@ -149,9 +131,7 @@ fn isExecutable(path: []const u8) bool {
     return stat.kind == .file;
 }
 
-/// Search PATH for `binary_name`.
-/// Returns an owned absolute path string on success; caller must free.
-/// Returns null when not found.
+/// Searching for a binary path in an allocator using a binary name string.
 fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) !?[]const u8 {
     const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch return null;
     defer allocator.free(path_env);

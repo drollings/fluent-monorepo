@@ -24,10 +24,7 @@
 const std = @import("std");
 const Context = @import("context.zig").Context;
 
-/// Type-erased work unit.  Produced by WorkUnit(T).toAny().
-///
-/// Single-owner: one thread creates it, one thread executes (or discards) it.
-/// Size: 24 bytes on 64-bit systems (three pointers).
+/// Manages concurrent work units with fixed buffers; owns lifecycle; ensures safe access across threads.
 pub const AnyWorkUnit = struct {
     ptr: *anyopaque,
     /// Execute the work, deinit the arena, free the struct, return any error.
@@ -43,15 +40,7 @@ comptime {
     std.debug.assert(@sizeOf(AnyWorkUnit) == 3 * @sizeOf(*anyopaque));
 }
 
-/// Typed concrete work unit.
-///
-/// `Handler` must expose:
-///   `fn execute(*Handler, std.mem.Allocator, *const Context) anyerror!void`
-///
-/// Call `WorkUnit(Handler).init(allocator, handler, ctx)` to heap-allocate the
-/// unit.  The returned `*WorkUnit` is valid until `toAny().runFn` or
-/// `toAny().deinitFn` is called — after that the memory is freed and the
-/// pointer is dangling.
+/// Transforms a given handler into its work unit representation, handling any type passed.
 pub fn WorkUnit(comptime Handler: type) type {
     return struct {
         const Self = @This();
@@ -120,7 +109,7 @@ pub fn WorkUnit(comptime Handler: type) type {
 
 const testing = std.testing;
 
-/// Minimal handler for testing: writes to an out-pointer, optionally errors.
+/// Manages concurrent test execution; owns test setup and teardown; ensures isolation between work units.
 const TestHandler = struct {
     executed: *bool,
     should_error: bool = false,
@@ -242,3 +231,6 @@ test "WorkUnit: thread transfer — create on A, run on B" {
     thread.join();
     try testing.expect(executed);
 }
+
+
+

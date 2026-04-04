@@ -38,7 +38,7 @@ pub const DelegationConfig = struct {
     inherit_memory: bool = false,
 };
 
-/// Represents a delegation outcome with ownership and invariants; managed by the struct itself.
+/// Represents a delegation outcome with ownership and invariants; manages state internally.
 pub const DelegationResult = struct {
     /// The child agent's final response text.
     response: []const u8,

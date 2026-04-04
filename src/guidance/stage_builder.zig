@@ -19,8 +19,7 @@ const types = @import("types.zig");
 // StageBuilder VTable
 // =============================================================================
 
-/// Polymorphic interface for typed, pre-allocated stage production.
-/// Two pointers, no inheritance — fluent-wvr pattern.
+/// Manages stage transitions with a fixed-size buffer pool; owns lifecycle; not thread-safe.
 pub const StageBuilder = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -85,7 +84,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
     workspace: []const u8,
 };
 
-/// Counts valid stage indices in a Zig source file, returning the total count.
+/// Counts valid stage identifiers in a Zig source file, returning the total count.
 fn gjsbStageCount(ptr: *anyopaque) usize {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     const doc = self.doc;
@@ -182,7 +181,7 @@ fn gjsbIsRelevant(ptr: *anyopaque, query_tokens: []const []const u8) bool {
     return false;
 }
 
-/// Cleans up resources by deallocating the provided pointer in Zig.
+/// Cleans up Zig memory by deallocating the provided pointer.
 fn gjsbDeinit(ptr: *anyopaque) void {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     self.allocator.destroy(self);
@@ -195,7 +194,7 @@ const guidance_json_stage_vtable: StageBuilder.VTable = .{
     .deinit = gjsbDeinit,
 };
 
-/// Builder pattern: value-copy, terminal `.build()` call.
+/// Manages GuidanceJsonStageBuilderFactory instances, ensuring proper ownership and lifecycle; centralizes stage construction logic.
 pub const GuidanceJsonStageBuilderFactory = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,
@@ -216,8 +215,7 @@ pub const GuidanceJsonStageBuilderFactory = struct {
 // Dispatcher: run a list of StageBuilders and collect relevant stages
 // =============================================================================
 
-/// Collect stages from all relevant builders for the given query tokens.
-/// Returns an owned slice; caller must free with types.freeStages() + allocator.free().
+/// Collects relevant Zig stage structures from allocator and builders, returning a slice of stages.
 pub fn collectRelevantStages(
     allocator: std.mem.Allocator,
     builders: []const StageBuilder,

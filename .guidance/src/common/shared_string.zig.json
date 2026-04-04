@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "SharedString",
-      "match_hash": "2de7a28ffa57c1d63206f9386b1590cce765d64a554c43fc94f41a7ae2779351",
+      "match_hash": "938045179c1f0a6a4c1549b43c5260dc89f7e9b081ff4242d26bcca92c7c58ce",
       "signature": "keyword_struct SharedString { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -22,7 +22,7 @@
         {
           "type": "fn_private",
           "name": "create",
-          "match_hash": "a44c8142ca5dce2dfafa4288abdbbd358e29bd0e5af0b03270e8aecc7a9c6ad8",
+          "match_hash": "c00515af304a424b6f56823640a630054ddf5ea67c0b7b0ced5103d231dcc0c6",
           "signature": "fn create(allocator: std.mem.Allocator, str: []const u8) -> *SharedString",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -38,7 +38,7 @@
     ,    {
           "type": "fn_private",
           "name": "destroy",
-          "match_hash": "a90750efeda8010d8ee30580d507d691a247f63eca3b7cda4afd6270b881b37e",
+          "match_hash": "28cc59f0a867f4679f2dd2d484244abe24da20e84802b817d48b7f1b8cbaf624",
           "signature": "fn destroy(self: *SharedString, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*SharedString" },
@@ -51,7 +51,7 @@
     ,    {
           "type": "fn_private",
           "name": "acquire",
-          "match_hash": "d99c30715d44058390008e78f9a7685b68f32845ffc6718b69d993c743b5a8c3",
+          "match_hash": "59ec5e5e58be68273586f7b6cb80e5d31584712d02b10991decadfe013fc4eb9",
           "signature": "fn acquire(self: *SharedString) -> void",
           "params": [
             { "name": "self", "type": "*SharedString" }
@@ -63,7 +63,7 @@
     ,    {
           "type": "fn_private",
           "name": "release",
-          "match_hash": "a9e3fb1b49202dc17b1ff8a275b752472946edfd27683701349bda39a8a369d8",
+          "match_hash": "b8574a1df9fc862e08294aa34fe1331a4874b7b015b0dbf0fb4a4f2d2c548d46",
           "signature": "fn release(self: *SharedString, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*SharedString" },
@@ -76,7 +76,7 @@
     ,    {
           "type": "fn_decl",
           "name": "slice",
-          "match_hash": "5d77e7b759c165d1dc20af06dac89d02b36c32efed3bbc3c31e56ea68f17638a",
+          "match_hash": "036808f946c2ef8da9f89b3b39130cffa2b8aa7f7de63e26a0bf47d595552177",
           "signature": "fn slice(self: *const SharedString) -> []const u8",
           "params": [
             { "name": "self", "type": "*const SharedString" }

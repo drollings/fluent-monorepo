@@ -35,20 +35,13 @@ pub const ShellParseError = error{
 /// Shell metacharacters that enable injection when executing via a shell.
 const METACHARACTERS = "|&;<>`$(){}";
 
-/// Checks if a byte is a metacharacter, returning true for special symbols.
+/// Checks if a byte is a metacharacter, returning true for special characters.
 fn isMetachar(c: u8) bool {
     return std.mem.indexOfScalar(u8, METACHARACTERS, c) != null or
         c == '\n' or c == '\r';
 }
 
-/// Parse a simple command string into an argv slice.
-///
-/// Returns an allocator-owned `[][]const u8`.  Each element is an
-/// allocator-owned slice.  On error all partially-built allocations are freed.
-///
-/// The caller must free via:
-///   for (argv) |arg| allocator.free(arg);
-///   allocator.free(argv);
+/// Interprets a Zig command string, validating input and returning parsed components.
 pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseError![][]const u8 {
     var args: std.ArrayList([]const u8) = .{};
     errdefer {
@@ -308,3 +301,5 @@ test "parseCommand quoted argument concatenation" {
     try std.testing.expectEqual(@as(usize, 1), args.len);
     try std.testing.expectEqualStrings("foobar", args[0]);
 }
+
+

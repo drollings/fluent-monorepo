@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *
     };
 }
 
-/// Like `init`, but accepts explicit `ResolverOptions`.
+/// Initializes a dependency resolver with allocation, registry, and options parameters.
 pub fn initWithOptions(
     allocator: std.mem.Allocator,
     registry: *TargetRegistry,
@@ -55,7 +55,7 @@ pub const ResolvedBuild = struct {
     }
 };
 
-/// Simple topological sort over all transitive concrete dependencies.
+/// Resolves dependencies for a Zig project, returning a resolved build configuration.
 pub fn resolve(self: *DependencyResolver, target_names: []const []const u8) !ResolvedBuild {
     var all_needed = std.AutoHashMap(usize, *Target).init(self.allocator);
     defer all_needed.deinit();
@@ -68,7 +68,7 @@ pub fn resolve(self: *DependencyResolver, target_names: []const []const u8) !Res
     return self.topoSort(&all_needed);
 }
 
-/// Abstract-aware resolution: resolves abstract dependencies via provider selection.
+/// Resolves abstract dependencies for a Zig build, returning a resolved build configuration.
 pub fn resolveAbstractDependencies(
     self: *DependencyResolver,
     target_names: []const []const u8,
@@ -88,7 +88,7 @@ pub fn resolveAbstractDependencies(
     return self.topoSort(&all_needed);
 }
 
-/// Kahn's topological sort on the collected target set.
+/// Converts a dependency graph into a topologically sorted build order using the provided targets.
 fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Target)) !ResolvedBuild {
     const total = all_needed.count();
 
@@ -817,3 +817,16 @@ test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     }
     try testing.expectEqual(.ok, gpa.deinit());
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

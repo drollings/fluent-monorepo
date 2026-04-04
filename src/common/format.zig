@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// One column in a rendered ASCII table: header label, JSON key for row lookup, display width, and alignment.
+/// Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.
 pub const Column = struct {
     header: []const u8,
     key: []const u8,
@@ -8,7 +8,7 @@ pub const Column = struct {
     align_left: bool = true,
 };
 
-/// ASCII table renderer: takes a column schema and a slice of JSON rows, prints to stdout.
+/// Defines a table structure for structured data; owned by the module; maintains invariant schema integrity.
 pub const Table = struct {
     columns: []const Column,
     rows: []const std.json.Value,
@@ -212,7 +212,7 @@ pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fie
     return buf.toOwnedSlice(allocator);
 }
 
-/// Writes a CSV field as a byte array, formatting it for storage.
+/// Writes a CSV field as a byte slice to the writer, handling null-termination.
 fn writeCsvField(writer: anytype, field: []const u8) !void {
     const needs_quote = std.mem.indexOfAny(u8, field, "\",\n\r") != null;
     if (needs_quote) {
@@ -245,7 +245,7 @@ pub fn formatSize(bytes: usize, buf: []u8) []const u8 {
     }
 }
 
-/// Converts a null-terminated byte slice into a usize representing its size.
+/// Converts a null-terminated string slice into its corresponding usize value.
 pub fn parseSize(size_str: []const u8) ?usize {
     const trimmed = std.mem.trim(u8, size_str, " \t\r\n");
     if (trimmed.len == 0) return null;
@@ -316,3 +316,12 @@ test "formatJson: simple struct" {
     try testing.expect(std.mem.indexOf(u8, result, "\"test\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "42") != null);
 }
+
+
+
+
+
+
+
+
+

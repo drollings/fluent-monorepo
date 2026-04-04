@@ -43,11 +43,7 @@ const std = @import("std");
 
 // ── AtomicRefCount ────────────────────────────────────────────────────────────
 
-/// Thread-safe atomic reference counter.
-///
-/// Starts at 1 (representing the initial owner).
-/// `inc()` increments on clone; `dec()` decrements on deinit and returns
-/// `true` when the count reaches zero (caller must free).
+/// Tracks reference counts atomically; manages ownership with strict invariants; ensures safe concurrent access.
 const AtomicRefCount = struct {
     count: std.atomic.Value(usize),
 
@@ -74,10 +70,7 @@ const AtomicRefCount = struct {
 
 // ── RefCounted(T) ─────────────────────────────────────────────────────────────
 
-/// Reference-counted wrapper for a value of type `T`.
-///
-/// The value and its reference count are heap-allocated together.
-/// All clones share the same heap allocation.
+/// Converts a type to a reference-counted Zig type, returning the new type with a reference count.
 pub fn RefCounted(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -225,3 +218,5 @@ test "AtomicRefCount: inc then dec to zero returns true" {
     try testing.expect(!rc.dec()); // → 1, not zero
     try testing.expect(rc.dec()); // → 0, returns true
 }
+
+

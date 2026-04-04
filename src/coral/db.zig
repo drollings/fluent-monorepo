@@ -35,17 +35,15 @@ const BUSY_TIMEOUT_MS: c_int = 5000;
 // §3.5 NodeId — typed enum wrapping i64 for compile-time ID safety
 // ---------------------------------------------------------------------------
 
-/// Typed handle for a ContextNode's primary key.
-/// Using an enum prevents accidental cross-assignment with SessionId or TargetId.
-/// Conversion: nodeIdFromInt() / nodeIdToInt()
+/// Represents a unique identifier for database nodes; managed centrally with ownership model; ensures stable references.
 pub const NodeId = enum(i64) { _ };
 
-/// Cast an i64 SQLite row id to a NodeId.
+/// Converts an integer to a unique node identifier using Zig's encoding logic.
 pub fn nodeIdFromInt(i: i64) NodeId {
     return @enumFromInt(i);
 }
 
-/// Extract the underlying i64 from a NodeId for SQLite binding.
+/// Converts a NodeId string to its corresponding integer ID.
 pub fn nodeIdToInt(id: NodeId) i64 {
     return @intFromEnum(id);
 }
@@ -174,8 +172,7 @@ pub const ContextNode = struct {
 // `.\n`) within the budget.  If no sentence boundary exists within 80% of
 // the budget it falls back to word-boundary truncation.
 
-/// Generate a truncated summary of `text` at `max_chars`, cutting at the
-/// nearest sentence boundary.  Returns an allocator-owned string.
+/// Truncates a text slice to a specified length, ensuring it fits within memory constraints.
 pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
     if (text.len <= max_chars) return allocator.dupe(u8, text);
 
@@ -200,11 +197,7 @@ pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_ch
     return allocator.dupe(u8, text[0..max_chars]);
 }
 
-/// Generate LOD levels 1-3 from `full_text` by deterministic truncation.
-///
-/// Returns an array of 6 slices; slots 0, 4, 5 are empty strings (callers
-/// fill them separately).  Slots 1-3 are allocator-owned and must be freed.
-/// The `lod_owned` bitmask for the returned values is 0b00001110 (bits 1-3).
+/// Generates a list of LOD slices from the provided text using an allocator.
 pub fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) ![schema.LOD_COUNT][]const u8 {
     var result = [_][]const u8{ "", "", "", "", "", "" };
     if (full_text.len == 0) return result;
@@ -217,14 +210,14 @@ pub fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) ![
     return result;
 }
 
-/// KnnHit — result from in-Zig cosine similarity search.
+/// Represents a knowledge node structure for nearest neighbor hits; managed by owner; key invariant is consistent indexing.
 pub const KnnHit = struct {
     id: i64,
     name: []const u8,
     distance: f32, // cosine distance in [0, 2]; 0 = identical
 };
 
-/// EdgeType — logical classification for neighbor_of edges.
+/// Defines edge type constraints with fixed buffers; managed via ownership model; ensures consistent state across operations.
 pub const EdgeType = enum(i16) {
     depends_on = 0,
     provides_capability = 1,
@@ -259,7 +252,7 @@ pub const GraphNode = struct {
     graph_distance: u32,
 };
 
-/// Manages WasmTool functionality, owns runtime state, ensures consistent initialization; not thread-safe.
+/// Manages WasmTool functionality with fixed buffers; owned by the system; ensures consistent state across operations.
 pub const WasmTool = struct {
     id: i64 = 0,
     target_id: i64 = 0,
@@ -285,7 +278,7 @@ pub const StorageEngine = enum {
     sqlite, // persistent file
 };
 
-/// Library — unified database interface backed by SQLite.
+/// Manages database connections with fixed-size buffers; owned by the library; ensures consistent state across operations.
 pub const Library = struct {
     const Self = @This();
 
@@ -1431,10 +1424,7 @@ pub const Library = struct {
 // §3.3 HydrationPipeline — in-Zig KNN → persist neighbor edges
 // ---------------------------------------------------------------------------
 
-/// Implements the 3-step hydration pipeline:
-///   1. Accept embedding vector (from edge LLM via HTTP)
-///   2. KNN: fetch all embeddings from SQLite, compute cosine in Zig, take top-K
-///   3. Persist NEIGHBOR_OF edges into SQLite for graph traversal
+/// Manages hydration data flow with fixed buffers; owned by the module; ensures consistent state across operations.
 pub const HydrationPipeline = struct {
     const Self = @This();
 
@@ -1530,11 +1520,7 @@ pub const HydrationPipeline = struct {
 // §3.4 ContextPacker — LOD selection algorithm
 // ---------------------------------------------------------------------------
 
-/// Assigns LOD levels to nodes based on BFS hop distance from semantic center.
-/// distance 0 → lod0 (full text)
-/// distance 1 → lod1 (summary, falls back to lod0)
-/// distance 2 → lod2 (brief, falls back to lod4/name)
-/// distance 3+ → lod4 (name only)
+/// Manages context packing buffers, owns fixed-size allocations, not thread-safe.
 pub const ContextPacker = struct {
     const Self = @This();
 

@@ -69,8 +69,7 @@ pub fn generateFileHeader(
     return @as(?[]const u8, try out.toOwnedSlice(allocator));
 }
 
-/// Insert `header` at the very beginning of `source`.
-/// Returns the new source content (owned by caller).
+/// Inserts a file header into a Zig source file using provided allocator and data.
 pub fn insertFileHeader(
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -84,7 +83,7 @@ pub fn insertFileHeader(
     return out.toOwnedSlice(allocator);
 }
 
-/// Return true when the first non-empty line of `source` starts with `//!`.
+/// Checks if a Zig source contains a module documentation string and returns a boolean.
 pub fn sourceHasModuleDoc(source: []const u8) bool {
     var iter = std.mem.splitScalar(u8, source, '\n');
     while (iter.next()) |line| {

@@ -7,9 +7,7 @@
 ///   - Private IP ranges always blocked (SSRF prevention)
 const std = @import("std");
 
-/// Return true when `host` resolves to the loopback interface.
-/// Covers the common aliases: "localhost", "127.0.0.1", "::1", and the
-/// full 127.x.x.x range.
+/// Checks if a given host string matches a localhost pattern, returning true or false.
 pub fn isLocalHost(host: []const u8) bool {
     if (std.mem.eql(u8, host, "localhost")) return true;
     if (std.mem.eql(u8, host, "127.0.0.1")) return true;
@@ -59,8 +57,7 @@ pub fn isPrivateIp(host: []const u8) bool {
     return false;
 }
 
-/// Extract the host (without brackets, port, or path) from a URL that has
-/// already been validated to start with `http://` or `https://`.
+/// Extracts the host portion from a URL slice, returning a slice of bytes.
 fn extractHost(url: []const u8) []const u8 {
     const scheme_end = (std.mem.indexOf(u8, url, "://") orelse 0) + 3;
     const after = url[scheme_end..];
@@ -68,16 +65,7 @@ fn extractHost(url: []const u8) []const u8 {
     return after[0..host_end];
 }
 
-/// Validate that `url` is acceptable as an API endpoint.
-///
-/// Allowed:
-///   - `https://` URL to any *public* host
-///   - `http://` URL to localhost / 127.x.x.x / ::1
-///
-/// Rejected:
-///   - Empty or non-http(s) URLs         → `error.InvalidApiUrl`
-///   - Plain HTTP to non-localhost host  → `error.InsecureApiUrl`
-///   - Private / link-local IP ranges    → `error.SsrfBlockedUrl`
+/// Validates whether a given URL is HTTPS or local HTTP, returning a boolean result.
 pub fn validateHttpsOrLocalHttp(url: []const u8) !void {
     if (url.len == 0) return error.InvalidApiUrl;
     const is_https = std.mem.startsWith(u8, url, "https://");
@@ -191,3 +179,7 @@ test "validateHttpsOrLocalHttp allows public https" {
     try validateHttpsOrLocalHttp("https://api.openai.com/v1/embeddings");
     try validateHttpsOrLocalHttp("https://example.com/api");
 }
+
+
+
+

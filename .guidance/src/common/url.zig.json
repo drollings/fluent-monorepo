@@ -10,134 +10,134 @@
     {
       "type": "fn_decl",
       "name": "isLocalHost",
-      "match_hash": "d12c391f50883063f3382e61372876a778c2bcb977bbc1ac582f84a592b22200",
+      "match_hash": "a36db0874ebb04a4d05dbf3ea43036e6bc41f3b6695223904a927c8f1c768e21",
       "signature": "fn isLocalHost(host: []const u8) -> bool",
       "params": [
         { "name": "host", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 13
+      "line": 11
     },
     {
       "type": "fn_decl",
       "name": "isPrivateIp",
-      "match_hash": "323ca53f5899f43d8df925ad8aa7d7ee4ad2336639a374210a970c562603489e",
+      "match_hash": "9aa0d073ec7616a700860fcadc8c2b1518353aaac774ca6142d6d93615eab648",
       "signature": "fn isPrivateIp(host: []const u8) -> bool",
       "params": [
         { "name": "host", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 22
+      "line": 20
     },
     {
       "type": "fn_private",
       "name": "extractHost",
-      "match_hash": "2d345d024d6b848ca716f474b0eb1b82a66f779eb7615c42143701cbfe96ea93",
+      "match_hash": "604bc68597e7027a473964923afe7f5a5b8472a8696ae712428f05d8b7681b26",
       "signature": "fn extractHost(url: []const u8) -> []const u8",
       "params": [
         { "name": "url", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 64
+      "line": 61
     },
     {
       "type": "fn_decl",
       "name": "validateHttpsOrLocalHttp",
-      "match_hash": "8f87f3aa049f96389f4164f1ee8fa3de02b56b28388f89a6747045969953b792",
+      "match_hash": "5af6eb860b627190b5af6322603d2cf1d035279ccb35ea1284f94593e2a8bd6f",
       "signature": "fn validateHttpsOrLocalHttp(url: []const u8) -> void",
       "params": [
         { "name": "url", "type": "[]const u8" }
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 81
+      "line": 69
     },
     {
       "type": "test_decl",
       "name": "isLocalHost recognises loopback aliases",
       "is_pub": false,
-      "line": 102
+      "line": 90
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp accepts https",
       "is_pub": false,
-      "line": 111
+      "line": 99
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp accepts local http",
       "is_pub": false,
-      "line": 115
+      "line": 103
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects empty",
       "is_pub": false,
-      "line": 120
+      "line": 108
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects bare hostname",
       "is_pub": false,
-      "line": 124
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp rejects remote http",
       "is_pub": false,
-      "line": 128
+      "line": 116
     },
     {
       "type": "test_decl",
       "name": "isPrivateIp detects private ranges",
       "is_pub": false,
-      "line": 132
+      "line": 120
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via http",
       "is_pub": false,
-      "line": 147
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via https",
       "is_pub": false,
-      "line": 156
+      "line": 144
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp blocks private class A via http",
       "is_pub": false,
-      "line": 163
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp blocks private class A via https",
       "is_pub": false,
-      "line": 171
+      "line": 159
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp blocks private class C via https",
       "is_pub": false,
-      "line": 178
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp allows localhost http",
       "is_pub": false,
-      "line": 185
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "validateHttpsOrLocalHttp allows public https",
       "is_pub": false,
-      "line": 190
+      "line": 178
     }
   ]
 }

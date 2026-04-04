@@ -25,7 +25,7 @@ pub const OntologyVersion = struct {
 /// Stub type — implementations TBD.
 pub const MigrateFn = *const fn (allocator: std.mem.Allocator) anyerror!void;
 
-/// Defines migration struct for ontology changes, manages invariants and lifecycle; owned by the system, not thread-safe.
+/// Tracks ontology migration events with fixed-size buffers; managed by owner; key invariant is data integrity.
 pub const OntologyMigration = struct {
     from_version: []const u8,
     to_version: []const u8,

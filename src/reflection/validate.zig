@@ -51,8 +51,7 @@ pub const ValidationError = error{
 
 // ── validateEnumValues ────────────────────────────────────────────────────────
 
-/// If `meta.enum_values` is set, verify that `value` matches one entry.
-/// Case-sensitive exact match.
+/// Validates enum values against a provided slice of u8, returning a ValidationError if any value is invalid.
 pub fn validateEnumValues(meta: FieldMeta, value: []const u8) ValidationError!void {
     const allowed = meta.enum_values orelse return;
     for (allowed) |candidate| {
@@ -63,7 +62,7 @@ pub fn validateEnumValues(meta: FieldMeta, value: []const u8) ValidationError!vo
 
 // ── validateCustom ────────────────────────────────────────────────────────────
 
-/// If `meta.custom_validate` is set, call it and return an error on false.
+/// Validates a Zig field against a Zig string, returning a ValidationError if mismatched.
 pub fn validateCustom(meta: FieldMeta, value: []const u8) ValidationError!void {
     const f = meta.custom_validate orelse return;
     if (!f(value)) return error.CustomValidationFailed;
@@ -130,8 +129,7 @@ pub fn validatePattern(meta: FieldMeta, value: []const u8) ValidationError!void 
 
 // ── validateValue ─────────────────────────────────────────────────────────────
 
-/// Run the full validation pipeline for a field: enum_values → custom → pattern.
-/// Returns the first error encountered, or void on success.
+/// Validates a Zig value slice against a field metadata constraint.
 pub fn validateValue(meta: FieldMeta, value: []const u8) ValidationError!void {
     try validateEnumValues(meta, value);
     try validateCustom(meta, value);

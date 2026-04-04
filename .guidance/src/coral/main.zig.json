@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "main",
-      "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
+      "match_hash": "48daee132649a48a80af94ea2ff5fbec8d2e7c9928f35b074e1f85c466bb87ca",
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
@@ -19,7 +19,7 @@
     {
       "type": "fn_private",
       "name": "printHelp",
-      "match_hash": "7d8bab1e5fad33bd27b72b476652eb393c442c974629deac5917eb9fff389c2b",
+      "match_hash": "e99b46f7739f9c78de776b4d6b82b7c50b6392b7af0da9002050de0006d89c7f",
       "signature": "fn printHelp(writer) -> void",
       "params": [
         { "name": "writer" }

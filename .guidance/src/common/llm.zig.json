@@ -12,7 +12,7 @@
     {
       "type": "fn_private",
       "name": "stripTagBlock",
-      "match_hash": "3e57dd9f7bb11d845bb2dd7293d6f7c8416d8db7f55d5b0797886249fd4589bb",
+      "match_hash": "7da96f2e53814cef01b2bb1888fe7b4a6a4424076ff1dd496750f9a4d549a2bf",
       "signature": "fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) -> []const u8",
       "params": [
         { "name": "text", "type": "[]const u8" },
@@ -21,24 +21,24 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 63
+      "line": 60
     },
     {
       "type": "fn_decl",
       "name": "stripThinkBlock",
-      "match_hash": "95c3b4915ceed297ceb2683ca261b7b201bd6e0717c5b83f76be630db83fb69c",
+      "match_hash": "6a0814d8a06f4ef1a50f18cae247bc5e90c9e067ebec2368a0a248c67edd4850",
       "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
       "params": [
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 77
+      "line": 73
     },
     {
       "type": "fn_decl",
       "name": "stripPreamble",
-      "match_hash": "7ecbcc31133f66a082623d0aeb90d6ae87b149b08ddccec4172c0d5a89c6c46e",
+      "match_hash": "12048cfc11b084b152aaf540d4fb342811a32560dddf0091479ce7ec7fc9ee77",
       "signature": "fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -46,163 +46,163 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 86
+      "line": 82
     },
     {
       "type": "fn_decl",
       "name": "isMalformedResponse",
-      "match_hash": "d2b67f6b51085730ec0c330ee3ea585383f76dd4f94abde904fb029e25c0415e",
+      "match_hash": "989a06c3376cb65285465d097f1f1fcd734f9ba75c0095a4baf4054ec202d2a3",
       "signature": "fn isMalformedResponse(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 124
+      "line": 119
     },
     {
       "type": "fn_decl",
       "name": "llmHasDanglingEnd",
-      "match_hash": "92d37f5c26c6a53f32c388786ae72e68df648da5d2f890d4623e8b891ef2126b",
+      "match_hash": "c597a2087a77280e02163b60bd2daeaf658296f4943aa62f6200b4dc8ca2fe1a",
       "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 142
+      "line": 137
     },
     {
       "type": "fn_decl",
       "name": "llmIsGenericSelfRef",
-      "match_hash": "6dd32d83420206cc0ee18bd436409d4d01264670b0e53017c573ad5866a152db",
+      "match_hash": "60c16287d49914f56d6ba280dd24142f2a3a875444f96a7f3726ed5467269850",
       "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 156
+      "line": 151
     },
     {
       "type": "fn_decl",
       "name": "llmIsOverlyGeneric",
-      "match_hash": "a8f6a14a4e9d45bf6ad4af01f523b34d4891d593d9c36b681cf8495d69ecea3f",
+      "match_hash": "242b9bb1b0e250642801e34b4d46340dba8a352a70126afcc9f20b5d60051a95",
       "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 169
+      "line": 164
     },
     {
       "type": "fn_decl",
       "name": "extractCommentTag",
-      "match_hash": "508f67edd5f7a3d015ed377c4883688cc9ec03e5c0329acc7ee0de9fb6e703ca",
+      "match_hash": "6d89fe5e23fc92483d478adf72a99b0cfeb0c1986a577bfb49e611bb6e77ac38",
       "signature": "fn extractCommentTag(text: []const u8) -> ?[]const u8",
       "params": [
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 185
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 262
+      "line": 256
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 273
+      "line": 267
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 277
+      "line": 271
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 281
+      "line": 275
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 297
+      "line": 291
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 302
+      "line": 296
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 307
+      "line": 301
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 311
+      "line": 305
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 317
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 323
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 330
+      "line": 324
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 336
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 343
+      "line": 337
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 350
+      "line": 344
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 355
+      "line": 349
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: chain-of-thought before tag is ignored",
       "is_pub": false,
-      "line": 359
+      "line": 353
     }
   ]
 }

@@ -30,7 +30,7 @@ const GuidanceDb = vector_db_mod.GuidanceDb;
 /// Manages RalphState instances with fixed-size buffers; encapsulates ownership and invariants.
 pub const RalphState = enum { read, ask, learn, plan, help, done };
 
-/// A single query record for adaptive learning.
+/// Manages query records with fixed-size buffers; owned by the caller; ensures consistent state across operations.
 pub const QueryRecord = struct {
     query: []const u8,
     intent: QueryIntent,
@@ -38,7 +38,7 @@ pub const QueryRecord = struct {
     had_synthesis: bool,
 };
 
-/// A discovered relationship between codebase entities.
+/// Manages relationships with fixed-size buffers; encapsulates ownership and invariants.
 pub const Relationship = struct {
     from: []const u8,
     to: []const u8,
@@ -46,8 +46,7 @@ pub const Relationship = struct {
     confidence: f32,
 };
 
-/// RALPH loop context. All strings are allocator-owned.
-/// Call deinit() when done; do NOT call if init() failed.
+/// Manages RalphContext state with fixed buffers; encapsulates ownership and lifecycle; not thread-safe.
 pub const RalphContext = struct {
     allocator: std.mem.Allocator,
     state: RalphState,
@@ -107,8 +106,7 @@ pub const RalphContext = struct {
 // State transitions
 // =============================================================================
 
-/// Advance the RALPH state machine with user input.
-/// Returns owned stages; caller frees with types.freeStages() + allocator.free().
+/// Processes user input to generate a Zig stage, handling context and allocator parameters.
 pub fn step(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -124,14 +122,14 @@ pub fn step(
     };
 }
 
-/// read: Discover codebase structure, then transition to .ask.
+/// Reads a raw C string into a Zig-safe slice, handling allocation and error safely.
 fn ralphRead(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) ![]types.Stage {
     ctx.map = codebase_map_mod.discoverStructure(allocator, ctx.workspace) catch null;
     ctx.state = .ask;
     return formatReadSummary(allocator, ctx);
 }
 
-/// ask: Route query through strategy dispatcher, then transition to .learn.
+/// Retrieves a stage from the RalphContext using provided allocator and query parameters.
 fn ralphAsk(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -150,7 +148,7 @@ fn ralphAsk(
     return stages;
 }
 
-/// learn: Record query in history, discover relationships, then transition to .plan.
+/// Processes a Zig code snippet to extract learning data from a context.
 fn ralphLearn(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -169,7 +167,7 @@ fn ralphLearn(
     return allocator.alloc(types.Stage, 0);
 }
 
-/// plan: Suggest next queries based on history gaps, then transition to .help.
+/// Transforms a RalphContext into a Zig slice with allocation and context handling.
 fn ralphPlan(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -179,7 +177,7 @@ fn ralphPlan(
     return formatPlanSuggestions(allocator, ctx);
 }
 
-/// help: Return a help summary, then transition to .ask for next query.
+/// Processes a Zig code snippet and returns a compiled stage.
 fn ralphHelp(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -193,7 +191,7 @@ fn ralphHelp(
 // Formatting helpers
 // =============================================================================
 
-/// Converts a raw C string into a Zig-safe slice, handling formatting and errors.
+/// Converts a raw C string into a Zig-safe slice for read operations.
 fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
@@ -337,9 +335,7 @@ fn classifyIntent(query: []const u8, strategies: []const QueryStrategy, db: *Gui
 // Session runner (single query, no interactive loop)
 // =============================================================================
 
-/// Run a single query through the RALPH loop and return combined stages.
-/// This is the batch-mode entry point for `guidance ralph <query>`.
-/// Returns owned stages; caller frees with types.freeStages() + allocator.free().
+/// Executes a database query using the provided allocator, database, workspace, and aliases, returning the execution stage.
 pub fn runQuery(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,

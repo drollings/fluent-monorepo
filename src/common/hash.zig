@@ -5,8 +5,7 @@
 /// guidance-domain types so they can be reused by any Zig tool.
 const std = @import("std");
 
-/// Compute SHA-256 over `data` and return the digest as a 64-char lowercase
-/// hex string.  Caller must free the returned slice.
+/// Converts input data into a SHA-256 hexadecimal string using an allocator.
 pub fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     var hash_out: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(data, &hash_out, .{});
@@ -16,12 +15,7 @@ pub fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     return result;
 }
 
-/// SHA-256-based 16-hex-char content+model hash.
-///
-/// Combines `model` and `content` so that the same content hashed under
-/// different embedding models produces distinct keys — preventing stale
-/// cache hits after a model swap.  Returns a fixed-size [16]u8 so the
-/// caller needs no allocator.
+/// Computes a 16-bit hash combining content and model inputs for integrity verification.
 pub fn contentHashWithModel(content: []const u8, model: []const u8) [16]u8 {
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     hasher.update(model);
@@ -43,7 +37,7 @@ pub fn contentHashWithModel(content: []const u8, model: []const u8) [16]u8 {
 // Multi-algorithm hashing — from coral/src/common/hash.zig
 // =============================================================================
 
-/// Supported hash algorithms.
+/// Defines a hash algorithm with fixed-size outputs; managed via ownership and not thread-safe.
 pub const HashAlgorithm = enum {
     sha256,
     sha512,
@@ -58,8 +52,7 @@ pub const HashAlgorithm = enum {
     }
 };
 
-/// Hash a file at `path` with the given algorithm.
-/// Returns an allocator-owned hex string; caller must free.
+/// Computes a hash for a file using the provided allocator and algorithm, returning the resulting hash value.
 pub fn hashFile(
     allocator: std.mem.Allocator,
     path: []const u8,
@@ -110,16 +103,14 @@ pub fn hashFile(
     }
 }
 
-/// Per-file result from `hashBatch`.
+/// Manages batch hash results with fixed-size buffers; owned by the caller; ensures consistent state across operations.
 pub const BatchHashResult = struct {
     path: []const u8,
     hash: ?[]const u8,
     error_msg: ?[]const u8,
 };
 
-/// Hash multiple files in sequence, collecting results.
-/// `progress_callback` is called with (completed, total) before each file.
-/// Returns an allocator-owned slice; caller must free each `.hash` and `.error_msg`, then free the slice.
+/// Processes multiple paths with a hashing algorithm, returning results via callback.
 pub fn hashBatch(
     allocator: std.mem.Allocator,
     paths: []const []const u8,
@@ -144,8 +135,7 @@ pub fn hashBatch(
     return results;
 }
 
-/// Hash an in-memory byte slice with the given algorithm.
-/// Returns an allocator-owned hex string; caller must free.
+/// Converts a byte slice into a Zig hash using the provided algorithm.
 pub fn hashString(
     allocator: std.mem.Allocator,
     data: []const u8,
@@ -173,22 +163,21 @@ pub fn hashString(
     }
 }
 
-/// Compute a Blake3 digest of `data` — no allocation, returns raw bytes.
+/// Computes a 32-byte Blake3 hash from the provided data slice.
 pub fn blake3Hash(data: []const u8) [32]u8 {
     var out: [32]u8 = undefined;
     std.crypto.hash.Blake3.hash(data, &out, .{});
     return out;
 }
 
-/// Compute a Blake3 digest of `data` and return it as an allocator-owned hex string.
+/// Converts input data into a hexadecimal string using the Blake3 algorithm.
 pub fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     const h = blake3Hash(data);
     const hex = std.fmt.bytesToHex(h, .lower);
     return allocator.dupe(u8, &hex);
 }
 
-/// Incremental streaming hash: accumulate data in multiple `update()` calls,
-/// then call `final()` to obtain the hex digest.
+/// Manages hash state with fixed-size buffers; owned by the caller; ensures consistent key-value mapping.
 pub const HashState = struct {
     algorithm: HashAlgorithm,
     sha256: ?std.crypto.hash.sha2.Sha256 = null,

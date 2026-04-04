@@ -19,12 +19,7 @@
 const std = @import("std");
 const AnyWorkUnit = @import("any_work_unit.zig").AnyWorkUnit;
 
-/// Fire-and-forget spawn.  Errors from the work unit are logged but not
-/// propagated.  `wg.finish()` is called by `spawnWg` after `runUnit` returns.
-///
-/// The work unit is executed by a thread in `pool`.  The caller must keep
-/// any state referenced by the unit alive until `wg.wait()` (or
-/// `pool.waitAndWork`) returns.
+/// Starts a new thread using the provided pool and waits for completion with the given wait group.
 pub fn spawn(
     pool: *std.Thread.Pool,
     wg: *std.Thread.WaitGroup,
@@ -33,7 +28,7 @@ pub fn spawn(
     pool.spawnWg(wg, runUnit, .{unit});
 }
 
-/// Processes a unit input and executes its logic, returning no value on success.
+/// Processes a unit input, executing logic and returning a result or error.
 fn runUnit(unit: AnyWorkUnit) void {
     unit.runFn(unit.ptr) catch |e| {
         if (e != error.Cancelled) {
@@ -140,3 +135,5 @@ test "spawn: GPA no leaks after pool.deinit" {
     spawn(&pool, &wg, unit.toAny());
     pool.waitAndWork(&wg);
 }
+
+

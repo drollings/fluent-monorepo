@@ -58,16 +58,7 @@ pub inline fn wrapIf(
 
 // ── retryCall ─────────────────────────────────────────────────────────────────
 
-/// Call `func(args...)` up to `max_attempts` times, retrying on any error.
-///
-/// Returns the result on the first success.  If all attempts fail, returns
-/// the error from the last attempt.
-///
-/// `max_attempts` must be >= 1.  `func` must return an error union.
-///
-/// Example:
-///
-///   const result = try retryCall(3, fetchData, .{url, allocator});
+/// Retries a Zig function up to max_attempts times, returning its type-safe result.
 pub fn retryCall(
     comptime max_attempts: usize,
     func: anytype,
@@ -253,3 +244,5 @@ test "wrapIf: build-mode selection compiles correctly" {
     // Just verify it compiles and returns a value (exact value depends on build mode).
     _ = handler(1);
 }
+
+

@@ -6,7 +6,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 
-/// Result of verifying a member's line number against the source file.
+/// Tracks verification outcomes with fixed-size buffers; managed by owner; key invariant is result integrity.
 pub const VerificationResult = struct {
     /// Line number is correct (declaration found at recorded position).
     verified: bool,
@@ -20,10 +20,7 @@ pub const VerificationResult = struct {
     }
 };
 
-/// Verify that `member.line` points to the member's declaration in `source`.
-/// When the recorded line is stale, the file is searched for the correct line.
-///
-/// `source` must be the full contents of the source file (not null-terminated).
+/// Verifies a member line against the allocator and returns a verification result.
 pub fn verifyMemberLine(
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -47,8 +44,7 @@ pub fn verifyMemberLine(
     return .{ .verified = false };
 }
 
-/// Return true when the 1-based `line_no` in `source` contains a declaration
-/// for `name` of the given `member_type`.
+/// Checks if a source line matches a specified member type and returns a boolean result.
 fn lineMatchesDecl(source: []const u8, line_no: u32, name: []const u8, member_type: types.MemberType) bool {
     var line_iter = std.mem.splitScalar(u8, source, '\n');
     var current_line: u32 = 1;
@@ -59,7 +55,7 @@ fn lineMatchesDecl(source: []const u8, line_no: u32, name: []const u8, member_ty
     return false;
 }
 
-/// Return true when `line` contains a declaration pattern for `name`.
+/// Checks if a pattern exists in a line of bytes, returning true or false.
 fn declPatternInLine(line: []const u8, name: []const u8, member_type: types.MemberType) bool {
     return switch (member_type) {
         .fn_decl, .fn_private, .method, .method_private => blk: {
@@ -100,8 +96,7 @@ fn declPatternInLine(line: []const u8, name: []const u8, member_type: types.Memb
     };
 }
 
-/// Returns true when `line` contains `word` as a whole word (surrounded by
-/// non-alphanumeric/underscore characters or at the line boundaries).
+/// Checks if a word exists within a line of bytes, returning true or false.
 fn containsWord(line: []const u8, word: []const u8) bool {
     var start: usize = 0;
     while (std.mem.indexOf(u8, line[start..], word)) |rel| {
@@ -121,8 +116,7 @@ fn isIdentChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
 }
 
-/// Search `source` line-by-line for a declaration matching `name`/`member_type`.
-/// Returns a `VerificationResult` with `corrected_line` set, or null if not found.
+/// Checks for a specified member in the allocator's source slice and returns verification result.
 fn searchForDecl(
     allocator: std.mem.Allocator,
     source: []const u8,

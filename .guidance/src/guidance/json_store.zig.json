@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "JsonStore",
-      "match_hash": "3f34465f5f4a2dcc3dcf8c2ed5ed82d029ab59c7ef7240583dfb5e1d78378df6",
+      "match_hash": "caeff89551517c70d599da7d3943dbeac43d8e6745f03eb519b9d3a32c38424f",
       "signature": "keyword_struct JsonStore { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "2df233505173c66a830c27296537efcc1a2eec8baffa0e3d3463be44a89a6844",
+          "match_hash": "8a43409e42da1056e9b95e7f1dd19583dc888f5c305f8e2d587c959f4447a0b7",
           "signature": "fn init(allocator: std.mem.Allocator) -> JsonStore",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -29,7 +29,7 @@
     ,    {
           "type": "fn_decl",
           "name": "loadGuidance",
-          "match_hash": "b658acbae05043874a126a856eb66ddc2ae05480e7c685f57eec4642c162e80a",
+          "match_hash": "2098cb9e0dc53ca5d16dd134d511966a1c7cbda34475b288dd52d49d6695b68c",
           "signature": "fn loadGuidance(self: *JsonStore, path: []const u8) -> ?types.GuidanceDoc",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -42,7 +42,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseGuidance",
-          "match_hash": "1f966537edfc012df6cbba5d3dcea807b5c0deabdb80471f58fa2dd5ba2dc2dd",
+          "match_hash": "ce079a02c6126e7602bd70d95a23b94c4df4f64afc3b2e35a233a66624fccc73",
           "signature": "fn parseGuidance(self: *JsonStore, content: []const u8) -> ?types.GuidanceDoc",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -55,7 +55,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseMembers",
-          "match_hash": "3807e15cc3a65d185e8462df709ff6b29deff586cc62e419e59e5214f078bfd4",
+          "match_hash": "3d2ddc3c930422e799ee06d4b6790fc10a6caa8fd794ea983f0191364502a50a",
           "signature": "fn parseMembers(self: *JsonStore, members_val: std.json.Value) -> std.mem.Allocator.Error![]types.Member",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_private",
           "name": "isLeakedPrompt",
-          "match_hash": "4c43215dda3bcbd0be1757d6e7306cd3ea5865bde52adcc5d29c33e6e3bd0698",
+          "match_hash": "5f8081a1cf5552412a9ff9285596c17909a4fcba9e6564295edc8bd6bb2e543d",
           "signature": "fn isLeakedPrompt(text: []const u8) -> bool",
           "params": [
             { "name": "text", "type": "[]const u8" }
@@ -80,7 +80,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseMember",
-          "match_hash": "16966830b70f71cda1891d69ff6fe1b916d709703816c851d40280319256146b",
+          "match_hash": "ba38196cb8b8cb7e9c37a4999c3e7b071071f8d5ec4605dfb6c17424ee521526",
           "signature": "fn parseMember(self: *JsonStore, member_val: std.json.Value) -> std.mem.Allocator.Error!?types.Member",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -93,7 +93,7 @@
     ,    {
           "type": "fn_decl",
           "name": "saveGuidance",
-          "match_hash": "cbedb2d62890b0c22297018f94c83560d96c9e0c1531e547657a1703af124a63",
+          "match_hash": "832e693428190faf1233481b76d09dcc0b659a8a90752eb802a93a0d12b252d7",
           "signature": "fn saveGuidance(self: *JsonStore, path: []const u8, doc: types.GuidanceDoc) -> void",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -107,7 +107,7 @@
     ,    {
           "type": "fn_decl",
           "name": "dupeMember",
-          "match_hash": "0628a121f18f38476249d3595f81ae1cbbbde12f1ab552e0289b1331592664b4",
+          "match_hash": "e2aa841094929bdaf9b9c327408a99596bc402cf4e95000dcb9e7962c0d3eeed",
           "signature": "fn dupeMember(self: *JsonStore, m: types.Member) -> types.Member",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -120,7 +120,7 @@
     ,    {
           "type": "fn_private",
           "name": "dupeParams",
-          "match_hash": "578a1dd22fd9d15ca7c74f55e2a22772ee508bd2cf5ee6368a0ce2a8708502aa",
+          "match_hash": "80e806396c7e15b914152216c0b58fe4baf680724fd0606f8d31fa7543452533",
           "signature": "fn dupeParams(self: *JsonStore, params: []const types.Param) -> []types.Param",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -133,7 +133,7 @@
     ,    {
           "type": "fn_decl",
           "name": "dupeStrings",
-          "match_hash": "79074c461f7fa1ca91eef01fe81c6a6d10164bae6d0e51baa83b38c394140418",
+          "match_hash": "3eeea117c20b9b504e45bddaa35d2bf3149df75a53ac55ca6b95200cabac44d8",
           "signature": "fn dupeStrings(self: *JsonStore, strs: []const []const u8) -> [][]const u8",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -146,7 +146,7 @@
     ,    {
           "type": "fn_private",
           "name": "dupePatterns",
-          "match_hash": "45fdfe4be4d01c343aa0ab1aa9a34aece1dec160b6af8f1936c2a59e26b6e801",
+          "match_hash": "09c08d93d6348379de05e1af8dccbcdc9537c74297fb61ece731d5074125ab95",
           "signature": "fn dupePatterns(self: *JsonStore, patterns: []const types.Pattern) -> []types.Pattern",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -159,7 +159,7 @@
     ,    {
           "type": "fn_decl",
           "name": "dupeSkills",
-          "match_hash": "d2584c22fbf9d2e6053682489ad512d864b3b38e23aab86610dc8e770c687da5",
+          "match_hash": "eba9fd6b5d109f1b4add009804164c2af19aee7cc3ba563d310dc56214e98309",
           "signature": "fn dupeSkills(self: *JsonStore, skills: []const types.Skill) -> []types.Skill",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -172,7 +172,7 @@
     ,    {
           "type": "fn_decl",
           "name": "freeMember",
-          "match_hash": "a16c7755b4bd89c94ee11794dfb34c1dc7702ca7ee2cc4ebbabb927552513525",
+          "match_hash": "595a4f82956121313655e5ffa2daa5e82152f8b4d460b57bfb2b0afb61ddcd4b",
           "signature": "fn freeMember(self: *JsonStore, member: types.Member) -> void",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -185,7 +185,7 @@
     ,    {
           "type": "fn_decl",
           "name": "freeGuidanceDoc",
-          "match_hash": "6ab0fa3d82a1cd2c13556d35106f489602333fd36cfec9b245c46ff475d6a4e4",
+          "match_hash": "ba2fa3265e09e5a52d7700da55ae362c721c890032c7cb95dc4645a0fce30493",
           "signature": "fn freeGuidanceDoc(self: *JsonStore, doc: types.GuidanceDoc) -> void",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -198,7 +198,7 @@
     ,    {
           "type": "fn_decl",
           "name": "extractMemberCommentsFromSource",
-          "match_hash": "ef38d36f29540bbfb3a3500a69449384dd3efa3f2d8554faaa2e997ac50d027f",
+          "match_hash": "83da154ae6a93ef95df3c77b8658ce1db056e360a281b1d4888ca24a40dd1939",
           "signature": "fn extractMemberCommentsFromSource(self: *JsonStore, doc: *types.GuidanceDoc, source: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -212,7 +212,7 @@
     ,    {
           "type": "fn_private",
           "name": "extractCommentsForMemberRecursive",
-          "match_hash": "e27698d8231c115a2f9c1105bd1bf4501b4cb16a232d1c23062c2eed6331af0d",
+          "match_hash": "6f6f39d8b39831e20775b39daf52e0240e385bcf62fbbb7129b274149d813b5e",
           "signature": "fn extractCommentsForMemberRecursive(self: *JsonStore, source: []const u8, member: *types.Member) -> void",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -226,7 +226,7 @@
     ,    {
           "type": "fn_decl",
           "name": "mergeMembers",
-          "match_hash": "81a9507eaa712cea22259a0dedcd676df517299971e8ed6a11fd50e7b00422ee",
+          "match_hash": "b24510de3d7b5a779ddcb59511c4f791a867c30136ddf01b4177f9b8656b1ca1",
           "signature": "fn mergeMembers(self: *JsonStore, source: []const types.Member, existing: []const types.Member, preserve_existing_comments: bool) -> std.mem.Allocator.Error!MergeResult",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -241,7 +241,7 @@
     ,    {
           "type": "fn_private",
           "name": "mergeMember",
-          "match_hash": "a64be8594a3f2965e6b0ec21d053412395729b00ddf618701950752d088dfce5",
+          "match_hash": "dfb26547c7aaa398e79488bb48a81b2e201fb57a3da84d6aa033732ae706abfc",
           "signature": "fn mergeMember(self: *JsonStore, source: types.Member, existing: types.Member, result: *MergeResult, preserve_existing_comments: bool) -> types.Member",
           "params": [
             { "name": "self", "type": "*JsonStore" },
@@ -260,7 +260,7 @@
     {
       "type": "struct",
       "name": "MergeResult",
-      "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
+      "match_hash": "84857c08b97008f2c93bf75a1eb2e8747aaa0b2c524da406da9c15041758194c",
       "signature": "keyword_struct MergeResult { ... }",
       "is_pub": true,
       "line": 641

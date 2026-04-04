@@ -10,7 +10,7 @@ const std = @import("std");
 const llm = @import("common");
 const types = @import("types.zig");
 
-/// Processes a query by filtering stages using an allocator and returns a cleaned slice of stages.
+/// Processes a query by filtering stages using an allocator and returns a cleaned stage list.
 pub fn filterStages(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -46,10 +46,7 @@ pub const SeeAlsoEntry = struct {
     keywords: []const u8,
 };
 
-/// Filter "Used in files" (see_also) entries for relevance using the fast LLM.
-/// Given a list of file paths and their context, returns only the most relevant ones.
-/// Uses bounded context: `keyword: comment` format for each entry.
-/// Returns an owned slice of owned strings; caller must free.
+/// Filters and returns a list of related SeeAlso entries based on the provided query and client data.
 pub fn filterSeeAlso(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -157,8 +154,7 @@ fn keepAll(allocator: std.mem.Allocator, entries: []const SeeAlsoEntry) ![][]con
     return result;
 }
 
-/// Ask the LLM whether `content` is relevant to `query`.
-/// Returns true (keep) or false (discard).  Fails open on error.
+/// Checks if a query matches relevant content using an allocator and client, returning a boolean result.
 fn askRelevant(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -186,7 +182,7 @@ fn askRelevant(
     return !std.ascii.startsWithIgnoreCase(trimmed, "NO");
 }
 
-/// Deep-copy a Stage so the returned copy fully owns its strings.
+/// Transforms a stage into a duplicated version using an allocator.
 fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) !types.Stage {
     return types.Stage{
         .kind = s.kind,

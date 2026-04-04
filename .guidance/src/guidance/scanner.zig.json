@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "ConfidenceTier",
-      "match_hash": "3d75d085eae0c7c2dbc9206e22b5446430f9b3b929995e74d749e1fe00075e57",
+      "match_hash": "9d9a16b2a018598f51dde7aac8dcd77c80f9a39f7d6ada9c1779f67174d2f200",
       "signature": "keyword_enum ConfidenceTier { ... }",
       "is_pub": true,
       "members": [
@@ -39,14 +39,14 @@
     {
       "type": "struct",
       "name": "CodebaseScanner",
-      "match_hash": "4cdd6ccbc366bbdbe2ad9e241130c02dd5d9f4a0a02a62366482d586518cd411",
+      "match_hash": "1a1f316a77a9297340ce71a4b24be5292a480030dc2a18b12751de9a99df5be2",
       "signature": "keyword_struct CodebaseScanner { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "af21dc3b201891cc02da278d73b5a3733dbcf4412c8bf9ba9713235dd0cb0a5b",
+          "match_hash": "098b8c1630431780697d448e166351854517669ad38c4a3bfffe6350d14c2295",
           "signature": "fn init(allocator: std.mem.Allocator, workspace: []const u8) -> CodebaseScanner",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -59,7 +59,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "0a9722d8de3cc259e49397feb16f1e5d0e9f8079a8eabe401ca13e02260410be",
+          "match_hash": "854f4a67b4fb1ed9ed29c24736a528c9b0eb20cda22547e20e4ce2853b2673fa",
           "signature": "fn deinit(self: *CodebaseScanner) -> void",
           "params": [
             { "name": "self", "type": "*CodebaseScanner" }
@@ -71,7 +71,7 @@
     ,    {
           "type": "fn_decl",
           "name": "scan",
-          "match_hash": "a1be12a89b7f2f647bb833a5c09104e93e095d9b3afae6cfcda5a0f22d4364b8",
+          "match_hash": "8fee6f52cec17f8e38e4aa4501007d05c4512141fcf10e17fe7b7dbd66a1f40c",
           "signature": "fn scan(self: *CodebaseScanner) -> void",
           "params": [
             { "name": "self", "type": "*CodebaseScanner" }
@@ -83,7 +83,7 @@
     ,    {
           "type": "fn_decl",
           "name": "scanWithDb",
-          "match_hash": "35ae524cd77160fe79ebc167a3131148771d2556ff476e1052279bc1beef785b",
+          "match_hash": "745eecbb41b5863935fcbc2c8a3232473413e1e036bca9e43e929dd6c54871be",
           "signature": "fn scanWithDb(self: *CodebaseScanner, db: *GuidanceDb) -> void",
           "params": [
             { "name": "self", "type": "*CodebaseScanner" },
@@ -96,7 +96,7 @@
     ,    {
           "type": "fn_decl",
           "name": "explain",
-          "match_hash": "c8b50532f3aaa6905c539a521a5de3f80bff46aa1ff6cbcb6d6d3683a7482760",
+          "match_hash": "20f1218d7086e039b32f91ba8c607e055602a3803b6528640c7978545d1b7cf7",
           "signature": "fn explain(self: *CodebaseScanner, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
           "params": [
             { "name": "self", "type": "*CodebaseScanner" },
@@ -112,7 +112,7 @@
     ,    {
           "type": "fn_decl",
           "name": "diagnose",
-          "match_hash": "29dabcce4408ddf7a841720658f736b9076ac41bba91a185f3b382954779b752",
+          "match_hash": "dc2d4d5c5b35cf823fd215e6625535634d4705773feb92d4752aa75918dc5047",
           "signature": "fn diagnose(self: *const CodebaseScanner, allocator: std.mem.Allocator) -> []u8",
           "params": [
             { "name": "self", "type": "*const CodebaseScanner" },
@@ -125,7 +125,7 @@
     ,    {
           "type": "fn_private",
           "name": "hasCapabilityDocs",
-          "match_hash": "f1de32ee8cebce046dcb344538001f720e61f08918b980c20c9607fbfcd64a2a",
+          "match_hash": "3c7e5130b1144047c0eb596d9813e1f773b181fcf638ae2701dd380e1c7a3b50",
           "signature": "fn hasCapabilityDocs(self: *const CodebaseScanner) -> bool",
           "params": [
             { "name": "self", "type": "*const CodebaseScanner" }
@@ -140,7 +140,7 @@
     {
       "type": "fn_decl",
       "name": "cmdScan",
-      "match_hash": "57969508fd3c59c08c7cf88011610f556c56f8d7f8c5578b436aa15cc7990b12",
+      "match_hash": "ffa9ed037a31570b70dd38cab4afaf2bbd05e4b1a0072a7d39bca70bbbab84d0",
       "signature": "fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -153,7 +153,7 @@
     {
       "type": "fn_private",
       "name": "emitDiagnosis",
-      "match_hash": "05c7df18a4e351244929c1b77444ed3defc5b2a10dd99dc4a2b4de5090c8897e",
+      "match_hash": "21b8a93155f8b90976195cce95a483aa25343d4f6c8310fb077dde071ff483d3",
       "signature": "fn emitDiagnosis(allocator: std.mem.Allocator, scanner: *const CodebaseScanner) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

@@ -8,7 +8,7 @@ const schema = coral_db.schema;
 pub const BINARY_SCHEMA_VERSION: u32 = 1;
 pub const BINARY_MAGIC: [4]u8 = .{ 'C', 'C', 'N', 'D' };
 
-/// Binary IPC payload tag discriminating the message type in the CCND wire format.
+/// Defines a payload type with enum-based payload definitions, managed by owner; ensures fixed-size buffers and clear ownership model.
 pub const PayloadType = enum(u32) {
     context_node = 1,
     execution_request = 2,
@@ -132,7 +132,7 @@ pub const BinaryContextNode = extern struct {
 // execution_request.zig can import these types via coral_schema without
 // creating a circular dependency.
 
-/// Execution request sent to a WASM tool over the binary IPC channel.
+/// Represents a binary execution request with ownership and invariants; managed by the system; not thread-safe.
 pub const BinaryExecutionRequest = extern struct {
     header: BinaryHeader align(1),
     target_id: i64 align(1),
@@ -147,11 +147,7 @@ pub const BinaryExecutionRequest = extern struct {
     };
 };
 
-/// Execution result returned from a WASM tool over the binary IPC channel.
-///
-/// provides_words_count / provides_words_offset encode the `provides` bitset
-/// as an array of u64 words appended after this header.
-/// Use getProvidesBitSet() to reconstruct a DynamicBitSetUnmanaged.
+/// Represents execution outcome data, managed by owner; key invariant is correct result struct; not thread-safe.
 pub const BinaryExecutionResult = extern struct {
     header: BinaryHeader align(1),
     success: u32 align(1), // 0 = failure, 1 = success
@@ -181,7 +177,7 @@ pub const BinaryExecutionResult = extern struct {
     }
 };
 
-/// Reflection-based schema for ContextNode: holds the 11 field accessors used by MCP tool-schema generation and validation.
+/// Defines a schema for context nodes, managing ownership and invariants like fixed-size buffers and initialization/deinit cycles.
 pub const ContextNodeSchema = struct {
     /// SQL bind indices — column order for INSERT OR REPLACE in context_nodes.
     /// Matches the column order in DDL_CONTEXT_NODES.

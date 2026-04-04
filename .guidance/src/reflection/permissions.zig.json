@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "Role",
-      "match_hash": "636ad8ae77ed4bbd2baecf67711260be55d2deabedbdf763cb1954eb5e1e17bd",
+      "match_hash": "e8f72e6f5f1a8240388cf7a42b55edcbc8fadde3de0df15acac92e7955a457f8",
       "signature": "keyword_enum Role { ... }",
       "is_pub": true,
       "members": [
@@ -57,14 +57,14 @@
     {
       "type": "struct",
       "name": "RolePermissions",
-      "match_hash": "3bad71ad1cc494287bd5fed2502c327d93b4b98b2fec67cfc3d1b4d716f7beec",
+      "match_hash": "b21a49bb9f969489b4f5069d02976db89a253e44c1f9fdc2d4223aa044ffc894",
       "signature": "keyword_struct RolePermissions { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "canRead",
-          "match_hash": "490652e9f6431d13b07c69d3f0044e4e5a80d7318d737415b259c3135f6b2dda",
+          "match_hash": "107ae567e1399bb9cbf8aef816ac1a3d3c8120f932c36b35272f73a7e694ae8e",
           "signature": "fn canRead(self: RolePermissions, role: Role) -> bool",
           "params": [
             { "name": "self", "type": "RolePermissions" },
@@ -72,12 +72,12 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 42
+          "line": 41
         }
     ,    {
           "type": "fn_decl",
           "name": "canWrite",
-          "match_hash": "1241dc71e09080b867e8dbd49205c8fabe5cacb35f557d5b3d50ff19df6be353",
+          "match_hash": "e3173327973dd2ecf2e0e2e47ebf1c5db052b99923c0cc266fbad3d337103177",
           "signature": "fn canWrite(self: RolePermissions, role: Role) -> bool",
           "params": [
             { "name": "self", "type": "RolePermissions" },
@@ -85,12 +85,12 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 53
+          "line": 52
         }
     ,    {
           "type": "fn_decl",
           "name": "canDerive",
-          "match_hash": "47daf732b0a5e2601dda9634481234ca76b86b43ed6ec3c578e91f19ac34eeae",
+          "match_hash": "772e4fbb4cb7e9a8419f279ae7b8afe2e1c51657191cc1477f350c5c08d8db9a",
           "signature": "fn canDerive(self: RolePermissions, role: Role) -> bool",
           "params": [
             { "name": "self", "type": "RolePermissions" },
@@ -98,10 +98,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 64
+          "line": 63
         }
       ],
-      "line": 20
+      "line": 19
     }
   ]
 }

@@ -23,7 +23,7 @@ const SearchResult = GuidanceDb.SearchResult;
 // QueryIntent enum
 // =============================================================================
 
-/// Classifies the intent of a query for strategy routing.
+/// Manages query intent keywords with a fixed ownership model; ensures key invariants are preserved across operations.
 pub const QueryIntent = enum {
     /// Single identifier: "cmdExplain", "GuidanceDb", "embed"
     identifier_lookup,
@@ -39,9 +39,7 @@ pub const QueryIntent = enum {
 // QueryStrategy VTable
 // =============================================================================
 
-/// Polymorphic query routing interface.
-/// Each strategy determines if it applies to a query, then executes it.
-/// Two pointers, no inheritance — fluent-wvr pattern.
+/// Manages query keyword structures with ownership and invariants; ensures consistent state across operations.
 pub const QueryStrategy = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -114,7 +112,7 @@ pub const IdentifierLookupStrategy = struct {
     }
 };
 
-/// Checks if query strings match database entries, returning true or false.
+/// Checks if query strings match identifiers in the database, returning true or false.
 fn identifierMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     _ = ptr;
     _ = db;
@@ -270,8 +268,7 @@ const concept_vtable: QueryStrategy.VTable = .{
 // Strategy dispatcher
 // =============================================================================
 
-/// Dispatch query through strategies in priority order.
-/// Falls back to staged pipeline if no strategy matches.
+/// Executes a query using the specified strategy, allocating memory and processing the query result.
 pub fn executeWithStrategy(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -298,8 +295,7 @@ pub fn executeWithStrategy(
     );
 }
 
-/// Build the default strategy list (sorted by priority).
-/// Call once during initialization; strategies are stateless so no deinit needed.
+/// Creates default query strategies based on provided capabilities and concepts.
 pub fn buildDefaultStrategies(
     identifier: *IdentifierLookupStrategy,
     capability: *CapabilityQueryStrategy,
@@ -316,8 +312,7 @@ pub fn buildDefaultStrategies(
 // Helpers
 // =============================================================================
 
-/// Returns true if the query looks like a single identifier token
-/// (camelCase, PascalCase, snake_case, or a single word).
+/// Checks if a query string slice matches a predefined identifier pattern.
 pub fn looksLikeIdentifier(query: []const u8) bool {
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     if (trimmed.len < 2 or trimmed.len > 64) return false;
@@ -336,7 +331,7 @@ pub fn looksLikeIdentifier(query: []const u8) bool {
     return true;
 }
 
-/// Returns true if the query looks like a natural language question.
+/// Checks if a Zig query string resembles a natural language question, returning true or false.
 fn looksLikeNaturalLanguageQuestion(query: []const u8) bool {
     const nl_prefixes = [_][]const u8{
         "how ",  "what ",    "where ",    "why ",  "when ", "which ",

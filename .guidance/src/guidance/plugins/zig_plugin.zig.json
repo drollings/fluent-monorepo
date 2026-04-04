@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "plugin",
-      "match_hash": "3a6f2a54a4f3e7fba098b1c4f632b29610caa99042ed81290bc41afefa7bc978",
+      "match_hash": "5a6f3373dcbf7996197f89488b187205dc3e2b4f888a961a85c93a354e490306",
       "signature": "fn plugin() -> LanguagePlugin",
       "returns": "LanguagePlugin",
       "is_pub": true,
@@ -20,7 +20,7 @@
     {
       "type": "fn_private",
       "name": "parseZig",
-      "match_hash": "32862f573a0475a724b3afca9d32458b2baf79de6755a70388c46055cbb1b32d",
+      "match_hash": "20962aaadf1395afadfd5861222e19dc4eb5d246af1434d217c15f20c780d4cc",
       "signature": "fn parseZig(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },
@@ -34,7 +34,7 @@
     {
       "type": "fn_private",
       "name": "extractZigImports",
-      "match_hash": "9cdfa287400d9ed53de18139035ff13bf09f9d0305f6231c8074bb48a843dffa",
+      "match_hash": "51cf02dedd16d867241e049e3aa3ca4a09a1461828be6a99e359f91fb765c0a0",
       "signature": "fn extractZigImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },
@@ -47,7 +47,7 @@
     {
       "type": "fn_private",
       "name": "deriveModule",
-      "match_hash": "dde488651bb94a70bdce05fde1db577df1ecc6c45e1a3e63c81a0ad6543d08ac",
+      "match_hash": "a8e1a0ee1b6afeaf40e2b38dc3abff593cd10413bb8011dae5bb8a5cb2cbdc6b",
       "signature": "fn deriveModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },
@@ -55,31 +55,31 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 75
+      "line": 74
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin handles .zig extension",
       "is_pub": false,
-      "line": 97
+      "line": 96
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin.parse extracts members from simple source",
       "is_pub": false,
-      "line": 107
+      "line": 106
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin.extractImports returns import paths",
       "is_pub": false,
-      "line": 132
+      "line": 131
     },
     {
       "type": "test_decl",
       "name": "deriveModule strips extension and converts slashes",
       "is_pub": false,
-      "line": 151
+      "line": 150
     }
   ]
 }

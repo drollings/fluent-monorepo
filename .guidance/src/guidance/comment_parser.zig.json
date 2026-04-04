@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "DocComment",
-      "match_hash": "918413b65a83853d3a8b6ff4298b49063805199ee679e17113964661d762f120",
+      "match_hash": "c62b7912c8cdd3269b9389b8c4608d5c91579021ad4f468cf4d7fc06e1d69028",
       "signature": "keyword_struct DocComment { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "3169f66bb3870bfbf531860a6d41ec37e949ceb27a2bd481862422a2475ba93a",
+          "match_hash": "78fb3dfe85c69e56be03a428aa4b00897336bffd60ca6158ac8731b7b58b80aa",
           "signature": "fn deinit(self: DocComment, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "DocComment" },
@@ -33,7 +33,7 @@
     {
       "type": "fn_decl",
       "name": "parseDocComment",
-      "match_hash": "f9f92e2e97fbd4eeaff1c6b53c0aa9508bc493a97d7f90973e09bc2ab2aa1646",
+      "match_hash": "32aaaf4f16dd07dfc9aaccb0d173d6c558cfbcadae99ab2b806d0690aeb4c9b0",
       "signature": "fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) -> DocComment",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -41,12 +41,12 @@
       ],
       "returns": "DocComment",
       "is_pub": true,
-      "line": 29
+      "line": 28
     },
     {
       "type": "fn_decl",
       "name": "isWellFormedComment",
-      "match_hash": "93731d94c2171be7f0655c1527fe1da86d64f4ab9188a795b09dedaa195e86fc",
+      "match_hash": "2742109aeedebae4970ee69b5f523eaca1cd68b0edd8cd2c1ebdd4c77f44c75b",
       "signature": "fn isWellFormedComment(comment: []const u8, code_context: []const u8) -> bool",
       "params": [
         { "name": "comment", "type": "[]const u8" },
@@ -54,49 +54,49 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 53
+      "line": 52
     },
     {
       "type": "test_decl",
       "name": "parseDocComment - simple single line",
       "is_pub": false,
-      "line": 84
+      "line": 83
     },
     {
       "type": "test_decl",
       "name": "parseDocComment - multi-line",
       "is_pub": false,
-      "line": 95
+      "line": 94
     },
     {
       "type": "test_decl",
       "name": "isWellFormedComment - empty",
       "is_pub": false,
-      "line": 105
+      "line": 104
     },
     {
       "type": "test_decl",
       "name": "isWellFormedComment - too long",
       "is_pub": false,
-      "line": 109
+      "line": 108
     },
     {
       "type": "test_decl",
       "name": "isWellFormedComment - leaked prompt",
       "is_pub": false,
-      "line": 115
+      "line": 114
     },
     {
       "type": "test_decl",
       "name": "isWellFormedComment - TODO marker",
       "is_pub": false,
-      "line": 120
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "isWellFormedComment - valid",
       "is_pub": false,
-      "line": 124
+      "line": 123
     }
   ]
 }

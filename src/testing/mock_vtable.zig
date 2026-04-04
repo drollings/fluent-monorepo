@@ -32,9 +32,7 @@ pub const CallRecord = struct {
 
 // ── MockEmbeddingProvider ─────────────────────────────────────────────────────
 
-/// Mock implementation of EmbeddingProvider.VTable for unit testing.
-///
-/// All state is owned by the mock struct.  Call deinit() after the test.
+/// Tracks mock embeddings with a fixed-size buffer; managed by owner; ensures consistent state across tests.
 pub const MockEmbeddingProvider = struct {
     allocator: std.mem.Allocator,
     /// All recorded calls in order.
@@ -190,7 +188,7 @@ pub const MockEmbeddingProvider = struct {
 //
 //   const prod_provider: common.EmbeddingProvider = mock.provider(); // layout-compatible
 
-/// Minimal vtable function table matching EmbeddingProvider.VTable.
+/// Defines a dynamic embedding table structure for efficient lookup; managed by owner; key invariant is consistent indexing.
 pub const EmbeddingVTable = struct {
     name: *const fn (ptr: *anyopaque) []const u8,
     dimensions: *const fn (ptr: *anyopaque) u32,
@@ -198,7 +196,7 @@ pub const EmbeddingVTable = struct {
     deinit: *const fn (ptr: *anyopaque) void,
 };
 
-/// Minimal 2-pointer VTable handle, layout-compatible with EmbeddingProvider.
+/// Manages embedding handles with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.
 pub const EmbeddingHandle = struct {
     ptr: *anyopaque,
     vtable: *const EmbeddingVTable,
@@ -332,3 +330,6 @@ test "MockEmbeddingProvider: GPA no leaks" {
 
     mock.assertCallCount("embed", 2);
 }
+
+
+

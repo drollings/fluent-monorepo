@@ -13,7 +13,7 @@ const std = @import("std");
 // Public types
 // =============================================================================
 
-/// Detected build system.
+/// Manages build system configurations with ownership and invariants on resource allocation.
 pub const BuildSystem = enum {
     zig_build,
     make,
@@ -38,7 +38,7 @@ pub const BuildSystem = enum {
     }
 };
 
-/// A detected entry point in the codebase.
+/// Manages core entry logic with fixed buffers; owned by the module; ensures consistent initialization.
 pub const EntryPoint = struct {
     /// Function/struct name: "main", "cmdExplain", "handleRequest"
     name: []const u8,
@@ -50,7 +50,7 @@ pub const EntryPoint = struct {
     kind: enum { main_fn, cmd_fn, cli_handler, test_fn, server_fn, other },
 };
 
-/// One entry in the filesystem tree.
+/// Manages directory entries with ownership and invariants; designed for single ownership and not thread-safe.
 pub const DirectoryEntry = struct {
     /// Relative path from workspace root
     path: []const u8,
@@ -65,8 +65,7 @@ pub const LanguageCount = struct {
     count: u32,
 };
 
-/// Result of structural discovery. All strings are owned by this struct.
-/// Call deinit() to release all allocations.
+/// Tracks code module boundaries; manages references; ensures ownership remains with the codebase.
 pub const CodebaseMap = struct {
     allocator: std.mem.Allocator,
 
@@ -123,9 +122,7 @@ pub const CodebaseMap = struct {
 // Discovery entry point
 // =============================================================================
 
-/// Discover the structure of the codebase rooted at `workspace`.
-/// Respects basic ignore patterns (.git/, zig-out/, node_modules/, __pycache__/).
-/// Caller owns the returned CodebaseMap; call deinit() when done.
+/// Determines and returns the codebase map structure using an allocator and workspace data.
 pub fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) !CodebaseMap {
     var tree: std.ArrayList(DirectoryEntry) = .{};
     errdefer {
@@ -372,8 +369,7 @@ fn isEntryPointName(name: []const u8) bool {
     return false;
 }
 
-/// Detect entry points by scanning guidance JSON files (fast path) or
-/// by looking for well-known filenames.
+/// Detects entry points in a directory tree using an allocator and workspace parameters.
 fn detectEntryPoints(
     allocator: std.mem.Allocator,
     tree: []const DirectoryEntry,
@@ -449,7 +445,7 @@ fn detectEntryPoints(
 const CAPABILITY_DIR_NAMES = [_][]const u8{ "capabilities", "docs/capabilities", "doc/capabilities" };
 const SKILL_DIR_NAMES = [_][]const u8{ "skills", ".skills", "doc/skills", ".guidance/.skills", ".guidance/skills" };
 
-/// Identifies directory paths for allocation within a workspace tree using an allocator.
+/// Finds a list of directory entries based on an allocator and workspace parameters.
 fn findCapabilityDirs(
     allocator: std.mem.Allocator,
     workspace: []const u8,

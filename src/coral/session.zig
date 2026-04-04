@@ -78,7 +78,7 @@ const SCHEMA_DDL = [_][]const u8{
 // Public types
 // ---------------------------------------------------------------------------
 
-/// A row returned by searchMessages.
+/// Manages message payloads with fixed-size buffers; owned by the session; ensures data integrity across operations.
 pub const Message = struct {
     id: i64,
     session_id: i64,
@@ -90,7 +90,7 @@ pub const Message = struct {
 // SessionDB
 // ---------------------------------------------------------------------------
 
-/// Manages database session state with fixed-size buffers; owned by the session; ensures consistent access patterns.
+/// Manages session data storage with fixed-size buffers; owned by the session; ensures consistent state across operations.
 pub const SessionDB = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,

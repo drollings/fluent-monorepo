@@ -16,14 +16,14 @@ const ContextNode = coral_db.ContextNode;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = common_mod.EmbeddingProvider;
 
-/// Manages test fixtures with a keyword struct, owns test data, and ensures consistent initialization across runs.
+/// Manages test fixtures with a keyword struct, owns test data, ensures consistent initialization and cleanup.
 pub const TestLibrary = struct {
     lib: *Library,
     arena: std.heap.ArenaAllocator,
     allocator: std.mem.Allocator,
 };
 
-/// Creates a test library instance using the provided allocator.
+/// Creates a test library using an allocator, returning a TestLibrary instance.
 pub fn createTestLibrary(allocator: std.mem.Allocator) !TestLibrary {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -96,7 +96,7 @@ pub const TestNodeSpec = struct {
     lod2: ?[]const u8 = null,
 };
 
-/// Inserts test nodes into the specified test library structure, updating the test suite with new instances.
+/// Inserts test nodes into the specified test library structure, updating the test suite with new test cases.
 pub fn insertTestNodes(tl: *TestLibrary, specs: []const TestNodeSpec) !void {
     for (specs) |spec| {
         var node = try createTestNode(tl, spec.id, spec.name, spec.full_text);

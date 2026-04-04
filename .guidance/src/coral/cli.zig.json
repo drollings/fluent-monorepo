@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "IngestStatus",
-      "match_hash": "9274d51ce89dec1e744b302507024983456742ecb927d085a631e18c67d7b79c",
+      "match_hash": "e806f5aee4e8665c073c4f32a850fae6033d050991d23d6bc27a39be0302d4c1",
       "signature": "keyword_enum IngestStatus { ... }",
       "is_pub": true,
       "members": [
@@ -43,7 +43,7 @@
     {
       "type": "struct",
       "name": "Checkpoint",
-      "match_hash": "627f9aa68dd09dcda9621541355dd554120342351dd98b37bb068b09c3798b59",
+      "match_hash": "93990ec9d064a077451bfdb683fbf7153d4c45eb155f49e5470c90c2ae3563b8",
       "signature": "keyword_struct Checkpoint { ... }",
       "is_pub": true,
       "line": 33
@@ -51,14 +51,14 @@
     {
       "type": "struct",
       "name": "IngestArgs",
-      "match_hash": "10034f1e3441c1fe185f8480cd212d83f5586f06191ff7f1396da169183d712b",
+      "match_hash": "733f90899940650d2d8f08ff9f0fb16ac662021836ea843b83cf917bfddbe452",
       "signature": "keyword_struct IngestArgs { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "parse",
-          "match_hash": "5ea319d85654798beaf464394649a0dd968a72f49fe633b61f2838b833cf6cb2",
+          "match_hash": "65ea596018c54ede2b7882a55fe2dc9c03f1266ce76b43d7ce36635d0b69f8fd",
           "signature": "fn parse(args: []const []const u8) -> IngestArgs",
           "params": [
             { "name": "args", "type": "[]const []const u8" }
@@ -70,7 +70,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toBatchConfig",
-          "match_hash": "5bb121dabc01f1cfda7503c574996e94215ab6678ad5a5acff370f61ce1eec95",
+          "match_hash": "ff3770555340367fb2d0227a5c7f894e895cf84f069e8e5dec390d714480ea88",
           "signature": "fn toBatchConfig(self: IngestArgs) -> BatchConfig",
           "params": [
             { "name": "self", "type": "IngestArgs" }
@@ -85,14 +85,14 @@
     {
       "type": "struct",
       "name": "CheckpointStore",
-      "match_hash": "7e9be8d8247925b4db1e275f5bd7be63fc7c90ba84a1e2d61f1073e35561540b",
+      "match_hash": "145938441348586cb2ba5d0787808242d4c05dbaadd3ff1bec20b8f972ae42c3",
       "signature": "keyword_struct CheckpointStore { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "085217bef3f4e4b0ecba06dc7bde6e9417e629116b6df83f35616b4dfb74496b",
+          "match_hash": "733837fe33004c597bd830687fa5eab15b1b062cfe34c0dc9154927d0eea2954",
           "signature": "fn init(allocator: std.mem.Allocator) -> CheckpointStore",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -104,7 +104,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "c8baec5b30c2b93433d10824461b0a4481eccd91a29976b51e3fed6ead2ae0c4",
+          "match_hash": "075b851b3f3476e1cba953502c7d2af536de7d743c935e4a7a58b04f9df4bbac",
           "signature": "fn deinit(self: *CheckpointStore) -> void",
           "params": [
             { "name": "self", "type": "*CheckpointStore" }
@@ -116,7 +116,7 @@
     ,    {
           "type": "fn_decl",
           "name": "save",
-          "match_hash": "c0b9afbda523134af538e822869a44737c28a734b3ac184671c82d7f74a1a4d4",
+          "match_hash": "91e02e9551b744143735e7008fc1195f0e3b3f4e90f527c2f7b379f353910343",
           "signature": "fn save(self: *CheckpointStore, cp: Checkpoint) -> void",
           "params": [
             { "name": "self", "type": "*CheckpointStore" },
@@ -129,7 +129,7 @@
     ,    {
           "type": "fn_decl",
           "name": "findLatest",
-          "match_hash": "8e7ce320be5e58bf581150b27759109b6ad78d0c75cf8ae79974dbfd5d82e49d",
+          "match_hash": "b270dd707ac0e95892e32058d47908043de39c7968a57ba06f7f3601dbdf6a66",
           "signature": "fn findLatest(self: *const CheckpointStore, source: []const u8) -> ?Checkpoint",
           "params": [
             { "name": "self", "type": "*const CheckpointStore" },

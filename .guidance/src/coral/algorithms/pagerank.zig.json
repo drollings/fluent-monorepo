@@ -10,7 +10,7 @@
     {
       "type": "struct",
       "name": "PageRankConfig",
-      "match_hash": "56beac94d1434a063b2fe263ad1f1764bda6524005423e19c2ec2a5c2c63476b",
+      "match_hash": "ef03501bc9d34c64451cf46b49e3b9187b61f074c068a995d645d638f47eb31d",
       "signature": "keyword_struct PageRankConfig { ... }",
       "is_pub": true,
       "line": 29
@@ -18,14 +18,14 @@
     {
       "type": "struct",
       "name": "PageRank",
-      "match_hash": "3149aef5f7f663d9420b279228a61efd3fad4aa4b542cf74d4c990421d851318",
+      "match_hash": "e0b1228cfa553520856f99ead59589233c8e1c787873083c4c4f60bf238f18f8",
       "signature": "keyword_struct PageRank { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "a939b22a383b6e8ee81430bd4728902008dfc39ee15d8ce475a6fca75dbff8d6",
+          "match_hash": "b7ee32a32914beed06d940664e446b1ac4fbc98949f0d3e4ee82150a5fa7cfbd",
           "signature": "fn init(config: PageRankConfig) -> Self",
           "params": [
             { "name": "config", "type": "PageRankConfig" }
@@ -37,7 +37,7 @@
     ,    {
           "type": "fn_decl",
           "name": "run",
-          "match_hash": "384653f431176f7d40f8d8a9012a7485eb6b1f42862f3a9c6371354ac818aac0",
+          "match_hash": "5a11f5011c5f5a297ca0d5eadc8341d85629018b12c54efb6dff0eb2580b12ab",
           "signature": "fn run(self: Self, arena: Allocator, graph: *const CSRGraph) -> []f32",
           "params": [
             { "name": "self", "type": "Self" },

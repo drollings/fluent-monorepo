@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "1a8e99d563e14c374835b224be0217a209edcac1a4128c85907de59bce0f4fc0",
+      "match_hash": "a03868b69e35aa81a61911e5d9ac3c25c3d97e633f0464917aa72d102705d3b8",
       "signature": "fn init(allocator: std.mem.Allocator, interner: *StringInterner) -> TargetRegistry",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -24,7 +24,7 @@
     {
       "type": "fn_decl",
       "name": "deinit",
-      "match_hash": "6b6fc487674cf448b31e28373d568cf12126a59b613ac6366a8543272ace282f",
+      "match_hash": "3cf709996559ec25dcd5871e39a4559c2b047b8c1f30b40a9c44116855a5b88e",
       "signature": "fn deinit(self: *TargetRegistry) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" }
@@ -36,7 +36,7 @@
     {
       "type": "fn_decl",
       "name": "add",
-      "match_hash": "37859e3df234d0e7163e99cd6395d0dfb5d74c983dcb7d854eb007a20183e4ae",
+      "match_hash": "57347a42c51420d73be2112064982945693cc280c402b392094e9766d436b703",
       "signature": "fn add(self: *TargetRegistry, tgt: *Target) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
@@ -49,7 +49,7 @@
     {
       "type": "fn_decl",
       "name": "get",
-      "match_hash": "247b0e36352acb9a4509c1d0f09f4a28f72899cb426f0178c2467c76529ad1e7",
+      "match_hash": "5b50546890f44f1f017fb5f9207478354a2494af833add96fe441be5d3f4a29a",
       "signature": "fn get(self: *const TargetRegistry, name: []const u8) -> ?*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -62,7 +62,7 @@
     {
       "type": "fn_decl",
       "name": "getByBitIndex",
-      "match_hash": "25f280dc1e53ad14518db40fd14d0d710d64fe2d8a6ab4e5b6ef866a0b87923d",
+      "match_hash": "464b8b9253d5f74cdecc8a120a87ee9fff7398c2ab75cfa496bc6931b290d3ce",
       "signature": "fn getByBitIndex(self: *const TargetRegistry, idx: usize) -> ?*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -75,7 +75,7 @@
     {
       "type": "fn_decl",
       "name": "remove",
-      "match_hash": "52bc41bb0848b6e3252cfb562c1e23b0a94ebc9e61e3d531ce90bafdabdb0139",
+      "match_hash": "dfbd640aadc8744e4579f856e03602d19734430075cc2da50bd563e251fa342d",
       "signature": "fn remove(self: *TargetRegistry, name: []const u8) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
@@ -88,7 +88,7 @@
     {
       "type": "fn_decl",
       "name": "listNames",
-      "match_hash": "02cfa09f0513d3d2d9177efd8f1fc87acb1e0acb66569c2be5fec8e86087176a",
+      "match_hash": "6040e5b6091cb3c0259fc14a9ab156200c18427617882f9e162edf15467b4fdf",
       "signature": "fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) -> [][]const u8",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -101,7 +101,7 @@
     {
       "type": "fn_private",
       "name": "updateProviderMap",
-      "match_hash": "93b1f0e7a24645153ed576e1c0d8c28a6876c5426880fdb24d60b3be884ba851",
+      "match_hash": "d973c0b6dbf6f73a90de7b482b9bd55d47eb6359f87b235d837b904b09e8527d",
       "signature": "fn updateProviderMap(self: *TargetRegistry, tgt: *Target) -> void",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
@@ -114,7 +114,7 @@
     {
       "type": "fn_decl",
       "name": "getProviders",
-      "match_hash": "f7e18553caf391efa58edb45f701a64d37bc34174b834db7f0b942e4d45b18ff",
+      "match_hash": "3517d7c4131f7fd13e3e59f913e1c8a6978bcab357b4da5d3d54a73c287630f6",
       "signature": "fn getProviders(self: *const TargetRegistry, bit_index: usize) -> ?[]*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -127,7 +127,7 @@
     {
       "type": "fn_decl",
       "name": "getProvidersForName",
-      "match_hash": "a3a44712d29c572d6776a075ac13e6fe855e67e42f47fe6f18925e89fb0ca624",
+      "match_hash": "758afcc16b08f7233bab8a32390d4b8c70b3399d2e06a2c01207378fb3dc9c91",
       "signature": "fn getProvidersForName(self: *const TargetRegistry, name: []const u8) -> ?[]*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -140,7 +140,7 @@
     {
       "type": "fn_decl",
       "name": "count",
-      "match_hash": "7657124174e915ce9dba8bf0fb7c0b84414b3ee5ded4b74fa994bdec3cc448df",
+      "match_hash": "2cc53bdc7d5920db1cf3cbf3b68e29108b05d41a30046aea24e5045d36c81ad4",
       "signature": "fn count(self: *const TargetRegistry) -> usize",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" }
@@ -152,7 +152,7 @@
     {
       "type": "fn_decl",
       "name": "essentialTargets",
-      "match_hash": "f44585422082a098ce9bd4d4a576f0c76de0031ac0eecf3211b3b879190e8930",
+      "match_hash": "5d84f97579f1282c378b14d77bf8da594978521ad483fd4555d50c0b533bb447",
       "signature": "fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) -> []*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -165,7 +165,7 @@
     {
       "type": "fn_decl",
       "name": "abstractTargets",
-      "match_hash": "adcc83d9f488f5c396ea892a26798179176d0ed99c55fe749eac3c12a36d9ee4",
+      "match_hash": "c77bd82236c395f1fbad5b8aa04439c197dd484cbe9c1e4b1226db1928906cd2",
       "signature": "fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) -> []*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -178,14 +178,14 @@
     {
       "type": "struct",
       "name": "TargetBuilder",
-      "match_hash": "5a3a927cdb3303980f98ce281ce180d775c758885431eb42f352bf9768092dff",
+      "match_hash": "188f0980d50da9f3f309db16738a514daf5962e1ad9ffa0d745fa37be25ff591",
       "signature": "keyword_struct TargetBuilder { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_private",
           "name": "hasError",
-          "match_hash": "37077c4f548f4ff22f04104a613193bb3a53c9bc3963ab0bab6a4c4b36f68913",
+          "match_hash": "ed997626909b4bde20c8b70e06f1c7769f9dc6d9ccb145a319705b8f8d7c23a5",
           "signature": "fn hasError(self: *const TargetBuilder) -> bool",
           "params": [
             { "name": "self", "type": "*const TargetBuilder" }
@@ -197,7 +197,7 @@
     ,    {
           "type": "fn_private",
           "name": "setError",
-          "match_hash": "33ba833f0ef6bb8fef0828f7cc3c53e3401a5f62926be0171c46ae87f8abb22d",
+          "match_hash": "68f70da811a659dcf3046adfd6cfff1d457062e91c6917e2b4a2d3cd80481735",
           "signature": "fn setError(self: *TargetBuilder, phase: BuilderPhase, field: []const u8, value: ?[]const u8, constraint: []const u8, cause: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -214,7 +214,7 @@
     ,    {
           "type": "fn_decl",
           "name": "depends",
-          "match_hash": "dabad4ae5f4c1dd9359a3bc97248a9ea54d9ddb891b186d88b851d6bf659f495",
+          "match_hash": "333d23504576dc5180e7f4e008b4447731f2a428c47c2847530b1ac669f5033c",
           "signature": "fn depends(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -227,7 +227,7 @@
     ,    {
           "type": "fn_decl",
           "name": "provides",
-          "match_hash": "5b8360b2b6289472f374077a4fa78c6bdd1de4ac7080a7734b51626adee1ce9f",
+          "match_hash": "b369cd3e8129eb8063b2a2ba4a5e873e02bac32b51a2d9650cd490a994efa0ab",
           "signature": "fn provides(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -240,7 +240,7 @@
     ,    {
           "type": "fn_decl",
           "name": "command",
-          "match_hash": "12fdb8b079594bc127e5ac89bdf3992f5639eaedb7da2b0523ff2af6d73e40ab",
+          "match_hash": "0e91bc369a2c5e9194f0ffdd34adfbd4554ea8a5c2dcaa58483beb1994dd8cdb",
           "signature": "fn command(self: *TargetBuilder, cmd: []const u8) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -253,7 +253,7 @@
     ,    {
           "type": "fn_decl",
           "name": "essential",
-          "match_hash": "36e5ee39fcdb5662d0c2da79ec6fc4e7324dbb442aa12e5f7108b09b195b2274",
+          "match_hash": "35397d4ce54293b908bcb2d53b1a24d0d6eca96d89658b416664ca95768e1b5c",
           "signature": "fn essential(self: *TargetBuilder) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" }
@@ -265,7 +265,7 @@
     ,    {
           "type": "fn_decl",
           "name": "exists",
-          "match_hash": "8f79094d1fe2212de63b62f47fd68b928800cfc992f2d3a0275034f6eb8b899a",
+          "match_hash": "393f91b10b8a3709a160ea746ee353e8d04e129c58b2db93429fd289ee6e24e5",
           "signature": "fn exists(self: *TargetBuilder, path: []const u8) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -278,7 +278,7 @@
     ,    {
           "type": "fn_decl",
           "name": "id",
-          "match_hash": "778289342dd52cd53645693b42a90c2ab8b93ca207a971b2ec7fa2ac33b0c0c9",
+          "match_hash": "3a1f065d460d0885bcc1c32f00265d22515125eb4e1da617a77dde6bfcacd5b0",
           "signature": "fn id(self: *TargetBuilder, node_id: i64) -> *TargetBuilder",
           "params": [
             { "name": "self", "type": "*TargetBuilder" },
@@ -291,7 +291,7 @@
     ,    {
           "type": "fn_decl",
           "name": "register",
-          "match_hash": "97e2f2f88d6b35c928cef0f26f4c422d2156ffbc2552efce9ba693f6b83121ab",
+          "match_hash": "1e6e0664fa5557e2ac021ba38b77187a302be89e7f41380ef1b87ea0dad0fb1b",
           "signature": "fn register(self: *TargetBuilder) -> void",
           "params": [
             { "name": "self", "type": "*TargetBuilder" }
@@ -306,7 +306,7 @@
     {
       "type": "fn_decl",
       "name": "target",
-      "match_hash": "585bb7b5e41af86cc82ac5e1e61e369618333a9ef30deaba1201fa10e7b43b38",
+      "match_hash": "6baa796353ca4ca8915fe6359a61db404d632c78db8dc1c4ddd49dc221b554a2",
       "signature": "fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) -> TargetBuilder",
       "params": [
         { "name": "self", "type": "*TargetRegistry" },
@@ -315,12 +315,12 @@
       ],
       "returns": "TargetBuilder",
       "is_pub": true,
-      "line": 297
+      "line": 290
     },
     {
       "type": "fn_private",
       "name": "capabilityDistance",
-      "match_hash": "7e8b1f73d97f2a2265f6561e510208c6cc69bc03c062254ca7d54ea1c438fbf3",
+      "match_hash": "5c5cc1ca22c4677e2e6842bfa08bdbc032a12f58effafaf8ca46480d50ac3dc2",
       "signature": "fn capabilityDistance(allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, provides: *const std.bit_set.DynamicBitSetUnmanaged) -> usize",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -329,12 +329,12 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 323
+      "line": 313
     },
     {
       "type": "fn_decl",
       "name": "resolveByCapability",
-      "match_hash": "82f3d3a420ab3dc6e876f5dc8203ef6b70b1e6f8360790671c5be7026c2a49c3",
+      "match_hash": "e636e7a246f31b2948f9790e976b0662ec76e9161695e7f185114bf423fc6b1e",
       "signature": "fn resolveByCapability(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged) -> ?*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -343,12 +343,12 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 349
+      "line": 332
     },
     {
       "type": "fn_decl",
       "name": "resolveByCapabilityWithHierarchy",
-      "match_hash": "003040ddbd20f9ef1bd6f797614db45da30fc08a1be7979067a21a5aedf6d775",
+      "match_hash": "ac9478cbc96739817006f55f22ca414967fb9e39b17c63871633787cd6b239a0",
       "signature": "fn resolveByCapabilityWithHierarchy(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, ancestor_caps: []const []const u8) -> ?*Target",
       "params": [
         { "name": "self", "type": "*const TargetRegistry" },
@@ -358,157 +358,157 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 375
+      "line": 358
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry basic operations",
       "is_pub": false,
-      "line": 410
+      "line": 393
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry GPA no leaks",
       "is_pub": false,
-      "line": 426
+      "line": 409
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex returns the correct target",
       "is_pub": false,
-      "line": 454
+      "line": 437
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex for unknown index returns null",
       "is_pub": false,
-      "line": 470
+      "line": 453
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: remove drops the target",
       "is_pub": false,
-      "line": 479
+      "line": 462
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: listNames returns sorted names",
       "is_pub": false,
-      "line": 504
+      "line": 487
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: essentialTargets returns only essential ones",
       "is_pub": false,
-      "line": 530
+      "line": 513
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: abstractTargets returns only abstract ones",
       "is_pub": false,
-      "line": 552
+      "line": 535
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getProviders and getProvidersForName",
       "is_pub": false,
-      "line": 575
+      "line": 558
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: get returns null for unknown name",
       "is_pub": false,
-      "line": 606
+      "line": 589
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: basic fluent registration",
       "is_pub": false,
-      "line": 619
+      "line": 602
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: depends and provides interned correctly",
       "is_pub": false,
-      "line": 635
+      "line": 618
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: feature parity with imperative style",
       "is_pub": false,
-      "line": 650
+      "line": 633
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: multiple commands accumulate",
       "is_pub": false,
-      "line": 690
+      "line": 673
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: id field set via fluent",
       "is_pub": false,
-      "line": 705
+      "line": 688
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: GPA no leaks — happy path",
       "is_pub": false,
-      "line": 717
+      "line": 700
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: integrates with DependencyResolver end-to-end",
       "is_pub": false,
-      "line": 737
+      "line": 720
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: exact match returns target",
       "is_pub": false,
-      "line": 770
+      "line": 753
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: empty registry returns null",
       "is_pub": false,
-      "line": 790
+      "line": 773
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: closest partial match returned",
       "is_pub": false,
-      "line": 805
+      "line": 788
     },
     {
       "type": "test_decl",
       "name": "resolveByCapabilityWithHierarchy: matches via ancestor capability",
       "is_pub": false,
-      "line": 827
+      "line": 810
     },
     {
       "type": "test_decl",
       "name": "resolveByCapabilityWithHierarchy: no ancestors returns same as resolveByCapability",
       "is_pub": false,
-      "line": 850
+      "line": 833
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: arena freed on happy path — GPA no leaks",
       "is_pub": false,
-      "line": 869
+      "line": 852
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: err accumulates and surfaces cause",
       "is_pub": false,
-      "line": 885
+      "line": 868
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: err field is null on successful register",
       "is_pub": false,
-      "line": 898
+      "line": 881
     }
   ]
 }

@@ -19,8 +19,7 @@ const types = @import("types.zig");
 // DocumentMetadata
 // =============================================================================
 
-/// Extracted metadata from a document — keywords, capabilities, skills, anchors.
-/// All slices borrow from the indexer's allocator; deinit with freeMetadata().
+/// Manages document metadata structures, owns shared state, ensures invariant integrity.
 pub const DocumentMetadata = struct {
     keywords: []const []const u8 = &.{},
     capabilities: []const []const u8 = &.{},
@@ -50,8 +49,7 @@ pub fn freeMetadata(allocator: std.mem.Allocator, m: DocumentMetadata) void {
 // DocumentIndexer VTable
 // =============================================================================
 
-/// Polymorphic interface for any document type that can be indexed and queried.
-/// Two pointers, no inheritance — fluent-wvr pattern.
+/// Manages document indexing structures, owns dynamic buffers, and ensures consistent state across operations.
 pub const DocumentIndexer = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -134,7 +132,7 @@ pub const DocumentIndexer = struct {
 // Produces stages from the guidance JSON metadata: prose from detail/comment,
 // code from source excerpts (when available), metadata from keywords/skills.
 
-/// Manages guidance JSON indexing logic, owns struct state, ensures consistent key structures across operations.
+/// Manages guidance JSON indexing with fixed buffers; owned by the module; ensures consistent key structures.
 pub const GuidanceJsonIndexerImpl = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,
@@ -146,7 +144,7 @@ fn guidanceJsonDocType(_: *anyopaque) []const u8 {
     return "guidance_json";
 }
 
-/// Converts a pointer to a Zig string into a JSON document ID slice.
+/// Converts a pointer to a Zig array into a JSON document ID slice.
 fn guidanceJsonDocId(ptr: *anyopaque) []const u8 {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     return self.doc.meta.source;

@@ -11,7 +11,7 @@ const comment_parser = @import("comment_parser.zig");
 /// Owned by SyncProcessor and freed in deinit.
 const CapabilitiesMap = std.StringHashMapUnmanaged([][]const u8);
 
-/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access patterns.
+/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access across calls.
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -289,9 +289,10 @@ pub const SyncProcessor = struct {
                                     m.comment_generated = true;
                                     result.has_changes = true;
                                     result.comments_generated = true;
-                                    // Recompute match_hash to include the new comment.
+                                    // Comment is inserted into source by comment_sync module.
+                                    // Keep match_hash as code-only (apiHash) for consistency.
                                     if (m.match_hash) |old_hash| self.allocator.free(old_hash);
-                                    m.match_hash = try hash.computeMemberHash(self.allocator, m.*);
+                                    m.match_hash = try hash.apiHash(self.allocator, m.name, m.params, m.returns);
                                 }
                             }
                             if (er.tags.len > 0) {
@@ -319,9 +320,13 @@ pub const SyncProcessor = struct {
                                     m.comment_generated = true;
                                     result.has_changes = true;
                                     result.comments_generated = true;
-                                    // Recompute match_hash to include the new comment.
+                                    // Comment is inserted into source by comment_sync module.
+                                    // Keep match_hash as code-only (structHash) for consistency.
+                                    // Note: structHash for containers requires field names to detect field
+                                    // changes, but struct fields aren't tracked in m.members.
+                                    // Field additions/removals in containers won't trigger regeneration.
                                     if (m.match_hash) |old_hash| self.allocator.free(old_hash);
-                                    m.match_hash = try hash.computeMemberHash(self.allocator, m.*);
+                                    m.match_hash = try hash.structHash(self.allocator, m.name, &.{});
                                 }
                             }
                             if (er.tags.len > 0) {
@@ -577,15 +582,11 @@ pub const SyncProcessor = struct {
             try self.store.saveGuidance(guidance_path, doc);
             std.debug.print("Generated: {s}\n", .{guidance_path});
         } else {
-            // No changes needed, but file was stale. Touch the JSON to mark it up-to-date.
-            // This prevents reprocessing on subsequent runs when source and JSON are in sync.
+            // No changes needed but still touch JSON to update its mtime to "now + 1 second".
+            // This ensures subsequent runs don't re-check this file.
             const marker_mod = @import("marker.zig");
-            marker_mod.touchFileAfter(guidance_path, filepath) catch |err| blk: {
-                // JSON might not exist yet (new file) - that's fine, skip touching
-                if (err != error.FileNotFound) {
-                    if (self.debug) std.debug.print("[sync] warning: failed to touch {s}: {s}\n", .{ guidance_path, @errorName(err) });
-                }
-                break :blk;
+            marker_mod.touchFileNowPlusOne(guidance_path) catch |err| {
+                if (self.debug) std.debug.print("[sync] warning: failed to touch {s}: {s}\n", .{ guidance_path, @errorName(err) });
             };
         }
 

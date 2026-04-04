@@ -119,7 +119,7 @@ pub const NoopEmbedding = struct {
 
 // ── Ollama embedding provider ─────────────────────────────────────
 
-/// Manages Ollama embeddings with a keyword structure, owns the model, and ensures consistent key-value pairs.
+/// Manages Ollama embeddings with fixed-size storage; owned by the service; key invariant is consistent embedding retrieval.
 pub const OllamaEmbedding = struct {
     allocator: std.mem.Allocator,
     base_url: []const u8,
@@ -237,7 +237,7 @@ pub const OllamaEmbedding = struct {
     }
 };
 
-/// Parse Ollama /api/embed response: {"embeddings":[[0.1, 0.2, ...]]}
+/// Converts a JSON string into a slice of f32 values using the allocator.
 pub fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8) ![]f32 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_bytes, .{}) catch return error.InvalidEmbeddingResponse;
     defer parsed.deinit();
@@ -273,7 +273,7 @@ pub fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
 
 // ── OpenAI-compatible provider ────────────────────────────────────
 
-/// Manages OpenAI embeddings with a fixed-size structure; owned by the service; key invariants include fixed dimensions and pre-trained weights.
+/// Manages OpenAI embeddings with a fixed-size structure; owned by the service; key invariants include fixed dimensions and embedding retrieval.
 pub const OpenAiEmbedding = struct {
     allocator: std.mem.Allocator,
     base_url: []const u8,
@@ -411,7 +411,7 @@ pub const OpenAiEmbedding = struct {
     }
 };
 
-/// Parse OpenAI-compatible embeddings API response.
+/// Converts a JSON array of AI response bytes into a slice of f32 values.
 pub fn parseOpenAiResponse(allocator: std.mem.Allocator, json_bytes: []const u8) ![]f32 {
     const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_bytes, .{}) catch return error.InvalidEmbeddingResponse;
     defer parsed.deinit();
@@ -596,3 +596,10 @@ test "EmbeddingProvider: thread_safe=true disables thread assertion" {
     defer std.testing.allocator.free(vec);
     try std.testing.expectEqual(@as(usize, 0), vec.len);
 }
+
+
+
+
+
+
+

@@ -1,9 +1,7 @@
 const std = @import("std");
 const common = @import("common");
 
-/// Classification of a source file's content type.
-/// Used in the `file_type` column of `ast_nodes` and by the plugin registry
-/// to route non-code files to appropriate handlers.
+/// Defines a file type with enum variants; manages ownership and invariants for file metadata.
 pub const FileType = enum {
     source, // Zig, Python, Rust, Go, etc.
     markdown, // .md, .markdown
@@ -45,7 +43,7 @@ pub const FileType = enum {
     }
 };
 
-/// Classifies a declaration extracted from an AST node (function, struct, enum, test, etc.).
+/// Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const MemberType = enum {
     fn_decl,
     fn_private,
@@ -64,14 +62,14 @@ pub const PatternType = enum {
     GoF,
 };
 
-/// Named design pattern (GoF or domain) attached to a Member for discovery.
+/// Defines a pattern for structured data handling, manages ownership, and ensures invariant integrity.
 pub const Pattern = struct {
     name: []const u8,
     type: PatternType,
     ref: ?[]const u8 = null,
 };
 
-/// One parameter of a function declaration: name, optional type annotation, and optional default value.
+/// Defines a parameter struct for configuration; managed by owner; immutable once initialized.
 pub const Param = struct {
     name: []const u8,
     type: ?[]const u8 = null,
@@ -115,7 +113,7 @@ pub const Skill = struct {
     context: ?[]const u8 = null,
 };
 
-/// Source-file identity: module name, relative path, and language tag stored in every guidance JSON.
+/// Defines a metadata structure for configuration; owned by the project; ensures consistent initialization and invariants.
 pub const Meta = struct {
     module: []const u8,
     source: []const u8,
@@ -148,7 +146,7 @@ pub const GuidanceDoc = struct {
     equivalents: []const []const u8 = &.{},
 };
 
-/// Tracks file matches with ownership model; manages lifecycle; not thread-safe.
+/// Tracks file matches with ownership model; managed via init/deinit; not thread-safe.
 pub const FileMatch = struct {
     filename: []const u8,
     filepath: []const u8,
@@ -156,7 +154,7 @@ pub const FileMatch = struct {
     line_context: []const u8 = "",
 };
 
-/// Lightweight summary of a guidance JSON returned by a search hit: path, comment, and skill/tag lists.
+/// Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.
 pub const GuidanceInfo = struct {
     path: []const u8,
     comment: []const u8 = "",
@@ -166,7 +164,7 @@ pub const GuidanceInfo = struct {
     tags: []const []const u8 = &.{},
 };
 
-/// Tracks AST nodes with ownership model; ensures invariants on structure and state.
+/// Tracks AST nodes with ownership model; ensures invariants on structure and mutability.
 pub const ASTAnalysis = struct {
     filepath: []const u8,
     functions: []const Member = &.{},
@@ -177,7 +175,7 @@ pub const ASTAnalysis = struct {
     signature_preview: []const u8 = "",
 };
 
-/// Aggregated output of the explain pipeline: matched files, guidance info, AST analysis, and LLM summary.
+/// Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.
 pub const QueryResult = struct {
     query: []const u8,
     file_matches: []const FileMatch = &.{},
@@ -194,7 +192,7 @@ pub const QueryResult = struct {
 // Staged explain pipeline types
 // ---------------------------------------------------------------------------
 
-/// Defines a stage kind for Zig projects, managing configuration and transitions with a fixed ownership model.
+/// Defines a stage kind for Zig projects, managing configuration and ownership with strict invariants.
 pub const StageKind = enum {
     /// Human-readable explanation from module or member comment.
     prose,
@@ -213,8 +211,7 @@ pub const StageKind = enum {
     not_found,
 };
 
-/// A single unit of information collected by the staged explain pipeline.
-/// All string fields are owned by this struct; call freeStage() to release.
+/// Defines a stage for structured guidance, manages ownership and invariants, not thread-safe.
 pub const Stage = struct {
     kind: StageKind,
     /// Content to display (prose text, code block, metadata text, etc.).
@@ -225,18 +222,18 @@ pub const Stage = struct {
     line: ?u32 = null,
 };
 
-/// Free all allocations owned by a single Stage.
+/// Releases memory associated with a stage using the provided allocator.
 pub fn freeStage(allocator: std.mem.Allocator, s: Stage) void {
     allocator.free(s.content);
     allocator.free(s.source);
 }
 
-/// Free a slice of Stages and all allocations they own.
+/// Releases allocated memory by freeing all stages passed to it.
 pub fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) void {
     for (stages) |s| freeStage(allocator, s);
 }
 
-/// Manages synchronization outcomes with fixed buffers; owned by the caller; ensures consistent state across operations.
+/// Manages synchronization state with fixed buffers; owned by the caller; ensures consistent access.
 pub const SyncResult = struct {
     filepath: []const u8,
     members_added: usize = 0,
@@ -249,7 +246,7 @@ pub const SyncResult = struct {
     source_modified: bool = false,
 };
 
-/// Print a step-progress line to stdout unconditionally (visible without --verbose).
+/// Prints formatted data using a Zig slice with specified formatting arguments.
 pub fn stepPrint(comptime fmt: []const u8, args: anytype) void {
     var buf: [512]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;

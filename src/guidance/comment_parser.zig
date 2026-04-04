@@ -5,7 +5,7 @@
 ///   isWellFormedComment()  — validate comment against style guidelines
 const std = @import("std");
 
-/// A parsed doc comment block.
+/// Represents structured documentation comments; owned by the module; ensures consistent parsing and invariants.
 pub const DocComment = struct {
     /// Raw text with `///` prefixes stripped and lines joined by newlines.
     text: []const u8,
@@ -24,8 +24,7 @@ pub const DocComment = struct {
     }
 };
 
-/// Parse `raw` comment text (with `///` prefixes already stripped) into a
-/// `DocComment`.  All returned string fields are owned by the caller.
+/// Converts a raw C string into a DocComment object using an allocator.
 pub fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) !DocComment {
     const text = try allocator.dupe(u8, raw);
     errdefer allocator.free(text);

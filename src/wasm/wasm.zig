@@ -55,7 +55,7 @@ pub const ExtismFunction = ?*anyopaque;
 pub const ExtismCurrentPlugin = ?*anyopaque;
 pub const ExtismSize = u64;
 
-/// Extism value type for host functions.
+/// Represents a value type with fixed-size storage; managed via ownership model; immutable by design.
 pub const ExtismValType = enum(u8) {
     void = 0,
     i32 = 1,
@@ -201,7 +201,7 @@ pub const extism = if (builtin.is_test or !have_extism) struct {
     pub extern "extism" fn extism_function_free(func: ExtismFunction) void;
 };
 
-/// Manifest for WASM plugin configuration.
+/// Defines metadata for Wasm modules, managing structure and version; owned by the module; ensures consistent binary format.
 pub const WasmManifest = struct {
     wasm_bytes: []const u8,
     memory_max: u32 = 16 * 1024 * 1024, // 16 MB default
@@ -215,7 +215,7 @@ pub const WasmManifest = struct {
     }
 };
 
-/// WASM Plugin wrapper with lifecycle management.
+/// Defines a WasmPlugin struct managing module interactions; encapsulates ownership and lifecycle; key invariant is module access control.
 pub const WasmPlugin = struct {
     const Self = @This();
 
@@ -299,12 +299,7 @@ pub const WasmPlugin = struct {
 // §4.3 Host Functions & Controlled I/O
 // ---------------------------------------------------------------------------
 
-/// Host function context - passed to host functions for controlled I/O.
-///
-/// `call_count` is incremented on every host-function invocation and compared
-/// against `max_calls` to prevent tight-loop DoS from malicious WASM modules.
-/// The counter is reset to zero each time a new plugin invocation begins via
-/// `HostFunctionContext.reset()`.
+/// Defines a host function context for Zig's WebAssembly, managing execution state and ownership without thread safety.
 pub const HostFunctionContext = struct {
     library: *Library,
     allocator: std.mem.Allocator,
@@ -319,17 +314,13 @@ pub const HostFunctionContext = struct {
     }
 };
 
-/// Check whether the per-invocation host-function rate limit has been reached.
-/// Increments `ctx.call_count` and returns `error.RateLimited` when the cap
-/// is exceeded.  All host functions call this as their first action.
+/// Validates request rate limits using provided context and returns an error if limits are exceeded.
 fn checkRateLimit(ctx: *HostFunctionContext) error{RateLimited}!void {
     ctx.call_count += 1;
     if (ctx.call_count > ctx.max_calls) return error.RateLimited;
 }
 
-/// Host function: Get node LOD1 summary by ID.
-/// Input: (id: i64)
-/// Returns pointer to string in WASM memory.
+/// Retrieves low-level node data from a plugin input, returning associated values.
 pub fn hostGetNodeLod1(
     plugin: ?*anyopaque,
     inputs: [*]const ExtismVal,
@@ -371,9 +362,7 @@ pub fn hostGetNodeLod1(
     outputs[0] = .{ .t = .ptr, .v = ptr };
 }
 
-/// Host function: Get neighbor node IDs for a given node.
-/// Input: (id: i64)
-/// Output: ptr to [count: u32][id0: i64, ...] in WASM memory.
+/// Retrieves neighbor data for a plugin based on input parameters and returns corresponding outputs.
 pub fn hostGetNeighbors(
     plugin: ?*anyopaque,
     inputs: [*]const ExtismVal,
@@ -426,9 +415,7 @@ pub fn hostGetNeighbors(
     outputs[0] = .{ .t = .ptr, .v = ptr };
 }
 
-/// Host function: Insert a directed edge between two nodes.
-/// Input: (from_id: i64, to_id: i64)
-/// Output: (status: i64) — 0 on success, 1 on error.
+/// Inserts an edge operation into a Zig plugin, accepting inputs and outputs with specified sizes.
 pub fn hostInsertEdge(
     plugin: ?*anyopaque,
     inputs: [*]const ExtismVal,
@@ -478,7 +465,7 @@ pub fn hostInsertEdge(
     outputs[0] = .{ .t = .i64, .v = @bitCast(@as(i64, 0)) };
 }
 
-/// Host function registry for controlled I/O.
+/// Manages function registrations and lookups; owned by the host; ensures stable function mapping.
 pub const HostFunctionRegistry = struct {
     const Self = @This();
 
@@ -559,8 +546,7 @@ pub const HostFunctionRegistry = struct {
 // WasmTarget has been merged into Target (via ExecutorKind.wasm).
 // This function takes a *Target whose executor tag is .wasm and executes it.
 
-/// Result of executing a WASM-backed Target.
-/// `provides` is caller-owned; free with provides.deinit(allocator).
+/// Represents the outcome of a Wasm execution, encapsulating results and errors; owned by the module; immutable once constructed.
 pub const WasmExecutionResult = struct {
     success: bool,
     output: []const u8, // slice into `payload` buffer — valid until payload is freed
@@ -575,8 +561,7 @@ pub const WasmExecutionResult = struct {
     }
 };
 
-/// Execute a WASM-backed Target against a ContextNode input.
-/// The target's executor must be .wasm; asserts otherwise.
+/// Executes a Zig compilation target on a Wasm target with specified allocator and context.
 pub fn runWasmTarget(
     allocator: std.mem.Allocator,
     target: *target_mod.Target,
@@ -647,7 +632,7 @@ pub fn runWasmTarget(
     };
 }
 
-/// Create plugin with host functions from the registry wired in.
+/// Creates a Wasm plugin with host function support using provided allocator, manifest, and registry.
 fn createPluginWithHostFunctions(
     allocator: std.mem.Allocator,
     manifest: WasmManifest,
@@ -677,13 +662,7 @@ fn createPluginWithHostFunctions(
     };
 }
 
-/// Execute a WASM binary with a plain string query as input.
-/// Calls the exported "run" function and returns the allocator-owned output.
-/// Used by QueueReactor L2 routing.  Returns error if Extism runtime is
-/// unavailable or the WASM invocation fails.
-///
-/// In test builds this function returns `error.WasmRuntimeNotAvailable`
-/// immediately so that test binaries do not require libextism to be linked.
+/// Executes a Wasm query using an allocator and returns the result as a Zig array.
 pub fn executeWasmQuery(
     allocator: std.mem.Allocator,
     wasm_bytes: []const u8,
@@ -697,11 +676,7 @@ pub fn executeWasmQuery(
     return allocator.dupe(u8, raw);
 }
 
-/// Execute a WASM module with Library host functions wired in via a HostFunctionRegistry.
-/// Identical to executeWasmQuery but creates the plugin with host functions so that
-/// WASM tools can call get_node_lod1, get_neighbors, and insert_edge.
-///
-/// Used by QueueReactor L2 routing (R2).
+/// Executes a Wasm query using provided allocator, input data, and registry, returning the result as a Zig array.
 pub fn executeWasmQueryWithHosts(
     allocator: std.mem.Allocator,
     wasm_bytes: []const u8,
@@ -731,7 +706,7 @@ pub const ToolCompilerConfig = struct {
     editable: reflection.Editable(@This()) = .{},
 };
 
-/// Supported WASM source languages.
+/// Defines a language enum for Wasm, managing type safety and ownership without thread safety.
 pub const WasmLanguage = enum {
     zig,
     rust,
@@ -750,7 +725,7 @@ pub const WasmLanguage = enum {
     }
 };
 
-/// Dynamic tool generator - compiles source code to WASM.
+/// Defines a tool generator struct managing tool definitions; owns tool metadata; not thread-safe.
 pub const ToolGenerator = struct {
     const Self = @This();
 
@@ -859,8 +834,7 @@ pub const ToolTestCase = struct {
     expected_output_contains: ?[]const u8 = null,
 };
 
-/// Run a series of test cases against a WASM binary.
-/// Returns true if all test cases pass, false if any fail.
+/// Validates Wasm byte data against test cases using an allocator.
 pub fn verifyWithTests(
     allocator: std.mem.Allocator,
     wasm_bytes: []const u8,
@@ -878,7 +852,7 @@ pub fn verifyWithTests(
     return true;
 }
 
-/// Cache entry for a single WASM tool with TTL/LRU metadata.
+/// Represents a cached entry in the WasmToolCache, managing storage and access; owned by the module, immutable once created.
 pub const WasmToolCacheEntry = struct {
     wasm_bytes: []const u8,
     created_at: i64,

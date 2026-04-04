@@ -9,7 +9,7 @@ pub const Role = permissions_mod.Role;
 pub const RolePermissions = permissions_mod.RolePermissions;
 pub const perm_all = permissions_mod.perm_all;
 
-/// Defines a type identifier with enum capabilities; managed centrally; immutable once defined.
+/// Defines a type identifier with compile-time checks; manages ownership and invariants.
 pub const TypeId = enum(u8) {
     int_u8,
     int_u16,
@@ -57,7 +57,7 @@ pub fn typeIdFromType(comptime T: type) TypeId {
     };
 }
 
-/// Defines a typed accessor structure for type-safe field access; manages ownership and invariants.
+/// Defines a typed accessor structure for controlled type-safe interactions; manages ownership and invariants.
 pub const TypedAccessor = struct {
     name: []const u8,
     offset: usize,
@@ -186,7 +186,7 @@ pub fn TypedAccessorTable(comptime Host: type) type {
     };
 }
 
-/// Represents a typed editable structure with strict ownership and invariants; managed via reflection.
+/// Represents a typed struct with editable fields; managed via ownership and lifetime; ensures data integrity.
 pub const TypedEditable = struct {
     host_ptr: *anyopaque,
     accessors: []const TypedAccessor,

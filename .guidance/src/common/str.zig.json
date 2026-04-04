@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "looksLikeIdentifier",
-      "match_hash": "e83302f980d853ea7c01ccd648c9f5f8bfd64c7d7f3cf11bd30f055ff71f22e0",
+      "match_hash": "fdf50e4c3d0aed385ee65a7f17debcdf3929233322f983ecf217db9d3c432653",
       "signature": "fn looksLikeIdentifier(token: []const u8) -> bool",
       "params": [
         { "name": "token", "type": "[]const u8" }
@@ -22,31 +22,31 @@
     {
       "type": "fn_decl",
       "name": "isTestPath",
-      "match_hash": "5f085f475423eb0a8b0dd595f513ebe75164a3ae7b0a8499cac049709f8695b2",
+      "match_hash": "1b9553e870b53dcfb1b66671ec584c0838af4f3b00661b9a729b1fc77072992e",
       "signature": "fn isTestPath(rel_path: []const u8) -> bool",
       "params": [
         { "name": "rel_path", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 31
+      "line": 27
     },
     {
       "type": "fn_decl",
       "name": "skillNameFromRef",
-      "match_hash": "f6fc702df2201a7cf70fda3f21fb1d8a29f5ef4a9dcbec425c1245a03fcff73f",
+      "match_hash": "6c5a99722bd2cc80fab1517db23d0e82b52417cefc5ca2049163f000aea8045b",
       "signature": "fn skillNameFromRef(ref: []const u8) -> []const u8",
       "params": [
         { "name": "ref", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 54
+      "line": 43
     },
     {
       "type": "fn_decl",
       "name": "containsWord",
-      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
+      "match_hash": "42e0003d20a6bda2eaa94f218d350ec0ead739372dacb316e631d2bfbcd9fcc7",
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -54,12 +54,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 70
+      "line": 57
     },
     {
       "type": "fn_decl",
       "name": "containsAny",
-      "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
+      "match_hash": "8e7b321f00dbfef44c7232c8a4498c41c1bbb8ac9027c77df0c7640754a5b308",
       "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -67,12 +67,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 85
+      "line": 71
     },
     {
       "type": "fn_decl",
       "name": "containsAnyWord",
-      "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
+      "match_hash": "a353bcf6efc6dc9672c86db09c484b3beb464e775306629ce272815a14ba899f",
       "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -80,12 +80,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 94
+      "line": 79
     },
     {
       "type": "fn_decl",
       "name": "hasExtension",
-      "match_hash": "67214f2a30390f2260026fc7455d417021f59f586a66b3e97c73fcdfae83a070",
+      "match_hash": "a09c821bdc627204655c457772d4b8a7ad118e0c13c4df74ce9279133d07163b",
       "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },
@@ -93,12 +93,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 105
+      "line": 87
     },
     {
       "type": "fn_decl",
       "name": "isPathToken",
-      "match_hash": "29ca08119803dc0c18bd9aa975ab9cd548267e288131e7a59aea55bac07ee33e",
+      "match_hash": "5ac05f0c4c733ec335230515567519c98508eaedbda4415e2bfdaea94c1d41ea",
       "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },
@@ -106,12 +106,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 116
+      "line": 97
     },
     {
       "type": "fn_decl",
       "name": "containsIgnoreCase",
-      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
+      "match_hash": "f5eb822465bbef4e6f296244686c6d8d52c20a7548950ad4b2f3402feefe7264",
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -119,24 +119,24 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 126
+      "line": 103
     },
     {
       "type": "fn_decl",
       "name": "langFromPath",
-      "match_hash": "bad2ce8f34135954f00db94e5af60010e132d90f1cae1af4581ed216fa02fbb2",
+      "match_hash": "94fb4b4cc8c9a20b10578f7a81f034d3ba149ecf3afd71c8b7d4124474b43d27",
       "signature": "fn langFromPath(path: []const u8) -> []const u8",
       "params": [
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 143
+      "line": 114
     },
     {
       "type": "fn_decl",
       "name": "dupeStrings",
-      "match_hash": "dc915ca1f604bc1cfa756da90fec70ff4171bfbfc10e9cf939c6803b18c5a268",
+      "match_hash": "a10294488a7ecd5067935833db1e69a64598ce3a9b1db0e75f7e3e79976e93f5",
       "signature": "fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -144,12 +144,12 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 161
+      "line": 124
     },
     {
       "type": "fn_decl",
       "name": "dupeString",
-      "match_hash": "03ad2bb4525928eef5b5e3ff9feadcb31359b3c8e5e2b6d698eb3b98b392df61",
+      "match_hash": "96113e80f3c6e6067eb2adc7eb417eea24b5e9065ea14792a564ac4f7ab552c5",
       "signature": "fn dupeString(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -157,12 +157,12 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 176
+      "line": 139
     },
     {
       "type": "fn_decl",
       "name": "dupeStringOpt",
-      "match_hash": "1b451b4770dd4d7b4fb37136499817118b39887f4223e65f84cfad1a2aa0cb7f",
+      "match_hash": "184217376d8a8fb4c6450e4638431f192bad53c3464c5951dc035583fde6ebb9",
       "signature": "fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -170,204 +170,204 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 189
+      "line": 145
     },
     {
       "type": "fn_decl",
       "name": "stripBoilerplate",
-      "match_hash": "c56921142090f8e4dd08c2b113fff2ce2b6316f5ca933156ab39987847a4c2aa",
+      "match_hash": "111191ae18d6e78ca224d47de291b9a4a87587bc08ffdc6b76d6bcb1cb1fd66e",
       "signature": "fn stripBoilerplate(comment: []const u8) -> []const u8",
       "params": [
         { "name": "comment", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 214
+      "line": 170
     },
     {
       "type": "fn_decl",
       "name": "isNoisyComment",
-      "match_hash": "67ab0a765e7b6c378e3394e80948062139a6358d9d30df638456c4f3ef8354c5",
+      "match_hash": "0fb953b04096ab7e71aaf688ec969bfeaa7a2b256cfe33d48ff84c5ef8b0e661",
       "signature": "fn isNoisyComment(comment: []const u8) -> bool",
       "params": [
         { "name": "comment", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 229
+      "line": 181
     },
     {
       "type": "fn_decl",
       "name": "stripNlPrefix",
-      "match_hash": "e7161a7902fa22b05c3f595d5137f5c5b5d32f5fe96b1ad4dff84ee7762ca773",
+      "match_hash": "23f44561710ff727ecfb9cfb184692de6647ea926206163d1af7f7ad39b39456",
       "signature": "fn stripNlPrefix(query: []const u8) -> []const u8",
       "params": [
         { "name": "query", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 273
+      "line": 225
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier snake_case",
       "is_pub": false,
-      "line": 291
+      "line": 243
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier camelCase and PascalCase",
       "is_pub": false,
-      "line": 296
+      "line": 248
     },
     {
       "type": "test_decl",
       "name": "containsWord whole-word match",
       "is_pub": false,
-      "line": 302
+      "line": 254
     },
     {
       "type": "test_decl",
       "name": "containsAny matches any keyword",
       "is_pub": false,
-      "line": 310
+      "line": 262
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord whole-word multi-keyword",
       "is_pub": false,
-      "line": 317
+      "line": 269
     },
     {
       "type": "test_decl",
       "name": "hasExtension matches without dot",
       "is_pub": false,
-      "line": 323
+      "line": 275
     },
     {
       "type": "test_decl",
       "name": "isPathToken detects paths and extensions",
       "is_pub": false,
-      "line": 331
+      "line": 283
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase finds substring",
       "is_pub": false,
-      "line": 339
+      "line": 291
     },
     {
       "type": "test_decl",
       "name": "langFromPath maps extensions",
       "is_pub": false,
-      "line": 346
+      "line": 298
     },
     {
       "type": "test_decl",
       "name": "dupeStrings produces independent copies",
       "is_pub": false,
-      "line": 354
+      "line": 306
     },
     {
       "type": "test_decl",
       "name": "dupeStrings handles empty slice",
       "is_pub": false,
-      "line": 369
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier rejects plain words",
       "is_pub": false,
-      "line": 375
+      "line": 327
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix removes interrogative prefix",
       "is_pub": false,
-      "line": 382
+      "line": 334
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix leaves identifiers unchanged",
       "is_pub": false,
-      "line": 390
+      "line": 342
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix is case-insensitive on prefix",
       "is_pub": false,
-      "line": 396
+      "line": 348
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate removes leading phrase",
       "is_pub": false,
-      "line": 401
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate trims leading whitespace",
       "is_pub": false,
-      "line": 408
+      "line": 360
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: short comment is noisy",
       "is_pub": false,
-      "line": 412
+      "line": 364
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: hex dump is noisy",
       "is_pub": false,
-      "line": 417
+      "line": 369
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: prose is not noisy",
       "is_pub": false,
-      "line": 421
+      "line": 373
     },
     {
       "type": "test_decl",
       "name": "STOP_WORDS contains expected words",
       "is_pub": false,
-      "line": 426
+      "line": 378
     },
     {
       "type": "test_decl",
       "name": "dupeString produces independent copy",
       "is_pub": false,
-      "line": 434
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "dupeString returns null for empty string",
       "is_pub": false,
-      "line": 442
+      "line": 394
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns null for null input",
       "is_pub": false,
-      "line": 447
+      "line": 399
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns null for empty string",
       "is_pub": false,
-      "line": 452
+      "line": 404
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns copy for non-empty string",
       "is_pub": false,
-      "line": 457
+      "line": 409
     },
     {
       "type": "fn_decl",
       "name": "slugify",
-      "match_hash": "828aca300e0dea36f99a766e5072f29e19d911f3bae8e2224bdc47e3351917ea",
+      "match_hash": "e5e466f96bba6cbc9c9f99de1e791387c87c02a4bbd38028a6dfbf4b81d55549",
       "signature": "fn slugify(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -375,25 +375,25 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 469
+      "line": 419
     },
     {
       "type": "test_decl",
       "name": "slugify converts to lowercase and replaces spaces",
       "is_pub": false,
-      "line": 489
+      "line": 439
     },
     {
       "type": "test_decl",
       "name": "slugify caps at 40 chars",
       "is_pub": false,
-      "line": 495
+      "line": 445
     },
     {
       "type": "test_decl",
       "name": "slugify handles empty string",
       "is_pub": false,
-      "line": 502
+      "line": 452
     }
   ]
 }

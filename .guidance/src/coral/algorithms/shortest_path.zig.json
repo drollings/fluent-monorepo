@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "ShortestPath",
-      "match_hash": "62e67929dfbbc419d6af618a33be48b4c8dce6e0fdd0710f2381daab16843e84",
+      "match_hash": "e629b428150f815c589dbf01cab91d795b6a75fce46b2248948a0d28bf88f218",
       "signature": "keyword_struct ShortestPath { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "findPath",
-          "match_hash": "57f4e4c573e068a43ef68d5b374e14ccb406d5840d1be50847da12d0470971cc",
+          "match_hash": "3bda785a1d7340c2b3b40c3b3dfb7a2f2eeb6acf4c0a0edddb77bd43b92c1617",
           "signature": "fn findPath(arena: Allocator, graph: *const CSRGraph, source: u32, target: u32) -> ?[]u32",
           "params": [
             { "name": "arena", "type": "Allocator" },
@@ -32,7 +32,7 @@
     ,    {
           "type": "fn_decl",
           "name": "findAllReachable",
-          "match_hash": "98027b695d1eee18cc7b0399e8d3574c64f8180725f35621707d1ae120c186e7",
+          "match_hash": "b7de2b3d0becdd2fe65cada8f6b4912214575573848a0fc7bee5afc7a4ed397a",
           "signature": "fn findAllReachable(arena: Allocator, graph: *const CSRGraph, source: u32, max_distance: f32) -> []PathResult",
           "params": [
             { "name": "arena", "type": "Allocator" },
@@ -50,14 +50,14 @@
     {
       "type": "struct",
       "name": "HeapEntry",
-      "match_hash": "2a0a01850273e3d7469776376fa2e9a02a28da006be95d149b41dae84399c196",
+      "match_hash": "97b8979e1f74864f379cd26e52536c98a3d3737ac302d323f0d84e978cef9be1",
       "signature": "keyword_struct HeapEntry { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_private",
           "name": "lessThan",
-          "match_hash": "152b714b2e0ac31d1d43f1c541638911f17f87f7609f1da359cf9fab0c04af83",
+          "match_hash": "a504c2a7db5b044ed56c2a9532fca1b91fd76049d4cb7ad4b6a44a7bd6bb54b6",
           "signature": "fn lessThan(_: void, a: HeapEntry, b: HeapEntry) -> std.math.Order",
           "params": [
             { "name": "_", "type": "void" },
@@ -74,7 +74,7 @@
     {
       "type": "fn_private",
       "name": "runDijkstra",
-      "match_hash": "88c7e99a9e389d45c5d4e65f69170274b53c64cf47a78c1cfdce29c08a2e5572",
+      "match_hash": "4180b30500d09e2d6d3cb43cb3a3d02195643b9f962084d91aef3172eff410ec",
       "signature": "fn runDijkstra(arena: Allocator, graph: *const CSRGraph, source: u32, target: ?u32) -> DijkstraResult",
       "params": [
         { "name": "arena", "type": "Allocator" },

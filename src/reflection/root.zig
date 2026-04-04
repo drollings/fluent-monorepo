@@ -95,7 +95,7 @@ const testing = std.testing;
 
 // ── primitive types ──────────────────────────────────────────────────────────
 
-/// Represents configuration settings with a fixed structure; owned by the module; ensures consistent initialization and deinitialization.
+/// Represents configuration settings with strict ownership and invariants; managed via reflection.
 const TestConfig = struct {
     port: u16 = 8080,
     timeout: f32 = 30.0,
@@ -319,7 +319,7 @@ test "Editable: access denied on read" {
 
 // ── Schema description for AI agents ───────────────────────────────────────
 
-/// Defines a test schema with fixed-size buffers, managed via ownership and lifecycle; ensures invariants are preserved.
+/// Defines a test schema with fixed-size buffers, managed via ownership and lifecycle; ensures invariant buffer management.
 const TestSchema = struct {
     port: u16 = 8080,
     host: []const u8 = "localhost",
@@ -817,7 +817,7 @@ const DbConfig = struct {
     port: u16 = 5432,
 };
 
-/// Host struct with a nested plain-data struct field.
+/// Represents application configuration with structured data; managed centrally; immutable after initialization.
 const AppConfig = struct {
     db: DbConfig = .{},
     timeout_ms: u32 = 5000,

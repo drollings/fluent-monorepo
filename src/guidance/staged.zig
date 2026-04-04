@@ -21,11 +21,7 @@ const SearchResult = GuidanceDb.SearchResult;
 // Stage collection entry point
 // ---------------------------------------------------------------------------
 
-/// Collect all stages for a query by searching the vector/keyword database
-/// and loading supporting data from guidance JSON files.
-///
-/// Returned slice is owned by the caller; free with types.freeStages() then
-/// allocator.free(slice).
+/// Executes a staged query using the provided allocator, database, and workspace, returning a Stage array.
 pub fn executeStaged(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -53,8 +49,7 @@ pub fn executeStagedWithAliases(
 // Below NOT_FOUND_RRF_THRESHOLD, nothing relevant was found.
 const NOT_FOUND_RRF_THRESHOLD: f64 = 0.004;
 
-/// M7: Build "not found" stages when search results are below confidence threshold.
-/// Returns an owned slice of stages; caller must call types.freeStages() + allocator.free().
+/// Constructs a list of stage identifiers for missing data in the GuidanceDb.
 fn buildNotFoundStages(
     allocator: std.mem.Allocator,
     query: []const u8,
@@ -103,8 +98,7 @@ fn buildNotFoundStages(
     return stages.toOwnedSlice(allocator);
 }
 
-/// M7: Check if any result is relevant to the original query tokens.
-/// Returns true if at least one result name or source contains a query token.
+/// Checks if a search result matches the original query and returns a boolean.
 fn anyResultIsRelevant(results: []const SearchResult, original_query: []const u8) bool {
     // Extract meaningful tokens from the query (skip stop words, short words)
     var tok_it = std.mem.tokenizeAny(u8, original_query, " \t\n\r_-");
@@ -650,9 +644,7 @@ pub fn executeStagedWithAliasesOriginal(
 // Follow-up expansion (M7)
 // ---------------------------------------------------------------------------
 
-/// Follow metadata breadcrumbs: used_by paths and skill refs found in the top
-/// search results.  Returns a NEW slice of additional stages to append.
-/// Caller owns returned slice and must free with types.freeStages() + free(slice).
+/// Expands follow-up data structures based on allocation limits and source constraints.
 pub fn expandFollowUps(
     allocator: std.mem.Allocator,
     db_results_file_paths: []const []const u8, // file_path fields from search results
@@ -741,10 +733,7 @@ pub fn expandFollowUps(
 // Output formatting (M9)
 // ---------------------------------------------------------------------------
 
-/// Format a []Stage slice into clean markdown output.
-/// If `summary` is non-null it is prepended as the synthesized answer block.
-/// If `followup_keywords` is non-null, they are appended as suggested queries.
-/// Returns an owned allocation; caller must free.
+/// Processes a Zig code snippet to format it into a structured output using provided allocator and stages.
 pub fn formatStaged(
     allocator: std.mem.Allocator,
     query: []const u8,
@@ -934,10 +923,7 @@ pub fn formatStaged(
 // Source excerpt extraction
 // ---------------------------------------------------------------------------
 
-/// Like `extractSourceExcerpt` but verifies (and corrects) the line number
-/// before extracting, using `member_name` to locate the declaration.
-/// Logs a debug warning when the line number was stale.
-/// `member_name` may be null; in that case no verification is performed.
+/// Extracts verified source excerpt from workspace, returning a slice of extracted bytes.
 pub fn extractSourceExcerptVerified(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -975,7 +961,7 @@ pub fn extractSourceExcerptVerified(
     return extractExcerptFromSource(allocator, src, effective_line, node_type);
 }
 
-/// Map a node_type string (as stored in the DB) to the corresponding MemberType.
+/// Converts a node type array into its corresponding Zig member type.
 fn memberTypeFromNodeType(node_type: []const u8) types.MemberType {
     if (std.mem.eql(u8, node_type, "fn_decl")) return .fn_decl;
     if (std.mem.eql(u8, node_type, "fn_private")) return .fn_private;
@@ -989,11 +975,7 @@ fn memberTypeFromNodeType(node_type: []const u8) types.MemberType {
     return .fn_decl; // fallback
 }
 
-/// Load source file and extract an excerpt starting at `start_line` (1-based).
-/// Extracts complete functions/structs by tracking brace depth.
-/// For functions: extracts the entire function.
-/// For structs/enums/unions: abbreviates to signatures.
-/// Returns an owned allocation; caller must free.
+/// Extracts a source excerpt from a workspace slice using an allocator and node metadata.
 pub fn extractSourceExcerpt(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -1011,11 +993,7 @@ pub fn extractSourceExcerpt(
     return extractExcerptFromSource(allocator, src, start_line, node_type);
 }
 
-/// Extract a complete logical unit (function/struct/etc) starting at `start_line` (1-based).
-/// Uses brace counting to find the end of the scope.
-/// For functions: extracts the entire function (no line limit).
-/// For structs/enums/unions: abbreviates to declarations only.
-/// Returns an owned allocation.
+/// Extracts a specified excerpt from a Zig source slice using an allocator and node types.
 pub fn extractExcerptFromSource(
     allocator: std.mem.Allocator,
     src: []const u8,
@@ -1031,8 +1009,7 @@ pub fn extractExcerptFromSource(
 // Guidance JSON helpers
 // ---------------------------------------------------------------------------
 
-/// Build a metadata Stage from a guidance JSON file.
-/// Returns null when the file is absent or has no useful metadata.
+/// Constructs a Zig stage metadata object using provided allocator and source data.
 pub fn buildMetadataStage(
     allocator: std.mem.Allocator,
     json_path: []const u8,
@@ -1147,8 +1124,7 @@ pub fn buildMetadataStage(
     };
 }
 
-/// Load just the module-level comment from a guidance JSON file.
-/// Returns an owned string or null.
+/// Loads a JSON module comment from a file path into a Zig array of bytes.
 fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
     var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
@@ -1158,8 +1134,7 @@ fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]con
     return allocator.dupe(u8, cv.string) catch null;
 }
 
-/// Load skill names (short names like "zig-current") from a guidance JSON file.
-/// Returns an owned slice of owned strings; caller frees.
+/// Loads skill names from a JSON file into a Zig array of byte slices.
 pub fn loadSkillNamesFromJson(
     allocator: std.mem.Allocator,
     json_path: []const u8,
@@ -1195,16 +1170,12 @@ pub fn loadSkillNamesFromJson(
     return out.toOwnedSlice(allocator);
 }
 
-/// Parse the first description / first paragraph from the content of a SKILL.md file.
-///
-/// Delegates to doc_parser.parseSkillDocContent for unified parsing logic.
-/// Returns an owned string; `content` is not modified.
+/// Converts a C string into a Zig-safe slice, handling memory allocation and parsing.
 pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
     return doc_parser.parseSkillDocContent(allocator, content);
 }
 
-/// Load the first paragraph / description from a SKILL.md file.
-/// Returns an owned string or null.
+/// Loads a skill excerpt from a directory into a Zig array slice.
 pub fn loadSkillExcerpt(
     allocator: std.mem.Allocator,
     skills_dir: []const u8,

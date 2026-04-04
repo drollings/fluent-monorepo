@@ -24,14 +24,14 @@ const sync_engine_mod = @import("sync_engine.zig");
 /// Maximum size of a single JSON-RPC message (4 MB).
 const MAX_MSG_SIZE = 4 * 1024 * 1024;
 
-/// A JSON-RPC 2.0 request.
+/// Represents a request structure for communication; managed by owner; ensures consistent state across invocations.
 const Request = struct {
     id: ?std.json.Value = null,
     method: []const u8,
     params: ?std.json.Value = null,
 };
 
-/// Write a JSON-encoded string (with surrounding quotes and escaping).
+/// Writes a JSON-formatted string to a writer, converting input bytes into a C-style array of bytes.
 fn writeJsonString(writer: anytype, s: []const u8) !void {
     try writer.writeByte('"');
     for (s) |ch| {
@@ -48,7 +48,7 @@ fn writeJsonString(writer: anytype, s: []const u8) !void {
     try writer.writeByte('"');
 }
 
-/// Write a JSON-RPC 2.0 success response.
+/// Writes Zig code content to a writer using a JSON ID and byte slice.
 fn writeResult(writer: anytype, id: ?std.json.Value, content: []const u8) !void {
     try writer.print(
         \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":
@@ -60,7 +60,7 @@ fn writeResult(writer: anytype, id: ?std.json.Value, content: []const u8) !void 
     try writer.writeAll("}}]}}\n");
 }
 
-/// Write a JSON-RPC 2.0 error response.
+/// Handles error writing with id, code, and message parameters.
 fn writeError(writer: anytype, id: ?std.json.Value, code: i32, msg: []const u8) !void {
     try writer.print(
         \\{{"jsonrpc":"2.0","id":{s},"error":{{"code":{d},"message":
@@ -79,7 +79,7 @@ fn writeError(writer: anytype, id: ?std.json.Value, code: i32, msg: []const u8) 
 // Tool dispatch
 // ---------------------------------------------------------------------------
 
-/// Initializes memory allocation with provided allocator and JSON ID, returning void.
+/// Initializes memory allocation with the provided allocator and JSON ID, returning void.
 fn handleInitialize(allocator: std.mem.Allocator, writer: anytype, id: ?std.json.Value) !void {
     _ = allocator;
     const resp =
@@ -105,7 +105,7 @@ fn handleToolsList(writer: anytype, id: ?std.json.Value) !void {
     try writer.writeByte('\n');
 }
 
-/// Processes a JSON tool call with allocator, writer, and parameters, returning a processed value.
+/// Handles tool call with allocator, writer, JSON name, and parameters, returning no value on success.
 fn handleToolCall(
     allocator: std.mem.Allocator,
     writer: anytype,
@@ -192,8 +192,7 @@ fn handleToolCall(
 // Main serve loop
 // ---------------------------------------------------------------------------
 
-/// Start the MCP STDIO server. Reads JSON-RPC requests from stdin line by
-/// line and writes responses to stdout.
+/// Transforms a Zig source code string into a memory-allocated slice for processing.
 pub fn serve(allocator: std.mem.Allocator, args: []const []const u8) !void {
     _ = args;
 

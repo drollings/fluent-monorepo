@@ -9,14 +9,14 @@
     {
       "type": "struct",
       "name": "TypeInference",
-      "match_hash": "bb510e717300d45d7d7d0b9f144d0f3252f1f829c1a813137aa7acd96a12bfc2",
+      "match_hash": "e257aeb266febe74be4d8ed42c9fc68e803a08f7abe2f4b6aede444ec4ae55f8",
       "signature": "keyword_struct TypeInference { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "9b44993b70856037e95e16857541dd9952188f5b8a24c0e47d1e9b4ed24eea7d",
+          "match_hash": "1aaa306c4c7fe7a8b3319ea766cec2cb178c4130c70b2a7e5e5706809d650bb3",
           "signature": "fn build(arena: Allocator, class_ids: []const i64, edges: []const [2]i64) -> Self",
           "params": [
             { "name": "arena", "type": "Allocator" },
@@ -30,7 +30,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "792ef6ba61fc23fec40369ab9c53c481653a1b3233a99dac34f0ebefa662b4e0",
+          "match_hash": "ed38086e8a982374cba95e5a04501609b77fc8b1614a6b94d1605c551b0bb200",
           "signature": "fn deinit(self: *Self, arena: Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -43,7 +43,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isSubclassOf",
-          "match_hash": "4f854983251f1516a8bee8c0056e448209ee7ec50922520a2a5ba6d5a6cb47ec",
+          "match_hash": "5190cd89432afd71de2efc1b8f079c415f57d4db767b0fdcaab55bb3b0f9735d",
           "signature": "fn isSubclassOf(self: *const Self, class_id: i64, ancestor_id: i64) -> bool",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -57,7 +57,7 @@
     ,    {
           "type": "fn_decl",
           "name": "classCount",
-          "match_hash": "0c2511ff70837ef404482d63a8da5f2fcb3969fa25ca283d90e24fdd2a812505",
+          "match_hash": "16f85bc5ee91e09f86f1f8eeec15686b75d8e3e7c325a3469ea54536205b56ec",
           "signature": "fn classCount(self: *const Self) -> usize",
           "params": [
             { "name": "self", "type": "*const Self" }

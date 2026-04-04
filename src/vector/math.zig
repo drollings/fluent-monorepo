@@ -6,8 +6,7 @@ const std = @import("std");
 
 // ── Cosine similarity ─────────────────────────────────────────────
 
-/// Cosine similarity between two vectors. Returns 0.0–1.0.
-/// Returns 0.0 for empty, mismatched, or degenerate inputs.
+/// Calculates cosine similarity between two arrays of f32 values.
 pub fn cosineSimilarity(a: []const f32, b: []const f32) f32 {
     if (a.len != b.len or a.len == 0) return 0.0;
 
@@ -40,7 +39,7 @@ pub fn cosineSimilarity(a: []const f32, b: []const f32) f32 {
 
 // ── Serialization ─────────────────────────────────────────────────
 
-/// Serialize f32 vector to bytes (little-endian). Caller owns result.
+/// Converts a vector of f32 to a byte array using an allocator.
 pub fn vecToBytes(allocator: std.mem.Allocator, v: []const f32) ![]u8 {
     const bytes = try allocator.alloc(u8, v.len * 4);
     for (v, 0..) |f, i| {
@@ -50,7 +49,7 @@ pub fn vecToBytes(allocator: std.mem.Allocator, v: []const f32) ![]u8 {
     return bytes;
 }
 
-/// Deserialize bytes to f32 vector (little-endian). Caller owns result.
+/// Converts a null-terminated byte slice to a vector of f32 values.
 pub fn bytesToVec(allocator: std.mem.Allocator, bytes: []const u8) ![]f32 {
     const count = bytes.len / 4;
     const result = try allocator.alloc(f32, count);
@@ -84,7 +83,7 @@ pub const IdScore = struct {
 /// Higher values (e.g., 80) give more weight to lower-ranked items.
 pub const RRF_K: f32 = 60.0;
 
-/// Merges two sets of results using weights and limits, returning a combined ScoredResult slice.
+/// Combines vector results with weights, merging scores into a unified output.
 pub fn hybridMerge(
     allocator: std.mem.Allocator,
     vector_results: []const IdScore,
@@ -165,15 +164,7 @@ pub fn hybridMerge(
     return allocator.dupe(ScoredResult, results.items[0..actual_limit]);
 }
 
-/// Three-way hybrid merge using Reciprocal Rank Fusion (RRF).
-///
-/// RRF is the standard approach for fusing heterogeneous result streams.
-/// Handles vector, keyword, and capability results with different score distributions.
-///
-/// RRF score = Σ(1 / (k + rank) * weight) for each list containing the item
-///
-/// Deduplicates by id. Results sorted by RRF score descending.
-/// Caller owns the returned slice and must free it.
+/// Merges three score vectors into a single result using allocator and parameters.
 pub fn hybridMergeThree(
     allocator: std.mem.Allocator,
     vector_results: []const IdScore,

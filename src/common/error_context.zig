@@ -16,8 +16,7 @@ const std = @import("std");
 /// Maximum bytes copied from a user-supplied value into an ErrorContext.
 const max_value_len: usize = 128;
 
-/// Stack-allocated structured error context.
-/// Provides `format()` for consistent log formatting without heap allocation.
+/// Manages error context structures, owns state, ensures invariants; not thread-safe.
 pub const ErrorContext = struct {
     /// Operation that failed (static string literal).
     operation: []const u8,
@@ -102,9 +101,7 @@ pub const ErrorContext = struct {
     }
 };
 
-/// Arena-backed error context for cases needing allocation.
-/// Use when the error context needs to outlive the current stack frame
-/// or when multiple errors need to be collected.
+/// Manages error context structures for arena allocations, ensuring ownership and invariants during initialization.
 pub const ArenaErrorContext = struct {
     operation: []const u8,
     field: ?[]const u8,
@@ -155,8 +152,7 @@ pub const ArenaErrorContext = struct {
     }
 };
 
-/// Chain two error contexts together.
-/// Creates a new message: "child (caused by: parent)"
+/// Links error contexts across levels in the arena hierarchy.
 pub fn chain(
     arena: std.mem.Allocator,
     child: *ArenaErrorContext,
@@ -249,3 +245,6 @@ test "ArenaErrorContext: chain appends parent" {
     try testing.expect(std.mem.indexOf(u8, child.message, "caused by") != null);
     try testing.expect(std.mem.indexOf(u8, child.message, "FileNotFound") != null);
 }
+
+
+

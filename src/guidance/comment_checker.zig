@@ -14,7 +14,7 @@ pub const CheckResult = struct {
     reason: ?[]const u8 = null,
 };
 
-/// Checks if a comment is stale based on existing data and context.
+/// Checks if a comment's staleness based on existing data and context.
 pub fn checkCommentStaleness(
     existing_comment: []const u8,
     member: types.Member,
@@ -41,8 +41,7 @@ pub fn checkCommentStaleness(
     return .{ .needs_regeneration = false };
 }
 
-/// Return true when a stored `match_hash` differs from `current_hash`,
-/// indicating that the code changed since the comment was written.
+/// Checks if the current hash matches the stored hash to detect staleness.
 pub fn isHashStale(stored_hash: ?[]const u8, current_hash: ?[]const u8) bool {
     const stored = stored_hash orelse return false;
     const current = current_hash orelse return false;

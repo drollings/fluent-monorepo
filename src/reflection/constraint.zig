@@ -104,10 +104,7 @@ pub const ConstraintVTable = struct {
     ) anyerror!void = null,
 };
 
-/// Build a static ConstraintVTable for type T.
-/// The returned value is typically stored as a comptime constant and referenced
-/// by pointer from Accessor.  Supported types: int, float, bool, []const u8,
-/// enum, optional, array, vector.
+/// Converts a Zig type to a ConstraintVTable object.
 pub fn Constraint(comptime T: type) ConstraintVTable {
     // releaseFn is only meaningful for owned heap types.  For []const u8 we
     // free the slice and zero out the field so double-free is safe.
@@ -155,7 +152,7 @@ pub fn Constraint(comptime T: type) ConstraintVTable {
 //       new ConstraintVTable just to call through a function pointer, and
 //   (c) setFast/getFast can call these directly, bypassing type erasure.
 
-/// Validates and sets constraints for a Zig type with allocator and input data.
+/// Validates and sets constraints for a Zig type using an allocator and input data.
 pub fn constraintSet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) anyerror!void {
     switch (@typeInfo(T)) {
         .int => typed_ptr.* = try std.fmt.parseInt(T, input, 10),
@@ -218,7 +215,7 @@ pub fn constraintSet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
     }
 }
 
-/// Retrieves a value from a typed pointer using reflection, returning any error if failed.
+/// Retrieves a value from a typed pointer using reflection, returning an error if invalid.
 pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: *const T) anyerror![]const u8 {
     switch (@typeInfo(T)) {
         .int, .float => return std.fmt.allocPrint(allocator, "{d}", .{typed_ptr.*}),

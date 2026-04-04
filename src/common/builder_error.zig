@@ -15,7 +15,7 @@ const builtin = @import("builtin");
 
 // ── Phase ─────────────────────────────────────────────────────────────────────
 
-/// The builder phase in which an error occurred.
+/// Defines a phase-level enum for configuration options; manages ownership and ensures consistent initialization/deinit behavior.
 pub const Phase = enum {
     depends,
     provides,
@@ -31,8 +31,7 @@ pub const Phase = enum {
 
 // ── BuilderError ──────────────────────────────────────────────────────────────
 
-/// Structured error captured by a fluent builder.
-/// Allocated from the builder's arena — lifetime matches the builder.
+/// Handles build-time errors with strict ownership and invariants; ensures consistent state management.
 pub const BuilderError = struct {
     phase: Phase,
     /// Field name (static string literal; not arena-allocated).
@@ -116,13 +115,7 @@ pub const BuilderError = struct {
 /// Maximum bytes copied from a user-supplied value into a BuilderError.
 pub const max_value_len: usize = 128;
 
-/// Log `err.message` at the `err` level if `maybe_err` is non-null.
-/// Call this at terminal builder methods before returning the error.
-///
-///   if (self.err) |e| {
-///       logIfError(e);
-///       return e.cause;
-///   }
+/// Checks for errors in BuilderError and logs them if present.
 pub fn logIfError(maybe_err: ?*const BuilderError) void {
     const e = maybe_err orelse return;
     // Skip logging during test builds to avoid test output pollution.
@@ -132,8 +125,7 @@ pub fn logIfError(maybe_err: ?*const BuilderError) void {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Join `names` into a comma-separated string, allocated from `arena`.
-/// Returns empty slice for an empty input.
+/// Joins a slice of byte arrays into a single Zig string slice.
 pub fn joinStringSlice(
     arena: std.mem.Allocator,
     names: []const []const u8,
@@ -258,3 +250,7 @@ test "BuilderError: GPA no leaks" {
 
     _ = try BuilderError.init(arena.allocator(), .validation, "port", "99999", "max=65535", error.Overflow);
 }
+
+
+
+

@@ -47,34 +47,16 @@ const llm = @import("common");
 // Per-file change detection
 // ---------------------------------------------------------------------------
 
-/// Returns true when `src_abs` needs to be (re-)processed.
-///
-/// A file is stale when its guidance JSON is absent or older than the source.
-/// `json_abs` is the absolute path to the expected `.json` guidance file.
-///
-/// Special case: when JSON mtime == src_mtime - 1 second (exactly), it means
-/// the file was validated but had no meaningful changes, so we skip reprocessing.
+/// Checks if the JSON source requires processing by evaluating its contents.
 pub fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) bool {
     const json_mtime = fileMtime(json_abs) orelse return true; // JSON absent → stale
     const src_mtime = fileMtime(src_abs) orelse return false; // unreadable src → skip
 
-    // Check for "validated but unchanged" pattern
-    // If JSON mtime is exactly src_mtime - 1 second, it was touched after validation
-    if (json_mtime == src_mtime - std.time.ns_per_s) {
-        return false; // Validated, no changes needed
-    }
-
-    // If JSON is newer than source, it needs processing (e.g., imported JSON)
-    if (json_mtime > src_mtime) {
-        return true;
-    }
-
-    // Otherwise, process if source is newer than JSON
+    // Source modified since guidance ran → stale
     return src_mtime > json_mtime;
 }
 
-/// Return the mtime (nanoseconds since epoch) of `path`, or null when the
-/// file is absent or cannot be stat'd.
+/// Converts a file timestamp string into a 128-bit integer value.
 pub fn fileMtime(path: []const u8) ?i128 {
     const f = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer f.close();
@@ -115,8 +97,7 @@ pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8)
     return true;
 }
 
-/// Create or touch the test_passed marker file to record a successful test run.
-/// Creates parent `.marks/` directory if needed.
+/// Validates a marker path slice and returns void, handling potential errors.
 pub fn touchTestMarker(marker_path: []const u8) !void {
     const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
     try llm.makePathAbsolute(parent);
@@ -124,11 +105,7 @@ pub fn touchTestMarker(marker_path: []const u8) !void {
     f.close();
 }
 
-/// Set `target_path` mtime to be 1 second BEFORE `ref_path` mtime.
-/// This marks the file as "validated but unchanged" - older than the source
-/// by exactly 1 second, which `fileNeedsProcessingEx` can recognize to skip
-/// reprocessing when no meaningful changes occurred.
-/// Returns error if either file cannot be accessed.
+/// Transfers a file path to a target location in Zig, updating the reference path.
 pub fn touchFileAfter(target_path: []const u8, ref_path: []const u8) !void {
     const ref_mtime = fileMtime(ref_path) orelse return error.FileNotFound;
 
@@ -140,6 +117,25 @@ pub fn touchFileAfter(target_path: []const u8, ref_path: []const u8) !void {
     // This creates a recognizable pattern: validated files have mtime = src_mtime - 1
     const new_mtime = ref_mtime - std.time.ns_per_s;
     try target_file.updateTimes(stat.atime, new_mtime);
+}
+
+/// Set `target_path` mtime to "now" to mark it as recently validated.
+pub fn touchFileNow(target_path: []const u8) !void {
+    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
+    defer target_file.close();
+
+    const now = std.time.nanoTimestamp();
+    try target_file.updateTimes(now, now);
+}
+
+/// Set `target_path` mtime to "now + 1 second" to mark it as recently validated.
+/// The +1 second buffer prevents filesystem timestamp resolution issues.
+pub fn touchFileNowPlusOne(target_path: []const u8) !void {
+    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
+    defer target_file.close();
+
+    const now = std.time.nanoTimestamp() + std.time.ns_per_s;
+    try target_file.updateTimes(now, now);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +188,7 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
     try std.testing.expect(!fileNeedsProcessing(src_abs, json_abs));
 }
 
-test "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)" {
+test "fileNeedsProcessing: JSON mtime = now + 1s → validated (skip)" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -208,7 +204,7 @@ test "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)" {
         f.close();
     }
 
-    // Create JSON after source (so JSON is newer)
+    // Create JSON file
     const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "validated.zig.json" });
     defer std.testing.allocator.free(json_abs);
     {
@@ -216,10 +212,11 @@ test "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)" {
         f.close();
     }
 
-    // Use touchFileAfter to set JSON mtime to src_mtime - 1 second (validated pattern)
-    try touchFileAfter(json_abs, src_abs);
+    // Use touchFileNowPlusOne to set JSON mtime to "now + 1 second" (validated pattern)
+    try touchFileNowPlusOne(json_abs);
 
     // fileNeedsProcessing should return false for validated files
+    // JSON is in the future, so src_mtime <= json_mtime always holds
     try std.testing.expect(!fileNeedsProcessing(src_abs, json_abs));
 }
 

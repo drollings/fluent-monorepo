@@ -5,7 +5,7 @@ const std = @import("std");
 // § 1  Role-based permission system
 // ============================================================
 
-/// The six access roles mirroring the original worldcore C++ permission model.
+/// Defines a permission role with fixed-size buffers, managed via ownership and invariants.
 pub const Role = enum(u3) {
     coder,
     creator,
@@ -15,8 +15,7 @@ pub const Role = enum(u3) {
     player,
 };
 
-/// 18-bit packed permission word: 6 roles × 3 operations.
-/// Fits in a u32 (with padding), costs a single bitwise AND to query.
+/// Defines permission roles with ownership and access rules; manages role metadata and permissions.
 pub const RolePermissions = packed struct(u18) {
     coder_read: bool = false,
     creator_read: bool = false,

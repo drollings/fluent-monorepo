@@ -52,7 +52,7 @@ pub fn init(
     };
 }
 
-/// Converts a Zig source code string into a BuildContext result.
+/// Converts a Zig source code string into a BuildResult indicating success or error.
 pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult {
     const start = std.time.nanoTimestamp();
 
@@ -152,7 +152,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
     return result;
 }
 
-/// Checks if a BuildContext's target is up-to-date with Zig's version constraints.
+/// Checks if a BuildContext's target is up-to-date with the expected version.
 fn isUpToDate(self: *BuildContext, target: *const Target) bool {
     const exists_path = target.exists orelse return false;
 
@@ -271,7 +271,7 @@ pub fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) !void {
     }
 }
 
-/// Displays a graphical representation using provided context and data.
+/// Displays a graphical representation using provided data and UI components.
 pub fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) !void {
     const graph_str = try self.resolver.visualizeGraph(target_names, self.allocator);
     defer self.allocator.free(graph_str);

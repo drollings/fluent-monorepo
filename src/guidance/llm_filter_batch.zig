@@ -22,18 +22,12 @@ const types = @import("types.zig");
 
 const Allocator = std.mem.Allocator;
 
-/// Approximate tokens for a string: 1 token ≈ 4 bytes.
-/// Delegates to the shared common.token_budget.estimate().
+/// Calculates the estimated token count for a given content slice in Zig.
 pub fn estimateTokens(content: []const u8) usize {
     return llm.token_budget.estimate(content);
 }
 
-/// Deterministic pre-filter: drop prose/insight/skill_doc stages that would
-/// push the total token count over `budget`.  Code and metadata stages are
-/// always preserved and counted toward the budget.
-///
-/// Returns an allocator-owned slice of Stage pointers into the original `stages`
-/// slice (no copying).  The result slice must be freed with `allocator.free()`.
+/// Applies budget constraints to filter stages in the LLM pipeline.
 pub fn preFilterByBudget(
     allocator: Allocator,
     stages: []const types.Stage,
@@ -67,14 +61,7 @@ pub fn preFilterByBudget(
     return kept.toOwnedSlice(allocator);
 }
 
-/// Batch-filter `stages` for relevance to `query` using a single LLM call.
-///
-/// Phase 1: deterministic token-budget pre-filter (always runs, no LLM).
-/// Phase 2: single LLM call asking "which of these N excerpts are relevant?"
-/// Phase 3: assemble result from returned indices.
-///
-/// Returns allocator-owned slice of Stages.  On any failure, falls back to
-/// returning all pre-filtered stages (fail-open).
+/// Processes a batch of stages for an LLM filter, filtering based on stages and allocator constraints.
 pub fn filterStagesBatch(
     allocator: Allocator,
     client: *llm.LlmClient,
@@ -162,9 +149,7 @@ pub fn filterStagesBatch(
     return result.toOwnedSlice(allocator);
 }
 
-/// Ask the LLM which of `stages` are relevant to `query`.
-/// Returns an allocator-owned slice of 0-based indices into `stages`.
-/// Returns an error on LLM failure (caller should fail-open).
+/// Checks relevance of a batch of queries using an allocator and returns relevant batch indices.
 fn askRelevantBatch(
     allocator: Allocator,
     client: *llm.LlmClient,

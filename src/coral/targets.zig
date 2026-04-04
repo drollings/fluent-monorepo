@@ -123,7 +123,7 @@ pub const INGEST_TARGET_DEFS = [_]TargetDef{
     },
 };
 
-/// Look up a target definition by name.
+/// Retrieves a TargetDef instance from a given array of bytes, returning null if not found.
 pub fn lookupTargetDef(name: []const u8) ?*const TargetDef {
     for (&INGEST_TARGET_DEFS) |*def| {
         if (std.mem.eql(u8, def.name, name)) return def;
@@ -131,7 +131,7 @@ pub fn lookupTargetDef(name: []const u8) ?*const TargetDef {
     return null;
 }
 
-/// Verify that all dependency names exist in the definitions.
+/// Checks required dependencies for successful compilation.
 pub fn validateDependencies() bool {
     for (INGEST_TARGET_DEFS) |def| {
         for (def.depends) |dep| {
@@ -141,13 +141,7 @@ pub fn validateDependencies() bool {
     return true;
 }
 
-/// Compute a valid topological execution order from INGEST_TARGET_DEFS.
-///
-/// Uses Kahn's algorithm on the dependency graph encoded in `depends` slices.
-/// Returns an owned slice of target name slices; caller must free the outer
-/// slice (the name pointers themselves are static string literals).
-///
-/// Returns `error.CyclicDependency` if the graph contains a cycle.
+/// Converts a topologically sorted list into a flat array of slices.
 pub fn topoSort(allocator: std.mem.Allocator) ![]const []const u8 {
     const N = INGEST_TARGET_DEFS.len;
 

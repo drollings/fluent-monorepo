@@ -64,7 +64,7 @@ pub const LlmConfig = struct {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-/// Writes a formatted string with escaped characters to the writer, handling null-terminated input.
+/// Writes a null-terminated string to a writer, handling escaped characters properly.
 fn writeEscapedString(writer: anytype, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
@@ -298,8 +298,7 @@ pub const LlmClient = struct {
     }
 };
 
-/// Minimal think-block stripper used internally by extractResponseText.
-/// The full public stripThinkBlock lives in src/common/llm.zig.
+/// Removes inline thinking blocks from a Zig text input, returning a cleaned slice.
 fn stripThinkBlockInline(text: []const u8) []const u8 {
     if (std.mem.indexOf(u8, text, "<think>")) |think_start| {
         const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "</think>");

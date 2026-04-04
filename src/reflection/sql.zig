@@ -43,9 +43,7 @@ pub const SQLITE_TRANSIENT: c.sqlite3_destructor_type = @ptrCast(@as(?*anyopaque
 // §1 SqlBinder — incremental parameter binding
 // ============================================================
 
-/// Wraps a prepared statement for incremental parameter binding.
-/// Parameter indices are 1-based (SQLite convention).
-/// Tracks the next parameter index automatically.
+/// Manages SQL binding structures, owns runtime context, ensures consistent state across invocations.
 pub const SqlBinder = struct {
     stmt: *c.sqlite3_stmt,
     next_param: c_int = 1,
@@ -152,9 +150,7 @@ pub const SqlBinder = struct {
 // §2 SqlHydrator — column extraction wrapper
 // ============================================================
 
-/// Wraps a prepared statement result row for incremental column extraction.
-/// Column indices are 0-based (SQLite convention).
-/// Uses an arena for all string allocations during hydration.
+/// Manages SQL query execution context, owns runtime bindings; ensures consistent state across calls.
 pub const SqlHydrator = struct {
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,
@@ -280,8 +276,7 @@ pub const SqlHydrator = struct {
 // §3 SqlColumn — column metadata
 // ============================================================
 
-/// SQL column metadata derived from an Accessor.
-/// Used to generate INSERT/SELECT statements and map columns to fields.
+/// Represents a SQL column structure with compile-time metadata; owned by the module; ensures type safety and invariants.
 pub const SqlColumn = struct {
     name: []const u8,
     sql_type: SqlType,
@@ -374,8 +369,7 @@ pub fn bindFromSchema(
     if (binder.err) |e| return e;
 }
 
-/// Bind a single field from its accessor.
-/// Handles type coercion and null binding.
+/// Assigns a value to a specified field using reflection, returning no value on success or an error on failure.
 pub fn bindField(
     binder: *SqlBinder,
     allocator: std.mem.Allocator,
@@ -473,8 +467,7 @@ pub fn hydrateFromSchema(
     if (hydrator.err) |e| return e;
 }
 
-/// Hydrate a single field from its accessor.
-/// Returns the string value (arena-allocated) for custom processing.
+/// Hydrates a field using a hydrator, accessor, and role, returning an array of errors or null.
 pub fn hydrateField(
     hydrator: *SqlHydrator,
     accessor: *const Accessor,
@@ -520,8 +513,7 @@ pub fn hydrateField(
 // §6 TableSchema — SQL generation from column list
 // ============================================================
 
-/// Table schema generated from a slice of SqlColumns.
-/// Provides INSERT and SELECT statement generation.
+/// Defines a schema table structure with fixed-size buffers; managed via ownership model; immutable by design.
 pub const TableSchema = struct {
     name: []const u8,
     columns: []const SqlColumn,

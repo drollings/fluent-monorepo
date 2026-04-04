@@ -141,6 +141,10 @@ pub const AstParser = struct {
             else => return null,
         };
 
+        // The "///" doc comment is written before "pub const Foo = struct {",
+        // i.e. before the var_decl node, not before the container body (init_node).
+        const comment = try self.extractFullDocstring(var_decl_node);
+
         // Collect public field names to include in the hash so that adding/removing
         // a field changes the match_hash and triggers re-enhancement.
         var field_names: std.ArrayList([]const u8) = .{};
@@ -160,10 +164,6 @@ pub const AstParser = struct {
 
         const match_hash = try hash.structHash(self.allocator, name, field_names.items);
         errdefer self.allocator.free(match_hash);
-
-        // The "///" doc comment is written before "pub const Foo = struct {",
-        // i.e. before the var_decl node, not before the container body (init_node).
-        const comment = try self.extractFullDocstring(var_decl_node);
 
         var nested_members: std.ArrayList(types.Member) = .{};
         errdefer nested_members.deinit(self.allocator);

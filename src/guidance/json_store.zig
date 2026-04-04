@@ -5,7 +5,7 @@ const llm = @import("common");
 const line_verify = @import("line_verify.zig");
 const comment_inserter = @import("comment_inserter.zig");
 
-/// Reads, writes, and validates guidance JSON files; owns the leak-prompt detection flag per load call.
+/// Manages JSON data storage with fixed-size buffers; owned by the module; ensures consistent access patterns.
 pub const JsonStore = struct {
     allocator: std.mem.Allocator,
     debug: bool = false,
@@ -637,7 +637,7 @@ pub const JsonStore = struct {
     }
 };
 
-/// Represents the outcome of a merge operation, managing ownership and invariants for safe state transitions.
+/// Represents a merged result with ownership model and invariants; managed by the caller.
 pub const MergeResult = struct {
     members: []types.Member = &.{},
     members_added: usize = 0,

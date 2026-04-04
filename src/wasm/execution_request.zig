@@ -26,16 +26,7 @@ const BuilderPhase = registry_mod.BuilderPhase;
 // ExecutionRequestBuilder
 // ---------------------------------------------------------------------------
 
-/// Fluent builder for binary execution request payloads.
-///
-/// Usage:
-///   var builder = ExecutionRequestBuilder.init(allocator);
-///   const payload = try builder
-///       .targetId(42)
-///       .input("hello")
-///       .flag(BinaryExecutionRequest.Flag.VERBOSE)
-///       .build();
-///   defer allocator.free(payload);
+/// Manages execution request construction, owns build logic, ensures correct ownership and invariants.
 pub const ExecutionRequestBuilder = struct {
     const Self = @This();
 
@@ -170,7 +161,7 @@ pub const ExecutionRequestBuilder = struct {
 // WasmExecution — result from ExecutionResultReader
 // ---------------------------------------------------------------------------
 
-/// Parsed result from a WASM execution response.
+/// Represents execution context for Wasm; manages state and calls; owned by the module; ensures safe interaction.
 pub const WasmExecution = struct {
     /// Allocator-owned output bytes; free with allocator.free(output).
     output: []const u8,

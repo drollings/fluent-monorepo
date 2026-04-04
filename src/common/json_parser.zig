@@ -33,7 +33,7 @@ pub fn parseFile(
     try parseJson(allocator, contents, registry, interner);
 }
 
-/// Converts a null-terminated C string into a Zig-safe slice using the provided allocator and registry.
+/// Converts a C-style JSON array into a Zig-safe slice, handling allocations and string interners.
 pub fn parseJson(
     allocator: std.mem.Allocator,
     json_text: []const u8,
@@ -67,13 +67,7 @@ pub fn parseJson(
     }
 }
 
-/// Parse a single target entry from the JSON object map.
-///
-/// Allocator contract: all allocations for the produced `Target` (including
-/// its name, command strings, and `exists` string) are made with `allocator`.
-/// The caller must ensure that `allocator` is the same allocator used to
-/// initialise the `registry` so that `registry.deinit()` can free them
-/// correctly.
+/// Interprets a JSON string slice into a Zig target structure, handling allocator and registry parameters.
 fn parseTarget(
     allocator: std.mem.Allocator,
     name: []const u8,
@@ -471,3 +465,8 @@ test "JSON parsing: parseFile returns IoError for missing file" {
     const result = parseFile(testing.allocator, "/nonexistent/path/coral.json", &registry, &interner);
     try testing.expectError(ParseError.IoError, result);
 }
+
+
+
+
+

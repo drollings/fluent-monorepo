@@ -9,7 +9,7 @@
     {
       "type": "fn_decl",
       "name": "runCommand",
-      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
+      "match_hash": "81ea76e79dcee3804f082224d846c6956623c49f2c207927e1a219f625702949",
       "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -17,12 +17,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 11
+      "line": 9
     },
     {
       "type": "fn_decl",
       "name": "addUniquePath",
-      "match_hash": "32bfe5a4133b67fbc58bb5447172bd60724fbfd85ea5a7d25c4c82a88783072b",
+      "match_hash": "94edd5264e501ad7f1316c8d82e0014249a4733201369c3818d7c6301e3b5152",
       "signature": "fn addUniquePath(allocator: std.mem.Allocator, list: *std.ArrayList([]const u8), path: []const u8, project_root: []const u8) -> bool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -32,25 +32,25 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 23
+      "line": 20
     },
     {
       "type": "test_decl",
       "name": "runCommand returns true for successful command",
       "is_pub": false,
-      "line": 41
+      "line": 38
     },
     {
       "type": "test_decl",
       "name": "runCommand returns false for failing command",
       "is_pub": false,
-      "line": 46
+      "line": 43
     },
     {
       "type": "test_decl",
       "name": "addUniquePath deduplicates paths",
       "is_pub": false,
-      "line": 51
+      "line": 48
     }
   ]
 }

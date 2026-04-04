@@ -11,7 +11,7 @@ pub const CliError = error{
     OutOfMemory,
 };
 
-/// Manages command execution logic, owns CLI workflow; ensures consistent initialization and cleanup.
+/// Manages command execution context, owns CLI workflow; ensures consistent initialization and cleanup.
 pub const Command = struct {
     name: []const u8,
     description: []const u8,
@@ -20,7 +20,7 @@ pub const Command = struct {
     examples: []const u8 = "",
 };
 
-/// Maps command names to their handlers; used by App to dispatch argv[1] at startup.
+/// Manages command registrations with a centralized structure; owned by the CLI; ensures unique key storage.
 pub const CommandRegistry = struct {
     commands: std.StringHashMapUnmanaged(Command),
     allocator: std.mem.Allocator,
@@ -60,7 +60,7 @@ pub const CommandRegistry = struct {
     }
 };
 
-/// Top-level CLI entry point: name, description, version string, and a CommandRegistry for subcommand dispatch.
+/// Manages app configuration and state; owned by the project; ensures consistent initialization and cleanup.
 pub const App = struct {
     name: []const u8,
     description: []const u8,
@@ -210,3 +210,6 @@ test "CommandRegistry: names returns sorted list" {
     try testing.expectEqualStrings("middle", names[1]);
     try testing.expectEqualStrings("zebra", names[2]);
 }
+
+
+

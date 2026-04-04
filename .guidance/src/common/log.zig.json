@@ -8,7 +8,7 @@
     {
       "type": "enum",
       "name": "Level",
-      "match_hash": "8902a0b88a5bb181526ca9c0a430e584b5f34aaf57642ae53e67e7b4585041a5",
+      "match_hash": "03604e9067eee0d6758e17b42b3b92761520efab37abf3306270df053abcab7b",
       "signature": "keyword_enum Level { ... }",
       "is_pub": true,
       "members": [
@@ -39,7 +39,7 @@
     ,    {
           "type": "fn_decl",
           "name": "prefix",
-          "match_hash": "8e032ff8b75c353b74b2306e6988ed4590d78b9c5e5a8bd42134abf06c5edb19",
+          "match_hash": "d2c744e331ef72c10dace1c2e671f2bc1b940f4cc5882fc01cdf538c3f8975cf",
           "signature": "fn prefix(self: Level) -> []const u8",
           "params": [
             { "name": "self", "type": "Level" }
@@ -51,7 +51,7 @@
     ,    {
           "type": "fn_decl",
           "name": "color",
-          "match_hash": "c1c19e61aa74f095ee7691d50a8a2b2e559e6dbe33fc5abb9b6b61de54ead9ae",
+          "match_hash": "128781e7f1b1f29a709d01562cb40ed42b7baa594677e635b6993b4a24b7eae3",
           "signature": "fn color(self: Level) -> []const u8",
           "params": [
             { "name": "self", "type": "Level" }
@@ -66,7 +66,7 @@
     {
       "type": "struct",
       "name": "LogConfig",
-      "match_hash": "8efa4f61d255c04c059b8bc166826b4119d3f72390952b8cc8ca45f39a11e033",
+      "match_hash": "984840e5888677d1191dd162ed1fd110d7210dd5601772ef8306b434451be893",
       "signature": "keyword_struct LogConfig { ... }",
       "is_pub": true,
       "line": 31
@@ -74,14 +74,14 @@
     {
       "type": "struct",
       "name": "Logger",
-      "match_hash": "2255b71d304e6cf503de74744c3267b57e6dafbbfe4c6aef9971f9f6e631e1d4",
+      "match_hash": "ae1405ab1f6a64b4d27924a6edc1acec2105c0a5b76cf4de8ece77fe50bab55c",
       "signature": "keyword_struct Logger { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f31b573fcca23daa54eedf56c1b60e0803031882b57017ad810bc6866583e43c",
+          "match_hash": "2fe86b06f0acaa4277632c44495b936b6bdf5b5d57b8be3f764c857c975b66a4",
           "signature": "fn init(allocator: std.mem.Allocator, config: LogConfig) -> *Logger",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -94,7 +94,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "9d20d7c0ddccb9e285af22e6b3eded99d5d781115a91ae7444a9e2b69faaee08",
+          "match_hash": "ec5514fb1de37040f4c4e01df65572e5228f16583bf10302240a95cb8f54c7af",
           "signature": "fn deinit(self: *Logger) -> void",
           "params": [
             { "name": "self", "type": "*Logger" }
@@ -106,7 +106,7 @@
     ,    {
           "type": "fn_decl",
           "name": "log",
-          "match_hash": "8addc34fa5a1a9946139ae2bb5e1e80902644c48ada737c9a4019d4c72058387",
+          "match_hash": "db40800dc8c4fa9a036d0b971b4d977c374a76b166393478126fc55d98e01b5f",
           "signature": "fn log(self: *const Logger, level: Level, format: []const u8, args) -> void",
           "params": [
             { "name": "self", "type": "*const Logger" },
@@ -121,7 +121,7 @@
     ,    {
           "type": "fn_decl",
           "name": "debug",
-          "match_hash": "750a1cf69e5ad587d9a12ccfa955edb5e53fce10f542a713e7ea9f5ea46b1d77",
+          "match_hash": "a55c3e38616d06e7bf975eb0e7ac211d7b52ee903e6f7ecfa02061f9d8caf200",
           "signature": "fn debug(self: *const Logger, format: []const u8, args) -> void",
           "params": [
             { "name": "self", "type": "*const Logger" },
@@ -135,7 +135,7 @@
     ,    {
           "type": "fn_decl",
           "name": "info",
-          "match_hash": "efeeb57d8f1ea7adfedb34d602b6b9d8f98396a7dba7ea440860c5b6b72040a5",
+          "match_hash": "a6fd14a99a1d98afa6882c9c3c309b799524657678596d7d5c29f1764dced85e",
           "signature": "fn info(self: *const Logger, format: []const u8, args) -> void",
           "params": [
             { "name": "self", "type": "*const Logger" },
@@ -149,7 +149,7 @@
     ,    {
           "type": "fn_decl",
           "name": "warn",
-          "match_hash": "3a5c98d928aa58ccc1407d978868d45319fb99f25cf5d54a8dfd201938b8ed21",
+          "match_hash": "f8e682ee1710384bc884bb8e66fb0d9d6b04f7189b82ba674ceab500c71dd23a",
           "signature": "fn warn(self: *const Logger, format: []const u8, args) -> void",
           "params": [
             { "name": "self", "type": "*const Logger" },
@@ -163,7 +163,7 @@
     ,    {
           "type": "fn_decl",
           "name": "err",
-          "match_hash": "38c5aa565a2f910f71b0f04d2227731d32d40b1c19e0a559841bfdf4cf836db6",
+          "match_hash": "2ac710053da5f2430555a2745e0d8dba03bab294a5a8a3ff8c6af1dbcb9d7354",
           "signature": "fn err(self: *const Logger, format: []const u8, args) -> void",
           "params": [
             { "name": "self", "type": "*const Logger" },
@@ -180,7 +180,7 @@
     {
       "type": "fn_decl",
       "name": "setGlobal",
-      "match_hash": "93a5666ce9a8bdbab684663bd31963e7ebf4caf3a6e2aa8f846972c03863ab72",
+      "match_hash": "c9b075e1825eb3de13882466410b5eb38823d64c4c4980e6da85d2370ccf0de7",
       "signature": "fn setGlobal(logger: *Logger) -> void",
       "params": [
         { "name": "logger", "type": "*Logger" }
@@ -192,7 +192,7 @@
     {
       "type": "fn_decl",
       "name": "getGlobal",
-      "match_hash": "66b72130b212891ba3fdd0f6386c2c17f24fa26b7aca19ea50748f9ed1e8af18",
+      "match_hash": "32fac76c099eba8b2057b3918d037768f9622bc67fce2ae979ea0b8d639adee4",
       "signature": "fn getGlobal() -> ?*Logger",
       "returns": "?*Logger",
       "is_pub": true,
@@ -201,7 +201,7 @@
     {
       "type": "fn_decl",
       "name": "logGlobal",
-      "match_hash": "1e63278b30283e2d0145339c35f947b499d0f22c7bd399c45c881c21275382ed",
+      "match_hash": "83d86ad82dcd88fe151ad3f3e98f91e214c40f1604c02be94b9df5dab123c4d7",
       "signature": "fn logGlobal(level: Level, format: []const u8, args) -> void",
       "params": [
         { "name": "level", "type": "Level" },
@@ -215,7 +215,7 @@
     {
       "type": "fn_decl",
       "name": "setupLogging",
-      "match_hash": "50e9d3e1ed7c86703deb78c310a8904c250eb6c93e8a0b16a682b55350f0e8d6",
+      "match_hash": "c0b0af86a99bc6653a21303f5277c4794b487d649e6a3992b375616d1665e20d",
       "signature": "fn setupLogging(allocator: std.mem.Allocator, verbose: bool, quiet: bool, log_file: ?[]const u8, name: []const u8) -> *Logger",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

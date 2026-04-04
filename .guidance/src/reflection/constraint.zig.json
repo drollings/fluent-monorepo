@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "ConstraintVTable",
-      "match_hash": "a0941d4b301a6c255c58787cefea4d2fa2e5a9cdf23ea30534659b3700569236",
+      "match_hash": "c477b8afce46b9b28ad04a1dbbda174f1fbf3fabb6682dbdc52689b89c784fd4",
       "signature": "keyword_struct ConstraintVTable { ... }",
       "is_pub": true,
       "line": 12
@@ -19,19 +19,19 @@
     {
       "type": "fn_decl",
       "name": "Constraint",
-      "match_hash": "bd6bd77f9257ffe9957dae3cb57cc21455cdae3762192fccc6dff55cba306c5b",
+      "match_hash": "8bce276fae377b83b6b2ce19d6100b23fed83b3be5e605b56fa39393db7735d5",
       "signature": "fn Constraint(T: type) -> ConstraintVTable",
       "params": [
         { "name": "T", "type": "type" }
       ],
       "returns": "ConstraintVTable",
       "is_pub": true,
-      "line": 111
+      "line": 108
     },
     {
       "type": "fn_decl",
       "name": "constraintSet",
-      "match_hash": "305f3b61cc9d0a58fa60c036922e58fe93c753d4936e89db91071576ac3f7b6d",
+      "match_hash": "52664f44963de42c0689cf701a51c9c9c47f9616417f54941dfbea960881db09",
       "signature": "fn constraintSet(T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) -> anyerror!void",
       "params": [
         { "name": "T", "type": "type" },
@@ -41,12 +41,12 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 159
+      "line": 156
     },
     {
       "type": "fn_decl",
       "name": "constraintGet",
-      "match_hash": "f6fa78a4c4c214eb4dcfcd52f7b93e52d177831b05677478b6190867095069fc",
+      "match_hash": "0b947ce922aa8a44ecf37a46d7c033dec667f02d69be38eb11568b4b8ea881c3",
       "signature": "fn constraintGet(T: type, allocator: std.mem.Allocator, typed_ptr: *const T) -> anyerror![]const u8",
       "params": [
         { "name": "T", "type": "type" },
@@ -55,139 +55,139 @@
       ],
       "returns": "anyerror![]const u8",
       "is_pub": true,
-      "line": 222
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "constraintSet: integer types",
       "is_pub": false,
-      "line": 273
+      "line": 270
     },
     {
       "type": "test_decl",
       "name": "constraintSet: float types",
       "is_pub": false,
-      "line": 283
+      "line": 280
     },
     {
       "type": "test_decl",
       "name": "constraintSet: bool types",
       "is_pub": false,
-      "line": 293
+      "line": 290
     },
     {
       "type": "test_decl",
       "name": "constraintSet: bool invalid value",
       "is_pub": false,
-      "line": 305
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "constraintSet: string slice",
       "is_pub": false,
-      "line": 310
+      "line": 307
     },
     {
       "type": "test_decl",
       "name": "constraintSet: enum types",
       "is_pub": false,
-      "line": 317
+      "line": 314
     },
     {
       "type": "test_decl",
       "name": "constraintSet: enum invalid value",
       "is_pub": false,
-      "line": 324
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "constraintSet: optional types",
       "is_pub": false,
-      "line": 330
+      "line": 327
     },
     {
       "type": "test_decl",
       "name": "constraintSet: array types",
       "is_pub": false,
-      "line": 340
+      "line": 337
     },
     {
       "type": "test_decl",
       "name": "constraintSet: array too long",
       "is_pub": false,
-      "line": 346
+      "line": 343
     },
     {
       "type": "test_decl",
       "name": "constraintSet: array too short",
       "is_pub": false,
-      "line": 351
+      "line": 348
     },
     {
       "type": "test_decl",
       "name": "constraintSet: vector types",
       "is_pub": false,
-      "line": 356
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "constraintGet: integer types",
       "is_pub": false,
-      "line": 364
+      "line": 361
     },
     {
       "type": "test_decl",
       "name": "constraintGet: float types",
       "is_pub": false,
-      "line": 371
+      "line": 368
     },
     {
       "type": "test_decl",
       "name": "constraintGet: bool types",
       "is_pub": false,
-      "line": 378
+      "line": 375
     },
     {
       "type": "test_decl",
       "name": "constraintGet: string slice",
       "is_pub": false,
-      "line": 389
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "constraintGet: enum types",
       "is_pub": false,
-      "line": 396
+      "line": 393
     },
     {
       "type": "test_decl",
       "name": "constraintGet: optional types",
       "is_pub": false,
-      "line": 404
+      "line": 401
     },
     {
       "type": "test_decl",
       "name": "constraintGet: array types",
       "is_pub": false,
-      "line": 415
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "Constraint: round-trip integer",
       "is_pub": false,
-      "line": 422
+      "line": 419
     },
     {
       "type": "test_decl",
       "name": "Constraint: round-trip string",
       "is_pub": false,
-      "line": 431
+      "line": 428
     },
     {
       "type": "test_decl",
       "name": "Constraint: releaseFn frees string slice",
       "is_pub": false,
-      "line": 445
+      "line": 442
     }
   ]
 }

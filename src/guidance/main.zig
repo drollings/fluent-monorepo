@@ -39,7 +39,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.
+/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
 const Command = enum {
     init,
     gen,
@@ -129,12 +129,12 @@ pub fn main() !void {
     };
 }
 
-/// M6: RALPH loop — run a single query through Read→Ask→Learn→Plan stages.
+/// Processes a Zig command string, validating arguments and preparing execution.
 fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     return query_engine_mod.cmdRalph(allocator, args);
 }
 
-/// Displays usage instructions for the Zig library.
+/// Displays usage instructions for the Zig library's help feature.
 fn printHelp() !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -210,6 +210,16 @@ fn printHelp() !void {
         \\Deps options:
         \\  --src DIR             Source directory to scan (default: src)
         \\
+        \\Check options:
+        \\  --dry-run             Show what would change without writing (skips tests, structure)
+        \\  --skip-tests          Skip test suite phase
+        \\  --skip-lint           Skip lint phase
+        \\  --skip-fmt            Skip format phase
+        \\  --no-structure        Skip STRUCTURE.md generation
+        \\  --force               Re-process all files, ignoring freshness markers
+        \\  --verbose             Show LLM metadata (api calls, responses)
+        \\  --timeout N           Sleep N seconds after each file (default: 2, set to 0 to disable)
+        \\
         \\Examples:
         \\  guidance init
         \\  guidance gen
@@ -233,7 +243,7 @@ fn printHelp() !void {
 // structure — thin wrapper (delegates to structure_mod)
 // =============================================================================
 
-/// Transforms a C string into a Zig-safe structure using an allocator.
+/// Processes a Zig source code string, allocating memory and returning a pointer to the structure.
 fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var no_llm: bool = false;

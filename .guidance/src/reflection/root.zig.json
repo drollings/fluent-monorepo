@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "TestConfig",
-      "match_hash": "2bdee22dcce48dbc7f389cfbdc91fad1e2b259a68ac8fefa94889f44ea293a44",
+      "match_hash": "d2a91d5d97a117d9c0f9d79e6884727c527102c724f729efafdfebc37507b726",
       "signature": "keyword_struct TestConfig { ... }",
       "is_pub": false,
       "line": 99
@@ -61,7 +61,7 @@
     {
       "type": "enum",
       "name": "Status",
-      "match_hash": "5e17af7d2b56b085692e0c26090e7c90fc9a441428abdee948cfda088bb47bbf",
+      "match_hash": "446372e36068207377330b83b235c1e500b93b24a5108c86ff31997105a0ebf2",
       "signature": "keyword_enum Status { ... }",
       "is_pub": false,
       "members": [
@@ -155,14 +155,14 @@
     {
       "type": "struct",
       "name": "TestSchema",
-      "match_hash": "cb9e97a8a8c42ec45990b5c1797d1c4e9b35b5d9a4afb39eec667244a10e6b9a",
+      "match_hash": "5452185735bcb598babdc4d1fb377e0bafb8c921a48c4da4925aa37a00c4b4e8",
       "signature": "keyword_struct TestSchema { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "describeField",
-          "match_hash": "cbc9e8d816917833ee7e1100796852365ab59a72ab048b3e073d17f7ce1aba65",
+          "match_hash": "db282708da746d3c98528cf871f5db23f42d79569d4f8ff7f14e6eaa2a4de08d",
           "signature": "fn describeField(name: []const u8) -> FieldMeta",
           "params": [
             { "name": "name", "type": "[]const u8" }
@@ -201,7 +201,7 @@
     {
       "type": "struct",
       "name": "TestConfigTyped",
-      "match_hash": "372df65bb4ea2bfc65f1032c206794b734a4b6a775d2135546dc3254938f4e47",
+      "match_hash": "e86e353209e002b44e19951a91f8c91f88e8b620a821f4a375d59ed8ed367c2d",
       "signature": "keyword_struct TestConfigTyped { ... }",
       "is_pub": false,
       "line": 420
@@ -353,7 +353,7 @@
     {
       "type": "struct",
       "name": "AppConfig",
-      "match_hash": "618fee0070ae40a98bb2f2419f1ab780f776baff9a00e2cb69389d26e9bfbaa9",
+      "match_hash": "d01e04cb8d0ac18f6affcd2e9ac2210c731d1170e3e67da104205d9c1a1042f4",
       "signature": "keyword_struct AppConfig { ... }",
       "is_pub": false,
       "line": 821

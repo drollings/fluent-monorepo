@@ -5,7 +5,7 @@
 /// tool that needs lightweight text analysis.
 const std = @import("std");
 
-/// Checks if a token matches a pattern resembling a Zig identifier, returning true or false.
+/// Checks if a token matches a pattern resembling an identifier in Zig.
 pub fn looksLikeIdentifier(token: []const u8) bool {
     if (token.len < 2) return false;
 
@@ -23,11 +23,7 @@ pub fn looksLikeIdentifier(token: []const u8) bool {
     return false;
 }
 
-/// Return true when `rel_path` matches common test file naming conventions.
-///
-/// Checks both Unix (`/test/`, `/tests/`) and Windows (`\test\`, `\tests\`)
-/// directory separators.  Suitable for filtering test files out of `used_by`
-/// lists and reverse-dependency scans.
+/// Checks if a given relative path matches expected patterns, returning true or false.
 pub fn isTestPath(rel_path: []const u8) bool {
     const basename = std.fs.path.basename(rel_path);
     // Strip extension to get the stem.
@@ -43,14 +39,7 @@ pub fn isTestPath(rel_path: []const u8) bool {
     return false;
 }
 
-/// Extract a short skill name from a JSON skill ref path.
-///
-/// Examples:
-///   "skills/gof-patterns/SKILL.md"  → "gof-patterns"
-///   "skills/zig-current/SKILL.md"   → "zig-current"
-///   "gof-patterns"                   → "gof-patterns"  (bare name, returned as-is)
-///
-/// Returns a slice into the original `ref` — no allocation.
+/// Converts a reference to a null-terminated C string into a Zig array slice.
 pub fn skillNameFromRef(ref: []const u8) []const u8 {
     const base = std.fs.path.basename(ref);
     if (std.mem.eql(u8, base, "SKILL.md")) {
@@ -64,9 +53,7 @@ pub fn skillNameFromRef(ref: []const u8) []const u8 {
 // String search helpers — from coral/src/common/string.zig
 // =============================================================================
 
-/// Return true when `needle` appears in `haystack` as a whole-word match
-/// (case-insensitive).  A word boundary is any non-alphanumeric character or
-/// the start/end of the string.
+/// Checks if a needle substring exists within the haystack array of bytes.
 pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
@@ -80,8 +67,7 @@ pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// Return true when `source` contains ANY of the given `keywords`
-/// (case-insensitive substring match).
+/// Checks if any keywords exist within the source string slice.
 pub fn containsAny(source: []const u8, keywords: []const []const u8) bool {
     for (keywords) |kw| {
         if (containsIgnoreCase(source, kw)) return true;
@@ -89,8 +75,7 @@ pub fn containsAny(source: []const u8, keywords: []const []const u8) bool {
     return false;
 }
 
-/// Return true when `source` contains ANY of the given `keywords` as whole
-/// words (case-insensitive word-boundary match).
+/// Checks if any word from keywords appears in the source string.
 pub fn containsAnyWord(source: []const u8, keywords: []const []const u8) bool {
     for (keywords) |kw| {
         if (containsWord(source, kw)) return true;
@@ -98,10 +83,7 @@ pub fn containsAnyWord(source: []const u8, keywords: []const []const u8) bool {
     return false;
 }
 
-/// Return true when `s` ends with one of the given `extensions`.
-///
-/// Extensions are matched WITHOUT the leading dot — pass `"zig"`, not `".zig"`.
-/// Comparison is case-sensitive (file system semantics).
+/// Checks if the input slice contains a specified extension, returning true if found.
 pub fn hasExtension(s: []const u8, extensions: []const []const u8) bool {
     const dot = std.mem.lastIndexOfScalar(u8, s, '.') orelse return false;
     const ext = s[dot + 1 ..];
@@ -111,18 +93,13 @@ pub fn hasExtension(s: []const u8, extensions: []const []const u8) bool {
     return false;
 }
 
-/// Return true when `s` looks like a path-like token: it is at least 3 chars
-/// long AND either has a recognised extension or contains a `/`.
+/// Checks if a given slice of bytes matches a specified extension pattern, returning true or false.
 pub fn isPathToken(s: []const u8, extensions: []const []const u8) bool {
     if (s.len < 3) return false;
     return hasExtension(s, extensions) or std.mem.indexOf(u8, s, "/") != null;
 }
 
-/// Return true when `needle` appears anywhere in `haystack` (case-insensitive).
-///
-/// Uses a sliding-window comparison with `std.ascii.eqlIgnoreCase`.
-/// No allocation — suitable for hot paths and large haystacks.
-/// An empty needle always matches.
+/// Checks if a needle substring exists within the haystack, ignoring case, and returns true or false.
 pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
     if (needle.len > haystack.len) return false;
@@ -133,13 +110,7 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// Map a file path to a fenced-code-block language identifier.
-///
-/// Used for Markdown output (e.g. ` ```zig `) when embedding source excerpts.
-/// Recognised extensions: .zig, .py, .rs, .ts, .tsx, .js.
-/// Falls back to "text" for unrecognised extensions.
-///
-/// Returns a `[]const u8` into a static string literal — no allocation.
+/// Converts a null-terminated C string slice into a Zig array of characters.
 pub fn langFromPath(path: []const u8) []const u8 {
     if (std.mem.endsWith(u8, path, ".zig")) return "zig";
     if (std.mem.endsWith(u8, path, ".py")) return "python";
@@ -149,15 +120,7 @@ pub fn langFromPath(path: []const u8) []const u8 {
     return "text";
 }
 
-/// Deep-copy a slice of strings — each element is individually owned.
-///
-/// Returns a freshly allocated `[][]const u8` whose backing strings are all
-/// duped with `allocator`.  On error any already-allocated elements are freed
-/// before propagating the error.
-///
-/// Ownership: the caller must free every element and then the slice itself:
-///   for (result) |s| allocator.free(s);
-///   allocator.free(result);
+/// Converts a slice of byte slices into a new slice of byte slices, preserving order and structure.
 pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]const u8 {
     const result = try allocator.alloc([]const u8, strs.len);
     var n: usize = 0;
@@ -178,14 +141,7 @@ pub fn dupeString(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return try allocator.dupe(u8, s);
 }
 
-/// Deep-copy an optional string with a null-check.
-///
-/// If `opt` is null, returns null without allocating.
-/// If `opt` points to an empty slice, returns null without allocating.
-/// On error, propagates `error.OutOfMemory`.
-///
-/// Useful for fields that are `?[]const u8` where you need to
-/// normalize null and empty to a single representation.
+/// Converts a null-terminated string into a Zig-safe slice, handling memory allocation and validation.
 pub fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) !?[]const u8 {
     const s = opt orelse return null;
     if (s.len == 0) return null;
@@ -221,11 +177,7 @@ pub fn stripBoilerplate(comment: []const u8) []const u8 {
     return trimmed;
 }
 
-/// Return true when a doc comment is predominantly numeric or punctuation
-/// noise (auto-generated tables, hex dumps, lookup arrays).
-///
-/// Threshold: >50% of non-whitespace characters are digits or ASCII
-/// punctuation — equivalent to bloop's `is_noisy()` heuristic.
+/// Checks if a comment slice contains invalid or unexpected characters, returning true for noise.
 pub fn isNoisyComment(comment: []const u8) bool {
     if (comment.len < 10) return true; // too short to be meaningful
     var non_ws: usize = 0;
@@ -269,7 +221,7 @@ const NL_PREFIXES = [_][]const u8{
     "i need ",          "i want ",    "help me ",
 };
 
-/// Removes leading null characters from a UTF-8 string slice.
+/// Removes leading null bytes from a UTF-8 string slice.
 pub fn stripNlPrefix(query: []const u8) []const u8 {
     // Lowercase a buffer large enough for the longest prefix we check.
     const MAX_PREFIX_LEN = 30;
@@ -463,9 +415,7 @@ test "dupeStringOpt returns copy for non-empty string" {
     try std.testing.expect(result.?.ptr != original.ptr);
 }
 
-/// Convert a description string to a URL/directory-safe slug.
-/// Lowercases, replaces non-alphanumeric chars with dashes, removes leading/trailing dashes.
-/// Caps result at 40 chars.
+/// Converts a string into a slugified format by trimming, replacing spaces, and ensuring valid URL characters.
 pub fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .{};
     var prev_dash = true;
@@ -504,3 +454,20 @@ test "slugify handles empty string" {
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("work-item", result);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

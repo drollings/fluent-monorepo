@@ -7,8 +7,7 @@
 
 const std = @import("std");
 
-/// Return true when `comment` is a machine-generated placeholder or mangled
-/// LLM output.  Equivalent to Python's `is_synthetic_comment()`.
+/// Checks if a comment slice is synthetic by validating its structure and content.
 pub fn isSyntheticComment(comment: []const u8) bool {
     // Strip surrounding whitespace.
     var body = std.mem.trim(u8, comment, " \t\r\n");
@@ -73,8 +72,7 @@ pub fn isSyntheticComment(comment: []const u8) bool {
     return false;
 }
 
-/// Return true when `s` ends with an isolated preposition or article,
-/// indicating an incomplete sentence.
+/// Checks if a byte slice ends with an incomplete string, returning true if so.
 fn endsWithIncomplete(s: []const u8) bool {
     const dangling = [_][]const u8{ " of", " in", " for", " from", " with", " to", " a", " an", " the" };
     for (dangling) |d| {
@@ -87,8 +85,7 @@ fn endsWithIncomplete(s: []const u8) bool {
     return false;
 }
 
-/// Return true when `s` contains a pattern like ": N struct", ": N class",
-/// or ": N function" — common in auto-generated Python type-reference strings.
+/// Checks if the input slice contains a valid numeric type reference.
 fn hasNumericTypeRef(s: []const u8) bool {
     var i: usize = 0;
     while (i + 4 < s.len) : (i += 1) {
@@ -105,7 +102,7 @@ fn hasNumericTypeRef(s: []const u8) bool {
     return false;
 }
 
-/// Case-insensitive substring search.
+/// Checks if a needle substring exists within the haystack, ignoring case sensitivity.
 pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
@@ -115,9 +112,7 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// Scrub synthetic comments from a parsed JSON `Value` tree in-place.
-/// Modifies `comment` fields at module and member levels.
-/// Returns true if any comments were blanked.
+/// Validates and returns a boolean indicating whether the provided JSON value is valid.
 pub fn scrubJsonValue(value: *std.json.Value) bool {
     if (value.* != .object) return false;
     var changed = false;

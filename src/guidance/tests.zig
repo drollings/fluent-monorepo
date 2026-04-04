@@ -997,7 +997,7 @@ test "mergeMembers result is independent after existing freed" {
 // detect any unreleased memory.
 // ---------------------------------------------------------------------------
 
-/// Write a minimal valid guidance JSON to a file and return the path (owned).
+/// Creates a temporary Zig file with the given parameters and returns its contents.
 fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filename: []const u8, module: []const u8) ![]u8 {
     const path = try std.fs.path.join(allocator, &.{ dir_path, filename });
     errdefer allocator.free(path);
@@ -1027,7 +1027,7 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
 // M8: infillJsonFile / infillAllJson — cross-language infill sweep
 // ---------------------------------------------------------------------------
 
-/// Write a minimal guidance JSON with an optional module comment.
+/// Writes guidance JSON data to a specified file path with optional comments and member flags.
 fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8, has_member: bool) !void {
     var buf: [2048]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);

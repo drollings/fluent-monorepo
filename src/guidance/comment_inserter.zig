@@ -15,7 +15,7 @@ pub const LineAdjustment = struct {
     new_line: u32,
 };
 
-/// Result of inserting or replacing a comment in source.
+/// Manages insertion results with fixed buffers; owns state; ensures consistent output.
 pub const InsertResult = struct {
     /// Whether any changes were made to the source.
     changed: bool,
@@ -30,14 +30,7 @@ pub const InsertResult = struct {
     }
 };
 
-/// Insert a `///` doc comment block above the declaration at 1-based `line`.
-///
-/// `comment` is plain text; each line will be prefixed with `/// `.
-/// Returns `InsertResult` with `changed = false` when:
-///   - `line` is 0 or beyond the end of `source`
-///   - the comment block is empty after formatting
-///
-/// Caller owns all allocations in the returned struct.
+/// Inserts a comment string into a Zig source file at the specified line, returning an insert result or error.
 pub fn insertComment(
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -88,11 +81,7 @@ pub fn insertComment(
     };
 }
 
-/// Replace an existing `///` doc comment block above the declaration at `line`.
-///
-/// Scans backwards from `line - 1` to find consecutive `///` lines and
-/// replaces them with the new `comment`.  If no existing comment is found,
-/// falls back to `insertComment`.
+/// Replaces a specified comment in a Zig source file while preserving surrounding content.
 pub fn replaceComment(
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -166,9 +155,7 @@ pub fn replaceComment(
     };
 }
 
-/// Extract the doc comment text above the declaration at 1-based `line`,
-/// stripping `///` prefixes.  Returns null when no comment is found.
-/// Caller owns the returned slice.
+/// Extracts a comment from a specified line in a Zig source file using an allocator.
 pub fn extractCommentAtLine(
     allocator: std.mem.Allocator,
     source: []const u8,
@@ -214,8 +201,7 @@ pub fn extractCommentAtLine(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Format `comment` as a `///`-prefixed doc comment block, one line per input
-/// line.  Returns an owned string ending with a newline.
+/// Converts a list of bytes into a formatted Zig comment slice.
 pub fn formatDocComment(allocator: std.mem.Allocator, comment: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .{};
     errdefer out.deinit(allocator);
@@ -243,7 +229,7 @@ fn countLines(text: []const u8) u32 {
     return n;
 }
 
-/// Returns an empty InsertResult with default values when no data is provided.
+/// Returns an empty InsertResult when no data is provided.
 fn emptyResult(allocator: std.mem.Allocator) !InsertResult {
     return .{
         .changed = false,

@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "TypeId",
-      "match_hash": "eef8aca451dc108d0bd36120358147b5cd561d1c7fee655b4b648e516e1fb465",
+      "match_hash": "9fc55abeb90d07c160cb576c48d136a3c3e6a62b202e4d1711d72add07f1f603",
       "signature": "keyword_enum TypeId { ... }",
       "is_pub": true,
       "members": [
@@ -135,7 +135,7 @@
     {
       "type": "fn_decl",
       "name": "typeIdFromType",
-      "match_hash": "6148d92ebd4a69fc1a1c11c2922656906ba11befaa6aca3cb2cfb1c24503f6ff",
+      "match_hash": "d0979de14640c184044a8056fdf437fa1e599df99426b2d4878056d0bf4f3614",
       "signature": "fn typeIdFromType(T: type) -> TypeId",
       "params": [
         { "name": "T", "type": "type" }
@@ -147,14 +147,14 @@
     {
       "type": "struct",
       "name": "TypedAccessor",
-      "match_hash": "d61918491f8d3019aabfaa64c7bb6a6bf67cacb736f7ab6dc830fb33fe03d50f",
+      "match_hash": "4d8b5cc054bfd199d9de43796b494fc943c5c2321a0395298c115f38a9939252",
       "signature": "keyword_struct TypedAccessor { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "setTyped",
-          "match_hash": "6c4b2126b2340f100e48a84183cd4e746082109fd278ce2b8ba768d078656b6d",
+          "match_hash": "aae2be18192574d09262e1332a49457e63a9fdb205bff780fa53006d87f3ef1a",
           "signature": "fn setTyped(self: *const TypedAccessor, base: *anyopaque, value) -> void",
           "params": [
             { "name": "self", "type": "*const TypedAccessor" },
@@ -168,7 +168,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getTyped",
-          "match_hash": "8eab579f4b68e4b76e075b52fe0c8b0e28664dcab8112e0b1af119fd01d96b64",
+          "match_hash": "7ca2962b4831fb175f0decba6eeb3e81bd7591fd9380f262f0e56dd42c5ce9e7",
           "signature": "fn getTyped(self: *const TypedAccessor, base: *const anyopaque, T: type) -> T",
           "params": [
             { "name": "self", "type": "*const TypedAccessor" },
@@ -182,7 +182,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setString",
-          "match_hash": "6e614a11291968fb25239ed329135712f05694183d4b607ecec58aee5445084e",
+          "match_hash": "f1f9a98bc7d9fcd601b966ec5a45f9301bb1fee679d93cacdd786fb9a80747e8",
           "signature": "fn setString(self: *const TypedAccessor, allocator: std.mem.Allocator, base: *anyopaque, input: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*const TypedAccessor" },
@@ -197,7 +197,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getString",
-          "match_hash": "83e4b6969be56791bc081cda6af4b080a74aad8ac9388c7640fec17bdc1e9043",
+          "match_hash": "e8db081364deaa9987f68d8a65b85ff5c878b01872d893f37ce33907af1b2678",
           "signature": "fn getString(self: *const TypedAccessor, allocator: std.mem.Allocator, base: *const anyopaque) -> []const u8",
           "params": [
             { "name": "self", "type": "*const TypedAccessor" },
@@ -211,7 +211,7 @@
     ,    {
           "type": "fn_decl",
           "name": "validateRange",
-          "match_hash": "c675f6e62d46633ccc1bb071fde5f9decbc9f4f01f7cde51332e13bbc5d00933",
+          "match_hash": "9501d1127cce32622e42de12e4f999f908a3bdf51b156c40abf15065f4d6f057",
           "signature": "fn validateRange(self: *const TypedAccessor, value) -> bool",
           "params": [
             { "name": "self", "type": "*const TypedAccessor" },
@@ -227,7 +227,7 @@
     {
       "type": "fn_decl",
       "name": "TypedAccessorTable",
-      "match_hash": "d9aa69a87cb77098f3ba1b2eff6fd501087b229b97de32a6588edaf009a853c2",
+      "match_hash": "4c6032645d4fe2c7165b5144f8ab012c3d9597897406a84ae0217122956e2f24",
       "signature": "fn TypedAccessorTable(Host: type) -> type",
       "params": [
         { "name": "Host", "type": "type" }
@@ -239,14 +239,14 @@
     {
       "type": "struct",
       "name": "TypedEditable",
-      "match_hash": "8b315bdadabbe2f9eb425542acedb72bf7bfd4b49de2bb0c5ed2306c9b4b11d9",
+      "match_hash": "3c968d88f1f0cb00494e6fb72c66b0556cbf98f9e92a71c61d7acf80820edfd3",
       "signature": "keyword_struct TypedEditable { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "306796705145a7ea2f21031fc160f2a884b2cbfb558e34a684bc2a7cd5891752",
+          "match_hash": "ec20b4b0306c91d59bf6ae622375c1847bbf15254dba4d8e39a45eaea71a7162",
           "signature": "fn init(allocator: std.mem.Allocator, host: *anyopaque, accessors: []const TypedAccessor) -> TypedEditable",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -260,7 +260,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "68112e9fad58320540f4b30e0b03f8e0a158f540a9588f141b4c174aad26fe86",
+          "match_hash": "beae438083258f158dd7983a889f79606507e0c623bfa93be4c1ebc075b56fc5",
           "signature": "fn deinit(self: *TypedEditable) -> void",
           "params": [
             { "name": "self", "type": "*TypedEditable" }
@@ -272,7 +272,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setByString",
-          "match_hash": "891d260617f16591fddce9a8838d22539a7dccc981c569f2b0e82a5b831f5e70",
+          "match_hash": "d7576e4f70dfe4749ca783f1e2f492fa8544d0ddb44353e635c587a67d4ab221",
           "signature": "fn setByString(self: *TypedEditable, key: []const u8, value: []const u8, role: Role) -> void",
           "params": [
             { "name": "self", "type": "*TypedEditable" },
@@ -287,7 +287,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getByString",
-          "match_hash": "ee06d83dae4de9d8e5d8a70e1d0401038d83f767ca8d636e66b07db2d20ca334",
+          "match_hash": "9d82a621e8682b9b4b3bbc0b5fdb5539a0f9547936c3bc8f34aa35209e7ba797",
           "signature": "fn getByString(self: *const TypedEditable, key: []const u8, role: Role) -> []const u8",
           "params": [
             { "name": "self", "type": "*const TypedEditable" },
@@ -301,7 +301,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setTyped",
-          "match_hash": "42439936fcd0decefd73f358797361743d9f31ab3e1561b8633281ac96bc0850",
+          "match_hash": "d35f432a2432e7bb65d5bbeb4bf6ec43574afaf399b07e8527bd77caaa5c793e",
           "signature": "fn setTyped(self: *TypedEditable, key: []const u8, value, role: Role) -> void",
           "params": [
             { "name": "self", "type": "*TypedEditable" },
@@ -316,7 +316,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getTyped",
-          "match_hash": "70732420c3c643427414f2223607fa589ae1c6d1e6b5a67c0b0e9d1980ecb128",
+          "match_hash": "5d35ad9fcc6b17ee7bea62f2326b9ab4e2770f222620fa054d642a6e2e85d313",
           "signature": "fn getTyped(self: *const TypedEditable, key: []const u8, T: type, role: Role) -> T",
           "params": [
             { "name": "self", "type": "*const TypedEditable" },
@@ -331,7 +331,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getAccessor",
-          "match_hash": "37d97f4f2f0e3ade3b5b4cecda5b0ba4bf6a91590c01f0b6f580a65ae15a8fd0",
+          "match_hash": "abeb820673079d8ffe6f0050644353673b11e8a858a58f8ab46e44486e1539f2",
           "signature": "fn getAccessor(self: *const TypedEditable, key: []const u8) -> ?*const TypedAccessor",
           "params": [
             { "name": "self", "type": "*const TypedEditable" },

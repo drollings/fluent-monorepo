@@ -7,7 +7,7 @@ const std = @import("std");
 /// Default maximum lines for excerpt extraction.
 pub const DEFAULT_MAX_LINES: usize = 200;
 
-/// Node type classification for excerpt extraction.
+/// Defines a fixed-size buffer node type with ownership and invariants; manages pool lifecycle.
 pub const NodeType = enum {
     fn_decl,
     fn_private,
@@ -43,13 +43,7 @@ pub const NodeType = enum {
     }
 };
 
-/// Extract a source code excerpt from `src` starting at `start_line` (1-based).
-///
-/// For functions: extracts the entire function body using brace matching.
-/// For containers (struct/enum/union): shows declaration and signatures only.
-/// For other types: extracts up to `max_lines` lines (default: DEFAULT_MAX_LINES).
-///
-/// Returns an owned allocation; caller must free.
+/// Extracts a specified number of lines from a source string using an allocator.
 pub fn extractExcerpt(
     allocator: std.mem.Allocator,
     src: []const u8,
@@ -162,10 +156,7 @@ pub fn extractExcerpt(
     return buf.toOwnedSlice(allocator);
 }
 
-/// Extract up to `max_lines` source lines starting at `start_line` (1-based).
-/// Stops at the next top-level pub/fn/const/var declaration or at `max_lines`.
-/// This is a simpler extraction for quick lookups without brace-awareness.
-/// Returns an owned allocation; caller must free.
+/// Extracts a simple excerpt from source content using an allocator, returning a slice of bytes.
 pub fn extractSimpleExcerpt(
     allocator: std.mem.Allocator,
     src_content: []const u8,
@@ -282,3 +273,6 @@ test "NodeType.isFunction and isContainer" {
     try std.testing.expect(NodeType.struct_decl.isContainer());
     try std.testing.expect(!NodeType.struct_decl.isFunction());
 }
+
+
+

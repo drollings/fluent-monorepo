@@ -11,14 +11,14 @@
     {
       "type": "struct",
       "name": "BuildResult",
-      "match_hash": "294b5ff34ac1a631a126e0f6d85eac722d0d94dd915a62a2b67af358544842c8",
+      "match_hash": "80ca12061e22cd976c2b7f123bec90345faf11b677d6df96d3b36cdcdc88d783",
       "signature": "keyword_struct BuildResult { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "6aefb924630bd248b5681c34026f7f549197d4bb2a8f7ea55c829ff4fd8f8042",
+          "match_hash": "95bbe142c4b916fd0d4a1af6ac89fb7f4644b80ca8dd7c43ba9cd8b87b060f9c",
           "signature": "fn deinit(self: *BuildResult, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*BuildResult" },
@@ -34,7 +34,7 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "97f020e34e93f12558d7fdf419f321ea50b1b4e0f4fa81e8aab2b8a8360ab6d7",
+      "match_hash": "ccd4f899dfbcd59eb9e60598180af88ea17a256dab9fc9d490216f00df69ef1b",
       "signature": "fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner) -> BuildContext",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -48,7 +48,7 @@
     {
       "type": "fn_decl",
       "name": "build",
-      "match_hash": "fbd69103c5534484f0c6369a6c56e33ce1e44d37c2dd693870432e8564e7e3b9",
+      "match_hash": "4462005e61f0095ce2cdb87d4d51fd0b0b8a99746af83ee37a5a4867b5a53f75",
       "signature": "fn build(self: *BuildContext, target_names: []const []const u8) -> BuildResult",
       "params": [
         { "name": "self", "type": "*BuildContext" },
@@ -61,7 +61,7 @@
     {
       "type": "fn_private",
       "name": "isUpToDate",
-      "match_hash": "d5507bc1923434ef25aa2570f72077d74fae0643c33601a1b1990e08470f1beb",
+      "match_hash": "6817f4e37e33f017d4d9c1e829d70a2f00abc2126e48c0977d251508464f5528",
       "signature": "fn isUpToDate(self: *BuildContext, target: *const Target) -> bool",
       "params": [
         { "name": "self", "type": "*BuildContext" },
@@ -74,7 +74,7 @@
     {
       "type": "fn_private",
       "name": "executeTarget",
-      "match_hash": "0d284bb3fcbdf62fe381f0b174dbb268bd109e7ba736b9f9cfa2747a7a4607d5",
+      "match_hash": "b4ac71592693d767c4d831e33ee77121449875598562234e9c4dca25ad26de10",
       "signature": "fn executeTarget(self: *BuildContext, target: *const Target) -> bool",
       "params": [
         { "name": "self", "type": "*BuildContext" },
@@ -87,7 +87,7 @@
     {
       "type": "fn_decl",
       "name": "listTargets",
-      "match_hash": "06fd4eefaf7add25e83b8e7b12de86a5a753ba93c8b2e689a7d8254b58d93ccd",
+      "match_hash": "01ec6d6715286137c817ef8da9408fa377e14f7562c5f01476393e39a58a8dbd",
       "signature": "fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) -> void",
       "params": [
         { "name": "self", "type": "*const BuildContext" },
@@ -100,7 +100,7 @@
     {
       "type": "fn_decl",
       "name": "showGraph",
-      "match_hash": "09fc317b670c96c04bb1110fe6cfc93232b04010e4fa7686e29f3287ed39dec3",
+      "match_hash": "f0d288c74c4904e8fcadf7bc9e0f8b421eac55f2bde012c7cf5772ebb3835156",
       "signature": "fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) -> void",
       "params": [
         { "name": "self", "type": "*BuildContext" },

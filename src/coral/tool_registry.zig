@@ -34,7 +34,7 @@ pub const Tool = struct {
     is_available: ?*const fn () bool = null,
 };
 
-/// Manages tool definitions with a fixed-size buffer pool; owned by the tool registry; ensures consistent state across operations.
+/// Defines a tool definition with fixed-size buffers, managed via init/deinit; owned by the tool system, not thread-safe.
 pub const ToolDefinition = struct {
     name: []const u8,
     description: []const u8,

@@ -13,7 +13,7 @@
     {
       "type": "struct",
       "name": "SerializedCSR",
-      "match_hash": "6556fa1b6b1f49183ddaf82a3cab6fab876cf22bad76e9bc8ae2f39ebbbfd46f",
+      "match_hash": "3ed1eb7bcc95afad4ac89ecd0880c42b67067a24b3fa94abef516c5744b65194",
       "signature": "keyword_struct SerializedCSR { ... }",
       "is_pub": true,
       "line": 32
@@ -21,7 +21,7 @@
     {
       "type": "struct",
       "name": "CSRGraph",
-      "match_hash": "106ca6f2908ddf6850327f6749a86cd92c42ce3eb1b18a9cef816a05adef7797",
+      "match_hash": "d7f6e5cc92feb8bff2e7f9956a818e9ed910e40d1fad304ca8ac53c727b1f1e8",
       "signature": "keyword_struct CSRGraph { ... }",
       "patterns": [
         { "name": "Ring Buffer", "type": "Domain", "ref": "guidance/skills/domain_patterns/SKILL.md#ring-buffer" }
@@ -31,7 +31,7 @@
         {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "0fd4f2366613063847a3971bf20952828cc1d8b5042c7046544800f3672f2e67",
+          "match_hash": "37ee250b168f45b77a88b9d85726851a3cd179b7da2ded6d1d4cb09d5914430f",
           "signature": "fn build(arena: Allocator, library, predicate_filter: ?[]const u8, with_weights: bool) -> Self",
           "params": [
             { "name": "arena", "type": "Allocator" },
@@ -49,7 +49,7 @@
     ,    {
           "type": "fn_decl",
           "name": "neighbors",
-          "match_hash": "6c4d7f6cad77eea394756409623879d33392af2b7cf6c4a88598b9cc612165a9",
+          "match_hash": "01df50b13e1d27d3df1e1b35c71422d510f05a4b362fc0c465965cc136ab40cf",
           "signature": "fn neighbors(self: Self, node_idx: u32) -> []const u32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -62,7 +62,7 @@
     ,    {
           "type": "fn_decl",
           "name": "degree",
-          "match_hash": "c450907a9d2c9b36a15bc9d396c9b2e67e186e06ebd6e2b7de5b48f43a56dba3",
+          "match_hash": "3c074eba263ef48db7aefa3632e5d1c96667215750dda399595eca5344f218af",
           "signature": "fn degree(self: Self, node_idx: u32) -> u32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -75,7 +75,7 @@
     ,    {
           "type": "fn_decl",
           "name": "serialize",
-          "match_hash": "9e5b8a1e312965d8d2435fa7f1e81d68b03e94fe19a3afbf6af14354683464ca",
+          "match_hash": "9485da50ccf8422973777fdeb293e160a8f74b2cf89d9497f9a412fc6240c27b",
           "signature": "fn serialize(self: *const Self, allocator: Allocator) -> []u8",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -88,7 +88,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deserialize",
-          "match_hash": "9978cfd409955e718fa2117e3249117f5e8952713c99015c75e9fbf7f5631a94",
+          "match_hash": "9101a648ce98bed5ad766fe65191ef218f90cc8ad0665f894c94f5dde9ee2160",
           "signature": "fn deserialize(allocator: Allocator, blob: []const u8) -> Self",
           "params": [
             { "name": "allocator", "type": "Allocator" },

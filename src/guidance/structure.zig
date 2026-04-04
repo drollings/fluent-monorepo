@@ -21,7 +21,7 @@ const TreeEntry = union(enum) {
     file: FileEntry,
 };
 
-/// One node in the directory tree being rendered: tree-art prefix, basename, and full absolute path.
+/// Manages file entry metadata; owned by the module; ensures consistent state across initialization and cleanup.
 const FileEntry = struct {
     /// The tree prefix string (e.g. "│   ├── ").
     prefix: []const u8,
@@ -425,8 +425,7 @@ fn childLessThan(_: void, a: ChildEntry, b: ChildEntry) bool {
     return std.ascii.lessThanIgnoreCase(a.name, b.name);
 }
 
-/// Extract the filename from a tree line like "│   ├── main.zig".
-/// Returns a slice into the input — not heap-allocated.
+/// Extracts the filename from a Zig source code line as a slice of bytes.
 fn extractFilename(line: []const u8) ?[]const u8 {
     // Walk from the end of the string backwards past any trailing spaces,
     // then find the start of the filename token.

@@ -17,7 +17,7 @@
 /// struct, one for the byte slice.  Simple, correct, no alignment tricks.
 const std = @import("std");
 
-/// Manages shared string data across modules; owned by the application; ensures consistent access patterns.
+/// Manages shared string data with ownership and lifetime control; ensures safe access across contexts.
 pub const SharedString = struct {
     ref_count: std.atomic.Value(u32),
     bytes: []const u8, // allocator-owned copy; freed when ref_count → 0
@@ -189,3 +189,4 @@ test "SharedString: slice pointer stability across clones" {
     b.deinit(allocator);
     a.deinit(allocator);
 }
+

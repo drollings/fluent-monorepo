@@ -33,7 +33,7 @@ const Library = db_mod.Library;
 // Pending node — accumulates property values before flush
 // ---------------------------------------------------------------------------
 
-/// In-memory representation of a node being built from triples.
+/// Represents a pending node in the Zig mapping system, managing ownership and invariants for state transitions.
 pub const PendingNode = struct {
     allocator: std.mem.Allocator,
     id: i64,
@@ -86,7 +86,7 @@ pub const PendingNode = struct {
 // Pending edge — directed edge between two node IDs
 // ---------------------------------------------------------------------------
 
-/// A directed graph edge pending insertion: from/to node IDs and an owned copy of the predicate IRI.
+/// Represents a pending edge in the graph; managed by the owner; key invariant is its pending state.
 pub const PendingEdge = struct {
     from_id: i64,
     to_id: i64,
@@ -97,7 +97,7 @@ pub const PendingEdge = struct {
 // Pending contradiction — conflicting literal values for same subject+predicate
 // ---------------------------------------------------------------------------
 
-/// Two conflicting literal values for the same subject+predicate, detected during mapping.
+/// Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with strict ownership and invariants.
 pub const PendingContradiction = struct {
     subject_id: i64,
     predicate: []const u8, // owned copy of predicate IRI
@@ -116,7 +116,7 @@ pub const MappingConfig = struct {
     scope: []const u8 = "default",
 };
 
-/// Accumulates RDF triples in memory and batch-inserts them to SQLite via `flush()`.
+/// Manages mapping transformations for triple structures, owns state, ensures consistent key invariants.
 pub const TripleMapper = struct {
     allocator: std.mem.Allocator,
     config: MappingConfig,
@@ -349,7 +349,7 @@ pub const TripleMapper = struct {
     }
 };
 
-/// Manages flush operations with fixed-size buffers; encapsulates ownership and invariants.
+/// Manages flush operations with fixed-size buffers; ensures single ownership and deterministic cleanup.
 pub const FlushResult = struct {
     nodes_created: usize,
     edges_created: usize,

@@ -23,12 +23,7 @@ pub const NODE_SCHEMA_OVERHEAD_TOKENS: usize = 16;
 // Standalone helper (drop-in replacement for local estimateTokens() calls)
 // ---------------------------------------------------------------------------
 
-/// Estimate the number of tokens in `text` using the bytes-per-token
-/// approximation. Returns at least 1 for any non-empty input.
-///
-/// This is a convenience wrapper around `TokenEstimator.estimateTokens` that
-/// does not require constructing the struct — useful for replacing local
-/// one-liner `estimateTokens()` functions scattered across files.
+/// Converts a byte slice into a Zig usize value representing its length.
 pub fn estimate(text: []const u8) usize {
     if (text.len == 0) return 0;
     return @max(1, (text.len + BYTES_PER_TOKEN - 1) / BYTES_PER_TOKEN);
@@ -38,11 +33,7 @@ pub fn estimate(text: []const u8) usize {
 // TokenEstimator
 // ---------------------------------------------------------------------------
 
-/// Lightweight, stateless token estimator.
-///
-/// Usage:
-///   const est = TokenEstimator{};
-///   const tokens = est.estimateTokens("hello world");  // → 3
+/// Manages token estimation logic, owns estimation model; ensures consistent state across runs.
 pub const TokenEstimator = struct {
     const Self = @This();
 
@@ -73,8 +64,7 @@ pub const TokenEstimator = struct {
 // ProportionalBudget — P3.1
 // ---------------------------------------------------------------------------
 
-/// Allocate a total token budget across three context sections.
-/// Fractions must sum to 1.0 (validated by `validate()`).
+/// Manages dynamic token budget allocation; owns runtime state; ensures proportional distribution.
 pub const ProportionalBudget = struct {
     total: usize,
     /// Fraction for community-report context (default 15%).

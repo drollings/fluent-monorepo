@@ -32,7 +32,7 @@ pub const SIMHASH_DIMS: usize = 384;
 pub const PROJECTIONS: [SIMHASH_BITS][SIMHASH_DIMS]f32 =
     @import("simhash_projections.zig").data;
 
-/// Computes a SHA-256 hash from an embedding array and returns a 64-bit unsigned value.
+/// Computes a SHA-3-like hash from an embedding array, returning a 64-bit unsigned value.
 pub fn simhash(embedding: []const f32) u64 {
     const effective_len = @min(embedding.len, SIMHASH_DIMS);
     var h: u64 = 0;
@@ -46,23 +46,12 @@ pub fn simhash(embedding: []const f32) u64 {
     return h;
 }
 
-/// Hamming distance between two SimHashes.
-/// Equivalent to the number of projection sign disagreements.
-/// Range: [0, 64].
+/// Calculates the Hamming distance between two u64 integers, returning a 7-bit unsigned value.
 pub inline fn hammingDistance(a: u64, b: u64) u7 {
     return @popCount(a ^ b);
 }
 
-/// Approximate maximum Hamming distance for a given cosine threshold.
-///
-/// Linear approximation:  H_max ≈ (1 - cosine_threshold) × BITS × 0.85
-///
-/// Calibration:
-///   cosine ≥ 0.70 → H_max = 16   (conservative; true ~12 bits)
-///   cosine ≥ 0.50 → H_max = 27
-///   cosine ≥ 0.28 → H_max = 44   (main threshold; high recall)
-///
-/// Returns u7 to match the return type of hammingDistance().
+/// Computes the maximum Hamming distance between two cosine thresholds, returning a 7-bit unsigned integer.
 pub fn maxHamming(cosine_threshold: f32) u7 {
     const f_bits: f32 = @floatFromInt(SIMHASH_BITS);
     const raw = f_bits * (1.0 - cosine_threshold) * 0.85;
