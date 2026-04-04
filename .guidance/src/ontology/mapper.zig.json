@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "RDF", "YAGO", "SQLite", "ContextNode", "TripleMapper", "LOD", "Data Transformation", "Memory Management"],
+  "capabilities": ["coral-ingestion", "ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [
     {
@@ -221,55 +222,55 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 359
+      "line": 360
     },
     {
       "type": "test_decl",
       "name": "mapper: entity from rdf:type triple",
       "is_pub": false,
-      "line": 371
+      "line": 372
     },
     {
       "type": "test_decl",
       "name": "mapper: label routes to lod[4]",
       "is_pub": false,
-      "line": 385
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "mapper: comment routes to lod[0]",
       "is_pub": false,
-      "line": 402
+      "line": 403
     },
     {
       "type": "test_decl",
       "name": "mapper: object property creates edge",
       "is_pub": false,
-      "line": 419
+      "line": 420
     },
     {
       "type": "test_decl",
       "name": "mapper: multiple triples for same entity",
       "is_pub": false,
-      "line": 439
+      "line": 440
     },
     {
       "type": "test_decl",
       "name": "mapper: contradiction detection for duplicate label",
       "is_pub": false,
-      "line": 459
+      "line": 460
     },
     {
       "type": "test_decl",
       "name": "mapper: no contradiction for identical label",
       "is_pub": false,
-      "line": 484
+      "line": 485
     },
     {
       "type": "test_decl",
       "name": "mapper: pending node to ContextNode",
       "is_pub": false,
-      "line": 501
+      "line": 502
     }
   ]
 }

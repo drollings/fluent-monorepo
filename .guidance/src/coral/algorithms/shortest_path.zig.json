@@ -4,6 +4,7 @@
     "source": "src/coral/algorithms/shortest_path.zig",
     "language": "zig"
   },
+  "comment": " shortest_path.zig — Dijkstra's shortest-path algorithm on CSRGraph.\n\n Finds minimum-cost paths through the graph using a binary min-heap as the\n priority queue.  Supports:\n - Weighted edges (via `CSRGraph.weights`)\n - Unweighted graphs (treated as unit-weight)\n - Optional `max_distance` cutoff for reachability queries\n\n §Integration with context packing:\n Graph distance from Dijkstra feeds into `selectLodByDistance()` so that\n nodes close to the query anchor (low distance) get more detail (lower LOD\n index = more text) while distant nodes get summaries only.\n\n §Performance:\n Standard O((V + E) log V) Dijkstra.  For unweighted graphs, BFS is faster\n in theory but Dijkstra handles the weighted case without a separate path,\n keeping the code simpler.\n\n All allocations use the provided arena; no cleanup beyond `arena.deinit()`.",
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
@@ -83,37 +84,37 @@
       ],
       "returns": "DijkstraResult",
       "is_pub": false,
-      "line": 118
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "ShortestPath.findPath: same node returns single-element path",
       "is_pub": false,
-      "line": 170
+      "line": 171
     },
     {
       "type": "test_decl",
       "name": "ShortestPath.findPath: simple chain",
       "is_pub": false,
-      "line": 182
+      "line": 183
     },
     {
       "type": "test_decl",
       "name": "ShortestPath.findPath: no path returns null",
       "is_pub": false,
-      "line": 198
+      "line": 199
     },
     {
       "type": "test_decl",
       "name": "ShortestPath.findAllReachable: within max_distance",
       "is_pub": false,
-      "line": 210
+      "line": 211
     },
     {
       "type": "test_decl",
       "name": "ShortestPath.findPath: weighted shortest path",
       "is_pub": false,
-      "line": 228
+      "line": 229
     }
   ]
 }

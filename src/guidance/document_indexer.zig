@@ -141,15 +141,18 @@ pub const GuidanceJsonIndexerImpl = struct {
     workspace: []const u8,
 };
 
+/// Converts a Zig code snippet into a JSON document type array.
 fn guidanceJsonDocType(_: *anyopaque) []const u8 {
     return "guidance_json";
 }
 
+/// Converts a pointer to a Zig string into a JSON document ID slice.
 fn guidanceJsonDocId(ptr: *anyopaque) []const u8 {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     return self.doc.meta.source;
 }
 
+/// Extracts metadata from a JSON string using Zig's guidance library, returning DocumentMetadata or an error.
 fn guidanceJsonExtractMetadata(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
@@ -195,6 +198,7 @@ fn guidanceJsonExtractMetadata(
     };
 }
 
+/// Converts a JSON query into a series of processing stages for guidance generation.
 fn guidanceJsonProduceStages(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
@@ -270,6 +274,7 @@ fn guidanceJsonProduceStages(
     return stages.toOwnedSlice(allocator);
 }
 
+/// Converts a Zig source snippet into a relevance score for query tokens.
 fn guidanceJsonRelevance(ptr: *anyopaque, query_tokens: []const []const u8) f32 {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     const doc = self.doc;
@@ -299,6 +304,7 @@ fn guidanceJsonRelevance(ptr: *anyopaque, query_tokens: []const []const u8) f32 
     return @min(1.0, score);
 }
 
+/// Cleans up the guidanceJsonDeinit pointer, ensuring proper memory management and returning nothing.
 fn guidanceJsonDeinit(ptr: *anyopaque) void {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     self.allocator.destroy(self);

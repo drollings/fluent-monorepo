@@ -558,6 +558,7 @@ test "loadSkillPara extracts first paragraph from SKILL.md" {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Creates a Zig member from a name slice, hash, and doc slice, returning the member object.
 fn makeMember(name: []const u8, hash: ?[]const u8, doc: ?[]const u8) types.Member {
     return .{
         .type = .fn_decl,
@@ -1697,4 +1698,139 @@ test "reportCapabilityLifecycle: updated cap detected when anchors change" {
     try std.testing.expectEqual(@as(usize, 0), result.new_count);
     try std.testing.expectEqual(@as(usize, 1), result.updated_count);
     try std.testing.expectEqual(@as(usize, 0), result.removed_count);
+}
+
+// ---------------------------------------------------------------------------
+// M6: extractMemberCommentsFromSource tests
+// ---------------------------------------------------------------------------
+
+test "extractMemberCommentsFromSource: extracts comment from source" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var store = json_store.JsonStore.init(allocator);
+
+    const source =
+        \\/// This is a doc comment.
+        \\/// It has multiple lines.
+        \\pub fn myFunc() void {}
+        \\
+        \\pub fn otherFunc() void {}
+    ;
+
+    var doc = types.GuidanceDoc{
+        .meta = .{
+            .module = "test",
+            .source = "test.zig",
+        },
+        .members = &.{
+            .{
+                .type = .fn_decl,
+                .name = "myFunc",
+                .line = 3, // myFunc is on line 3 (after the two /// comments)
+                .comment = null, // Should be extracted from source
+            },
+            .{
+                .type = .fn_decl,
+                .name = "otherFunc",
+                .line = 5, // otherFunc is on line 5
+                .comment = null, // No comment before this function
+            },
+        },
+    };
+
+    store.extractMemberCommentsFromSource(&doc, source);
+
+    // myFunc should have its comment extracted
+    try std.testing.expect(doc.members[0].comment != null);
+    try std.testing.expect(std.mem.indexOf(u8, doc.members[0].comment.?, "This is a doc comment") != null);
+    try std.testing.expect(std.mem.indexOf(u8, doc.members[0].comment.?, "multiple lines") != null);
+
+    // otherFunc has no doc comment before it
+    try std.testing.expect(doc.members[1].comment == null);
+
+    // Cleanup
+    if (doc.members[0].comment) |c| allocator.free(c);
+}
+
+test "extractMemberCommentsFromSource: preserves existing comments" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var store = json_store.JsonStore.init(allocator);
+
+    const source =
+        \\/// Source comment (should be ignored).
+        \\pub fn myFunc() void {}
+    ;
+
+    var doc = types.GuidanceDoc{
+        .meta = .{
+            .module = "test",
+            .source = "test.zig",
+        },
+        .members = &.{
+            .{
+                .type = .fn_decl,
+                .name = "myFunc",
+                .line = 2,
+                .comment = "Existing comment from JSON", // Should be preserved
+            },
+        },
+    };
+
+    store.extractMemberCommentsFromSource(&doc, source);
+
+    // Existing comment should NOT be overwritten
+    try std.testing.expect(doc.members[0].comment != null);
+    try std.testing.expectEqualStrings("Existing comment from JSON", doc.members[0].comment.?);
+}
+
+test "extractMemberCommentsFromSource: handles nested members" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var store = json_store.JsonStore.init(allocator);
+
+    const source =
+        \\pub const MyStruct = struct {
+        \\    /// Method comment.
+        \\    pub fn method() void {}
+        \\};
+    ;
+
+    var doc = types.GuidanceDoc{
+        .meta = .{
+            .module = "test",
+            .source = "test.zig",
+        },
+        .members = &.{
+            .{
+                .type = .@"struct",
+                .name = "MyStruct",
+                .line = 1,
+                .comment = null,
+                .members = &.{
+                    .{
+                        .type = .method,
+                        .name = "method",
+                        .line = 3,
+                        .comment = null, // Should extract "Method comment."
+                    },
+                },
+            },
+        },
+    };
+
+    store.extractMemberCommentsFromSource(&doc, source);
+
+    // Nested method comment should be extracted
+    try std.testing.expect(doc.members[0].members[0].comment != null);
+    try std.testing.expectEqualStrings("Method comment.", doc.members[0].members[0].comment.?);
+
+    // Cleanup
+    if (doc.members[0].members[0].comment) |c| allocator.free(c);
 }

@@ -20,6 +20,7 @@ const CacheTier = cache.CacheTier;
 const WasmTool = coral_db.WasmTool;
 const RoutingResult = cache.RoutingResult;
 
+/// Creates a test library instance using the provided allocator.
 fn makeTestLib(allocator: std.mem.Allocator) !*Library {
     const lib = try Library.init(allocator, .mem, "");
     try lib.initSchema();

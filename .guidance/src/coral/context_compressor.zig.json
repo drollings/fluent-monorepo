@@ -159,55 +159,55 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 213
+      "line": 214
     },
     {
       "type": "test_decl",
       "name": "estimateTokens basic",
       "is_pub": false,
-      "line": 217
+      "line": 218
     },
     {
       "type": "test_decl",
       "name": "compress empty messages",
       "is_pub": false,
-      "line": 224
+      "line": 225
     },
     {
       "type": "test_decl",
       "name": "compress under budget — no pruning",
       "is_pub": false,
-      "line": 231
+      "line": 232
     },
     {
       "type": "test_decl",
       "name": "compress phase 2 — drop from beginning when over budget",
       "is_pub": false,
-      "line": 242
+      "line": 243
     },
     {
       "type": "test_decl",
       "name": "compress phase 1 — prune bulky tool results outside protect_tail",
       "is_pub": false,
-      "line": 259
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "compress phase 1 — small tool results inside protect_tail are kept",
       "is_pub": false,
-      "line": 277
+      "line": 278
     },
     {
       "type": "test_decl",
       "name": "compress phase 3 — orphan tool_call removed when result pruned",
       "is_pub": false,
-      "line": 295
+      "line": 296
     },
     {
       "type": "test_decl",
       "name": "compress protect_tail keeps recent messages intact",
       "is_pub": false,
-      "line": 327
+      "line": 328
     }
   ]
 }

@@ -93,7 +93,7 @@
       "signature": "fn alwaysAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 117
+      "line": 118
     },
     {
       "type": "fn_private",
@@ -102,37 +102,37 @@
       "signature": "fn neverAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 120
+      "line": 122
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: register and count",
       "is_pub": false,
-      "line": 124
+      "line": 126
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: getDefinitions returns all when no filter",
       "is_pub": false,
-      "line": 135
+      "line": 137
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: toolset filter includes only matching tools",
       "is_pub": false,
-      "line": 148
+      "line": 150
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: availability check skips unavailable tools",
       "is_pub": false,
-      "line": 164
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: availability=false skips check",
       "is_pub": false,
-      "line": 178
+      "line": 180
     }
   ]
 }

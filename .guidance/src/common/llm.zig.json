@@ -4,7 +4,9 @@
     "source": "src/common/llm.zig",
     "language": "zig"
   },
+  "comment": " common — Shared utilities and LLM client for guidance, vector, and coral.\n\n This file is the module root for the `common` build module.\n It re-exports from sub-modules so consumers can write\n `@import(\"common\").LlmClient` etc. without knowing the source file.\n\n Sub-modules:\n   src/llm/root.zig       — LlmClient, LlmConfig, LlmError (pure HTTP, no str deps)\n   src/common/embeddings  — EmbeddingProvider, Ollama/OpenAI clients, factory\n   src/common/args        — CommonArgs, parseCommonArgs\n   src/common/io          — WriterState, ReaderState, path helpers\n   src/common/source      — NodeType, extractExcerpt, extractSimpleExcerpt\n   src/common/hash        — sha256Hex, contentHashWithModel, blake3, etc.\n   src/common/json        — jsonStringifyAlloc, jsonWriteEscaped, parseJsonFile\n   src/common/str         — containsIgnoreCase, looksLikeIdentifier, etc.\n   src/common/url         — isLocalHost, validateHttpsOrLocalHttp",
   "keywords": ["LLM", "Zig", "API", "Configuration", "Error Handling", "Modular", "Reflection", "JSON", "Embeddings"],
+  "capabilities": ["llm-client", "target-registry", "embedding-providers", "ast-indexing"],
   "used_by": ["src/common/root.zig"],
   "members": [
     {

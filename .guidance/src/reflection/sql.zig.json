@@ -4,6 +4,7 @@
     "source": "src/reflection/sql.zig",
     "language": "zig"
   },
+  "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig"],
   "members": [
     {

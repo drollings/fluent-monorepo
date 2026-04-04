@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Verification", "Data Integrity", "Zig", "IngestionReport", "ErrorChecking"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "enum",

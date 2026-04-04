@@ -91,6 +91,7 @@ pub const GitignoreFilter = struct {
     }
 };
 
+/// Checks if a given byte slice matches a specified pattern, returning true or false.
 fn matchesPattern(path: []const u8, pattern: []const u8) bool {
     if (pattern.len == 0) return false;
 
@@ -119,6 +120,7 @@ fn matchesPattern(path: []const u8, pattern: []const u8) bool {
     return globMatch(path, pat);
 }
 
+/// Checks if a pattern exists within a given text slice, returning true or false.
 fn globMatch(text: []const u8, pattern: []const u8) bool {
     var ti: usize = 0;
     var pi: usize = 0;

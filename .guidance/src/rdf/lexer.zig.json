@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "lexer", "Terse RDF-TL", "tokenization", "streaming", "error handling", "state management"],
+  "capabilities": ["rdf-parsing"],
   "used_by": ["src/rdf/parser.zig", "src/rdf/root.zig"],
   "members": [
     {

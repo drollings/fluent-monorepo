@@ -4,6 +4,7 @@
     "source": "src/concurrency/spawn.zig",
     "language": "zig"
   },
+  "comment": " spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).\n\n A thin wrapper that submits an `AnyWorkUnit` to a `std.Thread.Pool` via\n `spawnWg`.  All scheduling complexity lives in `std.Thread.Pool`; this file\n is intentionally minimal (~40 lines including comments).\n\n For error-capturing dispatch, use `ErrorGroup.go()` (error_group.zig).\n\n ## Usage\n\n   var wg: std.Thread.WaitGroup = .{};\n   spawn(&pool, &wg, unit.toAny());\n   pool.waitAndWork(&wg);\n\n `pool.waitAndWork` is preferred over `wg.wait()` when the calling thread\n has no other work — it helps drain the queue, reducing latency for small\n batches while still blocking properly (no spin).",
   "used_by": ["src/concurrency/root.zig"],
   "members": [
     {
@@ -30,31 +31,31 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 36
+      "line": 37
     },
     {
       "type": "test_decl",
       "name": "spawn: runs handler and signals wg",
       "is_pub": false,
-      "line": 60
+      "line": 61
     },
     {
       "type": "test_decl",
       "name": "spawn: 20 units on 4-thread pool — all complete",
       "is_pub": false,
-      "line": 76
+      "line": 77
     },
     {
       "type": "test_decl",
       "name": "spawn: cancelled unit completes without hanging",
       "is_pub": false,
-      "line": 108
+      "line": 109
     },
     {
       "type": "test_decl",
       "name": "spawn: GPA no leaks after pool.deinit",
       "is_pub": false,
-      "line": 126
+      "line": 127
     }
   ]
 }

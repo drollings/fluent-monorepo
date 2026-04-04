@@ -4,6 +4,7 @@
     "source": "src/guidance/scrub.zig",
     "language": "zig"
   },
+  "comment": " scrub.zig — Synthetic comment detection and scrubbing.\n\n Ports the Python `is_synthetic_comment()` heuristics from\n `bin/guidance-py:650-699` to Zig for use in the `guidance scrub` command.\n A synthetic comment is a machine-generated placeholder or mangled LLM\n output that provides no value to readers.",
   "used_by": ["src/coral/main.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

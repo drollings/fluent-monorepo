@@ -16,7 +16,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 38
+      "line": 39
     },
     {
       "type": "fn_decl",
@@ -29,103 +29,103 @@
       ],
       "returns": "ShellParseError![][]const u8",
       "is_pub": true,
-      "line": 51
+      "line": 52
     },
     {
       "type": "test_decl",
       "name": "parseCommand simple command",
       "is_pub": false,
-      "line": 175
+      "line": 176
     },
     {
       "type": "test_decl",
       "name": "parseCommand three tokens",
       "is_pub": false,
-      "line": 186
+      "line": 187
     },
     {
       "type": "test_decl",
       "name": "parseCommand double-quoted argument with space",
       "is_pub": false,
-      "line": 198
+      "line": 199
     },
     {
       "type": "test_decl",
       "name": "parseCommand single-quoted argument with space",
       "is_pub": false,
-      "line": 209
+      "line": 210
     },
     {
       "type": "test_decl",
       "name": "parseCommand backslash escape",
       "is_pub": false,
-      "line": 220
+      "line": 221
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects pipe",
       "is_pub": false,
-      "line": 230
+      "line": 231
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects double-ampersand",
       "is_pub": false,
-      "line": 237
+      "line": 238
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects dollar sign",
       "is_pub": false,
-      "line": 244
+      "line": 245
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects backtick substitution",
       "is_pub": false,
-      "line": 251
+      "line": 252
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects redirect",
       "is_pub": false,
-      "line": 258
+      "line": 259
     },
     {
       "type": "test_decl",
       "name": "parseCommand rejects metachar in double quotes",
       "is_pub": false,
-      "line": 265
+      "line": 266
     },
     {
       "type": "test_decl",
       "name": "parseCommand unterminated single quote",
       "is_pub": false,
-      "line": 272
+      "line": 273
     },
     {
       "type": "test_decl",
       "name": "parseCommand unterminated double quote",
       "is_pub": false,
-      "line": 279
+      "line": 280
     },
     {
       "type": "test_decl",
       "name": "parseCommand empty string",
       "is_pub": false,
-      "line": 286
+      "line": 287
     },
     {
       "type": "test_decl",
       "name": "parseCommand whitespace only",
       "is_pub": false,
-      "line": 293
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "parseCommand quoted argument concatenation",
       "is_pub": false,
-      "line": 300
+      "line": 301
     }
   ]
 }

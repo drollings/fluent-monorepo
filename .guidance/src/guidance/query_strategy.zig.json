@@ -4,6 +4,8 @@
     "source": "src/guidance/query_strategy.zig",
     "language": "zig"
   },
+  "comment": " query_strategy.zig — QueryStrategy VTable for intent-based query routing.\n\n Implements M2 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n Classify query intent before retrieval and route to the optimal strategy.\n\n VTable pattern follows fluent-wvr (see doc/skills/fluent-wvr/SKILL.md):\n   {ptr: *anyopaque, vtable: *const VTable} — two pointers, no inheritance.\n\n Strategy priority (lower = tried first):\n   0  IdentifierLookupStrategy  — single-token camelCase/PascalCase/snake_case\n   2  CapabilityQueryStrategy   — query matches a known capability/alias\n   4  ConceptQueryStrategy      — fallback: hybrid search + LLM synthesis",
+  "capabilities": ["explain-query", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig"],
   "members": [
     {
@@ -118,7 +120,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 117
+      "line": 118
     },
     {
       "type": "fn_private",
@@ -136,7 +138,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 123
+      "line": 125
     },
     {
       "type": "fn_private",
@@ -150,7 +152,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 169
+      "line": 172
     },
     {
       "type": "fn_private",
@@ -168,7 +170,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 185
+      "line": 189
     },
     {
       "type": "fn_private",
@@ -182,7 +184,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 226
+      "line": 231
     },
     {
       "type": "fn_private",
@@ -200,7 +202,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 236
+      "line": 242
     },
     {
       "type": "fn_decl",
@@ -218,7 +220,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 269
+      "line": 275
     },
     {
       "type": "fn_decl",
@@ -232,7 +234,7 @@
       ],
       "returns": "[3]QueryStrategy",
       "is_pub": true,
-      "line": 297
+      "line": 303
     },
     {
       "type": "fn_decl",
@@ -244,7 +246,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 315
+      "line": 321
     },
     {
       "type": "fn_private",
@@ -256,25 +258,25 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 334
+      "line": 340
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: single camelCase identifier",
       "is_pub": false,
-      "line": 354
+      "line": 360
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects multi-word queries",
       "is_pub": false,
-      "line": 361
+      "line": 367
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects empty and too-long",
       "is_pub": false,
-      "line": 367
+      "line": 373
     }
   ]
 }

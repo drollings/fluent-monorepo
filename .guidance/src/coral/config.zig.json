@@ -59,7 +59,7 @@
     {
       "type": "fn_private",
       "name": "buildDefault",
-      "match_hash": "f5687d418eb748947913c92e87ddc29c2f5265542ac87a0feb15a2de6f5c3ef2",
+      "match_hash": "da1283b255a7178eac8e62031745bba0c68bfbfce83c5c5c82991441ae0ab33a",
       "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -67,12 +67,12 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 208
+      "line": 209
     },
     {
       "type": "fn_private",
       "name": "buildFromParts",
-      "match_hash": "d2a66a8e872c2bc820886f394925f31e4a2e6786435b3c422cfb031d4d7650ca",
+      "match_hash": "6c1708ec9a6cea5e0f527d87ede44965504675ab306b97290a127bbd95244e6a",
       "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -84,7 +84,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 221
+      "line": 223
     }
   ]
 }

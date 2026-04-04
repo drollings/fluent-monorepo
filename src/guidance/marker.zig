@@ -192,6 +192,69 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
     try std.testing.expect(!fileNeedsProcessing(src_abs, json_abs));
 }
 
+test "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    // Create source file first
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "validated.zig" });
+    defer std.testing.allocator.free(src_abs);
+    {
+        const f = try std.fs.createFileAbsolute(src_abs, .{});
+        try f.sync();
+        f.close();
+    }
+
+    // Create JSON after source (so JSON is newer)
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "validated.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+    {
+        const f = try std.fs.createFileAbsolute(json_abs, .{});
+        f.close();
+    }
+
+    // Use touchFileAfter to set JSON mtime to src_mtime - 1 second (validated pattern)
+    try touchFileAfter(json_abs, src_abs);
+
+    // fileNeedsProcessing should return false for validated files
+    try std.testing.expect(!fileNeedsProcessing(src_abs, json_abs));
+}
+
+test "fileNeedsProcessing: JSON older by >1s → needs processing" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(tmp_path);
+
+    // Create JSON first (older)
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "stale.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+    {
+        const f = try std.fs.createFileAbsolute(json_abs, .{});
+        try f.sync();
+        f.close();
+    }
+
+    // Sleep to ensure mtime difference > 1 second
+    std.Thread.sleep(1100_000_000); // 1.1 seconds
+
+    // Create source file (newer)
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "stale.zig" });
+    defer std.testing.allocator.free(src_abs);
+    {
+        const f = try std.fs.createFileAbsolute(src_abs, .{});
+        try f.sync();
+        f.close();
+    }
+
+    // JSON is older than source by >1 second → needs processing
+    try std.testing.expect(fileNeedsProcessing(src_abs, json_abs));
+}
+
 test "testsCanBeSkipped: no marker → false" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

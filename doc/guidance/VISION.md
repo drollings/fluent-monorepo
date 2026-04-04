@@ -85,8 +85,8 @@ Both `guidance gen` (Zig) and `bin/guidance-py` (Python) produce identical JSON 
 | `meta.module` | ✓ | ✓ | Module name |
 | `meta.source` | ✓ | ✓ | Relative path |
 | `meta.language` | ✓ | ✓ | "zig" or "python" |
-| `members[].match_hash` | ✓ | ✓ | SHA-256 of signature |
-| `members[].comment` | ✓ | ✓ | Doc comment ( backward compat) |
+| `members[].match_hash` | ✓ | ✓ | SHA-256 of signature + comment |
+| `members[].comment` | ✗ | ✗ | ~~Not stored in JSON~~ (extracted from source) |
 | `skills[].ref` | ✓ | ✓ | SKILL.md reference |
 | `used_by[]` | ✓ | ✓ | Reverse dependencies |
 
@@ -250,12 +250,19 @@ pub const Member = struct {
     signature: ?[]const u8 = null,   // Function/struct signature
     params: []const Param = &.{},   // Function parameters
     returns: ?[]const u8 = null,     // Return type
-    comment: ?[]const u8 = null,     // Doc comment (///)
+    comment: ?[]const u8 = null,     // in-memory: extracted from source (not in JSON)
     line: ?u32 = null,              // 1-based line number
     comment_generated: bool = false, // True if LLM-generated (not from source)
     // ... other fields
 };
 ```
+
+**Comment Storage Strategy:**
+- **Module-level comments (`//!`)**: Stored in JSON's top-level `comment` field
+- **Member comments (`///`)**: Extracted from source on-demand, never stored in JSON
+- **Rationale**: Keeps JSON minimal, reduces diff noise, aligns with Zig's design
+- **Backward compatibility**: Old JSON files with member comments still load correctly
+- **`match_hash`**: Still tracks comment changes for staleness detection
 
 ### Stage (Staged Query Pipeline)
 
@@ -286,17 +293,23 @@ CREATE TABLE ast_nodes (
     name TEXT NOT NULL,          -- Member name
     node_type TEXT NOT NULL,     -- "fn_decl", "struct", "enum", "module"
     signature TEXT,
-    comment TEXT,
+    comment TEXT,                -- Extracted from source on sync
     detail TEXT,                 -- Comprehensive documentation
     keywords TEXT,               -- JSON array
     line INTEGER,
     embedding BLOB,              -- Float32 vector
-    match_hash TEXT,             -- SHA-256 of signature
+    match_hash TEXT,             -- SHA-256 of signature + comment
     used_by TEXT,                -- JSON array of paths
     skills TEXT,                 -- JSON array of skill refs
     capabilities TEXT            -- JSON array of capability names
 );
 ```
+
+**Comment Extraction During Sync:**
+- Module comments: Loaded from JSON's top-level `comment` field
+- Member comments: Extracted from source files using `extractCommentAtLine()`
+- Extracted during `guidance db sync` and stored in database for search
+- Always in sync with source because extraction happens on every sync
 
 ---
 
@@ -339,11 +352,21 @@ CREATE TABLE ast_nodes (
 
 ---
 
-## Comment In-filling
+## Comment Management
 
-When `guidance gen` runs with LLM enabled and a function/struct/enum lacks a `///` doc comment, the enhancer generates one and stores it in the JSON with `comment_generated=true`. A post-processing phase ensures these generated comments are written back to source:
+**Single Source of Truth Principle:**
+Member comments (`///`) live in source files—the JSON is a derived artifact. Thiseliminates redundancy, reduces JSON file size by ~30%, and ensures comments are always in sync with code.
 
-### Workflow
+### Storage Strategy
+
+| Content | Location | Rationale |
+|---------|----------|-----------|
+| Module comments (`//!`) | JSON `comment` field | Module-level docs rarely accessed, useful in semantic search |
+| Member comments (`///`) | Source file only | Aligned with Zig's design, extracted on-demand |
+| `match_hash` | JSON | Tracks signature + comment for staleness detection |
+| `comment_generated` | In-memory only | Runtime flag, never persisted |
+
+### Workflow: LLM Comment Generation
 
 ```
 guidance gen --all-languages
@@ -353,21 +376,21 @@ guidance gen --all-languages
        ├─► Member Merge → Preserve existing comments, flag new members
        │
        ├─► LLM Enhancement → Generate comments for members missing them
-       │                      Sets comment_generated=true, recalculates match_hash
+       │                      Sets comment_generated=true, calculates match_hash
        │
-       ├─► JSON Write → Save guidance JSON with comment_generated flag
+       ├─► JSON Write → Save JSON WITHOUT member comments (only match_hash)
        │
        └─► Post-Processing (if any comment_generated=true):
             │
-            ├─► Scan JSON files for comment_generated=true members
+            ├─► Scan JSON for comment_generated=true members
             │
             ├─► Write comments to source files (bottom-up line order)
             │
             ├─► Run zig fmt on modified files
             │
-            ├─► Correct line numbers in JSON (re-parse after fmt)
+            ├─► Extract comments from source (extractMemberCommentsFromSource)
             │
-            └─► Recalculate match_hash with final comments
+            └─► Update line numbers and match_hash in memory
 ```
 
 ### Key Invariants
@@ -376,11 +399,17 @@ guidance gen --all-languages
    - Comment changes trigger regeneration check
    - Stable comments produce stable hashes
 
-2. **Single Fmt Pass**: After all comment insertions, run `zig fmt` once on modified files
+2. **JSON Mtime Strategy**: `json_mtime = source_mtime - 1 second`
+   - Prevents spurious reprocessing of unchanged files
+   - `fileNeedsProcessing()` skips when JSON mtime == source_mtime - 1
 
-3. **Automatic Workflow**: No explicit `--sync-comments` flag needed when LLM is available
-   - Generated comments are written to source automatically
-   - Line numbers corrected after fmt
+3. **Member Comments Not in JSON**: Extracted from source when JSON is loaded
+   - Backward compatible: old JSON files with comments still load
+   - `extractMemberCommentsFromSource()` populates in-memory structure
+
+4. **Single Fmt Pass**: After all comment insertions, run `zig fmt` once
+
+5. **Automatic Workflow**: No explicit `--sync-comments` flag needed when LLM is available
 
 ### Implementation
 
@@ -389,8 +418,10 @@ guidance gen --all-languages
 | `types.Member.comment_generated` | Flag tracking LLM-generated comments |
 | `hash.computeMemberHash()` | SHA-256 hash including comment with separator |
 | `sync.zig` | Sets `comment_generated=true` when LLM generates comment |
-| `sync_engine.postProcessCommentSync()` | Scans JSON, writes comments, runs fmt, corrects lines |
+| `sync_engine.postProcessCommentSync()` | Scans JSON, writes comments, runs fmt, extracts from source |
+| `json_store.extractMemberCommentsFromSource()` | Reads source file and extracts `///` comments by line number |
 | `comment_sync.correctLineNumbers()` | Re-parses source and updates JSON line numbers |
+| `marker.fileNeedsProcessing()` | Recognizes JSON mtime pattern to skip validated files |
 
 ---
 
@@ -611,22 +642,30 @@ The result is an AI-assisted development tool that grows more capable with every
 
 ---
 
-*Vision Document v1.2 — April 2026*
+*Vision Document v1.3 — April 2026*
 
 ---
 
 ## Appendix: Comparative Analysis Summary
 
-### Comment In-filling Implementation Status
+### Comment Management Implementation Status
 
-See `doc/guidance/COMMENT_INFILL_DESIGN.md` for full design details.
+See `doc/guidance/TODO_20260404_STREAMLINE_JSON.md` for full design details.
 
-**Completed:**
-- ✅ `comment_generated` field in `types.Member`
-- ✅ `computeMemberHash()` in `hash.zig` includes comment
-- ✅ Post-processing phase in `sync_engine.zig`
-- ✅ `correctLineNumbers()` in `comment_sync.zig`
-- ✅ Single fmt pass after all comment insertions
+**Streamlined JSON (v2.0):**
+- ✅ Member comments excluded from JSON (`jsonifyMember()` skips comment field)
+- ✅ Module-level comments still stored in JSON
+- ✅ `extractMemberCommentsFromSource()` extracts comments from source on load
+- ✅ `match_hash` still tracks comment changes for staleness detection
+- ✅ JSON mtime set to `source_mtime - 1` after successful sync
+- ✅ `fileNeedsProcessing()` skips files with validated mtime pattern
+- ✅ Backward compatibility: old JSON files with comments still load
+- ✅ Database sync extracts member comments from source files
+
+**Eliminates:**
+- Spurious LLM calls on unchanged files (detected by mtime pattern)
+- Redundant comment storage (30% JSON size reduction)
+- Diff noise from comment-only changes in JSON files
 
 ### From GraphRAG vs Coral Context Report
 

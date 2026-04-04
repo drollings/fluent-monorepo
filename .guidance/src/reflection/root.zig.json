@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Reflection", "Validation", "Access Control", "Type Safety", "Coral", "Zig", "Modularity", "Security", "API", "Extensibility"],
+  "capabilities": ["reflection"],
   "used_by": ["src/vector/vector_db.zig"],
   "members": [
     {

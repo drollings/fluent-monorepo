@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig module", "batch processing", "memory management", "SQLite", "Turtle files", "streaming ingestion", "ArenaAllocator", "progress reporting", "configuration", "modular design"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cli.zig"],
   "members": [
     {

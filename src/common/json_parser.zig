@@ -157,6 +157,7 @@ fn parseTarget(
     try registry.add(target);
 }
 
+/// Determines the target type from a JSON object map, returning a TargetType or error.
 fn determineTargetType(obj: std.json.ObjectMap) TargetType {
     if (obj.get("phony")) |val| {
         if (val == .bool and val.bool) {

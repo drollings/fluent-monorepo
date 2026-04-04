@@ -4,6 +4,7 @@
     "source": "src/guidance/staged.zig",
     "language": "zig"
   },
+  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output",
   "capabilities": ["explain-query", "coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/scanner.zig"],
   "members": [

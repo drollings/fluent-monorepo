@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "comment_checker", "comment_staleness", "comment_validation", "hash_comparison", "code_sync", "Zig_lang", "documentation", "API", "testing"],
+  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/comment_sync.zig"],
   "members": [
     {

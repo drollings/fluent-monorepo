@@ -73,11 +73,11 @@ admin   — full access (broadest permissions)
 | `src/reflection/accessor.zig` | 1.0 | defines_anchor |
 | `src/reflection/constraint.zig` | 1.0 | defines_anchor |
 | `src/reflection/root.zig` | 0.9 | used_by |
+| `src/reflection/sql.zig` | 0.9 | used_by |
+| `src/reflection/validate.zig` | 0.9 | used_by |
 | `src/reflection/typed.zig` | 0.9 | used_by |
 | `src/reflection/binary.zig` | 0.4 | path_heuristic |
-| `src/reflection/validate.zig` | 0.4 | path_heuristic |
 | `src/reflection/schema_version.zig` | 0.4 | path_heuristic |
 | `src/reflection/enum_registry.zig` | 0.4 | path_heuristic |
-| `src/reflection/sql.zig` | 0.4 | path_heuristic |
 | `src/reflection/permissions.zig` | 0.4 | path_heuristic |
 

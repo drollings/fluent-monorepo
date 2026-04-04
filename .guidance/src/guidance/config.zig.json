@@ -245,7 +245,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 498
+      "line": 499
     },
     {
       "type": "fn_private",
@@ -258,7 +258,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 762
+      "line": 764
     },
     {
       "type": "fn_private",
@@ -287,7 +287,7 @@
       ],
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 806
+      "line": 809
     },
     {
       "type": "fn_private",
@@ -303,37 +303,37 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 891
+      "line": 894
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: exact slot match",
       "is_pub": false,
-      "line": 926
+      "line": 929
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: same model, different provider alias",
       "is_pub": false,
-      "line": 933
+      "line": 936
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: different model — not a thinking ref",
       "is_pub": false,
-      "line": 941
+      "line": 944
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: empty thinking slot — always false",
       "is_pub": false,
-      "line": 949
+      "line": 952
     },
     {
       "type": "test_decl",
       "name": "isThinkingModelRef: bare model ref (no provider prefix) — not treated as thinking",
       "is_pub": false,
-      "line": 957
+      "line": 960
     }
   ]
 }

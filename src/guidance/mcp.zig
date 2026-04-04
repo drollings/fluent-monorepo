@@ -79,6 +79,7 @@ fn writeError(writer: anytype, id: ?std.json.Value, code: i32, msg: []const u8) 
 // Tool dispatch
 // ---------------------------------------------------------------------------
 
+/// Initializes memory allocation with provided allocator and JSON ID, returning void.
 fn handleInitialize(allocator: std.mem.Allocator, writer: anytype, id: ?std.json.Value) !void {
     _ = allocator;
     const resp =
@@ -89,6 +90,7 @@ fn handleInitialize(allocator: std.mem.Allocator, writer: anytype, id: ?std.json
     try writer.writeByte('\n');
 }
 
+/// Processes a JSON object to populate a tools list, returning an owned Zig array.
 fn handleToolsList(writer: anytype, id: ?std.json.Value) !void {
     const tools =
         \\{"jsonrpc":"2.0","id":null,"result":{"tools":[
@@ -103,6 +105,7 @@ fn handleToolsList(writer: anytype, id: ?std.json.Value) !void {
     try writer.writeByte('\n');
 }
 
+/// Processes a JSON tool call with allocator, writer, and parameters, returning a processed value.
 fn handleToolCall(
     allocator: std.mem.Allocator,
     writer: anytype,

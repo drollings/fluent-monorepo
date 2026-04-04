@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Unique API names", "domain concepts", "design patterns", "technical terms"],
-  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/registry.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/root.zig", "src/common/target.zig"],
+  "used_by": ["src/common/context.zig", "src/common/drift.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/registry.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/root.zig", "src/common/target.zig"],
   "members": [
     {
       "type": "fn_decl",

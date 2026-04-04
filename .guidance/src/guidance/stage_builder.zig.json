@@ -4,9 +4,11 @@
     "source": "src/guidance/stage_builder.zig",
     "language": "zig"
   },
+  "comment": "[gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.\n\n Implements M5 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n Each document type produces its own stages through a uniform interface,\n reducing coupling to the monolithic executeStagedWithAliasesOriginal() function.\n\n VTable pattern follows fluent-wvr (see doc/skills/fluent-wvr/SKILL.md):\n   {ptr: *anyopaque, vtable: *const VTable} — two pointers, no inheritance.\n\n Interface vs DocumentIndexer.produce_stages():\n   - produce_stages(): allocates its own []Stage; caller frees\n   - StageBuilder.fill_stages(): fills a caller-provided []Stage; zero allocation\n   The zero-allocation path is suitable for tight loops and pre-sized buffers.",
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["ast-indexing"],
   "members": [
     {
       "type": "struct",
@@ -86,7 +88,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 88
+      "line": 89
     },
     {
       "type": "fn_private",
@@ -100,7 +102,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 98
+      "line": 100
     },
     {
       "type": "fn_private",
@@ -113,7 +115,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 168
+      "line": 171
     },
     {
       "type": "fn_private",
@@ -125,7 +127,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 182
+      "line": 186
     },
     {
       "type": "struct",
@@ -152,10 +154,10 @@
             { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
           ],
           "is_pub": true,
-          "line": 200
+          "line": 204
         }
       ],
-      "line": 195
+      "line": 199
     },
     {
       "type": "fn_decl",
@@ -170,25 +172,25 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 217
+      "line": 221
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail",
       "is_pub": false,
-      "line": 253
+      "line": 257
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: buildStages produces prose stage from detail",
       "is_pub": false,
-      "line": 272
+      "line": 276
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: isRelevant matches source path token",
       "is_pub": false,
-      "line": 297
+      "line": 301
     }
   ]
 }

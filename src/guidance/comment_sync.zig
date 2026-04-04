@@ -404,6 +404,7 @@ pub fn sortMembersByLineDesc(allocator: std.mem.Allocator, members: []const type
     return copy;
 }
 
+/// Converts a file path array into a Zig-safe slice, handling null-termination correctly.
 fn relPath(filepath: []const u8, root: []const u8) []const u8 {
     if (std.mem.startsWith(u8, filepath, root)) {
         var rel = filepath[root.len..];
@@ -413,6 +414,7 @@ fn relPath(filepath: []const u8, root: []const u8) []const u8 {
     return filepath;
 }
 
+/// Writes binary content to a file path, handling data and errors.
 fn writeFile(path: []const u8, content: []const u8) !void {
     const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
     defer file.close();

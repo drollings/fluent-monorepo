@@ -4,7 +4,8 @@
     "source": "src/common/types.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
+  "capabilities": ["coral-database"],
+  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/document_indexer.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/llm_filter_batch.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig", "src/guidance/schema_validator.zig", "src/guidance/stage_builder.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
   "members": [
     {
       "type": "enum",

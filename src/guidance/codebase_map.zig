@@ -188,6 +188,7 @@ pub fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) !C
 // Build system detection
 // =============================================================================
 
+/// Detects the build system configuration from a workspace string and returns the corresponding BuildSystem type.
 fn detectBuildSystem(workspace: []const u8) BuildSystem {
     const marker_names = [_][]const u8{
         "build.zig",    "Makefile",       "Cargo.toml",     "package.json",
@@ -214,6 +215,7 @@ const IGNORE_DIRS = [_][]const u8{
     ".guidance.db", "target",  ".build",    "dist",         "build",
 };
 
+/// Checks if a given name slice should be ignored based on directory context.
 fn shouldIgnoreDir(name: []const u8) bool {
     for (IGNORE_DIRS) |ig| {
         if (std.mem.eql(u8, name, ig)) return true;
@@ -225,6 +227,7 @@ fn shouldIgnoreDir(name: []const u8) bool {
     return false;
 }
 
+/// Traverses a directory tree using an allocator and returns a walkable path.
 fn walkFilesystem(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -235,6 +238,7 @@ fn walkFilesystem(
     try walkDir(allocator, dir, "", tree, 0);
 }
 
+/// Traverses a directory structure recursively, handling allocations and depth tracking.
 fn walkDir(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -288,6 +292,7 @@ fn walkDir(
 // Language distribution
 // =============================================================================
 
+/// Counts language directories in a Zig project structure and returns their counts.
 fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) ![]LanguageCount {
     // Collect all extensions then sort and count — avoids StringHashMap growth panics
     // on large repos where the map resizes with borrowed-slice keys.
@@ -342,6 +347,7 @@ const ENTRY_PREFIXES = [_][]const u8{ "cmd", "handle", "run", "serve", "start" }
 const ENTRY_SUFFIXES = [_][]const u8{ "Cli", "Handler", "Server", "Main" };
 const ENTRY_EXACT = [_][]const u8{ "main", "run", "start" };
 
+/// Determines the type of an entry point from a Zig string slice.
 fn classifyEntryPoint(name: []const u8) @TypeOf(@as(EntryPoint, undefined).kind) {
     if (std.mem.eql(u8, name, "main")) return .main_fn;
     if (std.mem.startsWith(u8, name, "cmd")) return .cmd_fn;
@@ -352,6 +358,7 @@ fn classifyEntryPoint(name: []const u8) @TypeOf(@as(EntryPoint, undefined).kind)
     return .other;
 }
 
+/// Checks if a given byte slice represents an entry point name, returning true or false.
 fn isEntryPointName(name: []const u8) bool {
     for (ENTRY_EXACT) |e| {
         if (std.mem.eql(u8, name, e)) return true;
@@ -442,6 +449,7 @@ fn detectEntryPoints(
 const CAPABILITY_DIR_NAMES = [_][]const u8{ "capabilities", "docs/capabilities", "doc/capabilities" };
 const SKILL_DIR_NAMES = [_][]const u8{ "skills", ".skills", "doc/skills", ".guidance/.skills", ".guidance/skills" };
 
+/// Identifies directory paths for allocation within a workspace tree using an allocator.
 fn findCapabilityDirs(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -482,6 +490,7 @@ fn findCapabilityDirs(
     return dirs.toOwnedSlice(allocator);
 }
 
+/// Finds a list of directory entries based on allocator, workspace, and tree structure.
 fn findSkillDirs(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -508,6 +517,7 @@ fn findSkillDirs(
 // README description extraction
 // =============================================================================
 
+/// Extracts a readable description from a workspace string, returning a Zig slice.
 fn extractReadmeDescription(allocator: std.mem.Allocator, workspace: []const u8) ![]const u8 {
     const readme_names = [_][]const u8{ "README.md", "README.txt", "README" };
 

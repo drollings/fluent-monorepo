@@ -134,6 +134,7 @@ fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     return query_engine_mod.cmdRalph(allocator, args);
 }
 
+/// Displays usage instructions for the Zig library.
 fn printHelp() !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -232,6 +233,7 @@ fn printHelp() !void {
 // structure — thin wrapper (delegates to structure_mod)
 // =============================================================================
 
+/// Transforms a C string into a Zig-safe structure using an allocator.
 fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var no_llm: bool = false;
@@ -264,6 +266,7 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // deps — thin wrapper (delegates to deps_mod)
 // =============================================================================
 
+/// Processes allocation arguments to prepare dependency data structure.
 fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var src_dir: []const u8 = "src";
     var i: usize = 0;

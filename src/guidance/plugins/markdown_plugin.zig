@@ -33,6 +33,7 @@ pub fn plugin() LanguagePlugin {
 // Implementation
 // ---------------------------------------------------------------------------
 
+/// Converts a markdown file into a Zig source file by parsing its content.
 fn parseMarkdown(
     arena: std.mem.Allocator,
     source: [:0]const u8,

@@ -24,7 +24,7 @@
           ],
           "returns": "JsonStore",
           "is_pub": true,
-          "line": 17
+          "line": 18
         }
     ,    {
           "type": "fn_decl",
@@ -37,7 +37,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": true,
-          "line": 21
+          "line": 22
         }
     ,    {
           "type": "fn_private",
@@ -50,7 +50,7 @@
           ],
           "returns": "?types.GuidanceDoc",
           "is_pub": false,
-          "line": 28
+          "line": 29
         }
     ,    {
           "type": "fn_private",
@@ -63,7 +63,7 @@
           ],
           "returns": "std.mem.Allocator.Error![]types.Member",
           "is_pub": false,
-          "line": 145
+          "line": 146
         }
     ,    {
           "type": "fn_private",
@@ -75,7 +75,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 162
+          "line": 163
         }
     ,    {
           "type": "fn_private",
@@ -88,7 +88,7 @@
           ],
           "returns": "std.mem.Allocator.Error!?types.Member",
           "is_pub": false,
-          "line": 182
+          "line": 183
         }
     ,    {
           "type": "fn_decl",
@@ -102,7 +102,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 316
+          "line": 317
         }
     ,    {
           "type": "fn_decl",
@@ -115,7 +115,7 @@
           ],
           "returns": "types.Member",
           "is_pub": true,
-          "line": 330
+          "line": 331
         }
     ,    {
           "type": "fn_private",
@@ -128,7 +128,7 @@
           ],
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 366
+          "line": 367
         }
     ,    {
           "type": "fn_decl",
@@ -141,7 +141,7 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 380
+          "line": 381
         }
     ,    {
           "type": "fn_private",
@@ -154,7 +154,7 @@
           ],
           "returns": "[]types.Pattern",
           "is_pub": false,
-          "line": 384
+          "line": 385
         }
     ,    {
           "type": "fn_decl",
@@ -167,7 +167,7 @@
           ],
           "returns": "[]types.Skill",
           "is_pub": true,
-          "line": 397
+          "line": 398
         }
     ,    {
           "type": "fn_decl",
@@ -180,7 +180,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 408
+          "line": 409
         }
     ,    {
           "type": "fn_decl",
@@ -193,7 +193,35 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 434
+          "line": 435
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "extractMemberCommentsFromSource",
+          "match_hash": "ef38d36f29540bbfb3a3500a69449384dd3efa3f2d8554faaa2e997ac50d027f",
+          "signature": "fn extractMemberCommentsFromSource(self: *JsonStore, doc: *types.GuidanceDoc, source: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "doc", "type": "*types.GuidanceDoc" },
+            { "name": "source", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 466
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractCommentsForMemberRecursive",
+          "match_hash": "e27698d8231c115a2f9c1105bd1bf4501b4cb16a232d1c23062c2eed6331af0d",
+          "signature": "fn extractCommentsForMemberRecursive(self: *JsonStore, source: []const u8, member: *types.Member) -> void",
+          "params": [
+            { "name": "self", "type": "*JsonStore" },
+            { "name": "source", "type": "[]const u8" },
+            { "name": "member", "type": "*types.Member" }
+          ],
+          "returns": "void",
+          "is_pub": false,
+          "line": 478
         }
     ,    {
           "type": "fn_decl",
@@ -208,7 +236,7 @@
           ],
           "returns": "std.mem.Allocator.Error!MergeResult",
           "is_pub": true,
-          "line": 458
+          "line": 503
         }
     ,    {
           "type": "fn_private",
@@ -224,10 +252,10 @@
           ],
           "returns": "types.Member",
           "is_pub": false,
-          "line": 501
+          "line": 546
         }
       ],
-      "line": 8
+      "line": 9
     },
     {
       "type": "struct",
@@ -235,109 +263,109 @@
       "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
       "is_pub": true,
-      "line": 596
+      "line": 641
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to write' preamble",
       "is_pub": false,
-      "line": 611
+      "line": 656
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to look' preamble",
       "is_pub": false,
-      "line": 617
+      "line": 662
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to read' preamble",
       "is_pub": false,
-      "line": 622
+      "line": 667
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'i need to write' preamble",
       "is_pub": false,
-      "line": 627
+      "line": 672
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let's write' preamble",
       "is_pub": false,
-      "line": 632
+      "line": 677
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let me write' preamble",
       "is_pub": false,
-      "line": 637
+      "line": 682
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'write a one-sentence' preamble",
       "is_pub": false,
-      "line": 642
+      "line": 687
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: returns false for valid comments",
       "is_pub": false,
-      "line": 647
+      "line": 692
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: case-insensitive matching",
       "is_pub": false,
-      "line": 654
+      "line": 699
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: false for text starting with similar but different words",
       "is_pub": false,
-      "line": 660
+      "line": 705
     },
     {
       "type": "test_decl",
       "name": "JsonStore: init creates store with allocator",
       "is_pub": false,
-      "line": 666
+      "line": 711
     },
     {
       "type": "test_decl",
       "name": "JsonStore: loadGuidance returns null for non-existent file",
       "is_pub": false,
-      "line": 671
+      "line": 716
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for invalid JSON",
       "is_pub": false,
-      "line": 677
+      "line": 722
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing meta",
       "is_pub": false,
-      "line": 683
+      "line": 728
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing module/source",
       "is_pub": false,
-      "line": 689
+      "line": 734
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeStrings deep copies strings",
       "is_pub": false,
-      "line": 697
+      "line": 742
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeSkills deep copies skills",
       "is_pub": false,
-      "line": 710
+      "line": 755
     }
   ]
 }

@@ -514,6 +514,7 @@ pub const McpServer = struct {
     }
 };
 
+/// Converts a raw C string into a JsonRpcRequest object using the provided allocator.
 fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) !JsonRpcRequest {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, raw, .{});
     // Note: parsed is arena-allocated via allocator, no defer needed

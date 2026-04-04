@@ -4,7 +4,8 @@
     "source": "src/guidance/deps.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/main.zig"],
+  "capabilities": ["ast-indexing"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",

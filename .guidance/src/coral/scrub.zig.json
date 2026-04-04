@@ -35,38 +35,38 @@
     {
       "type": "fn_private",
       "name": "hasBoilerplateManagesPattern",
-      "match_hash": "f72e61a8ba027ea93b4f83aad5845ca5bf9e6f686c5e51fa92cc12134a9636c8",
+      "match_hash": "85a9bb63a741679ccde0dc3f3c8aa7f50b03dbedc2ae61ed8da6465e642a985e",
       "signature": "fn hasBoilerplateManagesPattern(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 36
+      "line": 37
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: empty and short are synthetic",
       "is_pub": false,
-      "line": 60
+      "line": 61
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: boilerplate manages pattern",
       "is_pub": false,
-      "line": 66
+      "line": 67
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: malformed responses are synthetic",
       "is_pub": false,
-      "line": 72
+      "line": 73
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: valid comments pass",
       "is_pub": false,
-      "line": 78
+      "line": 79
     }
   ]
 }

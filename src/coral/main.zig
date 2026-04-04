@@ -473,6 +473,7 @@ pub fn main() !void {
     }
 }
 
+/// Prints help information using the provided writer object.
 fn printHelp(writer: anytype) !void {
     try writer.writeAll(
         \\coral - Yet Another Make, Zig edition

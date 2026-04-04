@@ -33,6 +33,7 @@ pub const OntologyMigration = struct {
     migrate_fn: MigrateFn,
 };
 
+/// Performs a no-operation migration with the provided allocator, returning no error.
 fn noopMigration(allocator: std.mem.Allocator) anyerror!void {
     _ = allocator;
 }

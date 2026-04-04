@@ -13,6 +13,7 @@ const http_transport = @import("http_transport.zig");
 const HttpTransport = http_transport.HttpTransport;
 const McpHandler = http_transport.McpHandler;
 
+/// Creates a handler for echoing requests in the test module.
 fn makeEchoHandler() McpHandler {
     const EchoHandler = struct {
         fn handleJsonRpc(ptr: *anyopaque, json: []const u8, alloc: std.mem.Allocator) anyerror![]const u8 {

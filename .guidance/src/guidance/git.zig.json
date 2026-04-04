@@ -79,7 +79,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 94
+      "line": 95
     },
     {
       "type": "fn_private",
@@ -92,19 +92,19 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 122
+      "line": 124
     },
     {
       "type": "test_decl",
       "name": "globMatch basic patterns",
       "is_pub": false,
-      "line": 152
+      "line": 154
     },
     {
       "type": "test_decl",
       "name": "GitignoreFilter always excludes .git",
       "is_pub": false,
-      "line": 160
+      "line": 162
     }
   ]
 }

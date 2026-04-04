@@ -4,6 +4,7 @@
     "source": "src/common/logging.zig",
     "language": "zig"
   },
+  "comment": " logging.zig — Structured logging context and timing scope for Fluent WEAVER.\n\n ## Design\n\n `LogContext` is a thread-local struct that propagates request-scoped metadata\n (request_id, user_id, trace_id, span_id) through a call chain without threading\n the context through every function signature.\n\n `Scope` wraps a named operation: it logs start (with context) and end (with\n duration) via `std.log.debug`. When context is null, no logging occurs — zero\n overhead in production with filters set above `debug`.\n\n `callLogged` wraps a single function call in a Scope:\n\n   const result = try callLogged(\"embed\", embedder.embed, .{ allocator, text });\n\n For manual scope management:\n\n   const scope = Scope.begin(\"embed\");\n   defer scope.end();\n   const result = try embedder.embed(allocator, text);\n\n ## Thread Safety\n\n `LogContext.current` is `threadlocal` — each OS thread has its own copy.\n No synchronization required. Set context at the entry point of a request\n handler and clear it on exit:\n\n   LogContext.set(.{ .request_id = \"req-123\" });\n   defer LogContext.clear();\n\n Context does NOT propagate across thread boundaries automatically. When\n spawning a worker thread, pass the context value explicitly and call\n `LogContext.set()` on the new thread.",
   "used_by": ["src/common/root.zig"],
   "members": [
     {

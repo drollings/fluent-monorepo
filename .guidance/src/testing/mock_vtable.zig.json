@@ -4,6 +4,7 @@
     "source": "src/testing/mock_vtable.zig",
     "language": "zig"
   },
+  "comment": "[gof-patterns]  mock_vtable.zig — Mock implementations of VTable interfaces for testing.\n\n Provides `MockEmbeddingProvider` which:\n   - Records all calls with their arguments\n   - Returns configurable vectors or errors\n   - Asserts call count and arguments\n   - Requires no external services (Ollama, OpenAI, etc.)\n\n Usage:\n\n   var mock = MockEmbeddingProvider.init(std.testing.allocator);\n   defer mock.deinit();\n\n   mock.setEmbedResult(&[_]f32{ 0.1, 0.2, 0.3 });\n\n   var provider = mock.provider();\n   const vec = try provider.embed(std.testing.allocator, \"hello\");\n   defer std.testing.allocator.free(vec);\n\n   mock.assertCallCount(\"embed\", 1);",
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],

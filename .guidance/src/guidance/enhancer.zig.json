@@ -396,97 +396,97 @@
       ],
       "returns": "?usize",
       "is_pub": false,
-      "line": 841
+      "line": 842
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring empty",
       "is_pub": false,
-      "line": 855
+      "line": 856
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring quality",
       "is_pub": false,
-      "line": 859
+      "line": 860
     },
     {
       "type": "test_decl",
       "name": "extractTags parses hashtags",
       "is_pub": false,
-      "line": 865
+      "line": 866
     },
     {
       "type": "test_decl",
       "name": "extractTags returns empty when no Tags line",
       "is_pub": false,
-      "line": 887
+      "line": 888
     },
     {
       "type": "test_decl",
       "name": "stripTagsLine removes Tags line",
       "is_pub": false,
-      "line": 905
+      "line": 906
     },
     {
       "type": "test_decl",
       "name": "lastIndexOf basic",
       "is_pub": false,
-      "line": 921
+      "line": 922
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag extracts content",
       "is_pub": false,
-      "line": 926
+      "line": 927
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag returns null for missing tag",
       "is_pub": false,
-      "line": 933
+      "line": 934
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag handles whitespace",
       "is_pub": false,
-      "line": 939
+      "line": 940
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases extracts identifiers",
       "is_pub": false,
-      "line": 946
+      "line": 947
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases skips generic words",
       "is_pub": false,
-      "line": 967
+      "line": 968
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse handles comma-separated",
       "is_pub": false,
-      "line": 989
+      "line": 990
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse handles newline-separated",
       "is_pub": false,
-      "line": 1008
+      "line": 1009
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse limits to 5 phrases",
       "is_pub": false,
-      "line": 1024
+      "line": 1025
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse skips generic words",
       "is_pub": false,
-      "line": 1040
+      "line": 1041
     }
   ]
 }

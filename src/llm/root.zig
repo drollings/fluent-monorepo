@@ -382,4 +382,3 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
-

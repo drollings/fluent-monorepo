@@ -28,6 +28,7 @@ pub fn plugin() LanguagePlugin {
 // Implementation
 // ---------------------------------------------------------------------------
 
+/// Converts a Zig source file into a parsed Zig data structure, handling errors gracefully.
 fn parseZig(
     arena: std.mem.Allocator,
     source: [:0]const u8,
@@ -56,6 +57,7 @@ fn parseZig(
     };
 }
 
+/// Extracts Zig import addresses from a source string, returning an array of byte slices.
 fn extractZigImports(
     arena: std.mem.Allocator,
     source: [:0]const u8,

@@ -75,7 +75,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 81
+      "line": 82
     },
     {
       "type": "fn_decl",
@@ -89,7 +89,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 124
+      "line": 125
     },
     {
       "type": "fn_private",
@@ -104,7 +104,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 131
+      "line": 133
     },
     {
       "type": "fn_decl",
@@ -118,7 +118,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 168
+      "line": 170
     },
     {
       "type": "fn_private",
@@ -131,7 +131,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 213
+      "line": 216
     },
     {
       "type": "fn_decl",
@@ -144,7 +144,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 228
+      "line": 231
     },
     {
       "type": "fn_decl",
@@ -156,43 +156,43 @@
       ],
       "returns": "?usize",
       "is_pub": true,
-      "line": 246
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "formatSize: bytes",
       "is_pub": false,
-      "line": 280
+      "line": 283
     },
     {
       "type": "test_decl",
       "name": "formatSize: kilobytes",
       "is_pub": false,
-      "line": 286
+      "line": 289
     },
     {
       "type": "test_decl",
       "name": "parseSize: plain number",
       "is_pub": false,
-      "line": 292
+      "line": 295
     },
     {
       "type": "test_decl",
       "name": "parseSize: with KB suffix",
       "is_pub": false,
-      "line": 296
+      "line": 299
     },
     {
       "type": "test_decl",
       "name": "parseSize: with MB suffix",
       "is_pub": false,
-      "line": 300
+      "line": 303
     },
     {
       "type": "test_decl",
       "name": "formatJson: simple struct",
       "is_pub": false,
-      "line": 304
+      "line": 307
     }
   ]
 }

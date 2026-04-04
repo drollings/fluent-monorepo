@@ -148,6 +148,7 @@ pub fn filterSeeAlso(
     return kept.toOwnedSlice(allocator);
 }
 
+/// Processes a list of entries and returns a cleaned slice of zig slices.
 fn keepAll(allocator: std.mem.Allocator, entries: []const SeeAlsoEntry) ![][]const u8 {
     var result = try allocator.alloc([]const u8, entries.len);
     for (entries, 0..) |e, i| {

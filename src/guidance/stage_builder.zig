@@ -85,6 +85,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
     workspace: []const u8,
 };
 
+/// Counts valid stage indices in a Zig source file, returning the total count.
 fn gjsbStageCount(ptr: *anyopaque) usize {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     const doc = self.doc;
@@ -95,6 +96,7 @@ fn gjsbStageCount(ptr: *anyopaque) usize {
     return @max(1, n); // At least 1 (metadata fallback).
 }
 
+/// Processes a Zig source file to fill stage data structures with allocated memory.
 fn gjsbFillStages(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
@@ -165,6 +167,7 @@ fn gjsbFillStages(
     return i;
 }
 
+/// Checks if a given pointer and tokens are valid Zig syntax, returning true or false.
 fn gjsbIsRelevant(ptr: *anyopaque, query_tokens: []const []const u8) bool {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     const doc = self.doc;
@@ -179,6 +182,7 @@ fn gjsbIsRelevant(ptr: *anyopaque, query_tokens: []const []const u8) bool {
     return false;
 }
 
+/// Cleans up resources by deallocating the provided pointer in Zig.
 fn gjsbDeinit(ptr: *anyopaque) void {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     self.allocator.destroy(self);

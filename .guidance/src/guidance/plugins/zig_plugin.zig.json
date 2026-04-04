@@ -4,7 +4,9 @@
     "source": "src/guidance/plugins/zig_plugin.zig",
     "language": "zig"
   },
+  "comment": " ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.\n\n Handles .zig and .zon files.  Parses with Zig's stdlib AST, extracting\n top-level declarations and imports.",
   "keywords": ["ZigPlugin", "ASTParser", "LanguagePlugin", "ZigSource", "ModuleDerivation", "PluginArchitecture", "CodeExtraction", "CompilerIntegration"],
+  "capabilities": ["plugin-system"],
   "members": [
     {
       "type": "fn_decl",
@@ -27,7 +29,7 @@
       ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
-      "line": 31
+      "line": 32
     },
     {
       "type": "fn_private",
@@ -40,7 +42,7 @@
       ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
-      "line": 59
+      "line": 61
     },
     {
       "type": "fn_private",
@@ -53,31 +55,31 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 73
+      "line": 75
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin handles .zig extension",
       "is_pub": false,
-      "line": 95
+      "line": 97
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin.parse extracts members from simple source",
       "is_pub": false,
-      "line": 105
+      "line": 107
     },
     {
       "type": "test_decl",
       "name": "ZigPlugin.extractImports returns import paths",
       "is_pub": false,
-      "line": 130
+      "line": 132
     },
     {
       "type": "test_decl",
       "name": "deriveModule strips extension and converts slashes",
       "is_pub": false,
-      "line": 149
+      "line": 151
     }
   ]
 }

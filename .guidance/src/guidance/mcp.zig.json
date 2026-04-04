@@ -4,6 +4,7 @@
     "source": "src/guidance/mcp.zig",
     "language": "zig"
   },
+  "comment": " mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).\n\n Implements the Model Context Protocol server for guidance, allowing AI\n agents to use guidance tools (explain, gen, check, status) via MCP.\n\n Transport: STDIO (stdin → request, stdout → response)\n Protocol:  JSON-RPC 2.0\n\n Tools exposed:\n   explain — AST-guided code search (maps to cmdExplain)\n   gen     — regenerate guidance JSON + .guidance.db\n   check   — run the full RALPH loop (test → lint → fmt → guidance)\n   status  — report generation status",
   "capabilities": ["explain-query"],
   "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
   "members": [
@@ -69,7 +70,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 82
+      "line": 83
     },
     {
       "type": "fn_private",
@@ -82,7 +83,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 92
+      "line": 94
     },
     {
       "type": "fn_private",
@@ -98,7 +99,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 106
+      "line": 109
     },
     {
       "type": "fn_decl",
@@ -111,7 +112,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 194
+      "line": 197
     }
   ]
 }

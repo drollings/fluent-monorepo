@@ -26,13 +26,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 476
+      "line": 477
     },
     {
       "type": "test_decl",
       "name": "coral: core module imports compile",
       "is_pub": false,
-      "line": 522
+      "line": 523
     }
   ]
 }

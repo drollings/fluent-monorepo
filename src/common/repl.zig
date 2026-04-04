@@ -61,6 +61,7 @@ pub fn run(self: *Repl) !void {
     try stdout.flush();
 }
 
+/// Processes a Zig command string, validates input, and returns a boolean status.
 fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !bool {
     var tokens = std.mem.tokenizeSequence(u8, input, " ");
     const cmd = tokens.next() orelse return true;
@@ -126,6 +127,7 @@ fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !boo
     return true;
 }
 
+/// Processes a Zig build command input and returns a compiled result.
 fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !void {
     var tgt_list: std.ArrayListUnmanaged([]const u8) = .{};
     defer tgt_list.deinit(self.allocator);

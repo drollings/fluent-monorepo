@@ -217,6 +217,7 @@ fn askRelevantBatch(
     return indices.toOwnedSlice(allocator);
 }
 
+/// Transforms a stage by duplicating its data structure using an allocator.
 fn dupeStage(allocator: Allocator, s: types.Stage) !types.Stage {
     return types.Stage{
         .kind = s.kind,

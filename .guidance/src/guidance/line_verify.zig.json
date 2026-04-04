@@ -97,7 +97,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 119
+      "line": 120
     },
     {
       "type": "fn_private",
@@ -112,37 +112,37 @@
       ],
       "returns": "?VerificationResult",
       "is_pub": false,
-      "line": 125
+      "line": 126
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - correct line",
       "is_pub": false,
-      "line": 152
+      "line": 153
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - stale line number",
       "is_pub": false,
-      "line": 171
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - member not found",
       "is_pub": false,
-      "line": 193
+      "line": 194
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - struct detection",
       "is_pub": false,
-      "line": 209
+      "line": 210
     },
     {
       "type": "test_decl",
       "name": "verifyMemberLine - no line recorded",
       "is_pub": false,
-      "line": 228
+      "line": 229
     }
   ]
 }

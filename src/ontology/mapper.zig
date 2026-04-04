@@ -356,6 +356,7 @@ pub const FlushResult = struct {
     contradictions_detected: usize = 0,
 };
 
+/// Checks if the actual and preferred language slices match, returning true if they align.
 fn shouldUseLang(actual: ?[]const u8, preferred: []const u8) bool {
     // Accept if preferred matches or if no lang tag (plain literal)
     if (actual == null) return true;

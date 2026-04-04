@@ -4,6 +4,7 @@
     "source": "src/coral/quantized_embedding.zig",
     "language": "zig"
   },
+  "comment": " quantized_embedding.zig — int8 Quantized Embeddings for Memory Efficiency\n\n Provides compact storage for embeddings by quantizing float32 vectors to int8.\n Reduces memory footprint by 4× (4 bytes per float → 1 byte per int8) while\n preserving cosine similarity ordering for approximate nearest neighbor search.\n\n §Use case:\n   - Edge devices with limited RAM (RaspberryPi, mobile)\n   - Large embeddings databases (>1M vectors)\n   - Preliminary filtering before full-precision reranking\n\n §Quantization scheme:\n   - Scale factor per vector: max(|x|) across all dimensions\n   - Quantize: q[i] = clamp(round(x[i] / scale), -128, 127)\n   - Dequantize: x_hat[i] = q[i] * scale\n   - Cosine similarity: computed directly on int8 using dot product + normalization\n\n §Hamming distance for binary comparison:\n   - Convert int8 to binary sign (+1/-1)\n   - XOR population count gives Hamming distance\n   - Useful for approximate similarity without float operations",
   "capabilities": ["coral-ingestion", "coral-database", "embedding-providers", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig"],
   "members": [

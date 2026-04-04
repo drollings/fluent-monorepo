@@ -167,7 +167,7 @@ Then you you must read
 │   │   ├── context.zig
 │   │   ├── dag_executor.zig                                # dag_executor.zig — M6.1 Parallel DAG Execution
 │   │   ├── drift.zig                                       # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
-│   │   ├── embeddings.zig                                  # Embedding providers — convert text to vectors for semantic search.
+│   │   ├── embeddings.zig                                  # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── error_context.zig                               # error_context.zig — Structured error context for non-builder code paths.
 │   │   ├── format.zig
 │   │   ├── hash.zig                                        # hash.zig — Generic cryptographic hashing utilities
@@ -201,7 +201,7 @@ Then you you must read
 │   ├── concurrency
 │   │   ├── any_work_unit.zig                               # any_work_unit.zig — Type-erased work unit and typed wrapper (M11).
 │   │   ├── channel.zig                                     # channel.zig — Bounded, mutex-backed MPMC channel (M13).
-│   │   ├── context.zig                                     # context.zig — Cancellation and deadline propagation (M11).
+│   │   ├── context.zig                                     # [domain-patterns]  context.zig — Cancellation and deadline propagation (M11).
 │   │   ├── error_group.zig                                 # error_group.zig — Structured parallel dispatch with error capture (M14).
 │   │   ├── root.zig                                        # concurrency/root.zig — Public API re-exports for the concurrency layer.
 │   │   └── spawn.zig                                       # spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).
@@ -225,7 +225,7 @@ Then you you must read
 │   │   ├── context_compressor.zig                          # context_compressor.zig — Context Compression for Token Budget Management
 │   │   ├── context_node_schema.zig
 │   │   ├── context_packer.zig                              # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
-│   │   ├── csr_graph.zig                                   # csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
+│   │   ├── csr_graph.zig                                   # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                          # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── delegation.zig                                  # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── drift.zig                                       # drift.zig — Re-exports BitSet DRIFT from src/common/drift.zig.
@@ -266,7 +266,7 @@ Then you you must read
 │   │   ├── config.zig                                      # guidance project configuration loader.
 │   │   ├── deps.zig
 │   │   ├── doc_parser.zig                                  # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
-│   │   ├── document_indexer.zig                            # document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
+│   │   ├── document_indexer.zig                            # [gof-patterns]  document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
 │   │   ├── enhancer.zig                                    # AI Docstring Enhancer for Zig guidance generation.
 │   │   ├── git.zig
 │   │   ├── hash.zig
@@ -286,12 +286,12 @@ Then you you must read
 │   │   ├── provider_discovery.zig                          # External language provider discovery for guidance.
 │   │   ├── query_engine.zig                                # [gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.
 │   │   ├── query_strategy.zig                              # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
-│   │   ├── ralph.zig                                       # ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
+│   │   ├── ralph.zig                                       # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                                     # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                            # schema_validator.zig — GuidanceDoc field validation.
 │   │   ├── scrub.zig                                       # scrub.zig — Synthetic comment detection and scrubbing.
 │   │   ├── simhash.zig                                     # simhash.zig — 64-bit SimHash for near-duplicate detection.
-│   │   ├── stage_builder.zig                               # stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
+│   │   ├── stage_builder.zig                               # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                                      # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                                   # STRUCTURE.md generator.
 │   │   ├── sync.zig
@@ -328,7 +328,7 @@ Then you you must read
 │   │   ├── typed.zig                                       # typed.zig — TypedAccessorTable(T) and TypedEditable.
 │   │   └── validate.zig                                    # validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).
 │   ├── testing
-│   │   └── mock_vtable.zig                                 # mock_vtable.zig — Mock implementations of VTable interfaces for testing.
+│   │   └── mock_vtable.zig                                 # [gof-patterns]  mock_vtable.zig — Mock implementations of VTable interfaces for testing.
 │   ├── vector
 │   │   ├── hnsw.zig                                        # hnsw.zig — M5.1 HNSW (Hierarchical Navigable Small World) Index
 │   │   ├── math.zig                                        # Vector operations — cosine similarity, normalization, hybrid merge.

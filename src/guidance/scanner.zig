@@ -266,6 +266,7 @@ pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
     return emitDiagnosis(allocator, &scanner);
 }
 
+/// Emits a diagnostic message using the provided allocator and scanner instance.
 fn emitDiagnosis(allocator: std.mem.Allocator, scanner: *const CodebaseScanner) !void {
     const llm = @import("common");
     const report = try scanner.diagnose(allocator);

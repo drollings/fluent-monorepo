@@ -4,6 +4,7 @@
     "source": "src/vector/vector_db.zig",
     "language": "zig"
   },
+  "comment": " guidance SQLite vector search database (cosine similarity via BLOB storage).\n\n Produces `.guidance.db` — a SQLite database with vector embeddings for\n semantic (cosine similarity) search, powering the `explain` subcommand.\n\n Public API:\n   pub fn syncDatabase(allocator, guidance_dir, db_path, embedder) !void\n   pub fn openDb(allocator, db_path, embedder) !GuidanceDb\n   pub fn loadSemanticAliases(allocator, path) !?SemanticAliases\n\n Schema (version 1):\n   schema_version   — single-row version table\n   ast_nodes        — relational table with metadata + embedding BLOB\n   embedding_cache  — content-hash → embedding blob (avoids redundant API calls)\n\n Search modes:\n   vectorSearch    — cosine similarity over stored embeddings (semantic)\n   keywordSearch   — SQL LIKE on name / comment / module / signature\n   search          — hybrid: vector + keyword, fused by weighted score",
   "capabilities": ["vector-search", "sync-pipeline", "llm-client", "explain-query"],
   "used_by": ["src/vector/root.zig"],
   "members": [
@@ -1337,7 +1338,7 @@
       ],
       "returns": "ParsedDoc",
       "is_pub": false,
-      "line": 3944
+      "line": 3945
     },
     {
       "type": "fn_private",
@@ -1349,7 +1350,7 @@
       ],
       "returns": "ParsedMember",
       "is_pub": false,
-      "line": 4060
+      "line": 4062
     },
     {
       "type": "fn_private",
@@ -1362,7 +1363,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 4102
+      "line": 4105
     },
     {
       "type": "fn_private",
@@ -1376,7 +1377,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 4122
+      "line": 4126
     },
     {
       "type": "fn_private",
@@ -1390,7 +1391,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 4145
+      "line": 4150
     },
     {
       "type": "fn_private",
@@ -1404,7 +1405,7 @@
       ],
       "returns": "?[]u8",
       "is_pub": false,
-      "line": 4152
+      "line": 4158
     },
     {
       "type": "fn_private",
@@ -1420,73 +1421,73 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 4160
+      "line": 4167
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb init and schema",
       "is_pub": false,
-      "line": 4176
+      "line": 4183
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb index and keyword search round-trip",
       "is_pub": false,
-      "line": 4200
+      "line": 4207
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb search falls back to keyword when noop embedder",
       "is_pub": false,
-      "line": 4250
+      "line": 4257
     },
     {
       "type": "test_decl",
       "name": "GuidanceDb skips unchanged files",
       "is_pub": false,
-      "line": 4291
+      "line": 4298
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText descriptor-bag format",
       "is_pub": false,
-      "line": 4339
+      "line": 4346
     },
     {
       "type": "test_decl",
       "name": "buildEmbeddingText module row",
       "is_pub": false,
-      "line": 4366
+      "line": 4373
     },
     {
       "type": "test_decl",
       "name": "moduleToProse strips src prefix and limits depth",
       "is_pub": false,
-      "line": 4382
+      "line": 4389
     },
     {
       "type": "test_decl",
       "name": "extractParamNames strips types",
       "is_pub": false,
-      "line": 4390
+      "line": 4397
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
       "is_pub": false,
-      "line": 4405
+      "line": 4412
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder fluent setters return updated values",
       "is_pub": false,
-      "line": 4423
+      "line": 4430
     },
     {
       "type": "test_decl",
       "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
       "is_pub": false,
-      "line": 4443
+      "line": 4450
     }
   ]
 }

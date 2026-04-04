@@ -4,6 +4,7 @@
     "source": "src/guidance/header_generator.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/comment_sync.zig"],
   "members": [
     {

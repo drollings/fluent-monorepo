@@ -59,7 +59,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 126
+      "line": 127
     },
     {
       "type": "fn_private",
@@ -76,43 +76,43 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 136
+      "line": 138
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: empty input",
       "is_pub": false,
-      "line": 140
+      "line": 142
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: head stages always included",
       "is_pub": false,
-      "line": 147
+      "line": 149
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: code stages always included in body",
       "is_pub": false,
-      "line": 171
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: token budget enforced on body",
       "is_pub": false,
-      "line": 189
+      "line": 191
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: tail always included even over budget",
       "is_pub": false,
-      "line": 214
+      "line": 216
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: max_stages enforced",
       "is_pub": false,
-      "line": 234
+      "line": 236
     }
   ]
 }

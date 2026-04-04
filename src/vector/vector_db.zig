@@ -3941,6 +3941,7 @@ fn loadCapabilityKeywordsMap(
     }
 }
 
+/// Converts a JSON string into a ParsedDoc object using the provided allocator.
 fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc {
     const Value = std.json.Value;
     const parsed = try std.json.parseFromSlice(Value, arena, json_data, .{
@@ -4057,6 +4058,7 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
     };
 }
 
+/// Converts a JSON value to a ParsedMember, handling nulls and errors gracefully.
 fn parseMemberValue(item: std.json.Value) ParsedMember {
     const node_type: []const u8 = blk: {
         const tv = item.object.get("type") orelse break :blk "unknown";
@@ -4099,6 +4101,7 @@ fn parseMemberValue(item: std.json.Value) ParsedMember {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+/// Serializes a slice of allocated memory items into a compact byte array for storage.
 fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u8 {
     var buf: std.ArrayList(u8) = .{};
     errdefer buf.deinit(allocator);
@@ -4119,6 +4122,7 @@ fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u
     return buf.toOwnedSlice(allocator);
 }
 
+/// Converts a SQL statement's column usage into a slice of byte slices, handling allocator and SQLite3_stmt parameters.
 fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![][]const u8 {
     if (c.sqlite3_column_type(stmt, col) == c.SQLITE_NULL) return &.{};
     const raw = c.sqlite3_column_text(stmt, col);
@@ -4142,6 +4146,7 @@ fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocato
     return try out.toOwnedSlice(allocator);
 }
 
+/// Converts a SQLite column value to a Zig byte slice, handling nulls and allocator context.
 fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![]u8 {
     const raw = c.sqlite3_column_text(stmt, col);
     const len: usize = @intCast(c.sqlite3_column_bytes(stmt, col));
@@ -4149,6 +4154,7 @@ fn dupeCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![]u
     return allocator.dupe(u8, @as([*]const u8, @ptrCast(raw))[0..len]);
 }
 
+/// Converts a null-terminated C string into a Zig array of u8 values.
 fn dupeColNullable(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) !?[]u8 {
     if (c.sqlite3_column_type(stmt, col) == c.SQLITE_NULL) return null;
     const raw = c.sqlite3_column_text(stmt, col);
@@ -4157,6 +4163,7 @@ fn dupeColNullable(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocat
     return try allocator.dupe(u8, @as([*]const u8, @ptrCast(raw))[0..len]);
 }
 
+/// Handles SQLite errors by logging details and returning an error code.
 fn logSqliteErr(context: []const u8, sql: []const u8, rc: c_int, err_msg: [*c]u8, db: ?*c.sqlite3) void {
     if (err_msg) |msg| {
         log.warn("sqlite {s} failed (rc={d}, sql={s}): {s}", .{ context, rc, sql, std.mem.span(msg) });

@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "keywords": ["Zig", "SHA-256", "structHash", "APIHash", "normalizeType"],
-  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/sync.zig"],
+  "capabilities": ["coral-database", "ast-indexing"],
+  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -38,6 +39,19 @@
     },
     {
       "type": "fn_decl",
+      "name": "computeMemberHash",
+      "match_hash": "a4561261240f88ee101c776bff1e84d22f91d93755f02b1260bdc40358a1f66a",
+      "signature": "fn computeMemberHash(allocator: std.mem.Allocator, member: types.Member) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "member", "type": "types.Member" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 49
+    },
+    {
+      "type": "fn_decl",
       "name": "normalizeType",
       "match_hash": "d97c07e53a23308dca3de66cf277938cda4abd9f3dd65713d492afbbfb9fc3ca",
       "signature": "fn normalizeType(type_str: []const u8) -> []const u8",
@@ -46,37 +60,61 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 46
+      "line": 70
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 52
+      "line": 76
     },
     {
       "type": "test_decl",
       "name": "apiHash is deterministic",
       "is_pub": false,
-      "line": 58
+      "line": 82
     },
     {
       "type": "test_decl",
       "name": "apiHash differs for different names",
       "is_pub": false,
-      "line": 72
+      "line": 96
     },
     {
       "type": "test_decl",
       "name": "structHash differs when field names change",
       "is_pub": false,
-      "line": 83
+      "line": 107
     },
     {
       "type": "test_decl",
       "name": "structHash same fields produce same hash",
       "is_pub": false,
-      "line": 103
+      "line": 127
+    },
+    {
+      "type": "test_decl",
+      "name": "computeMemberHash without comment produces hash of signature",
+      "is_pub": false,
+      "line": 138
+    },
+    {
+      "type": "test_decl",
+      "name": "computeMemberHash with comment differs from signature-only hash",
+      "is_pub": false,
+      "line": 155
+    },
+    {
+      "type": "test_decl",
+      "name": "computeMemberHash same comment produces same hash",
+      "is_pub": false,
+      "line": 179
+    },
+    {
+      "type": "test_decl",
+      "name": "computeMemberHash different comments produce different hashes",
+      "is_pub": false,
+      "line": 202
     }
   ]
 }

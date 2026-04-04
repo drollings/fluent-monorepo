@@ -88,6 +88,7 @@ pub fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) ![][
     return names.toOwnedSlice(allocator);
 }
 
+/// Updates the provider map with the given target registry and target values.
 fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
     var iter = tgt.provides.iterator(.{});
     while (iter.next()) |provides_idx| {

@@ -4,6 +4,7 @@
     "source": "src/common/embeddings.zig",
     "language": "zig"
   },
+  "comment": "[gof-patterns]  Embedding providers — convert text to vectors for semantic search.\n\n Provides:\n   - EmbeddingProvider  vtable interface\n   - NoopEmbedding      returns empty vectors (keyword-only fallback)\n   - OllamaEmbedding    Ollama local /api/embed endpoint\n   - OpenAiEmbedding    OpenAI-compatible /v1/embeddings endpoint\n   - createEmbeddingProvider() factory",
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],

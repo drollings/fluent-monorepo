@@ -4,6 +4,7 @@
     "source": "src/vector/simhash.zig",
     "language": "zig"
   },
+  "capabilities": ["vector-search"],
   "used_by": ["src/vector/vector_db.zig"],
   "members": [
     {

@@ -33,6 +33,7 @@ pub fn isSyntheticComment(comment: []const u8) bool {
     return false;
 }
 
+/// Checks if the input text contains boilerplate patterns, returning true or false.
 fn hasBoilerplateManagesPattern(text: []const u8) bool {
     if (text.len < 8) return false;
     if (!std.ascii.eqlIgnoreCase(text[0..8], "manages ")) return false;

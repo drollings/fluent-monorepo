@@ -7,6 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "fn_private",
@@ -18,61 +19,61 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 16
+      "line": 17
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: init sets default values",
       "is_pub": false,
-      "line": 37
+      "line": 38
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: requestShutdown sets flag",
       "is_pub": false,
-      "line": 48
+      "line": 49
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: deinit cleans up without error",
       "is_pub": false,
-      "line": 58
+      "line": 59
     },
     {
       "type": "test_decl",
       "name": "McpHandler VTable interface compiles and calls through",
       "is_pub": false,
-      "line": 66
+      "line": 67
     },
     {
       "type": "test_decl",
       "name": "McpHandler: echo handler returns input",
       "is_pub": false,
-      "line": 105
+      "line": 106
     },
     {
       "type": "test_decl",
       "name": "SseEvent: default values",
       "is_pub": false,
-      "line": 118
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "SseState: default values",
       "is_pub": false,
-      "line": 127
+      "line": 128
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: bind address parsing",
       "is_pub": false,
-      "line": 134
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: signals ready when listenWithReady called",
       "is_pub": false,
-      "line": 143
+      "line": 144
     }
   ]
 }

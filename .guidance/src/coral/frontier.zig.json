@@ -4,6 +4,7 @@
     "source": "src/coral/frontier.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cache.zig"],
   "members": [
     {

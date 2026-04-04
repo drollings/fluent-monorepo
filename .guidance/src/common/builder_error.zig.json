@@ -4,6 +4,7 @@
     "source": "src/common/builder_error.zig",
     "language": "zig"
   },
+  "comment": " builder_error.zig — Structured error type for fluent builder chains.\n\n Replaces bare `?anyerror` in builder structs with rich context:\n   - Which phase the error occurred in (depends, provides, command, …)\n   - Which field was being set\n   - What value was supplied (truncated to 128 bytes)\n   - Which constraint was violated\n   - The underlying anyerror cause\n\n All strings except field/constraint names are allocated from the builder's\n arena; the arena is deinited by the terminal method (register / build / sync).",
   "used_by": ["src/common/registry.zig"],
   "members": [
     {

@@ -4,6 +4,7 @@
     "source": "src/concurrency/context.zig",
     "language": "zig"
   },
+  "comment": "[domain-patterns]  context.zig — Cancellation and deadline propagation (M11).\n\n `Context` is a 24-byte, stack-allocatable struct with an atomic cancellation\n flag and an optional absolute deadline.  No heap allocation, no destructor.\n\n ## Ownership\n\n The caller owns the Context and must keep it alive until all work units\n that hold a `*const Context` pointer to it have completed.\n\n ## Parent–child cancellation\n\n There is no registration tree.  Pass the parent's `*Context` pointer to child\n work units that should observe parent cancellation.  `withTimeout` and\n `withDeadline` derive an independently cancellable context with a stricter\n deadline — they do not inherit the parent's flag automatically.\n\n ## Thread safety\n\n `isCancelled`, `isExpired`, and `cancel` are safe to call from multiple\n threads concurrently.  First call to `cancel` wins; subsequent calls are no-ops.",
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],

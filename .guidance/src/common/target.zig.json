@@ -8,6 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["target-registry"],
   "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/registry.zig", "src/common/resolver.zig", "src/common/root.zig"],
   "members": [
     {

@@ -114,6 +114,7 @@ fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
+/// Checks if a character is a valid email character in the Zig source.
 fn isEmailChar(ch: u8) bool {
     return std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '-' or ch == '+' or ch == '.';
 }
@@ -342,6 +343,7 @@ fn replaceIpv4(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
+/// Checks if a list of bytes resembles a valid IPv4 address, returning true or false.
 fn looksLikeIpv4(s: []const u8) bool {
     var part_count: usize = 0;
     var part_len: usize = 0;
@@ -392,6 +394,7 @@ fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
+/// Checks if a byte is a valid hex character for use in Zig code.
 fn isHexChar(c: u8) bool {
     return std.ascii.isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
 }

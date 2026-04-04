@@ -123,6 +123,7 @@ pub const ContextPacker = struct {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Calculates the estimated number of tokens in a Zig source file for packing purposes.
 fn estimateTokens(content: []const u8) usize {
     return (content.len + 3) / 4;
 }
@@ -133,6 +134,7 @@ fn estimateTokens(content: []const u8) usize {
 
 const testing = std.testing;
 
+/// Creates a Zig stage instance with specified kind, content, and relevance parameters.
 fn makeStage(kind: StageKind, content: []const u8, relevance: f32) Stage {
     return .{ .kind = kind, .content = content, .relevance_score = relevance };
 }

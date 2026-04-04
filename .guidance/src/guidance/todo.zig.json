@@ -4,6 +4,7 @@
     "source": "src/guidance/todo.zig",
     "language": "zig"
   },
+  "comment": " todo.zig — Work item lifecycle tracking for guidance.\n\n Directory layout:\n   .guidance/todo/\n   ├── YYYYMMDD_HHMMSS_<slug>/\n   │   ├── TODO.md        — human-written goal + acceptance criteria\n   │   ├── TRIAGE.md      — LLM-generated risk + steps + dependencies\n   │   ├── CHECKLIST.md   — LLM-generated checkboxes from TODO.md\n   │   ├── DIARY.md       — timestamped manual entries\n   │   └── COMMITTED.md   — auto-generated on successful commit\n   └── archive/           — abandoned work items",
   "used_by": ["src/guidance/sync_engine.zig"],
   "members": [
     {

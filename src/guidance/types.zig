@@ -372,6 +372,7 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
     return @as(?[]u8, try list.toOwnedSlice(allocator));
 }
 
+/// Writes a field or comma to the writer, handling null-terminated strings.
 fn writeFieldOrComma(writer: anytype, key: []const u8, value: ?[]const u8) !void {
     if (value) |v| {
         try writeEscapedString(writer, key, v);
@@ -730,6 +731,32 @@ test "jsonifyMember: no trailing comma when no members and no line" {
     try std.testing.expect(json != null);
     const j = json.?;
     // Must parse as valid JSON (no trailing comma)
+    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
+    defer parsed.deinit();
+}
+
+test "jsonifyMember: member comment NOT written to JSON" {
+    const allocator = std.testing.allocator;
+    const member = Member{
+        .type = .fn_decl,
+        .name = "documentedFunc",
+        .is_pub = true,
+        .signature = "fn documentedFunc() void",
+        .comment = "This is a doc comment that should NOT appear in JSON.",
+        .match_hash = "abc123",
+    };
+    const json = try jsonifyMember(allocator, member);
+    defer if (json) |j| allocator.free(j);
+    try std.testing.expect(json != null);
+    const j = json.?;
+    // Verify the comment field is NOT present in JSON
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"comment\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "This is a doc comment") == null);
+    // Verify other fields ARE present
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"name\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"documentedFunc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"match_hash\"") != null);
+    // Parse as valid JSON
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
     defer parsed.deinit();
 }

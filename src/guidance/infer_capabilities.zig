@@ -119,6 +119,7 @@ fn generateDescription(
     return std.fmt.allocPrint(allocator, "Inferred capability '{s}' from {d} source file(s) by naming convention.", .{ name, files.len });
 }
 
+/// Analyzes code names to infer capabilities, returning a map of inferred types.
 fn inferFromNaming(
     allocator: std.mem.Allocator,
     map: *const CodebaseMap,
@@ -181,6 +182,7 @@ fn inferFromNaming(
 // Pass 2: Import graph clustering
 // =============================================================================
 
+/// Analyzes import graph data to infer capability types, returning a list of inferred capabilities.
 fn inferFromImportGraph(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -255,6 +257,7 @@ fn inferFromImportGraph(
 // Pass 3: Module comment analysis
 // =============================================================================
 
+/// Extracts capability information from module comments, updating the provided list of inferred capabilities.
 fn inferFromModuleComments(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -302,6 +305,7 @@ fn inferFromModuleComments(
 // Pass 4: File grouping by directory
 // =============================================================================
 
+/// Analyzes file grouping data to infer capabilities, returning a map of inferred capabilities.
 fn inferFromFileGrouping(
     allocator: std.mem.Allocator,
     map: *const CodebaseMap,

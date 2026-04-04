@@ -495,6 +495,7 @@ fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![
     return try commands.toOwnedSlice(allocator);
 }
 
+/// Attempts to load a file into a project configuration, returning the loaded settings or an error.
 fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) !ProjectConfig {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
@@ -759,6 +760,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     );
 }
 
+/// Constructs a default project configuration from an allocator and CWD input.
 fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     var src_dirs = try allocator.alloc([]const u8, 1);
     src_dirs[0] = try allocator.dupe(u8, DEFAULT_SRC_DIR);
@@ -803,6 +805,7 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     );
 }
 
+/// Constructs a project configuration from specified Zig parts and parameters.
 fn buildFromParts(
     allocator: std.mem.Allocator,
     cwd: []const u8,

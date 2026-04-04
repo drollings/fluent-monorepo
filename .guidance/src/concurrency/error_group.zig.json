@@ -4,6 +4,7 @@
     "source": "src/concurrency/error_group.zig",
     "language": "zig"
   },
+  "comment": " error_group.zig — Structured parallel dispatch with error capture (M14).\n\n `ErrorGroup` submits work units to a `std.Thread.Pool`, captures errors,\n and cancels the shared `Context` on the first failure.\n\n ## Usage\n\n   var ctx = Context.background();\n   var group = ErrorGroup.init(allocator, &pool, &ctx);\n   defer group.deinit();\n\n   for (inputs) |input| {\n       const unit = try WorkUnit(Handler).init(allocator, Handler{ .input = input }, &ctx);\n       group.go(unit.toAny());\n   }\n\n   if (group.wait()) |first_err| return first_err;\n\n ## Ownership\n\n - `go()` transfers ownership of the work unit to the pool closure.\n - `wait()` blocks until all submitted units complete (via `waitAndWork`).\n - `deinit()` is safe to call after `wait()`.\n - `go()` must only be called from the submitting thread (not thread-safe).\n - `wait()` and `waitAll()` must not be called concurrently.\n\n ## Cancellation\n\n When the first unit fails, `ErrorGroup` calls `ctx.cancel(err)`.  Subsequent\n units will observe `ctx.isCancelled() == true` and return `error.Cancelled`\n without doing real work — but they still complete (no orphaned goroutines).",
   "used_by": ["src/concurrency/root.zig"],
   "members": [
     {

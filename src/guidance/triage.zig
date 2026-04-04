@@ -131,6 +131,7 @@ pub fn findAffectedFiles(
 /// Common source/doc extensions recognised by triage path detection.
 const TRIAGE_EXTS = [_][]const u8{ "zig", "py", "md", "json", "toml", "yaml", "yml", "sh", "txt" };
 
+/// Checks if a given byte slice represents a valid path token, returning true or false.
 fn isPathToken(s: []const u8) bool {
     return llm.isPathToken(s, &TRIAGE_EXTS);
 }

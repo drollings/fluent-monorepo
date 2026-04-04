@@ -156,16 +156,16 @@
     {
       "type": "fn_private",
       "name": "printHelp",
-      "match_hash": "6d55964a151fcb9711b4b888125d0ba308f075cac50c0e9f1a513064db2a249b",
+      "match_hash": "6b8ba952646097fbecbc003f01b45005eca1fa9666fdce94af0c795c0af2ddde",
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 137
+      "line": 138
     },
     {
       "type": "fn_private",
       "name": "cmdStructure",
-      "match_hash": "afc4ab03f3bf7b5f61c643fccfba2104533c7948043188de3dad151a3b531a56",
+      "match_hash": "365c31948bb590f64739040f33bae9cf97759257d419d376cac44a3ec8a03e2d",
       "signature": "fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -173,12 +173,12 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 235
+      "line": 237
     },
     {
       "type": "fn_private",
       "name": "cmdDeps",
-      "match_hash": "28b48f1c1135b0a58c4afb3ab609c85b00f6aa3308beea5229c24025a30311fb",
+      "match_hash": "5fb19e1220b91320c8a6949b16271b7ca65590e887b78de94feaca1ed838b7e4",
       "signature": "fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -186,7 +186,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 267
+      "line": 270
     }
   ]
 }

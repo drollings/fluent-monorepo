@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "keywords": ["Accessor", "DynamicEditable", "FieldMeta", "OwnershipMode", "Permissions", "Constraint"],
-  "used_by": ["src/reflection/root.zig"],
+  "capabilities": ["reflection"],
+  "used_by": ["src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/validate.zig"],
   "members": [
     {
       "type": "enum",

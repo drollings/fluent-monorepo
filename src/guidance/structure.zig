@@ -417,6 +417,7 @@ const ChildEntry = struct {
     is_dir: bool,
 };
 
+/// Compares two child entries to check if one is less than another, returning true or false.
 fn childLessThan(_: void, a: ChildEntry, b: ChildEntry) bool {
     // Dirs before files.
     if (a.is_dir != b.is_dir) return a.is_dir;

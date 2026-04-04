@@ -115,6 +115,7 @@ const HeapEntry = struct {
     }
 };
 
+/// Implements Dijkstra's algorithm to find shortest paths from source to target in a graph.
 fn runDijkstra(
     arena: Allocator,
     graph: *const CSRGraph,

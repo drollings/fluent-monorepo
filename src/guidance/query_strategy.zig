@@ -114,12 +114,14 @@ pub const IdentifierLookupStrategy = struct {
     }
 };
 
+/// Checks if query strings match database entries, returning true or false.
 fn identifierMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     _ = ptr;
     _ = db;
     return looksLikeIdentifier(query);
 }
 
+/// Executes an identifier query in the GuidanceDb, returning results or errors.
 fn identifierExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
@@ -166,6 +168,7 @@ pub const CapabilityQueryStrategy = struct {
     }
 };
 
+/// Checks if a query matches capability data in the GuidanceDb, returning true or false.
 fn capabilityMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     _ = ptr;
     // Query is a capability match if findMatchedCapabilityNamesForQuery returns ≥ 1 result
@@ -182,6 +185,7 @@ fn capabilityMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     return tok_count >= 2 and tok_count <= 4 and !looksLikeNaturalLanguageQuestion(trimmed);
 }
 
+/// Executes a capability query, accepting parameters for database, query, workspace, and aliases, returning results or errors.
 fn capabilityExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
@@ -223,6 +227,7 @@ pub const ConceptQueryStrategy = struct {
     }
 };
 
+/// Checks if a query matches a concept using a pointer, query slice, and database.
 fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     _ = ptr;
     _ = db;
@@ -233,6 +238,7 @@ fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     return tok_count >= 2;
 }
 
+/// Executes a query using provided parameters and returns results or errors.
 fn conceptExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,

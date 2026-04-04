@@ -4,5 +4,6 @@
     "source": "src/concurrency/root.zig",
     "language": "zig"
   },
+  "comment": " concurrency/root.zig — Public API re-exports for the concurrency layer.\n\n Import this module to access all concurrency primitives:\n\n   const concurrency = @import(\"concurrency\");\n   const Context     = concurrency.Context;\n   const WorkUnit    = concurrency.WorkUnit;\n   const AnyWorkUnit = concurrency.AnyWorkUnit;\n   const Channel     = concurrency.Channel;\n   const ErrorGroup  = concurrency.ErrorGroup;\n   const spawn       = concurrency.spawn;",
   "used_by": ["src/vector/vector_db.zig"]
 }

@@ -4,6 +4,7 @@
     "source": "src/guidance/infer_capabilities.zig",
     "language": "zig"
   },
+  "comment": " infer_capabilities.zig — M4: InferCapabilities — Capability Discovery Without CAPABILITY.md\n\n Implements M4 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n When doc/capabilities/ doesn't exist (or is incomplete), infer capabilities\n from codebase structure, naming conventions, and module comments.\n\n Four-pass inference (decreasing confidence):\n   Pass 1: Naming conventions  (0.9) — \"vector_db.zig\" + \"vector_search.zig\" → \"vector-search\"\n   Pass 2: Import graph cluster (0.8) — modules that import each other form capability clusters\n   Pass 3: Module comments      (0.7) — \"//! Vector similarity search...\" → \"vector-search\"\n   Pass 4: File grouping        (0.5) — all files in src/vector/ → \"vector\" capability\n\n Memory: all strings in InferredCapability are allocator-owned. Call freeInferredCapabilities().",
   "used_by": ["src/guidance/scanner.zig"],
   "members": [
     {
@@ -138,7 +139,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 122
+      "line": 123
     },
     {
       "type": "fn_private",
@@ -152,7 +153,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 184
+      "line": 186
     },
     {
       "type": "fn_private",
@@ -166,7 +167,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 258
+      "line": 261
     },
     {
       "type": "fn_private",
@@ -180,7 +181,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 305
+      "line": 309
     },
     {
       "type": "fn_private",
@@ -193,7 +194,7 @@
       ],
       "returns": "[]InferredCapability",
       "is_pub": false,
-      "line": 369
+      "line": 373
     },
     {
       "type": "fn_private",
@@ -206,7 +207,7 @@
       ],
       "returns": "[]u8",
       "is_pub": false,
-      "line": 408
+      "line": 412
     },
     {
       "type": "fn_private",
@@ -218,7 +219,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 427
+      "line": 431
     },
     {
       "type": "fn_private",
@@ -230,37 +231,37 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 437
+      "line": 441
     },
     {
       "type": "test_decl",
       "name": "toCapabilityName: snake_case to kebab-case",
       "is_pub": false,
-      "line": 458
+      "line": 462
     },
     {
       "type": "test_decl",
       "name": "toCapabilityName: camelCase to kebab-case",
       "is_pub": false,
-      "line": 465
+      "line": 469
     },
     {
       "type": "test_decl",
       "name": "extractPrefix: underscore-separated",
       "is_pub": false,
-      "line": 472
+      "line": 476
     },
     {
       "type": "test_decl",
       "name": "extractPrefix: single word",
       "is_pub": false,
-      "line": 477
+      "line": 481
     },
     {
       "type": "test_decl",
       "name": "isSupportedExtension: known extensions",
       "is_pub": false,
-      "line": 481
+      "line": 485
     }
   ]
 }

@@ -205,6 +205,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     );
 }
 
+/// Constructs a default project configuration from an allocator and CWD input.
 fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     var src_dirs = try allocator.alloc([]const u8, 1);
     src_dirs[0] = try allocator.dupe(u8, DEFAULT_SRC_DIR);
@@ -218,6 +219,7 @@ fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     );
 }
 
+/// Constructs a project configuration from Zig source parts using allocator, paths, and model data.
 fn buildFromParts(
     allocator: std.mem.Allocator,
     cwd: []const u8,

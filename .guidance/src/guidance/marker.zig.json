@@ -4,8 +4,10 @@
     "source": "src/guidance/marker.zig",
     "language": "zig"
   },
+  "comment": " Mtime-based change detection for guidance's incremental RALPH loop.\n\n ## Design\n\n The guidance JSON file's mtime IS the per-file marker.  When a provider\n (Zig built-in, guidance-py, or any future language tool) finishes its\n full test→lint→fmt→guidance cycle for a source file, it writes the JSON,\n advancing its mtime.  guidance then uses a simple mtime comparison to\n decide whether re-processing is needed:\n\n   - JSON absent → stale, needs processing\n   - JSON mtime == src_mtime - 1 second → validated, no changes, skip\n   - JSON mtime > src_mtime → needs processing (e.g., imported JSON)\n   - JSON mtime < src_mtime (but not src_mtime - 1) → stale, needs processing\n\n ## Validated Pattern\n\n When a file is processed and no meaningful changes are needed (members match,\n comments in sync), we set JSON mtime to src_mtime - 1 second. This creates\n a recognizable pattern that `fileNeedsProcessing` can identify to skip\n reprocessing on subsequent runs.\n\n ## Test marker\n\n A separate marker file `.guidance/.marks/test_passed` records the last\n successful test run.  If no source file is newer than this marker, tests\n can be skipped.  This enables fast incremental runs of lint→fmt→guidance\n without re-running the full test suite.\n\n ## Provider contract\n\n Each provider (built-in or external) must:\n   1. Run the language test suite (once, whole suite).\n   2. Run lint on the file.\n   3. Run the formatter on the file (must precede AST parse so line numbers\n      in the JSON reflect the final formatted source).\n   4. Generate or update the guidance JSON.\n\n The Zig provider implements steps 1-4 inside guidance itself.\n External providers (e.g. guidance-py) honour the same contract in their\n own implementation.",
   "keywords": ["Zig", "guidance", "mtime", "incremental processing", "test cycle", "JSON file", "file monitoring", "language tools"],
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
+  "capabilities": ["sync-pipeline"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -18,7 +20,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 45
+      "line": 57
     },
     {
       "type": "fn_decl",
@@ -30,7 +32,7 @@
       ],
       "returns": "?i128",
       "is_pub": true,
-      "line": 53
+      "line": 78
     },
     {
       "type": "fn_decl",
@@ -42,37 +44,62 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 95
+      "line": 120
+    },
+    {
+      "type": "fn_decl",
+      "name": "touchFileAfter",
+      "match_hash": "05c519a4d7d5e3e624410207eccc611466c64fff97b9522b546987a8b11253cb",
+      "signature": "fn touchFileAfter(target_path: []const u8, ref_path: []const u8) -> void",
+      "params": [
+        { "name": "target_path", "type": "[]const u8" },
+        { "name": "ref_path", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 132
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: absent JSON → stale",
       "is_pub": false,
-      "line": 106
+      "line": 149
     },
     {
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON written after source → fresh",
       "is_pub": false,
-      "line": 126
+      "line": 169
+    },
+    {
+      "type": "test_decl",
+      "name": "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)",
+      "is_pub": false,
+      "line": 195
+    },
+    {
+      "type": "test_decl",
+      "name": "fileNeedsProcessing: JSON older by >1s → needs processing",
+      "is_pub": false,
+      "line": 226
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: no marker → false",
       "is_pub": false,
-      "line": 152
+      "line": 258
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: marker newer than source → true",
       "is_pub": false,
-      "line": 173
+      "line": 279
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: source newer than marker → false",
       "is_pub": false,
-      "line": 195
+      "line": 301
     }
   ]
 }

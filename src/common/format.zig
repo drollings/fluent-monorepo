@@ -78,6 +78,7 @@ pub const Table = struct {
     }
 };
 
+/// Converts a JSON value into a Zig-safe string slice.
 fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 {
     return switch (val) {
         .null => allocator.dupe(u8, "null"),
@@ -128,6 +129,7 @@ pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) !
     return buf.toOwnedSlice(allocator);
 }
 
+/// Converts a value into a formatted string with indentation and level control.
 fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void {
     const T = @TypeOf(value);
     if (T == []const u8) {
@@ -210,6 +212,7 @@ pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fie
     return buf.toOwnedSlice(allocator);
 }
 
+/// Writes a CSV field as a byte array, formatting it for storage.
 fn writeCsvField(writer: anytype, field: []const u8) !void {
     const needs_quote = std.mem.indexOfAny(u8, field, "\",\n\r") != null;
     if (needs_quote) {

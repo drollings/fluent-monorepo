@@ -33,6 +33,7 @@ pub fn spawn(
     pool.spawnWg(wg, runUnit, .{unit});
 }
 
+/// Processes a unit input and executes its logic, returning no value on success.
 fn runUnit(unit: AnyWorkUnit) void {
     unit.runFn(unit.ptr) catch |e| {
         if (e != error.Cancelled) {

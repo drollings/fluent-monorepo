@@ -4,6 +4,7 @@
     "source": "src/concurrency/any_work_unit.zig",
     "language": "zig"
   },
+  "comment": " any_work_unit.zig — Type-erased work unit and typed wrapper (M11).\n\n ## Pattern\n\n Follows the `ptr + vtable` pattern used throughout the codebase.\n `AnyWorkUnit` is the type-erased handle (24 bytes: three pointers).\n `WorkUnit(Handler)` is the typed concrete type.  `WorkUnit.init()` heap-\n allocates the struct and stores the parent allocator so `runFn` can self-free.\n\n ## Ownership\n\n - `WorkUnit(T).init()` allocates the struct on the heap via the parent allocator.\n - `runFn` and `deinitFn` both deinit the arena AND destroy the struct — the\n   caller must not touch the pointer after calling `group.go(unit.toAny())`.\n - The `Context` pointer is NOT owned.  The caller must keep the context alive\n   until the work unit completes.\n\n ## Handler contract\n\n   pub const Handler = struct {\n       pub fn execute(self: *Handler, arena: std.mem.Allocator, ctx: *const Context) anyerror!void { ... }\n   };",
   "used_by": ["src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig"],
   "members": [
     {

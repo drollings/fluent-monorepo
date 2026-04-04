@@ -4,6 +4,7 @@
     "source": "src/coral/http_transport.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig"],
   "members": [
     {

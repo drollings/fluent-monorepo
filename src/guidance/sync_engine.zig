@@ -166,6 +166,7 @@ pub fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // commit — AI git commit message from staged diff + guidance JSON context
 // =============================================================================
 
+/// Compares two directories, returning differences in a Zig slice.
 fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) ![]u8 {
     const argv: []const []const u8 = if (staged)
         &.{ "git", "diff", "--staged" }
@@ -342,6 +343,7 @@ fn loadChangedMembers(
     return result.toOwnedSlice(allocator);
 }
 
+/// Generates a commit message string using provided file diffs and metadata for version control.
 fn generateCommitMessage(
     allocator: std.mem.Allocator,
     diff: []const u8,
@@ -528,6 +530,7 @@ fn generateCommitMessage(
     return try allocator.dupe(u8, "* Update codebase");
 }
 
+/// Converts a Zig message array into a temporary commit message slice.
 fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
     const path = try std.fmt.allocPrint(allocator, "/tmp/explain_gen_commit_{d}.txt", .{std.time.timestamp()});
     const file = try std.fs.createFileAbsolute(path, .{});
@@ -1413,15 +1416,7 @@ pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try cmdGenImpl(allocator, ga);
 }
 
-/// Core gen implementation shared by `gen` and `check`.
-///
-/// Pipeline (per source file):
-///   incremental check → test (once/language) → lint → fmt → guidance → touch JSON
-///
-/// Incremental detection is always active: a file is skipped when its guidance
-/// JSON is at least as new as the source.  Pass `ga.force = true` to override.
-/// The guidance JSON is always touched after successful processing so its mtime
-/// acts as the universal "all phases passed" marker across all languages.
+/// Generates a Zig implementation for the sync engine using an allocator and provided generation parameters.
 fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -3405,18 +3400,7 @@ pub fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const 
     }
 }
 
-/// Run the per-file pipeline for one built-in source file:
-///   1. lint  (if configured and not skip_lint)
-///   2. fmt   (if configured and not skip_fmt)
-///   3. guidance  (AST → JSON via SyncProcessor)
-///   4. touch JSON  (always — makes JSON mtime the universal "all phases passed" marker)
-///
-/// Formatting runs AFTER lint so that:
-///   - Semantic lint errors are caught before any file modification.
-///   - The formatter normalises whitespace before the AST is parsed, ensuring
-///     line numbers in the JSON are stable and accurate.
-///
-/// Returns false when lint fails (caller should abort the batch).
+/// Executes a built-in file pipeline using provided allocator, config, processor, and source data.
 fn runBuiltinFilePipeline(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,
@@ -3471,15 +3455,7 @@ fn runBuiltinFilePipeline(
     return true;
 }
 
-/// Run the full built-in pipeline over a set of source files that share the
-/// same language group:
-///   1. Test suite (once, if any file is stale relative to the test marker)
-///   2. Per-file: lint → fmt → guidance → touch JSON
-///
-/// `language` is a short tag (e.g. "zig") used for the test marker path.
-/// `stale_files` are the files that need processing (source newer than JSON).
-/// `all_files` are ALL source files for this language (used for test marker check).
-/// `guidance_root` is the absolute path to the guidance directory (e.g. .guidance).
+/// Executes a built-in language pipeline using provided allocator, config, processor, and language data.
 fn runBuiltinLanguagePipeline(
     allocator: std.mem.Allocator,
     cfg: *const config_mod.ProjectConfig,

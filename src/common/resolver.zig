@@ -169,6 +169,7 @@ fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Targ
     };
 }
 
+/// Collects and returns a map of collected dependencies for a target in the resolver.
 fn collectDependencies(
     self: *DependencyResolver,
     target: *Target,
@@ -194,6 +195,7 @@ fn collectDependencies(
     }
 }
 
+/// Collects dependencies and their abstracts into a bit set for a target Zig project.
 fn collectDependenciesWithAbstracts(
     self: *DependencyResolver,
     target: *Target,
@@ -348,6 +350,7 @@ pub fn visualizeGraph(
     return output.toOwnedSlice(allocator);
 }
 
+/// Prints a tree structure of dependencies with prefix, tracking visited nodes.
 fn printTree(
     self: *DependencyResolver,
     target: *Target,
@@ -404,6 +407,7 @@ const testing = std.testing;
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Creates a target slice from a Zig string, using an allocator and string interners.
 fn makeTarget(
     allocator: std.mem.Allocator,
     interner: *StringInterner,

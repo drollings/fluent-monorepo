@@ -114,9 +114,11 @@ pub const ToolRegistry = struct {
 
 const testing = std.testing;
 
+/// Checks if the system is always available by evaluating a condition; returns true or false.
 fn alwaysAvailable() bool {
     return true;
 }
+/// Checks for a never available condition with no parameters and returns false.
 fn neverAvailable() bool {
     return false;
 }

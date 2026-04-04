@@ -4,6 +4,7 @@
     "source": "src/guidance/ralph.zig",
     "language": "zig"
   },
+  "comment": "[domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help\n\n Implements M6 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n A state machine for interactive codebase navigation that integrates\n CodebaseMap (M3), QueryStrategy (M2), and DocumentIndexer (M1).\n\n State transitions:\n   read  → discovers codebase structure, initialises context\n   ask   → routes query through QueryStrategy dispatcher\n   learn → records query history, discovers relationships\n   plan  → suggests next queries based on capability gaps\n   help  → emits formatted stages for the current query\n   done  → terminal state; context is invalid",
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
@@ -207,7 +208,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 196
+      "line": 197
     },
     {
       "type": "fn_private",
@@ -220,7 +221,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 249
+      "line": 251
     },
     {
       "type": "fn_private",
@@ -232,7 +233,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 296
+      "line": 299
     },
     {
       "type": "fn_private",
@@ -246,7 +247,7 @@
       ],
       "returns": "QueryIntent",
       "is_pub": false,
-      "line": 325
+      "line": 329
     },
     {
       "type": "fn_decl",
@@ -262,19 +263,19 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 339
+      "line": 343
     },
     {
       "type": "test_decl",
       "name": "RalphState: transitions in order",
       "is_pub": false,
-      "line": 402
+      "line": 406
     },
     {
       "type": "test_decl",
       "name": "QueryRecord: can be appended to ArrayList",
       "is_pub": false,
-      "line": 408
+      "line": 412
     }
   ]
 }

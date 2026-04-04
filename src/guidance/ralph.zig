@@ -193,6 +193,7 @@ fn ralphHelp(
 // Formatting helpers
 // =============================================================================
 
+/// Converts a raw C string into a Zig-safe slice, handling formatting and errors.
 fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
@@ -246,6 +247,7 @@ fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]
     return stages.toOwnedSlice(allocator);
 }
 
+/// Converts a RALPH context into a structured plan suggestion slice using an allocator.
 fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
@@ -293,6 +295,7 @@ fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext)
     return stages.toOwnedSlice(allocator);
 }
 
+/// Converts a Zig stage string into a slice of Stage objects.
 fn formatHelpStages(allocator: std.mem.Allocator) ![]types.Stage {
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
@@ -322,6 +325,7 @@ fn formatHelpStages(allocator: std.mem.Allocator) ![]types.Stage {
 // Helpers
 // =============================================================================
 
+/// Determines the intent of a query string based on provided strategies and database context.
 fn classifyIntent(query: []const u8, strategies: []const QueryStrategy, db: *GuidanceDb) QueryIntent {
     for (strategies) |s| {
         if (s.matches(query, db)) return s.intent();

@@ -234,6 +234,7 @@ pub fn formatDocComment(allocator: std.mem.Allocator, comment: []const u8) ![]co
     return out.toOwnedSlice(allocator);
 }
 
+/// Counts the number of lines in a text buffer, returning a u32 value.
 fn countLines(text: []const u8) u32 {
     var n: u32 = 0;
     for (text) |c| if (c == '\n') {
@@ -242,6 +243,7 @@ fn countLines(text: []const u8) u32 {
     return n;
 }
 
+/// Returns an empty InsertResult with default values when no data is provided.
 fn emptyResult(allocator: std.mem.Allocator) !InsertResult {
     return .{
         .changed = false,

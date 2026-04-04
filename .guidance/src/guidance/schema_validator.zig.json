@@ -4,6 +4,7 @@
     "source": "src/guidance/schema_validator.zig",
     "language": "zig"
   },
+  "comment": " schema_validator.zig — GuidanceDoc field validation.\n\n Validates that a GuidanceDoc produced by the Zig AST parser or the Python\n provider meets the schema defined in VISION.md. This catches issues early\n (before the doc is written to disk or synced to the DB) and enforces parity\n between the Zig and Python providers.\n\n §Rules enforced:\n   - meta.module, meta.source, meta.language must be non-empty\n   - Every member must have a non-empty name\n   - language must be a known tag (zig, python, markdown, config, unknown)\n\n The validator is deliberately lenient about optional fields (comment, detail,\n keywords, skills, capabilities) — those may be empty during initial sync.",
   "capabilities": ["ast-indexing"],
   "used_by": ["src/guidance/sync_engine.zig"],
   "members": [

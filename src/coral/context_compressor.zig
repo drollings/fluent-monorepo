@@ -210,6 +210,7 @@ pub const ContextCompressor = struct {
 
 const testing = std.testing;
 
+/// Converts a role and content array into a Zig message object with specified kind.
 fn makeMsg(role: []const u8, content: []const u8, kind: MessageKind) Message {
     return .{ .role = role, .content = content, .kind = kind };
 }

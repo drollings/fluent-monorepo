@@ -4,6 +4,7 @@
     "source": "src/guidance/doc_parser.zig",
     "language": "zig"
   },
+  "comment": " doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.\n\n Extracts YAML frontmatter (name, description, anchors) and the first paragraph\n from Markdown documentation files. Shared by:\n   - staged.zig (skill excerpts)\n   - query_engine.zig (skill loading)\n   - sync_engine.zig (capability index generation)",
   "used_by": ["src/guidance/staged.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

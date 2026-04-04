@@ -4,6 +4,7 @@
     "source": "src/guidance/synthesize.zig",
     "language": "zig"
   },
+  "comment": " synthesize.zig — LLM-based synthesis for the staged explain pipeline.\n\n Combines prose stages and module detail into an answer proportionate to query detail.\n Uses fast model with cached detail context.",
   "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [

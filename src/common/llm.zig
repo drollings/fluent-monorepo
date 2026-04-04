@@ -365,6 +365,3 @@ test "extractCommentTag: chain-of-thought before tag is ignored" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.", result.?);
 }
-
-
-

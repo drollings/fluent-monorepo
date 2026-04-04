@@ -4,6 +4,7 @@
     "source": "src/common/drift.zig",
     "language": "zig"
   },
+  "comment": " drift.zig — BitSet DRIFT: deterministic follow-up query generation.\n\n Shared between guidance and coral. No coral_db dependency.\n\n Implements the DRIFT algorithm using bitwise set operations instead of\n LLM-based decomposition. Given a set of *needed* capabilities and the set\n of *available* capabilities resolved so far, DRIFT computes the missing\n set as `needed & ~available` and maps each missing bit back to its interned\n string name to produce exact follow-up queries.\n\n Follow-ups are TIER 1 (exact identifier) by construction — each is a single\n capability name, which routes directly to the vector-search path without LLM\n synthesis.\n\n §Design decisions:\n - Pure bitwise ops: O(bits/word), deterministic, zero LLM calls.\n - If needed.count() == 0, no follow-ups are generated.\n - If follow-up count exceeds `max_followups`, callers should fall back to\n   L4.5 local model decomposition.",
   "used_by": ["src/common/root.zig"],
   "members": [
     {

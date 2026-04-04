@@ -838,6 +838,7 @@ fn extractPhrasesTag(text: []const u8) ?[]const u8 {
 // Pure utilities (no allocator needed)
 // ---------------------------------------------------------------------------
 
+/// Finds the last position of a needle substring within a haystack, returning its index.
 fn lastIndexOf(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len > haystack.len) return null;
     var i: usize = haystack.len - needle.len + 1;
@@ -1054,4 +1055,3 @@ test "parsePhrasesResponse skips generic words" {
     try std.testing.expectEqual(@as(usize, 1), result.phrases.len);
     try std.testing.expectEqualStrings("cosine similarity", result.phrases[0]);
 }
-

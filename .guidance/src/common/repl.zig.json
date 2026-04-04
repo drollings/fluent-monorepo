@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Unique API names", "domain concepts", "design patterns", "technical terms"],
+  "capabilities": ["target-registry", "ast-indexing"],
   "used_by": ["src/common/llm.zig", "src/common/root.zig"],
   "members": [
     {
@@ -56,7 +57,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 64
+      "line": 65
     },
     {
       "type": "fn_private",
@@ -70,7 +71,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 129
+      "line": 131
     }
   ]
 }

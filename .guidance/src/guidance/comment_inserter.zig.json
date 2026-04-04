@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms"],
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/main.zig"],
+  "capabilities": ["coral-database", "ast-indexing"],
+  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/json_store.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -97,7 +98,7 @@
       ],
       "returns": "u32",
       "is_pub": false,
-      "line": 237
+      "line": 238
     },
     {
       "type": "fn_private",
@@ -109,43 +110,43 @@
       ],
       "returns": "InsertResult",
       "is_pub": false,
-      "line": 245
+      "line": 247
     },
     {
       "type": "test_decl",
       "name": "insertComment - basic",
       "is_pub": false,
-      "line": 257
+      "line": 259
     },
     {
       "type": "test_decl",
       "name": "insertComment - line beyond source",
       "is_pub": false,
-      "line": 273
+      "line": 275
     },
     {
       "type": "test_decl",
       "name": "replaceComment - existing comment replaced",
       "is_pub": false,
-      "line": 280
+      "line": 282
     },
     {
       "type": "test_decl",
       "name": "extractCommentAtLine - finds comment",
       "is_pub": false,
-      "line": 295
+      "line": 297
     },
     {
       "type": "test_decl",
       "name": "extractCommentAtLine - no comment",
       "is_pub": false,
-      "line": 309
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "formatDocComment - multi-line",
       "is_pub": false,
-      "line": 317
+      "line": 319
     }
   ]
 }

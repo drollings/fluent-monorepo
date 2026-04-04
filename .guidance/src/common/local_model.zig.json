@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["LLM client", "task decomposition", "fallback", "memory management", "JSON parsing", "recursion limit"],
+  "capabilities": ["local-model-decomposition", "llm-client"],
   "members": [
     {
       "type": "struct",

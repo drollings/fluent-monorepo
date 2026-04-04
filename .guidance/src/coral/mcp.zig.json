@@ -313,7 +313,7 @@
     {
       "type": "fn_private",
       "name": "parseJsonRpc",
-      "match_hash": "b1f418724e4f3fa2fa594d43df0d16534421e95609bce4d2f9992ccf3c3698d4",
+      "match_hash": "3d37f747bfee38de24999c9f9494df5af5e9a99587a518cdce03ba0da3133baf",
       "signature": "fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -321,7 +321,7 @@
       ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
-      "line": 517
+      "line": 518
     },
     {
       "type": "fn_private",
@@ -334,37 +334,37 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 542
+      "line": 543
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest initialize",
       "is_pub": false,
-      "line": 562
+      "line": 563
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest tools/list",
       "is_pub": false,
-      "line": 587
+      "line": 588
     },
     {
       "type": "test_decl",
       "name": "McpServer: tools/call coral_query routes to L5",
       "is_pub": false,
-      "line": 613
+      "line": 614
     },
     {
       "type": "test_decl",
       "name": "McpServer: unknown method returns error -32601",
       "is_pub": false,
-      "line": 640
+      "line": 641
     },
     {
       "type": "test_decl",
       "name": "McpServer: missing required field returns error",
       "is_pub": false,
-      "line": 664
+      "line": 665
     }
   ]
 }

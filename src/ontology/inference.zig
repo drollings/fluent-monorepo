@@ -163,10 +163,12 @@ fn inferSubclassTransitivity(
     }
 }
 
+/// Checks if a triple is a subclass of a given predicate IRI, returning true or false.
 fn isSubclassOfTriple(t: Triple, predicate_iri: []const u8) bool {
     return t.predicate == .iri and std.mem.eql(u8, t.predicate.iri, predicate_iri);
 }
 
+/// Transforms a Triple into a list of triples using IRI pattern matching.
 fn tripleSubjectIri(t: Triple) ?[]const u8 {
     return switch (t.subject) {
         .iri => |s| s,
@@ -174,6 +176,7 @@ fn tripleSubjectIri(t: Triple) ?[]const u8 {
     };
 }
 
+/// Transforms a triple into a structured triplet mapping by applying a triple IRI transformation.
 fn tripleObjectIri(t: Triple) ?[]const u8 {
     return switch (t.object) {
         .iri => |s| s,

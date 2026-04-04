@@ -116,6 +116,7 @@ fn containsWord(line: []const u8, word: []const u8) bool {
     return false;
 }
 
+/// Checks if a byte is a valid identifier character in Zig.
 fn isIdentChar(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '_';
 }

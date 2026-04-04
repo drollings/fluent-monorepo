@@ -7,6 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["wasm-tools"],
   "used_by": ["src/wasm/wasm.zig"],
   "members": [
     {

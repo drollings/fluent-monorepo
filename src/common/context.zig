@@ -152,6 +152,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
     return result;
 }
 
+/// Checks if a BuildContext's target is up-to-date with Zig's version constraints.
 fn isUpToDate(self: *BuildContext, target: *const Target) bool {
     const exists_path = target.exists orelse return false;
 
@@ -177,6 +178,7 @@ fn isUpToDate(self: *BuildContext, target: *const Target) bool {
     return true;
 }
 
+/// Checks if a target is reachable and returns a boolean indicating success.
 fn executeTarget(self: *BuildContext, target: *const Target) !bool {
     if (target.commands.items.len == 0) {
         return true;

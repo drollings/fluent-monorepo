@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig parser", "N-Quads", "term parsing", "graph handling", "memory management", "error handling"],
+  "capabilities": ["rdf-parsing"],
   "used_by": ["src/rdf/root.zig"],
   "members": [
     {

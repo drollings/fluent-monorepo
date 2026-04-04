@@ -4,6 +4,7 @@
     "source": "src/coral/algorithms/union_find.zig",
     "language": "zig"
   },
+  "comment": " union_find.zig — Union-Find with path compression and union by size.\n\n Used by:\n - Connected component detection (before Louvain community detection)\n - Kruskal's MST (future)\n - Deduplication during graph construction\n\n §Implementation:\n - Path compression: `find()` flattens the tree in one traversal.\n - Union by size: attaches smaller tree under larger tree root.\n - Together these give amortised O(α(n)) per operation (near-constant).\n\n All memory is caller-managed via the provided allocator (typically an arena).",
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {

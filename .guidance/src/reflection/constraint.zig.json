@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "keywords": ["ConstraintVTable", "ConstraintSet", "ConstraintGet", "DynamicEditable", "StringInterner", "Allocator", "Context", "BinarySerialization"],
-  "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/typed.zig"],
+  "capabilities": ["reflection"],
+  "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/typed.zig"],
   "members": [
     {
       "type": "struct",
