@@ -12,7 +12,7 @@
     {
       "type": "fn_decl",
       "name": "cosineSimilarity",
-      "match_hash": "715718c5ba0399b40e9e044a54670eb2cd6774f2e174fc79aee93cb3c998303f",
+      "match_hash": "e01419a98c1718dd5b906848c4c4a1a669264c9a525d5ce32982596b99ec75ba",
       "signature": "fn cosineSimilarity(a: []const f32, b: []const f32) -> f32",
       "params": [
         { "name": "a", "type": "[]const f32" },
@@ -25,7 +25,7 @@
     {
       "type": "fn_decl",
       "name": "vecToBytes",
-      "match_hash": "a6658a0730ae2b5f1298697aa8bdb85850a302e875de6fd1c495cb30371699dc",
+      "match_hash": "c7a62af54437d114c835892a5354e3256ad3f2c2489ff9780f0b340080338db0",
       "signature": "fn vecToBytes(allocator: std.mem.Allocator, v: []const f32) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -38,7 +38,7 @@
     {
       "type": "fn_decl",
       "name": "bytesToVec",
-      "match_hash": "4503a1dffc11e7bee7574d409534eddb53778063f9c8ed2829164562ca9e8e37",
+      "match_hash": "37f64b423bf6b872ede6e2f7017ca5333d97c67f77d1e6880ea875dc67a507e8",
       "signature": "fn bytesToVec(allocator: std.mem.Allocator, bytes: []const u8) -> []f32",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -51,7 +51,7 @@
     {
       "type": "struct",
       "name": "ScoredResult",
-      "match_hash": "02335e342defc548fe5128293a421398514c3b4e665cf1855a1dbd68e8d33e59",
+      "match_hash": "28eb14d797980a74572d28b7b3a0926bccf9f470489d77efd6894903b9c39102",
       "signature": "keyword_struct ScoredResult { ... }",
       "is_pub": true,
       "line": 66
@@ -59,7 +59,7 @@
     {
       "type": "fn_decl",
       "name": "hybridMerge",
-      "match_hash": "ab56980c41aea4f340187cb28570d5749c5f759c06e862f29d03fbbfc0831636",
+      "match_hash": "9abda54f0df7afc9d3b52dc0fc8394b7d66ebd18b7ff559a1145ba84b16564bf",
       "signature": "fn hybridMerge(allocator: std.mem.Allocator, vector_results: []const IdScore, keyword_results: []const IdScore, vector_weight: f32, keyword_weight: f32, limit: usize) -> []ScoredResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -76,7 +76,7 @@
     {
       "type": "fn_decl",
       "name": "hybridMergeThree",
-      "match_hash": "5cfa4f88ecceb34a0a6ebeed12c76e80e62cd10f0b8d68174c3145a4f62ff087",
+      "match_hash": "bbf513be1fe646941fb20278bba4154369f0b0a7be3da1e4d49a1ce607282658",
       "signature": "fn hybridMergeThree(allocator: std.mem.Allocator, vector_results: []const IdScore, keyword_results: []const IdScore, capability_results: []const IdScore, cosine_w: f32, keyword_w: f32, cap_w: f32, limit: usize) -> []ScoredResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

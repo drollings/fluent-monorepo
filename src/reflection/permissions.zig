@@ -5,7 +5,7 @@ const std = @import("std");
 // § 1  Role-based permission system
 // ============================================================
 
-/// Defines a permission role with fixed-size buffers, managed via ownership and invariants.
+/// Defines a permission role with fixed structure, manages access invariants, owned by the system.
 pub const Role = enum(u3) {
     coder,
     creator,
@@ -15,7 +15,7 @@ pub const Role = enum(u3) {
     player,
 };
 
-/// Defines permission roles with ownership and access rules; manages role metadata and permissions.
+/// Defines permission roles with ownership and access rules; central to access control logic.
 pub const RolePermissions = packed struct(u18) {
     coder_read: bool = false,
     creator_read: bool = false,
@@ -124,3 +124,5 @@ pub const perm_public_read: RolePermissions = .{
     .coder_write = true,
     .creator_write = true,
 };
+
+

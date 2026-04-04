@@ -97,7 +97,7 @@ pub const PendingEdge = struct {
 // Pending contradiction — conflicting literal values for same subject+predicate
 // ---------------------------------------------------------------------------
 
-/// Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with strict ownership and invariants.
+/// Represents a pending contradiction in the Zig ontology, tracking unresolved conflicts with ownership and invariants.
 pub const PendingContradiction = struct {
     subject_id: i64,
     predicate: []const u8, // owned copy of predicate IRI
@@ -116,7 +116,7 @@ pub const MappingConfig = struct {
     scope: []const u8 = "default",
 };
 
-/// Manages mapping transformations for triple structures, owns state, ensures consistent key invariants.
+/// Manages mapping transformations between Zig types; owns state, ensures consistent key structures; key invariants preserve reference integrity.
 pub const TripleMapper = struct {
     allocator: std.mem.Allocator,
     config: MappingConfig,
@@ -521,3 +521,9 @@ test "mapper: pending node to ContextNode" {
     }
     try testing.expectEqualStrings("Bob", cn.lod[4]);
 }
+
+
+
+
+
+

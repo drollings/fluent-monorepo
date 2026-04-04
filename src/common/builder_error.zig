@@ -15,7 +15,7 @@ const builtin = @import("builtin");
 
 // ── Phase ─────────────────────────────────────────────────────────────────────
 
-/// Defines a phase-level enum for configuration options; manages ownership and ensures consistent initialization/deinit behavior.
+/// Defines a phase with enum keywords, manages ownership, ensures invariants; not thread-safe.
 pub const Phase = enum {
     depends,
     provides,
@@ -250,3 +250,7 @@ test "BuilderError: GPA no leaks" {
 
     _ = try BuilderError.init(arena.allocator(), .validation, "port", "99999", "max=65535", error.Overflow);
 }
+
+
+
+

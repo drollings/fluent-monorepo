@@ -27,7 +27,7 @@ const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
-/// Manages dynamic embedding generation; owns model instances; key invariant is consistent key structure.
+/// Manages dynamic embedding generation; owns model instances; ensures consistent key-value mapping.
 pub const EmbeddingProvider = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -273,7 +273,7 @@ pub fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
 
 // ── OpenAI-compatible provider ────────────────────────────────────
 
-/// Manages OpenAI embeddings with a fixed-size structure; owned by the service; key invariants include fixed dimensions and embedding retrieval.
+/// Manages OpenAI embeddings with a fixed-size structure; owned by the service; key invariants include fixed dimensions and pre-trained weights.
 pub const OpenAiEmbedding = struct {
     allocator: std.mem.Allocator,
     base_url: []const u8,
@@ -596,3 +596,10 @@ test "EmbeddingProvider: thread_safe=true disables thread assertion" {
     defer std.testing.allocator.free(vec);
     try std.testing.expectEqual(@as(usize, 0), vec.len);
 }
+
+
+
+
+
+
+

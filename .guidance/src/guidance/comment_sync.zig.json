@@ -10,7 +10,7 @@
     {
       "type": "struct",
       "name": "CommentSyncResult",
-      "match_hash": "4cc6481c697a6eaf6652e62ed597817cd54cb1cd33e5b7512ea492e6cf1442c7",
+      "match_hash": "bcd9feeebcdbe7b7e6de6ac5ad5b7fbc0c1a4e3834dc03acbe2c9dec5c14cfd2",
       "signature": "keyword_struct CommentSyncResult { ... }",
       "is_pub": true,
       "line": 32
@@ -18,14 +18,14 @@
     {
       "type": "struct",
       "name": "CommentSyncProcessor",
-      "match_hash": "1ccb53119f072ffa4f6168769038b1c05212b2faed426b95c82a085fa4eed50c",
+      "match_hash": "15586d1c4e519c2eb0c1066ffa837ea3edcd73475642f365af0b53ba013c38f8",
       "signature": "keyword_struct CommentSyncProcessor { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "a27ae96a1b7ac1ace59c8c75295da3e595396f97ab00c1ead6a9a79d8f30aaf5",
+          "match_hash": "0547623f454019abcf52718d1c8dd487f77dd8b3a6948924aabe0693cd63a872",
           "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, debug: bool, dry_run: bool) -> CommentSyncProcessor",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -41,7 +41,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isUpToDate",
-          "match_hash": "2e7e5322381cd09aad85cbc3a4d1c31a96d0b85107cf6980e1f6beadc8eaf11a",
+          "match_hash": "027b9b677b2debc80381d54bf2d6e2fffb9b79c8e0f8ef1cbaa673285a53deb6",
           "signature": "fn isUpToDate(self: *const CommentSyncProcessor, filepath: []const u8) -> bool",
           "params": [
             { "name": "self", "type": "*const CommentSyncProcessor" },
@@ -54,7 +54,7 @@
     ,    {
           "type": "fn_decl",
           "name": "processFile",
-          "match_hash": "6350c9a1cb49938d1611d11204cd58d8c0198201962b4da784130692e25cc469",
+          "match_hash": "41f27269769ef051576702bef23dea7249ded84f60d91c1fecf80e0bbe70b7e7",
           "signature": "fn processFile(self: *CommentSyncProcessor, filepath: []const u8) -> CommentSyncResult",
           "params": [
             { "name": "self", "type": "*CommentSyncProcessor" },
@@ -67,7 +67,7 @@
     ,    {
           "type": "fn_private",
           "name": "generateMemberComment",
-          "match_hash": "00f6f6041e4c1119e548460202eb0bff448c84c44b7471d093c1d95a1ec5a9d1",
+          "match_hash": "243f9c7a20b20d4b4dc78cdc42addbfd67e028d950ea16c5f27826e4bc8a5ecb",
           "signature": "fn generateMemberComment(self: *CommentSyncProcessor, member: types.Member, _source: []const u8, filepath: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*CommentSyncProcessor" },
@@ -82,7 +82,7 @@
     ,    {
           "type": "fn_private",
           "name": "updateJsonLineNumbers",
-          "match_hash": "b9046018d4e21cbbca8dc0b5d0f214f50724fb19cd32833d9d95e135958b75c3",
+          "match_hash": "d10de563df7e1b7d989c3d8a27f232ba77512d1db6d4ace1ed5dd5e8d9e40bae",
           "signature": "fn updateJsonLineNumbers(self: *CommentSyncProcessor, guidance_path: []const u8, source: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncProcessor" },
@@ -99,7 +99,7 @@
     {
       "type": "fn_decl",
       "name": "sortMembersByLineDesc",
-      "match_hash": "7740c9a1c2b83928b36490a59c15926a5819b87e336dfcb3aa662c7a50365c3e",
+      "match_hash": "f0f245f0e5ba7b1327ccb9424271430a9e094265811b5b3a56659dc1ce2891f6",
       "signature": "fn sortMembersByLineDesc(allocator: std.mem.Allocator, members: []const types.Member) -> []types.Member",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -112,7 +112,7 @@
     {
       "type": "fn_private",
       "name": "relPath",
-      "match_hash": "998419fca39331111c6eced128240ef24b09307b1fa2a50205988ad63c8cbee7",
+      "match_hash": "23fe5c5a333311f93453e24865637d67028431d33b0f33f5a26177489f87b896",
       "signature": "fn relPath(filepath: []const u8, root: []const u8) -> []const u8",
       "params": [
         { "name": "filepath", "type": "[]const u8" },
@@ -125,7 +125,7 @@
     {
       "type": "fn_private",
       "name": "writeFile",
-      "match_hash": "8614ccd5dcf64bc365a5c02b4574eff21a00d3bad2f894fbd78c05fbe213fc97",
+      "match_hash": "7eb67abac378474aaa9aba2b39c593de054ee2036f55b8a104a21eb88b984dce",
       "signature": "fn writeFile(path: []const u8, content: []const u8) -> void",
       "params": [
         { "name": "path", "type": "[]const u8" },
@@ -138,14 +138,14 @@
     {
       "type": "struct",
       "name": "CommentSyncContext",
-      "match_hash": "4334de101ce2852b4e07d629c0f7d36eaae14c0171d44f6e8d5c56298ff986a2",
+      "match_hash": "e1d9c5f1c3c23df3a3406bc5aeef7226ec324ec8681b00d61ba384f096089cb4",
       "signature": "keyword_struct CommentSyncContext { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "7f022d6263e9398689c54fc3f6bec74a137c770bf94fab6b5bf589ae4b9fefc0",
+          "match_hash": "7e8aa6725a5db94b78f88d0842e8abcd9025c9595674bf691577b42d54f01799",
           "signature": "fn init(allocator: std.mem.Allocator) -> CommentSyncContext",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -157,7 +157,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "8a36304d55e597be284496e5f2ca74585ddfd0f1965462b35dc1622c106d8302",
+          "match_hash": "33568fd4043e818a66e071fc22e2032ede575e8cf8eaefbe29f92a0abffad260",
           "signature": "fn deinit(self: *CommentSyncContext) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncContext" }
@@ -169,7 +169,7 @@
     ,    {
           "type": "fn_decl",
           "name": "markNeedsCommentSync",
-          "match_hash": "b86f45bf72a087b1f9f521c5462636d2ccbc24a2846784e081d9f312f1a1e84e",
+          "match_hash": "866bf4e73f68b2e84593385be8a5d56ea0812515f0115bb33eacb7f1cc51398c",
           "signature": "fn markNeedsCommentSync(self: *CommentSyncContext, filepath: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncContext" },
@@ -182,7 +182,7 @@
     ,    {
           "type": "fn_decl",
           "name": "markNeedsLineCorrection",
-          "match_hash": "aa11483978705e61265adccf1d58ccd480d20502c751800deb8b3cff0add296b",
+          "match_hash": "6f1ae50c06bb5ac9b024e090a496bf1a428d15b5cd4b308817929960ffbe69d9",
           "signature": "fn markNeedsLineCorrection(self: *CommentSyncContext, filepath: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncContext" },
@@ -195,7 +195,7 @@
     ,    {
           "type": "fn_decl",
           "name": "markNeedsFmt",
-          "match_hash": "bbb596c26ba346937368bf88a51a19173e18d083e6c5664f2f9e6fb9c6db8eb3",
+          "match_hash": "7f8fd483c57836e8a32241ec1496f21f158d2b48ed07a89ea56c9da58cf3dd65",
           "signature": "fn markNeedsFmt(self: *CommentSyncContext, filepath: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncContext" },
@@ -208,7 +208,7 @@
     ,    {
           "type": "fn_decl",
           "name": "clear",
-          "match_hash": "62f407bd64a17013f7666d4b53e3ab371432df7d5123e7baf6b6a6faabae961f",
+          "match_hash": "410214d20c0d1793e0a65d03ade9ea3b450f257e346af0453d649edd0e982546",
           "signature": "fn clear(self: *CommentSyncContext) -> void",
           "params": [
             { "name": "self", "type": "*CommentSyncContext" }
@@ -223,7 +223,7 @@
     {
       "type": "fn_decl",
       "name": "syncCommentsToSource",
-      "match_hash": "899f2f4675d0b11228df83bde1cb23dac829e19194df3001b16e6c3e79659d71",
+      "match_hash": "0e9af2a0c056737a03a94c4686f7a011deeb661a71ac4d8135256c6865b45a66",
       "signature": "fn syncCommentsToSource(allocator: std.mem.Allocator, results: []const types.SyncResult, json_dir: []const u8, workspace: []const u8, dry_run: bool, verbose: bool) -> []const []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -240,7 +240,7 @@
     {
       "type": "fn_decl",
       "name": "correctLineNumbers",
-      "match_hash": "4484ec58879721af2914f12dd7c092a10a6b254ba3debe1b8bd37c29b407e34a",
+      "match_hash": "8850f66295ca70462dac518e6dbbb5a6e733e188f843822ac754aa7834934ed4",
       "signature": "fn correctLineNumbers(allocator: std.mem.Allocator, filepath: []const u8, json_dir: []const u8, workspace: []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

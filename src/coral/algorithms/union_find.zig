@@ -135,3 +135,4 @@ test "UnionFind: path compression maintains correctness" {
     const r5 = uf.find(5);
     try testing.expectEqual(r0, r5);
 }
+

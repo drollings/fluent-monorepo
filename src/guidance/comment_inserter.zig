@@ -15,7 +15,7 @@ pub const LineAdjustment = struct {
     new_line: u32,
 };
 
-/// Manages insertion results with fixed buffers; owns state; ensures consistent output.
+/// Manages insertion results with ownership and invariants; ensures safe access without thread safety.
 pub const InsertResult = struct {
     /// Whether any changes were made to the source.
     changed: bool,
@@ -308,3 +308,10 @@ test "formatDocComment - multi-line" {
     defer allocator.free(formatted);
     try std.testing.expectEqualStrings("/// Line one.\n/// Line two.\n", formatted);
 }
+
+
+
+
+
+
+

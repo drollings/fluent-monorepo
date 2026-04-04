@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "AtomicRefCount",
-      "match_hash": "10049ed8e6f85df8fb5ec46a9d86e7d17a83f2b97ef3e8d2f9c128864ec9c684",
+      "match_hash": "a0e40bcc75a966b8987ef8f0f6fc0d85f3ccf7a2745bba3e9e1f7554cd1d4771",
       "signature": "keyword_struct AtomicRefCount { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_private",
           "name": "init",
-          "match_hash": "bbd5e129269e6df4b33dca2c60f8031afc7eaf163d3ef959d936bc0c50d76ee5",
+          "match_hash": "19152065f27efdd4707fe6a2cdbf4ff64d48850f54b621de5fbf6bfa98896d12",
           "signature": "fn init() -> AtomicRefCount",
           "returns": "AtomicRefCount",
           "is_pub": false,
@@ -26,7 +26,7 @@
     ,    {
           "type": "fn_private",
           "name": "inc",
-          "match_hash": "0cf4bd6e001bcbe0fc6dc7c9b8a1bfc599e848bf9f49f6eeddb81ef35348933c",
+          "match_hash": "bcd3554714d4fba18dd44f524bbca423d56e929b564a1821191d04788360d721",
           "signature": "fn inc(self: *AtomicRefCount) -> usize",
           "params": [
             { "name": "self", "type": "*AtomicRefCount" }
@@ -38,7 +38,7 @@
     ,    {
           "type": "fn_private",
           "name": "dec",
-          "match_hash": "664cdec0be1e9b7df96dd86746d798c9514ede541bc9e46d142d4ee08e291b31",
+          "match_hash": "649836632eeb9982190e4f79354d8445b2cbabde9e05caaadf0cce84c1de015d",
           "signature": "fn dec(self: *AtomicRefCount) -> bool",
           "params": [
             { "name": "self", "type": "*AtomicRefCount" }
@@ -50,7 +50,7 @@
     ,    {
           "type": "fn_private",
           "name": "load",
-          "match_hash": "62abfa393620362075b61c184385a19aa1ca3841d2ad1aa1d75b278ab22dedaf",
+          "match_hash": "ec29704be00b9b524755d17ef9e39e1141f444e4d1010b4c982eb8aa51ba29bc",
           "signature": "fn load(self: *const AtomicRefCount) -> usize",
           "params": [
             { "name": "self", "type": "*const AtomicRefCount" }
@@ -65,7 +65,7 @@
     {
       "type": "fn_decl",
       "name": "RefCounted",
-      "match_hash": "7995b73dec152fbc41153342216712dec50d2678c3dcfe068a50b3ab8a5988cd",
+      "match_hash": "0b08d7947d7d2eec4df288ea621a5c768c852a7f28ca5ff76926df3aedbc79ba",
       "signature": "fn RefCounted(T: type) -> type",
       "params": [
         { "name": "T", "type": "type" }

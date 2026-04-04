@@ -343,3 +343,8 @@ test "compress protect_tail keeps recent messages intact" {
     for (result) |msg| total += estimateTokens(msg.content);
     try testing.expect(total <= 20);
 }
+
+
+
+
+

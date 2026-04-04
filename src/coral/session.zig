@@ -90,7 +90,7 @@ pub const Message = struct {
 // SessionDB
 // ---------------------------------------------------------------------------
 
-/// Manages session data storage with fixed-size buffers; owned by the session; ensures consistent state across operations.
+/// Manages session database interactions, owned by the application, with fixed-size buffers and no thread safety.
 pub const SessionDB = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
@@ -411,3 +411,5 @@ test "SessionDB persists to tmpDir" {
         try testing.expectEqual(@as(usize, 1), results.len);
     }
 }
+
+

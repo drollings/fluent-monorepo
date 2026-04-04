@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "CommunitySummary",
-      "match_hash": "4330d5c33cc33a1b6500462b7ba2e6bc83460815fe82c6c52f649d847e1a4f20",
+      "match_hash": "99110fe627e82b5d24cd38a746b2ee737099c5e9ad678f6a3365fabb14e00ac1",
       "signature": "keyword_struct CommunitySummary { ... }",
       "is_pub": true,
       "line": 24
@@ -17,7 +17,7 @@
     {
       "type": "struct",
       "name": "GlobalSearchResult",
-      "match_hash": "fd1db5d7624ccd9d3b7c6d8757fe13bade22fbde0b8b62397446023dd0316055",
+      "match_hash": "c5de9414e06becd58d6793c61c3677f1d43108cecb8d0db928090817803c6c39",
       "signature": "keyword_struct GlobalSearchResult { ... }",
       "is_pub": true,
       "line": 37
@@ -25,14 +25,14 @@
     {
       "type": "struct",
       "name": "GlobalSearch",
-      "match_hash": "496483cb9bcd06b3c1fc0877beb9859233de886a9fe3f0d9980bc73858491e45",
+      "match_hash": "945683103638abaac807c39be6d8922dba28151193fd42290f36d15675265dc7",
       "signature": "keyword_struct GlobalSearch { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "e8fa62df10f9f7c7c8a18b80ed535ff2944a04ec1726f99a8f7471f293f063ce",
+          "match_hash": "7867a7f570ed7e2613c4af77d884502b0880020b6bf978057632cec8c8bf9f29",
           "signature": "fn init(config: GlobalSearchConfig) -> Self",
           "params": [
             { "name": "config", "type": "GlobalSearchConfig" }
@@ -44,7 +44,7 @@
     ,    {
           "type": "fn_decl",
           "name": "search",
-          "match_hash": "045153afdcc18d9d83f410ab1468eef7bcdabed31fe8ba4a6c36a637710b6f3c",
+          "match_hash": "a4c38a2cff6bee34af2c780007ee8ed747bfc421e418515a5fa22df5efe157f0",
           "signature": "fn search(self: Self, arena: Allocator, query: []const u8, summaries: []const CommunitySummary, reduce_fn) -> GlobalSearchResult",
           "params": [
             { "name": "self", "type": "Self" },

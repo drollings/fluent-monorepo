@@ -162,3 +162,4 @@ test "HttpTransport: signals ready when listenWithReady called" {
     try testing.expect(!transport.running);
     try testing.expect(!transport.shutdown_requested);
 }
+

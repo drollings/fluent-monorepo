@@ -9,7 +9,7 @@
     {
       "type": "fn_private",
       "name": "getWinsize",
-      "match_hash": "f8d8c724903cb2f729b94e3a12806d19b83af47636042a8b31757a37e9819d52",
+      "match_hash": "1ed424902364e690941072c6156ddc04a4951c1cfefeb67493115cc7c2f0d474",
       "signature": "fn getWinsize() -> ?std.posix.winsize",
       "returns": "?std.posix.winsize",
       "is_pub": false,
@@ -18,7 +18,7 @@
     {
       "type": "fn_decl",
       "name": "getTerminalWidth",
-      "match_hash": "48ff22674908316fd98cf7b0d4f99be083788ee04d12aa501f2d0b146b4358e9",
+      "match_hash": "6c5ad37f2ac0c5a6e0ff25be3f928c420c00348840b24ba116f3fb89af371977",
       "signature": "fn getTerminalWidth() -> usize",
       "returns": "usize",
       "is_pub": true,
@@ -27,7 +27,7 @@
     {
       "type": "fn_decl",
       "name": "getTerminalHeight",
-      "match_hash": "cb7cfa6d34c6f2c265e328b22b943da882c61776af8cd165d20f9208e41aa555",
+      "match_hash": "93b9650729632a318c2aff501fc84f8e20927f0e23ed0329fac0e875b74a5c66",
       "signature": "fn getTerminalHeight() -> usize",
       "returns": "usize",
       "is_pub": true,
@@ -36,7 +36,7 @@
     {
       "type": "fn_decl",
       "name": "isTerminal",
-      "match_hash": "9c48b05bd3a4a947df6a37fb5d3691db03fb7d9e0f3cece75d007d5d24b68732",
+      "match_hash": "612dd0302de5cec5e599347ee95241db8c60672f3ebd7bf582cf8276dff2428e",
       "signature": "fn isTerminal() -> bool",
       "returns": "bool",
       "is_pub": true,
@@ -45,7 +45,7 @@
     {
       "type": "fn_decl",
       "name": "confirm",
-      "match_hash": "fbbec202d97cf680162f1287a266a079c61c4dda9843e69fe10fc5063656ac77",
+      "match_hash": "7530f403d5322eb0be8ff6ca41c8588cb2062d609c88dec616b59be26662f10a",
       "signature": "fn confirm(question: []const u8, default: bool) -> bool",
       "params": [
         { "name": "question", "type": "[]const u8" },
@@ -58,7 +58,7 @@
     {
       "type": "fn_decl",
       "name": "ask",
-      "match_hash": "94f5926710a2b7380f0dc642b64f9b00d5d998bb56a4484cc9b1712f78f92555",
+      "match_hash": "4bbfe7963f7193c6aef54558a8781270ad73958cb0dc6ea58d12e3dd00d9ef38",
       "signature": "fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -72,7 +72,7 @@
     {
       "type": "fn_decl",
       "name": "askInt",
-      "match_hash": "e406ae79b8c6bb2dc485585594088fd475f6854baefb49ba6f69486557d1115a",
+      "match_hash": "bf4f873c75a0d147542c69320d4a26d6edc042e42682e390371c86014bc49f69",
       "signature": "fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64) -> i64",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -86,14 +86,14 @@
     {
       "type": "struct",
       "name": "ProgressBar",
-      "match_hash": "5c607b6cc208147d1218c9011d54459d26b9c2d1734dc50234afd4628f518c93",
+      "match_hash": "bc9366429efd7db6cc360b916353769ade38898d6a7e1485145d53a11649b680",
       "signature": "keyword_struct ProgressBar { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "c3c45436546ebe628f4f3a1b2631599b1d01cb3ffd024267da07c00f1eed7b29",
+          "match_hash": "4d08c8c36dad427221cb8dc0bde04f1d0a07d8afb1114006bc3dc6e85e2a1713",
           "signature": "fn init(description: []const u8, total: usize) -> ProgressBar",
           "params": [
             { "name": "description", "type": "[]const u8" },
@@ -106,7 +106,7 @@
     ,    {
           "type": "fn_decl",
           "name": "advance",
-          "match_hash": "7234c0009b1424fa8fcbf6324c9336b8ba3328ccc4c06205bcc8faeb7c2b0b11",
+          "match_hash": "c9f12c3710ffa947ab621eb9e28fb587432484dc33305751d256f31c2235bc9e",
           "signature": "fn advance(self: *ProgressBar, amount: usize) -> void",
           "params": [
             { "name": "self", "type": "*ProgressBar" },
@@ -119,7 +119,7 @@
     ,    {
           "type": "fn_decl",
           "name": "set",
-          "match_hash": "53976dc014365f60712cc9e9e855fe47fa0fbbfd03f26b964bf082ee06bd59fe",
+          "match_hash": "3a0b356d186a3b0a10c845e18b93c66427e83ee88e0f31fa7dd264860062dc87",
           "signature": "fn set(self: *ProgressBar, value: usize) -> void",
           "params": [
             { "name": "self", "type": "*ProgressBar" },
@@ -132,7 +132,7 @@
     ,    {
           "type": "fn_decl",
           "name": "render",
-          "match_hash": "917eb82046aea58d3d2b3b170de366384b38412ad47f908fd4a5618a4c2b6472",
+          "match_hash": "976ba0096a4cc2eb2c483824f123e9b0d5441219bc3c7278d60888a5c166a7e8",
           "signature": "fn render(self: *const ProgressBar, writer) -> void",
           "params": [
             { "name": "self", "type": "*const ProgressBar" },
@@ -145,7 +145,7 @@
     ,    {
           "type": "fn_decl",
           "name": "complete",
-          "match_hash": "3365a050f986c079010388740be63c03277777a7af640dc7e761caba627f067f",
+          "match_hash": "8713f9dc58a47ebc742757f15abd13926782707a9473379b42968cecf92ff151",
           "signature": "fn complete(self: *const ProgressBar, writer) -> void",
           "params": [
             { "name": "self", "type": "*const ProgressBar" },
@@ -161,7 +161,7 @@
     {
       "type": "enum",
       "name": "Color",
-      "match_hash": "549e1258bddc8ff24cf5dd1450a25ea961ed5be417ab7afd4520aaa7fd8bc17a",
+      "match_hash": "9fb21703b4ee0fb04f7309bbb232e8a34189614a877c02ef9c69f8bd8840c24b",
       "signature": "keyword_enum Color { ... }",
       "is_pub": true,
       "members": [
@@ -270,7 +270,7 @@
     ,    {
           "type": "fn_decl",
           "name": "code",
-          "match_hash": "7341e39837e8056ac47a70440340c07375f67205f42e9f93966f785bc5d20b3f",
+          "match_hash": "57c0d1c8b6e1392a0046b19dfe08348daf6309f39daedf355be079029e69f58a",
           "signature": "fn code(self: Color) -> []const u8",
           "params": [
             { "name": "self", "type": "Color" }
@@ -285,7 +285,7 @@
     {
       "type": "fn_decl",
       "name": "colorPrint",
-      "match_hash": "742fd2b44589cab0ac2e45f7a363b88305041894b4e55cbc24a12123efc3d20f",
+      "match_hash": "412db495c624a2a083e7cb1c50b1e156f5b66532e2c56de52e0ebd2629b040d5",
       "signature": "fn colorPrint(writer, color: Color, text: []const u8) -> void",
       "params": [
         { "name": "writer" },

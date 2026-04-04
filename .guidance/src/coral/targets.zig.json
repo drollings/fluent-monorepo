@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "TargetDef",
-      "match_hash": "fe23d16372ae67f9b5717c8895d2269b550c72b17e55bf93304973c727e0bc41",
+      "match_hash": "d09ce46e2cecd397de233bcd7ac8dc6701c46f5963265892090e86fc19b99e68",
       "signature": "keyword_struct TargetDef { ... }",
       "is_pub": true,
       "line": 48
@@ -19,7 +19,7 @@
     {
       "type": "fn_decl",
       "name": "lookupTargetDef",
-      "match_hash": "29346fbe4583b3875fc371ccbeb3459851766383baab51178da25c1e969014f5",
+      "match_hash": "2260161376c2a9dda04e7ea620df236b63ce1599ccceaa9761cf58f4f9a845a5",
       "signature": "fn lookupTargetDef(name: []const u8) -> ?*const TargetDef",
       "params": [
         { "name": "name", "type": "[]const u8" }
@@ -31,7 +31,7 @@
     {
       "type": "fn_decl",
       "name": "validateDependencies",
-      "match_hash": "9a7afd5b78ebda22340e9a5050add1342c081082e6b43fe810ca39b059f1fd6f",
+      "match_hash": "1d8763431dd69e14ef43e02783a2ac2dd80dd0d36b14e7efa8d9ea9da9a091d2",
       "signature": "fn validateDependencies() -> bool",
       "returns": "bool",
       "is_pub": true,
@@ -40,7 +40,7 @@
     {
       "type": "fn_decl",
       "name": "topoSort",
-      "match_hash": "123c3c8651a876851150366a60f9bf7c5ff547cc79c19fbfa50d925ada4c09f0",
+      "match_hash": "2a9badd3020aa7c85709325d4f589f1e00c6395be82586f71d626d8034f4a8ec",
       "signature": "fn topoSort(allocator: std.mem.Allocator) -> []const []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" }

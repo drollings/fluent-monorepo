@@ -31,7 +31,7 @@ const Request = struct {
     params: ?std.json.Value = null,
 };
 
-/// Writes a JSON-formatted string to a writer, converting input bytes into a C-style array of bytes.
+/// Writes a JSON-formatted string to a writer, converting input bytes into a JSON-encoded slice.
 fn writeJsonString(writer: anytype, s: []const u8) !void {
     try writer.writeByte('"');
     for (s) |ch| {
@@ -48,7 +48,7 @@ fn writeJsonString(writer: anytype, s: []const u8) !void {
     try writer.writeByte('"');
 }
 
-/// Writes Zig code content to a writer using a JSON ID and byte slice.
+/// Writes Zig code content to a writer using an ID and JSON value.
 fn writeResult(writer: anytype, id: ?std.json.Value, content: []const u8) !void {
     try writer.print(
         \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":
@@ -79,7 +79,7 @@ fn writeError(writer: anytype, id: ?std.json.Value, code: i32, msg: []const u8) 
 // Tool dispatch
 // ---------------------------------------------------------------------------
 
-/// Initializes memory allocation with the provided allocator and JSON ID, returning void.
+/// Initializes memory allocation with provided allocator and JSON ID, returning void.
 fn handleInitialize(allocator: std.mem.Allocator, writer: anytype, id: ?std.json.Value) !void {
     _ = allocator;
     const resp =
@@ -105,7 +105,7 @@ fn handleToolsList(writer: anytype, id: ?std.json.Value) !void {
     try writer.writeByte('\n');
 }
 
-/// Handles tool call with allocator, writer, JSON name, and parameters, returning no value on success.
+/// Processes a JSON tool call with allocator, writer, and parameters, returning a processed value.
 fn handleToolCall(
     allocator: std.mem.Allocator,
     writer: anytype,
@@ -272,3 +272,11 @@ pub fn serve(allocator: std.mem.Allocator, args: []const []const u8) !void {
         try writer.flush();
     }
 }
+
+
+
+
+
+
+
+

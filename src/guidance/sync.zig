@@ -11,7 +11,7 @@ const comment_parser = @import("comment_parser.zig");
 /// Owned by SyncProcessor and freed in deinit.
 const CapabilitiesMap = std.StringHashMapUnmanaged([][]const u8);
 
-/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access across calls.
+/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access patterns.
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -1183,3 +1183,4 @@ pub const SyncProcessor = struct {
         return found.toOwnedSlice(self.allocator);
     }
 };
+

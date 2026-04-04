@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "MockEmbeddingProvider",
-      "match_hash": "0aab11a34824a772e21e8af19fa4d7ba9604886a530efe52a2e6f7e0f8e07b21",
+      "match_hash": "a96f7d85f6c6aea5a381c5e366cc31ac2a9243eabab337fec7ce787fb0ddf6a1",
       "signature": "keyword_struct MockEmbeddingProvider { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -22,7 +22,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "10089975963808a6bc41ef5928eb306107a473d03d0413cbf2f0574b21dc8661",
+          "match_hash": "4cf7ef047edd8c359228c38b52c1f94c509665d7e1cc3508be970d1f9e73bb3f",
           "signature": "fn init(allocator: std.mem.Allocator) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -34,7 +34,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -46,7 +46,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setEmbedResult",
-          "match_hash": "eefa9ea70f64806dcb4a649b8b51b42caa3ad1ca5fc68d4f740625a487dabbd9",
+          "match_hash": "858849ed14ebfdd6a231f708dd79acfdd1fd8df2fec41754800e40e4accb0d4e",
           "signature": "fn setEmbedResult(self: *Self, result: []const f32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -59,7 +59,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setEmbedError",
-          "match_hash": "0efe6eee60fc528e770402d922180de2347ad19ddb3ed97de7f98cd0596ef84e",
+          "match_hash": "2552b4fea61744d8289c62993771bbcf061ebd0c7b13470053ce9e49df3b71ef",
           "signature": "fn setEmbedError(self: *Self, err: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -72,7 +72,7 @@
     ,    {
           "type": "fn_private",
           "name": "implName",
-          "match_hash": "00f1fa485d6d7052899c06ae76cc2f4f81f61ab89439f326551a9461898cb584",
+          "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -84,7 +84,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDimensions",
-          "match_hash": "8b3d941f8d8e9ca83d4a746dba774a7777eb3e01f58830749ee6f891e6f9cd00",
+          "match_hash": "830c732514f31488a60e54fc79b0e2ddda15ebf03d50c93cce944edf850dded8",
           "signature": "fn implDimensions(_: *anyopaque) -> u32",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -96,7 +96,7 @@
     ,    {
           "type": "fn_private",
           "name": "implEmbed",
-          "match_hash": "0df490e05e3d1599e43a921e11fd59705c59dc779e72d5930b8b1d4d279cf8dd",
+          "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
           "signature": "fn implEmbed(ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) -> anyerror![]f32",
           "params": [
             { "name": "ptr", "type": "*anyopaque" },
@@ -110,7 +110,7 @@
     ,    {
           "type": "fn_private",
           "name": "implDeinit",
-          "match_hash": "3b638776653af6b9e93008fc9da3d292c208322e64b04b6ce0156a88c6816285",
+          "match_hash": "0120cf9de52d5494eca06d24dce3c0282cfc77180bdf455c391064ca8cb007ba",
           "signature": "fn implDeinit(_: *anyopaque) -> void",
           "params": [
             { "name": "_", "type": "*anyopaque" }
@@ -122,7 +122,7 @@
     ,    {
           "type": "fn_decl",
           "name": "provider",
-          "match_hash": "18a9d5fd22d21c5d5555ab45efd7d209bee5f3eb4b90a9fa34bb23ede32f729b",
+          "match_hash": "5491b6646e04dd92074c4bd738fbcc95be92fe65fe10246d0ee518a8e9b45aeb",
           "signature": "fn provider(self: *Self) -> EmbeddingHandle",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -134,7 +134,7 @@
     ,    {
           "type": "fn_decl",
           "name": "assertCallCount",
-          "match_hash": "ba58844f8ee956f4d503a0ff3b3fdd0173ff1701d99d9118dae9ee9599c08de0",
+          "match_hash": "44b411a30e89914b6771976ec4f0078b911ecc135b4b6ada3f4908de9f4549e2",
           "signature": "fn assertCallCount(self: *const Self, method: []const u8, expected: usize) -> void",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -148,7 +148,7 @@
     ,    {
           "type": "fn_decl",
           "name": "assertCalledWith",
-          "match_hash": "a5d3fc84b702799383fe708c8e5fd9a42192dbf5802914984f4c3e2f6cc6976b",
+          "match_hash": "fc15104cf7e589b52d92b472790460af0b1ee093908efa9c392888573aea57d2",
           "signature": "fn assertCalledWith(self: *const Self, method: []const u8, text: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -162,7 +162,7 @@
     ,    {
           "type": "fn_decl",
           "name": "callCount",
-          "match_hash": "898120cd295b3f87b7934ee8ce9c62b5cb828d743bf2ff3d06c58195d42d2973",
+          "match_hash": "79bfc08c6051ac3164c5749ec8ff3bd961c560912c80ed83d8f3cef37d59116f",
           "signature": "fn callCount(self: *const Self, method: []const u8) -> usize",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -178,7 +178,7 @@
     {
       "type": "struct",
       "name": "EmbeddingVTable",
-      "match_hash": "d608000d2001e96edfba9c8755ce6ebcb230b2113fe3db1ced07c2fb48a4ef4d",
+      "match_hash": "da4744bf9cd7515683627f75c332ab3e33a47962255051313e34411aa7b5bae6",
       "signature": "keyword_struct EmbeddingVTable { ... }",
       "is_pub": true,
       "line": 192
@@ -186,14 +186,14 @@
     {
       "type": "struct",
       "name": "EmbeddingHandle",
-      "match_hash": "cddedb5313d6aaf3b3e8c088ecad4f1940dcfd695a455b18df0bc2439d53efa8",
+      "match_hash": "e805fb6855164241362bfed5bccb82944853ec77d4c012f2dea410fba8afb0eb",
       "signature": "keyword_struct EmbeddingHandle { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "getName",
-          "match_hash": "1b1f35882650dd6e482557064eeda5d2047e1d29deefe4e64c1165ed5a14d4ae",
+          "match_hash": "7bde0ab9a527494fd361b9f6ee122b49b13ad4120970ad79d7d423f30dd7488d",
           "signature": "fn getName(self: EmbeddingHandle) -> []const u8",
           "params": [
             { "name": "self", "type": "EmbeddingHandle" }
@@ -205,7 +205,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getDimensions",
-          "match_hash": "df98e507841082dee813ea4227be8b15630160eb91ee899135dbd8ebc36634d4",
+          "match_hash": "5ca493191daafd4e34f49edd6b3a586e2b1ffed0a546973a18743755cfcb8f8b",
           "signature": "fn getDimensions(self: EmbeddingHandle) -> u32",
           "params": [
             { "name": "self", "type": "EmbeddingHandle" }
@@ -217,7 +217,7 @@
     ,    {
           "type": "fn_decl",
           "name": "embed",
-          "match_hash": "d112273d37c98aa23a9fed4674ddc765b08ea5f1925d03b5c954c33c16444cf6",
+          "match_hash": "767ca53adeaa147890e1aacdab0428ab6853d1a06a3adf06317e985fd77a28c3",
           "signature": "fn embed(self: EmbeddingHandle, allocator: std.mem.Allocator, text: []const u8) -> []f32",
           "params": [
             { "name": "self", "type": "EmbeddingHandle" },
@@ -231,7 +231,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "02e2ff5bfdc2c6c137c0c0deaa3f81081a4fbefd85e46b1f9d97f8f4085bf8b9",
+          "match_hash": "65024f6b129feed21f8dcbc5bb4d9e16df32f3863a9ad07aac8da6ea2991a371",
           "signature": "fn deinit(self: EmbeddingHandle) -> void",
           "params": [
             { "name": "self", "type": "EmbeddingHandle" }

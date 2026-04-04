@@ -997,7 +997,7 @@ test "mergeMembers result is independent after existing freed" {
 // detect any unreleased memory.
 // ---------------------------------------------------------------------------
 
-/// Creates a temporary Zig file with the given parameters and returns its contents.
+/// Creates a temporary GUID file path using provided allocator, directory, filename, and module parameters.
 fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filename: []const u8, module: []const u8) ![]u8 {
     const path = try std.fs.path.join(allocator, &.{ dir_path, filename });
     errdefer allocator.free(path);
@@ -1027,7 +1027,7 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
 // M8: infillJsonFile / infillAllJson — cross-language infill sweep
 // ---------------------------------------------------------------------------
 
-/// Writes guidance JSON data to a specified file path with optional comments and member flags.
+/// Writes guidance JSON data to a file path, accepting directory, filename, comments, and a flag for member inclusion.
 fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8, has_member: bool) !void {
     var buf: [2048]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -1834,3 +1834,6 @@ test "extractMemberCommentsFromSource: handles nested members" {
     // Cleanup
     if (doc.members[0].members[0].comment) |c| allocator.free(c);
 }
+
+
+

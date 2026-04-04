@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "TypeTag",
-      "match_hash": "76bad444a5dfde2e4ee5727e7fe3d6e79125cafa7c044a6219625f1a5217b485",
+      "match_hash": "3f4b280ac94968209d4d6ab18f0d3278d45a8c2cc830c5014528d96c806c21d8",
       "signature": "keyword_enum TypeTag { ... }",
       "is_pub": true,
       "members": [
@@ -99,7 +99,7 @@
     {
       "type": "enum",
       "name": "OwnershipMode",
-      "match_hash": "3e0c75d51255f3f82868634f57880ba1d3ace5a670a72ad886ec21efe672ef71",
+      "match_hash": "9c1dd43ff500e556c097174fc81bd7c65bab68954b50b9eec602726235c69746",
       "signature": "keyword_enum OwnershipMode { ... }",
       "is_pub": true,
       "members": [
@@ -133,7 +133,7 @@
     {
       "type": "enum",
       "name": "SqlType",
-      "match_hash": "a2ce8ab0ee1b3b3435cdf0abdbbbee00ab773017570ba9d579f351d38476f8aa",
+      "match_hash": "1c8aa34d0a17b30c23b08703acbc447895a774a0e86c447f0485c44fefca89fe",
       "signature": "keyword_enum SqlType { ... }",
       "is_pub": true,
       "members": [
@@ -164,7 +164,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fromTypeTag",
-          "match_hash": "a9b4c44e46b1943162a8930cc41e2660e826e5cef263bff1a430cdec9851f46b",
+          "match_hash": "3c808e335ddf27b2fdd30a034248cbd8d4ec0a53dcedcc95511db3e57f6cbb74",
           "signature": "fn fromTypeTag(tag: TypeTag) -> SqlType",
           "params": [
             { "name": "tag", "type": "TypeTag" }
@@ -176,7 +176,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toString",
-          "match_hash": "6c1c714badad53d60657be8f8287a7d0e268f4e4ff3bf5d6d36176bf6946e9f9",
+          "match_hash": "ff496a08fbd50a1675f351dc20d967790c2508d8f875ee8136843f1f1dd63755",
           "signature": "fn toString(self: SqlType) -> []const u8",
           "params": [
             { "name": "self", "type": "SqlType" }
@@ -191,7 +191,7 @@
     {
       "type": "struct",
       "name": "FieldMeta",
-      "match_hash": "56618e7b74365d70f58409562c159b6ef804897897dccb8260b1e6a3e59e12d4",
+      "match_hash": "c870aae02f3f118eb30d12fd67c2713bea478dfebcfd43dfd3702aac31db60af",
       "signature": "keyword_struct FieldMeta { ... }",
       "is_pub": true,
       "line": 96
@@ -199,14 +199,14 @@
     {
       "type": "struct",
       "name": "Accessor",
-      "match_hash": "4b84d919a6884e1a26bec27daf417b40731e3f4cbf15f91a7ac062d82fc37614",
+      "match_hash": "a3c29cc537bed22cf432f544bbff1e32e37482d2d00bb44355029d01428d79e1",
       "signature": "keyword_struct Accessor { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "isPresentIn",
-          "match_hash": "a734a9b15a57cee8ee85405cbf2ae7dd3f44db5b482f92a1b492affe971fcf92",
+          "match_hash": "1b27df02713cd4a68571cd4fc8fc8dc45d8680711d33dcb72684d877f60cb679",
           "signature": "fn isPresentIn(self: *const Accessor, stored: SchemaVersion) -> bool",
           "params": [
             { "name": "self", "type": "*const Accessor" },
@@ -222,7 +222,7 @@
     {
       "type": "fn_decl",
       "name": "Editable",
-      "match_hash": "65ba068887365d1fead97d25b1f330753e7ebc639d0015da936b0e479bcc5067",
+      "match_hash": "05b17cb454d4881e95ba4a472ded9dd68d4fa1f9bb3019c9a0a909f8aff5c266",
       "signature": "fn Editable(Host: type) -> type",
       "params": [
         { "name": "Host", "type": "type" }
@@ -234,7 +234,7 @@
     {
       "type": "fn_decl",
       "name": "describeSchemaFromAccessors",
-      "match_hash": "779b366e5acb72d77db021cfe9b5e37394c414db8833fee5e774bd3adc037737",
+      "match_hash": "84bf637500d1e205b5815874f9f9da16d7d559ba7c6cbe63a74da5a3706a28bf",
       "signature": "fn describeSchemaFromAccessors(allocator: std.mem.Allocator, type_name: []const u8, accessors_slice: []const Accessor) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -248,7 +248,7 @@
     {
       "type": "fn_private",
       "name": "describeFieldToJson",
-      "match_hash": "def6318cc5573af8a3b91ec1c8282d2f16e04dcf6e290e3705c395dd2fd56e2e",
+      "match_hash": "05f043eb9625bdf99421a56d2c44cfc59c13eee7d195b8afd09883e1517ec822",
       "signature": "fn describeFieldToJson(writer, accessor: Accessor, indent: usize) -> void",
       "params": [
         { "name": "writer" },
@@ -262,7 +262,7 @@
     {
       "type": "fn_private",
       "name": "typeTagToJsonSchema",
-      "match_hash": "3b7797dbfeefa34ea09bb28ccf41496867828a38f55a9e71406c8850c5fbf6e5",
+      "match_hash": "87015b364c8feae0bc0f637a7d1a609f510ff537c4243c9914e429cbf49d2bdf",
       "signature": "fn typeTagToJsonSchema(tag: TypeTag) -> []const u8",
       "params": [
         { "name": "tag", "type": "TypeTag" }
@@ -274,7 +274,7 @@
     {
       "type": "fn_private",
       "name": "describeRoleSet",
-      "match_hash": "f676b01dd88110f61b60c73cdb8542e01a1da24e31fe79cfb87d1402ccf2945a",
+      "match_hash": "0b80af0cd4add009e7fd1b3ac436dbc06d9f6ec8a87444ddb1304f6fc88e438c",
       "signature": "fn describeRoleSet(writer, perms: RolePermissions, operation: []const u8) -> void",
       "params": [
         { "name": "writer" },
@@ -288,7 +288,7 @@
     {
       "type": "fn_private",
       "name": "writeEscapedJsonString",
-      "match_hash": "51c40f1e9d6dc8fa5a958d41dc5895155c6db2584a38114f7d61be53cada0818",
+      "match_hash": "f5606b0ed6fc1642e7992b5b438afa99c202ab1267122b284b04815ce87e08a6",
       "signature": "fn writeEscapedJsonString(writer, s: []const u8) -> void",
       "params": [
         { "name": "writer" },
@@ -301,14 +301,14 @@
     {
       "type": "struct",
       "name": "DynamicEditable",
-      "match_hash": "2fa727ae6a627b5b16355fe9d1e66d265c40514ba1c6ab4c632fa68880501889",
+      "match_hash": "bd90575620092c8ca1848915298f4a611e62e270c3bd5c4a09d5232115ce5339",
       "signature": "keyword_struct DynamicEditable { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "374df4f05e6f04daf1b84e97c0a27909aeef168d05c80221bde1be311bcf0cdc",
+          "match_hash": "d3ca03aeaa32e9b1ae0655cb2c874de4e28e8d918bb493caec18875d2f3e33fe",
           "signature": "fn init(allocator: std.mem.Allocator, buffer: []u8, accessors: []const Accessor) -> DynamicEditable",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -322,7 +322,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b5606d605c793d55bbb39db366b9673a600d8d32ac7528d101ef33198e7a32b9",
+          "match_hash": "7e769d44cb8e82658b3388befeff470033ae86ca7f6a733531cdeec46df9da01",
           "signature": "fn deinit(self: *DynamicEditable) -> void",
           "params": [
             { "name": "self", "type": "*DynamicEditable" }
@@ -334,7 +334,7 @@
     ,    {
           "type": "fn_decl",
           "name": "releaseAll",
-          "match_hash": "9fe17716a0b059824a928447fa012320358929a77f62c85f33134eb88a21bbaf",
+          "match_hash": "7e913a64647eb61804335d133274c5f027f4c563e6320869c8903c135428af04",
           "signature": "fn releaseAll(self: *DynamicEditable) -> void",
           "params": [
             { "name": "self", "type": "*DynamicEditable" }
@@ -346,7 +346,7 @@
     ,    {
           "type": "fn_decl",
           "name": "set",
-          "match_hash": "4bbda2b45e99212d1ca273f79b54ada5bf4065e6562ebcbf3e21fb6ffb4d0a18",
+          "match_hash": "c227b6629f1bd4c77acaca903164c2c2df6d0981a0485f3509e762d592ca27c8",
           "signature": "fn set(self: *DynamicEditable, key: []const u8, value: []const u8, role: Role) -> anyerror!void",
           "params": [
             { "name": "self", "type": "*DynamicEditable" },
@@ -361,7 +361,7 @@
     ,    {
           "type": "fn_decl",
           "name": "get",
-          "match_hash": "c14930147ba4781b9a1d97f31f455d4354117b210a5a7d9db2d045b3cc625ffb",
+          "match_hash": "6dcb2ee44137747884f5a739d0867c2fd8dc3ba519d3756d239c8729674b7c8f",
           "signature": "fn get(self: *const DynamicEditable, key: []const u8, role: Role) -> anyerror![]const u8",
           "params": [
             { "name": "self", "type": "*const DynamicEditable" },
@@ -375,7 +375,7 @@
     ,    {
           "type": "fn_decl",
           "name": "describeSchema",
-          "match_hash": "d69f29eaf720225a166a4da3d4776597c98c71d67bf489ae04fe92d09bde5bda",
+          "match_hash": "efde8665034dff047a317ae01e54078d633297a3fb0933bb3370942e5d60cf45",
           "signature": "fn describeSchema(self: *const DynamicEditable, allocator: std.mem.Allocator, type_name: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*const DynamicEditable" },
@@ -389,7 +389,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fieldNames",
-          "match_hash": "c08b1eaee481136a6f871d2059e2572717b8dd5351fa3a3d86452d4a70f798b7",
+          "match_hash": "caec772724e22998e5ce0c2652ae9e405c0bca2423a80ba15152f69781626ca2",
           "signature": "fn fieldNames(self: *const DynamicEditable, allocator: std.mem.Allocator) -> []const []const u8",
           "params": [
             { "name": "self", "type": "*const DynamicEditable" },
@@ -402,7 +402,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getFieldMeta",
-          "match_hash": "e6345538f342202b6174f92e48b0ff84cefbfa854574cf1cf7e29eaf4d0bf72c",
+          "match_hash": "1a2cd8b19edc37dcc1ed8ee6aa5092403c9b003975f7d49cdb11fff9c85f80ca",
           "signature": "fn getFieldMeta(self: *const DynamicEditable, key: []const u8) -> ?FieldMeta",
           "params": [
             { "name": "self", "type": "*const DynamicEditable" },

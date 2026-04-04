@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "InferenceMethod",
-      "match_hash": "49974696890621c5cfdf5cec743612d3dd1e1d73cafa270c3fcd275aa79c38e5",
+      "match_hash": "cb43df9a4e9474078ba7268384cfbbafbc9827dc822c9b9bb5100ffa924d60ed",
       "signature": "keyword_enum InferenceMethod { ... }",
       "is_pub": true,
       "members": [
@@ -44,7 +44,7 @@
     {
       "type": "struct",
       "name": "InferredCapability",
-      "match_hash": "d9e2deaad3ea15f2d391f46f658bbac9e8254194f8ede121a00eb386266dd175",
+      "match_hash": "d2d92933b45732f82c47cbcb1da20ff3b6c74b58b82a5150862524cfc0f36667",
       "signature": "keyword_struct InferredCapability { ... }",
       "is_pub": true,
       "line": 36
@@ -52,7 +52,7 @@
     {
       "type": "fn_decl",
       "name": "freeInferredCapability",
-      "match_hash": "c26361ea9bfeea9cde57109bc880e0de7edc5bfb5c1138d7b189d19e4a46fccb",
+      "match_hash": "d36335d74324b49499d3f90b9f51b726576a6f2a5fe8d91c9b2a897de7bb105e",
       "signature": "fn freeInferredCapability(allocator: std.mem.Allocator, cap: InferredCapability) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -65,7 +65,7 @@
     {
       "type": "fn_decl",
       "name": "freeInferredCapabilities",
-      "match_hash": "fea7bc34115d7d9cd74d3f167db05ffde99d53e1cc7a651d6966e61048dcaf00",
+      "match_hash": "2021617bbbadd28139f8599ab46bed2d37bd395cfeac0e2c8c4eb6b44c01bfb8",
       "signature": "fn freeInferredCapabilities(allocator: std.mem.Allocator, caps: []InferredCapability) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -78,7 +78,7 @@
     {
       "type": "fn_decl",
       "name": "inferCapabilities",
-      "match_hash": "dff6cd574282cc25631231e509dc1669451fd8e220fb562c16d9e304e0c2b645",
+      "match_hash": "90eacef75e6a0e6c4b336591f8d6e271cc064f792763bff9dc3b65a01cf3f150",
       "signature": "fn inferCapabilities(allocator: std.mem.Allocator, map: *const CodebaseMap, db: *GuidanceDb) -> []InferredCapability",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -92,7 +92,7 @@
     {
       "type": "fn_private",
       "name": "extractPrefix",
-      "match_hash": "2b238c981783c09e958ff313bf27a92543a3dbaf0536ca933fc30e4a4816ec75",
+      "match_hash": "b96722c5b081ecaf3015a9616f68515a444b6bd82c4664d8049c71730a867d6b",
       "signature": "fn extractPrefix(stem: []const u8) -> []const u8",
       "params": [
         { "name": "stem", "type": "[]const u8" }
@@ -104,7 +104,7 @@
     {
       "type": "fn_private",
       "name": "pathStem",
-      "match_hash": "975694aff761a55a984b12f5c9b2864a8a109d2c0ad1003757b459aec0128abe",
+      "match_hash": "b74386e2a79330d6bd3dd9a6571377f3d7a4c9c42e17f9bfbcb1c498475b1243",
       "signature": "fn pathStem(path: []const u8) -> []const u8",
       "params": [
         { "name": "path", "type": "[]const u8" }
@@ -116,7 +116,7 @@
     {
       "type": "fn_private",
       "name": "generateDescription",
-      "match_hash": "cb82421475c4de078eac7b872c48e2cf8480f9c28109d3afb62bc97170c74b35",
+      "match_hash": "342f39b8d91016f8e96d6914403d063db6fa4fb077f18689e57ce411127d98a1",
       "signature": "fn generateDescription(allocator: std.mem.Allocator, name: []const u8, files: []const []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -130,7 +130,7 @@
     {
       "type": "fn_private",
       "name": "inferFromNaming",
-      "match_hash": "0658f8c1e5ebbddab27f9e8baea0a583f29cecf174124c626052134e5b5f42cc",
+      "match_hash": "76d40d61a5b4a15ffbbda7f65b813e6908a8bf2a1e92433d53dd961bf3ef8e0f",
       "signature": "fn inferFromNaming(allocator: std.mem.Allocator, map: *const CodebaseMap, caps: *std.ArrayList(InferredCapability)) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -144,7 +144,7 @@
     {
       "type": "fn_private",
       "name": "inferFromImportGraph",
-      "match_hash": "3299ee775597bd8443001d160e5607b4d9d3e0683a1e8271820eb9d347bb1968",
+      "match_hash": "fd2fcb2661b2580a4ab9426c8e28c768df216de5da358c7fea835c2c2165b83c",
       "signature": "fn inferFromImportGraph(allocator: std.mem.Allocator, db: *GuidanceDb, caps: *std.ArrayList(InferredCapability)) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -158,7 +158,7 @@
     {
       "type": "fn_private",
       "name": "inferFromModuleComments",
-      "match_hash": "31b09576df5103fbfa5ae9111f4a9d9a67893be75f058b34d5e5599610c92394",
+      "match_hash": "c11b66edd5131cd49b1dd35abc85d0d256edd0796a4683134957f020ddb383af",
       "signature": "fn inferFromModuleComments(allocator: std.mem.Allocator, db: *GuidanceDb, caps: *std.ArrayList(InferredCapability)) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -172,7 +172,7 @@
     {
       "type": "fn_private",
       "name": "inferFromFileGrouping",
-      "match_hash": "e6b1344c29e2c207afe0a58782872db08dfe4227592aa85969c8ccf2043b520f",
+      "match_hash": "32880a2095962e3758c246eeafda9a4b2201f6b88a6d7adc18ff8a578bb11736",
       "signature": "fn inferFromFileGrouping(allocator: std.mem.Allocator, map: *const CodebaseMap, caps: *std.ArrayList(InferredCapability)) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -186,7 +186,7 @@
     {
       "type": "fn_private",
       "name": "deduplicateCapabilities",
-      "match_hash": "50e6aaee38ecfdc0cc39cb9b668e87b2d2812b1c861ee3733773f9ad36be7aff",
+      "match_hash": "fdd417a29dadf60b51bfef80de853996aeea358057fe4b980c914ac87623aa30",
       "signature": "fn deduplicateCapabilities(allocator: std.mem.Allocator, caps: []InferredCapability) -> []InferredCapability",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -199,7 +199,7 @@
     {
       "type": "fn_private",
       "name": "toCapabilityName",
-      "match_hash": "7623a572b35706cb58ab96a3f58554264d4c3d89e0793f693cd44413af342598",
+      "match_hash": "c776becfa2043601f1d24d25b723ac84a771614c225105bbea2f26eeacea0a88",
       "signature": "fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -212,7 +212,7 @@
     {
       "type": "fn_private",
       "name": "isSupportedExtension",
-      "match_hash": "b5f5f435a7ae7e3de484a08c12e9b949c1c090af76fa150ae6830115c0c730d4",
+      "match_hash": "12988dbb9b82c66351e2166d9a16bc8ec074971947afb9d15ded3fa97f350f19",
       "signature": "fn isSupportedExtension(ext: []const u8) -> bool",
       "params": [
         { "name": "ext", "type": "[]const u8" }
@@ -224,7 +224,7 @@
     {
       "type": "fn_private",
       "name": "extractCapabilityFromComment",
-      "match_hash": "b226be4e7dac5b119d4f0900138e71a7a3181e745a6e36e12eb034c72ee0d92d",
+      "match_hash": "948420c356b401fd275845ab058c9274dd5327fd9134381f69e30c74f707f416",
       "signature": "fn extractCapabilityFromComment(comment: []const u8) -> ?[]const u8",
       "params": [
         { "name": "comment", "type": "[]const u8" }

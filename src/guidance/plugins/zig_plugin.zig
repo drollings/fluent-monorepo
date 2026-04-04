@@ -14,7 +14,7 @@ const ParsedFile = plugin_mod.ParsedFile;
 /// File extensions handled by this plugin.
 const EXTENSIONS = [_][]const u8{ ".zig", ".zon" };
 
-/// Transforms the provided Zig plugin code into a LanguagePlugin instance.
+/// Transforms the provided Zig code snippet into a LanguagePlugin instance.
 pub fn plugin() LanguagePlugin {
     return .{
         .name = "zig",
@@ -70,7 +70,7 @@ fn extractZigImports(
     return @as([]const []const u8, raw);
 }
 
-/// Derives a Zig module slice from a given file path, handling memory allocation and parsing.
+/// Derives a Zig module slice from a given file path and allocator.
 fn deriveModule(arena: std.mem.Allocator, file_path: []const u8) ![]const u8 {
     // Strip leading "./"
     var path = file_path;
@@ -157,3 +157,7 @@ test "deriveModule strips extension and converts slashes" {
     const m2 = try deriveModule(arena.allocator(), "./src/main.zig");
     try std.testing.expectEqualStrings("src.main", m2);
 }
+
+
+
+

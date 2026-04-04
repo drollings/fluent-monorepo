@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "NodeType",
-      "match_hash": "de8651330aa1fc88ef4692b80c195228c7b66f5ad00d06b04c01061562b3f1d4",
+      "match_hash": "58ec64885c9d7ecbc77dba8d88cad8df9f6d9e2974fddecba8e26aa75b1fd03e",
       "signature": "keyword_enum NodeType { ... }",
       "is_pub": true,
       "members": [
@@ -76,7 +76,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isFunction",
-          "match_hash": "2ea919b661d0efcef20c0f7796acc652dcc74bee6beb1691217cf67f182f10b8",
+          "match_hash": "f8c49db20575b1ba7e2aa4071bd57997f31b28dcc7108cc319cdf4662c9e8746",
           "signature": "fn isFunction(self: NodeType) -> bool",
           "params": [
             { "name": "self", "type": "NodeType" }
@@ -88,7 +88,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isContainer",
-          "match_hash": "1df88fd3840bb2f62c8863df5a47664e1997b5b7db7a7fdef995e722742a544b",
+          "match_hash": "5ebc2c5787bf0eaa501868cd69ff280f2a7a0a12ec32eab90230e3f1ac7a664b",
           "signature": "fn isContainer(self: NodeType) -> bool",
           "params": [
             { "name": "self", "type": "NodeType" }
@@ -100,7 +100,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fromString",
-          "match_hash": "eb3919b17589443b41d50ba663c786f919880b3145bfbb018035284dc1c118e9",
+          "match_hash": "03a5e049160ec8042477c8e51548b799da682e2073138eba321eb824762a7ef1",
           "signature": "fn fromString(node_type: []const u8) -> NodeType",
           "params": [
             { "name": "node_type", "type": "[]const u8" }
@@ -115,7 +115,7 @@
     {
       "type": "fn_decl",
       "name": "extractExcerpt",
-      "match_hash": "9cc70177f0fb0155979861410c1c466a8ee70badaaf823e2f5f6d70251c1414b",
+      "match_hash": "b517c74facf564425b90b444aa746e1b47007e54843537e13dc7427f915f97b3",
       "signature": "fn extractExcerpt(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: NodeType, max_lines: usize) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -131,7 +131,7 @@
     {
       "type": "fn_decl",
       "name": "extractSimpleExcerpt",
-      "match_hash": "9abc5732bee31665851a33c038a1cfe57863af40692290c66dbf29cd4690f7a6",
+      "match_hash": "01c0e54a4e1516be376ec903fad6db92a4b0a9dd52e918a3b6372c2b4645e86a",
       "signature": "fn extractSimpleExcerpt(allocator: std.mem.Allocator, src_content: []const u8, start_line: usize, max_lines: usize) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

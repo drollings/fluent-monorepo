@@ -22,7 +22,7 @@ const wasm_mod = @import("wasm");
 // MinimizedContext
 // ---------------------------------------------------------------------------
 
-/// Manages minimal context for efficient execution; owned by the module; ensures fixed buffer sizes and invariant state.
+/// Manages minimal context for efficient execution; owned by the module; ensures fixed buffer size and invariant state.
 pub const MinimizedContext = struct {
     /// Anonymized, allocator-owned copy of the original query.
     query: []const u8,
@@ -178,7 +178,7 @@ test "buildPrompt: contains query and context" {
 //
 // Node id is derived from a hash of the query so re-indexing is idempotent.
 
-/// Processes a Zig query result, returning an index map for the given allocator and library.
+/// Processes a query to locate a specific index in the Coral DB, returning the corresponding value.
 pub fn indexSolution(
     allocator: std.mem.Allocator,
     library: *coral_db.Library,
@@ -359,3 +359,9 @@ test "indexSolutionWithTool: no code block still indexes node" {
     );
     try testing.expect(try lib.countNodes() >= 1);
 }
+
+
+
+
+
+

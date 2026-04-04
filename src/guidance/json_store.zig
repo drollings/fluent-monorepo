@@ -637,7 +637,7 @@ pub const JsonStore = struct {
     }
 };
 
-/// Represents a merged result with ownership model and invariants; managed by the caller.
+/// Represents the outcome of a merge operation, managing ownership and invariants for safe state transitions.
 pub const MergeResult = struct {
     members: []types.Member = &.{},
     members_added: usize = 0,
@@ -772,3 +772,5 @@ test "JsonStore: dupeSkills deep copies skills" {
     try testing.expectEqualSlices(u8, "skill2", copy[1].ref);
     try testing.expect(copy[1].context == null);
 }
+
+

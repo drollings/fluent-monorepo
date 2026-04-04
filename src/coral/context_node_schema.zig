@@ -18,7 +18,7 @@ pub const PayloadType = enum(u32) {
     host_function_result = 6,
 };
 
-/// Manages binary header structures with fixed-size buffers; owned by the context; ensures invariant buffer integrity.
+/// Manages binary header structures with fixed-size buffers; owned by the module; ensures consistent data layout.
 pub const BinaryHeader = extern struct {
     magic: [4]u8 align(1),
     version: u32 align(1),
@@ -177,7 +177,7 @@ pub const BinaryExecutionResult = extern struct {
     }
 };
 
-/// Defines a schema for context nodes, managing ownership and invariants like fixed-size buffers and initialization/deinit cycles.
+/// Defines a schema for context nodes with ownership and invariants; manages fixed buffers and lifecycle.
 pub const ContextNodeSchema = struct {
     /// SQL bind indices — column order for INSERT OR REPLACE in context_nodes.
     /// Matches the column order in DDL_CONTEXT_NODES.
@@ -535,3 +535,9 @@ test "ContextNodeSchema: sql_type is correctly set on all accessors" {
     try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[9].sql_type); // confidence
     try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[10].sql_type); // provenance_id
 }
+
+
+
+
+
+

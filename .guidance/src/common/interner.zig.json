@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "d5aba885a13c5e45bab2b0411efb07c6e897867bfd5646bdf8236c1b1ec2fb62",
+      "match_hash": "d78d93e39a54fe8cc61b4b22172584ddebe3a42e0482b571e78dcc1b1131b595",
       "signature": "fn init(allocator: std.mem.Allocator) -> StringInterner",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" }
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "deinit",
-      "match_hash": "19048bb5a1d0f094899d1c4de6c6c28023d85315e07d27bccefe164d8ab4bd58",
+      "match_hash": "0dfe7c55c37605cfd60b7bb071288674aabdbbec34ba3f88674c80fa088de815",
       "signature": "fn deinit(self: *StringInterner) -> void",
       "params": [
         { "name": "self", "type": "*StringInterner" }
@@ -34,7 +34,7 @@
     {
       "type": "fn_decl",
       "name": "intern",
-      "match_hash": "6128b89bb5d1fe25a630020d88be2eb8314dd3940d06be494fda229c1af8f224",
+      "match_hash": "81dab6d284323336d6ed5589171e0b960d793d9fe2a798dd7b8536d1e8fbe668",
       "signature": "fn intern(self: *StringInterner, str: []const u8) -> usize",
       "params": [
         { "name": "self", "type": "*StringInterner" },
@@ -47,7 +47,7 @@
     {
       "type": "fn_decl",
       "name": "getIndex",
-      "match_hash": "9bcda289d67be66b3352b95a6c63e036a38a703330413b5f4f7b85dcb3ed3678",
+      "match_hash": "b341f406b8d425dd1ebe8f1abb21982032045d63b55e66e147cbe97e0e49cae9",
       "signature": "fn getIndex(self: *StringInterner, str: []const u8) -> ?usize",
       "params": [
         { "name": "self", "type": "*StringInterner" },
@@ -60,7 +60,7 @@
     {
       "type": "fn_decl",
       "name": "getString",
-      "match_hash": "ab83df5f33b601e0fc7bde16cda8dfe5ac4502e7e9e9c00b64a5f69912aeae26",
+      "match_hash": "c0138eb01f828893e468fb295b0dc1ed395895cf2165085037101e166308dc85",
       "signature": "fn getString(self: *const StringInterner, idx: usize) -> ?[]const u8",
       "params": [
         { "name": "self", "type": "*const StringInterner" },
@@ -73,7 +73,7 @@
     {
       "type": "fn_decl",
       "name": "count",
-      "match_hash": "136c4d21ba57980c01684544eddfe10a2dd1dd676d1ed5cd48474ed6eec69f93",
+      "match_hash": "52a9fe0ce6e6a92d98648138b5d54b54a2c5453193af93e9dc7e9ba30be26567",
       "signature": "fn count(self: *const StringInterner) -> usize",
       "params": [
         { "name": "self", "type": "*const StringInterner" }
@@ -85,7 +85,7 @@
     {
       "type": "fn_decl",
       "name": "internList",
-      "match_hash": "478debf1f02637b6860a3d4ceb01cc75382fcdb1764689504cab1ce77c4c96b3",
+      "match_hash": "706f36c38fd9b5880e3b7cedec7bc2a76b63163a0d5977618541a6c22393a2b9",
       "signature": "fn internList(self: *StringInterner, strings: []const []const u8) -> void",
       "params": [
         { "name": "self", "type": "*StringInterner" },
@@ -98,7 +98,7 @@
     {
       "type": "fn_decl",
       "name": "internAndGetBitSet",
-      "match_hash": "e024dfcb80fe0dd2c0ee697bd4a2e937fdaf100a1620e8af8b796934278a0e7f",
+      "match_hash": "7f3d29512785d19f3b4760ffc718ebb7d8155cb533a80fffc2c439ff3330ff2e",
       "signature": "fn internAndGetBitSet(self: *StringInterner, allocator: std.mem.Allocator, strings: []const []const u8) -> std.bit_set.DynamicBitSetUnmanaged",
       "params": [
         { "name": "self", "type": "*StringInterner" },
@@ -112,7 +112,7 @@
     {
       "type": "fn_decl",
       "name": "bitSetFromString",
-      "match_hash": "27d2eeed43442e96da66e7763a693365417a4757fddc7a266ea53f519758ac5b",
+      "match_hash": "1d963356853c591b124081f93e529b20bfdcaef394dcf86ad3c88b83ea73a4ea",
       "signature": "fn bitSetFromString(interner: *StringInterner, allocator: std.mem.Allocator, bs: *std.bit_set.DynamicBitSetUnmanaged, input: []const u8) -> void",
       "params": [
         { "name": "interner", "type": "*StringInterner" },
@@ -127,7 +127,7 @@
     {
       "type": "fn_decl",
       "name": "bitSetToString",
-      "match_hash": "3b643f879228aaec4bea2688fd42f85bc34403628ef03dbc32d4f10fd73a0095",
+      "match_hash": "ff292b62b0781900738b7ef3defb98c108123fd2b1e252b1f102feaeb27d6aac",
       "signature": "fn bitSetToString(interner: *const StringInterner, allocator: std.mem.Allocator, bs: *const std.bit_set.DynamicBitSetUnmanaged) -> []const u8",
       "params": [
         { "name": "interner", "type": "*const StringInterner" },
@@ -141,7 +141,7 @@
     {
       "type": "fn_decl",
       "name": "bitSetConstraint",
-      "match_hash": "382387efe9440bb6d5181c04aed90a33052ab6a1427c2366f69b4f0f83c51af0",
+      "match_hash": "66677f891530a4defce007a5b4ca52c8f373e7f4512ea012cbb1a7c93c442ae9",
       "signature": "fn bitSetConstraint(self: *StringInterner) -> reflection.ConstraintVTable",
       "params": [
         { "name": "self", "type": "*StringInterner" }

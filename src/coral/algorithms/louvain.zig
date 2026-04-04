@@ -153,7 +153,7 @@ pub const Louvain = struct {
     }
 };
 
-/// Transforms dense community assignments into a sparse representation by relabeling nodes.
+/// Transforms dense community assignments into a list of community IDs.
 fn relabelDense(arena: Allocator, communities: []u32, n: u32) ![]u32 {
     var remap = std.AutoHashMap(u32, u32).init(arena);
     var next_id: u32 = 0;
@@ -257,3 +257,5 @@ test "Louvain: two strong cliques merge fewer communities" {
     try testing.expect(seen.count() >= 1);
     try testing.expect(seen.count() <= 4);
 }
+
+

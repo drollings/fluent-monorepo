@@ -61,7 +61,7 @@ pub const SemanticPhrasesResult = struct {
     }
 };
 
-/// Manages static configuration structures; owned by the module; ensures consistent initialization state.
+/// Enhances Zig code with runtime checks; managed via ownership; core invariants ensure safety.
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
@@ -1054,3 +1054,7 @@ test "parsePhrasesResponse skips generic words" {
     try std.testing.expectEqual(@as(usize, 1), result.phrases.len);
     try std.testing.expectEqualStrings("cosine similarity", result.phrases[0]);
 }
+
+
+
+

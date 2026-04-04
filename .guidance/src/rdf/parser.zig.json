@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "TermType",
-      "match_hash": "f9da31f07eb8daae77c8eb8b4303aff70c7acd3939f25a48ffe55d09784b286b",
+      "match_hash": "1afe79cc831cd7d2959023f446b97f0f6588cbf7fc0415fce1090514686636da",
       "signature": "keyword_enum TermType { ... }",
       "is_pub": true,
       "members": [
@@ -39,14 +39,14 @@
     {
       "type": "struct",
       "name": "Literal",
-      "match_hash": "12e9c0b0860be5a0fcf11f301c558a77118ff3fb2a4f731a6ec62e323078c9f2",
+      "match_hash": "2e8f7aa23f744bb8b9764baadfb5b2cad9b43b6fd608aed4036ce23665643517",
       "signature": "keyword_struct Literal { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "df237d772116696378b9c0cce643afc16c64c4d9cae70bb22e3bea32e8308689",
+          "match_hash": "52e501af82ee7bfdbf54eaea64eec8c7dd970e732acae3e16333e02a28c30bb3",
           "signature": "fn deinit(self: Literal, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "Literal" },
@@ -62,14 +62,14 @@
     {
       "type": "union",
       "name": "Term",
-      "match_hash": "7afbdb68ccc59a0d4adfd8a6628afdc756d5ee848cd93775820809b2481e848e",
+      "match_hash": "6d09424d77f58b7d9b2f40467c0b0e0bdcc3da821a24b9afec603696af62bb37",
       "signature": "keyword_union Term { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "dd9d33ea67bbfc6cf636acb63ba27b8171633a1e6d5c342f6fac813b0bf5d14c",
+          "match_hash": "6e8f46f40448598140a60ac663f39245880fefcd16e73cd6df1f8405315b1cf5",
           "signature": "fn deinit(self: Term, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "Term" },
@@ -85,14 +85,14 @@
     {
       "type": "struct",
       "name": "Triple",
-      "match_hash": "4483e6c138bba6b80acfdef62ec830e95019329f43a8e0bac806c606b919207f",
+      "match_hash": "98d26bc96f040c3b63ff6eadbf683968eb9fdd8b633f28a5e5fb7a4ccc50c9dd",
       "signature": "keyword_struct Triple { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "aa54e7e0e161f9dbae3ee1e2ae6088d98d37118c9d4c8005451a7abc53f0e2f1",
+          "match_hash": "1a68b0484f849dce6e27c14713e7ef77b6a12ffed49580df43bb0f8d172622a2",
           "signature": "fn deinit(self: Triple, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "Triple" },
@@ -108,14 +108,14 @@
     {
       "type": "struct",
       "name": "Parser",
-      "match_hash": "3299093309c2c3b9b6863ab372a74bebc05c647b0416c7733d595a0701611586",
+      "match_hash": "c48bf2e5175eebf461bfe0ff45b4fc941bec7944ab26514448735abbaca54058",
       "signature": "keyword_struct Parser { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "b25396c4140bc481f4658da550acfac210b5f3f64bc6ab23300f10f0ae8cfc40",
+          "match_hash": "b7c2537749e5384a14a5183564846f186a84af5eadcbe422cab428a416e9d9a0",
           "signature": "fn init(allocator: std.mem.Allocator, source: []const u8) -> Parser",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -128,7 +128,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "3a4bd3076792fac78afbc0fd35d403f9e2d820b6d74d87d1fa3481e776ff5e76",
+          "match_hash": "bb82753be8d9bff5a117ecd3f8ad2cc2c2a8641798efe6956d1d624e8ecebe67",
           "signature": "fn deinit(self: *Parser) -> void",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -140,7 +140,7 @@
     ,    {
           "type": "fn_private",
           "name": "peekTok",
-          "match_hash": "a7211bee08c3e8182037eed520d65a7ddb568f442b768d496593b3954b9b7d3a",
+          "match_hash": "19cc30f38726d9bd912cc3f9baf18bc9a398ef5cc946ef875e7a6a48f72f6189",
           "signature": "fn peekTok(self: *Parser) -> ParseError!Token",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -152,7 +152,7 @@
     ,    {
           "type": "fn_private",
           "name": "consumeTok",
-          "match_hash": "12ec52cac4203b7758c9ee5163ba86a8ce622acc4257b653dff8557e0dcdb61d",
+          "match_hash": "f3a62265654258afc00c3b4f4e7601a976be9ef2305073003fad0180a0af9cf3",
           "signature": "fn consumeTok(self: *Parser) -> ParseError!Token",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -164,7 +164,7 @@
     ,    {
           "type": "fn_private",
           "name": "expectTok",
-          "match_hash": "9c200cd07438d5eeb06fcf754066196b8b84d4ca1bb65de7f917cd30d186f4d8",
+          "match_hash": "f946360c6ed080f51155eb40513b3b2bde44b2a85508fba965698ab8c02cf204",
           "signature": "fn expectTok(self: *Parser, tt: TokenType) -> ParseError!Token",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -177,7 +177,7 @@
     ,    {
           "type": "fn_decl",
           "name": "next",
-          "match_hash": "4259e16fb22d7ab33f55cfe305c389e0abf29bb13b94a083893b59993345afd5",
+          "match_hash": "c3376c2e5fd149bbffc1d2cf70f3df930dacb2f6b06860d3c7d601dcf40e3701",
           "signature": "fn next(self: *Parser) -> ParseError!?Triple",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -189,7 +189,7 @@
     ,    {
           "type": "fn_private",
           "name": "parsePrefix",
-          "match_hash": "25a82b15676a8c1ed2a294b7f539025c64e0d2834756c876519792263a34ae70",
+          "match_hash": "d58fea3cd5f63446c6a3f277a68d548a72ca59c4259d6c8797a1fbb8df5a36d5",
           "signature": "fn parsePrefix(self: *Parser) -> ParseError!void",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -201,7 +201,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseBase",
-          "match_hash": "5f251215fe624d8f7e7161ba1c851ae4419a8991edbcc7b44399d4d5fec5a5ee",
+          "match_hash": "2894b53e3c2c9b4aa89b6ad088af9f1785d3689c8bf61a2f5c32ff0a5976670c",
           "signature": "fn parseBase(self: *Parser) -> ParseError!void",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -213,7 +213,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseStatement",
-          "match_hash": "5cca1d7a4c7078b00c1fef8067a418db483eb5395fc86e8157811718e81a3fb4",
+          "match_hash": "72532149f672aa7dba9344b531206ca3d486c8c6a7f2ea917a906aac3a77495d",
           "signature": "fn parseStatement(self: *Parser) -> ParseError!void",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -225,7 +225,7 @@
     ,    {
           "type": "fn_private",
           "name": "collectPredicateObjectList",
-          "match_hash": "a529acec1d30d20334175c7c0e036ae90ed477499bd98397ee299723c0e49e23",
+          "match_hash": "31128bdd8d5c3aab73bf406c3de8e8f924fdbde3579164f8371b4c5fb7f897e7",
           "signature": "fn collectPredicateObjectList(self: *Parser, subj: Term) -> ParseError!void",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -238,7 +238,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseVerb",
-          "match_hash": "dfa2f1f6fb109df1051954ea1495388a11d77739a6df5c7b77b1bcfd73846a52",
+          "match_hash": "07649ad5e66cfe38d6bac98f3e4d2b8a7caa08ddfde4b45390f75fc3a9a9a82b",
           "signature": "fn parseVerb(self: *Parser) -> ParseError!?Term",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -250,7 +250,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseTerm",
-          "match_hash": "4437d758c757403b631cd7dbdb7cfccd0b5545759388e43279695d50af40f8c9",
+          "match_hash": "2763d92db6c5ad0af0d8f1b611b6c379f248d955717b98a60822bacfbfa8a317",
           "signature": "fn parseTerm(self: *Parser) -> ParseError!?Term",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -262,7 +262,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseLiteralTerm",
-          "match_hash": "f3b6dc9099d7b6aee381a9a822fd6be78c9ac4e2d6424b2cc408797ec0679749",
+          "match_hash": "763e981e969e3c6ef90e84b21a445984111c22dfbcce6fa09d34085b76caece1",
           "signature": "fn parseLiteralTerm(self: *Parser, lit_tok: Token) -> ParseError!Term",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -275,7 +275,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseInlineBlankNode",
-          "match_hash": "5da0372a5afdcb794930ec3e00176c2eebea535d4b4597cf38e41000fd144b86",
+          "match_hash": "ca3b5febc2a9a0959ef9d9183eb21b6f494426542b24d38330a4d551c9828cda",
           "signature": "fn parseInlineBlankNode(self: *Parser) -> ParseError!?Term",
           "params": [
             { "name": "self", "type": "*Parser" }
@@ -287,7 +287,7 @@
     ,    {
           "type": "fn_private",
           "name": "extractIRI",
-          "match_hash": "d579361a91fa52c203f5855ebdc2e8f5e8762b4a582a3b690bc9f34fae185c13",
+          "match_hash": "3ed99984dd88c05da661607361d90233bf23c591f494f3c4dd68f6e5084d286b",
           "signature": "fn extractIRI(self: *Parser, raw: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -300,7 +300,7 @@
     ,    {
           "type": "fn_private",
           "name": "expandPrefixedName",
-          "match_hash": "7a7074aceeafa6325a7db9a44c678294dce8e7b5e022f05b7ceb20eabc073ff3",
+          "match_hash": "5ffff5c0efa83b00f1fbdf6d9dc7da34274fd7213d072769451d478a3a0f187e",
           "signature": "fn expandPrefixedName(self: *Parser, raw: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -313,7 +313,7 @@
     ,    {
           "type": "fn_private",
           "name": "cloneTerm",
-          "match_hash": "20d2419549e2ae03f047384f67a0bc8ea61629752f6192bbadd6603a8a511c34",
+          "match_hash": "007e6c100eac32358f9ddcb3dc1f30c4dc5dcf773667c600f01e6799c5483d4a",
           "signature": "fn cloneTerm(self: *Parser, t: Term) -> Term",
           "params": [
             { "name": "self", "type": "*Parser" },
@@ -326,7 +326,7 @@
     ,    {
           "type": "fn_private",
           "name": "extractLiteralContent",
-          "match_hash": "345e6867839d7563f8cd7ad3feb1e47a05cae27ee1f7123f7a8978eda77ecd98",
+          "match_hash": "b5e8be2ff15c5690b926a9b01109e637e4da05e8ccd093ad7050b9c70661ab03",
           "signature": "fn extractLiteralContent(raw: []const u8) -> []const u8",
           "params": [
             { "name": "raw", "type": "[]const u8" }

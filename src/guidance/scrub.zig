@@ -112,7 +112,7 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// Validates and returns a boolean indicating whether the provided JSON value is valid.
+/// Validates and returns a boolean indicating whether the JSON value is valid.
 pub fn scrubJsonValue(value: *std.json.Value) bool {
     if (value.* != .object) return false;
     var changed = false;
@@ -245,3 +245,8 @@ test "scrubJsonValue: preserves real comment" {
     const changed = scrubJsonValue(&parsed.value);
     try t.expect(!changed);
 }
+
+
+
+
+

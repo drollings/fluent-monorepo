@@ -32,7 +32,7 @@ pub const SIMHASH_DIMS: usize = 384;
 pub const PROJECTIONS: [SIMHASH_BITS][SIMHASH_DIMS]f32 =
     @import("simhash_projections.zig").data;
 
-/// Computes a SHA-3-like hash from an embedding array, returning a 64-bit unsigned value.
+/// Computes a SHA-256 hash from an embedding array and returns a 64-bit unsigned value.
 pub fn simhash(embedding: []const f32) u64 {
     const effective_len = @min(embedding.len, SIMHASH_DIMS);
     var h: u64 = 0;
@@ -117,3 +117,6 @@ test "simhash: short embedding (shorter than DIMS) doesn't panic" {
     const short: [10]f32 = [_]f32{0.5} ** 10;
     _ = simhash(&short); // must not panic or overflow
 }
+
+
+

@@ -18,7 +18,7 @@ pub const LlmConfig = llm_root.LlmConfig;
 // Config
 // ---------------------------------------------------------------------------
 
-/// Manages decomposer configuration with fixed buffers; owned by the model; ensures consistent state across operations.
+/// Manages decomposer configuration with fixed buffers; ensures ownership and invariants are preserved.
 pub const DecomposerConfig = struct {
     /// LLM API config (endpoint + model).
     llm: LlmConfig,
@@ -32,7 +32,7 @@ pub const DecomposerConfig = struct {
 // LocalDecomposer
 // ---------------------------------------------------------------------------
 
-/// Manages local model state with fixed buffers; owned by the local context; ensures consistent state across calls.
+/// Manages local model state with fixed buffers; owned by the local context; ensures consistent invariants.
 pub const LocalDecomposer = struct {
     allocator: std.mem.Allocator,
     config: DecomposerConfig,
@@ -191,3 +191,8 @@ test "LocalDecomposer.fallback returns single task" {
     try testing.expectEqual(@as(usize, 1), result.len);
     try testing.expectEqualStrings("find scientists", result[0]);
 }
+
+
+
+
+

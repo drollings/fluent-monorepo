@@ -9,14 +9,14 @@
     {
       "type": "struct",
       "name": "FrozenSnapshot",
-      "match_hash": "340160e7c718b9a819ee33139feeaed4dd5e2ea1bf2a977937a3abcdfbb14512",
+      "match_hash": "50edcf80179e0d578852c7d2375ed168ab17934deb858fac8093b98ba7381652",
       "signature": "keyword_struct FrozenSnapshot { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "50ab1e8dc2ffd12f35d033daf5b6ff85b30c8b90dc559b3093d27bc979339073",
+          "match_hash": "2729da69556b922b0eb7534fa0e99a81c581eac92ffcf5547fcb6a94a66c7647",
           "signature": "fn init() -> Self",
           "returns": "Self",
           "is_pub": true,
@@ -25,7 +25,7 @@
     ,    {
           "type": "fn_decl",
           "name": "load",
-          "match_hash": "1bd8f426df9485dcf6d93455a7e4625567013ce2a6e16ea3d752e5db1f91f39b",
+          "match_hash": "8da8a6a81ded81f9548483846bf71f796a910cbed29faaded778d17c73070801",
           "signature": "fn load(allocator: std.mem.Allocator, paths: []const []const u8) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -38,7 +38,7 @@
     ,    {
           "type": "fn_decl",
           "name": "loadSections",
-          "match_hash": "4ac193849d0002105140ebc091778617678b15d1827783b6617c4db07f4c6c2d",
+          "match_hash": "fb26704e68172a87eb207528f6de4165d08463bb8c010a2ff52a78a8a0fcb55a",
           "signature": "fn loadSections(allocator: std.mem.Allocator, memory_paths: []const []const u8, skill_paths: []const []const u8, context_paths: []const []const u8) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -53,7 +53,7 @@
     ,    {
           "type": "fn_decl",
           "name": "formatForSystemPrompt",
-          "match_hash": "c6e5786e466d678ea0c79ab42b50872d9d777f9a718af2e64e475ff03077835c",
+          "match_hash": "43ef3cb6ce7ff7cf4da31e579821d95b23441998ff28c2887cec861e86e7d085",
           "signature": "fn formatForSystemPrompt(self: *const Self, allocator: std.mem.Allocator) -> []const u8",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -66,7 +66,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "434bdbf320f4bb2f5454d869e6525ee88e351c627f210a9287c0f1d9d1163585",
+          "match_hash": "9450bcb32205961f46e5992b23a25af0c0c456ae6706c50ef37e742cc8f2d489",
           "signature": "fn deinit(self: *Self, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -79,7 +79,7 @@
     ,    {
           "type": "fn_private",
           "name": "readAndJoin",
-          "match_hash": "b5574d37c5d76662b15ba204918e0a43f80df2823e4cca7785006fc5e120d429",
+          "match_hash": "4720671f3f6f9cb3de98d7c8e9eaaeba37a052d58ce00c8bce0e62265cb19115",
           "signature": "fn readAndJoin(allocator: std.mem.Allocator, paths: []const []const u8) -> []const u8",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },

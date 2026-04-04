@@ -223,7 +223,7 @@ fn isShortQuery(query: []const u8) bool {
 // explain — phase helpers
 // =============================================================================
 
-/// Collects skill excerpts from a JSON path, using allocator, top path, guidance direction, and workspace parameters.
+/// Collects skill excerpts from JSON paths using an allocator, returning a slice of SkillExcerpt objects.
 fn collectSkillExcerpts(
     allocator: std.mem.Allocator,
     top_json_path: []const u8,
@@ -475,7 +475,7 @@ fn renderExplainOutput(
     try stdout.flush();
 }
 
-/// Processes a Zig command string, validating arguments and preparing output.
+/// Processes allocation arguments to generate explanation output.
 pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var ea: ExplainArgs = .{};
     var i: usize = 0;
@@ -763,7 +763,7 @@ fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Checks if a list of characters exactly matches a list of terms, returning true or false.
+/// Checks if a list of characters exactly matches a list of character lists in the query terms.
 fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
     // Fast path — avoid allocation for short names.
     var buf: [128]u8 = undefined;
@@ -810,7 +810,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
     return out.toOwnedSlice(allocator) catch null;
 }
 
-/// Loads public member names from a JSON path into a Zig array of arrays.
+/// Loads public member names from a JSON path into a Zig array of slices.
 fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
     var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
@@ -913,7 +913,7 @@ fn explainGrepFile(
     return line_numbers.toOwnedSlice(allocator);
 }
 
-/// Constructs a summary slice from LLM query results using provided allocator, client, and text data.
+/// Constructs a summary slice from LLM query results, using allocator, client, and query data.
 fn buildLlmSummary(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -1016,7 +1016,7 @@ fn loadAliases(allocator: std.mem.Allocator, guidance_dir: []const u8) ?vector_d
     return vector_db_mod.loadSemanticAliases(allocator, alias_path) catch null;
 }
 
-/// Extracts key terms from a query string into a structured Zig array of slices.
+/// Extracts key terms from a query string into structured slices for LLM processing.
 fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8) !?[][]const u8 {
     const prompt = try std.fmt.allocPrint(allocator,
         \\Extract 3-5 key technical terms from this query. Return only a comma-separated list, no other text.
@@ -1417,7 +1417,7 @@ fn cmdExplainStaged(
     return emitStagedOutput(allocator, query_text, combined.items, effective_summary, merged_followups, workspace);
 }
 
-/// Processes query data into staged output stages for efficient rendering.
+/// Processes query data into staged output format using provided allocator and parameters.
 fn emitStagedOutput(
     allocator: std.mem.Allocator,
     query_text: []const u8,
@@ -1454,12 +1454,12 @@ pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const
     return loadPublicMemberNames(allocator, json_path);
 }
 
-/// Loads a skill parameter pack into a Zig array, returning the parsed data.
+/// Loads a skill parameter pack into a Zig array, returning the allocated slice.
 pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
     return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
 }
 
-/// Explains the extraction of a publication excerpt from a Zig source code snippet, taking allocator, line number, and node type into account.
+/// Explains the extracted excerpt in the query engine, taking allocator, source slice, line number, and node type as inputs.
 pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
     return explainExtractExcerpt(allocator, src, start_line, node_type);
 }
@@ -1599,7 +1599,7 @@ const TestQuery = struct {
     observations: []const u8 = "",
 };
 
-/// Tracks benchmark metrics with a fixed-size buffer pool; managed centrally; not thread-safe.
+/// Tracks benchmark metrics with a fixed-size buffer pool; managed by owner; not thread-safe.
 const BenchmarkResult = struct {
     query: common.SharedString.Ref,
     acc: u8,
@@ -1608,7 +1608,7 @@ const BenchmarkResult = struct {
     nav: u8,
 };
 
-/// Validates command arguments and processes them, returning success or error status.
+/// Validates command arguments and processes them in the Zig engine.
 pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var no_llm = false;
     var db_path: ?[]const u8 = null;
@@ -2359,3 +2359,49 @@ test "isShortQuery: regular two-word queries are short" {
     try testing.expect(isShortQuery("parse file"));
     try testing.expect(isShortQuery("load config"));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

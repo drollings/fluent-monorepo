@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "plugin",
-      "match_hash": "0c39ae7bc82c4901315a109e5f77dd05f3d0d2c6e4ca6b401fe9203e1c2f89cb",
+      "match_hash": "3a6f2a54a4f3e7fba098b1c4f632b29610caa99042ed81290bc41afefa7bc978",
       "signature": "fn plugin() -> LanguagePlugin",
       "returns": "LanguagePlugin",
       "is_pub": true,
@@ -19,7 +19,7 @@
     {
       "type": "fn_private",
       "name": "parseMarkdown",
-      "match_hash": "030b95a188c0ae0cfbfc7208d61cc29873084b83d8f15c3b92dce58c0ea44bdd",
+      "match_hash": "e2e6ff359df950fde93726a450f67d4a9d129852adcef0f51f16875b2bd02998",
       "signature": "fn parseMarkdown(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },
@@ -33,7 +33,7 @@
     {
       "type": "fn_private",
       "name": "extractMarkdownLinks",
-      "match_hash": "b3c792f2e17c157b60a1b5b5734b11d1dc0cd2b2a6eb4b918bc070a17253af0d",
+      "match_hash": "ce6e891b06bf14842e46ad325e88d09287cceff5a68fa1abcdd45a39b435b450",
       "signature": "fn extractMarkdownLinks(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },
@@ -46,7 +46,7 @@
     {
       "type": "fn_private",
       "name": "deriveMarkdownModule",
-      "match_hash": "e2d84177e28f05eb6947b3b1621b0848f318790f186a896d9ccaf6cf1f9f8d41",
+      "match_hash": "72df3c07751c0f9a5e6b61167d29b2d900025bb2439b340a239a68f13842e81b",
       "signature": "fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },

@@ -43,7 +43,7 @@ const HANDLER_OVERRIDES = [_]HandlerOverride{
     .{ .name = targets.TARGET_MAP, .handler = handleYagoMap },
 };
 
-/// Manages Dag executor state, owns buffers, not thread-safe.
+/// Manages execution context for Dag messages; owns state; not thread-safe.
 pub const DagExecutor = struct {
     const Self = @This();
 
@@ -280,3 +280,5 @@ test "DagExecutor: essential handler failure propagates" {
     // With no handlers registered, run completes without error.
     try exec.run(&ctx, &.{targets.TARGET_DOWNLOAD});
 }
+
+

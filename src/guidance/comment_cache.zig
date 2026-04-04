@@ -160,3 +160,5 @@ test "CommentCache - isValid" {
     try std.testing.expect(cache.isValid("src/bar.zig", "init", "h1"));
     try std.testing.expect(!cache.isValid("src/bar.zig", "init", "h2"));
 }
+
+

@@ -13,7 +13,7 @@
     {
       "type": "enum",
       "name": "PayloadType",
-      "match_hash": "b555e5026b3db7996d0b44a11eace722b81ac7b53aa67a092bb664219175fd80",
+      "match_hash": "1cabcf77e8879039e1d2d3ecad4dc64cd59b3fb071a0bc8e828b4ae3db10ffb0",
       "signature": "keyword_enum PayloadType { ... }",
       "is_pub": true,
       "members": [
@@ -59,14 +59,14 @@
     {
       "type": "struct",
       "name": "BinaryHeader",
-      "match_hash": "aac92770ac69473cd0b8d20d372edfb3fed4b9e70222bb2b5932c4041cd19ada",
+      "match_hash": "c69cbaf8a3179739f71fa0a4578bfdb816781daa6e9f5408c3b8f1bcc56c112f",
       "signature": "keyword_struct BinaryHeader { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "992101911385f2d5a7ce30c494932e0495fa9389b2b8f4c89c0d7c8275497fe4",
+          "match_hash": "a71b0544cf50f8cdf909b86d4cf1cb62aaa24bdfecc201663c2544c9c7e2ab9c",
           "signature": "fn init(payload_type: PayloadType, size: u32) -> BinaryHeader",
           "params": [
             { "name": "payload_type", "type": "PayloadType" },
@@ -79,7 +79,7 @@
     ,    {
           "type": "fn_decl",
           "name": "validate",
-          "match_hash": "97229ddf342d93801c6fc6a23a23f6daded460d02095b89acccceb43843d6f26",
+          "match_hash": "1b5250fd1e4856838a40e79ac8e62f73aaf498d2a3141a71adad2bcd3f99e7ef",
           "signature": "fn validate(self: *const BinaryHeader) -> bool",
           "params": [
             { "name": "self", "type": "*const BinaryHeader" }
@@ -94,14 +94,14 @@
     {
       "type": "struct",
       "name": "BinaryContextNode",
-      "match_hash": "fb11f8f660c507da2f7f13f0868fec9bdb891f5b16e87498ab46588e9f95d7e6",
+      "match_hash": "0f74a3f86e0fe3de76c1fe14cacaf33d10108fb131ec0065c5a9e31474fad4af",
       "signature": "keyword_struct BinaryContextNode { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "getId",
-          "match_hash": "33e3114092fd5e5b69ce186460ca348470de6e52ec234f7f70ce3cc6cbe7cab6",
+          "match_hash": "408b19a5f4ac32a4bb96d2e7b42bacb20a1333a9292bbb83dc349d1504884225",
           "signature": "fn getId(self: *const BinaryContextNode) -> i64",
           "params": [
             { "name": "self", "type": "*const BinaryContextNode" }
@@ -113,7 +113,7 @@
     ,    {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "7e811128e17722e1153900fb42210091eb46ddfd7c3d5197994a0315c4a0f688",
+          "match_hash": "7778e8b22321d2adb8ad15b6c883501b0afa7726af33d8c1ff309a41eff21195",
           "signature": "fn init(node: *const ContextNode, buffer: []u8) -> BinaryContextNode",
           "params": [
             { "name": "node", "type": "*const ContextNode" },
@@ -126,7 +126,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getLod",
-          "match_hash": "06bbad6f1cb3e1fc7bc0a6899622019f64b08a11c72216e22415b061fd8f4f25",
+          "match_hash": "3ea5a02956d765ffb1172eb651b263d7d5cbed9c60da8539cc7ecd8ce04e7aac",
           "signature": "fn getLod(self: *const BinaryContextNode, buffer: []const u8, level: u3) -> []const u8",
           "params": [
             { "name": "self", "type": "*const BinaryContextNode" },
@@ -140,7 +140,7 @@
     ,    {
           "type": "fn_decl",
           "name": "writeToBuffer",
-          "match_hash": "36b94182b5a5fc903e246fe6b405431b5c05c53321a8efbedba4c75495a24854",
+          "match_hash": "d134959d009bd7d055aaabab74b12c5eba8ed780861a721559413278b2bdbdd1",
           "signature": "fn writeToBuffer(node: *const ContextNode, buffer: []u8) -> usize",
           "params": [
             { "name": "node", "type": "*const ContextNode" },
@@ -153,7 +153,7 @@
     ,    {
           "type": "fn_decl",
           "name": "readFromBuffer",
-          "match_hash": "ee24a1092c7fee083981d7241885fcd2dc0b39933d04ad4c27ea75812e2a487d",
+          "match_hash": "b46b001e00b26ff7e6d241a32083d73ae4d6c69736ed480c77f3f966bc649c4d",
           "signature": "fn readFromBuffer(allocator: std.mem.Allocator, buffer: []const u8) -> ContextNode",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -169,7 +169,7 @@
     {
       "type": "struct",
       "name": "BinaryExecutionRequest",
-      "match_hash": "37d3994ad7146219bfdcb6d95f5be35c63a51de2b3788ba047b5a2a4ca297a2f",
+      "match_hash": "f3ab3a52c0c4e7e653f76815775376c8d9d1c200ac1db36d242918e1160e8122",
       "signature": "keyword_struct BinaryExecutionRequest { ... }",
       "is_pub": true,
       "line": 136
@@ -177,14 +177,14 @@
     {
       "type": "struct",
       "name": "BinaryExecutionResult",
-      "match_hash": "4e58411aa8310a86a0b0325a1b691cb1446384917729a3baba85f273898e866d",
+      "match_hash": "0d90c6316e82792af2283c401f4d5264cc93305d9554bf81b237e9b5f67486e6",
       "signature": "keyword_struct BinaryExecutionResult { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "getProvidesBitSet",
-          "match_hash": "520e7b4dcef5ca2bbebfff35d782e2ec887d4e2e9837f0b30f7e5eb6080b6759",
+          "match_hash": "439f503ef1dfb6f454f235bd33ce41122c9e3b8cfe7d5f000d92413371686beb",
           "signature": "fn getProvidesBitSet(self: *const BinaryExecutionResult, allocator: std.mem.Allocator, payload: []const u8) -> std.bit_set.DynamicBitSetUnmanaged",
           "params": [
             { "name": "self", "type": "*const BinaryExecutionResult" },
@@ -201,7 +201,7 @@
     {
       "type": "struct",
       "name": "ContextNodeSchema",
-      "match_hash": "48a982807c22bfa3d8380dbfb5b83436873c22fc2a06b6b4769ee680390095bd",
+      "match_hash": "730d2d6cc43fd07d1cddc933feb78ef8c349ec4f81c042c710434d7b5a4ff58c",
       "signature": "keyword_struct ContextNodeSchema { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -211,7 +211,7 @@
         {
           "type": "fn_decl",
           "name": "create",
-          "match_hash": "fa9c55de9ff4ba31741ccb9940fe470917b4eb1053d4c628e4f096bc7a393507",
+          "match_hash": "df5aaff844562240b819f5e6d9510c4ee4c0f401fe8a0003427bd47d3abe0ba6",
           "signature": "fn create(allocator: std.mem.Allocator) -> *Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -226,7 +226,7 @@
     ,    {
           "type": "fn_decl",
           "name": "destroy",
-          "match_hash": "39e4acada8fa0e22379ab7c41c620387afc3a0156ce5d29a102219796a8e3ae2",
+          "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
           "signature": "fn destroy(self: *Self, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -239,7 +239,7 @@
     ,    {
           "type": "fn_decl",
           "name": "viewOf",
-          "match_hash": "1194daed365e64f4aee533c98dfb1e884d9ace97d8202bf6708b24e9a1d1c753",
+          "match_hash": "9858cb9515735bee9fb8caac4ef7e199e9e8ac63dd2cb556d3b77ed311bb652d",
           "signature": "fn viewOf(self: *const Self, allocator: std.mem.Allocator, node: *ContextNode) -> reflection.DynamicEditable",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -253,7 +253,7 @@
     ,    {
           "type": "fn_decl",
           "name": "binarySize",
-          "match_hash": "a501d2075d2093e53e57413c02a62b7c55caeca636576382888d2920a925329c",
+          "match_hash": "91193fa3cfbdcd4825e8a8081ff235c4b1bf70aa929bb4192fd459c057fd633f",
           "signature": "fn binarySize(node: *const ContextNode) -> usize",
           "params": [
             { "name": "node", "type": "*const ContextNode" }

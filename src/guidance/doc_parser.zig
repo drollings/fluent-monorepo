@@ -140,7 +140,7 @@ pub fn parseDocContent(allocator: std.mem.Allocator, content: []const u8, verbos
     return result;
 }
 
-/// Converts a Zig source snippet into a Zig array, handling memory allocation and parsing.
+/// Converts a Zig source snippet into a Zig array, handling allocator and content input.
 pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
     const excerpt = try parseDocContent(allocator, content, false);
     defer freeDocExcerpt(allocator, excerpt);
@@ -295,3 +295,8 @@ test "parseDocContent: multiline description truncated to 300 chars" {
     try std.testing.expect(excerpt.description != null);
     try std.testing.expectEqual(@as(usize, 300), excerpt.description.?.len);
 }
+
+
+
+
+

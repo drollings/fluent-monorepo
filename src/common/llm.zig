@@ -78,7 +78,7 @@ pub fn stripThinkBlock(text: []const u8) []const u8 {
     return text;
 }
 
-/// Removes leading zeros from a Zig string slice, returning a trimmed version.
+/// Removes leading zeros from a Zig array slice, returning a trimmed version.
 pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return allocator.dupe(u8, trimmed);
@@ -147,7 +147,7 @@ pub fn llmHasDanglingEnd(body: []const u8) bool {
     return false;
 }
 
-/// Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches the expected pattern.
+/// Checks if the provided body is a valid Zig array of bytes, returning true if it represents a self-ref type.
 pub fn llmIsGenericSelfRef(body: []const u8) bool {
     const patterns = [_][]const u8{
         "this function", "this method", "this class",
@@ -359,3 +359,11 @@ test "extractCommentTag: chain-of-thought before tag is ignored" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.", result.?);
 }
+
+
+
+
+
+
+
+

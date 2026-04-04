@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "checkCommentStaleness",
-      "match_hash": "15ac0b7aa86196c9bcf6015af8786921826fb591c52719aa0c202200e19b9a7b",
+      "match_hash": "37744bc224799b7a49a582d882442b485dc4058abdd6fcef231cabc10875cb6b",
       "signature": "fn checkCommentStaleness(existing_comment: []const u8, member: types.Member, source_context: []const u8) -> CheckResult",
       "params": [
         { "name": "existing_comment", "type": "[]const u8" },
@@ -25,7 +25,7 @@
     {
       "type": "fn_decl",
       "name": "isHashStale",
-      "match_hash": "a25245772eb0b2dd7e93f2c55ac08cac9489a7e6d169245126464bd3c9a3e808",
+      "match_hash": "b5c72a8c04c36d5a6cfeea7b281fc127c195ce018ca623db0a7a76bd0fb43be8",
       "signature": "fn isHashStale(stored_hash: ?[]const u8, current_hash: ?[]const u8) -> bool",
       "params": [
         { "name": "stored_hash", "type": "?[]const u8" },

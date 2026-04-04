@@ -22,7 +22,7 @@ pub const BUCKET_COUNT: usize = BUCKET_MS.len + 1; // +1 for the +Inf bucket
 // LatencyHistogram
 // ---------------------------------------------------------------------------
 
-/// Tracks latency distributions; managed by owner; key invariant is accurate measurement intervals.
+/// Tracks latency distributions; managed by owner; key invariant is accurate measurement.
 pub const LatencyHistogram = struct {
     /// Bucket counts: index i accumulates observations where
     /// BUCKET_MS[i-1] < latency_ms ≤ BUCKET_MS[i].
@@ -86,7 +86,7 @@ pub const LatencyHistogram = struct {
 // CoralMetrics — per-tier histogram collection + resolution counters
 // ---------------------------------------------------------------------------
 
-/// Tracks coral metrics with a fixed-size buffer pool; managed via init/deinit; not thread-safe.
+/// Tracks coral health metrics with a fixed-size buffer; managed via ownership model; ensures data integrity.
 pub const CoralMetrics = struct {
     l1_hit: LatencyHistogram = LatencyHistogram.init(),
     l2_hit: LatencyHistogram = LatencyHistogram.init(),
@@ -282,3 +282,5 @@ test "CoralMetrics: thread-safe concurrent observe" {
 
     try testing.expectEqual(@as(u64, N_THREADS * N_OBS), m.l1Hits());
 }
+
+

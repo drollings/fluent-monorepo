@@ -273,3 +273,6 @@ test "NodeType.isFunction and isContainer" {
     try std.testing.expect(NodeType.struct_decl.isContainer());
     try std.testing.expect(!NodeType.struct_decl.isFunction());
 }
+
+
+

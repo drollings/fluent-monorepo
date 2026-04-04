@@ -84,7 +84,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
     workspace: []const u8,
 };
 
-/// Counts valid stage identifiers in a Zig source file, returning the total count.
+/// Counts valid stage indices in a Zig source file, returning the total count.
 fn gjsbStageCount(ptr: *anyopaque) usize {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     const doc = self.doc;
@@ -181,7 +181,7 @@ fn gjsbIsRelevant(ptr: *anyopaque, query_tokens: []const []const u8) bool {
     return false;
 }
 
-/// Cleans up Zig memory by deallocating the provided pointer.
+/// Cleans up resources by deallocating the provided pointer in Zig.
 fn gjsbDeinit(ptr: *anyopaque) void {
     const self: *GuidanceJsonStageBuilderImpl = @ptrCast(@alignCast(ptr));
     self.allocator.destroy(self);
@@ -194,7 +194,7 @@ const guidance_json_stage_vtable: StageBuilder.VTable = .{
     .deinit = gjsbDeinit,
 };
 
-/// Manages GuidanceJsonStageBuilderFactory instances, ensuring proper ownership and lifecycle; centralizes stage construction logic.
+/// Manages guidance stage builder factories, owns configuration contracts, ensures stable access patterns.
 pub const GuidanceJsonStageBuilderFactory = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,
@@ -315,3 +315,11 @@ test "GuidanceJsonStageBuilder: isRelevant matches source path token" {
     const no_tokens = [_][]const u8{"triage"};
     try std.testing.expect(!builder.isRelevant(&no_tokens));
 }
+
+
+
+
+
+
+
+

@@ -330,3 +330,6 @@ test "MockEmbeddingProvider: GPA no leaks" {
 
     mock.assertCallCount("embed", 2);
 }
+
+
+

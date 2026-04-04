@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "simhash",
-      "match_hash": "a83a2670bdeea7b25da9caa5c420cd83bd53fa8877a57c01e38d9c07dad7fd59",
+      "match_hash": "5f4cb8f0d6c02a46423225c84527f82c85cbfd1ca2e8978b7da2c1316cac362a",
       "signature": "fn simhash(embedding: []const f32) -> u64",
       "params": [
         { "name": "embedding", "type": "[]const f32" }
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "hammingDistance",
-      "match_hash": "1b78f4b72df746fa160b08f1db65eace261115a543ba46ac8f90e7e2a03985cd",
+      "match_hash": "ab79fe9c5a257fc37a6db7ee2ff23f5ec4389a5fe08187f76a6e534099b13f0c",
       "signature": "fn hammingDistance(a: u64, b: u64) -> u7",
       "params": [
         { "name": "a", "type": "u64" },
@@ -35,7 +35,7 @@
     {
       "type": "fn_decl",
       "name": "maxHamming",
-      "match_hash": "32cee50822d135f3c94b70e62f914ce2f53331ef4e5d098d55dc57b9fea6a00b",
+      "match_hash": "0bc27977902f5362aa54698e501725e9588233bb30ef6acfd75186e754f07980",
       "signature": "fn maxHamming(cosine_threshold: f32) -> u7",
       "params": [
         { "name": "cosine_threshold", "type": "f32" }

@@ -12,7 +12,7 @@
     {
       "type": "fn_private",
       "name": "makeEchoHandler",
-      "match_hash": "0e95353acfaa5ed04f478dfad1d10f132bb67d1c2d6679192f9b5b7cc614b08f",
+      "match_hash": "63507e36d3cacb825b14a40847f3ed774002d64babf8b5483070739ccf2ad310",
       "signature": "fn makeEchoHandler() -> McpHandler",
       "returns": "McpHandler",
       "patterns": [

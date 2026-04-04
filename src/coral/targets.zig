@@ -131,7 +131,7 @@ pub fn lookupTargetDef(name: []const u8) ?*const TargetDef {
     return null;
 }
 
-/// Checks required dependencies for successful compilation.
+/// Checks required dependencies for the Zig build process and returns true if all are present.
 pub fn validateDependencies() bool {
     for (INGEST_TARGET_DEFS) |def| {
         for (def.depends) |dep| {
@@ -278,3 +278,7 @@ test "topoSort: download is first, yago_ingest is last" {
     try testing.expectEqualStrings(TARGET_DOWNLOAD, order[0]);
     try testing.expectEqualStrings(TARGET_INGEST, order[order.len - 1]);
 }
+
+
+
+

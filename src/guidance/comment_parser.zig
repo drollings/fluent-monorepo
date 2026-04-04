@@ -24,7 +24,7 @@ pub const DocComment = struct {
     }
 };
 
-/// Converts a raw C string into a DocComment object using an allocator.
+/// Converts a raw C string into a structured DocComment object using an allocator.
 pub fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) !DocComment {
     const text = try allocator.dupe(u8, raw);
     errdefer allocator.free(text);
@@ -123,3 +123,6 @@ test "isWellFormedComment - TODO marker" {
 test "isWellFormedComment - valid" {
     try std.testing.expect(isWellFormedComment("Returns the sum of all elements.", ""));
 }
+
+
+

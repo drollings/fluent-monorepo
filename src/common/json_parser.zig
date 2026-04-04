@@ -33,7 +33,7 @@ pub fn parseFile(
     try parseJson(allocator, contents, registry, interner);
 }
 
-/// Converts a C-style JSON array into a Zig-safe slice, handling allocations and string interners.
+/// Converts a null-terminated C string into a Zig-safe slice using an allocator and registry.
 pub fn parseJson(
     allocator: std.mem.Allocator,
     json_text: []const u8,
@@ -465,3 +465,8 @@ test "JSON parsing: parseFile returns IoError for missing file" {
     const result = parseFile(testing.allocator, "/nonexistent/path/coral.json", &registry, &interner);
     try testing.expectError(ParseError.IoError, result);
 }
+
+
+
+
+

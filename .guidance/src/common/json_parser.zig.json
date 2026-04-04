@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "parseFile",
-      "match_hash": "21597bd4c531c23081deeda17876f3ee78a090f643c8032fb911a9cda90c51e1",
+      "match_hash": "c4c27b7d46a82c578c65f1fd8247ab3d16413b0577c559446048f55c88070252",
       "signature": "fn parseFile(allocator: std.mem.Allocator, path: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -26,7 +26,7 @@
     {
       "type": "fn_decl",
       "name": "parseJson",
-      "match_hash": "794c1e361aab4c5a947519be5956ad432dc11555687cc55ab23979c6036de39d",
+      "match_hash": "ef96f72591b032408aa1139188daf45f2acd40af4232560328f19c77499d8fd0",
       "signature": "fn parseJson(allocator: std.mem.Allocator, json_text: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -41,7 +41,7 @@
     {
       "type": "fn_private",
       "name": "parseTarget",
-      "match_hash": "1ebb0fa01c29ca36612157365febfa9d9698514278f21c7c60d2d349f89e5d34",
+      "match_hash": "e5bd1c97717c17c4e24ffe0321962a6265e70e912b12cd9ef33180bec33d1b5a",
       "signature": "fn parseTarget(allocator: std.mem.Allocator, name: []const u8, value: std.json.Value, registry: *TargetRegistry, interner: *StringInterner) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -57,7 +57,7 @@
     {
       "type": "fn_private",
       "name": "determineTargetType",
-      "match_hash": "7e477ed5cf17dfba738abce0a7f15bcf0256be4afd7cc67160632e6105708f15",
+      "match_hash": "774771ff117549f5c5413b33ccfb6ef41b95f9182dd39eeeadc81b9b7bb18bc8",
       "signature": "fn determineTargetType(obj: std.json.ObjectMap) -> TargetType",
       "params": [
         { "name": "obj", "type": "std.json.ObjectMap" }
@@ -69,7 +69,7 @@
     {
       "type": "fn_decl",
       "name": "writeExample",
-      "match_hash": "2e399dcaaa1e8e239443f2d18e45be80b9ae73fc15aeaa02692b582d1c83bb21",
+      "match_hash": "38788f3fd95504e6d9d60edae1a92a15eb97619dae2e7e7438d8732357799886",
       "signature": "fn writeExample(allocator: std.mem.Allocator, path: []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

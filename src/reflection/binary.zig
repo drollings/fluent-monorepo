@@ -81,3 +81,4 @@ pub const BinaryFieldCodec = struct {
         };
     }
 };
+

@@ -51,7 +51,7 @@ pub const ContextPackConfig = struct {
 // ContextPacker
 // ---------------------------------------------------------------------------
 
-/// Manages context packing structures, owns buffer allocations, ensures safe initialization/deinit; not thread-safe.
+/// Manages context packing structures, owns buffer allocations, ensures consistent state across lifecycle.
 pub const ContextPacker = struct {
     config: ContextPackConfig,
 
@@ -123,7 +123,7 @@ pub const ContextPacker = struct {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Calculates the estimated number of tokens in a Zig source file for packing purposes.
+/// Calculates token estimates from Zig content, returning a usize value.
 fn estimateTokens(content: []const u8) usize {
     return (content.len + 3) / 4;
 }
@@ -255,3 +255,8 @@ test "ContextPacker: max_stages enforced" {
     // head(1) + body capped at max_stages=3 minus head=1 → 2 body + tail(1)
     try testing.expect(result.len <= 4);
 }
+
+
+
+
+

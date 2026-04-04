@@ -70,7 +70,7 @@ const AtomicRefCount = struct {
 
 // ── RefCounted(T) ─────────────────────────────────────────────────────────────
 
-/// Converts a type to a reference-counted Zig type, returning the new type with a reference count.
+/// Converts a type to a reference-counted Zig type, returning the owned instance.
 pub fn RefCounted(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -218,3 +218,5 @@ test "AtomicRefCount: inc then dec to zero returns true" {
     try testing.expect(!rc.dec()); // → 1, not zero
     try testing.expect(rc.dec()); // → 0, returns true
 }
+
+

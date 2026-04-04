@@ -22,7 +22,7 @@
 
 const std = @import("std");
 
-/// Manages shared context with ownership and invariants; ensures safe access across threads.
+/// Manages shared context across threads with ownership and lifecycle control; ensures safe access patterns.
 pub const Context = struct {
     /// Bit 0: cancelled flag.  Bits 1–16: u16 error code from `anyerror`.
     state: std.atomic.Value(u32),
@@ -211,3 +211,4 @@ test "Context: GPA no leaks — background, withTimeout, cancel" {
     const ctx2 = Context.withTimeout(60 * std.time.ns_per_s);
     try testing.expect(!ctx2.isExpired());
 }
+

@@ -39,7 +39,7 @@ pub const QueryIntent = enum {
 // QueryStrategy VTable
 // =============================================================================
 
-/// Manages query keyword structures with ownership and invariants; ensures consistent state across operations.
+/// Manages query keywords with ownership model; ensures key invariants are preserved.
 pub const QueryStrategy = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -112,7 +112,7 @@ pub const IdentifierLookupStrategy = struct {
     }
 };
 
-/// Checks if query strings match identifiers in the database, returning true or false.
+/// Checks if query strings match database entries, returning true or false.
 fn identifierMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     _ = ptr;
     _ = db;
@@ -295,7 +295,7 @@ pub fn executeWithStrategy(
     );
 }
 
-/// Creates default query strategies based on provided capabilities and concepts.
+/// Constructs default query strategies from provided identifiers, capabilities, and concepts.
 pub fn buildDefaultStrategies(
     identifier: *IdentifierLookupStrategy,
     capability: *CapabilityQueryStrategy,
@@ -371,3 +371,15 @@ test "looksLikeIdentifier: rejects empty and too-long" {
     // 65 chars — too long
     try std.testing.expect(!looksLikeIdentifier("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 }
+
+
+
+
+
+
+
+
+
+
+
+

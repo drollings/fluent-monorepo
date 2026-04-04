@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "isMalformedResponse",
-      "match_hash": "3a4b33837799133aa27783a5287390b3f97d83246c09737a6784c6e75f0135d0",
+      "match_hash": "d2b67f6b51085730ec0c330ee3ea585383f76dd4f94abde904fb029e25c0415e",
       "signature": "fn isMalformedResponse(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -23,7 +23,7 @@
     {
       "type": "fn_decl",
       "name": "isSyntheticComment",
-      "match_hash": "9e7984418b6e13ede71ec72638a7046de7db9781c8fafb4ce075af98fdf348fd",
+      "match_hash": "c77d79df2f20ec26deb56d66af4e13ef54eda66e7941b9b53a563e649b86efc0",
       "signature": "fn isSyntheticComment(comment: []const u8) -> bool",
       "params": [
         { "name": "comment", "type": "[]const u8" }
@@ -35,7 +35,7 @@
     {
       "type": "fn_private",
       "name": "hasBoilerplateManagesPattern",
-      "match_hash": "f72e61a8ba027ea93b4f83aad5845ca5bf9e6f686c5e51fa92cc12134a9636c8",
+      "match_hash": "85a9bb63a741679ccde0dc3f3c8aa7f50b03dbedc2ae61ed8da6465e642a985e",
       "signature": "fn hasBoilerplateManagesPattern(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }

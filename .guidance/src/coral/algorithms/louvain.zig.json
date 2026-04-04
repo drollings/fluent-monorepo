@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "Louvain",
-      "match_hash": "004e245b88e33be2df153aa47a5c895d2452fab5e9e5fcb6dbd6fad5d8d1f380",
+      "match_hash": "a3cd1df66c6525e5eb1fbd286fd647009b8262f34313144d7786cfbea353d248",
       "signature": "keyword_struct Louvain { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "e164759061be001a3bb79b37fec43cdceed27b356521faf5871159de14beb9ed",
+          "match_hash": "d5ed8e3a4b5cb3b013eaefda6dff1521b1d6ba760798cb05517c98bff63b4443",
           "signature": "fn init(config: LouvainConfig) -> Self",
           "params": [
             { "name": "config", "type": "LouvainConfig" }
@@ -29,7 +29,7 @@
     ,    {
           "type": "fn_decl",
           "name": "run",
-          "match_hash": "1636e4fd7c3c0d3369669005da2f4c90981cd50d1f9f74bc88edc86e304e1b57",
+          "match_hash": "0fea22cbaf5a74e5994d91abf94f8ee7789909139441a9a3543011842984f6ca",
           "signature": "fn run(self: Self, arena: Allocator, graph: *const CSRGraph) -> []u32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -46,7 +46,7 @@
     {
       "type": "fn_private",
       "name": "relabelDense",
-      "match_hash": "30aff797d65470252dbdb55571ff17cb0df0c2fa7c1a8e2ef511aeccc3e7fdf8",
+      "match_hash": "4f687620052203a06c9712dd7123d67cb5cbdc84dbf8d82139cde7588d0922c6",
       "signature": "fn relabelDense(arena: Allocator, communities: []u32, n: u32) -> []u32",
       "params": [
         { "name": "arena", "type": "Allocator" },

@@ -47,7 +47,7 @@ const llm = @import("common");
 // Per-file change detection
 // ---------------------------------------------------------------------------
 
-/// Checks if the JSON source requires processing by evaluating its contents.
+/// Checks if the JSON array requires processing based on source data.
 pub fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) bool {
     const json_mtime = fileMtime(json_abs) orelse return true; // JSON absent → stale
     const src_mtime = fileMtime(src_abs) orelse return false; // unreadable src → skip
@@ -97,7 +97,7 @@ pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8)
     return true;
 }
 
-/// Validates a marker path slice and returns void, handling potential errors.
+/// Validates a marker path slice and returns void, ensuring proper marker data integrity.
 pub fn touchTestMarker(marker_path: []const u8) !void {
     const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
     try llm.makePathAbsolute(parent);
@@ -119,7 +119,7 @@ pub fn touchFileAfter(target_path: []const u8, ref_path: []const u8) !void {
     try target_file.updateTimes(stat.atime, new_mtime);
 }
 
-/// Set `target_path` mtime to "now" to mark it as recently validated.
+/// Processes a file path string and triggers an action on it.
 pub fn touchFileNow(target_path: []const u8) !void {
     var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
     defer target_file.close();
@@ -128,8 +128,7 @@ pub fn touchFileNow(target_path: []const u8) !void {
     try target_file.updateTimes(now, now);
 }
 
-/// Set `target_path` mtime to "now + 1 second" to mark it as recently validated.
-/// The +1 second buffer prevents filesystem timestamp resolution issues.
+/// Updates a file path to the next valid position after a touch event.
 pub fn touchFileNowPlusOne(target_path: []const u8) !void {
     var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
     defer target_file.close();
@@ -329,3 +328,9 @@ test "testsCanBeSkipped: source newer than marker → false" {
     const files = [_][]const u8{src};
     try std.testing.expect(!testsCanBeSkipped(marker, &files));
 }
+
+
+
+
+
+

@@ -25,7 +25,7 @@ const StringInterner = @import("interner.zig").StringInterner;
 
 const Self = BitSetDrift;
 
-/// Manages a bit-set drift structure for efficient memory updates; owned by the module; ensures consistent state across operations.
+/// Manages a bit-set drift structure for efficient state tracking; owned by the module; ensures consistent state across operations.
 pub const BitSetDrift = struct {
     interner: *StringInterner,
 
@@ -200,3 +200,4 @@ test "BitSetDrift.generateFollowUps: no follow-ups when all resolved" {
     const followups = try drift.generateFollowUps(a, &needed, &available);
     try testing.expect(followups.len == 0);
 }
+

@@ -9,7 +9,7 @@
     {
       "type": "fn_private",
       "name": "isMetachar",
-      "match_hash": "4212f644cc6c9fabc0e2af35c9beea53e8c3e5cc443b36351b1543dacf7465b3",
+      "match_hash": "7c8dcbf9a80807b597da01702cc370eba2a8a7118fdfeab20b9302b06e20f408",
       "signature": "fn isMetachar(c: u8) -> bool",
       "params": [
         { "name": "c", "type": "u8" }
@@ -21,7 +21,7 @@
     {
       "type": "fn_decl",
       "name": "parseCommand",
-      "match_hash": "785345f55f249639ec5b07b89a1620afecb4158ab31f8e637c67c9d8ec0661fc",
+      "match_hash": "a789b32d4de7f6317e2ac3b3543c17ed45c2b92f913a7ffde70b45be3fc62f7d",
       "signature": "fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) -> ShellParseError![][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

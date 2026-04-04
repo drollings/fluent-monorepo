@@ -60,7 +60,7 @@ pub const DagCallbacks = struct {
     }
 };
 
-/// Manages DagExecutor logic, owns execution context, ensures consistent state across runs.
+/// Manages DagExecutor logic, owns execution context, ensures consistent state across invocations.
 pub const DagExecutor = struct {
     const Self = @This();
 
@@ -328,3 +328,7 @@ test "DagExecutor: single node" {
     try testing.expectEqual(@as(i64, 1), results[0].node_id);
     try testing.expect(results[0].success);
 }
+
+
+
+

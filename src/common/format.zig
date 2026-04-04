@@ -8,7 +8,7 @@ pub const Column = struct {
     align_left: bool = true,
 };
 
-/// Defines a table structure for structured data; owned by the module; maintains invariant schema integrity.
+/// Defines a table structure for structured data; owned by the module; maintains invariant data integrity.
 pub const Table = struct {
     columns: []const Column,
     rows: []const std.json.Value,
@@ -121,7 +121,7 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
     };
 }
 
-/// Converts a value into a formatted JSON slice using an allocator and indentation level.
+/// Converts a JSON value into a formatted Zig array with indentation.
 pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) ![]const u8 {
     var buf: std.ArrayListUnmanaged(u8) = .{};
     errdefer buf.deinit(allocator);
@@ -129,7 +129,7 @@ pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) !
     return buf.toOwnedSlice(allocator);
 }
 
-/// Converts a value into a formatted string with indentation and level control.
+/// Converts a value into a formatted string with specified indentation and level.
 fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void {
     const T = @TypeOf(value);
     if (T == []const u8) {
@@ -166,7 +166,7 @@ fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void
     }
 }
 
-/// Converts a CSV-formatted JSON slice into a CSV-formatted string using an allocator.
+/// Converts a CSV-formatted JSON slice into a CSV-formatted string using an allocator and field names.
 pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) ![]const u8 {
     if (rows.len == 0) return allocator.dupe(u8, "");
 
@@ -316,3 +316,12 @@ test "formatJson: simple struct" {
     try testing.expect(std.mem.indexOf(u8, result, "\"test\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "42") != null);
 }
+
+
+
+
+
+
+
+
+

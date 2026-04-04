@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "Message",
-      "match_hash": "4bed4d609192b985c04a366264011b5ca4bd6fa0d19b9fb2dd7883db7ebec9cf",
+      "match_hash": "ec560222879bb7e75bcdb7ea1151bdcdba6595911311e2dd3fd29623b01b7c23",
       "signature": "keyword_struct Message { ... }",
       "is_pub": true,
       "line": 82
@@ -20,7 +20,7 @@
     {
       "type": "struct",
       "name": "SessionDB",
-      "match_hash": "30d30eb8ad356591e412d55e869131b6c65b4d75a600461d47df4ebc71176d50",
+      "match_hash": "90d83e516bfd12347f1e40464588a2439fff61c0416fa35c8b19a9dc4fdc34a8",
       "signature": "keyword_struct SessionDB { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -30,7 +30,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "79fba58ae4187b12a8cb2b85169261f9d2ce8e7e1cce4affc14d4ac75363f0f4",
+          "match_hash": "8bf4b4e05d6c51d4c9b10b4fffb03dc823ddc8a584e539a8e5afc7e04d9575e6",
           "signature": "fn init(path: []const u8, allocator: std.mem.Allocator) -> Self",
           "params": [
             { "name": "path", "type": "[]const u8" },
@@ -43,7 +43,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -55,7 +55,7 @@
     ,    {
           "type": "fn_private",
           "name": "exec",
-          "match_hash": "6efa13335833e38017def1e7f617cb5e9719b1431a25cab026999598fb4c25f4",
+          "match_hash": "4aab8bee3871c3413163c0219eaba37bf9b1917517436c1f03118fb6f60fa44c",
           "signature": "fn exec(self: *Self, sql: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_private",
           "name": "prepare",
-          "match_hash": "cf540bd40e4d0f2adea29db678fe19d86ef09849f37ba371d7df8884a9e0a00a",
+          "match_hash": "f1c5507e7959f8f926c5406a5458fb34a9853e8a7e6ee8ceb7df364f45ffb041",
           "signature": "fn prepare(self: *Self, sql: []const u8) -> *c.sqlite3_stmt",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -81,7 +81,7 @@
     ,    {
           "type": "fn_private",
           "name": "step",
-          "match_hash": "51a1184bce8ff8168e0bb8d8f4e119305b2594d29faf6673614716046fa2971e",
+          "match_hash": "98eff056c0071a63e927dba6fb274a0e7f9af13eea7f07d258fa3503fd62d848",
           "signature": "fn step(stmt: *c.sqlite3_stmt) -> bool",
           "params": [
             { "name": "stmt", "type": "*c.sqlite3_stmt" }
@@ -93,7 +93,7 @@
     ,    {
           "type": "fn_private",
           "name": "initSchema",
-          "match_hash": "ab05d1f0520249771ab69efed9dc7ab02550b89966ec900e0cf6c3e4d18cbb61",
+          "match_hash": "299374d1092e4999ef42a1bf8554916404c43770f694917c7e9ce12711821690",
           "signature": "fn initSchema(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -105,7 +105,7 @@
     ,    {
           "type": "fn_decl",
           "name": "createSession",
-          "match_hash": "3d70ca57228ac630e4e83381be572679512ed004a0322179e00edc2b0c174e51",
+          "match_hash": "ba90ee57c3a54136def34c4a02fbc60a2ce874dfa5eb6816ac1965f7f65d6056",
           "signature": "fn createSession(self: *Self, source: []const u8, model: []const u8, parent_session_id: ?i64) -> i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -123,7 +123,7 @@
     ,    {
           "type": "fn_decl",
           "name": "addMessage",
-          "match_hash": "ae7c18b22f55dda155f68917d47e1646b02b1eece7ea3393c223c70c12a2e455",
+          "match_hash": "30b8cf15836f38236dd7d1a0729a8d434878128bdf135e8689a09cc210c7e359",
           "signature": "fn addMessage(self: *Self, session_id: i64, role: []const u8, content: []const u8, tokens: i64) -> i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -139,7 +139,7 @@
     ,    {
           "type": "fn_decl",
           "name": "searchMessages",
-          "match_hash": "bbb4aeb313c21ab150887cf2e9a040531fd90cded04a7191e0f155ac4b0fbf2c",
+          "match_hash": "a5098de9f006949f8c5d4a96525a340e92a3d8b4960ec98b26f1fd771d059604",
           "signature": "fn searchMessages(self: *Self, query: []const u8, limit: usize, allocator: std.mem.Allocator) -> []Message",
           "params": [
             { "name": "self", "type": "*Self" },

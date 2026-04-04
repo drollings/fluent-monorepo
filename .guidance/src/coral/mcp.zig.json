@@ -11,7 +11,7 @@
     {
       "type": "enum",
       "name": "SessionId",
-      "match_hash": "6dabe837b969cc36e57c79b31cb1115c79f12c5484dde1d6416946dd2945b8ee",
+      "match_hash": "0938b85de2db2df59d2034ce6022e077eaaffbd7ea740825bf235eae0f545234",
       "signature": "keyword_enum SessionId { ... }",
       "is_pub": true,
       "members": [
@@ -27,7 +27,7 @@
     {
       "type": "fn_decl",
       "name": "sessionIdFromInt",
-      "match_hash": "3486817d00dcdda6139ba09565c627178006ae233465fca984d64aa965c577ae",
+      "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
       "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
       "params": [
         { "name": "i", "type": "i64" }
@@ -39,7 +39,7 @@
     {
       "type": "fn_decl",
       "name": "sessionIdToInt",
-      "match_hash": "faebcc15b891c352666ffb78fa112aeaf9850daa3c63cc695cd1539cf3238689",
+      "match_hash": "22cc545510b58d8cc7afd337817960e55d1bec5efe6ceaea1e0c2139962324c4",
       "signature": "fn sessionIdToInt(id: SessionId) -> i64",
       "params": [
         { "name": "id", "type": "SessionId" }
@@ -51,14 +51,14 @@
     {
       "type": "struct",
       "name": "CoralQueryParams",
-      "match_hash": "6f0bf0b9f6ed06aef16571d87ac8349385a98bd374444f5268cb37008a4a7d62",
+      "match_hash": "39519fa82b2a25c7b5b75ba6b5c14876db598b319df91df6ea50fd0d34ee270b",
       "signature": "keyword_struct CoralQueryParams { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "describeField",
-          "match_hash": "a61f4a88d15d254ad7da9013ed2bd0d6eb5596ab55dea84cd93fc1277ea50289",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
           "params": [
             { "name": "name", "type": "[]const u8" }
@@ -73,14 +73,14 @@
     {
       "type": "struct",
       "name": "InsertNodeParams",
-      "match_hash": "16706b45320ec9ff98e8e2b0dacb251dd9e82648194e109c5774de1f03bb7047",
+      "match_hash": "fd927d059b17d04b21ef380c35de94af89e9920270fd32c8d0790fe8a6c64a13",
       "signature": "keyword_struct InsertNodeParams { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "describeField",
-          "match_hash": "a61f4a88d15d254ad7da9013ed2bd0d6eb5596ab55dea84cd93fc1277ea50289",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
           "params": [
             { "name": "name", "type": "[]const u8" }
@@ -95,14 +95,14 @@
     {
       "type": "struct",
       "name": "ExplainParams",
-      "match_hash": "76fb6ffc4beb3389fc84a28c224a4d1c67d94677811187246f1cad747db2d360",
+      "match_hash": "97da4a363710d2bf8750c09ffcf399ec14ce8586b02954afcfb328dfa813447c",
       "signature": "keyword_struct ExplainParams { ... }",
       "is_pub": false,
       "members": [
         {
           "type": "fn_decl",
           "name": "describeField",
-          "match_hash": "a61f4a88d15d254ad7da9013ed2bd0d6eb5596ab55dea84cd93fc1277ea50289",
+          "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
           "params": [
             { "name": "name", "type": "[]const u8" }
@@ -117,7 +117,7 @@
     {
       "type": "fn_private",
       "name": "validateRequiredFields",
-      "match_hash": "c14e4efd95f47f1f499fe2aa96ce96164ddfc6dd7b717611f9a183d75331a293",
+      "match_hash": "4f98115d739101e2dfece646a753839ae08265bf8de781ef83428a40db8a3c60",
       "signature": "fn validateRequiredFields(T: type, args: std.json.ObjectMap) -> void",
       "params": [
         { "name": "T", "type": "type" },
@@ -130,7 +130,7 @@
     {
       "type": "struct",
       "name": "ToolDef",
-      "match_hash": "edd8d1f92fc338a579f288aa1c7f4cd044b2bdb3336e7087ac09c8d083285e8b",
+      "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
       "signature": "keyword_struct ToolDef { ... }",
       "is_pub": true,
       "line": 126
@@ -138,7 +138,7 @@
     {
       "type": "struct",
       "name": "JsonRpcRequest",
-      "match_hash": "b3253c332d629503070971685c012e0e6725fd06eab75ce082f6e5c5347d5ec2",
+      "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
       "signature": "keyword_struct JsonRpcRequest { ... }",
       "is_pub": false,
       "line": 161
@@ -146,14 +146,14 @@
     {
       "type": "struct",
       "name": "McpServer",
-      "match_hash": "e6f45b7fa495240ad7821b54fc0614f20f5228a6bc98dd7420b7e27e453213e0",
+      "match_hash": "e6043e4781e4ac55df457ded001af893105e13c89e925e9a61066b1ab680245a",
       "signature": "keyword_struct McpServer { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "serve",
-          "match_hash": "23b724c33482c708c1aa94a1396c9592c284783b28d7d1503a6cb4beb64fe580",
+          "match_hash": "443e491ffd1557f07ddc7085c62cdeabf7cb41910f854d8d6bf3f4c928f1dec1",
           "signature": "fn serve(self: *McpServer, reader: *std.Io.Reader, writer: *std.Io.Writer) -> void",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -167,7 +167,7 @@
     ,    {
           "type": "fn_decl",
           "name": "handleRequest",
-          "match_hash": "6bf7cb1cc10f700853247e69a1321bc2e2e56268378ab45245f300fc0decb99b",
+          "match_hash": "80c4b8760e6b07cd87d34c1ca057b7572795bfa86d25fc9845b4d6af1d270e4c",
           "signature": "fn handleRequest(self: *McpServer, raw_json: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -180,7 +180,7 @@
     ,    {
           "type": "fn_private",
           "name": "dispatch",
-          "match_hash": "f623e3a66af493048f9f20ffb262996e5545b4c868f85ac00edccf9db9efabe3",
+          "match_hash": "5100c6977d712144e98eff0260bbbc863dd4d0b7f2d5a4dbf961d2eedc790b45",
           "signature": "fn dispatch(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -194,7 +194,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleInitialize",
-          "match_hash": "78fec0cec5c0a503a02b460ff36911b633baf3a1893e3357f756b65e0fba01a4",
+          "match_hash": "ae6270a448351f9aba1392771ee6bb49d97c4d99d7fbd007ef041b3f1a311ac3",
           "signature": "fn handleInitialize(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -208,7 +208,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleToolsList",
-          "match_hash": "366b6b233dd506da2873f1fc7f473b37b35b1f6ab1771de714dff031d29e112b",
+          "match_hash": "e7e41b3318f222ae55985b1bf405ef40af5f5e58f2761f0e5358a469d6e57f57",
           "signature": "fn handleToolsList(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -222,7 +222,7 @@
     ,    {
           "type": "fn_private",
           "name": "handleToolsCall",
-          "match_hash": "7878d1ef4e89d96aa774f2fc79a6e65449f17636481ec357ccdd666d2d893af7",
+          "match_hash": "137febeba3ab2c1edac76ca91324b811e99d10e51e021703c3c1445db8a603aa",
           "signature": "fn handleToolsCall(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -236,7 +236,7 @@
     ,    {
           "type": "fn_private",
           "name": "toolCoralQuery",
-          "match_hash": "a20a3fde1d0bf295e4c03afa1eb30fe16992ee6436d8ed67bb6ebdc3b2d900d8",
+          "match_hash": "1b4b2fe581b67ae47a0c08ded6ff22af8f7247f02068e3921a18b8a4cef4468b",
           "signature": "fn toolCoralQuery(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -251,7 +251,7 @@
     ,    {
           "type": "fn_private",
           "name": "toolCoralInsertNode",
-          "match_hash": "13c46952375b21f05cfcdfd3c2b1cd3c96a9d2591ce3f209fa2bafbe7710fe0d",
+          "match_hash": "97ab32862b504ce0128c571794cf46c7aadf710f037795404c46b017bdd86d9f",
           "signature": "fn toolCoralInsertNode(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -266,7 +266,7 @@
     ,    {
           "type": "fn_private",
           "name": "toolCoralExplain",
-          "match_hash": "ee3d81af77b513ac1cb1b38e130efe518f83e18e5c1bc9377566847c93899fd9",
+          "match_hash": "ce5d72151990d7de8b81dfc891fcc74e5b4776c93959222c4ab0e8b085d3c181",
           "signature": "fn toolCoralExplain(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -281,7 +281,7 @@
     ,    {
           "type": "fn_private",
           "name": "errorResponse",
-          "match_hash": "ea12cdead044c4f5815be945e2a980e6a28b99d2aeb934739b41afe61d05b4a6",
+          "match_hash": "05c74c7a681c58023d43b454b1617b5fe11d770afd99a167540975e0c86ca6c0",
           "signature": "fn errorResponse(self: *McpServer, id: ?std.json.Value, code: i32, message: []const u8, err: anyerror) -> []const u8",
           "params": [
             { "name": "self", "type": "*McpServer" },
@@ -297,7 +297,7 @@
     ,    {
           "type": "fn_private",
           "name": "idToJson",
-          "match_hash": "609b92de440ae556618a8880183f551223c96dc51a2a48fc15bcf2e9da62bcd4",
+          "match_hash": "e76b709694d30d4a2e59e50d958e3cc633abacb055e82a4578b81666fbaabbe8",
           "signature": "fn idToJson(allocator: std.mem.Allocator, id: ?std.json.Value) -> []const u8",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -313,7 +313,7 @@
     {
       "type": "fn_private",
       "name": "parseJsonRpc",
-      "match_hash": "b1f418724e4f3fa2fa594d43df0d16534421e95609bce4d2f9992ccf3c3698d4",
+      "match_hash": "3d37f747bfee38de24999c9f9494df5af5e9a99587a518cdce03ba0da3133baf",
       "signature": "fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -326,7 +326,7 @@
     {
       "type": "fn_private",
       "name": "writeJsonEscaped",
-      "match_hash": "cbbb02c8151210ef58299bd67786a0712be7647466adf56e33f2535773cfc86f",
+      "match_hash": "8d6cb81056a6d69a7f9221cdea605965277527ebe8f956b32e1b6469c174560a",
       "signature": "fn writeJsonEscaped(writer, s: []const u8) -> void",
       "params": [
         { "name": "writer" },

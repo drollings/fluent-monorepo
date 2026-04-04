@@ -55,3 +55,4 @@ test "estimateEmbeddingTokens includes overhead" {
     try testing.expect(tokens >= NODE_SCHEMA_OVERHEAD_TOKENS + 1);
     try testing.expect(tokens <= NODE_SCHEMA_OVERHEAD_TOKENS + 2);
 }
+

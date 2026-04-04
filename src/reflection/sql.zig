@@ -683,3 +683,11 @@ test "TableSchema SQL generation" {
     defer allocator.free(select_sql);
     try testing.expectEqualStrings("SELECT id, name FROM test_table WHERE id = ?", select_sql);
 }
+
+
+
+
+
+
+
+

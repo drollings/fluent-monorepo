@@ -161,3 +161,4 @@ test "PluginRegistry register custom plugin" {
     try std.testing.expect(p != null);
     try std.testing.expectEqualStrings("lua", p.?.name);
 }
+

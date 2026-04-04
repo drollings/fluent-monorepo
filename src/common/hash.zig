@@ -5,7 +5,7 @@
 /// guidance-domain types so they can be reused by any Zig tool.
 const std = @import("std");
 
-/// Converts input data into a SHA-256 hexadecimal string using an allocator.
+/// Converts input data into a SHA256 hexadecimal string using an allocator.
 pub fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     var hash_out: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(data, &hash_out, .{});
@@ -15,7 +15,7 @@ pub fn sha256Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     return result;
 }
 
-/// Computes a 16-bit hash combining content and model inputs for integrity verification.
+/// Computes a 16-bit hash combining content and model data.
 pub fn contentHashWithModel(content: []const u8, model: []const u8) [16]u8 {
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     hasher.update(model);
@@ -303,3 +303,13 @@ test "HashAlgorithm digestLength" {
     try std.testing.expectEqual(@as(usize, 64), HashAlgorithm.sha512.digestLength());
     try std.testing.expectEqual(@as(usize, 32), HashAlgorithm.blake3.digestLength());
 }
+
+
+
+
+
+
+
+
+
+

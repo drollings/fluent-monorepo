@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "Phase",
-      "match_hash": "5e5e01f5d2c2a1033488e57f6548ba3ba8a432d9cb0d8980062456c0a229dcfb",
+      "match_hash": "f3714964b5bf2a439b074d44e14f9f7e406f8deef0004a10e74023909f32c327",
       "signature": "keyword_enum Phase { ... }",
       "is_pub": true,
       "members": [
@@ -53,7 +53,7 @@
     ,    {
           "type": "fn_decl",
           "name": "label",
-          "match_hash": "fef5d181597ac99dd0c2ff27db9434e02e6ba50d0b8c45e09da504e50e99826e",
+          "match_hash": "9995ba92067088073a046c000f2f19842335283d81944a50a9e1f828abf1d509",
           "signature": "fn label(self: Phase) -> []const u8",
           "params": [
             { "name": "self", "type": "Phase" }
@@ -68,14 +68,14 @@
     {
       "type": "struct",
       "name": "BuilderError",
-      "match_hash": "4319bde27b62e85609cb0c5070a91d1703556716ed3b8795d6a114f01d624d51",
+      "match_hash": "8892e28103d316ed96f72a7959ff00e1bd55c5a4aedcae6d5b7d8754618ba6b0",
       "signature": "keyword_struct BuilderError { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f0f150c9079d591177757e4789ad50df18321cd437b2023b060369d3b1381b89",
+          "match_hash": "33bac208877943a936633e991be10cfccac8f67c5fac9788d9f51fc7ec0c1743",
           "signature": "fn init(arena: std.mem.Allocator, phase: Phase, field: ?[]const u8, value: ?[]const u8, constraint: ?[]const u8, cause: anyerror) -> *BuilderError",
           "params": [
             { "name": "arena", "type": "std.mem.Allocator" },
@@ -92,7 +92,7 @@
     ,    {
           "type": "fn_decl",
           "name": "format",
-          "match_hash": "3b6d64af47ba6bde4945a428628fbbcdece0d60387033848670063bd23b96893",
+          "match_hash": "1886bbc7342a44960a959d5be07eeff9505262df51c82a5456e0af39367edc74",
           "signature": "fn format(self: *const BuilderError, _: []const u8, _: std.fmt.FormatOptions, writer) -> void",
           "params": [
             { "name": "self", "type": "*const BuilderError" },
@@ -107,7 +107,7 @@
     ,    {
           "type": "fn_decl",
           "name": "chain",
-          "match_hash": "cca9cb400f3da019f6aadeed14538e30f97ee1452a54369fb6ae462e8bebf1f0",
+          "match_hash": "f3d43ee4c9cd80f591818dcbd4b6ffc8398bcf37f03c6eb8189d24be211e0ed9",
           "signature": "fn chain(arena: std.mem.Allocator, child: *BuilderError, parent: *const BuilderError) -> void",
           "params": [
             { "name": "arena", "type": "std.mem.Allocator" },
@@ -124,7 +124,7 @@
     {
       "type": "fn_decl",
       "name": "logIfError",
-      "match_hash": "1f30d76283697f5d1b2aa37b3444e9cfc48368642ca6e219b2f879cefd9b851b",
+      "match_hash": "0048a1f2d757c69a2cf6f146db6bb6f278bd8b9a42d1cf2d4d2256d2406b87a7",
       "signature": "fn logIfError(maybe_err: ?*const BuilderError) -> void",
       "params": [
         { "name": "maybe_err", "type": "?*const BuilderError" }
@@ -136,7 +136,7 @@
     {
       "type": "fn_decl",
       "name": "joinStringSlice",
-      "match_hash": "e6abeca63f6820e596cf664a87a8466cdfac6925447914d7679a7bc2ae118ba0",
+      "match_hash": "faed75d537ec9d57be09f4dd2dbb485aa44e50bc8cc0c561df2639805298cf6f",
       "signature": "fn joinStringSlice(arena: std.mem.Allocator, names: []const []const u8) -> []const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },

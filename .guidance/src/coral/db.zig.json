@@ -12,7 +12,7 @@
     {
       "type": "enum",
       "name": "NodeId",
-      "match_hash": "72c30284dd6e638961ec9db3d0d3805f933eef0bf92433be0a7775bb590dd39b",
+      "match_hash": "cf1285d8b2f6e3870ce23b57bb88ff3a0823297dcc6605152ccfd8ff96a2d04a",
       "signature": "keyword_enum NodeId { ... }",
       "is_pub": true,
       "members": [
@@ -28,7 +28,7 @@
     {
       "type": "fn_decl",
       "name": "nodeIdFromInt",
-      "match_hash": "d9329462215b1cdc9eb3fb831e69f58245b3e8e1b8ec1c85413708df0073088a",
+      "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
       "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
       "params": [
         { "name": "i", "type": "i64" }
@@ -40,7 +40,7 @@
     {
       "type": "fn_decl",
       "name": "nodeIdToInt",
-      "match_hash": "7c38ee272600a839d44cca75d52df9e64a8e21a615b6770e03e162b6b293b9dc",
+      "match_hash": "19b77e91a29008ae9413ff1b9ac45e605d5c73146f0af94fa4126aaf4abb65aa",
       "signature": "fn nodeIdToInt(id: NodeId) -> i64",
       "params": [
         { "name": "id", "type": "NodeId" }
@@ -52,14 +52,14 @@
     {
       "type": "struct",
       "name": "ContextNode",
-      "match_hash": "3c007de0a5b42c22565930666c59db763b4cd014ed90ed08795f2c61d3ac94fb",
+      "match_hash": "ee76451a32c1986c99265272ada49794240298a798e7557ccaf668fa26c7ee82",
       "signature": "keyword_struct ContextNode { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "d08d9a9e176f757ac70f2efb61fd2f8179861acde339d8c98c92eb7045fa7876",
+          "match_hash": "d1fd5557efc34a91b33c1fc943a890307abc56c8f462cf61b0056890b53b4e96",
           "signature": "fn init(id: i64, name: []const u8, full_text: []const u8, allocator: std.mem.Allocator) -> ContextNode",
           "params": [
             { "name": "id", "type": "i64" },
@@ -74,7 +74,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getLod",
-          "match_hash": "bdf5d4f3d96d31c3d7ea91e780b4a7f907f0f60795e86b05b2e3200a099f4ca2",
+          "match_hash": "616cc7f05e43998d1889eb0198eb465e2b70cc09c502c2f41537b09dbdd9ffe3",
           "signature": "fn getLod(self: *const ContextNode, level: u3) -> []const u8",
           "params": [
             { "name": "self", "type": "*const ContextNode" },
@@ -87,7 +87,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setLod",
-          "match_hash": "268644e4d8cc10bb56b2d10690a053288839ed18599149d980f951cf87af2a9d",
+          "match_hash": "81a811335cd2f3c3ec2a8bbf7a96d32edbda9038a68fd53b328a2c97919fc5db",
           "signature": "fn setLod(self: *ContextNode, level: u3, value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*ContextNode" },
@@ -101,7 +101,7 @@
     ,    {
           "type": "fn_decl",
           "name": "setSource",
-          "match_hash": "687543bc3ab9ffe7008c3d04c03ac77339d3214b1ce614a957bf41e7f49421dc",
+          "match_hash": "577014c87a997a7dda03652e69ed4e45637237001f1d51b196b721df5f7a6d49",
           "signature": "fn setSource(self: *ContextNode, allocator: std.mem.Allocator, text: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*ContextNode" },
@@ -115,7 +115,7 @@
     ,    {
           "type": "fn_decl",
           "name": "clone",
-          "match_hash": "4d45aaf36a871f1458104a9e2758fe0221b3f7192bcb8e9a2383fea4ade1dd65",
+          "match_hash": "b6393da743aa7936ed227b16f78370b37f4c1c42b7105f2d5219698aee918fa4",
           "signature": "fn clone(self: *const ContextNode, allocator: std.mem.Allocator) -> ContextNode",
           "params": [
             { "name": "self", "type": "*const ContextNode" },
@@ -128,7 +128,7 @@
     ,    {
           "type": "fn_decl",
           "name": "free",
-          "match_hash": "607a03ddf5b8c4182ddd6db4c8e36ad162f2e69f3a353458c7e8c7ba2ed70136",
+          "match_hash": "38fdb4302519c796581a31d75fe5f49a7e2608d17e243978db2e914725c657aa",
           "signature": "fn free(self: *ContextNode, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*ContextNode" },
@@ -144,7 +144,7 @@
     {
       "type": "fn_decl",
       "name": "truncateAtSentence",
-      "match_hash": "3dcaa5b59e1678202919c7733e6e49a1bab306cd095594b7827cc2010d524c77",
+      "match_hash": "e2e1e81a2bab26886517a4fddde7e4ff8bddf5c8e7afdda758426da6e4d54dda",
       "signature": "fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -158,7 +158,7 @@
     {
       "type": "fn_decl",
       "name": "generateLodSlices",
-      "match_hash": "dd6c64f0aa9d8ad01dc1c61a37620cf0c60c30745c369aa129fcb0842fc5c6b8",
+      "match_hash": "e7d8573dfaf9409373329f96928ab054bb779f35a0358d74bfcdd537835b39a1",
       "signature": "fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) -> [schema.LOD_COUNT][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -171,7 +171,7 @@
     {
       "type": "struct",
       "name": "KnnHit",
-      "match_hash": "a97d0e50824ca5575cd1eccd4ed6f2d6a2a9f3796ff339a46b6688f8c1032d9d",
+      "match_hash": "5c19a058b27631568e7786db5513d9e869fb4e74712f602220050064be936613",
       "signature": "keyword_struct KnnHit { ... }",
       "is_pub": true,
       "line": 214
@@ -179,7 +179,7 @@
     {
       "type": "enum",
       "name": "EdgeType",
-      "match_hash": "825c6d5f4c547da32b188b95652f797d0119a33dc78d2cb5ef2e076dbe5d94aa",
+      "match_hash": "9ba75c7914570541f9cb4d90c43e8f32f28b825390fd8a3c56d69ee22dbd085f",
       "signature": "keyword_enum EdgeType { ... }",
       "is_pub": true,
       "members": [
@@ -216,7 +216,7 @@
     ,    {
           "type": "fn_decl",
           "name": "relation",
-          "match_hash": "fb63166a3bc7389d0bd7edb252f497f490ec894f24efb4485439ed8f33b4cf38",
+          "match_hash": "d5b51c2f0218478c4459a3f9af138f24cfde5a147165479fd386ac3eac2b4c50",
           "signature": "fn relation(self: EdgeType) -> []const u8",
           "params": [
             { "name": "self", "type": "EdgeType" }
@@ -228,7 +228,7 @@
     ,    {
           "type": "fn_decl",
           "name": "label",
-          "match_hash": "45da796e905b9f28179360a15a2773cf9bb5d824c30765b428e974ed423504fe",
+          "match_hash": "162f8233838b9a0d87319352b9b4156fbdb2399c2882c4449a3b6a390f4f58de",
           "signature": "fn label(self: EdgeType) -> []const u8",
           "params": [
             { "name": "self", "type": "EdgeType" }
@@ -243,7 +243,7 @@
     {
       "type": "struct",
       "name": "WasmTool",
-      "match_hash": "558f06a09c59250161a41ce0053df21be12534ce76558b05fb724cdeb6e078de",
+      "match_hash": "271110779a45e20af87ec49aeb3fcee7bc98d8e61d1b3df69f5d17573c423934",
       "signature": "keyword_struct WasmTool { ... }",
       "is_pub": true,
       "line": 256
@@ -251,7 +251,7 @@
     {
       "type": "struct",
       "name": "Library",
-      "match_hash": "334f5067f82d95d398617f03de21663ec969ae99de6b4a074db9e46bbc7a2813",
+      "match_hash": "bc4f03f8759f7c15493a05166572012e928db9c63fb0fe8572ca22479a7dfffd",
       "signature": "keyword_struct Library { ... }",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -261,7 +261,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "ad581a4e8715241f8f8e01b0f236a70f62f202fd397ce3971315f48adaa1ce83",
+          "match_hash": "632e130c99a4217cbf1b2f885100d0aa2226ced3b14fa7ef8a92fc33d3a4f091",
           "signature": "fn init(allocator: std.mem.Allocator, engine: StorageEngine, path: []const u8) -> *Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -275,7 +275,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -287,7 +287,7 @@
     ,    {
           "type": "fn_decl",
           "name": "exec",
-          "match_hash": "5f2e534caef55ee863f464eaf59328b7f6612f5b2e453099072ecdc4d8722598",
+          "match_hash": "4aab8bee3871c3413163c0219eaba37bf9b1917517436c1f03118fb6f60fa44c",
           "signature": "fn exec(self: *Self, sql: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -300,7 +300,7 @@
     ,    {
           "type": "fn_private",
           "name": "prepare",
-          "match_hash": "404215c1e371c6b9360f0a34e61b2a807d6dca9e07fb6fcfe55bb07d33a1254f",
+          "match_hash": "f1c5507e7959f8f926c5406a5458fb34a9853e8a7e6ee8ceb7df364f45ffb041",
           "signature": "fn prepare(self: *Self, sql: []const u8) -> *c.sqlite3_stmt",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -313,7 +313,7 @@
     ,    {
           "type": "fn_private",
           "name": "step",
-          "match_hash": "51a1184bce8ff8168e0bb8d8f4e119305b2594d29faf6673614716046fa2971e",
+          "match_hash": "98eff056c0071a63e927dba6fb274a0e7f9af13eea7f07d258fa3503fd62d848",
           "signature": "fn step(stmt: *c.sqlite3_stmt) -> bool",
           "params": [
             { "name": "stmt", "type": "*c.sqlite3_stmt" }
@@ -325,7 +325,7 @@
     ,    {
           "type": "fn_decl",
           "name": "initSchema",
-          "match_hash": "3e1c59c87d864264ebcc9cc0eeb5f3e3d7582f48b115dbf41641e740cfdf0e06",
+          "match_hash": "299374d1092e4999ef42a1bf8554916404c43770f694917c7e9ce12711821690",
           "signature": "fn initSchema(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -337,7 +337,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getSchemaVersion",
-          "match_hash": "231f761f8905cb616a2460ae4b2dbcd83f6fc3a995801dda0bb2c06abb5b170b",
+          "match_hash": "2e0bbbf8a94af303eeea3d38d5562a2fb99a95427806f918f697e4fc3d5f56fe",
           "signature": "fn getSchemaVersion(self: *Self) -> u32",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -349,7 +349,7 @@
     ,    {
           "type": "fn_decl",
           "name": "migrate",
-          "match_hash": "d41a52d4a64b2df36334444b8735590f098e4f410b54b958f875263de7687b47",
+          "match_hash": "429e183661f29ba7cdf660db5f208697c2a1f5f9b93ec8e326afdf1e74d6836f",
           "signature": "fn migrate(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -361,7 +361,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertNode",
-          "match_hash": "af381cc19b29a3ca14d6ca4421a8d464e74c112d34ccc5cd5d55b34905f64baf",
+          "match_hash": "a5af120c08daf012589afaf3b15bef1cd971ef700307f367a866eabe13c918fd",
           "signature": "fn insertNode(self: *Self, node: ContextNode) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -374,7 +374,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fetchNode",
-          "match_hash": "3aaba63f64991c11ef39395cb361ef834ae535510455b142fa51ba15a9fb9e4b",
+          "match_hash": "ef487e3d2a638b3e83b8d922ac7d0583ac1fd8525d00456422a7b170d3a245b2",
           "signature": "fn fetchNode(self: *Self, id: i64) -> ?ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -387,7 +387,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertTarget",
-          "match_hash": "3498f9bc80b86486efcc5a66997dabd029a1818508f27a6758ceffe868eb8899",
+          "match_hash": "277bb7c73815e7d4a677f295c525c4363345741515e4b0a4526391cd3db68661",
           "signature": "fn insertTarget(self: *Self, id: i64, name: []const u8, depends: *const std.bit_set.DynamicBitSetUnmanaged, provides: *const std.bit_set.DynamicBitSetUnmanaged, total_bits: usize, is_essential: bool) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -405,7 +405,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertWasmTool",
-          "match_hash": "d850899f06b1fb1bd1f9c9f5b527b94f4f3023946492573ff74ea7c1446027a8",
+          "match_hash": "dced9c4bbfd9673db752b400a22d85548e855ab0e50497510471e7b2ef7ff065",
           "signature": "fn insertWasmTool(self: *Self, tool: WasmTool) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -418,7 +418,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fetchWasmTool",
-          "match_hash": "490ecbc1d720b83cce84e7a7198d06fcfc567588419bca021842d2728957831a",
+          "match_hash": "c25e9ed773c47faf7487fa15ac361a4e07e0d685685b79e40b37f756b956d417",
           "signature": "fn fetchWasmTool(self: *Self, id: i64) -> ?WasmTool",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -431,7 +431,7 @@
     ,    {
           "type": "fn_decl",
           "name": "freeWasmTool",
-          "match_hash": "548e0b9e7cf7d1cf944a729e32e4434adcd7fca75e8bc07776828f8912837d68",
+          "match_hash": "0d40143284b2b0be13721a89337b990fd898eec4f21a0342cd150d1fb3523f7a",
           "signature": "fn freeWasmTool(self: *Self, tool: WasmTool) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -444,7 +444,7 @@
     ,    {
           "type": "fn_decl",
           "name": "cleanupExpiredTools",
-          "match_hash": "d630cb0ef6335d16176e1f4788390bde3bb46d619e72c3134110623d69cdeb8e",
+          "match_hash": "6d6b05e51f733cd3ff3ecdadcc909f5f9b8c6b2ab11d49f8876952538db6eb86",
           "signature": "fn cleanupExpiredTools(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -456,7 +456,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertDependsOn",
-          "match_hash": "42a0b7385af7e9453581f0283f521326f2a0217cbe808fe8bd63d7a09d36cf97",
+          "match_hash": "4c0e8a9ba0229511bd2919df8f0f431329084f6aec444ceb08f322081f61c8d0",
           "signature": "fn insertDependsOn(self: *Self, from_id: i64, to_id: i64) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -470,7 +470,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertNeighborOf",
-          "match_hash": "0027242a89fc272aefc88e7e6886fe50df1c34a2c01138134521a88ca3194de7",
+          "match_hash": "e4c793a3bdc106c108ee85bdf493564059395e7429ca0ab957e007aaa2d521f2",
           "signature": "fn insertNeighborOf(self: *Self, from_id: i64, to_id: i64, distance: f32, edge_type: EdgeType) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -486,7 +486,7 @@
     ,    {
           "type": "fn_decl",
           "name": "updateNodeDegree",
-          "match_hash": "cb13a49e2bb583fddb3aad57e3c6af8a4b9055b7c8247df5f90fb4be3ec332a6",
+          "match_hash": "b0ae1d32c66de1c690a4daee128b47f31e3150ac5b7c83f2932b328e5041317a",
           "signature": "fn updateNodeDegree(self: *Self, node_id: i64, degree: u32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -500,7 +500,7 @@
     ,    {
           "type": "fn_decl",
           "name": "updateNodePageRank",
-          "match_hash": "cbe6b52d4df7f31a5e5a134cf5c331f597c6ef4ead07861f8deb80493a2a1766",
+          "match_hash": "35bac91d9779bdb042373b8adc7420bc02ffd38244eda4b5251887fca52d09b4",
           "signature": "fn updateNodePageRank(self: *Self, node_id: i64, pagerank: f32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -514,7 +514,7 @@
     ,    {
           "type": "fn_decl",
           "name": "updateNodeCommunity",
-          "match_hash": "bf778d6986a6bd7a87f594e2e2f2ea65b7595b7a7c60529a3e2c7658e1633066",
+          "match_hash": "bd065319a90972f58c1baa669c960931ecc063b0ab7aa5676155b334781dd502",
           "signature": "fn updateNodeCommunity(self: *Self, node_id: i64, community_id: i64, level: u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -529,7 +529,7 @@
     ,    {
           "type": "fn_decl",
           "name": "updateEdgeWeight",
-          "match_hash": "d700a4d4281740e614376bcda875502f8237a9ce8f8480d024f2291d31429a29",
+          "match_hash": "0faa28af2455bbf98e61fbe472e7bbd9d3ce699c542c38a959f72be1fdec01ef",
           "signature": "fn updateEdgeWeight(self: *Self, from_id: i64, to_id: i64, weight: f32, predicate_iri: ?[]const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -545,7 +545,7 @@
     ,    {
           "type": "fn_decl",
           "name": "saveCsrCache",
-          "match_hash": "d0a452e9b756a28611db86a57e6d38a18fe9b6be5c21e473074a88c1033fb88c",
+          "match_hash": "4e0fd95a64a9d21f17b163e7540c4f82479d2d4c0c8e5be0e23f32fb10c8f1d3",
           "signature": "fn saveCsrCache(self: *Self, data: []const u8, node_count: u32, edge_count: u32, predicate_filter: ?[]const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -561,7 +561,7 @@
     ,    {
           "type": "fn_decl",
           "name": "loadCsrCache",
-          "match_hash": "9144ad8da3903bb15c3ca5c2116ea828d8fa822a4dd7d1cc2d2749a84dc6adf4",
+          "match_hash": "0c65f803e793114112a6955bddee2cb8f7a09c87a80f311beb049ee94ab62678",
           "signature": "fn loadCsrCache(self: *Self, allocator: std.mem.Allocator) -> ?[]u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -574,7 +574,7 @@
     ,    {
           "type": "fn_decl",
           "name": "iterateNeighborOf",
-          "match_hash": "e6e86ccb6f2b1d75d77a5460f48fa89ef1e005920c37006366aa9b01932ff39a",
+          "match_hash": "9ac8667eaee14e494f79057d78d9e4c355fec85b560bcf60aeb9c3a7e20f7027",
           "signature": "fn iterateNeighborOf(self: *Self, arena: std.mem.Allocator, callback) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -588,7 +588,7 @@
     ,    {
           "type": "fn_decl",
           "name": "iterateDegrees",
-          "match_hash": "15b5e24077d11a9b287a590cdbd33312dcb742896a551d4c27dfe554f9ff8027",
+          "match_hash": "a0e785b4c289da54a2503aacd6358b64ecc0dbf5708085767e26a5ce274bc5dd",
           "signature": "fn iterateDegrees(self: *Self, arena: std.mem.Allocator, callback) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -602,7 +602,7 @@
     ,    {
           "type": "fn_decl",
           "name": "allNodeIds",
-          "match_hash": "1ff8d50fc0cd41bb17eacda48382489f87ecaa0fff900ffea8c742429d847342",
+          "match_hash": "f28a535288f5a1f99861161c592050558a3db1626b2989113a62b8d97726c732",
           "signature": "fn allNodeIds(self: *Self, arena: std.mem.Allocator) -> []i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -615,7 +615,7 @@
     ,    {
           "type": "fn_decl",
           "name": "countOutEdges",
-          "match_hash": "cad0a3d35d40b22fbeb394ea25b7e85957911ae2e16598773ef567623b5f5a22",
+          "match_hash": "7c5c1185d2b1022dcc55446ab174d7f1756b4a9f05f28013bbf5efb6af705881",
           "signature": "fn countOutEdges(self: *Self, node_id: i64) -> u32",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -628,7 +628,7 @@
     ,    {
           "type": "fn_decl",
           "name": "iterateNeighborOfWithDegrees",
-          "match_hash": "3d9efc5398b044afbfd7f9a40c9860b44e4f63f8b09a6bdf49060fa3a27c3680",
+          "match_hash": "3f00bde4d0dd909bf3f089187217e5471f419ebd3e8e5ca9f2ce44827c43cad1",
           "signature": "fn iterateNeighborOfWithDegrees(self: *Self, arena: std.mem.Allocator, callback) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -642,7 +642,7 @@
     ,    {
           "type": "fn_decl",
           "name": "createHydrationPipeline",
-          "match_hash": "9a963eb93b8c2c6fd63ce3e72ad199913b792b90e003dfb8f76e0bbbeb2d3c30",
+          "match_hash": "c546fe4ac2c5ba373c157c5304243a6d5d9dfcb2ee84a6c9c719df2ee0f1b600",
           "signature": "fn createHydrationPipeline(self: *Self) -> HydrationPipeline",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -657,7 +657,7 @@
     ,    {
           "type": "fn_decl",
           "name": "createContextPacker",
-          "match_hash": "18a52793bb827c466a8f66082f7b595ea9075c3974ba95c5085f29b953f44703",
+          "match_hash": "702786a42163c934ef7930c69551333ac31aa3436f3f4a65c188e96b0816b62a",
           "signature": "fn createContextPacker(self: *Self, max_tokens: usize) -> ContextPacker",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -673,7 +673,7 @@
     ,    {
           "type": "fn_decl",
           "name": "persistNeighborEdges",
-          "match_hash": "baddd230b4ac0850964dd466c976d18f6c6e204d56f71e68fe659eac429be608",
+          "match_hash": "9c47af5143817685ef4878252b74e6e044f6973767760f81e86fe73d8f83daf8",
           "signature": "fn persistNeighborEdges(self: *Self, knn_hits: []const KnnHit) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -686,7 +686,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getNeighborIds",
-          "match_hash": "232b00a1e835f1896a2aabb8bbffb5c933727d9ca8e644bc0db5606f6c3145a3",
+          "match_hash": "b89894b366e397b4b15782f20f11a80070ac9bf4643a8c5c55de7ac4b13d8c52",
           "signature": "fn getNeighborIds(self: *Self, allocator: std.mem.Allocator, node_id: i64) -> []i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -700,7 +700,7 @@
     ,    {
           "type": "fn_decl",
           "name": "knnSearch",
-          "match_hash": "56f5bfde2038c9eaa1e20bdb554e165f29815411fb9a0d7d62eca0272489a5da",
+          "match_hash": "082603b29b8891167c7d57de1034808b0724db996f5a63f98aa016d29abe2733",
           "signature": "fn knnSearch(self: *Self, allocator: std.mem.Allocator, query_vec: []const f32, k: usize) -> []KnnHit",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -715,7 +715,7 @@
     ,    {
           "type": "fn_decl",
           "name": "traverseFrom",
-          "match_hash": "99521d56b809e20a0a0890aec5cb955356c5e8669e6c8ef591a4f441c047c1ad",
+          "match_hash": "eced0a0ef34dc2c0f48cdbf7f68785d5e00a85729edba4b2207426c24ce197d1",
           "signature": "fn traverseFrom(self: *Self, arena: std.mem.Allocator, root_id: i64, max_depth: u8) -> []ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -730,7 +730,7 @@
     ,    {
           "type": "fn_decl",
           "name": "countNodes",
-          "match_hash": "399cf134fe76dd8b44876417acee0f11a6ec9875fe599d3208d0e9077df49178",
+          "match_hash": "10d11ede94daf33bc2d40d6526c46a313546d7d8527076e373ad9fb892bb5d79",
           "signature": "fn countNodes(self: *Self) -> usize",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -742,7 +742,7 @@
     ,    {
           "type": "fn_decl",
           "name": "findNodeByName",
-          "match_hash": "01b121b4621978df1457c2c2a3fa4d3661e655ce0fed8e62cc24722e39cf6677",
+          "match_hash": "481ffbcd68fc8096787d360629c3dbbb8054a52f8fd99fda2bf420a6d6f78dc0",
           "signature": "fn findNodeByName(self: *Self, name: []const u8) -> ?i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -755,7 +755,7 @@
     ,    {
           "type": "fn_decl",
           "name": "keywordSearch",
-          "match_hash": "730b7515f1bbbeb7069b8b7b28247cd3a95fc59b2de9d8e5ca943a9f200f7db8",
+          "match_hash": "1c4db62f893df981892bc894d5cf1699800d444c862354b4c099ed504136b145",
           "signature": "fn keywordSearch(self: *Self, allocator: std.mem.Allocator, query: []const u8, limit: usize) -> []ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -770,7 +770,7 @@
     ,    {
           "type": "fn_decl",
           "name": "hybridSearch",
-          "match_hash": "f1c6e87c610ef65f39c1fde2c9829a367be4b313842d1cf6ecdba08227d1e4f7",
+          "match_hash": "54c210907679f1790ed836b1dc6315412f72d965f9f8ad61ab8ad0f9f2b10481",
           "signature": "fn hybridSearch(self: *Self, allocator: std.mem.Allocator, query: []const u8, query_embedding: []const f32, limit: usize, threshold: f32) -> []ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -787,7 +787,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isA",
-          "match_hash": "48d6057a22fd0fac777eaf35ce14982db0948d75bcf43143dba84881db1dbf87",
+          "match_hash": "bfdcec6f9b641c44a3611f7ace1a272e08cedb148e200766d068e32f2f67ac18",
           "signature": "fn isA(self: *Self, child_id: i64, parent_name: []const u8) -> bool",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -801,7 +801,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getAllAncestors",
-          "match_hash": "4897d476426e0c2e18bac467e28a9b1d0b9660f7f3a88991733edbd3b52ce57b",
+          "match_hash": "3cbd0e4fbedbcbbf8ca017da4f0783b47901c2eee3bec2067aef95cd7751e6a9",
           "signature": "fn getAllAncestors(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> []i64",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -815,7 +815,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getCapabilitiesForEntity",
-          "match_hash": "4fd58fc1c29d73e6ac0e22109e3d465932c4f0ddcfea47a12c31e58c09ad7b82",
+          "match_hash": "80d7e6719e5c660d63e77dd26e7d4a1f5f1ca6ce024d9f8be567be6cfb65bc59",
           "signature": "fn getCapabilitiesForEntity(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> [][]const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -829,7 +829,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertEntityType",
-          "match_hash": "301c92173058ce5e2efd6afda5db9e79b403b9013bd3dd71769a4bc062607688",
+          "match_hash": "5c102c101f6f265a997cb2cdb292cbfd4628754cee92d18933db8ed86e169aa8",
           "signature": "fn insertEntityType(self: *Self, entity_id: i64, type_id: i64) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -843,7 +843,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getInheritedProperties",
-          "match_hash": "d628e29434e7a05a5cb14badcf2e1e571f6262b1e347e370299997f44917d090",
+          "match_hash": "b6ce1deb11ccd04bad6e061cbe6dfc020bcf5e6e9428bd958bb133706297b881",
           "signature": "fn getInheritedProperties(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> [][]const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -857,7 +857,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertPropertyUse",
-          "match_hash": "34d760907e5641c49ab31383a32fc3380de1cc1fc58b0131a6e49af602e2ee0d",
+          "match_hash": "d3cb699226d4a7e8172e1e35dbebb63cb222483b5214f81814651b54ec8bf40f",
           "signature": "fn insertPropertyUse(self: *Self, predicate: []const u8, domain_type_id: i64) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -871,7 +871,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertRdfEdge",
-          "match_hash": "f10e630a919f5eeeb0806a5181a62ede3cf73f498bfaf8d811acf1eddec43a60",
+          "match_hash": "15e221f431dd75bf37da5e4025aee4e789ef22c720bd061f502bbb299ad47cd4",
           "signature": "fn insertRdfEdge(self: *Self, from_id: i64, to_id: i64, predicate: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -886,7 +886,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getCommunityRoot",
-          "match_hash": "024fce2e8abce56eef3a792b0e95871cc1533d5b6233c3273b72572803095b1a",
+          "match_hash": "aa58bb8ec3875a73768654d12e6be680a3a2c145f726eeb802289ba0f8766241",
           "signature": "fn getCommunityRoot(self: *Self, community_id: i64) -> ?CommunityPathEntry",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -899,7 +899,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getCommunityPath",
-          "match_hash": "682fe7e89f3e6558bf7bfcc197644f7509dcebcf641c1125e17798b9976c23d7",
+          "match_hash": "f57a8f9def7d3f17a2720651745c626cf11ef5de291b4aab75889f82117c648b",
           "signature": "fn getCommunityPath(self: *Self, arena: std.mem.Allocator, node_id: i64) -> []CommunityPathEntry",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -913,7 +913,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getLeafCommunities",
-          "match_hash": "f0cc36bd24d8d79b497cc6139f4d90de4dc68158d1fdeec0947f02dd49793eab",
+          "match_hash": "8b96d3c9ad2944f698c565a65d3bb3d5fd2785fbe5e04194bad3e92c9105cb63",
           "signature": "fn getLeafCommunities(self: *Self, arena: std.mem.Allocator, parent_community_id: i64) -> []CommunityPathEntry",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -927,7 +927,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getNodesInSameRootCommunity",
-          "match_hash": "e3cfa99cfb733f12d6e8680c0babae215bd431470ed2c08580e49013a683fd21",
+          "match_hash": "a78b41e1eba12fb7e47f1b299ab207f781fd079af79cf7524dff9d3b625e1afc",
           "signature": "fn getNodesInSameRootCommunity(self: *Self, arena: std.mem.Allocator, node_id: i64) -> []NodeInCommunity",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -941,7 +941,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertProvenance",
-          "match_hash": "dea7e856d8864176ac212f2ab8219dd98bff7d669e8405ad761834f74bc7ab83",
+          "match_hash": "6eab81773c9cc1fa7582f4afb345280081472cdda5fcd81981df2adca20749ac",
           "signature": "fn insertProvenance(self: *Self, provenance_id: i32, source: []const u8, authority: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -956,7 +956,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertApproval",
-          "match_hash": "686ae8366a8ef09d701dda16a8bb3507c86204639d8b4d182161b6650d238a92",
+          "match_hash": "8b1efc155e9abfe1b8aa4f9341629bbe5fccbea1e930ace7bc773886c4c68066",
           "signature": "fn insertApproval(self: *Self, node_id: i64, confidence_before: i32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -970,7 +970,7 @@
     ,    {
           "type": "fn_decl",
           "name": "updateApproval",
-          "match_hash": "ec476a9fe63fa3d696e3488bfb8771ce34cdb3a3123d539388da8a059d57ec87",
+          "match_hash": "48df4d9ff47963a0bb31275a1fde37e375477c7f38e73290f77a0e93c3c43d2c",
           "signature": "fn updateApproval(self: *Self, node_id: i64, status: []const u8, reviewed_by: []const u8, confidence_after: i32) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -986,7 +986,7 @@
     ,    {
           "type": "fn_decl",
           "name": "insertContradiction",
-          "match_hash": "c154a6513775e5dae790a402e2245e4012db2dd2c3d579c626995322696491ea",
+          "match_hash": "b257544e08d1f6d0102034e804f3108c6857a33484053225bb1cdd466e09ebbc",
           "signature": "fn insertContradiction(self: *Self, node_a: i64, node_b: i64, predicate: []const u8, value_a: []const u8, value_b: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1006,14 +1006,14 @@
     {
       "type": "struct",
       "name": "HydrationPipeline",
-      "match_hash": "25791e46f6b1518ba481cff0413cc87ab77b0b0d3da11729087736345579644e",
+      "match_hash": "89c5b513b4f57814e4dff974813958fd639cefb31f738f6ec0ec42b746c62059",
       "signature": "keyword_struct HydrationPipeline { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "29413c0fecaa6101e9e3a1619145a688b9dc99e6a49b8e6962f2f048ab0fcdfd",
+          "match_hash": "5ad974043807e3a1e44144bf56f3f6f75a9f86eb92081fd8a9f7e8d327a66d78",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -1026,7 +1026,7 @@
     ,    {
           "type": "fn_decl",
           "name": "cosineDistance",
-          "match_hash": "ec529e243115447bcc6601a8d79aa374a2d8176f75ea8ec40db6cba89acb91c8",
+          "match_hash": "6c2a7d2ae6b70dd90117f7dfa175edf920b3a41e2bd1c1c60435d6dd6a681ca2",
           "signature": "fn cosineDistance(a: []const f32, b: []const f32) -> f32",
           "params": [
             { "name": "a", "type": "[]const f32" },
@@ -1039,7 +1039,7 @@
     ,    {
           "type": "fn_decl",
           "name": "knnSearch",
-          "match_hash": "2958d6cffeb28b381bcd326404217068078e08d241e0220f7daeab7c9090805f",
+          "match_hash": "dc1adba4948bc81d7f9f850b777f8d0a2aca3c6ebf23d29a2d551d3cc5b8fca6",
           "signature": "fn knnSearch(self: *Self, query_vec: []const f32, k: usize) -> []KnnHit",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1053,7 +1053,7 @@
     ,    {
           "type": "fn_decl",
           "name": "persistEdges",
-          "match_hash": "f004477db2f23b706e55c496a4ee71d20be98c8ef4108e530721a9a20dcae026",
+          "match_hash": "6024a21fdc2cb44ec3075adcff1d625d9097afe8c03f2b205312fa269c9b3df0",
           "signature": "fn persistEdges(self: *Self, knn_hits: []const KnnHit) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1066,7 +1066,7 @@
     ,    {
           "type": "fn_decl",
           "name": "hydrate",
-          "match_hash": "f0d0f0c3e91018c90782bec273745cafd7e724f4b4a500c7f9066c23a1179d4a",
+          "match_hash": "baee61a9e59e9702697a9081eb2e31a20a894446f76e52fa1d0492c035120bfd",
           "signature": "fn hydrate(self: *Self, query_vec: []const f32, k: usize) -> usize",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1083,14 +1083,14 @@
     {
       "type": "struct",
       "name": "ContextPacker",
-      "match_hash": "1c725a77ea062272732556bbd9edec3df4e422e8e74bf947a70dfb9e250bc952",
+      "match_hash": "64fc8294fa9795d4dfd3600dbac456ef57bf8753135c540d64fcb0577e1171d5",
       "signature": "keyword_struct ContextPacker { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "851dafe68cf51dbadc8941cab6d1f44901cb8cb7678f1673bb714db984dbf93a",
+          "match_hash": "25709b719014beb0361bb012fdb3b7edece29f00e034aa59803a133fb80f2e4f",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library, max_tokens: usize) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -1104,7 +1104,7 @@
     ,    {
           "type": "fn_decl",
           "name": "selectLod",
-          "match_hash": "8ecdcb8a78fe3bbef61012626d690debc7f7c2de9a3e999e3b3770ccedf9c23e",
+          "match_hash": "8f9fb59913fce4dd721f0a728f6b2f2c5d44d7e64766f77dc2de0c0a6d755884",
           "signature": "fn selectLod(self: *Self, node: ContextNode, graph_distance: u32) -> []const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1118,7 +1118,7 @@
     ,    {
           "type": "fn_decl",
           "name": "selectLodByDistance",
-          "match_hash": "707f4b7d098a9d9e3b2a8c2d583f30508069768254802c49e014ce36f7ea93a3",
+          "match_hash": "ae128e1ccfc835605fc2edf091d7d67575c873ffac8b860a286a995a53071e6f",
           "signature": "fn selectLodByDistance(_: *Self, node: ContextNode, graph_distance: u32, avg_degree: u32) -> u3",
           "params": [
             { "name": "_", "type": "*Self" },
@@ -1133,7 +1133,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getNodesByDistance",
-          "match_hash": "6230f26404f2995f59537d84781387e44199ea7ac6d6c5dbb4cba833c2e48e86",
+          "match_hash": "86e1474f8a3e9d49c75382e6534edd3b25d423590ff31849ca91aa43cc69ff41",
           "signature": "fn getNodesByDistance(self: *Self, semantic_center_id: i64) -> []GraphNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1146,7 +1146,7 @@
     ,    {
           "type": "fn_decl",
           "name": "pack",
-          "match_hash": "44492dcad0c4fdef5e08833ebea8ccb26163238649613148833f2a7ed772a7b3",
+          "match_hash": "14163cfff983247b6a9556f98ae44865114a7cfa2852b5a0a8778f4b38a30b1b",
           "signature": "fn pack(self: *Self, semantic_center_id: i64) -> []const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -1159,7 +1159,7 @@
     ,    {
           "type": "fn_decl",
           "name": "packFFD",
-          "match_hash": "ae53c085a09cbad87fef62dcb38756d9784d1235dc5884b05c61c1a2ee10b469",
+          "match_hash": "7717ba14c1b0f79c17563c6ed1589f7bee4dced602a7c757dbb33877428d5406",
           "signature": "fn packFFD(self: *Self, semantic_center_id: i64) -> struct { text: []const u8, tokens_used: usize, nodes_included: usize }",
           "params": [
             { "name": "self", "type": "*Self" },

@@ -19,7 +19,7 @@ const types = @import("types.zig");
 // DocumentMetadata
 // =============================================================================
 
-/// Manages document metadata structures, owns shared state, ensures invariant integrity.
+/// Manages document metadata structures, owns metadata pools, ensures consistent access patterns.
 pub const DocumentMetadata = struct {
     keywords: []const []const u8 = &.{},
     capabilities: []const []const u8 = &.{},
@@ -132,7 +132,7 @@ pub const DocumentIndexer = struct {
 // Produces stages from the guidance JSON metadata: prose from detail/comment,
 // code from source excerpts (when available), metadata from keywords/skills.
 
-/// Manages guidance JSON indexing with fixed buffers; owned by the module; ensures consistent key structures.
+/// Manages guidance JSON indexing logic, owns struct state, ensures consistent key structures across operations.
 pub const GuidanceJsonIndexerImpl = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,
@@ -144,7 +144,7 @@ fn guidanceJsonDocType(_: *anyopaque) []const u8 {
     return "guidance_json";
 }
 
-/// Converts a pointer to a Zig array into a JSON document ID slice.
+/// Converts a pointer to a Zig string into a JSON document ID slice.
 fn guidanceJsonDocId(ptr: *anyopaque) []const u8 {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     return self.doc.meta.source;
@@ -302,7 +302,7 @@ fn guidanceJsonRelevance(ptr: *anyopaque, query_tokens: []const []const u8) f32 
     return @min(1.0, score);
 }
 
-/// Cleans up the guidanceJsonDeinit pointer, ensuring proper memory management and returning nothing.
+/// Cleans up the guidanceJsonDeinit pointer, ensuring proper memory management and returning void.
 fn guidanceJsonDeinit(ptr: *anyopaque) void {
     const self: *GuidanceJsonIndexerImpl = @ptrCast(@alignCast(ptr));
     self.allocator.destroy(self);
@@ -321,7 +321,7 @@ const guidance_json_vtable: DocumentIndexer.VTable = .{
 // GuidanceJsonIndexerBuilder — value-copy builder pattern (fluent-wvr §2)
 // =============================================================================
 
-/// Manages GuidanceJsonIndexerBuilder's configuration and state, ensuring proper ownership and invariants for indexing operations.
+/// Manages GuidanceJsonIndexerBuilder for structured keyword extraction; owns indexing logic; key invariant is correct key mapping.
 pub const GuidanceJsonIndexerBuilder = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,
@@ -386,3 +386,14 @@ test "GuidanceJsonIndexer: produceStages includes detail prose" {
     try std.testing.expect(stages.len >= 1);
     try std.testing.expectEqual(types.StageKind.prose, stages[0].kind);
 }
+
+
+
+
+
+
+
+
+
+
+

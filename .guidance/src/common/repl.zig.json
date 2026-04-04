@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "4d4ee917ce3169e66583d17b63b290238419f1eb7ba7d118b6b93a3020d6dc4f",
+      "match_hash": "5fe11cb9d5d51fc4d4a8e0c44494c5535e25532a7998d01b070a2d1a38f7d43c",
       "signature": "fn init(allocator: std.mem.Allocator, ctx: *BuildContext) -> Repl",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -24,7 +24,7 @@
     {
       "type": "fn_decl",
       "name": "deinit",
-      "match_hash": "3ca813bf9fb19726ee5af36f1d4d78187a05c5735e6c4a605ac9e9d1d20ee540",
+      "match_hash": "48e322a15afd825a2f74779319d8289a984148490eda117d34b3f91ac99a95cd",
       "signature": "fn deinit(_: *Repl) -> void",
       "params": [
         { "name": "_", "type": "*Repl" }
@@ -36,7 +36,7 @@
     {
       "type": "fn_decl",
       "name": "run",
-      "match_hash": "1a33779918fe56a3b28cbd7fc336f47634447ca98b268c545cd29a7d14f07eb2",
+      "match_hash": "9ab4f9974fd768f246034d3960f63ffa568a8d635d3a54f3a0103da074be9540",
       "signature": "fn run(self: *Repl) -> void",
       "params": [
         { "name": "self", "type": "*Repl" }
@@ -48,7 +48,7 @@
     {
       "type": "fn_private",
       "name": "handleDotCommand",
-      "match_hash": "afd02a032f34020736ba115349554933326c16aa0b57eeac2cffd238a903c743",
+      "match_hash": "7090e29e73a37982ea5a382b05648478758fecc06f231927a8037c9a7e755d31",
       "signature": "fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> bool",
       "params": [
         { "name": "self", "type": "*Repl" },
@@ -62,7 +62,7 @@
     {
       "type": "fn_private",
       "name": "handleBuildCommand",
-      "match_hash": "d76ff9361834a3cd531650820c938d0d17d27f422b2433c8a12ef2166c578423",
+      "match_hash": "1074af0e306cd4d63f59a66a245a71f785ecb428efdeff90bd779584b9999c5f",
       "signature": "fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> void",
       "params": [
         { "name": "self", "type": "*Repl" },

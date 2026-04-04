@@ -37,7 +37,7 @@ const stepPrint = types.stepPrint;
 // init — create default configuration
 // =============================================================================
 
-/// Manages initialization arguments for sync engine; owns configuration; ensures consistent state across invocations.
+/// Manages initialization arguments for sync engine; owns configuration; ensures stable state across calls.
 const InitArgs = struct {
     guidance_dir: ?[]const u8 = null,
     db_path: ?[]const u8 = null,
@@ -240,7 +240,7 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
-/// Manages commit metadata structures; owns state; ensures consistent invariants across operations.
+/// Manages commit metadata structures; owns commit data; ensures consistent state across processes.
 const CommitMemberInfo = struct {
     name: []const u8, // owned
     line: ?u32,
@@ -341,7 +341,7 @@ fn loadChangedMembers(
     return result.toOwnedSlice(allocator);
 }
 
-/// Generates a commit message string using provided file diffs and metadata.
+/// Generates a commit message string using provided file diffs and metadata for version control.
 fn generateCommitMessage(
     allocator: std.mem.Allocator,
     diff: []const u8,
@@ -837,6 +837,9 @@ const GenArgs = struct {
     /// Show LLM prompts in debug output (separate from --debug).
     /// Use --show-prompts to see prompts; --debug shows metadata only.
     show_prompts: bool = false,
+    /// Enable debug output (LLM metadata, HTTP requests).
+    /// Separate from --verbose which shows file processing status.
+    debug: bool = false,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -867,8 +870,10 @@ const GenArgs = struct {
                 ga.db_path = args[i];
             } else if (std.mem.eql(u8, arg, "--dry-run")) {
                 ga.dry_run = true;
-            } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "--debug")) {
+            } else if (std.mem.eql(u8, arg, "--verbose")) {
                 ga.verbose = true;
+            } else if (std.mem.eql(u8, arg, "--debug")) {
+                ga.debug = true;
             } else if (std.mem.eql(u8, arg, "--regen")) {
                 ga.regen_comments = true;
             } else if (std.mem.eql(u8, arg, "--sync-comments")) {
@@ -926,7 +931,7 @@ const GenArgs = struct {
     }
 };
 
-/// Manages resolved path generation logic; owns path data structures; ensures consistent state across invocations.
+/// Manages resolved path generation structures, owns path data, ensures consistent state across invocations.
 const ResolvedGenPaths = struct {
     workspace: []const u8,
     json_dir: []const u8,
@@ -939,7 +944,7 @@ const ResolvedGenPaths = struct {
     }
 };
 
-/// Resolves GenPaths using an allocator, GenArgs, and current directory path.
+/// Resolves generation paths using an allocator, GenArgs, and current directory, returning an owned path list.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
     const workspace = try llm.resolvePath(allocator, cwd, ga.workspace orelse cwd);
     errdefer allocator.free(workspace);
@@ -974,7 +979,7 @@ fn setupCspEnhancer(
             .api_url = ga.api_url,
             .model = model,
             .think = null,
-            .debug = ga.verbose,
+            .debug = ga.debug,
             .show_prompts = ga.show_prompts,
         };
         const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return;
@@ -991,7 +996,7 @@ fn setupCspEnhancer(
         .api_url = llm_config.api_url,
         .model = llm_config.model,
         .think = llm_config.think,
-        .debug = ga.verbose,
+        .debug = ga.debug,
         .show_prompts = ga.show_prompts,
     };
 
@@ -1044,7 +1049,7 @@ fn setupEnhancer(
             .api_url = ga.api_url,
             .model = model,
             .think = null,
-            .debug = ga.verbose,
+            .debug = ga.debug,
             .show_prompts = ga.show_prompts,
         };
         processor.enhancer = enhancer_mod.Enhancer.init(allocator, fallback_config) catch |init_err| {
@@ -1065,7 +1070,7 @@ fn setupEnhancer(
         .api_url = api_url,
         .model = llm_config.model,
         .think = llm_config.think,
-        .debug = ga.verbose,
+        .debug = ga.debug,
         .show_prompts = ga.show_prompts,
     };
 
@@ -1098,7 +1103,7 @@ fn setupEnhancer(
             .api_url = thinking_config.api_url,
             .model = thinking_config.model,
             .think = true, // Always enable thinking for detail generation
-            .debug = ga.verbose,
+            .debug = ga.debug,
             .show_prompts = ga.show_prompts,
         };
         processor.thinking_enhancer = enhancer_mod.Enhancer.init(allocator, thinking_llm_config) catch |err| {
@@ -1111,7 +1116,7 @@ fn setupEnhancer(
     }
 }
 
-/// Processes files using an allocator, synchronization processor, and resolves paths, returning processed count.
+/// Processes Zig source files using an allocator, synchronization processor, and resolved paths, returning processed count.
 fn processFiles(
     allocator: std.mem.Allocator,
     processor: *sync_mod.SyncProcessor,
@@ -1383,7 +1388,7 @@ pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) !void {
     try cmdGenImpl(allocator, ga);
 }
 
-/// Generates a Zig implementation for the sync engine using an allocator and provided generation parameters.
+/// Generates a Zig implementation for the sync engine using an allocator and provided generation arguments.
 fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -1415,7 +1420,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             allocator,
             paths.workspace,
             paths.json_dir,
-            ga.verbose,
+            ga.debug,
             ga.dry_run,
         );
         csp.generate_headers = ga.sync_headers;
@@ -1452,7 +1457,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         paths.workspace,
         paths.json_dir,
         ga.dry_run,
-        ga.verbose,
+        ga.debug,
     );
     defer processor.deinit();
     setupEnhancer(allocator, ga, &cfg, &processor);
@@ -2379,7 +2384,7 @@ pub const CapabilityEntry = struct {
     source: []const u8,
 };
 
-/// Processes allocation parameters to validate and return sync capabilities for the Zig engine.
+/// Validates and processes sync capabilities arguments, returning a void result.
 pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
     var workspace: ?[]const u8 = null;
@@ -2821,7 +2826,7 @@ const DiscoveredSource = struct {
     reason: []const u8,
 };
 
-/// Updates the capability sources section with allocated memory paths and discovered sources.
+/// Updates the capability sources section with provided allocator, paths, sources, and verbosity flag.
 fn updateCapabilitySourcesSection(
     allocator: std.mem.Allocator,
     cap_md_path: []const u8,
@@ -2883,7 +2888,7 @@ fn updateCapabilitySourcesSection(
     }
 }
 
-/// Processes allocation arguments to discover capability sources for the sync engine.
+/// Processes allocation parameters to discover capability sources for the sync engine.
 pub fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
     var db_path: []const u8 = config_mod.DEFAULT_DB_PATH;
@@ -3895,7 +3900,7 @@ fn scrubCount(value: *std.json.Value) usize {
 // todo — work item lifecycle
 // ---------------------------------------------------------------------------
 
-/// Processes a Zig command string, validates input, and prepares execution context.
+/// Processes a Zig command string, validating input and preparing execution context.
 pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -3958,7 +3963,7 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
 // diary — append timestamped entry to current work item DIARY.md
 // ---------------------------------------------------------------------------
 
-/// Processes a Zig command string, validates arguments, and executes the corresponding command.
+/// Processes a Zig command string, validates arguments, and executes the command.
 pub fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
         std.debug.print("Usage: guidance diary \"<message>\"\n", .{});
@@ -4066,7 +4071,7 @@ pub fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) ![][2
     return parseHunkRanges(allocator, chunk);
 }
 
-/// Loads changed member information from a Zig file using an allocator, returning a slice of CommitMemberInfo.
+/// Loads changed member information from a Zig file using allocator, guidance root, relative paths, and hunk ranges.
 pub fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) ![]CommitMemberInfo {
     return loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges);
 }
@@ -4076,7 +4081,7 @@ pub fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) bool {
     return chunkIsExplainGenJson(chunk, guidance_dir);
 }
 
-/// Converts a chunk of bytes into a public file path string.
+/// Converts a byte slice into a public file path string.
 pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
     return chunkFilePath(chunk);
 }
@@ -4085,3 +4090,64 @@ pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

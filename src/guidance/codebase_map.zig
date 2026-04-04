@@ -13,7 +13,7 @@ const std = @import("std");
 // Public types
 // =============================================================================
 
-/// Manages build system configurations with ownership and invariants on resource allocation.
+/// Defines a build system configuration with ownership, fixed buffers, and invariants; managed centrally.
 pub const BuildSystem = enum {
     zig_build,
     make,
@@ -38,7 +38,7 @@ pub const BuildSystem = enum {
     }
 };
 
-/// Manages core entry logic with fixed buffers; owned by the module; ensures consistent initialization.
+/// Manages entry point logic with fixed buffers; owned by the module; ensures consistent initialization.
 pub const EntryPoint = struct {
     /// Function/struct name: "main", "cmdExplain", "handleRequest"
     name: []const u8,
@@ -122,7 +122,7 @@ pub const CodebaseMap = struct {
 // Discovery entry point
 // =============================================================================
 
-/// Determines and returns the codebase map structure using an allocator and workspace data.
+/// Detects and returns the codebase structure map from the provided workspace.
 pub fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) !CodebaseMap {
     var tree: std.ArrayList(DirectoryEntry) = .{};
     errdefer {
@@ -235,7 +235,7 @@ fn walkFilesystem(
     try walkDir(allocator, dir, "", tree, 0);
 }
 
-/// Traverses a directory structure recursively, handling allocations and depth tracking.
+/// Traverses a directory structure recursively, handling allocators and depth tracking.
 fn walkDir(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -445,7 +445,7 @@ fn detectEntryPoints(
 const CAPABILITY_DIR_NAMES = [_][]const u8{ "capabilities", "docs/capabilities", "doc/capabilities" };
 const SKILL_DIR_NAMES = [_][]const u8{ "skills", ".skills", "doc/skills", ".guidance/.skills", ".guidance/skills" };
 
-/// Finds a list of directory entries based on an allocator and workspace parameters.
+/// Identifies directory paths for allocation within a workspace tree using an allocator.
 fn findCapabilityDirs(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -577,3 +577,19 @@ test "looksLikeIdentifier via ENTRY_EXACT: main is an entry point" {
     try std.testing.expect(isEntryPointName("handleRequest"));
     try std.testing.expect(!isEntryPointName("parseToken"));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

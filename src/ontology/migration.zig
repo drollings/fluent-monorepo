@@ -9,7 +9,7 @@ const yago = @import("yago.zig");
 // Version record
 // ---------------------------------------------------------------------------
 
-/// Tracks ontology version changes with fixed-size buffers; managed by owner; invariant version history.
+/// Tracks ontology version changes with fixed-size buffers; managed centrally; not thread-safe.
 pub const OntologyVersion = struct {
     version: []const u8, // e.g. "4.5"
     loaded_at: f64, // Unix timestamp
@@ -25,7 +25,7 @@ pub const OntologyVersion = struct {
 /// Stub type — implementations TBD.
 pub const MigrateFn = *const fn (allocator: std.mem.Allocator) anyerror!void;
 
-/// Tracks ontology migration events with fixed-size buffers; managed by owner; key invariant is data integrity.
+/// Manages migration state transitions; encapsulates invariants and ownership; ensures consistent lifecycle.
 pub const OntologyMigration = struct {
     from_version: []const u8,
     to_version: []const u8,
@@ -51,7 +51,7 @@ pub const MIGRATIONS = [_]OntologyMigration{
 // Version registry — in-memory tracking of loaded ontologies
 // ---------------------------------------------------------------------------
 
-/// Manages version registry entries with strict ownership and invariants; ensures consistent state across operations.
+/// Manages registry entries with version tracking; owned by the system; ensures consistent key-value storage.
 pub const VersionRegistry = struct {
     allocator: std.mem.Allocator,
     versions: std.ArrayList(OntologyVersion),
@@ -121,3 +121,7 @@ test "latest returns null when empty" {
     defer reg.deinit();
     try testing.expect(reg.latest() == null);
 }
+
+
+
+

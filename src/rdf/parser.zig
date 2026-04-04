@@ -564,3 +564,8 @@ test "YAGO 4.5 tiny: first 100 triples parse without errors" {
 
     try testing.expectEqual(YAGO_VALIDATE_MAX, count);
 }
+
+
+
+
+

@@ -9,7 +9,7 @@
     {
       "type": "fn_decl",
       "name": "estimate",
-      "match_hash": "572ea587947f7ff7439114a5c015b5670bc836e99630a6df885279670e7fc66d",
+      "match_hash": "8407ac41a3da910db5b342e8869db6586df86fbbbec60eea278c22d3bfe8f255",
       "signature": "fn estimate(text: []const u8) -> usize",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -21,14 +21,14 @@
     {
       "type": "struct",
       "name": "TokenEstimator",
-      "match_hash": "a000a00d8508149140ac8a698f60dd1c6653a83971a064d6e5ded9a29255cb0d",
+      "match_hash": "7a4c3f731c2a271afae1370990b1a77127d42a20bb528c6740b860445a5c48ae",
       "signature": "keyword_struct TokenEstimator { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "estimateTokens",
-          "match_hash": "300645f02a77de66797d421dc1c86d215ce72a08a0d5e227ba8d8b3f72fb8e84",
+          "match_hash": "0d8b1eb7413f42161a5ebdbdf14b16d043ff821c5b6b1293c91707878e4800b7",
           "signature": "fn estimateTokens(_: Self, text: []const u8) -> usize",
           "params": [
             { "name": "_", "type": "Self" },
@@ -41,7 +41,7 @@
     ,    {
           "type": "fn_decl",
           "name": "estimateSliceTokens",
-          "match_hash": "a562b7fe81fdee6f4363effa7ce3cfd8932b09731283770549084502596ed80d",
+          "match_hash": "468d10528d96aae811b9695dde715249d6e88f47d8f7be32807b22ead2c057e7",
           "signature": "fn estimateSliceTokens(self: Self, texts: []const []const u8) -> usize",
           "params": [
             { "name": "self", "type": "Self" },
@@ -54,7 +54,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fits",
-          "match_hash": "a97492fd13044fee01485c788eb049481f60dc15b3cb6af022c81a102d67ca28",
+          "match_hash": "02beafaa6a96a55d94938e6f196c1be00f8ee470fb1955f8bae9fda9a3e4268b",
           "signature": "fn fits(_: Self, text: []const u8, budget_tokens: usize) -> bool",
           "params": [
             { "name": "_", "type": "Self" },
@@ -71,14 +71,14 @@
     {
       "type": "struct",
       "name": "ProportionalBudget",
-      "match_hash": "6adb08b99e54346fe52c6c1854c62a2f8f37c5935b96257c24b7b59567a25f06",
+      "match_hash": "36b0c24ffa9758b911ff106821980e6649b981a14d09df49800e1dbedfe2bbfc",
       "signature": "keyword_struct ProportionalBudget { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "validate",
-          "match_hash": "714e2717d874263ef2b237d222646eef5e6204f9fac39f3903358ba257f6939f",
+          "match_hash": "b580c0140ec9eada047dd7f969f40cdfaec57caf3a0ee2a2ffaa5fc921430672",
           "signature": "fn validate(self: Self) -> void",
           "params": [
             { "name": "self", "type": "Self" }
@@ -90,7 +90,7 @@
     ,    {
           "type": "fn_decl",
           "name": "communityTokens",
-          "match_hash": "50f0e46229fbfac2db236592f63e94a6d317828ec3a7e329f6a4318d865b5a47",
+          "match_hash": "09dee3f868917935c6c4c7b681e9985a7c4145d6f4986e98dce5622fd536c24f",
           "signature": "fn communityTokens(self: Self) -> usize",
           "params": [
             { "name": "self", "type": "Self" }
@@ -102,7 +102,7 @@
     ,    {
           "type": "fn_decl",
           "name": "textTokens",
-          "match_hash": "ab9d6ff7618b4f445b83977621cd951b477ad899c761b81f1238d42688346dca",
+          "match_hash": "5f26199bb8d7ebafb5408204c120bcf5eef7b8eb77ea30defbe0c17d687e546f",
           "signature": "fn textTokens(self: Self) -> usize",
           "params": [
             { "name": "self", "type": "Self" }
@@ -114,7 +114,7 @@
     ,    {
           "type": "fn_decl",
           "name": "entityTokens",
-          "match_hash": "5a3d1243889174aa87e1af428eb7f8a35153dcb36ac8e1d35faf3fb93b9ee0db",
+          "match_hash": "d8dfea313a3256ae25e67aaf24ccc59090eac04063430c9edde2ef7d7a36213a",
           "signature": "fn entityTokens(self: Self) -> usize",
           "params": [
             { "name": "self", "type": "Self" }

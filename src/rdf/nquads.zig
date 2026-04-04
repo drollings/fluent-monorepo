@@ -225,3 +225,5 @@ test "nquads blank node subject" {
     defer q.deinit(testing.allocator);
     try testing.expectEqualStrings("b1", q.subject.blank_node);
 }
+
+

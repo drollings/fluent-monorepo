@@ -46,7 +46,7 @@ pub const SeeAlsoEntry = struct {
     keywords: []const u8,
 };
 
-/// Filters and returns a list of related SeeAlso entries based on the provided query and client data.
+/// Filters and returns a list of matching SeeAlso entries based on the provided query and client data.
 pub fn filterSeeAlso(
     allocator: std.mem.Allocator,
     client: *llm.LlmClient,
@@ -191,3 +191,8 @@ fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) !types.Stage {
         .line = s.line,
     };
 }
+
+
+
+
+

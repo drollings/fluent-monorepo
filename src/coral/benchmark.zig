@@ -90,7 +90,7 @@ pub const Benchmark = struct {
     }
 };
 
-/// Tracks Coral benchmarks with a fixed-size structure; managed via ownership; not thread-safe.
+/// Tracks Coral benchmarks with a fixed-size structure; managed by owner; not thread-safe.
 pub const CoralBenchmarks = struct {
     allocator: Allocator,
     results: std.ArrayList(BenchmarkResult),
@@ -457,3 +457,8 @@ test "Arena allocation overhead is reasonable" {
     try testing.expect(avg_ns > 0);
     try testing.expect(avg_ns < 10_000_000); // 10ms per arena cycle in debug is acceptable
 }
+
+
+
+
+

@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *
     };
 }
 
-/// Initializes a dependency resolver with allocation, registry, and options parameters.
+/// Initializes a dependency resolver with allocator, registry, and options, returning a resolved dependency.
 pub fn initWithOptions(
     allocator: std.mem.Allocator,
     registry: *TargetRegistry,
@@ -195,7 +195,7 @@ fn collectDependencies(
     }
 }
 
-/// Collects dependencies and their abstracts into a bit set for a target Zig project.
+/// Collects dependencies and their abstracts into a bit set for a Zig resolver.
 fn collectDependenciesWithAbstracts(
     self: *DependencyResolver,
     target: *Target,
@@ -407,7 +407,7 @@ const testing = std.testing;
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Creates a target slice from a Zig string, using an allocator and string interners.
+/// Creates a target slice from a Zig string using an allocator and interners.
 fn makeTarget(
     allocator: std.mem.Allocator,
     interner: *StringInterner,
@@ -817,3 +817,16 @@ test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     }
     try testing.expectEqual(.ok, gpa.deinit());
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

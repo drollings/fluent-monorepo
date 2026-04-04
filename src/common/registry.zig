@@ -51,7 +51,7 @@ pub fn add(self: *TargetRegistry, tgt: *Target) !void {
     self.updateProviderMap(tgt);
 }
 
-/// Retrieves a registry entry by name, returning a pointer to the target registry.
+/// Retrieves a target registry entry by name, returning a pointer to its registry data.
 pub fn get(self: *const TargetRegistry, name: []const u8) ?*Target {
     return self.targets.get(name);
 }
@@ -100,7 +100,7 @@ fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
     }
 }
 
-/// Retrieves provider addresses for a given registry bit index.
+/// Retrieves provider addresses at the specified registry bit index.
 pub fn getProviders(self: *const TargetRegistry, bit_index: usize) ?[]*Target {
     if (self.provider_map.get(bit_index)) |list| {
         return list.items;
@@ -114,12 +114,12 @@ pub fn getProvidersForName(self: *const TargetRegistry, name: []const u8) ?[]*Ta
     return self.getProviders(idx);
 }
 
-/// Counts registry entries; returns the number of valid targets.
+/// Counts registry entries and returns the total count.
 pub fn count(self: *const TargetRegistry) usize {
     return self.targets.count();
 }
 
-/// Retrieves essential target registry entries from the provided allocator.
+/// Retrieves essential target registry entries with allocator support.
 pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
     var essentials: std.ArrayList(*Target) = .{};
     errdefer essentials.deinit(allocator);
@@ -328,7 +328,7 @@ fn capabilityDistance(
     return unmet;
 }
 
-/// Resolves a target registry entry using its capability and allocator, returning a pointer to the registered target.
+/// Resolves a target registry entry using its capability and allocator, returning a pointer to the registered object.
 pub fn resolveByCapability(
     self: *const TargetRegistry,
     allocator: std.mem.Allocator,
@@ -354,7 +354,7 @@ pub fn resolveByCapability(
     return best;
 }
 
-/// Resolves a target registry entry using capability hierarchy and bit sets, returning a pointer to the registry item.
+/// Resolves a target registry entry using capability hierarchy and bit sets, returning a pointer to the registered value.
 pub fn resolveByCapabilityWithHierarchy(
     self: *const TargetRegistry,
     allocator: std.mem.Allocator,
@@ -890,3 +890,21 @@ test "TargetBuilder: err field is null on successful register" {
     try testing.expect(b.err_any == null);
     try b.command("rm -rf build").register();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

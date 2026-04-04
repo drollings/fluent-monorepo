@@ -259,7 +259,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
 // guidance todo checklist
 // ---------------------------------------------------------------------------
 
-/// Processes a todo list file by validating its contents and returning a status.
+/// Processes a todo list file by allocating memory and validating its contents.
 pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo checklist: no current work item found\n", .{});
@@ -641,7 +641,7 @@ pub fn writeCommittedMd(
 // LLM helper
 // ---------------------------------------------------------------------------
 
-/// Transforms an API response into a Zig array slice for processing.
+/// Transforms an API response into a Zig array slice with specified token limits.
 fn callLlm(
     allocator: std.mem.Allocator,
     api_url: []const u8,
@@ -696,3 +696,17 @@ test "queryChecklistStatus: nonexistent dir returns zeros" {
     try t.expectEqual(@as(usize, 0), result.total);
     try t.expectEqual(@as(usize, 0), result.incomplete);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

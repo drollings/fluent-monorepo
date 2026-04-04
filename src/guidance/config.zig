@@ -34,7 +34,7 @@ pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const DEFAULT_EMBEDDING_CACHE_LIMIT: u32 = 400;
 pub const CONFIG_FILENAME = "guidance-config.json";
 
-/// Manages dynamic resource allocation; owned by the provider; ensures consistent state across operations.
+/// Manages configuration structures for Zig projects, owns shared settings, ensures consistent initialization and cleanup.
 pub const Provider = struct {
     name: []const u8,
     base_url: []const u8,
@@ -47,7 +47,7 @@ pub const Provider = struct {
     }
 };
 
-/// Manages linting rules with a structured command; owns invariants like rule state; supports ownership model.
+/// Manages linting rules as a structured command; owns configuration state; ensures invariant integrity.
 pub const LintCommand = struct {
     extension: []const u8,
     argv: []const []const u8,
@@ -266,7 +266,7 @@ pub const ProjectConfig = struct {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Loads configuration data into a ProjectConfig object using an allocator and file path.
+/// Loads a configuration string into a ProjectConfig object using an allocator and context.
 pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig {
     // 1. Project-local config.
     {
@@ -525,7 +525,7 @@ fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![
     return try commands.toOwnedSlice(allocator);
 }
 
-/// Attempts to load a file into a project configuration, returning the loaded settings or an error.
+/// Attempts to load a file into a project configuration, returning a ProjectConfig or error.
 fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) !ProjectConfig {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
@@ -919,7 +919,7 @@ fn buildFromParts(
 // Tests
 // =============================================================================
 
-/// Creates a test configuration project config from an allocator and model data.
+/// Creates a project configuration from an allocator and model data.
 fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) !ProjectConfig {
     return buildFromParts(
         allocator,
@@ -995,3 +995,14 @@ test "isThinkingModelRef: bare model ref (no provider prefix) — not treated as
     // match "deepseek-r1:7b", so this correctly returns false.
     try std.testing.expect(!cfg.isThinkingModelRef("deepseek-r1:7b"));
 }
+
+
+
+
+
+
+
+
+
+
+

@@ -122,7 +122,7 @@ pub fn step(
     };
 }
 
-/// Reads a raw C string into a Zig-safe slice, handling allocation and error safely.
+/// Reads a raw C string into a Zig-safe slice, handling allocation and error cases.
 fn ralphRead(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) ![]types.Stage {
     ctx.map = codebase_map_mod.discoverStructure(allocator, ctx.workspace) catch null;
     ctx.state = .ask;
@@ -167,7 +167,7 @@ fn ralphLearn(
     return allocator.alloc(types.Stage, 0);
 }
 
-/// Transforms a RalphContext into a Zig slice with allocation and context handling.
+/// Transforms a raw C string into a Zig-safe slice with allocation handling.
 fn ralphPlan(
     ctx: *RalphContext,
     allocator: std.mem.Allocator,
@@ -245,7 +245,7 @@ fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]
     return stages.toOwnedSlice(allocator);
 }
 
-/// Converts a RALPH context into a structured plan suggestion slice using an allocator.
+/// Converts a RALPH context into a structured plan suggestion slice using the provided allocator.
 fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
     var stages: std.ArrayList(types.Stage) = .{};
     errdefer {
@@ -335,7 +335,7 @@ fn classifyIntent(query: []const u8, strategies: []const QueryStrategy, db: *Gui
 // Session runner (single query, no interactive loop)
 // =============================================================================
 
-/// Executes a database query using the provided allocator, database, workspace, and aliases, returning the execution stage.
+/// Executes a database query using the provided allocator, database, and workspace, returning the result stage.
 pub fn runQuery(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -423,3 +423,18 @@ test "QueryRecord: can be appended to ArrayList" {
     try std.testing.expectEqual(@as(usize, 1), history.items.len);
     try std.testing.expectEqualStrings("cmdExplain", history.items[0].query);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

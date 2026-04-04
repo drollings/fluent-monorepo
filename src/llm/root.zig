@@ -90,6 +90,9 @@ pub const LlmClient = struct {
     /// For Ollama: corrects /v1/completions → /v1/chat/completions if needed.
     chat_url: []const u8,
     http_client: std.http.Client,
+    /// Cached availability result (null = not checked yet).
+    /// After first check, stores the result to avoid repeated network calls.
+    availability_cache: ?bool = null,
 
     pub fn init(allocator: std.mem.Allocator, config: LlmConfig) !LlmClient {
         const is_openai = std.mem.indexOf(u8, config.api_url, "api.openai.com") != null;
@@ -114,6 +117,7 @@ pub const LlmClient = struct {
             .is_openai_format = is_openai,
             .chat_url = chat_url,
             .http_client = http_client,
+            .availability_cache = null,
         };
     }
 
@@ -268,7 +272,13 @@ pub const LlmClient = struct {
     /// Check whether the LLM endpoint is reachable.
     ///   OpenAI  → GET <base>/v1/models
     ///   Ollama  → GET <scheme>://<host:port>/api/tags
+    /// Caches the result after first check to avoid repeated network calls.
     pub fn available(self: *LlmClient) bool {
+        // Return cached result if available
+        if (self.availability_cache) |cached| {
+            return cached;
+        }
+
         const check_url = if (self.is_openai_format) blk: {
             if (std.mem.indexOf(u8, self.config.api_url, "/v1/")) |pos| {
                 break :blk std.fmt.allocPrint(self.allocator, "{s}/v1/models", .{self.config.api_url[0..pos]}) catch return false;
@@ -290,15 +300,18 @@ pub const LlmClient = struct {
             .location = .{ .url = check_url },
         }) catch |err| {
             if (self.config.debug) std.debug.print("DEBUG: availability check failed: {}\n", .{err});
+            self.availability_cache = false;
             return false;
         };
 
         if (self.config.debug) std.debug.print("DEBUG: availability HTTP status {d}\n", .{@intFromEnum(result.status)});
-        return result.status == .ok;
+        const is_available = result.status == .ok;
+        self.availability_cache = is_available;
+        return is_available;
     }
 };
 
-/// Removes inline thinking blocks from a Zig text input, returning a cleaned slice.
+/// Removes inline thinking blocks from the input text slice.
 fn stripThinkBlockInline(text: []const u8) []const u8 {
     if (std.mem.indexOf(u8, text, "<think>")) |think_start| {
         const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "</think>");
@@ -381,3 +394,7 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
+
+
+
+

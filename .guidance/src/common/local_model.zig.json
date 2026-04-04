@@ -10,7 +10,7 @@
     {
       "type": "struct",
       "name": "DecomposerConfig",
-      "match_hash": "18815a04c9fa56abd6b17c5022550397edf492821abef05d5be289792fcc9492",
+      "match_hash": "65886122986a46e3edb305166f69bc3fe99e5ff578454776c53c8f465eb7f1b9",
       "signature": "keyword_struct DecomposerConfig { ... }",
       "is_pub": true,
       "line": 22
@@ -18,14 +18,14 @@
     {
       "type": "struct",
       "name": "LocalDecomposer",
-      "match_hash": "eff0d5d8e609194ec2329d48e9b2e546f2840c6ff56ff10561eba097a0184920",
+      "match_hash": "92e53c4a8935a29a2d42e9bf2963651af9a584a0977fd7c533ebd940b9fbeebf",
       "signature": "keyword_struct LocalDecomposer { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "421a39c81ff25c2f6ea8578f93ed0f859d01e60e97b359fcbc8262970d900418",
+          "match_hash": "b00cb8083b8c9720328eaedcc0d42bef8873af5a4e894d2d24befbac983145e2",
           "signature": "fn init(allocator: std.mem.Allocator, config: DecomposerConfig) -> LocalDecomposer",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -38,7 +38,7 @@
     ,    {
           "type": "fn_decl",
           "name": "decompose",
-          "match_hash": "df745ce330fc7ff44c6f4a856fbec986833b445f0ae15af7ce5d8e755a7d13b4",
+          "match_hash": "1d3ea74925354942524aa317342dde8a76a94d191b398442218d7d21b9b731ab",
           "signature": "fn decompose(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
           "params": [
             { "name": "self", "type": "*LocalDecomposer" },
@@ -52,7 +52,7 @@
     ,    {
           "type": "fn_private",
           "name": "fallback",
-          "match_hash": "5d14a401562265d4e96f3dfa0c95534f1b8670b5d77121151a5e74dc04930057",
+          "match_hash": "1a3cd18f9992e884fe0bc6271164f431243a349cbab60fda3a648341833fda69",
           "signature": "fn fallback(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
           "params": [
             { "name": "self", "type": "*LocalDecomposer" },
@@ -69,7 +69,7 @@
     {
       "type": "fn_private",
       "name": "stripThinkBlock",
-      "match_hash": "efcde072c7e702058f089d29cae57c7fb1fcd6a23da58e0956f69dc2206194cd",
+      "match_hash": "95c3b4915ceed297ceb2683ca261b7b201bd6e0717c5b83f76be630db83fb69c",
       "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -81,7 +81,7 @@
     {
       "type": "fn_private",
       "name": "isMalformedJsonArray",
-      "match_hash": "20bc705eccc4ea1ca730afdc9c6d543b1db26aebe74af28b75e25e108b9ebc54",
+      "match_hash": "6759176124dc7a99d5f681c7450d393b79c7daa1cecf345c6caf2f7b3b7c91cb",
       "signature": "fn isMalformedJsonArray(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -93,7 +93,7 @@
     {
       "type": "fn_private",
       "name": "parseJsonArray",
-      "match_hash": "ec298a5f136e97189d30fb92e0790043a7b88747e6467f16b972351999c1a988",
+      "match_hash": "5918c0f7c8139afba3b2438505090d219514e94312d9b060ff5af4226d708b1a",
       "signature": "fn parseJsonArray(arena: std.mem.Allocator, text: []const u8, limit: usize) -> [][]const u8",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },

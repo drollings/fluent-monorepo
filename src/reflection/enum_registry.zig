@@ -53,3 +53,4 @@ pub const EnumRegistry = struct {
         return null;
     }
 };
+

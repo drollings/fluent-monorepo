@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "TestLibrary",
-      "match_hash": "407eb718c05dac731b1f83b44ecf5350436ebdab378195a9c793e46ec98379cd",
+      "match_hash": "adb6708f01a27b73237df81734b17b8640c09912b6f385a9483519cc248de490",
       "signature": "keyword_struct TestLibrary { ... }",
       "is_pub": true,
       "line": 20
@@ -20,7 +20,7 @@
     {
       "type": "fn_decl",
       "name": "createTestLibrary",
-      "match_hash": "e0b90bafe8e5a0fb0d3cf6c8a95586a7bb0ca9a04b3fcef9c7b3ff33c48afc82",
+      "match_hash": "53694813e93b0c05371bbea16a36d0df8004364a4f83ecba24b001a2ed5dc0e3",
       "signature": "fn createTestLibrary(allocator: std.mem.Allocator) -> TestLibrary",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" }
@@ -35,7 +35,7 @@
     {
       "type": "fn_decl",
       "name": "deinitTestLibrary",
-      "match_hash": "eff68b90c9d3b71b29a98f094feddfd0e5d37f0e974af9245caf7c9cc2f6e6e6",
+      "match_hash": "fef5157dd100f97e67a0670a1ac4acecda8eddbf3e9f485f0c0c6ae59a7a803a",
       "signature": "fn deinitTestLibrary(tl: *TestLibrary) -> void",
       "params": [
         { "name": "tl", "type": "*TestLibrary" }
@@ -47,7 +47,7 @@
     {
       "type": "fn_decl",
       "name": "createTestEmbedding",
-      "match_hash": "88e8fbcfd0a7fb498511f74dc9aabbc696c79167528c4b28bab3043fa68dc2ee",
+      "match_hash": "fea008e48af24d49bd49c12d638054ec3816559cc212f3ae16d3a512784ec4b6",
       "signature": "fn createTestEmbedding() -> EmbeddingProvider",
       "returns": "EmbeddingProvider",
       "patterns": [
@@ -59,7 +59,7 @@
     {
       "type": "fn_decl",
       "name": "createTestNode",
-      "match_hash": "2e789ef812cb8ab8ff544b958c026d3835b11a31c1ce3ec39e536e1c6b518897",
+      "match_hash": "a639f2e912da590a2b219ce6cb4b80f568dd7876e6d32433e8e03e433dca8d33",
       "signature": "fn createTestNode(tl: *TestLibrary, id: i64, name: []const u8, full_text: []const u8) -> ContextNode",
       "params": [
         { "name": "tl", "type": "*TestLibrary" },
@@ -77,7 +77,7 @@
     {
       "type": "fn_decl",
       "name": "insertTestNode",
-      "match_hash": "52c0c4c36db75ff4f23692320a81bd99b2401136bc57135ae9e6bedf74afe280",
+      "match_hash": "2a77f68ed88bb09a24c977f5eaa17c7074ada3aed2769145bb4e8d10b8c47ab0",
       "signature": "fn insertTestNode(tl: *TestLibrary, node: ContextNode) -> void",
       "params": [
         { "name": "tl", "type": "*TestLibrary" },
@@ -90,7 +90,7 @@
     {
       "type": "fn_decl",
       "name": "createTestWasmTool",
-      "match_hash": "8608804758af34485310ff2165ff89a035eb2b3ff6b8f6100442423536cdd18e",
+      "match_hash": "5c39d3709c6f680906fa6785455440658af1111712f8a2fc3d321f5be01a99a1",
       "signature": "fn createTestWasmTool(allocator: std.mem.Allocator, id: i64, target_id: i64, wasm_b64: []const u8, test_passed: bool) -> WasmTool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -109,7 +109,7 @@
     {
       "type": "struct",
       "name": "TestNodeSpec",
-      "match_hash": "df1dc6141eace802150c02c798f46554d6647ce57bd78fa027468ae36d1b124e",
+      "match_hash": "5e3a27f4b17c300db14c983fc8f05d24d1cabaf332b6b80bb85351ea6482477f",
       "signature": "keyword_struct TestNodeSpec { ... }",
       "is_pub": true,
       "line": 91
@@ -117,7 +117,7 @@
     {
       "type": "fn_decl",
       "name": "insertTestNodes",
-      "match_hash": "b9bba8cd28e7de55c46bb2ae7ad004082acd975e59eea55eeec36b24671f56f6",
+      "match_hash": "b4ae822e93885e520a155b14f48e57b8e2afbfc64dc176d1a1810c36c4e86ea9",
       "signature": "fn insertTestNodes(tl: *TestLibrary, specs: []const TestNodeSpec) -> void",
       "params": [
         { "name": "tl", "type": "*TestLibrary" },

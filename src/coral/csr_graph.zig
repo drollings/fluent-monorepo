@@ -38,7 +38,7 @@ pub const SerializedCSR = extern struct {
     _pad: [3]u8 align(1),
 };
 
-/// Manages graph data structures with ownership and invariants; designed for performance in concurrent environments.
+/// Manages graph data structures with a fixed-size buffer; encapsulates ownership and invariants.
 pub const CSRGraph = struct {
     node_count: u32,
     edge_count: u32,
@@ -381,3 +381,5 @@ test "CSRGraph: out-of-range node returns empty neighbors" {
     try testing.expectEqual(@as(usize, 0), g.neighbors(99).len);
     try testing.expectEqual(@as(u32, 0), g.degree(99));
 }
+
+

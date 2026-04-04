@@ -14,7 +14,7 @@
     {
       "type": "enum",
       "name": "CacheTier",
-      "match_hash": "d615ce80b9d7d345bd79e63b2c19a5c887fa7f039128605a60e01d2b58791ac9",
+      "match_hash": "2ee80326d2e14d4cda90f086ed56116c4e5ae736db1b9b043ef63c404ed5de0e",
       "signature": "keyword_enum CacheTier { ... }",
       "is_pub": true,
       "members": [
@@ -60,7 +60,7 @@
     {
       "type": "struct",
       "name": "RoutingResult",
-      "match_hash": "43a35708cb36ce71c118f51125b4948b450672c327670abf747d6f7aedb8778a",
+      "match_hash": "9b535d00a3c6018e6fc792300c3d96697b113c6eeafac16989ab740a843a940a",
       "signature": "keyword_struct RoutingResult { ... }",
       "is_pub": true,
       "line": 45
@@ -68,14 +68,14 @@
     {
       "type": "struct",
       "name": "L1Cache",
-      "match_hash": "e999ec8f3e041062de4582b1e2144646879c5536101b2561a715f19d7eb3b39c",
+      "match_hash": "c35eede1265d83dbfaccdee6b264cac4f4bbfee7990f9507cb186022ba27c155",
       "signature": "keyword_struct L1Cache { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "d161efc12f626777c75df146d35d142deddd68cf8595587da06a651e37825bcd",
+          "match_hash": "1bee82e8d023538183b7f1f7d243799abf0c3c0a097b57c728c0a9b30efd6828",
           "signature": "fn init(allocator: std.mem.Allocator) -> L1Cache",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -87,7 +87,7 @@
     ,    {
           "type": "fn_decl",
           "name": "initWithCapacity",
-          "match_hash": "9b3165715eef1bcc10c50e6e2c7b2a2a473c62d93d6082c4b5ff0e69bcf6f751",
+          "match_hash": "2510eb3298e16f2c01b34a70aa541d1c28109637d0bb31b78e9c39a214409302",
           "signature": "fn initWithCapacity(allocator: std.mem.Allocator, max_entries: usize) -> L1Cache",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -100,7 +100,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "7d9add2725c707379131995381e998e654e0a90ed16c88109e3c564de9558efa",
+          "match_hash": "94ffa6929ce639ef8a919b91bfff2ccb40b9d5e363a1b2dad872e55fa76d03f4",
           "signature": "fn deinit(self: *L1Cache) -> void",
           "params": [
             { "name": "self", "type": "*L1Cache" }
@@ -112,7 +112,7 @@
     ,    {
           "type": "fn_decl",
           "name": "get",
-          "match_hash": "0454b71f274a0744527d08ace62e79bf838b59013073ba9d8d063b55f2e5fcb0",
+          "match_hash": "485df743db8aa5cc211c61c3f8d9b94dfea0d3f812f7e804126369edc064a999",
           "signature": "fn get(self: *L1Cache, query_hash: []const u8) -> ?RoutingResult",
           "params": [
             { "name": "self", "type": "*L1Cache" },
@@ -125,7 +125,7 @@
     ,    {
           "type": "fn_decl",
           "name": "put",
-          "match_hash": "8cb7db967e4d92e8a30a7434d1c4f10a22cc5bcf5e1410f2247860bb86859efe",
+          "match_hash": "45590ad41740f6994c0fb66ff1821e36fbfadf707c040768eb51f4ffa6546d58",
           "signature": "fn put(self: *L1Cache, query_hash: []const u8, result: RoutingResult) -> void",
           "params": [
             { "name": "self", "type": "*L1Cache" },
@@ -139,7 +139,7 @@
     ,    {
           "type": "fn_private",
           "name": "freeRoutingResult",
-          "match_hash": "10a875513251f07f4fe940502a3381725d4c4d71a007703157f476cc61a89650",
+          "match_hash": "7e336dc678a63e205ace12002283f1b8963398d24b82e3362fe9f1863d602707",
           "signature": "fn freeRoutingResult(allocator: std.mem.Allocator, result: *RoutingResult) -> void",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -152,7 +152,7 @@
     ,    {
           "type": "fn_private",
           "name": "dupeRoutingResult",
-          "match_hash": "ccc4b83b167226d6246d74678b16e33263b4fdc72da841d0a49fc70630c02e16",
+          "match_hash": "ee53726bda1f3a624f443566d95ac441df2c1d8bc6936c472568d53860c506a2",
           "signature": "fn dupeRoutingResult(allocator: std.mem.Allocator, result: RoutingResult) -> RoutingResult",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -168,14 +168,14 @@
     {
       "type": "struct",
       "name": "L1HashCache",
-      "match_hash": "ff9bf8d416c0e6d91d2015c2111b98863811ab8944ecf596068c77414b0d3171",
+      "match_hash": "ed8965f66cabb1992e8d394db2891cd2c7b4904f4b1db0b91001f214602f4502",
       "signature": "keyword_struct L1HashCache { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f261016aeda7796d581ecc1e9af9373dce7e8edffa59877e95109c1c11da8bd9",
+          "match_hash": "38ffb445c909c9a4b9a958790c4937cd23270ffbbedf0713436723f76c3d4937",
           "signature": "fn init(allocator: std.mem.Allocator, max_entries: usize) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -188,7 +188,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -200,7 +200,7 @@
     ,    {
           "type": "fn_decl",
           "name": "get",
-          "match_hash": "00b8576734e8d0e3d9835e5b17d338d08e4550c8458ac1be20242e94c97c7cb3",
+          "match_hash": "f930d5e687c82ac5949c67e8386e3921054fd714d4b6ed0561a7009826a403bf",
           "signature": "fn get(self: *Self, query_hash: u64) -> ?RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -213,7 +213,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getWithPromotion",
-          "match_hash": "a0a15cc228a651e116ba658c687cafb3c6ca83d7ec6aa62457c16ff26732e175",
+          "match_hash": "a6a13bda1a87a4f54cf5d31db834684812dc6cfc0457066729e78e7804e8ba04",
           "signature": "fn getWithPromotion(self: *Self, query_hash: u64) -> ?RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -226,7 +226,7 @@
     ,    {
           "type": "fn_decl",
           "name": "put",
-          "match_hash": "a6e0873e73821a61a4740e6ed1521891b7763fe2be3bae07e1b6a7054cb0a2c9",
+          "match_hash": "56b454dabff420758a49ba104354ac649f02347447ed9285b35c9784d50c84e3",
           "signature": "fn put(self: *Self, query_hash: u64, result: RoutingResult) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -240,7 +240,7 @@
     ,    {
           "type": "fn_decl",
           "name": "hashQuery",
-          "match_hash": "66eef384de5b2e989b0f40f9520e1c19fc20400cd63348f47a636ff48b306e9d",
+          "match_hash": "3f2c1c889515de60c2ea7f5a4e961db6b1d0e11518620ece7202b1210b17f2e6",
           "signature": "fn hashQuery(query: []const u8) -> u64",
           "params": [
             { "name": "query", "type": "[]const u8" }
@@ -255,7 +255,7 @@
     {
       "type": "struct",
       "name": "QueueReactorBuilder",
-      "match_hash": "9caf45c4f75c23440ceb429e7cf61438be9c70b1b3b7a0d1ab0d07c8e866af73",
+      "match_hash": "c439c966ec316b4c7a44c24ba368b1a09c195ff15901f63fb47c5aa0ff9da480",
       "signature": "keyword_struct QueueReactorBuilder { ... }",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
@@ -265,7 +265,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "d18d96df4077f837425f08ec046687ecf67ef58bc9294ee1b4699a40acfd74d1",
+          "match_hash": "8120441e6919fdf170458a88d2b4188a99e0269468f2338fd46f805674b028c5",
           "signature": "fn init(allocator: std.mem.Allocator) -> QueueReactorBuilder",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -277,7 +277,7 @@
     ,    {
           "type": "fn_private",
           "name": "setError",
-          "match_hash": "e7b653598a5e489412216e5ad5dd8cd38ad197d05b089fa3fc8adbd9f9e71d02",
+          "match_hash": "da794fb18c1ff491dd509fde1adf172894239433a0400f106469b58a42b92490",
           "signature": "fn setError(self: *@This(), phase: BuilderPhase, field: []const u8, constraint: []const u8, cause: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -293,7 +293,7 @@
     ,    {
           "type": "fn_decl",
           "name": "library",
-          "match_hash": "fcb63d7c5ca442a9dbe68a849ed93e377db44d692089470434fe720575f77ca4",
+          "match_hash": "42f93eddcbc57e4bf614c5e8aa87ea8e5c75bbe64e695bcd27f78d104edbb302",
           "signature": "fn library(self: *@This(), lib: *Library) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -306,7 +306,7 @@
     ,    {
           "type": "fn_decl",
           "name": "embedder",
-          "match_hash": "d529b91c0faf9bf4b4b949f73e8d4f908dcb257a7b8789887c9a70147ccbce7d",
+          "match_hash": "1a693cf1bbf9c9249f8a63259e64637fa5b748d91164aa27ec2b976476e30fc1",
           "signature": "fn embedder(self: *@This(), emb: EmbeddingProvider) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -319,7 +319,7 @@
     ,    {
           "type": "fn_decl",
           "name": "knnK",
-          "match_hash": "893f04e434295c94bef902a7ee1972f3c84c36fcf62e9985f8b4922bf043a9c2",
+          "match_hash": "16650a623e4fbb58c3e979c8587e55d52585176609e9d57092aacccb50d05c7b",
           "signature": "fn knnK(self: *@This(), k: usize) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -332,7 +332,7 @@
     ,    {
           "type": "fn_decl",
           "name": "l4Threshold",
-          "match_hash": "d76eaeefce8ea99c9bc0f437b49c6b58e1c7e0a7c0eb2f01100a8fafd2dddadb",
+          "match_hash": "1dd9f1b79f12a74bdfafd7490396da1aa4b90cd30ca7ad355927200ebacb1fa0",
           "signature": "fn l4Threshold(self: *@This(), t: f32) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -345,7 +345,7 @@
     ,    {
           "type": "fn_decl",
           "name": "l3MaxDepth",
-          "match_hash": "333c57a85ae53ea356366e63cff7e36e2ffeef26bde17845deae3f2d5af68f63",
+          "match_hash": "9ebbbd3667c65afbb84ad1da17847ade74b9c5c337410581c6eb111f5d4023dc",
           "signature": "fn l3MaxDepth(self: *@This(), d: u8) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -358,7 +358,7 @@
     ,    {
           "type": "fn_decl",
           "name": "decomposerConfig",
-          "match_hash": "e486fa8f51e84f72b5a94d80c083706303b5c527810d684d6eb2ccfb35225142",
+          "match_hash": "3cbdb0ac0f898447a4c0c63142b54dca74fded46b664a4071c85e0b3b663c857",
           "signature": "fn decomposerConfig(self: *@This(), cfg: DecomposerConfig) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -371,7 +371,7 @@
     ,    {
           "type": "fn_decl",
           "name": "threadCount",
-          "match_hash": "f85a32f83d06c0c978ab7014b2f33caa87169c0ee643949de7df85040c83aae4",
+          "match_hash": "6bb97113c22f23210dbc20fa7dd78a3afc6a28a99aad757eb4c1246be536a422",
           "signature": "fn threadCount(self: *@This(), n: u32) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -384,7 +384,7 @@
     ,    {
           "type": "fn_decl",
           "name": "frontierCfg",
-          "match_hash": "275ccd1e2838c17fa10651bc8a4e1b11215a2d6c1767d1ab598b52181a4588e4",
+          "match_hash": "1072f68a92d550ee255d46d369b793094d14d3711ac32bd6ba704f801fd8ccad",
           "signature": "fn frontierCfg(self: *@This(), cfg: LlmConfig) -> *@This()",
           "params": [
             { "name": "self", "type": "*@This()" },
@@ -397,7 +397,7 @@
     ,    {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "f5b3cb087c4a2f3424697fc05979d722de5db636f4ccceb4429dcb7da192d5f8",
+          "match_hash": "d8ffd0dc5072bdc8e05f6dac42eab3d235f9f7046d7b29cf4b624b050a93f8cb",
           "signature": "fn build(self: *@This()) -> QueueReactor",
           "params": [
             { "name": "self", "type": "*@This()" }
@@ -412,14 +412,14 @@
     {
       "type": "struct",
       "name": "QueueReactor",
-      "match_hash": "49707315a2cdeecffceacc2993c889de7445d858132f88a37d9267ea02043c5b",
+      "match_hash": "db652831919d69cb01c9da88363a46e1360af7fb9bddaa43718bc3ab0ff82dc5",
       "signature": "keyword_struct QueueReactor { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "8fa31b26376cbad94a4b74941e59fd3a19884502ae4eeadda2a33ee93886db8c",
+          "match_hash": "41154cabc00f73c013c61430c008f9a17e1a38408a24c30df4d5aafe9f994da8",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library, max_knn_k: usize) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -433,7 +433,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "params": [
             { "name": "self", "type": "*Self" }
@@ -445,7 +445,7 @@
     ,    {
           "type": "fn_decl",
           "name": "submitAsync",
-          "match_hash": "9f45f01d61929752b006bab3fefbe6bfada5397a84ce6b0ee2733078c97066ab",
+          "match_hash": "eb4ccc807ac61c1352156978cc47748a13641cde005b2a58ed1c5bb7a279c734",
           "signature": "fn submitAsync(self: *Self, query: []const u8) -> *Task",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -458,7 +458,7 @@
     ,    {
           "type": "fn_private",
           "name": "routeTask",
-          "match_hash": "6a511459cc9879473323fdefbaa24508857daab63a2e3f3319248dde9772a1e9",
+          "match_hash": "423459b6cd2a2aa9e5442e91dce0991794cc12103a8b24e1c9e13e35dbd551ca",
           "signature": "fn routeTask(self: *Self, task: *Task) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -471,7 +471,7 @@
     ,    {
           "type": "fn_decl",
           "name": "route",
-          "match_hash": "69667cfca542811a98ac60a672408d54f38c6ab380d59eb9d5f5e83315054684",
+          "match_hash": "54d4af0d5b5597e3ad51410039c6be97c3a56e99980d57064d7e195c41da37ef",
           "signature": "fn route(self: *Self, query: []const u8) -> anyerror!RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -484,7 +484,7 @@
     ,    {
           "type": "fn_private",
           "name": "findWasmTool",
-          "match_hash": "b6e39428a8706d165db8e6f76d7539eabc2a89bb7484aee398f5669fac85ce8b",
+          "match_hash": "d465ed2b162593f9aea19577420011e8884b84990d35f4bf9c2b68997cb1cfee",
           "signature": "fn findWasmTool(self: *Self, query: []const u8) -> ?WasmTool",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -497,7 +497,7 @@
     ,    {
           "type": "fn_private",
           "name": "routeL2Wasm",
-          "match_hash": "56ad0f595154584b1fc32d291125811157c9aafffd0df0e8f59d27622ec80b66",
+          "match_hash": "d03a4fc55c392577ac59b2c073d57c67c05d78ed65263872e2e9baba0bdb33f0",
           "signature": "fn routeL2Wasm(self: *Self, query: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -510,7 +510,7 @@
     ,    {
           "type": "fn_private",
           "name": "graphTraversal",
-          "match_hash": "0d0db6d8544e642cf6e3e292ad8768f24d874d0f52ebcfb0d73c345b8fa5df61",
+          "match_hash": "986e5d026464af52eb70a39ef885d0f73157762a2d3b924f3069569e0303b5b3",
           "signature": "fn graphTraversal(self: *Self, query: []const u8) -> ?[]ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -523,7 +523,7 @@
     ,    {
           "type": "fn_private",
           "name": "semanticSearch",
-          "match_hash": "05547ab8140cba0a8b3245e3c03095f7b3b70d90675e34d99da578c627e5e5d1",
+          "match_hash": "3b6c3b310235ea92de2b2a2d93a3a936912a4cd4bada0b244743030e4edf1ef4",
           "signature": "fn semanticSearch(self: *Self, query: []const u8) -> ?[]ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -536,7 +536,7 @@
     ,    {
           "type": "fn_private",
           "name": "llmFallback",
-          "match_hash": "9ed2cf5c30bcc6b35b9d2025d905ddca25f256609bda8ca23f75d03a79e9a3b6",
+          "match_hash": "21843ee9dccd9910494602a749a6c5df504f3003b9bbd70bcd9a72402f349ead",
           "signature": "fn llmFallback(self: *Self, query: []const u8) -> RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -549,7 +549,7 @@
     ,    {
           "type": "fn_private",
           "name": "routeL5Frontier",
-          "match_hash": "27b50c50745e429f28c7fe08a5b1ef22a074792e86179ce187fca7fa06431c6a",
+          "match_hash": "886b6d23c2ee9ae59a6f7ec45945c6ffdeb4b8d921fb7126c0fb0d96492d7e32",
           "signature": "fn routeL5Frontier(self: *Self, query: []const u8) -> ?RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -562,7 +562,7 @@
     ,    {
           "type": "fn_private",
           "name": "callFrontierLlm",
-          "match_hash": "5b7322d2f9880e52629e4bf1150208c534a22924a3c4794ef7541858f304c7a6",
+          "match_hash": "9f4107d9f3efe19436c0910f2e59c149f06aa38f0133709cd1beeae1e02df65c",
           "signature": "fn callFrontierLlm(self: *Self, cfg: LlmConfig, prompt: []const u8) -> ?RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -576,7 +576,7 @@
     ,    {
           "type": "fn_private",
           "name": "localDecompose",
-          "match_hash": "459a6d8fcb2a0964e30d8b3c190234a471f829ced4a187a988bb6003c1956e54",
+          "match_hash": "4fec0bed821990e9b59d676602dc8efd1c08b0bf82cbfa4b7af5e18baa24042e",
           "signature": "fn localDecompose(self: *Self, query: []const u8, depth: u8) -> ?[]ContextNode",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -590,7 +590,7 @@
     ,    {
           "type": "fn_decl",
           "name": "cacheResult",
-          "match_hash": "ea733aa85ed841fde4bc1f323d0462d38b26c201c80dad4af3aec7ec435b49b1",
+          "match_hash": "3f5d74030e2f609e9ec7b7166ab53ca0f1b2103d23e4c21a3764673b60a5359d",
           "signature": "fn cacheResult(self: *Self, query: []const u8, result: RoutingResult) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -604,7 +604,7 @@
     ,    {
           "type": "fn_private",
           "name": "hashQuery",
-          "match_hash": "a0e208f5cb0e3e7039f77dca92e0bcb5c2aeb99843ad17471012cc0be5057686",
+          "match_hash": "5f86215e43f930a0b34b7a1b29d2543a43a725910132eb00991a95efdc03f028",
           "signature": "fn hashQuery(self: *Self, query: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -617,7 +617,7 @@
     ,    {
           "type": "fn_private",
           "name": "persistSolution",
-          "match_hash": "b3178ad0385c8a8c3b08bea4be914ba0917aeb48b32ff0140e75727ef3abb299",
+          "match_hash": "0012fa4d0b04622e4c86c3d337e4f702450c215ff740405cbf03a1925a0344c9",
           "signature": "fn persistSolution(self: *Self, query: []const u8, result: RoutingResult) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -634,14 +634,14 @@
     {
       "type": "struct",
       "name": "ParallelRouter",
-      "match_hash": "a8c08990273bec1787fced70cfa7f276933a40efd706b9b03fd671f4fd05227e",
+      "match_hash": "c410a0893f626316ecac288ce474c518b060b506bf452fa895dae5c19aea7ab4",
       "signature": "keyword_struct ParallelRouter { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "56b758faef5fbeb8a42da317eaaeac1bb4a6b57ba6269a9d0ee0cb53e1412998",
+          "match_hash": "0997a7fcbc5d9a65fb647cf2c54c73e49839f3270a9f92fc6e692264312cae15",
           "signature": "fn init(reactor: *QueueReactor) -> Self",
           "params": [
             { "name": "reactor", "type": "*QueueReactor" }
@@ -653,7 +653,7 @@
     ,    {
           "type": "fn_decl",
           "name": "routeBatch",
-          "match_hash": "9c31d88a259695c02e23c958e1b797b66b88a16dd9e2cd295be4345943fcda7a",
+          "match_hash": "d4b4eecd6fa26696b7fc350674ebb49209ba305dcf378989e5a4c4b6b0f21d80",
           "signature": "fn routeBatch(self: *Self, allocator: std.mem.Allocator, queries: []const []const u8) -> []RoutingResult",
           "params": [
             { "name": "self", "type": "*Self" },

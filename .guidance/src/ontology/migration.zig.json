@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "OntologyVersion",
-      "match_hash": "b7a7ce3784bbc8c4b3afd4655b493ccda21cf613494d0fd976205a366a20efeb",
+      "match_hash": "cefcf21e96bf43f01a911d311d5ee40d1d9a44bbaa9b642e3087bccc160cc1e8",
       "signature": "keyword_struct OntologyVersion { ... }",
       "is_pub": true,
       "line": 13
@@ -19,7 +19,7 @@
     {
       "type": "struct",
       "name": "OntologyMigration",
-      "match_hash": "b1557ec900d6fa17973a262b849771123e0f60d526061ca744e1f1dde9283bf5",
+      "match_hash": "aba79453c70effc7c20d824b0ed8c5cfacc6ab141ea9f98dc5e9e75d11eedcec",
       "signature": "keyword_struct OntologyMigration { ... }",
       "is_pub": true,
       "line": 29
@@ -27,7 +27,7 @@
     {
       "type": "fn_private",
       "name": "noopMigration",
-      "match_hash": "0cff7c3ceb7cb03a6d0f785b4d7ae2d96f50c30f2a993f94b5da8a7c1fd3b805",
+      "match_hash": "57a812d3fb61b370c50980fb23fe608bacb47642b933a9d33febebd30dccaec3",
       "signature": "fn noopMigration(allocator: std.mem.Allocator) -> anyerror!void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" }
@@ -39,14 +39,14 @@
     {
       "type": "struct",
       "name": "VersionRegistry",
-      "match_hash": "bef7e5b9f9c086d9534b9f63f77684d91497024c161978ef4f44c0c6e5e72077",
+      "match_hash": "384e51c16f833bccd9debde66e9d1e357c862b8f2e97cda7323a99d75cb30037",
       "signature": "keyword_struct VersionRegistry { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "01b755b169a28ce2408351215029b24d8147d1d9c250c2193807295bb4c4b712",
+          "match_hash": "adcdc676f506f79b02f9f0dab373f64bcb7e6339ee20b16e014af6380e7681c1",
           "signature": "fn init(allocator: std.mem.Allocator) -> VersionRegistry",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -58,7 +58,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "9ded9ed960579ae5a0634237fbf2043327e570d5247e3a7456a4c6bb54b68c90",
+          "match_hash": "fd87ff75aa2d8deeb981e50dc5e46b3687087076bfa9e8896edd57ba725c749d",
           "signature": "fn deinit(self: *VersionRegistry) -> void",
           "params": [
             { "name": "self", "type": "*VersionRegistry" }
@@ -70,7 +70,7 @@
     ,    {
           "type": "fn_decl",
           "name": "record",
-          "match_hash": "1f7b62385077992a1595b086fbaeb16b42cd9e8705e53db3820827a51c52fdbc",
+          "match_hash": "ae70b04f9214d4ef7977bc1003eedd99eacae130cbe9a65b565bf0352870cec4",
           "signature": "fn record(self: *VersionRegistry, ver: OntologyVersion) -> void",
           "params": [
             { "name": "self", "type": "*VersionRegistry" },
@@ -83,7 +83,7 @@
     ,    {
           "type": "fn_decl",
           "name": "latest",
-          "match_hash": "f1d90e0f382bdeba586931e40013d1d0a583afd4b9e9ba26eb9c1c8b1f08b8e5",
+          "match_hash": "4ec18379e6505f5b73d8a883f44b56b48375a54f416ae3a1e55e87325af84225",
           "signature": "fn latest(self: *const VersionRegistry) -> ?OntologyVersion",
           "params": [
             { "name": "self", "type": "*const VersionRegistry" }

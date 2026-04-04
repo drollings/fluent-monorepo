@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "OntologyClass",
-      "match_hash": "a7a6b97c463a8b8abb2e618572b615405673e70729d654cb5568a6197126c9e1",
+      "match_hash": "948f8186746d05df605c18bfc3d3be269a3aeafaa238fe1294e57b2b3172cfb0",
       "signature": "keyword_struct OntologyClass { ... }",
       "is_pub": true,
       "line": 30
@@ -19,7 +19,7 @@
     {
       "type": "enum",
       "name": "PropertyRange",
-      "match_hash": "ebc92582c179749f99e43068ae194f9e08b96056385b6b54e277abb0e57289f9",
+      "match_hash": "6be8bb6a15ebe0f53adcdda6f962468cf5c04106978311cfe077d43159cb2bb8",
       "signature": "keyword_enum PropertyRange { ... }",
       "is_pub": true,
       "members": [
@@ -77,7 +77,7 @@
     {
       "type": "struct",
       "name": "OntologyProperty",
-      "match_hash": "d963e69062f4e8119c5272dac2e371f4fe0486bb8d93a7cd60ed928a4674b30b",
+      "match_hash": "265b817001c1a1cdb915f5be472ed9a6141967a41e10a132b7e9edbb405daec5",
       "signature": "keyword_struct OntologyProperty { ... }",
       "is_pub": true,
       "line": 53
@@ -85,7 +85,7 @@
     {
       "type": "fn_decl",
       "name": "whitelistIRIs",
-      "match_hash": "34226cdf6b5835536ecd27e1e61b0dfae80916a9f83395b927d40fbc294af376",
+      "match_hash": "b4f2d47ff1c50c7bea97846dbbb0c9ffe61b657a4d27b516ab50b82bbd926246",
       "signature": "fn whitelistIRIs(out: [][]const u8) -> usize",
       "params": [
         { "name": "out", "type": "[][]const u8" }
@@ -97,7 +97,7 @@
     {
       "type": "fn_decl",
       "name": "lookupClass",
-      "match_hash": "6a1636dc921bdc90f871ee9e8f0758b6ad3ec5d934fc4bde4b14b9b68dd031ea",
+      "match_hash": "71069eb59d32b3d652013448109c1b8db2102d12a9dda4fb84eae3ed67c7b8f2",
       "signature": "fn lookupClass(iri: []const u8) -> ?*const OntologyClass",
       "params": [
         { "name": "iri", "type": "[]const u8" }
@@ -109,7 +109,7 @@
     {
       "type": "fn_decl",
       "name": "superclassChain",
-      "match_hash": "d66cd6e9fb4f0d1afd4fab1040a8f70e854d2fd5c652e9676b88b1d0807732a6",
+      "match_hash": "382f298c8058e74358030efd3363006d377a5b62679357e1b492102025137a4f",
       "signature": "fn superclassChain(iri: []const u8, out: [][]const u8) -> usize",
       "params": [
         { "name": "iri", "type": "[]const u8" },
@@ -122,7 +122,7 @@
     {
       "type": "fn_decl",
       "name": "isSubclassOf",
-      "match_hash": "0bc75f0fd170f1fd88d3ae8dab020029df6ec5824ea5fbeb4263ddd4e14910a7",
+      "match_hash": "92cb617957ab94fa85802858db2276ad7904ff774bd6d8fb393a10fcb018d88f",
       "signature": "fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) -> bool",
       "params": [
         { "name": "child_iri", "type": "[]const u8" },
@@ -135,7 +135,7 @@
     {
       "type": "fn_decl",
       "name": "lookupProperty",
-      "match_hash": "3aadde5570dfa29f4f2feb9c40a02edb3b6438c9b7bf5a186a22bf59b04ff530",
+      "match_hash": "0013ab4f5493995d4512ebebc38ee9ef58de99edd375e1b43d9b7d3bfe195dae",
       "signature": "fn lookupProperty(iri: []const u8) -> ?*const OntologyProperty",
       "params": [
         { "name": "iri", "type": "[]const u8" }

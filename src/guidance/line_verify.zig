@@ -44,7 +44,7 @@ pub fn verifyMemberLine(
     return .{ .verified = false };
 }
 
-/// Checks if a source line matches a specified member type and returns a boolean result.
+/// Checks if a line matches a specified member type in a Zig source file.
 fn lineMatchesDecl(source: []const u8, line_no: u32, name: []const u8, member_type: types.MemberType) bool {
     var line_iter = std.mem.splitScalar(u8, source, '\n');
     var current_line: u32 = 1;
@@ -232,3 +232,10 @@ test "verifyMemberLine - no line recorded" {
     defer result.deinit(allocator);
     try std.testing.expect(!result.verified);
 }
+
+
+
+
+
+
+

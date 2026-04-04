@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "EnumRegistry",
-      "match_hash": "37ba26cb2d69fa511151377ada404f2c807ea6d5a4e3e55a12f4f95ffa550761",
+      "match_hash": "21e629a1098a69b01ae2892df416f51a64fe1d573622ecdcb03616467ea0b09f",
       "signature": "keyword_struct EnumRegistry { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "6e5081b77fe1afdeede28da57202d255a0e932fa9193189e291887ac14943d0f",
+          "match_hash": "de1572295b2f259b2a068f8c47c2441547420ac52b55059c6e0ea3b22ce1c640",
           "signature": "fn init(allocator: std.mem.Allocator) -> EnumRegistry",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -29,7 +29,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "5a55f0051976cd9b2a8d5efbda5b456b175db6bcf0c4b040bb243687249c8ec3",
+          "match_hash": "0adfc97f36fa9742f94ca521ccb4b70f37ff1bb1fd0fc6f8bb118793e8dbd42d",
           "signature": "fn deinit(self: *EnumRegistry, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*EnumRegistry" },
@@ -42,7 +42,7 @@
     ,    {
           "type": "fn_decl",
           "name": "registerEnum",
-          "match_hash": "31a4fb0c76f6c75642d7f14e8aa72cba405fb8ed367f6299d9b9b47b588f0d06",
+          "match_hash": "fdb5d78f69e6870824af4979e0401e45708804c4635115c7cddde909978203c3",
           "signature": "fn registerEnum(self: *EnumRegistry, allocator: std.mem.Allocator, T: type) -> void",
           "params": [
             { "name": "self", "type": "*EnumRegistry" },
@@ -56,7 +56,7 @@
     ,    {
           "type": "fn_decl",
           "name": "nameToValue",
-          "match_hash": "b7d85b529fab86f17883e93a0ffb484cf8921681071243381305cdbcee933ed4",
+          "match_hash": "1b65db87674c01f9dd12c64f73e5d912866fa985ce4d5ffd18ab3e3506e4bab3",
           "signature": "fn nameToValue(self: *const EnumRegistry, name: []const u8) -> ?i64",
           "params": [
             { "name": "self", "type": "*const EnumRegistry" },
@@ -69,7 +69,7 @@
     ,    {
           "type": "fn_decl",
           "name": "valueToName",
-          "match_hash": "9810159ce17f87954e99e299dbad81a448c47a2040dbcb5e7f36dab3cf0941c4",
+          "match_hash": "e19f625a0fee5ea4fa3070eb63d25857be8a4935e6bc6967d3d8bb67d5cac33e",
           "signature": "fn valueToName(self: *const EnumRegistry, value: i64) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*const EnumRegistry" },

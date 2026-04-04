@@ -35,7 +35,7 @@ pub const ShellParseError = error{
 /// Shell metacharacters that enable injection when executing via a shell.
 const METACHARACTERS = "|&;<>`$(){}";
 
-/// Checks if a byte is a metacharacter, returning true for special characters.
+/// Checks if a byte is a metacharacter, returning true for special symbols.
 fn isMetachar(c: u8) bool {
     return std.mem.indexOfScalar(u8, METACHARACTERS, c) != null or
         c == '\n' or c == '\r';
@@ -301,3 +301,5 @@ test "parseCommand quoted argument concatenation" {
     try std.testing.expectEqual(@as(usize, 1), args.len);
     try std.testing.expectEqualStrings("foobar", args[0]);
 }
+
+

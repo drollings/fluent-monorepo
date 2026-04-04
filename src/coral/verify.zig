@@ -10,7 +10,7 @@ const TripleMapper = mapper_mod.TripleMapper;
 // Report types
 // ---------------------------------------------------------------------------
 
-/// Represents an ingestion error during data handling; manages fixed buffers with strict ownership and invariants.
+/// Handles ingestion errors with a fixed-size buffer pool; manages ownership and invariants for reliable data flow.
 pub const IngestionErrorKind = enum {
     count_mismatch,
     orphan_node,
@@ -19,7 +19,7 @@ pub const IngestionErrorKind = enum {
     dangling_blank_node,
 };
 
-/// Tracks ingestion events with a fixed-size buffer; managed by the owner; ensures consistent state across operations.
+/// Tracks ingestion events with a fixed-size buffer; managed by the owner; not thread-safe.
 pub const IngestionWarningKind = enum {
     no_type,
     no_description,
@@ -82,7 +82,7 @@ pub const VerifierConfig = struct {
     warn_missing_types: bool = true,
 };
 
-/// Manages verification logic with fixed buffers; owned by the module; ensures invariant correctness.
+/// Manages verification logic with a fixed-size buffer pool; owned by the module; ensures invariant correctness.
 pub const Verifier = struct {
     allocator: std.mem.Allocator,
     config: VerifierConfig,
@@ -228,3 +228,8 @@ test "report serializes error count" {
     try testing.expectEqual(@as(usize, 1), report.errors.items.len);
     try testing.expect(report.hasErrors());
 }
+
+
+
+
+

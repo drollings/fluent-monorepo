@@ -12,7 +12,7 @@
     {
       "type": "struct",
       "name": "ParsedFile",
-      "match_hash": "9d7cc68bcb0ad45818aaff75b22b3f2c4a407feba344f8baa28695078764329a",
+      "match_hash": "2cfd9b5dd016a6125a891b7abfa45b51f0766d52d7822c8a92856035c247870b",
       "signature": "keyword_struct ParsedFile { ... }",
       "is_pub": true,
       "line": 16
@@ -20,14 +20,14 @@
     {
       "type": "struct",
       "name": "LanguagePlugin",
-      "match_hash": "069936198df3ee8cb2be8077aa52ab7a2cc70eafcba5314a6292694a8b540712",
+      "match_hash": "c78111d5e007e7098ad75d1efce81a7addf20bca210e0bd2f1b209cfd857d927",
       "signature": "keyword_struct LanguagePlugin { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "parse",
-          "match_hash": "6433a50acfa324af46c56cd16918de467012807fd03845133a1a40561acdbc57",
+          "match_hash": "f3d2853baae5b8241c343459db8bbf9d93f6169387492216a5e65544ea96c041",
           "signature": "fn parse(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> ParsedFile",
           "params": [
             { "name": "self", "type": "*const LanguagePlugin" },
@@ -42,7 +42,7 @@
     ,    {
           "type": "fn_decl",
           "name": "extractImports",
-          "match_hash": "3d2c972adf13213d8830dce386425be973e54edef0d5c30561120c2f0b0d0670",
+          "match_hash": "741dad85c3649a641dfbc59de68543e5e240ea0182740adaff5f41d89c0967f5",
           "signature": "fn extractImports(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8) -> []const []const u8",
           "params": [
             { "name": "self", "type": "*const LanguagePlugin" },

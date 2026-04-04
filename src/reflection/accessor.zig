@@ -788,7 +788,7 @@ fn describeFieldToJson(writer: anytype, accessor: Accessor, indent: usize) !void
     try writer.writeAll("}");
 }
 
-/// Converts a TypeTag into a JSON schema array of bytes.
+/// Converts a TypeTag to a JSON schema array of bytes, handling type metadata.
 fn typeTagToJsonSchema(tag: TypeTag) []const u8 {
     return switch (tag) {
         .int => "integer",
@@ -845,7 +845,7 @@ fn writeEscapedJsonString(writer: anytype, s: []const u8) !void {
 // § 5  DynamicEditable  (runtime-defined schemas, e.g. dynamic SQLite rows)
 // ============================================================
 
-/// Tracks dynamic editable fields; manages access and ownership; ensures consistent state across instances.
+/// Tracks dynamic editable fields; manages access control; owns runtime state.
 pub const DynamicEditable = struct {
     buffer: []u8,
     accessors: []const Accessor,
@@ -930,3 +930,15 @@ pub const DynamicEditable = struct {
         return self.accessors[index].meta;
     }
 };
+
+
+
+
+
+
+
+
+
+
+
+

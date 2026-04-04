@@ -11,7 +11,7 @@ pub const CliError = error{
     OutOfMemory,
 };
 
-/// Manages command execution context, owns CLI workflow; ensures consistent initialization and cleanup.
+/// Manages command execution logic, owns CLI workflow; ensures consistent initialization and cleanup.
 pub const Command = struct {
     name: []const u8,
     description: []const u8,
@@ -210,3 +210,6 @@ test "CommandRegistry: names returns sorted list" {
     try testing.expectEqualStrings("middle", names[1]);
     try testing.expectEqualStrings("zebra", names[2]);
 }
+
+
+

@@ -161,7 +161,7 @@ pub const ExecutionRequestBuilder = struct {
 // WasmExecution — result from ExecutionResultReader
 // ---------------------------------------------------------------------------
 
-/// Represents execution context for Wasm; manages state and calls; owned by the module; ensures safe interaction.
+/// Represents execution context for Wasm; manages state and callbacks; ensures controlled access.
 pub const WasmExecution = struct {
     /// Allocator-owned output bytes; free with allocator.free(output).
     output: []const u8,
@@ -284,3 +284,5 @@ test "ExecutionRequestBuilder: empty input builds valid payload" {
     try testing.expectEqual(@as(i64, 99), req.target_id);
     try testing.expectEqual(@as(u32, 0), req.input_len);
 }
+
+

@@ -152,7 +152,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
     return result;
 }
 
-/// Checks if a BuildContext's target is up-to-date with the expected version.
+/// Checks if a BuildContext's target is up-to-date with Zig's version constraints.
 fn isUpToDate(self: *BuildContext, target: *const Target) bool {
     const exists_path = target.exists orelse return false;
 
@@ -271,7 +271,7 @@ pub fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) !void {
     }
 }
 
-/// Displays a graphical representation using provided data and UI components.
+/// Displays a graphical representation using provided context and data.
 pub fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) !void {
     const graph_str = try self.resolver.visualizeGraph(target_names, self.allocator);
     defer self.allocator.free(graph_str);
@@ -531,3 +531,10 @@ test "BuildContext: GPA no leaks across a multi-target build" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
+
+
+
+
+
+
+

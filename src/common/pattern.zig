@@ -100,7 +100,7 @@ pub fn detectAdapter(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index, sou
     return containsAny(source, &keywords);
 }
 
-/// Checks if a given source slice contains a valid Zig pattern definition.
+/// Checks if a given source slice contains valid Zig code and returns a boolean result.
 pub fn detectDecorator(source: []const u8) bool {
     const wrapped_field = containsAny(source, &[_][]const u8{ "wrapped:", "component:", "_inner:", "wrappee:" });
     if (!wrapped_field) return false;
@@ -108,7 +108,7 @@ pub fn detectDecorator(source: []const u8) bool {
     return delegates;
 }
 
-/// Checks if a given source slice matches the proxy pattern, returning true or false.
+/// Checks if a given source slice matches a proxy pattern, returning true or false.
 pub fn detectProxy(source: []const u8) bool {
     const has_subject = containsAny(source, &[_][]const u8{ "_real:", "_subject:", "_target:", "_delegate:", "_proxied:" });
     if (!has_subject) return false;
@@ -183,3 +183,13 @@ test "detectObserver" {
     ));
     try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
 }
+
+
+
+
+
+
+
+
+
+

@@ -32,7 +32,7 @@ pub const CommonArgs = struct {
     positional: []const []const u8 = &[_][]const u8{},
 };
 
-/// Converts a C-style array of arguments into a CommonArgs structure, handling null-terminated input.
+/// Converts a C-style array of arguments into a CommonArgs structure, handling positional data and allocating memory.
 pub fn parseCommonArgs(
     args: []const []const u8,
     positional_buf: *std.ArrayListUnmanaged([]const u8),
@@ -181,3 +181,5 @@ test "parseCommonArgs: defaults when no args given" {
     try testing.expectEqualStrings("local:code:latest", args.model);
     try testing.expectEqual(@as(usize, 0), args.positional.len);
 }
+
+

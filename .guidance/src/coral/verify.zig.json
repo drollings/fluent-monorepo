@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "IngestionErrorKind",
-      "match_hash": "3630863e92ed805db8cdace12c865be8f2df8c4df397ee6adf30107070db7e09",
+      "match_hash": "3bdc94f3935f8b39a9baf1954df9e9f64b82fa6ffca3fcf39ff1aa1d695b91fc",
       "signature": "keyword_enum IngestionErrorKind { ... }",
       "is_pub": true,
       "members": [
@@ -50,7 +50,7 @@
     {
       "type": "enum",
       "name": "IngestionWarningKind",
-      "match_hash": "05b0b948eaf3e3c99b910ba9e679310b38e0930c93816bd623e134941628fce0",
+      "match_hash": "ef0a0c240e9e67a8ae9b33828fc572e44f6f7c1480761311210925f8102dda74",
       "signature": "keyword_enum IngestionWarningKind { ... }",
       "is_pub": true,
       "members": [
@@ -78,14 +78,14 @@
     {
       "type": "struct",
       "name": "IngestionReport",
-      "match_hash": "0c36ab1f0b0d8e6e4cd6b453714e255f679fb280727dcb119c3a6ddedeac9421",
+      "match_hash": "4688d8f22eb2540c796609ad89b3a8bced4bcd50a79aebf463e7d852e3627999",
       "signature": "keyword_struct IngestionReport { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "79385af7b07e33b4f2ddd02ccd0d6f990d1fbd7c07896980061c176be05f0c7b",
+          "match_hash": "cbe207e837633d16cf6d0488014f98f99e0694583af85d7d5ac6223ae7a7b428",
           "signature": "fn init(allocator: std.mem.Allocator) -> IngestionReport",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" }
@@ -97,7 +97,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "a0dae9ee55bdd90114c99bb1279efe04cf33b4bbf04dc5b6f9753e4f32123f1f",
+          "match_hash": "6a21f4dca068ef78389e991f030e4e68dee764d3359fc041c60ec8bdc4b960d3",
           "signature": "fn deinit(self: *IngestionReport) -> void",
           "params": [
             { "name": "self", "type": "*IngestionReport" }
@@ -109,7 +109,7 @@
     ,    {
           "type": "fn_decl",
           "name": "hasErrors",
-          "match_hash": "aae1ebb4e6375f62d77fda57e99294bbe83f47bb8e4f7daf27528d432099bc15",
+          "match_hash": "69b720f43cbf3b486e5b1ed9146253d7e41794db44df0ea54cfdca821ab7c492",
           "signature": "fn hasErrors(self: *const IngestionReport) -> bool",
           "params": [
             { "name": "self", "type": "*const IngestionReport" }
@@ -124,7 +124,7 @@
     {
       "type": "struct",
       "name": "VerifierConfig",
-      "match_hash": "3582fdb7f3cf1160a60f88057c6158539b4870dfd8b8b60582911812f28cd743",
+      "match_hash": "26d6aafbbd8b8d9d2c291ff300e80e308e1117bfe3aa6e9a2d8909a311b49c72",
       "signature": "keyword_struct VerifierConfig { ... }",
       "is_pub": true,
       "line": 76
@@ -132,14 +132,14 @@
     {
       "type": "struct",
       "name": "Verifier",
-      "match_hash": "4f5b74d13f3d95aff332d9afc778230a32244095b90b609e868cb163c1ebdd94",
+      "match_hash": "87d283cad8765ad31d66d13a7666cd160c1e26a66f7a5288d3f6bd2330521d60",
       "signature": "keyword_struct Verifier { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f931b63c3350f9b402044db3d96676624c9c8dd699e7f7d6d4aaaf5c0bba8515",
+          "match_hash": "e07e85750f05d3456c9575280f986c446ba18a1b4f397dcadb1ce155d815e601",
           "signature": "fn init(allocator: std.mem.Allocator, config: VerifierConfig) -> Verifier",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -152,7 +152,7 @@
     ,    {
           "type": "fn_decl",
           "name": "verifyMapper",
-          "match_hash": "de5dd4a3245b0477b85e3edd15d75452b65acb1c7f0baf054530ce056b9bdbe0",
+          "match_hash": "e130255f4a10fcedfb1c7fd3bb53b75cb946deff9d5733497e8ca3809f89ecfa",
           "signature": "fn verifyMapper(self: *Verifier, mapper: *const TripleMapper, report: *IngestionReport) -> void",
           "params": [
             { "name": "self", "type": "*Verifier" },
@@ -166,7 +166,7 @@
     ,    {
           "type": "fn_decl",
           "name": "verifyStats",
-          "match_hash": "7b1734b400faaff2a7c560cad02c2ae000f08781e4daaaeb2c6082752062fbd0",
+          "match_hash": "9c5489405198a852450995b8f3315296f6e95e9baa1c0ca68626d3b07584e6bd",
           "signature": "fn verifyStats(self: *Verifier, triples: usize, nodes: usize, edges: usize, report: *IngestionReport) -> void",
           "params": [
             { "name": "self", "type": "*Verifier" },

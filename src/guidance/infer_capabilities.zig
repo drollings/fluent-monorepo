@@ -49,7 +49,7 @@ pub fn freeInferredCapability(allocator: std.mem.Allocator, cap: InferredCapabil
     allocator.free(cap.source_files);
 }
 
-/// Releases allocated memory by freeing inferred capability slices.
+/// Releases allocated memory by freeing inferred capabilities for the given allocator.
 pub fn freeInferredCapabilities(allocator: std.mem.Allocator, caps: []InferredCapability) void {
     for (caps) |cap| freeInferredCapability(allocator, cap);
     allocator.free(caps);
@@ -101,7 +101,7 @@ fn extractPrefix(stem: []const u8) []const u8 {
     return stem;
 }
 
-/// Converts a path array into a stemmed string slice, removing non-alphanumeric characters.
+/// Converts a path array into a stemmed string slice for Zig processing.
 fn pathStem(path: []const u8) []const u8 {
     const base = std.fs.path.basename(path);
     const ext_pos = std.mem.lastIndexOfScalar(u8, base, '.') orelse return base;
@@ -404,7 +404,7 @@ fn deduplicateCapabilities(
 // Helpers
 // =============================================================================
 
-/// Converts a raw memory slice to a human-readable capability name using an allocator.
+/// Converts a raw memory slice to a human-readable capability name using the allocator.
 fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .{};
     errdefer out.deinit(allocator);
@@ -483,3 +483,19 @@ test "isSupportedExtension: known extensions" {
     try std.testing.expect(!isSupportedExtension(".md"));
     try std.testing.expect(!isSupportedExtension(".json"));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

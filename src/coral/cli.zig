@@ -210,3 +210,7 @@ test "checkpoint store returns null for unknown source" {
     defer store.deinit();
     try testing.expect(store.findLatest("nonexistent.ttl") == null);
 }
+
+
+
+

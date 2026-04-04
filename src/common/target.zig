@@ -78,7 +78,7 @@ pub fn init(
     };
 }
 
-/// Releases allocated memory by cleaning up Zig resources.
+/// Releases allocated memory by deallocating the Zig object.
 pub fn deinit(self: *Target, allocator: std.mem.Allocator) void {
     self.depends.deinit(allocator);
     self.provides.deinit(allocator);
@@ -123,7 +123,7 @@ pub fn addCommand(self: *Target, allocator: std.mem.Allocator, cmd: []const u8) 
     try self.commands.append(allocator, cmd);
 }
 
-/// Checks if a target is abstract, returning true or false based on type constraints.
+/// Checks if a target is abstract by verifying its structure and return a boolean result.
 pub fn isAbstract(self: *const Target) bool {
     return self.target_type == .abstract and
         self.commands.items.len == 0 and
@@ -160,7 +160,7 @@ pub fn missingDepends(
     return missing;
 }
 
-/// Calculates the distance between two bit sets in a target structure.
+/// Calculates the distance between two targets using bit set operations.
 pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBitSetUnmanaged) usize {
     var dist: usize = 0;
     var iter = self.depends.iterator(.{});
@@ -172,7 +172,7 @@ pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBi
     return dist;
 }
 
-/// Formats a target string using the provided format options and writer.
+/// Formats a target string using specified format options and writer.
 pub fn format(
     self: *const Target,
     comptime fmt: []const u8,
@@ -692,3 +692,16 @@ test "TargetSchema: GPA no leaks" {
     const p = try view.get("provides", .coder);
     allocator.free(p);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

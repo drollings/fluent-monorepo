@@ -531,3 +531,5 @@ test "coral: core module imports compile" {
     _ = @import("http_transport.zig"); // M4.1 HTTP/SSE transport
     _ = @import("quantized_embedding.zig"); // P5.2 int8 embeddings
 }
+
+

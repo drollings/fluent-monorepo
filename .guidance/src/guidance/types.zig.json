@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "FileType",
-      "match_hash": "1b7f40af9ec3c962eb5f196a5aee0f8f6d79528da3a167c8f779255d185df15d",
+      "match_hash": "94aaa3d6a33d442c59ee7de81aa077705f380834991b7b2a0f5709ce5c7794e3",
       "signature": "keyword_enum FileType { ... }",
       "is_pub": true,
       "members": [
@@ -59,7 +59,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fromExtension",
-          "match_hash": "165754f83c275231c55aeecac716acbf86a326038f28f4c4e468ace9f5efd58b",
+          "match_hash": "6f447af6c3fa7a291b29f33742dfd4c6450fe9893bc11a7f92c5b8d6d2eb651b",
           "signature": "fn fromExtension(ext: []const u8) -> FileType",
           "params": [
             { "name": "ext", "type": "[]const u8" }
@@ -71,7 +71,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toStr",
-          "match_hash": "77254121910cbcbc37e74e3980d36bd4a7d96d972e99024ca18c35db92a28fcf",
+          "match_hash": "c096e2640d86a44aa2ad5650646b8de6b6c1e751e03ad85871504e2dc7db80ee",
           "signature": "fn toStr(self: FileType) -> []const u8",
           "params": [
             { "name": "self", "type": "FileType" }
@@ -86,7 +86,7 @@
     {
       "type": "enum",
       "name": "MemberType",
-      "match_hash": "43db4c7bb1583215fe913d8907848dcc2f4cf154e84f11bcfebbca4076702bed",
+      "match_hash": "77bb0644cedcf58c7ee95907830fc847661f03cbb56f6e4134e8b952c3eabd9a",
       "signature": "keyword_enum MemberType { ... }",
       "is_pub": true,
       "members": [
@@ -156,7 +156,7 @@
     {
       "type": "struct",
       "name": "Pattern",
-      "match_hash": "8b421b0ddef2387395d94c5c18c1f69f41ea12a57cc485410c8572a5b6c72b24",
+      "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
       "signature": "keyword_struct Pattern { ... }",
       "is_pub": true,
       "line": 66
@@ -164,7 +164,7 @@
     {
       "type": "struct",
       "name": "Param",
-      "match_hash": "fa84e186e4e0eb378a1af805751d864a89c1aab35a8d36be4d4035fb876fa955",
+      "match_hash": "af50a6fe6cc9eacc97156983a19c76c443ed71068d0fb557cdae55743c108a68",
       "signature": "keyword_struct Param { ... }",
       "is_pub": true,
       "line": 73
@@ -172,7 +172,7 @@
     {
       "type": "struct",
       "name": "Member",
-      "match_hash": "bb2e5d7cfff7de76dd5fb36b8d6e66266229682bf1325bd12ba7f19f518c8f59",
+      "match_hash": "9ed7bc447470fcf1eea31287619a8d10b46ab963661b6ec964f6983e7e685487",
       "signature": "keyword_struct Member { ... }",
       "is_pub": true,
       "line": 80
@@ -180,7 +180,7 @@
     {
       "type": "struct",
       "name": "Meta",
-      "match_hash": "6a3b755eee766e9e720958128052245610ea059c6f94a94809d36f970f465484",
+      "match_hash": "5b80824a2c945733e3ae8e331b59b4c63a0b607c78bb4c0c43132ca9fc79bafc",
       "signature": "keyword_struct Meta { ... }",
       "is_pub": true,
       "line": 117
@@ -188,7 +188,7 @@
     {
       "type": "struct",
       "name": "GuidanceDoc",
-      "match_hash": "3d2eab13573f130b0fabdf497350959fafdc6fc66bf14c8247d1d816ef174f2b",
+      "match_hash": "e0488260244e5fd5850b36f7f1aba5df2a3c9b29928b436927a400e4f1bc763a",
       "signature": "keyword_struct GuidanceDoc { ... }",
       "is_pub": true,
       "line": 124
@@ -196,7 +196,7 @@
     {
       "type": "struct",
       "name": "FileMatch",
-      "match_hash": "19d2669e9ee914b80fd7b5b3c0082df794ee691bb7d6d04302a4626e05364ac1",
+      "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
       "signature": "keyword_struct FileMatch { ... }",
       "is_pub": true,
       "line": 150
@@ -204,7 +204,7 @@
     {
       "type": "struct",
       "name": "GuidanceInfo",
-      "match_hash": "eaf975a963bd89de9954941824fec47996e6dd4540e3c44113e4d9a41f9b5f9c",
+      "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
       "signature": "keyword_struct GuidanceInfo { ... }",
       "is_pub": true,
       "line": 158
@@ -212,7 +212,7 @@
     {
       "type": "struct",
       "name": "ASTAnalysis",
-      "match_hash": "8a47adbb32afada24c95b5fec3f7b1e3757cb6f2a3dbcdaf3338c2337143d4a9",
+      "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
       "signature": "keyword_struct ASTAnalysis { ... }",
       "is_pub": true,
       "line": 168
@@ -220,7 +220,7 @@
     {
       "type": "struct",
       "name": "QueryResult",
-      "match_hash": "0ee85862a2d254104ee0470238245b592d80fa0ef0b35c7c165e875514ec9628",
+      "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
       "signature": "keyword_struct QueryResult { ... }",
       "is_pub": true,
       "line": 179
@@ -228,7 +228,7 @@
     {
       "type": "enum",
       "name": "StageKind",
-      "match_hash": "0621bdde0e99f40573b7b34d40f23195bd0a839114c27c03ecb9f4dee33bd8b1",
+      "match_hash": "e256a1f6e63deb19eee13f45b83edcaf1a9b58474ea47a4d27d833ba9b5cc7c4",
       "signature": "keyword_enum StageKind { ... }",
       "is_pub": true,
       "members": [
@@ -280,7 +280,7 @@
     {
       "type": "struct",
       "name": "Stage",
-      "match_hash": "3a2f08af9fed36d098e572f00f54886927f521e4b5688ede7a5e9271440ceaf9",
+      "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
       "signature": "keyword_struct Stage { ... }",
       "is_pub": true,
       "line": 215
@@ -288,7 +288,7 @@
     {
       "type": "fn_decl",
       "name": "freeStage",
-      "match_hash": "e32854e7154ef3d79566d504c5daf5ace045709be331730b712f09336dff0843",
+      "match_hash": "9f2aee87a48630684efef7ee99c3c969ce8d889340e1d03519eaec3031f08a41",
       "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -301,7 +301,7 @@
     {
       "type": "fn_decl",
       "name": "freeStages",
-      "match_hash": "57b9e5d335da857857873dcf00440397e82db85bc5612cfe7dd5bc2375928c5e",
+      "match_hash": "6b08128aa825462aa313132148b4892e55db1ae9e5834757b4a6625b607d58d4",
       "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -314,7 +314,7 @@
     {
       "type": "struct",
       "name": "SyncResult",
-      "match_hash": "191ad94d6655bed8d7cab0417a393127d4d005fa9944801238080ce3b63573c0",
+      "match_hash": "060cce40007a9a221e1f855b72c28790a64d8a0874e4d2b5978e8893aab8bc7b",
       "signature": "keyword_struct SyncResult { ... }",
       "is_pub": true,
       "line": 237
@@ -322,7 +322,7 @@
     {
       "type": "fn_decl",
       "name": "stepPrint",
-      "match_hash": "1abd0e2b94c0c6acc022847e0232851bd7a56188e266c9e03878fef5320906c6",
+      "match_hash": "57b5a35bdde4fc3d956262379dc8fc4730808f5aaddcaa8b4cc1dc67b3d2b3bc",
       "signature": "fn stepPrint(fmt: []const u8, args) -> void",
       "params": [
         { "name": "fmt", "type": "[]const u8" },
@@ -335,7 +335,7 @@
     {
       "type": "fn_decl",
       "name": "jsonifyMember",
-      "match_hash": "94d08762a7bc8efd16ba18c2e58a0a1dca11e7af1c0ae1a078279ae61729e5b3",
+      "match_hash": "f1469b8124657f84e29d9630843f52aec23573cb892c1fa9468da5595a34cb91",
       "signature": "fn jsonifyMember(allocator: std.mem.Allocator, member: Member) -> ?[]u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -348,7 +348,7 @@
     {
       "type": "fn_private",
       "name": "writeFieldOrComma",
-      "match_hash": "cff7f21cae38c7c38f3c47e45880872bc4cd7f47dbaafdbaf8151490f512a54e",
+      "match_hash": "83ed3f3b6ba7e075c765a36b341948ac9baa86636f6a64adcbf5b503e42fc409",
       "signature": "fn writeFieldOrComma(writer, key: []const u8, value: ?[]const u8) -> void",
       "params": [
         { "name": "writer" },
@@ -362,7 +362,7 @@
     {
       "type": "fn_private",
       "name": "writeEscapedString",
-      "match_hash": "098725ea806de0b2c6d6878eb751a9068e063e3e39e579b23b0137b245bc1218",
+      "match_hash": "6223b0721dadb199f1e583f91d5d512c57c56fb85300b90e6ed8a739f67756ad",
       "signature": "fn writeEscapedString(writer, key: []const u8, value: []const u8) -> void",
       "params": [
         { "name": "writer" },
@@ -376,7 +376,7 @@
     {
       "type": "fn_decl",
       "name": "jsonifyGuidanceDoc",
-      "match_hash": "8959abd8822d49144b60de5b247de4497dba18a208842b1892a2c5e29ac4e105",
+      "match_hash": "9cf9a76ff20d5b50c1c594024891ec6e4f6e6baa7781a8eeb1cba40deadce2a5",
       "signature": "fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

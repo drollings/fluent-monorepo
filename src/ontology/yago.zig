@@ -144,7 +144,7 @@ pub const ALL_CLASSES = [_]*const OntologyClass{
     &CLASS_CONCEPT,
 };
 
-/// Converts a list of IRI strings into a filtered slice, returning a unique set of valid URIs.
+/// Converts a list of IRI strings into a filtered slice, returning the whitelisted results.
 pub fn whitelistIRIs(out: [][]const u8) usize {
     var i: usize = 0;
     for (ALL_CLASSES) |cls| {
@@ -163,7 +163,7 @@ pub fn lookupClass(iri: []const u8) ?*const OntologyClass {
     return null;
 }
 
-/// Transforms a list of IRI elements into a structured Zig output, handling conversion and chaining.
+/// Transforms a sequence of IRI elements into a structured Zig output, handling errors gracefully.
 pub fn superclassChain(iri: []const u8, out: [][]const u8) usize {
     var count: usize = 0;
     var current: ?[]const u8 = iri;
@@ -318,7 +318,7 @@ const ALL_PROPERTIES = [_]*const OntologyProperty{
     &PROP_WIKIPEDIA,
 };
 
-/// Searchs an IRI string for a matching OntologyProperty and returns it.
+/// Retrieves an OntologyProperty from an IRI string, returning its pointer.
 pub fn lookupProperty(iri: []const u8) ?*const OntologyProperty {
     for (ALL_PROPERTIES) |prop| {
         if (std.mem.eql(u8, prop.iri, iri)) return prop;
@@ -389,3 +389,11 @@ test "isSubclassOf: unrelated classes" {
 test "isSubclassOf: unknown child IRI" {
     try testing.expect(!isSubclassOf("http://unknown/Foo", NS_YAGO ++ "Entity"));
 }
+
+
+
+
+
+
+
+

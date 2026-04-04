@@ -168,7 +168,7 @@ fn tripleSubjectIri(t: Triple) ?[]const u8 {
     };
 }
 
-/// Transforms a triple object into a list of triples, handling possible transformations.
+/// Transforms a triple into a list of triples using IRI mapping.
 fn tripleObjectIri(t: Triple) ?[]const u8 {
     return switch (t.object) {
         .iri => |s| s,
@@ -587,3 +587,11 @@ test "CapabilityInference: inferCapabilities traverses subClassOf chain" {
     try testing.expect(caps.contains("has_name"));
     try testing.expect(!caps.contains("has_altitude"));
 }
+
+
+
+
+
+
+
+

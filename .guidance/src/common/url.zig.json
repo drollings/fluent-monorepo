@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "isLocalHost",
-      "match_hash": "a36db0874ebb04a4d05dbf3ea43036e6bc41f3b6695223904a927c8f1c768e21",
+      "match_hash": "d12c391f50883063f3382e61372876a778c2bcb977bbc1ac582f84a592b22200",
       "signature": "fn isLocalHost(host: []const u8) -> bool",
       "params": [
         { "name": "host", "type": "[]const u8" }
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "isPrivateIp",
-      "match_hash": "9aa0d073ec7616a700860fcadc8c2b1518353aaac774ca6142d6d93615eab648",
+      "match_hash": "323ca53f5899f43d8df925ad8aa7d7ee4ad2336639a374210a970c562603489e",
       "signature": "fn isPrivateIp(host: []const u8) -> bool",
       "params": [
         { "name": "host", "type": "[]const u8" }
@@ -34,7 +34,7 @@
     {
       "type": "fn_private",
       "name": "extractHost",
-      "match_hash": "604bc68597e7027a473964923afe7f5a5b8472a8696ae712428f05d8b7681b26",
+      "match_hash": "2d345d024d6b848ca716f474b0eb1b82a66f779eb7615c42143701cbfe96ea93",
       "signature": "fn extractHost(url: []const u8) -> []const u8",
       "params": [
         { "name": "url", "type": "[]const u8" }
@@ -46,7 +46,7 @@
     {
       "type": "fn_decl",
       "name": "validateHttpsOrLocalHttp",
-      "match_hash": "5af6eb860b627190b5af6322603d2cf1d035279ccb35ea1284f94593e2a8bd6f",
+      "match_hash": "8f87f3aa049f96389f4164f1ee8fa3de02b56b28388f89a6747045969953b792",
       "signature": "fn validateHttpsOrLocalHttp(url: []const u8) -> void",
       "params": [
         { "name": "url", "type": "[]const u8" }

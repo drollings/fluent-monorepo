@@ -23,7 +23,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Manages quantized embedding state with fixed-size buffers; ownership model is per-instance; key invariant is consistent key-value mapping.
+/// Manages quantized embedding state with fixed-size buffers; ownership model is per-instance; key invariant is stable key structure.
 pub const QuantizedEmbedding = struct {
     /// Quantized values in [-128, 127].
     data: []i8,
@@ -269,3 +269,4 @@ test "QuantizedEmbedding.serialize/deserialize" {
         try testing.expectEqual(a, b);
     }
 }
+

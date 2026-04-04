@@ -315,7 +315,7 @@ pub const DbSyncBuilder = struct {
 // GuidanceDb — the database handle
 // ---------------------------------------------------------------------------
 
-/// Manages a fixed-size buffer pool for efficient data access; owned by the system; ensures consistent memory layout.
+/// Manages a fixed-size buffer pool for efficient data access; owned by the system; ensures consistent memory usage.
 pub const GuidanceDb = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
@@ -3882,7 +3882,7 @@ const ParsedMember = struct {
     line: ?u32,
 };
 
-/// Represents parsed document data with ownership and invariants; managed via parsing lifecycle.
+/// Represents parsed document data with ownership and invariants; managed via parsedDoc instance.
 const ParsedDoc = struct {
     module: []const u8,
     source: []const u8,
@@ -4054,7 +4054,7 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
     };
 }
 
-/// Converts a JSON value to a ParsedMember, handling nulls and errors gracefully.
+/// Converts a JSON value into a ParsedMember, handling nulls and types.
 fn parseMemberValue(item: std.json.Value) ParsedMember {
     const node_type: []const u8 = blk: {
         const tv = item.object.get("type") orelse break :blk "unknown";
@@ -4118,7 +4118,7 @@ fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u
     return buf.toOwnedSlice(allocator);
 }
 
-/// Converts a SQL statement into a slice of byte slices for column parsing.
+/// Converts a SQL statement's column usage into a slice of byte slices, handling SQLite's column references.
 fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocator) ![][]const u8 {
     if (c.sqlite3_column_type(stmt, col) == c.SQLITE_NULL) return &.{};
     const raw = c.sqlite3_column_text(stmt, col);
@@ -4459,3 +4459,19 @@ test "DbSyncBuilder: each setter produces an independent copy (immutable chain)"
     try std.testing.expectEqualStrings("cap", with_cap.capabilities_dir.?);
     try std.testing.expectEqual(@as(u32, 99), with_limit.cache_limit);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

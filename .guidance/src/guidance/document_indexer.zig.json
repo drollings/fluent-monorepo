@@ -14,7 +14,7 @@
     {
       "type": "struct",
       "name": "DocumentMetadata",
-      "match_hash": "eca3e95e5226c9fa4fbbd92fe76af15e995a0dcca832ad95642b60817f50d391",
+      "match_hash": "fae237c77dff0d3146f51b62e2a0ec7ea8ea6c844975dedcdfba659bc76dd76a",
       "signature": "keyword_struct DocumentMetadata { ... }",
       "is_pub": true,
       "line": 23
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "freeMetadata",
-      "match_hash": "05d0cef1ba1f385296eba122118bd75f85f542c4846bbefcd8bdb684ede55bc0",
+      "match_hash": "51fc30dfba4b97fed539f47f223d90a33348831d5634c7f0641dabdb3a1065fe",
       "signature": "fn freeMetadata(allocator: std.mem.Allocator, m: DocumentMetadata) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -35,14 +35,14 @@
     {
       "type": "struct",
       "name": "DocumentIndexer",
-      "match_hash": "a5e9e63ecd30f5ae3f7994004b688f9bd3a3e57fdfc3215ea8048ba163cf3b85",
+      "match_hash": "0f6969c2858e8ac68ccf78aedce0785d04f56bf4592989169b557f0dc32c85b8",
       "signature": "keyword_struct DocumentIndexer { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "docType",
-          "match_hash": "d2564602fd36c0370e80cb0bf734cf4895d0997bffc9af44b32207cc9ae5d56e",
+          "match_hash": "b506403b12113ea67071fcce81d7ada53306681daa44c9926b51287f22cd4db9",
           "signature": "fn docType(self: DocumentIndexer) -> []const u8",
           "params": [
             { "name": "self", "type": "DocumentIndexer" }
@@ -54,7 +54,7 @@
     ,    {
           "type": "fn_decl",
           "name": "docId",
-          "match_hash": "dfe432f9d892dfbf725cba00b0470b5050f9a802f173542108b087df8093cf02",
+          "match_hash": "eca534e0a01c3be8d95045a5193d6ec3ca36529f1ea1248f2bee7505e3b6f526",
           "signature": "fn docId(self: DocumentIndexer) -> []const u8",
           "params": [
             { "name": "self", "type": "DocumentIndexer" }
@@ -66,7 +66,7 @@
     ,    {
           "type": "fn_decl",
           "name": "extractMetadata",
-          "match_hash": "35812c31889f9569f6fa5578d7441f1a00e04f07ae792f938c62fccea19d962b",
+          "match_hash": "67a309a3da7dadd531342b45939f7c68d94ae10dfb24b4085185fb03899c315e",
           "signature": "fn extractMetadata(self: DocumentIndexer, allocator: std.mem.Allocator) -> DocumentMetadata",
           "params": [
             { "name": "self", "type": "DocumentIndexer" },
@@ -79,7 +79,7 @@
     ,    {
           "type": "fn_decl",
           "name": "produceStages",
-          "match_hash": "b1cda775e86a9be7c4293a26626b747926df3cf21fb024a2f7a311d7697044c0",
+          "match_hash": "063f09e29adb662672baa9ff86232e748ced1bb8fa9b32bfa8524cfe338eb441",
           "signature": "fn produceStages(self: DocumentIndexer, allocator: std.mem.Allocator, query: []const u8, score: f32) -> []types.Stage",
           "params": [
             { "name": "self", "type": "DocumentIndexer" },
@@ -94,7 +94,7 @@
     ,    {
           "type": "fn_decl",
           "name": "relevance",
-          "match_hash": "bdb7722bc871170d6873a50fefdcaea74e951422b3bbc7d126f83bd92615c7f2",
+          "match_hash": "05a533a1429da5c231cacb3a78d775dfac49fb3c2177641fba73e4b10ee74f50",
           "signature": "fn relevance(self: DocumentIndexer, query_tokens: []const []const u8) -> f32",
           "params": [
             { "name": "self", "type": "DocumentIndexer" },
@@ -107,7 +107,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "76089ee7003ad68bed414b9e3c71e7e02dcd92305b6cab1152ba744c5b1b07a3",
+          "match_hash": "b2279696cb9d01a0001f674a8afa22a47ae6fe9b290c91415ebf0e5e42bdbc69",
           "signature": "fn deinit(self: DocumentIndexer) -> void",
           "params": [
             { "name": "self", "type": "DocumentIndexer" }
@@ -122,7 +122,7 @@
     {
       "type": "struct",
       "name": "GuidanceJsonIndexerImpl",
-      "match_hash": "9fc390a33dec3b7e3c9d37108e8fc72ad176b10a095661de2b834533b28796d3",
+      "match_hash": "57cde06813e66d8d61249880afec76369fd8e30fc0c1d23dfb563da2eb7d8904",
       "signature": "keyword_struct GuidanceJsonIndexerImpl { ... }",
       "is_pub": true,
       "line": 136
@@ -130,7 +130,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonDocType",
-      "match_hash": "77a4d6046fca75d6aaae3e5f2d0b11c632e2b767bede7338901a9ec5a58e3b3c",
+      "match_hash": "1abe2588615a994bbf9b02e39f23a40394387a68b262d7d3458bc737a43c67c0",
       "signature": "fn guidanceJsonDocType(_: *anyopaque) -> []const u8",
       "params": [
         { "name": "_", "type": "*anyopaque" }
@@ -142,7 +142,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonDocId",
-      "match_hash": "868fdab5854ec52368e84d3d5b25453059f515b09c985b717adf7c0e3a0c4b50",
+      "match_hash": "852ce16e7bc7a75ab7750941ab85eb1ce511440e0aca09a0dac25643a16ea43c",
       "signature": "fn guidanceJsonDocId(ptr: *anyopaque) -> []const u8",
       "params": [
         { "name": "ptr", "type": "*anyopaque" }
@@ -154,7 +154,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonExtractMetadata",
-      "match_hash": "d4500ccb05e2280f4b1994eabe7fe2535cd9c226ce9273da5b1aed0e208c902a",
+      "match_hash": "f92bed98c87aeed7c869ddf9799b807f38f20235bef2a9a9465b81ab209cf9ef",
       "signature": "fn guidanceJsonExtractMetadata(ptr: *anyopaque, allocator: std.mem.Allocator) -> anyerror!DocumentMetadata",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -167,7 +167,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonProduceStages",
-      "match_hash": "05de33acda2436844f5d3501eee49f01800aaa71a3692adae9a2e2f976036442",
+      "match_hash": "e67fd8c1145b78ef7a6b026439fb36d4bb5d1984c9fbd9fed126acc10639051b",
       "signature": "fn guidanceJsonProduceStages(ptr: *anyopaque, allocator: std.mem.Allocator, query: []const u8, score: f32) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -182,7 +182,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonRelevance",
-      "match_hash": "fd62ced4b0667a8f1e7a5c628b08a34a60cde74f9c13626f8885450bba2a40ee",
+      "match_hash": "d49a504321e406c09bfa80bd5874fc3363decedc20b08fc00c11e6cc8386224c",
       "signature": "fn guidanceJsonRelevance(ptr: *anyopaque, query_tokens: []const []const u8) -> f32",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
@@ -195,7 +195,7 @@
     {
       "type": "fn_private",
       "name": "guidanceJsonDeinit",
-      "match_hash": "a888327676d0b18fed6478a3a16c110434ae9a90d4483bd533ce8fcc39ed07c5",
+      "match_hash": "18e66dd7b0e168b85dbd8a1e291523a9f7bdccfedecac6be7a1f4ac736848c76",
       "signature": "fn guidanceJsonDeinit(ptr: *anyopaque) -> void",
       "params": [
         { "name": "ptr", "type": "*anyopaque" }
@@ -207,7 +207,7 @@
     {
       "type": "struct",
       "name": "GuidanceJsonIndexerBuilder",
-      "match_hash": "fd6c87ad47dfc0dbd2c70575806724847212d68861a3b23b36e8f91c81c9fda8",
+      "match_hash": "9ef974433edd7d9dd5c3886f4c547377cb8e445421c065931004230a3e27e98d",
       "signature": "keyword_struct GuidanceJsonIndexerBuilder { ... }",
       "patterns": [
         { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
@@ -217,7 +217,7 @@
         {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "77743482c74b7b61e6342eab2e2b15122234feb8d65e1e80a63e90b20899ad25",
+          "match_hash": "8f5b35800b51040e1471b5052470a1c44217758cb4839b6aacce12866b531e4f",
           "signature": "fn build(self: GuidanceJsonIndexerBuilder) -> DocumentIndexer",
           "params": [
             { "name": "self", "type": "GuidanceJsonIndexerBuilder" }

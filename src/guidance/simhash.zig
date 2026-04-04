@@ -113,3 +113,4 @@ test "SimHash: distance is symmetric" {
     const hb = SimHash.compute(&b, 1);
     try testing.expectEqual(SimHash.distance(ha, hb), SimHash.distance(hb, ha));
 }
+

@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "DocComment",
-      "match_hash": "c62b7912c8cdd3269b9389b8c4608d5c91579021ad4f468cf4d7fc06e1d69028",
+      "match_hash": "918413b65a83853d3a8b6ff4298b49063805199ee679e17113964661d762f120",
       "signature": "keyword_struct DocComment { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "78fb3dfe85c69e56be03a428aa4b00897336bffd60ca6158ac8731b7b58b80aa",
+          "match_hash": "3169f66bb3870bfbf531860a6d41ec37e949ceb27a2bd481862422a2475ba93a",
           "signature": "fn deinit(self: DocComment, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "DocComment" },
@@ -33,7 +33,7 @@
     {
       "type": "fn_decl",
       "name": "parseDocComment",
-      "match_hash": "32aaaf4f16dd07dfc9aaccb0d173d6c558cfbcadae99ab2b806d0690aeb4c9b0",
+      "match_hash": "f9f92e2e97fbd4eeaff1c6b53c0aa9508bc493a97d7f90973e09bc2ab2aa1646",
       "signature": "fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) -> DocComment",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -46,7 +46,7 @@
     {
       "type": "fn_decl",
       "name": "isWellFormedComment",
-      "match_hash": "2742109aeedebae4970ee69b5f523eaca1cd68b0edd8cd2c1ebdd4c77f44c75b",
+      "match_hash": "93731d94c2171be7f0655c1527fe1da86d64f4ab9188a795b09dedaa195e86fc",
       "signature": "fn isWellFormedComment(comment: []const u8, code_context: []const u8) -> bool",
       "params": [
         { "name": "comment", "type": "[]const u8" },

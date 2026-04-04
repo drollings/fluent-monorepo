@@ -109,7 +109,7 @@ pub fn WorkUnit(comptime Handler: type) type {
 
 const testing = std.testing;
 
-/// Manages concurrent test execution; owns test setup and teardown; ensures isolation between work units.
+/// Manages concurrent test execution; owns test setup and teardown; ensures isolation between units.
 const TestHandler = struct {
     executed: *bool,
     should_error: bool = false,
@@ -231,3 +231,6 @@ test "WorkUnit: thread transfer — create on A, run on B" {
     thread.join();
     try testing.expect(executed);
 }
+
+
+

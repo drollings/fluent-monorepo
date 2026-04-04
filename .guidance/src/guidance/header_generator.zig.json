@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "generateFileHeader",
-      "match_hash": "d2c2d2ad9f66f435d3a3595b9019add0b8b69314b60d154f6c4c177a11b2aebf",
+      "match_hash": "ff7ea3fe30dcdee2ec1c23139c3d34c7617aff3e1e4fed4fb6a5ca5d64fd91e9",
       "signature": "fn generateFileHeader(allocator: std.mem.Allocator, rel_path: []const u8, members: []const types.Member, source_preview: []const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -25,7 +25,7 @@
     {
       "type": "fn_decl",
       "name": "insertFileHeader",
-      "match_hash": "a2c850cf5b12e7e6778d5cc38fa2157fd8d35645dc8ad70360a9a8ead9bf0cf4",
+      "match_hash": "4402d26cc8176750bbef17ddd112664bd773623d706049b2ec0ad575df954202",
       "signature": "fn insertFileHeader(allocator: std.mem.Allocator, source: []const u8, header: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -39,7 +39,7 @@
     {
       "type": "fn_decl",
       "name": "sourceHasModuleDoc",
-      "match_hash": "a2c4c86d9ad0613702b14b4a9f2f43c4f057b63505e87dc4b4f80f84aa5c004e",
+      "match_hash": "a39df19a788b6d8d52af4d5ace8f56f706c8f30295d66f700a5d4d0b15008865",
       "signature": "fn sourceHasModuleDoc(source: []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" }

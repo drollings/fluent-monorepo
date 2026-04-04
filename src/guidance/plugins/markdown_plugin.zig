@@ -128,7 +128,7 @@ fn parseMarkdown(
     };
 }
 
-/// Extracts Markdown links from the provided source, returning an empty slice on failure.
+/// Extracts Markdown links from the provided source data, returning an empty slice on failure.
 fn extractMarkdownLinks(
     arena: std.mem.Allocator,
     source: [:0]const u8,
@@ -162,7 +162,7 @@ fn extractMarkdownLinks(
     return links.toOwnedSlice(arena);
 }
 
-/// Transforms a markdown file path into a Zig module slice for processing.
+/// Converts a markdown file path into a Zig module slice for processing.
 fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) ![]const u8 {
     var path = file_path;
     if (std.mem.startsWith(u8, path, "./")) path = path[2..];
@@ -255,3 +255,7 @@ test "FileType.fromExtension" {
     try std.testing.expectEqual(types.FileType.config, types.FileType.fromExtension(".toml"));
     try std.testing.expectEqual(types.FileType.unknown, types.FileType.fromExtension(".xyz"));
 }
+
+
+
+

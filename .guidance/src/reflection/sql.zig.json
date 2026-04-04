@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "SqlBinder",
-      "match_hash": "d5cec0901fe6daf801e3508ea7776c070bbf7a1f07e7503be2ac6fa1996f8cbf",
+      "match_hash": "ebdae7d6a3559b9946f7dd3b3c6fe184216191d7d6d09dc51bd8f8b5d8f64cd0",
       "signature": "keyword_struct SqlBinder { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "2cded3333b86c5477ac9d8a14d2477ca1f0329c0a335c88dcb44355651272b6b",
+          "match_hash": "21b11e1f5706e1c1f566d9f1d78bfacd6e197c3784ddfdeaefec7d67b45f272e",
           "signature": "fn init(stmt: *c.sqlite3_stmt) -> SqlBinder",
           "params": [
             { "name": "stmt", "type": "*c.sqlite3_stmt" }
@@ -29,7 +29,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindInt64",
-          "match_hash": "8b2c67628d4c37891a4bea6d038ba55a4f92c75c9396cd35d92a29291218af08",
+          "match_hash": "f06e465a1712515815110ba8537cb8c1ec569c709512bc2058058a11b343fd2c",
           "signature": "fn bindInt64(self: *SqlBinder, value: i64) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -42,7 +42,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindDouble",
-          "match_hash": "58c09651d1f6061882d41e072e71bf42187ab325c819e34778fdb66b644c8078",
+          "match_hash": "18ac4aaff6102ab8603645f02cc7939c53922dca7fffd067e899835cf94c4296",
           "signature": "fn bindDouble(self: *SqlBinder, value: f64) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -55,7 +55,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindText",
-          "match_hash": "ba18200d152eb42d44bcf828bee3656e5e7dd77fe1810485e378e2aa9c1217d5",
+          "match_hash": "ef978df6308d93d9f3f1f773963099a358f1e4d7da5715a828946eeb1650483e",
           "signature": "fn bindText(self: *SqlBinder, value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindTextOwned",
-          "match_hash": "8fb2e57dea0efd6a389c5716562419e070909cb04927a5335261be36bcf90098",
+          "match_hash": "dac772899688d10e3b4be94d22b6c434bf2593723e903a6de2fc7f821e236565",
           "signature": "fn bindTextOwned(self: *SqlBinder, value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -81,7 +81,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindBlob",
-          "match_hash": "10e78d2ef0e64f0c23a1d32d16c53af0934049edc8dc57023de982f04066379f",
+          "match_hash": "d9fe8a184a6b1bfc6daf778e1c9aa14af0be0a16223bb780303e59491c202b09",
           "signature": "fn bindBlob(self: *SqlBinder, value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -94,7 +94,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindBlobOwned",
-          "match_hash": "3bb2ce64a1492e3c435e45a325c0e921cd24e66a06ea1bc1351ba305ddfe2892",
+          "match_hash": "9930654e76deb7d1402a6e814e8228851057481f4c72993c5ae8f7dca8fb665a",
           "signature": "fn bindBlobOwned(self: *SqlBinder, value: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -107,7 +107,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindNull",
-          "match_hash": "eb3c22460f9d9efce2ecc510f30dda3d62967598a7a71033a160829cc858e2ca",
+          "match_hash": "b38445e17d602f66793325d78842502ae81bde1577c74166c4b106d82d19a786",
           "signature": "fn bindNull(self: *SqlBinder) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" }
@@ -119,7 +119,7 @@
     ,    {
           "type": "fn_decl",
           "name": "bindBool",
-          "match_hash": "cf69e6830cd1ce1cb504c7ad990a95c8e981d5726674464ef78416e2d8141f03",
+          "match_hash": "adfead17b735afbec8e52f239cd65f856fd761f67e1ee50f7a1227175a8ad419",
           "signature": "fn bindBool(self: *SqlBinder, value: bool) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" },
@@ -132,7 +132,7 @@
     ,    {
           "type": "fn_decl",
           "name": "reset",
-          "match_hash": "649eba098607e2dce167e2e2e69a357a7637bb1e5f01bb86ebcf48ea93c40f15",
+          "match_hash": "bbc35fd94e9f4a37d6407819bb08a410706347e0cd02b33ca4009fb14cfa77a3",
           "signature": "fn reset(self: *SqlBinder) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" }
@@ -144,7 +144,7 @@
     ,    {
           "type": "fn_decl",
           "name": "step",
-          "match_hash": "a09813872ccb01e0dda62f8e2c4532d0e23b737c96466272e21e6550f99a9269",
+          "match_hash": "fc7bdda924704f3742008a3be56cd4fe20e9146cbb4ad0f1eb5df7e17e8978e0",
           "signature": "fn step(self: *SqlBinder) -> anyerror!bool",
           "params": [
             { "name": "self", "type": "*SqlBinder" }
@@ -156,7 +156,7 @@
     ,    {
           "type": "fn_decl",
           "name": "exec",
-          "match_hash": "ed4fca6155f9622b083592db1fd3294249966ff6d9b281f817474a41f4900945",
+          "match_hash": "f3e290d7adc17c03ee0a64922452784c924b1c89f2450a7bdd4a49351689743a",
           "signature": "fn exec(self: *SqlBinder) -> anyerror!void",
           "params": [
             { "name": "self", "type": "*SqlBinder" }
@@ -168,7 +168,7 @@
     ,    {
           "type": "fn_decl",
           "name": "finalize",
-          "match_hash": "c111df606fea60c441d0044da7fff5f29fc828ef3ae2fe38aabb775ed4757150",
+          "match_hash": "89da052ffb77f9f5996742021e68f50983a5de536597d7b1d508747efc4f074d",
           "signature": "fn finalize(self: *SqlBinder) -> void",
           "params": [
             { "name": "self", "type": "*SqlBinder" }
@@ -183,14 +183,14 @@
     {
       "type": "struct",
       "name": "SqlHydrator",
-      "match_hash": "cc2a3c74a16daf4c80ad4185c71e93ca4727ea43dbe7caef0f21b21c82a5d02d",
+      "match_hash": "0c28699b51ac0f55c6f09d444f5ba14206fbfa54a4ce30c7eb5e420e229e186b",
       "signature": "keyword_struct SqlHydrator { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "47e9e3b285bf230ffda07119f0f53901cc30a935262f245b01be8db3fcfc77c5",
+          "match_hash": "a6946ede820a6f8cf8d619c8b4bfd86113bd6b85493c203f2af6a04bc5e4aba0",
           "signature": "fn init(allocator: std.mem.Allocator, stmt: *c.sqlite3_stmt) -> SqlHydrator",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -203,7 +203,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "c31075abb46bdfbf86c48a9a22153040179a911343749799c43baebea45ff0c7",
+          "match_hash": "5b3c36109104e4836b19491d787fc07228910571e564190b82c32ebb7b84a5b0",
           "signature": "fn deinit(self: *SqlHydrator) -> void",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -215,7 +215,7 @@
     ,    {
           "type": "fn_decl",
           "name": "reset",
-          "match_hash": "ff11be01ea4be0eb55b9ad9a0887817094191af087d814d6b8817850f9fa25bd",
+          "match_hash": "6d866e9d279e849999f453a3465e610a24d5559177e1ef7009c2a5cf83fbbba4",
           "signature": "fn reset(self: *SqlHydrator) -> void",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -227,7 +227,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnInt64",
-          "match_hash": "1309d24895351e562c35e5a233e600555e88abc14691fa082d015f5ba31e7350",
+          "match_hash": "9d63322b3f34a3a652ec44d0c646c44daa7b2b82a437a0af69fa493881a3e97c",
           "signature": "fn columnInt64(self: *SqlHydrator) -> i64",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -239,7 +239,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnDouble",
-          "match_hash": "8fc0b8c348106b1adbc81f25027987e6b52782d1fe3d5a0b8128a6e7a7e010d5",
+          "match_hash": "ce9eac3851847f051c757482bcf77dffe5f04a28470a90ed05d2dd21039b7879",
           "signature": "fn columnDouble(self: *SqlHydrator) -> f64",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -251,7 +251,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnText",
-          "match_hash": "f999f818c22008148e8079cb9213e22ab3de799759b7f8bf2236fc5538cf4ec0",
+          "match_hash": "43625ee980c9d00ba4e890dd0bdbe173a504dcc1a8add6b153573796ee04a863",
           "signature": "fn columnText(self: *SqlHydrator) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -263,7 +263,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnTextOwned",
-          "match_hash": "c80698f2d6667e309061217f7daf0af73bf4d9c7108dc2580ec59db14c8fec9c",
+          "match_hash": "ed7a01bfd5432a16115cc1ed2d2fec9572a2fb41871cf810d3eaedc0e633e8e7",
           "signature": "fn columnTextOwned(self: *SqlHydrator) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -275,7 +275,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnBlob",
-          "match_hash": "28d2a601cbe0244e64f06c82368d60f47f81aea9b6838ccda2e9117ce3e173b1",
+          "match_hash": "64bb89eac766da9076938cc3af02e8ab1d7a70642134d13b5635feb5fa0dd4c4",
           "signature": "fn columnBlob(self: *SqlHydrator) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -287,7 +287,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnBlobOwned",
-          "match_hash": "1ffb37f77b06d764e1985e9854e2f2a401c035b02bf7ed7e10ab037bd99ecd4e",
+          "match_hash": "bfa95307ec62ca43a22909a0fa40d3bfa1b9cea65ef05d1b377e6d8551316327",
           "signature": "fn columnBlobOwned(self: *SqlHydrator) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -299,7 +299,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnBool",
-          "match_hash": "6bcee359ccbf6c67e13fac07050134a330b0ed85f83b6aefb1474abdaf4cf76c",
+          "match_hash": "587a6bf879003c677535821793a2878f27d5c51be4e60f5333ff8319e4a6192f",
           "signature": "fn columnBool(self: *SqlHydrator) -> bool",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -311,7 +311,7 @@
     ,    {
           "type": "fn_decl",
           "name": "columnType",
-          "match_hash": "fa728bf2c5383ab7f07756b440375b4d0aada549404ae5973f312a2af141cd68",
+          "match_hash": "ca58781986a6d4b4a0c667b4e6fad9292ea0202b5ddfb89db9b679cdd5ec45e6",
           "signature": "fn columnType(self: *SqlHydrator) -> c_int",
           "params": [
             { "name": "self", "type": "*SqlHydrator" }
@@ -323,7 +323,7 @@
     ,    {
           "type": "fn_decl",
           "name": "peekType",
-          "match_hash": "494f0138a81695b112eeb25c282f135f8dd26957fda5bd43e1be4926f84cb09e",
+          "match_hash": "8bf866d749ce810cae986e9ca9a67744cc9c50f7038b3782a92f639206a9a37a",
           "signature": "fn peekType(self: *const SqlHydrator) -> c_int",
           "params": [
             { "name": "self", "type": "*const SqlHydrator" }
@@ -335,7 +335,7 @@
     ,    {
           "type": "fn_decl",
           "name": "peekCol",
-          "match_hash": "078d16538f2c56a679d4af6c1cfaac2ae81adca65b8cfc9879f02989249870e3",
+          "match_hash": "b814536e9b58c1428936ae061bf6cfa96b731167db5cd94c9001d891920f4327",
           "signature": "fn peekCol(self: *const SqlHydrator) -> c_int",
           "params": [
             { "name": "self", "type": "*const SqlHydrator" }
@@ -350,7 +350,7 @@
     {
       "type": "struct",
       "name": "SqlColumn",
-      "match_hash": "b9951ab189c5d5be1ab6d2ab0eba224327ea5b438ab5f4d04a0c097dceb68879",
+      "match_hash": "c37c972ab4c026a699c658a52932894e7484e3cf72e9d0a0b39b3def2ef66dcd",
       "signature": "keyword_struct SqlColumn { ... }",
       "is_pub": true,
       "line": 280
@@ -358,7 +358,7 @@
     {
       "type": "fn_decl",
       "name": "bindFromSchema",
-      "match_hash": "6344107b4c2de1dd75b7183e25f64c8d8069264150fc163f008018087643f26c",
+      "match_hash": "834c0c3ce3b2d97f73040f0646c99a3d99cf5e443e3ef04c28b617e9067271b3",
       "signature": "fn bindFromSchema(binder: *SqlBinder, allocator: std.mem.Allocator, accessors: []const Accessor, data: *anyopaque, role: Role) -> anyerror!void",
       "params": [
         { "name": "binder", "type": "*SqlBinder" },
@@ -374,7 +374,7 @@
     {
       "type": "fn_decl",
       "name": "bindField",
-      "match_hash": "b332c45b7c8b93f1cee4ad2b0b211902691dadc0041e0404c0be55e80540cffb",
+      "match_hash": "45883c0152532e8a7e447394e3243286416f46c80baa9af9d32334e3b4f9fabd",
       "signature": "fn bindField(binder: *SqlBinder, allocator: std.mem.Allocator, accessor: *const Accessor, data: *anyopaque, role: Role) -> anyerror!void",
       "params": [
         { "name": "binder", "type": "*SqlBinder" },
@@ -390,7 +390,7 @@
     {
       "type": "fn_decl",
       "name": "hydrateFromSchema",
-      "match_hash": "dba0bfb85a121441ccfc74df80f71bb9e475c55ddbd98594e5c0586d4cf8c5ef",
+      "match_hash": "02035711d0cf41e4370dc452f252ceb099e1efd48d09d6919250dd8fbe902c9c",
       "signature": "fn hydrateFromSchema(hydrator: *SqlHydrator, accessors: []const Accessor, data: *anyopaque, role: Role) -> anyerror!void",
       "params": [
         { "name": "hydrator", "type": "*SqlHydrator" },
@@ -405,7 +405,7 @@
     {
       "type": "fn_decl",
       "name": "hydrateField",
-      "match_hash": "f37034df6c070a1d009e21eaf6099a12756c47b1ff8a41def73fc117fc558499",
+      "match_hash": "e37fe9b568068368d9ab37e3264a86ecf7da8cead373e9111b86034791041fe0",
       "signature": "fn hydrateField(hydrator: *SqlHydrator, accessor: *const Accessor, data: *anyopaque, role: Role) -> anyerror!?[]const u8",
       "params": [
         { "name": "hydrator", "type": "*SqlHydrator" },
@@ -420,14 +420,14 @@
     {
       "type": "struct",
       "name": "TableSchema",
-      "match_hash": "7bde7d2fc64db8d4c85e96fe445e037d66129826fa597bc980b5f6b6a16ea5d2",
+      "match_hash": "277cc6f2ff95396942a6dd9db60afd74852526c4a84ef801316f34ce393db9ec",
       "signature": "keyword_struct TableSchema { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "5ad250f6d0041c913b9c3964e4d132b27766688b0a091f913fdc8790a80c1f47",
+          "match_hash": "0d9a9dc26dfad1c30de113e0e14e9dd945ad77bcc7e893618fcbff195a7244b3",
           "signature": "fn init(allocator: std.mem.Allocator, name: []const u8, columns: []const SqlColumn) -> TableSchema",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -441,7 +441,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "832211ea494b211b1e22fe4f229711f08ef25a43581116e4330645608bf9a333",
+          "match_hash": "f60ed316d25f56546517416483b35973874ca74c27f0c4edb1365fb9bb32728e",
           "signature": "fn deinit(self: *TableSchema) -> void",
           "params": [
             { "name": "self", "type": "*TableSchema" }
@@ -453,7 +453,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generateInsertSql",
-          "match_hash": "36391fccca6516a5389d717e15dcf6175c47ea8bcf980342d8f403a806b375a4",
+          "match_hash": "27edb29984df1416ad1f5bc0091a37c59cfb330a696d2d276f4b25d970d97d2a",
           "signature": "fn generateInsertSql(self: *TableSchema, allocator: std.mem.Allocator) -> []const u8",
           "params": [
             { "name": "self", "type": "*TableSchema" },
@@ -466,7 +466,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generateSelectSql",
-          "match_hash": "71bc881c2a0d0e2f6e6a03513c376180e38e07a1b95e2428e2ef703a67a1420c",
+          "match_hash": "bd3012b570d37cd30de54aa65954a7fd73db0c368a831beb7cece57d66f69f50",
           "signature": "fn generateSelectSql(self: *TableSchema, allocator: std.mem.Allocator, where_clause: ?[]const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*TableSchema" },
@@ -480,7 +480,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generateUpdateSql",
-          "match_hash": "ba93d99d48e07d35c0bac96aa5480655899b0eab0593e47d98fc3aad9abd759c",
+          "match_hash": "a76e5dfeb0a276294aa26420a63bde4bda8127214bcb9946f224df745057a0b5",
           "signature": "fn generateUpdateSql(self: *TableSchema, allocator: std.mem.Allocator, where_clause: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*TableSchema" },
@@ -494,7 +494,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generateCreateTableSql",
-          "match_hash": "190c67f5494783219d7499f7d4515c828f4a860cc96f2189910a351b9520adb0",
+          "match_hash": "187a2bc8e41dfe92f34867c08d2bb86d0c1651bdd0845ead5413cdc27b293f53",
           "signature": "fn generateCreateTableSql(self: *TableSchema, allocator: std.mem.Allocator, primary_key: ?[]const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*TableSchema" },
@@ -508,7 +508,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fromAccessors",
-          "match_hash": "28a847c69c096215418b25d6b1f9a8e25de97ea67a60a15e9924cecf68a1ab52",
+          "match_hash": "ae4fdf5861e6a463d98d4b506197270bc1017b1cefe33ee4ee9d7ac4a432c77a",
           "signature": "fn fromAccessors(allocator: std.mem.Allocator, table_name: []const u8, accessors: []const Accessor, column_names: ?[]const []const u8) -> TableSchema",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },

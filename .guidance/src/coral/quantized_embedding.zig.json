@@ -11,14 +11,14 @@
     {
       "type": "struct",
       "name": "QuantizedEmbedding",
-      "match_hash": "3552eca2c5b03ca8532732d116e4b3b78b07d7a301b5e36a493c460d6347ba03",
+      "match_hash": "e29ebc2e8a79aaaae9bead912882d34e66f18de58e1cbf0c1e1ec22f464a853e",
       "signature": "keyword_struct QuantizedEmbedding { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "fromF32",
-          "match_hash": "5ba74233f6f8091b90fbd2cbeec74648523a233f37369480cfe5d34c0acea8c2",
+          "match_hash": "3633fc471a13ed23dfe9b7dda17ee3bd5aed4756b4d375692cc716a6e68056eb",
           "signature": "fn fromF32(allocator: Allocator, f32_emb: []const f32) -> Self",
           "params": [
             { "name": "allocator", "type": "Allocator" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "05a9d5346918729edc727538219c04a796bda61521d1f436c1bda717ad33e5d2",
+          "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
           "signature": "fn deinit(self: *Self, allocator: Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -44,7 +44,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toF32",
-          "match_hash": "261a1a0ffda720cec9803baea1783f72d51b8fc5308ef64e080cf52d0d6572f5",
+          "match_hash": "10490c79825ddbfa5fc2ffe8133d33146a3fb9b32c8289b18963fe63be55e1f0",
           "signature": "fn toF32(self: Self, allocator: Allocator) -> []f32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -57,7 +57,7 @@
     ,    {
           "type": "fn_decl",
           "name": "cosineSimilarity",
-          "match_hash": "ae2c3f61691b7058865cb7ac0fb45808349303317daf67b95e402f74ba3f887d",
+          "match_hash": "21f4856d470e2f12b6bd338db6b7dbb0ab9d08036cdae9d7bfc76c0bae384c6b",
           "signature": "fn cosineSimilarity(self: Self, other: Self) -> f32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -70,7 +70,7 @@
     ,    {
           "type": "fn_decl",
           "name": "dotProduct",
-          "match_hash": "084a8a78790772fd055dd6edcd6096bffe3b1acf358539f6128db10fe401c5d5",
+          "match_hash": "6834b4bfd852af0cc8ea819abe0d5a181329f186695b331429b66635f32b0606",
           "signature": "fn dotProduct(self: Self, other: Self) -> i64",
           "params": [
             { "name": "self", "type": "Self" },
@@ -83,7 +83,7 @@
     ,    {
           "type": "fn_decl",
           "name": "hammingDistance",
-          "match_hash": "60c1436d9e825d5f5cec3c13a8ea5a5c517cd9d3df0824ed203916b732f59d54",
+          "match_hash": "b990279e0aee17449484535ba1f3e7e3ac172e0a42124a3e2294f5ce3475f271",
           "signature": "fn hammingDistance(self: Self, other: Self) -> u32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -96,7 +96,7 @@
     ,    {
           "type": "fn_decl",
           "name": "l2DistanceSquared",
-          "match_hash": "a4af0b6998120286946074eff7b9cecc95773831e42d0d31f63a1c1924be7adc",
+          "match_hash": "c877efc1f17577473f91f73184fe2e80c8a71b517bfcc960df666126ce17061c",
           "signature": "fn l2DistanceSquared(self: Self, other: Self) -> f32",
           "params": [
             { "name": "self", "type": "Self" },
@@ -109,7 +109,7 @@
     ,    {
           "type": "fn_decl",
           "name": "serialize",
-          "match_hash": "27cb6d32271dd3477a260012325469e63f2c80fccb7daa28181c7cb623129e97",
+          "match_hash": "bf10f590ca8ec52860e48ad8b20d29a07c16ac964c612f892cd0a62f23692956",
           "signature": "fn serialize(self: Self, allocator: Allocator) -> []u8",
           "params": [
             { "name": "self", "type": "Self" },
@@ -122,7 +122,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deserialize",
-          "match_hash": "3373112f89eba30dc2910e111dc78a29539d1aecb7f1c8b496a7bf82fe371bf9",
+          "match_hash": "cfb7ad76076526a70717bbf80578e284d6fe70c42d27c95a32c7ecbc7ae72e22",
           "signature": "fn deserialize(buf: []const u8) -> ?Self",
           "params": [
             { "name": "buf", "type": "[]const u8" }
@@ -134,7 +134,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deserializeCopy",
-          "match_hash": "584e61a2be3a1877238341c6a1d144ac9931cf1ec80ebde7972c97cc95539b41",
+          "match_hash": "71f1ac8b00d4b1447fd9f06eb3f8f7c6a48b284d54ca86c6020dce7029e4dbf6",
           "signature": "fn deserializeCopy(allocator: Allocator, buf: []const u8) -> Self",
           "params": [
             { "name": "allocator", "type": "Allocator" },

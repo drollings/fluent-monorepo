@@ -38,7 +38,7 @@ pub const AnonymizationPattern = enum {
     }
 };
 
-/// Anonymizes context data by applying provided patterns to each byte in the input slice.
+/// Applies anonymization patterns to a context slice, returning a sanitized array of bytes.
 pub fn anonymizeContext(
     allocator: std.mem.Allocator,
     context: []const u8,
@@ -53,7 +53,7 @@ pub fn anonymizeContext(
     return result;
 }
 
-/// Replaces specified patterns in a Zig string using an allocator and returns the modified slice.
+/// Replaces specified patterns in a byte slice using an allocator and returns the modified data.
 fn replacePattern(
     allocator: std.mem.Allocator,
     input: []const u8,
@@ -112,7 +112,7 @@ fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Checks if a character is a valid email character in the Zig code snippet.
+/// Checks if a character is a valid email character in the Zig source.
 fn isEmailChar(ch: u8) bool {
     return std.ascii.isAlphanumeric(ch) or ch == '_' or ch == '-' or ch == '+' or ch == '.';
 }
@@ -302,7 +302,7 @@ fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     return out.toOwnedSlice(allocator);
 }
 
-/// Checks if a slice contains only numeric characters.
+/// Checks if a slice contains only numeric bytes.
 fn isNDigits(s: []const u8) bool {
     for (s) |c| if (!std.ascii.isDigit(c)) return false;
     return s.len > 0;
@@ -359,7 +359,7 @@ fn looksLikeIpv4(s: []const u8) bool {
     return part_count == 3;
 }
 
-/// Replaces IPv6 addresses in the input slice using an allocator.
+/// Replaces IPv6 addresses in the input slice using an allocator for memory management.
 fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var out: std.ArrayListUnmanaged(u8) = .{};
     errdefer out.deinit(allocator);
@@ -634,3 +634,22 @@ test "anonymizeContext: no false positive on short alphanumeric" {
     defer allocator.free(result);
     try testing.expectEqualStrings(input, result);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

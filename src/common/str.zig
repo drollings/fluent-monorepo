@@ -23,7 +23,7 @@ pub fn looksLikeIdentifier(token: []const u8) bool {
     return false;
 }
 
-/// Checks if a given relative path matches expected patterns, returning true or false.
+/// Checks if a given relative path matches expected test patterns, returning true or false.
 pub fn isTestPath(rel_path: []const u8) bool {
     const basename = std.fs.path.basename(rel_path);
     // Strip extension to get the stem.
@@ -120,7 +120,7 @@ pub fn langFromPath(path: []const u8) []const u8 {
     return "text";
 }
 
-/// Converts a slice of byte slices into a new slice of byte slices, preserving order and structure.
+/// Converts a slice of byte slices into a new slice of byte slices, duplicating each string.
 pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]const u8 {
     const result = try allocator.alloc([]const u8, strs.len);
     var n: usize = 0;
@@ -221,7 +221,7 @@ const NL_PREFIXES = [_][]const u8{
     "i need ",          "i want ",    "help me ",
 };
 
-/// Removes leading null bytes from a UTF-8 string slice.
+/// Removes leading null characters from a UTF-8 string slice.
 pub fn stripNlPrefix(query: []const u8) []const u8 {
     // Lowercase a buffer large enough for the longest prefix we check.
     const MAX_PREFIX_LEN = 30;
@@ -415,7 +415,7 @@ test "dupeStringOpt returns copy for non-empty string" {
     try std.testing.expect(result.?.ptr != original.ptr);
 }
 
-/// Converts a string into a slugified format by trimming, replacing spaces, and ensuring valid URL characters.
+/// Converts a string into a slugified format by trimming, lowercasing, and replacing spaces with hyphens.
 pub fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     var buf: std.ArrayList(u8) = .{};
     var prev_dash = true;
@@ -454,3 +454,20 @@ test "slugify handles empty string" {
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("work-item", result);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

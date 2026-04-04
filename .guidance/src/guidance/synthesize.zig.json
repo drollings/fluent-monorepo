@@ -11,7 +11,7 @@
     {
       "type": "fn_private",
       "name": "isDirectLookup",
-      "match_hash": "ae07076aa0be1fa4af70a66227c2ce8b7e6365d05ac85efee350f5772ffd4e31",
+      "match_hash": "6d38d27c1a3c71d0e938093329fd0155440d520fa10e46727c80839b2887c717",
       "signature": "fn isDirectLookup(query: []const u8) -> bool",
       "params": [
         { "name": "query", "type": "[]const u8" }
@@ -23,7 +23,7 @@
     {
       "type": "fn_decl",
       "name": "synthesize",
-      "match_hash": "28f5d20e399e743ebe8c365e7f2c911bac8c85ed7ee044cba6ff85d5c7060b62",
+      "match_hash": "6f02d3f501903e7b6ec98993b968295749d3cd486a4c7d81754ddd5fe4dfad9a",
       "signature": "fn synthesize(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> SynthesisResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -38,7 +38,7 @@
     {
       "type": "fn_decl",
       "name": "extractProseSources",
-      "match_hash": "659a3d45fe738158772231d6cd26426ff656bfc0fe86af972e2a63d32401eee9",
+      "match_hash": "55ea4e851e2988e819a890810884e847cc106d98394c8e88acb0e494c896ea02",
       "signature": "fn extractProseSources(allocator: std.mem.Allocator, stages: []const types.Stage) -> []const []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -51,7 +51,7 @@
     {
       "type": "fn_decl",
       "name": "stripAbsenceSentences",
-      "match_hash": "3d8e5bc417228cccc2193df268477b0d8db06a0abbb15a91731e97b0fe910bf5",
+      "match_hash": "4a01da80e5abbf20ae7d1da74c7a3c94443f159459a744ceb072bb483c473bf4",
       "signature": "fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

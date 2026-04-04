@@ -91,12 +91,12 @@ pub fn detectIdentifierPattern(query: []const u8) ?IdentifierMatch {
     };
 }
 
-/// Checks if a slice of bytes represents a valid PascalCase string, returning true if all uppercase letters are at the start.
+/// Checks if a slice of bytes represents a valid PascalCase string.
 pub fn isPascalCase(s: []const u8) bool {
     return s.len > 0 and std.ascii.isUpper(s[0]);
 }
 
-/// Checks if a query should be skipped based on exact match and LLMS synthesis rules.
+/// Checks if a query matches an exact match, returning true or false accordingly.
 pub fn shouldSkipLLMSynthesis(query: []const u8, exact_match: bool) bool {
     // TIER 0: empty → list recent
     if (query.len == 0) return true;
@@ -199,3 +199,8 @@ test "shouldSkipLLMSynthesis: natural language does not bypass" {
     try testing.expect(!shouldSkipLLMSynthesis("how does filterStages work?", false));
     try testing.expect(!shouldSkipLLMSynthesis("vector search", false));
 }
+
+
+
+
+

@@ -25,7 +25,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const CSRGraph = @import("csr_graph").CSRGraph;
 
-/// Manages PageRank configuration settings, owns a fixed-size buffer pool, and ensures consistent state across operations.
+/// Defines PageRank configuration parameters, manages configuration state, and enforces ownership model.
 pub const PageRankConfig = struct {
     damping: f32 = 0.85,
     tolerance: f32 = 0.0001,
@@ -183,3 +183,5 @@ test "PageRank: star graph — center has highest rank" {
     // Node 0 (hub) should have higher rank than leaves.
     try testing.expect(scores[0] > scores[1]);
 }
+
+

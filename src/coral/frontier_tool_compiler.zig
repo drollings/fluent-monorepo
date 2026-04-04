@@ -21,7 +21,7 @@ pub const ExtractedCode = struct {
     }
 };
 
-/// Extracts the first code block from the LLM response using an allocator and returns the extracted slice.
+/// Extracts the first code block from a Zig response using an allocator and returns the extracted slice.
 pub fn extractFirstCodeBlock(
     allocator: std.mem.Allocator,
     llm_response: []const u8,
@@ -105,3 +105,6 @@ test "validateSource: empty returns false" {
 test "validateSource: non-empty returns true" {
     try testing.expect(validateSource("fn main() void {}"));
 }
+
+
+

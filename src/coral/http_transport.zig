@@ -17,7 +17,7 @@ const std = @import("std");
 const http = std.http;
 const net = std.net;
 
-/// Manages McP transport logic, owns buffers, handles connection lifecycle without thread safety.
+/// Manages McP transport logic, owns buffers, handles initialization/deinit; ensures consistent state across sessions.
 pub const McpHandler = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -49,7 +49,7 @@ pub const SseState = struct {
     connected_at: i64,
 };
 
-/// Manages HTTP transport connections with a fixed-size buffer pool; owned by the server; ensures stable, non-thread-safe operations.
+/// Manages HTTP transport connections, owns connection pools, and ensures stable, thread-safe communication.
 pub const HttpTransport = struct {
     const Self = @This();
 
@@ -486,3 +486,7 @@ test "HttpTransport: SSE event format" {
     try testing.expectEqualStrings("{\"result\":42}", event.data);
     try testing.expectEqualStrings("123", event.id.?);
 }
+
+
+
+

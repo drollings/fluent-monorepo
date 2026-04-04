@@ -219,7 +219,7 @@ pub const CodebaseScanner = struct {
 // cmdScan — CLI entry point
 // =============================================================================
 
-/// Reads a C string and returns a Zig-safe slice, handling allocation and parsing.
+/// Reads a C string and converts it into a Zig-safe slice, handling allocation and error cases.
 pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const config_mod = @import("config.zig");
     const llm = @import("common");
@@ -308,3 +308,7 @@ test "CodebaseScanner: scan on empty workspace returns low confidence" {
     // Just verify no crash and confidence is set.
     try std.testing.expect(scanner.confidence == .low or scanner.confidence == .medium);
 }
+
+
+
+

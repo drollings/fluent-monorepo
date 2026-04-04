@@ -61,7 +61,7 @@ pub fn preFilterByBudget(
     return kept.toOwnedSlice(allocator);
 }
 
-/// Processes a batch of stages for an LLM filter, filtering based on stages and allocator constraints.
+/// Processes a batch of stages for an LLM client, filtering them based on budget constraints.
 pub fn filterStagesBatch(
     allocator: Allocator,
     client: *llm.LlmClient,
@@ -202,7 +202,7 @@ fn askRelevantBatch(
     return indices.toOwnedSlice(allocator);
 }
 
-/// Transforms a stage by duplicating its data structure using an allocator.
+/// Transforms a stage into a duplicated version using an allocator, ensuring memory safety and correctness.
 fn dupeStage(allocator: Allocator, s: types.Stage) !types.Stage {
     return types.Stage{
         .kind = s.kind,
@@ -259,3 +259,8 @@ test "preFilterByBudget: prose included when budget allows" {
     }
     try testing.expectEqual(@as(usize, 1), result.len);
 }
+
+
+
+
+

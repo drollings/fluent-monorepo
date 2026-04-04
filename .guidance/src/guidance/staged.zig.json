@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "executeStaged",
-      "match_hash": "d3bac60b11fd86013ccc4694e24a85b53fdba9b188fa239a2b4df4602d553f3d",
+      "match_hash": "d523032026e65dbfe5d29d0f753338317f0ec81728cc1255485d21afa2abe28e",
       "signature": "fn executeStaged(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, workspace: []const u8) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -26,7 +26,7 @@
     {
       "type": "fn_decl",
       "name": "executeStagedWithAliases",
-      "match_hash": "6d6251620e789ed3a5e00550cce3834208f06c741713a948f6cd3c4d74251fe4",
+      "match_hash": "30fe7448973b437cddfabc359340bf41df4f315814107fc31af93a426c51bc66",
       "signature": "fn executeStagedWithAliases(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -42,7 +42,7 @@
     {
       "type": "fn_private",
       "name": "buildNotFoundStages",
-      "match_hash": "0a085ca49d4c868ab76a4102ea14627331bd00729f4a1e6821fa1b43c1d1ad58",
+      "match_hash": "f34b49e60e81d5a70972b6816bf1b372adec6bef34809782e0af919175fdd5b5",
       "signature": "fn buildNotFoundStages(allocator: std.mem.Allocator, query: []const u8, db: *GuidanceDb) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -56,7 +56,7 @@
     {
       "type": "fn_private",
       "name": "anyResultIsRelevant",
-      "match_hash": "4541a82fef81c17304602709375ab749b778d4762c603b7ed6073fa393e423c6",
+      "match_hash": "fb95b0b213f3c8444243d21be1ea2d26b51038081244f71a852ea6507e52f78e",
       "signature": "fn anyResultIsRelevant(results: []const SearchResult, original_query: []const u8) -> bool",
       "params": [
         { "name": "results", "type": "[]const SearchResult" },
@@ -69,7 +69,7 @@
     {
       "type": "fn_decl",
       "name": "executeStagedWithAliasesOriginal",
-      "match_hash": "91cae9887a0feb33553d9b9e6f90bc0a86c05180e54744102e4e6c8a4f132a81",
+      "match_hash": "d15d409d875a53cf6d813ccdc50f02cc7a1e4609e84c176e1009e255f89714c4",
       "signature": "fn executeStagedWithAliasesOriginal(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -86,7 +86,7 @@
     {
       "type": "fn_decl",
       "name": "expandFollowUps",
-      "match_hash": "b0bd54d4702cf84e33d3b0b8c6b88cf1e8fb50b0bf87192a320624b6163309cc",
+      "match_hash": "8fda68b4d2fea36a7c69a4ce9a98e91f7f431736e5633df1e011dff75949609c",
       "signature": "fn expandFollowUps(allocator: std.mem.Allocator, db_results_file_paths: []const []const u8, db_results_sources: []const []const u8, db_results_used_by: []const []const []const u8, workspace: []const u8, guidance_dir: []const u8, skills_dir: []const u8, existing_sources: []const []const u8, limit: usize) -> []types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -106,7 +106,7 @@
     {
       "type": "fn_decl",
       "name": "formatStaged",
-      "match_hash": "cc18037ffc8bbaa5398e92f0192d32fec7452eb68d0e64534a910f17727c732b",
+      "match_hash": "703747cb1ff266a5df52040a09afb33a033524a9c250b9444b07a4cc77a56073",
       "signature": "fn formatStaged(allocator: std.mem.Allocator, query: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8, followup_keywords: ?[]const []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -123,7 +123,7 @@
     {
       "type": "fn_decl",
       "name": "extractSourceExcerptVerified",
-      "match_hash": "4bb423560d67e0b3b77396b6d80481a8910ed7e49319e4f1d15437cbb7f10e79",
+      "match_hash": "4588b8a0af0726e3d71f61dafe34df2526a3ecc41f0aeea5bab8f749a8cac571",
       "signature": "fn extractSourceExcerptVerified(allocator: std.mem.Allocator, workspace: []const u8, rel_source: []const u8, start_line: u32, node_type: []const u8, member_name: ?[]const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -140,7 +140,7 @@
     {
       "type": "fn_private",
       "name": "memberTypeFromNodeType",
-      "match_hash": "bc4233e081ebdf8e9497654303ee719d4525284612577665a3905fb61efa497f",
+      "match_hash": "02842473bc4649d0533b819de5534f5b6f228826ee25b7b89c8c2663a725db2b",
       "signature": "fn memberTypeFromNodeType(node_type: []const u8) -> types.MemberType",
       "params": [
         { "name": "node_type", "type": "[]const u8" }
@@ -152,7 +152,7 @@
     {
       "type": "fn_decl",
       "name": "extractSourceExcerpt",
-      "match_hash": "6c346a3579357ebce729f55142639380db9bc86be9c303b7923008a180828d33",
+      "match_hash": "ef06fbe9c08f47ec1ef0139c98ab3b410847208b8bc370c44102650d3adda682",
       "signature": "fn extractSourceExcerpt(allocator: std.mem.Allocator, workspace: []const u8, rel_source: []const u8, start_line: u32, node_type: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -168,7 +168,7 @@
     {
       "type": "fn_decl",
       "name": "extractExcerptFromSource",
-      "match_hash": "d7554e64230f2d3b70f036f10f2acc505c0968a322b23bf3a0eeed4d62dca0c7",
+      "match_hash": "6e60d7cc5456be968cc781f96594f0c8454a435e609cd286f45e571b15eca9c5",
       "signature": "fn extractExcerptFromSource(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -183,7 +183,7 @@
     {
       "type": "fn_decl",
       "name": "buildMetadataStage",
-      "match_hash": "2c4f56a5c5e006e83ef488700626273fafb01c3b23b3ed600876b1839c41dd36",
+      "match_hash": "6f71ac91a6140629c0b0a386493d21db41afcf839134be8ae1e53059f5fd6c3e",
       "signature": "fn buildMetadataStage(allocator: std.mem.Allocator, json_path: []const u8, source: []const u8) -> ?types.Stage",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -197,7 +197,7 @@
     {
       "type": "fn_private",
       "name": "loadModuleComment",
-      "match_hash": "6cfeb65fde647c911bdb18167bafe2c3baa45f14a612297dcb5677a008b886c1",
+      "match_hash": "95fa67b817387073af0628e9d36b7b72c974d680058f155254e13fd8b820a6a4",
       "signature": "fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -210,7 +210,7 @@
     {
       "type": "fn_decl",
       "name": "loadSkillNamesFromJson",
-      "match_hash": "c7c153254cec958d0e5ea47cd52397211718e9c2ca93750b6168c140e30a060d",
+      "match_hash": "e59a3cdaa9116bc75ebc438021091de150e20ce9f41793dc1671a5cbedf5ebec",
       "signature": "fn loadSkillNamesFromJson(allocator: std.mem.Allocator, json_path: []const u8) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -223,7 +223,7 @@
     {
       "type": "fn_decl",
       "name": "parseSkillDocContent",
-      "match_hash": "5772da7b57bb90fad30b32e0bfea5a28f2fbff0d55f857399421585761bab240",
+      "match_hash": "64451ca4a6636d27c055c1742efe8e4038fac8c27f28fbe852fb6a55319d2a68",
       "signature": "fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -236,7 +236,7 @@
     {
       "type": "fn_decl",
       "name": "loadSkillExcerpt",
-      "match_hash": "0f233608bc8a18db384a85fb1446602495729f60e6dd6c0a0e3f858cf2d3aed2",
+      "match_hash": "9351bde0a742db98fe2ce7fa63bbd3d6993e8e21a5d1a2bcd586a0e0eb17ef8a",
       "signature": "fn loadSkillExcerpt(allocator: std.mem.Allocator, skills_dir: []const u8, skill_name: []const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

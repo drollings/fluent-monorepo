@@ -39,7 +39,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
+/// Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.
 const Command = enum {
     init,
     gen,
@@ -134,7 +134,7 @@ fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     return query_engine_mod.cmdRalph(allocator, args);
 }
 
-/// Displays usage instructions for the Zig library's help feature.
+/// Displays usage instructions for the Zig library's help system.
 fn printHelp() !void {
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -243,7 +243,7 @@ fn printHelp() !void {
 // structure — thin wrapper (delegates to structure_mod)
 // =============================================================================
 
-/// Processes a Zig source code string, allocating memory and returning a pointer to the structure.
+/// Transforms a C string into a Zig-safe structure using an allocator.
 fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var json_dir_arg: ?[]const u8 = null;
     var no_llm: bool = false;
@@ -315,3 +315,9 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+
+
+
+
+
+

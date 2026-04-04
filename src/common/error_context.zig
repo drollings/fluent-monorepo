@@ -101,7 +101,7 @@ pub const ErrorContext = struct {
     }
 };
 
-/// Manages error context structures for arena allocations, ensuring ownership and invariants during initialization.
+/// Manages arena error context with fixed-size buffers; owned by Arena; ensures consistent state across operations.
 pub const ArenaErrorContext = struct {
     operation: []const u8,
     field: ?[]const u8,
@@ -245,3 +245,6 @@ test "ArenaErrorContext: chain appends parent" {
     try testing.expect(std.mem.indexOf(u8, child.message, "caused by") != null);
     try testing.expect(std.mem.indexOf(u8, child.message, "FileNotFound") != null);
 }
+
+
+

@@ -210,14 +210,14 @@ pub fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) ![
     return result;
 }
 
-/// Represents a knowledge node structure for nearest neighbor hits; managed by owner; key invariant is consistent indexing.
+/// Represents a knowledge node structure for nearest neighbor hits; managed via ownership model, with static invariants on hit counts.
 pub const KnnHit = struct {
     id: i64,
     name: []const u8,
     distance: f32, // cosine distance in [0, 2]; 0 = identical
 };
 
-/// Defines edge type constraints with fixed buffers; managed via ownership model; ensures consistent state across operations.
+/// Defines edge type constraints with fixed buffers; managed by owner; ensures consistent state across operations.
 pub const EdgeType = enum(i16) {
     depends_on = 0,
     provides_capability = 1,
@@ -252,7 +252,7 @@ pub const GraphNode = struct {
     graph_distance: u32,
 };
 
-/// Manages WasmTool functionality with fixed buffers; owned by the system; ensures consistent state across operations.
+/// Manages WasmTool functionality with fixed buffers; owned by the module; ensures consistent state across operations.
 pub const WasmTool = struct {
     id: i64 = 0,
     target_id: i64 = 0,
@@ -1424,7 +1424,7 @@ pub const Library = struct {
 // §3.3 HydrationPipeline — in-Zig KNN → persist neighbor edges
 // ---------------------------------------------------------------------------
 
-/// Manages hydration data flow with fixed buffers; owned by the module; ensures consistent state across operations.
+/// Manages hydration data flow, owns buffers, ensures consistent state; not thread-safe.
 pub const HydrationPipeline = struct {
     const Self = @This();
 
@@ -1520,7 +1520,7 @@ pub const HydrationPipeline = struct {
 // §3.4 ContextPacker — LOD selection algorithm
 // ---------------------------------------------------------------------------
 
-/// Manages context packing buffers, owns fixed-size allocations, not thread-safe.
+/// Manages context packing buffers with fixed-size allocations; owned by the runtime; ensures consistent memory layout.
 pub const ContextPacker = struct {
     const Self = @This();
 
@@ -2546,3 +2546,27 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

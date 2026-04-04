@@ -55,7 +55,7 @@ pub const ExtismFunction = ?*anyopaque;
 pub const ExtismCurrentPlugin = ?*anyopaque;
 pub const ExtismSize = u64;
 
-/// Represents a value type with fixed-size storage; managed via ownership model; immutable by design.
+/// Defines a type for representing existence values with ownership and invariants; managed via a single lifecycle.
 pub const ExtismValType = enum(u8) {
     void = 0,
     i32 = 1,
@@ -201,7 +201,7 @@ pub const extism = if (builtin.is_test or !have_extism) struct {
     pub extern "extism" fn extism_function_free(func: ExtismFunction) void;
 };
 
-/// Defines metadata for Wasm modules, managing structure and version; owned by the module; ensures consistent binary format.
+/// Defines metadata for Wasm modules, managing structure and version; owned by the module; ensures consistent deployment.
 pub const WasmManifest = struct {
     wasm_bytes: []const u8,
     memory_max: u32 = 16 * 1024 * 1024, // 16 MB default
@@ -546,7 +546,7 @@ pub const HostFunctionRegistry = struct {
 // WasmTarget has been merged into Target (via ExecutorKind.wasm).
 // This function takes a *Target whose executor tag is .wasm and executes it.
 
-/// Represents the outcome of a Wasm execution, encapsulating results and errors; owned by the module; immutable once constructed.
+/// Represents the outcome of a Wasm execution, encapsulating results and errors; managed by the host, immutable once created.
 pub const WasmExecutionResult = struct {
     success: bool,
     output: []const u8, // slice into `payload` buffer — valid until payload is freed
@@ -561,7 +561,7 @@ pub const WasmExecutionResult = struct {
     }
 };
 
-/// Executes a Zig compilation target on a Wasm target with specified allocator and context.
+/// Executes a Zig compilation target on a Wasm target with specified allocator, context, and host registry.
 pub fn runWasmTarget(
     allocator: std.mem.Allocator,
     target: *target_mod.Target,
@@ -725,7 +725,7 @@ pub const WasmLanguage = enum {
     }
 };
 
-/// Defines a tool generator struct managing tool definitions; owns tool metadata; not thread-safe.
+/// Defines a tool generator struct managing tool definitions; owns tool registry; ensures single responsibility.
 pub const ToolGenerator = struct {
     const Self = @This();
 
@@ -1273,3 +1273,23 @@ test "verifyWithTests: empty test cases returns true" {
     const result = verifyWithTests(testing.allocator, &[_]u8{}, &[_]ToolTestCase{});
     try testing.expect(result);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

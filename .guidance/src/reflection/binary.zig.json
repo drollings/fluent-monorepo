@@ -11,14 +11,14 @@
     {
       "type": "struct",
       "name": "BinaryFieldCodec",
-      "match_hash": "0712fc211f62e7b338c528958f76168a840c3a6fa378582b3314033a83f05244",
+      "match_hash": "b2de0cdee08297e269b5879c25a3605139f2d991d4273fd3503abd69294a7cd9",
       "signature": "keyword_struct BinaryFieldCodec { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "encodeField",
-          "match_hash": "f6bf9bdc9d956015cafc9027da3013dd6ca1c879358d89bd823ca365d61357b9",
+          "match_hash": "a652d2abfe55f5da157f3c2788779297bf09de59ff98e94354179c8f470cb637",
           "signature": "fn encodeField(T: type, value: T, writer) -> void",
           "params": [
             { "name": "T", "type": "type" },
@@ -32,7 +32,7 @@
     ,    {
           "type": "fn_decl",
           "name": "decodeField",
-          "match_hash": "8aa413694b2d5809330d2816c4c62642c63a8cba9b5b1c57d6926f0fc3ab5309",
+          "match_hash": "c924eb89a9d6d4124a25578a4ea9207248632216bd70cd7176734c1cab00633e",
           "signature": "fn decodeField(T: type, reader, allocator: std.mem.Allocator) -> T",
           "params": [
             { "name": "T", "type": "type" },
@@ -46,7 +46,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fieldWireSize",
-          "match_hash": "9857540a565f3ebeb5e2325bc47abc81890936c91898a8645c2c5304d5944ea1",
+          "match_hash": "cd4dbaef51dd3c85ea41a6389ff30d31b4541b5890e6033ca0e5f414a799a323",
           "signature": "fn fieldWireSize(T: type) -> ?usize",
           "params": [
             { "name": "T", "type": "type" }

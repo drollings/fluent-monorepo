@@ -43,7 +43,7 @@ const std = @import("std");
 
 // ── SchemaVersion ─────────────────────────────────────────────────────────────
 
-/// Defines the version schema; ensures schema invariants and versioning rules are enforced.
+/// Defines the schema version structure, manages version metadata, and ensures version invariants are enforced.
 pub const SchemaVersion = struct {
     major: u16,
     minor: u16 = 0,
@@ -79,7 +79,7 @@ pub const SCHEMA_CURRENT: SchemaVersion = .{ .major = 1, .minor = 0 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Validates compatibility between stored and current SchemaVersion objects.
+/// Validates compatibility between two SchemaVersion instances, returning an error if mismatched.
 pub fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) error{SchemaMismatch}!void {
     if (!stored.compatible(current)) return error.SchemaMismatch;
 }
@@ -149,3 +149,5 @@ test "checkCompatible: different major returns SchemaMismatch" {
 test "SchemaVersion: SCHEMA_CURRENT compatible with itself" {
     try testing.expect(SCHEMA_CURRENT.compatible(SCHEMA_CURRENT));
 }
+
+

@@ -91,7 +91,7 @@ pub const GitignoreFilter = struct {
     }
 };
 
-/// Checks if a given byte pattern matches a path, returning true or false.
+/// Checks if a given byte slice matches a specified pattern, returning true or false.
 fn matchesPattern(path: []const u8, pattern: []const u8) bool {
     if (pattern.len == 0) return false;
 
@@ -166,3 +166,6 @@ test "GitignoreFilter always excludes .git" {
     try std.testing.expect(filter.shouldIgnore("/project/.git/config"));
     try std.testing.expect(filter.shouldIgnore("/project/.zig-cache/foo"));
 }
+
+
+

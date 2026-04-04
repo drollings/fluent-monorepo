@@ -34,7 +34,7 @@ pub const Tool = struct {
     is_available: ?*const fn () bool = null,
 };
 
-/// Defines a tool definition with fixed-size buffers, managed via init/deinit; owned by the tool system, not thread-safe.
+/// Manages tool definitions with a fixed-size buffer pool; owned by the tool registry; ensures consistent state across operations.
 pub const ToolDefinition = struct {
     name: []const u8,
     description: []const u8,
@@ -189,3 +189,8 @@ test "ToolRegistry: availability=false skips check" {
     const defs = try reg.getDefinitions(arena.allocator(), null, false);
     try testing.expectEqual(@as(usize, 1), defs.len);
 }
+
+
+
+
+

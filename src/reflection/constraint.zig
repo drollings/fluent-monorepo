@@ -104,7 +104,7 @@ pub const ConstraintVTable = struct {
     ) anyerror!void = null,
 };
 
-/// Converts a Zig type to a ConstraintVTable object.
+/// Converts a Zig type to a ConstraintVTable representation.
 pub fn Constraint(comptime T: type) ConstraintVTable {
     // releaseFn is only meaningful for owned heap types.  For []const u8 we
     // free the slice and zero out the field so double-free is safe.
@@ -450,3 +450,7 @@ test "Constraint: releaseFn frees string slice" {
     }
     try testing.expectEqualSlices(u8, "", val);
 }
+
+
+
+

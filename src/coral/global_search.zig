@@ -20,7 +20,7 @@ const Allocator = std.mem.Allocator;
 // Public types
 // ---------------------------------------------------------------------------
 
-/// Tracks community summaries with fixed-size buffers; managed by owner; key invariant is data integrity.
+/// Tracks community summaries with fixed-size buffers; managed by owner; key invariant is consistent state.
 pub const CommunitySummary = struct {
     community_id: u32,
     /// Summarised text produced by the local model.
@@ -53,7 +53,7 @@ pub const GlobalSearchConfig = struct {
 // GlobalSearch
 // ---------------------------------------------------------------------------
 
-/// Manages global search keywords with a fixed-size structure; owned by the game; key invariant is consistent key-value mapping.
+/// Manages global search keywords with a fixed-size structure; owned by the application; ensures consistent state across sessions.
 pub const GlobalSearch = struct {
     config: GlobalSearchConfig,
 
@@ -196,3 +196,6 @@ test "GlobalSearch: high confidence skips frontier" {
     const result = try gs.search(a, "q", &summaries, TestReducer{});
     try testing.expect(!result.used_frontier); // 0.95 >= 0.7
 }
+
+
+

@@ -13,14 +13,14 @@
     {
       "type": "struct",
       "name": "Provider",
-      "match_hash": "84afd7cd431354eb5b73e166e36ca5105f3f88c6509147d5edf471e00df668d8",
+      "match_hash": "4973097466b2be8f42fdcd73c4302f2502d3b857a74fc3d888e6b144fe668ee2",
       "signature": "keyword_struct Provider { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "ae4e30e808523add1544dd85425d29108b4602b958812ff4d09923b89ed8f73e",
+          "match_hash": "937836ec20ac568ce6609e01e2151ed068a362bf0842dfdc508636181e074ac6",
           "signature": "fn deinit(self: *Provider, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "*Provider" },
@@ -36,14 +36,14 @@
     {
       "type": "struct",
       "name": "LintCommand",
-      "match_hash": "7cbb92e478575fd4bf56442e202ae9499247da980f73a4cf0297c61d8c46abfb",
+      "match_hash": "eb1b4c07333d26cf4189b2bd438bdd460d3d9c3120bd96f7bc28c9d9b27dd6ed",
       "signature": "keyword_struct LintCommand { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "023ae48b6358f91abe053a54eaab3676f23a68675c820fe455db9afa83fe4d46",
+          "match_hash": "01cf8f226ace115d2ce26bc1613c0b1cd04961187c71f5a510306dc14c5b2e07",
           "signature": "fn deinit(self: LintCommand, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "LintCommand" },
@@ -59,14 +59,14 @@
     {
       "type": "struct",
       "name": "ProjectConfig",
-      "match_hash": "0c8485e30c40dd2e473529c93e6e6aae24cb5f7c253a60fe9967763064d68d5f",
+      "match_hash": "e24a06dce48aa2d9241b32d17d34e16b5e0bd4d7dfcb8a6b78d695f7d08fa5f7",
       "signature": "keyword_struct ProjectConfig { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "c087612d9808462451417b12823ee23aed744315d0012af37072233d5cd60e33",
+          "match_hash": "0d733086fc310087a87c77d4df8de8e6fdd519d0d8f23e54c30dc15813702b2d",
           "signature": "fn deinit(self: *ProjectConfig) -> void",
           "params": [
             { "name": "self", "type": "*ProjectConfig" }
@@ -78,7 +78,7 @@
     ,    {
           "type": "fn_decl",
           "name": "infillModel",
-          "match_hash": "faef5c2336808863cdf8b4319bc1a3505bd8bc7e3c8f2b95194f33f586f8d722",
+          "match_hash": "d8d054301613bd247a82f74e1a56f770071ead62af76e4847b57528481f53ac5",
           "signature": "fn infillModel(self: *const ProjectConfig) -> []const u8",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" }
@@ -90,7 +90,7 @@
     ,    {
           "type": "fn_decl",
           "name": "thinkingModel",
-          "match_hash": "e7bf54b775a6ee113b5234cc436270d33598a042a0216ea5f71210db6a909cc7",
+          "match_hash": "785c54428394b28e4b23de3fb4c8c8d8f30392fc21115ed35eafe6966844d23c",
           "signature": "fn thinkingModel(self: *const ProjectConfig) -> []const u8",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" }
@@ -102,7 +102,7 @@
     ,    {
           "type": "fn_decl",
           "name": "getProvider",
-          "match_hash": "508eb1cc5efcc8fa170e4721c843f616e61d233238a2aa0c42d76720e21cfd79",
+          "match_hash": "69c938a68d120041d599d1e5d7bc5ae82568dad0b766636b32ba5de5bdc8114f",
           "signature": "fn getProvider(self: *const ProjectConfig, name: []const u8) -> ?Provider",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" },
@@ -115,7 +115,7 @@
     ,    {
           "type": "fn_decl",
           "name": "parseModelRef",
-          "match_hash": "36bb0aceb4fb84a303d1c1fceef1cc063f5c2ac68c010133bcf7e07b7ac9e045",
+          "match_hash": "92f7e15cdfac190113eb0b46f0be0806080cef712adba800b73817053440503e",
           "signature": "fn parseModelRef(model_ref: []const u8) -> ?struct { provider: []const u8, model: []const u8 }",
           "params": [
             { "name": "model_ref", "type": "[]const u8" }
@@ -127,7 +127,7 @@
     ,    {
           "type": "fn_decl",
           "name": "resolveModelUrl",
-          "match_hash": "e6590f4e6bc9a14665d9e3dc792a55a9377252e0c3e747be08293c31502cc244",
+          "match_hash": "c79f5ed702c12ab6a7dbf6e6b9847d837f360cfa2fc55ec07c53d0b8bb7c23ec",
           "signature": "fn resolveModelUrl(self: *const ProjectConfig, allocator: std.mem.Allocator, model_ref: []const u8) -> ?struct { url: []const u8, provider: Provider, is_thinking_endpoint: bool }",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" },
@@ -141,7 +141,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isThinkingModelRef",
-          "match_hash": "320c975d7d395f4ee66a7be8f24840e98ec36229cd4408a14ec0c35cd223112f",
+          "match_hash": "89db955d8857e41493beef3232bd3b3783d4b3f6a45feaac124f435e9a07ee7d",
           "signature": "fn isThinkingModelRef(self: *const ProjectConfig, model_ref: []const u8) -> bool",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" },
@@ -154,7 +154,7 @@
     ,    {
           "type": "fn_decl",
           "name": "lintCommandForExt",
-          "match_hash": "d606b97980a40b55f0623288ef32a6ec42b848b26a2c07c80874d72f70626a1c",
+          "match_hash": "29e27a4386b40bacf55c7f37e705aa0c1e519f1c1ed08e7cd0361506d8c839a2",
           "signature": "fn lintCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" },
@@ -167,7 +167,7 @@
     ,    {
           "type": "fn_decl",
           "name": "fmtCommandForExt",
-          "match_hash": "1dbf0f8508a956a0ebbfc32c2eb4a74f9daaa7b419bf9e70a08be32b3b170012",
+          "match_hash": "84583a00d969d38bdf4f179c6514e89243012a55b3ffbc0de7ac848a32cf4338",
           "signature": "fn fmtCommandForExt(self: *const ProjectConfig, ext: []const u8) -> ?[]const []const u8",
           "params": [
             { "name": "self", "type": "*const ProjectConfig" },
@@ -183,7 +183,7 @@
     {
       "type": "fn_decl",
       "name": "loadConfig",
-      "match_hash": "73e86f6000c5506e85153a7d7e6eb3a9d9ccde4ffeb929e57bb9048c71ddf2e2",
+      "match_hash": "53efcfcfabf4e8ee70407bfd7cdb60f9f9aa72c1953b6f61276da13983501c4f",
       "signature": "fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -196,7 +196,7 @@
     {
       "type": "fn_decl",
       "name": "initConfig",
-      "match_hash": "b5d7dd45aec9da7c5ebd80f8f269f22401acbfe43e19d58c69efbbf53c90e268",
+      "match_hash": "aed14e11aa3af67ebaf0add9e40ee79b6a9f5c7325c8af15267dce9508245846",
       "signature": "fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOptions) -> bool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -210,7 +210,7 @@
     {
       "type": "fn_decl",
       "name": "generateAgentsMdContent",
-      "match_hash": "0fd917e95b204318ffd2a08a8568fa71372d5b15c2f9530a611d5aacdc8eebe2",
+      "match_hash": "8d7465fc339e7fac9eeed95e9bce26b42bc7bd23a1a57757957433a876e8a792",
       "signature": "fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -223,7 +223,7 @@
     {
       "type": "fn_private",
       "name": "parseCommandsObject",
-      "match_hash": "61ed0d7d92f3cff998dcca520947a0f94e3ce50d657983b3ff6072ba2afc2ed3",
+      "match_hash": "67c26c9fd65b2e56a0e1d2a4845b53d5798754d701e3f585326aae2c3a5cfa78",
       "signature": "fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) -> []LintCommand",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -236,7 +236,7 @@
     {
       "type": "fn_private",
       "name": "tryLoadFile",
-      "match_hash": "339cb6be026b60d4db7aec9d6d67bc8519fbe36d78e6d76f6bb5dae9fe25095e",
+      "match_hash": "0de89c8da404f3038eb34d0745b9fc9c90b3eea5de888d0306227d1741e37b18",
       "signature": "fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -250,7 +250,7 @@
     {
       "type": "fn_private",
       "name": "buildDefault",
-      "match_hash": "f5687d418eb748947913c92e87ddc29c2f5265542ac87a0feb15a2de6f5c3ef2",
+      "match_hash": "da1283b255a7178eac8e62031745bba0c68bfbfce83c5c5c82991441ae0ab33a",
       "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -263,7 +263,7 @@
     {
       "type": "fn_private",
       "name": "buildFromParts",
-      "match_hash": "f48cd3d92d5c51c3ca3ea4cf90772b82181c36ed2181d26770e7131a50cd5bc5",
+      "match_hash": "925b1f8134eb2014fe6c7bb385625f29b488880924c5ea190ee47277e7c6affb",
       "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, db_path_rel: []const u8, skills_dir_rel: []const u8, capabilities_dir_rel: []const u8, embedding_provider: []const u8, embedding_model: []const u8, embedding_dims: u32, src_dirs: []const []const u8, providers: []const Provider, model_default: []const u8, model_fast: []const u8, model_thinking: []const u8, test_commands: []const LintCommand, lint_commands: []const LintCommand, fmt_commands: []const LintCommand, embedding_cache_limit: u32) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -292,7 +292,7 @@
     {
       "type": "fn_private",
       "name": "makeTestConfig",
-      "match_hash": "4deeea58f7e15017a864ebd7e35399bd10c85933aed64ecf16d2819624876bf4",
+      "match_hash": "6b796bf876b1c9eee6711ceb6b5484481204d81f1d8716efa529b40ca2977fad",
       "signature": "fn makeTestConfig(allocator: std.mem.Allocator, model_thinking: []const u8) -> ProjectConfig",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

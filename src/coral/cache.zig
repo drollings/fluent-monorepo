@@ -30,7 +30,7 @@ const HydrationPipeline = coral_db.HydrationPipeline;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = hashutil.EmbeddingProvider;
 
-/// Defines a cache tier with fixed-size buffers, managed via init/deinit; ensures consistent storage and access patterns.
+/// Manages cache tiers with fixed-size buffers; owned by the system; ensures consistent storage allocation.
 pub const CacheTier = enum(u8) {
     l1_memory = 1,
     l2_workflow = 2,
@@ -215,7 +215,7 @@ const L1HashEntry = struct {
     lru: *L1HashLruNodeData,
 };
 
-/// Manages L1 cache storage with fixed-size buckets; owns data structures; key invariants ensure consistent access patterns.
+/// Manages L1 cache storage with fixed-size buckets; owns data structures; key invariants ensure consistent access.
 pub const L1HashCache = struct {
     allocator: std.mem.Allocator,
     entries: std.AutoHashMap(u64, L1HashEntry),
@@ -1318,3 +1318,10 @@ test "ParallelRouter: routeBatch with empty input" {
     defer allocator.free(results);
     try testing.expectEqual(@as(usize, 0), results.len);
 }
+
+
+
+
+
+
+

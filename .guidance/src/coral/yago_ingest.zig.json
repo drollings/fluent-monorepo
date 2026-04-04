@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "yagoNamespaceFilter",
-      "match_hash": "5c7534cbe0fe6e108dc6cf73e2208bf043109871c0aee69c6d41389c136546c0",
+      "match_hash": "cbf22e6673130cbfac124a0fc75902f1ae827668468f23a178920a9bd9021f4b",
       "signature": "fn yagoNamespaceFilter(triple: Triple) -> bool",
       "params": [
         { "name": "triple", "type": "Triple" }
@@ -22,7 +22,7 @@
     {
       "type": "struct",
       "name": "YagoConfig",
-      "match_hash": "3122aee877843d6822b2a1bdc397344b805abf35c277e9dbb7acab6dd735819a",
+      "match_hash": "811278e21a721ea943f842207c4ea9d75b5e8a56a20024fecfbb9e7f5ceb28a4",
       "signature": "keyword_struct YagoConfig { ... }",
       "is_pub": true,
       "line": 61
@@ -30,14 +30,14 @@
     {
       "type": "struct",
       "name": "YagoIngestor",
-      "match_hash": "5c3d84c2c64e6482e4a153ebb5594310c094cd8f5a8ea1c2c50009c4ffc5502b",
+      "match_hash": "0e5e1fd25c231964bf86efd7d7f97cd5bb7e3796569d6d8d9e5a7c5a4f95b32b",
       "signature": "keyword_struct YagoIngestor { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "87ec67b52923cc2290e4cd546adeff19f94eb70916b02b858e3ae2c95c0e9f5b",
+          "match_hash": "31856b00ebb557a5a2bb3baee38551819aeb36dbb6b76d6b4ff3994dbb683d5f",
           "signature": "fn init(allocator: std.mem.Allocator, config: YagoConfig) -> Self",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -50,7 +50,7 @@
     ,    {
           "type": "fn_decl",
           "name": "ingestSource",
-          "match_hash": "8404580dfd1c88b61d942f5aff06c988b203435801b25c557921b8e4cefacbd4",
+          "match_hash": "a200a0d80b6aa1237ccde914cfac686d585cb6cd94878777270ff8f2d68688fb",
           "signature": "fn ingestSource(self: *Self, source: []const u8, library: *Library, capability_inference: ?*CapabilityInference) -> IngestStats",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -65,7 +65,7 @@
     ,    {
           "type": "fn_decl",
           "name": "ingestFile",
-          "match_hash": "b31c78783f9cd2bde8ce07d59047e1e1ae7ddecb3ab3cc87074fdd8ae2a63c92",
+          "match_hash": "a11dcb26aaeac95df157bb620029eabb61789ccd7d16067877f46ca13d90df3a",
           "signature": "fn ingestFile(self: *Self, path: []const u8, library: *Library, capability_inference: ?*CapabilityInference) -> IngestStats",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -80,7 +80,7 @@
     ,    {
           "type": "fn_private",
           "name": "runIngest",
-          "match_hash": "bc915951aca0581e12a2d1bf3797f63d81e5747bd8ffc93f62cd9458ddabc7ab",
+          "match_hash": "176ca5e0e6967c1fd81adce5a9c8950798c47aac010f24d802e1a56e31c82db3",
           "signature": "fn runIngest(self: *Self, library: *Library, source: ?[]const u8, path: ?[]const u8) -> IngestStats",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -95,7 +95,7 @@
     ,    {
           "type": "fn_private",
           "name": "runDryRun",
-          "match_hash": "bcb00b63c92b604b26ddb7a3144cae6a84cb32e62841ba2d200a25fc2fd12c30",
+          "match_hash": "c422116c96412fb4793564c29494c97ad4ecf340796219d0df7277f880225ff7",
           "signature": "fn runDryRun(self: *Self, source: ?[]const u8, path: ?[]const u8) -> IngestStats",
           "params": [
             { "name": "self", "type": "*Self" },
@@ -112,7 +112,7 @@
     {
       "type": "fn_decl",
       "name": "buildBaselineHierarchy",
-      "match_hash": "a6337e3b4893a98bbf4645e278d2eace7c7767d0bda490b3e408006746dff573",
+      "match_hash": "8c98ee473b1a59771fe17bf29ed39ec05c3b7e03e043e384a46cb532eec6ddd8",
       "signature": "fn buildBaselineHierarchy(ci: *CapabilityInference) -> void",
       "params": [
         { "name": "ci", "type": "*CapabilityInference" }

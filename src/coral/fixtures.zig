@@ -16,14 +16,14 @@ const ContextNode = coral_db.ContextNode;
 const WasmTool = coral_db.WasmTool;
 const EmbeddingProvider = common_mod.EmbeddingProvider;
 
-/// Manages test fixtures with a keyword struct, owns test data, ensures consistent initialization and cleanup.
+/// Manages test fixtures with a keyword struct, owns test data, and ensures consistent initialization across runs.
 pub const TestLibrary = struct {
     lib: *Library,
     arena: std.heap.ArenaAllocator,
     allocator: std.mem.Allocator,
 };
 
-/// Creates a test library using an allocator, returning a TestLibrary instance.
+/// Creates a test library instance using the provided allocator.
 pub fn createTestLibrary(allocator: std.mem.Allocator) !TestLibrary {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -46,7 +46,7 @@ pub fn deinitTestLibrary(tl: *TestLibrary) void {
     tl.* = undefined;
 }
 
-/// Creates an EmbeddingProvider instance from a Zig file path.
+/// Creates an EmbeddingProvider instance from a Zig code snippet.
 pub fn createTestEmbedding() EmbeddingProvider {
     var noop = embed_mod.NoopEmbedding{};
     return noop.provider();
@@ -105,3 +105,12 @@ pub fn insertTestNodes(tl: *TestLibrary, specs: []const TestNodeSpec) !void {
         try insertTestNode(tl, node);
     }
 }
+
+
+
+
+
+
+
+
+

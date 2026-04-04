@@ -59,7 +59,7 @@ pub const DEFAULT_STEPS =
     \\7. Move to COMPLETE.md when tests pass
 ;
 
-/// Identifies and returns affected file slices based on allocation and project data.
+/// Identifies and returns affected file slices based on allocation data.
 pub fn findAffectedFiles(
     allocator: std.mem.Allocator,
     content: []const u8,
@@ -187,3 +187,7 @@ test "findAffectedFiles detects backtick paths" {
     try std.testing.expect(files.len >= 1);
     try std.testing.expectEqualStrings("src/foo.zig", files[0]);
 }
+
+
+
+

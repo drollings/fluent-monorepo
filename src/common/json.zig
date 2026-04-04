@@ -37,7 +37,7 @@ pub fn writeEscaped(writer: anytype, s: []const u8) !void {
     }
 }
 
-/// Appends escaped characters to a Zig buffer, handling null-termination properly.
+/// Appends escaped characters to a Zig buffer, handling null-terminated strings with an allocator.
 pub fn appendEscaped(
     buf: *std.ArrayListUnmanaged(u8),
     allocator: std.mem.Allocator,
@@ -64,7 +64,7 @@ pub fn appendEscaped(
 // JSON file loading
 // =============================================================================
 
-/// Converts a JSON string to a Zig JSON value, handling allocator and size limits.
+/// Converts a JSON string to a Zig JSON value, handling allocation and parsing.
 pub fn parseJsonFile(
     allocator: std.mem.Allocator,
     path: []const u8,
@@ -138,3 +138,7 @@ test "appendEscaped handles control chars" {
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u0001") != null);
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "normal") != null);
 }
+
+
+
+

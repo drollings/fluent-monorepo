@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "MinimizedContext",
-      "match_hash": "5eb559e6caf5ffec00d2e8f235933f28e267b53dcb2ad6b52fa5339a3b49f5e7",
+      "match_hash": "b5d2d05155a4042e3f64ad24e42ac419f5c1f5e38ef8a75268a80bc5b782b9e1",
       "signature": "keyword_struct MinimizedContext { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "718c8966b9cb1218bfd74a24d7dd6ed93741d9fd8523e6f8ae23c92cd3e1716c",
+          "match_hash": "b180d10dbb7a830417871bebdc081e4537c3c3691966390c41348af40b746225",
           "signature": "fn deinit(self: *MinimizedContext) -> void",
           "params": [
             { "name": "self", "type": "*MinimizedContext" }
@@ -32,7 +32,7 @@
     {
       "type": "fn_decl",
       "name": "minimizeContext",
-      "match_hash": "3b94858d962188032b73aea2fbd9352db6821f1f8977678cc2f60ec24f0c0811",
+      "match_hash": "d3612f78e4ada4e2adacb5302083cca2ea8f590e7a42e71268de2bb0550a27c7",
       "signature": "fn minimizeContext(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, focal_id: i64, token_budget: usize) -> MinimizedContext",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -48,7 +48,7 @@
     {
       "type": "fn_decl",
       "name": "buildPrompt",
-      "match_hash": "cd6080b12aa0bb475cd9a2d7813c75b6f4a1127c58229b4d427dd3acccde1b02",
+      "match_hash": "9ec359327a100852d98626f1ab1c2869117cae64575f4832317ee6b187db22a8",
       "signature": "fn buildPrompt(allocator: std.mem.Allocator, ctx: MinimizedContext) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -61,7 +61,7 @@
     {
       "type": "fn_decl",
       "name": "validateSolution",
-      "match_hash": "e51a713e53303483b7ad61e00cbafe09e818b217c725958b93c22ece164ae98f",
+      "match_hash": "9ac003cf747af09298bf0e78b6c3b7f00eb3fe8406aa2d728c080997a0808689",
       "signature": "fn validateSolution(solution: []const u8) -> ValidationResult",
       "params": [
         { "name": "solution", "type": "[]const u8" }
@@ -103,7 +103,7 @@
     {
       "type": "fn_decl",
       "name": "indexSolution",
-      "match_hash": "88e19c86751207c5082d4368255bf4aad798b94dfd6f9122c6dcf2393b9b9193",
+      "match_hash": "60f7206da0827e91d3cb29b81d874a635ee6105236341c4fd82a368c14c01902",
       "signature": "fn indexSolution(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -130,7 +130,7 @@
     {
       "type": "fn_decl",
       "name": "indexSolutionWithTool",
-      "match_hash": "e6b427b5381043d9223cd06695964a7c6e935d584ebf09b5332042a41d336cc1",
+      "match_hash": "67e6bc67baac4dd582d098c9eb620b6b40529cf09bb0c719afe3e3f3ed279fbe",
       "signature": "fn indexSolutionWithTool(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8, generator: ?*wasm_mod.ToolGenerator) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

@@ -12,7 +12,7 @@
     {
       "type": "fn_private",
       "name": "stripTagBlock",
-      "match_hash": "7da96f2e53814cef01b2bb1888fe7b4a6a4424076ff1dd496750f9a4d549a2bf",
+      "match_hash": "3e57dd9f7bb11d845bb2dd7293d6f7c8416d8db7f55d5b0797886249fd4589bb",
       "signature": "fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) -> []const u8",
       "params": [
         { "name": "text", "type": "[]const u8" },
@@ -26,7 +26,7 @@
     {
       "type": "fn_decl",
       "name": "stripThinkBlock",
-      "match_hash": "6a0814d8a06f4ef1a50f18cae247bc5e90c9e067ebec2368a0a248c67edd4850",
+      "match_hash": "95c3b4915ceed297ceb2683ca261b7b201bd6e0717c5b83f76be630db83fb69c",
       "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -38,7 +38,7 @@
     {
       "type": "fn_decl",
       "name": "stripPreamble",
-      "match_hash": "12048cfc11b084b152aaf540d4fb342811a32560dddf0091479ce7ec7fc9ee77",
+      "match_hash": "7ecbcc31133f66a082623d0aeb90d6ae87b149b08ddccec4172c0d5a89c6c46e",
       "signature": "fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -51,7 +51,7 @@
     {
       "type": "fn_decl",
       "name": "isMalformedResponse",
-      "match_hash": "989a06c3376cb65285465d097f1f1fcd734f9ba75c0095a4baf4054ec202d2a3",
+      "match_hash": "d2b67f6b51085730ec0c330ee3ea585383f76dd4f94abde904fb029e25c0415e",
       "signature": "fn isMalformedResponse(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }
@@ -63,7 +63,7 @@
     {
       "type": "fn_decl",
       "name": "llmHasDanglingEnd",
-      "match_hash": "c597a2087a77280e02163b60bd2daeaf658296f4943aa62f6200b4dc8ca2fe1a",
+      "match_hash": "92d37f5c26c6a53f32c388786ae72e68df648da5d2f890d4623e8b891ef2126b",
       "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
@@ -75,7 +75,7 @@
     {
       "type": "fn_decl",
       "name": "llmIsGenericSelfRef",
-      "match_hash": "60c16287d49914f56d6ba280dd24142f2a3a875444f96a7f3726ed5467269850",
+      "match_hash": "6dd32d83420206cc0ee18bd436409d4d01264670b0e53017c573ad5866a152db",
       "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
@@ -87,7 +87,7 @@
     {
       "type": "fn_decl",
       "name": "llmIsOverlyGeneric",
-      "match_hash": "242b9bb1b0e250642801e34b4d46340dba8a352a70126afcc9f20b5d60051a95",
+      "match_hash": "a8f6a14a4e9d45bf6ad4af01f523b34d4891d593d9c36b681cf8495d69ecea3f",
       "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
       "params": [
         { "name": "body", "type": "[]const u8" }
@@ -99,7 +99,7 @@
     {
       "type": "fn_decl",
       "name": "extractCommentTag",
-      "match_hash": "6d89fe5e23fc92483d478adf72a99b0cfeb0c1986a577bfb49e611bb6e77ac38",
+      "match_hash": "508f67edd5f7a3d015ed377c4883688cc9ec03e5c0329acc7ee0de9fb6e703ca",
       "signature": "fn extractCommentTag(text: []const u8) -> ?[]const u8",
       "params": [
         { "name": "text", "type": "[]const u8" }

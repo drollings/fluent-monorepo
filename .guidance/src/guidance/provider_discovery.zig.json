@@ -12,14 +12,14 @@
     {
       "type": "struct",
       "name": "Provider",
-      "match_hash": "555a81e2f8fed1475a8834d58dbecb9993cf46eb985ee72fc69bd5d8917d099e",
+      "match_hash": "d67a9c4857b714b8591f9a9708508063079adba16cc906377e372499b4ab6b9a",
       "signature": "keyword_struct Provider { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "90b9efc9b015bb3352c5c871e208d388d397241c8d52dc44e669f73526abc01c",
+          "match_hash": "b28762fd0c071386871f3573f6bd6318e02046ca70d5fda2a35f5fb95d1bdf5b",
           "signature": "fn deinit(self: Provider, allocator: std.mem.Allocator) -> void",
           "params": [
             { "name": "self", "type": "Provider" },
@@ -35,7 +35,7 @@
     {
       "type": "fn_decl",
       "name": "discoverProvider",
-      "match_hash": "fd8f7a2f03dda96ff6b868fcc19d8af3c166787c8c07957bebec028c48ccf69a",
+      "match_hash": "e66b11613b7a81f7a665ead383f8e595238732f6655230e14b566c63434e70fc",
       "signature": "fn discoverProvider(allocator: std.mem.Allocator, workspace: []const u8, ext: []const u8) -> ?Provider",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -49,7 +49,7 @@
     {
       "type": "fn_decl",
       "name": "invokeProviderFile",
-      "match_hash": "de576e96235b9b093dc2c77a3c68bfef024cd7ac99e2c6cc9bd60bbdd581fe71",
+      "match_hash": "83f94fc5c8f80ac69f967a6373d1c6b6aa5722eae587a8188673f6e804e780e9",
       "signature": "fn invokeProviderFile(allocator: std.mem.Allocator, provider: Provider, src_abs: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -65,7 +65,7 @@
     {
       "type": "fn_decl",
       "name": "invokeProviderScan",
-      "match_hash": "83badab4d31d842a6b72afb582fee923eac4a0433187485cc6a1a3d76611ecb8",
+      "match_hash": "14ba8e541d76a8cf7aec3e9958967a641ea43c2d4273583e3aa27d062c196782",
       "signature": "fn invokeProviderScan(allocator: std.mem.Allocator, provider: Provider, scan_dir: []const u8, json_dir: []const u8, extra_args: []const []const u8) -> bool",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -81,7 +81,7 @@
     {
       "type": "fn_private",
       "name": "isExecutable",
-      "match_hash": "6f315af3609b8d4963e117c69d27664a0d4f4ecb3a295bf049cc0df95ee168d5",
+      "match_hash": "3e3c69769996964a630e08270e6ac6867b296be60661508d3c5af1df47cefe39",
       "signature": "fn isExecutable(path: []const u8) -> bool",
       "params": [
         { "name": "path", "type": "[]const u8" }
@@ -93,7 +93,7 @@
     {
       "type": "fn_private",
       "name": "findInPath",
-      "match_hash": "299227e4056b65f08925d12a5f06f9a921373f0923f5bbaa95b34b1aa17be6d1",
+      "match_hash": "33f1e28323f60f82dfd66306b7a27f383306e16d329d6819310accbcd7a313f8",
       "signature": "fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) -> ?[]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

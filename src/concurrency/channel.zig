@@ -23,7 +23,7 @@
 
 const std = @import("std");
 
-/// Converts a generic type to a Zig channel, handling type conversion and returning the channel instance.
+/// Converts a generic type to a channel type, ensuring safe data flow between concurrent contexts.
 pub fn Channel(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -352,3 +352,4 @@ test "Channel: GPA no leaks" {
     _ = ch.recv();
     ch.deinit();
 }
+

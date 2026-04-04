@@ -9,14 +9,14 @@
     {
       "type": "struct",
       "name": "ErrorContext",
-      "match_hash": "69c60ef15d65baee59099e9094448cb76add2865f6b552860ba16443e49cd079",
+      "match_hash": "439d57497ce5f6a1ff46c1de530e3df03ac11f71c4d60c06ab31040d5f522c4a",
       "signature": "keyword_struct ErrorContext { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "60bffe6fc674bba77cf031e048001582ee0139528a440ee88ef8d04767b6db64",
+          "match_hash": "fb02d9789e0eb0312da3626348262352a603857facd4023123d33875496f6d9f",
           "signature": "fn init(operation: []const u8, field: ?[]const u8, value: ?[]const u8, cause: anyerror) -> ErrorContext",
           "params": [
             { "name": "operation", "type": "[]const u8" },
@@ -31,7 +31,7 @@
     ,    {
           "type": "fn_decl",
           "name": "simple",
-          "match_hash": "e4c314fd36808a0f01fe6ab7bef8382ee91c15df28f65ccf8e025905b1e0297e",
+          "match_hash": "9bafd4a1e118bcfc4bfc90726b879b49babf1c264cd5850c3baed89eb48eb224",
           "signature": "fn simple(operation: []const u8, cause: anyerror) -> ErrorContext",
           "params": [
             { "name": "operation", "type": "[]const u8" },
@@ -44,7 +44,7 @@
     ,    {
           "type": "fn_decl",
           "name": "format",
-          "match_hash": "70b7c085857c828ac851f16d51077bcf2705caa4694667480354cf2c68d8b34e",
+          "match_hash": "0864991a3ae56e386aa04afcdd8ba6aef6e5ef30791792e04a175d5288a9dc8d",
           "signature": "fn format(self: *const ErrorContext, _: []const u8, _: std.fmt.FormatOptions, writer) -> void",
           "params": [
             { "name": "self", "type": "*const ErrorContext" },
@@ -59,7 +59,7 @@
     ,    {
           "type": "fn_decl",
           "name": "toMessage",
-          "match_hash": "e862f949f8d47f0fb1c744b8ce2bc3695314d7579fd8ba6b89ba7a24a467f8ac",
+          "match_hash": "fb101b739956364afbc8f91e82679915afb5ef19d67293e220c148b0df9e5840",
           "signature": "fn toMessage(self: *const ErrorContext, arena: std.mem.Allocator) -> []const u8",
           "params": [
             { "name": "self", "type": "*const ErrorContext" },
@@ -75,14 +75,14 @@
     {
       "type": "struct",
       "name": "ArenaErrorContext",
-      "match_hash": "c4b0a8ab3c271cc93dd82d94860684cbd13659dffd451bade7e4cd5c4180641b",
+      "match_hash": "fd5f7dc047815a8963ef48d95f98d838873cb04ede0c454a068c92cf5f0cdf48",
       "signature": "keyword_struct ArenaErrorContext { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "c027b3d2f3e3d8c7b014eca8546a2e254c3932f9b869cd95078504dfabd7c420",
+          "match_hash": "a3c7a410dc864f4b6fc9e5e87f94ef227592c1a5c5259aadcfc8940087eae6c2",
           "signature": "fn init(arena: std.mem.Allocator, operation: []const u8, field: ?[]const u8, value: ?[]const u8, cause: anyerror) -> ArenaErrorContext",
           "params": [
             { "name": "arena", "type": "std.mem.Allocator" },
@@ -98,7 +98,7 @@
     ,    {
           "type": "fn_decl",
           "name": "format",
-          "match_hash": "ce3e59333eee54eb8bc1ce3c90eb03bf6ae92d6b038963bb6b21f8e1ad72f103",
+          "match_hash": "291b88cd020fe7fb86c7fe5fd2d1de33d71343145bc2fc5e46b9977b8f59c860",
           "signature": "fn format(self: *const ArenaErrorContext, _: []const u8, _: std.fmt.FormatOptions, writer) -> void",
           "params": [
             { "name": "self", "type": "*const ArenaErrorContext" },
@@ -116,7 +116,7 @@
     {
       "type": "fn_decl",
       "name": "chain",
-      "match_hash": "2fa61bf825c16d6c551567561652d058284e0e276c542f39b1fe6973d88046de",
+      "match_hash": "9b078683324e19d7233f7eb0d38a29251c88df4bb909b7cf9607022737726600",
       "signature": "fn chain(arena: std.mem.Allocator, child: *ArenaErrorContext, parent: *const ArenaErrorContext) -> void",
       "params": [
         { "name": "arena", "type": "std.mem.Allocator" },

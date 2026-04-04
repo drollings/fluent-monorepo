@@ -5,7 +5,7 @@ const common = @import("common");
 /// SHA-256 hex digest — delegates to src/common/hash.zig.
 pub const sha256Hex = common.sha256Hex;
 
-/// Computes a hash from allocator, name, and parameters, returning a slice of hashed bytes.
+/// Computes a hash from allocator, name, and parameters, returning a slice of hash values.
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};
     defer sig_buf.deinit(allocator);
@@ -110,3 +110,6 @@ test "structHash same fields produce same hash" {
 
     try std.testing.expectEqualSlices(u8, hash1, hash2);
 }
+
+
+

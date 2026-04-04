@@ -21,7 +21,7 @@ const SearchResult = GuidanceDb.SearchResult;
 // Stage collection entry point
 // ---------------------------------------------------------------------------
 
-/// Executes a staged query using the provided allocator, database, and workspace, returning a Stage array.
+/// Executes a staged query using the provided allocator, database, and workspace, returning a Stage slice.
 pub fn executeStaged(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -961,7 +961,7 @@ pub fn extractSourceExcerptVerified(
     return extractExcerptFromSource(allocator, src, effective_line, node_type);
 }
 
-/// Converts a node type array into its corresponding Zig member type.
+/// Converts a list of node types into their corresponding Zig member type.
 fn memberTypeFromNodeType(node_type: []const u8) types.MemberType {
     if (std.mem.eql(u8, node_type, "fn_decl")) return .fn_decl;
     if (std.mem.eql(u8, node_type, "fn_private")) return .fn_private;
@@ -1365,3 +1365,19 @@ test "formatStaged: See Also is capped at 10 unique keywords" {
     };
     try std.testing.expect(comma_count <= 9);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

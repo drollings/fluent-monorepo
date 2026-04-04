@@ -13,7 +13,7 @@
     {
       "type": "struct",
       "name": "Context",
-      "match_hash": "8eebe2ed3299c8e4d367db62d8ebe64bf5a66b9520074c292cd4a024ffa0fc34",
+      "match_hash": "a96cf8f29b4629d7166064e7fccd82fb6b99f50b997f8d18e0e21855455aa807",
       "signature": "keyword_struct Context { ... }",
       "patterns": [
         { "name": "State Persistence", "type": "Domain", "ref": "guidance/skills/domain_patterns/SKILL.md#state-persistence" }
@@ -23,7 +23,7 @@
         {
           "type": "fn_decl",
           "name": "background",
-          "match_hash": "9535f11014544748471cc5c077dfdd5828fb62548fc90035b5a57a73b20a7afe",
+          "match_hash": "e7d772188939173b586c4320bdff254d5369743509d8c2b9efc850d9b648f776",
           "signature": "fn background() -> Context",
           "returns": "Context",
           "is_pub": true,
@@ -32,7 +32,7 @@
     ,    {
           "type": "fn_decl",
           "name": "withTimeout",
-          "match_hash": "66bb25ae5c2d176e83a40489f3452b469e87d4eef56ec8370615599180b48c65",
+          "match_hash": "aa668902015805ac9ffbd554518941c91dbbcfde5256b9723cebaa72aded48a7",
           "signature": "fn withTimeout(duration_ns: u64) -> Context",
           "params": [
             { "name": "duration_ns", "type": "u64" }
@@ -44,7 +44,7 @@
     ,    {
           "type": "fn_decl",
           "name": "withDeadline",
-          "match_hash": "aff7ff6237225ed2fc9b32d93ea6a0f9a18ea179a18639bf973b49bc2fb08061",
+          "match_hash": "3cb86dd214beef020ec7bed1e8697855b947922a2a039b63f1b2faba373f82d7",
           "signature": "fn withDeadline(deadline_ns: i64) -> Context",
           "params": [
             { "name": "deadline_ns", "type": "i64" }
@@ -56,7 +56,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isCancelled",
-          "match_hash": "c7e3185a63d5d065f2038f6e26660411893fb66776de06cef07e9dfdebb2dc17",
+          "match_hash": "367e92e746a73960a72755af2019d4a11f2f1a0221c3e47de23bafc245d94e49",
           "signature": "fn isCancelled(self: *const Context) -> bool",
           "params": [
             { "name": "self", "type": "*const Context" }
@@ -68,7 +68,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isExpired",
-          "match_hash": "504cb67a8d969941954685e03759bb96c31890b3bddfa1625804dce73cf76528",
+          "match_hash": "955f6f7f29b72aff65b8b5a718155eb0f53f27f61b54d1409ed1b16eaa4dc0c0",
           "signature": "fn isExpired(self: *const Context) -> bool",
           "params": [
             { "name": "self", "type": "*const Context" }
@@ -80,7 +80,7 @@
     ,    {
           "type": "fn_decl",
           "name": "err",
-          "match_hash": "0012ab70a20f6617e12734a6aeadbe96499e8dc7d6ffd04293d581f7819faeb1",
+          "match_hash": "18e1b029910ba659adc8ff235874d45e175476bd6a4f5ebd9f3b3d1c08aecb2b",
           "signature": "fn err(self: *const Context) -> ?anyerror",
           "params": [
             { "name": "self", "type": "*const Context" }
@@ -92,7 +92,7 @@
     ,    {
           "type": "fn_decl",
           "name": "cancel",
-          "match_hash": "7209dabf675c81837da278a391f5748cfd7e78acef143c77d08b70974725d479",
+          "match_hash": "017e48545d3cf847008b566a57218c87961ad901be7a01003575a64149ae83f2",
           "signature": "fn cancel(self: *Context, reason: anyerror) -> void",
           "params": [
             { "name": "self", "type": "*Context" },

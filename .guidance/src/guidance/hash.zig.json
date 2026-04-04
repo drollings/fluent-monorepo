@@ -11,7 +11,7 @@
     {
       "type": "fn_decl",
       "name": "apiHash",
-      "match_hash": "ce176fcfce4a693ec46312b740bffa8141219657c8d209e9ee402d14a2caf5c1",
+      "match_hash": "2aa05478b4dfb9c54404c97df32953f2334af3e8b8278b71d6e0bfdeb45f65c6",
       "signature": "fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -26,7 +26,7 @@
     {
       "type": "fn_decl",
       "name": "structHash",
-      "match_hash": "e56059da0cbc44aa6526092b14429fb71f633e1aea3cd02b3c8387f8aca3b828",
+      "match_hash": "be4864c26caa58f41e7e92aacd8e6d8ab22ca0f22f5a43ab66740fe7551517f5",
       "signature": "fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const []const u8) -> []const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -40,7 +40,7 @@
     {
       "type": "fn_decl",
       "name": "normalizeType",
-      "match_hash": "a07ca07b9ca31129d059809541387353552b826b119391b51fc2304ac45853aa",
+      "match_hash": "d97c07e53a23308dca3de66cf277938cda4abd9f3dd65713d492afbbfb9fc3ca",
       "signature": "fn normalizeType(type_str: []const u8) -> []const u8",
       "params": [
         { "name": "type_str", "type": "[]const u8" }

@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "FileEntry",
-      "match_hash": "ce273039208dcd7cc2336051e545420f4fb88767c03c6cfe0113f5d59b550854",
+      "match_hash": "1718eb1b47e19f2407666acd329745ea21013897792da74b6b1f7a14c74c088b",
       "signature": "keyword_struct FileEntry { ... }",
       "is_pub": false,
       "line": 25
@@ -17,14 +17,14 @@
     {
       "type": "struct",
       "name": "StructureGenerator",
-      "match_hash": "3a499646de9e450ff337a783062101d247e866e030ed2ad41607923e6ef17f82",
+      "match_hash": "53c3ce1f50f740dd1b57459c9b834ecdbae7efbf707da3e958474cbf1621b06c",
       "signature": "keyword_struct StructureGenerator { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "465525ddfc3d72eeb6e1ff4f0cd7297912bec586da862435ecae866b4c914351",
+          "match_hash": "9c3f209e2489fcea45a6d16978dda0ed14cbc4294495d9d7b4cf675a1f832433",
           "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, guidance_dir: []const u8, debug: bool) -> StructureGenerator",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
@@ -39,7 +39,7 @@
     ,    {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "49c32d7de237f30e819d506fcfb3ea804230158e3fdd99a967db0bf339ed7db8",
+          "match_hash": "c4360f29302f5c87da832f76ae20ff6bef6d5effb5dcdc42d3538be20ab82524",
           "signature": "fn deinit(self: *StructureGenerator) -> void",
           "params": [
             { "name": "self", "type": "*StructureGenerator" }
@@ -51,7 +51,7 @@
     ,    {
           "type": "fn_decl",
           "name": "generate",
-          "match_hash": "75f678a753bf902eceef669b28df149a7195435fe9b83bb2f654e63b4b659f12",
+          "match_hash": "85cfee50c9b5677135937fe46027081030f7750566123382168461314727c4d2",
           "signature": "fn generate(self: *StructureGenerator) -> void",
           "params": [
             { "name": "self", "type": "*StructureGenerator" }
@@ -63,7 +63,7 @@
     ,    {
           "type": "fn_private",
           "name": "buildTree",
-          "match_hash": "a39a603620d302178ad8bb9f9f96b764417852aba6261afacd681b3bf8798b63",
+          "match_hash": "b346438f5a45199d252c73abf84b2e64a03eeae1ddc764931372c9ba973e8f13",
           "signature": "fn buildTree(self: *StructureGenerator, entries: *std.ArrayList(TreeEntry), dir_path: []const u8, prefix: []const u8) -> void",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -78,7 +78,7 @@
     ,    {
           "type": "fn_private",
           "name": "relPath",
-          "match_hash": "4789280da95a562c425900c3160eb93423c21a50841a58b8979ff978d33cb1c6",
+          "match_hash": "fce1ffeec1f700a42a54d4773e98fa7888281391579e1322b3049cca71d2d19d",
           "signature": "fn relPath(self: *StructureGenerator, abs: []const u8) -> []const u8",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -91,7 +91,7 @@
     ,    {
           "type": "fn_private",
           "name": "resolveComment",
-          "match_hash": "9340cab4dbb6a2fb508cabf9d1c148a338a1a6eead576a9340205417bee990cb",
+          "match_hash": "abbf8bc11b0305ee28b8aa326e66620d18e70a7592c0f486bc9c726f6fcb7f3b",
           "signature": "fn resolveComment(self: *StructureGenerator, entry: FileEntry, old_comments: std.StringHashMapUnmanaged([]const u8)) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -105,7 +105,7 @@
     ,    {
           "type": "fn_private",
           "name": "commentFromZigSource",
-          "match_hash": "4a250a9e4a637219a46608978f68af0ef425cb65c8a6927b58349427cdaa6369",
+          "match_hash": "ef9fbd8ee1f92d209c4f614b461b29126cdb8adea1b9417f072b64aa6c2bd83d",
           "signature": "fn commentFromZigSource(self: *StructureGenerator, abs_path: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -118,7 +118,7 @@
     ,    {
           "type": "fn_private",
           "name": "commentFromGuidance",
-          "match_hash": "32e6fb5749e9a1010d3ce7c9bf6eaebdac6fdf517053204a4507ca553c374db3",
+          "match_hash": "e26d33169f47aefcdcbe744997369df1a60641ccb89bc2c68253abd741e712bf",
           "signature": "fn commentFromGuidance(self: *StructureGenerator, rel_path: []const u8) -> ?[]const u8",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -131,7 +131,7 @@
     ,    {
           "type": "fn_private",
           "name": "parseOldComments",
-          "match_hash": "d60c30e4e35f859998e8129d00df3ee124d17b52bf1edb625a8d486e753ca6de",
+          "match_hash": "98d3846cdd0ea5da1a212a1efa38f75c838d22b28903c7ab6aa51d9dea768e80",
           "signature": "fn parseOldComments(self: *StructureGenerator) -> std.StringHashMapUnmanaged([]const u8)",
           "params": [
             { "name": "self", "type": "*StructureGenerator" }
@@ -143,7 +143,7 @@
     ,    {
           "type": "fn_private",
           "name": "write",
-          "match_hash": "4958e5505f503daa47c9211d1c7fc283aebfd5bf27e805730c0cb19161390a39",
+          "match_hash": "50810999ff16700d1d0bcb9a794a424dcf77942732986b34b32c75586c82fe89",
           "signature": "fn write(self: *StructureGenerator, path: []const u8, entries: []const TreeEntry, old_comments: std.StringHashMapUnmanaged([]const u8), comment_col: usize) -> void",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -159,7 +159,7 @@
     ,    {
           "type": "fn_private",
           "name": "freeEntries",
-          "match_hash": "86182459ca4dc09da466ba0a352d65829af34889d12e23acf61bee035226327a",
+          "match_hash": "ce08d9075d0d0e4e9b081de86f7e744fb571580275a11efaf748de8edfbfbd3a",
           "signature": "fn freeEntries(self: *StructureGenerator, entries: *std.ArrayList(TreeEntry)) -> void",
           "params": [
             { "name": "self", "type": "*StructureGenerator" },
@@ -175,7 +175,7 @@
     {
       "type": "struct",
       "name": "ChildEntry",
-      "match_hash": "d7e4b11724efc577cf8ca0e411199d57a602ac040e81c7db8b2d2322cf432b9d",
+      "match_hash": "78ee4216ba0f632dd373ed1a44d5755d263aaaea0fc0b3332f310041d527ab5b",
       "signature": "keyword_struct ChildEntry { ... }",
       "is_pub": false,
       "line": 414
@@ -183,7 +183,7 @@
     {
       "type": "fn_private",
       "name": "childLessThan",
-      "match_hash": "9fec531369d2095eefcb4a27395fc5bb2d9b3bbff5ad9d728deda77a27cf8abc",
+      "match_hash": "643541ae4953a0b78833f49ac5c5911fb49ef15c0353b9dccdbd07e5b68e385f",
       "signature": "fn childLessThan(_: void, a: ChildEntry, b: ChildEntry) -> bool",
       "params": [
         { "name": "_", "type": "void" },
@@ -197,7 +197,7 @@
     {
       "type": "fn_private",
       "name": "extractFilename",
-      "match_hash": "0699f6f550d66c633a14115d2ad3c2332d12f8e644f7b3dfe846be4d375be9f4",
+      "match_hash": "7e64071945cb742e49b9113861c0f8a22b62874c17b0635b5612f516ca858129",
       "signature": "fn extractFilename(line: []const u8) -> ?[]const u8",
       "params": [
         { "name": "line", "type": "[]const u8" }

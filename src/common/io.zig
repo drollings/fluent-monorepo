@@ -26,7 +26,7 @@ pub const WriterState = struct {
     }
 };
 
-/// Manages streaming data with a fixed buffer; encapsulates ownership and state; not thread-safe.
+/// Manages streaming data with fixed buffers; encapsulates state, not shared; key invariant is buffer integrity.
 pub const ReaderState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
     fr: std.fs.File.Reader = undefined,
@@ -164,14 +164,14 @@ test "makePathAbsolute is idempotent for existing paths" {
 /// Default maximum file size for readFileAlloc (10 MB).
 pub const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-/// Reads a file into a memory-allocated Zig slice, handling allocation and error cases.
+/// Reads a file into a memory-allocated Zig slice, returning the content as a slice of bytes.
 pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
     return file.readToEndAlloc(allocator, max_size) catch null;
 }
 
-/// Reads a file using an allocator, returning its contents or an error on failure.
+/// Reads a file using an allocator, returning its contents or an error if allocation fails.
 pub fn readFileAllocErr(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ![]const u8 {
     const file = try std.fs.openFileAbsolute(path, .{});
     defer file.close();
@@ -237,7 +237,7 @@ test "resolvePath handles dot by returning base" {
     try std.testing.expectEqualStrings("/base", result);
 }
 
-/// Reads a file path into an owned Zig slice, returning its contents as bytes.
+/// Reads a file path and allocates memory for its contents, returning a slice of bytes.
 pub fn readFileOpt(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
     return readFileAlloc(allocator, path, max_size);
 }
@@ -246,3 +246,11 @@ test "readFileOpt returns null for non-existent file" {
     const result = readFileOpt(std.testing.allocator, "/nonexistent/path/file.txt", 1024);
     try std.testing.expect(result == null);
 }
+
+
+
+
+
+
+
+

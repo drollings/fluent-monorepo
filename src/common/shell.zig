@@ -58,3 +58,5 @@ test "addUniquePath deduplicates paths" {
     const added2 = try addUniquePath(std.testing.allocator, &list, "test/path", "");
     try std.testing.expect(!added2);
 }
+
+

@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "DelegationConfig",
-      "match_hash": "a559efb9a202d9e151c357a46153d3a4461d123451cb87a9b2b9b585fb1d3f45",
+      "match_hash": "de275421775226728b802da6698ed54cd4bb5d25be47929c6e91fe2b54a90677",
       "signature": "keyword_struct DelegationConfig { ... }",
       "is_pub": true,
       "line": 30
@@ -17,7 +17,7 @@
     {
       "type": "struct",
       "name": "DelegationResult",
-      "match_hash": "3c517c220a0b1655f3661066b1758e25e886c0099250a069af3965220ef46fe3",
+      "match_hash": "2c8f5cf48ded9b24f072f95eafec65d127b72c7ec18dfd22813d8e06da9ec6ff",
       "signature": "keyword_struct DelegationResult { ... }",
       "is_pub": true,
       "line": 42

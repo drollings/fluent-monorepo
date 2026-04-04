@@ -10,14 +10,14 @@
     {
       "type": "struct",
       "name": "BitSetDrift",
-      "match_hash": "c39921d685436f784b397cbf66b00279d3b31fd4861de7110eb43c50c7f1dbaf",
+      "match_hash": "9c625a22900a415f43103728e406e4e881f72c2ef6bb47c6041b31ad9f9d2926",
       "signature": "keyword_struct BitSetDrift { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "generateFollowUps",
-          "match_hash": "91a96600dde638291d9fd6a17918f77f56b53189db5b395ffadee95a383d964b",
+          "match_hash": "e4fdbced20d5204c336e4d13475876e0e83cf92611ba045c63aa3790db83bb2f",
           "signature": "fn generateFollowUps(self: *const Self, arena: Allocator, needed: *const DynamicBitSet, available: *const DynamicBitSet) -> []const []const u8",
           "params": [
             { "name": "self", "type": "*const Self" },
@@ -32,7 +32,7 @@
     ,    {
           "type": "fn_decl",
           "name": "isResolved",
-          "match_hash": "ed37b6c1be5e6dc145099b690b15d7ea2eed05296d965b1194b4e397e2db6367",
+          "match_hash": "57322d7938866a207f3606c225e17625fc92bfe1d4ae445bf0bbbf287566c4c3",
           "signature": "fn isResolved(needed: *const DynamicBitSet, available: *const DynamicBitSet) -> bool",
           "params": [
             { "name": "needed", "type": "*const DynamicBitSet" },

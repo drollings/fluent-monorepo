@@ -11,7 +11,7 @@
     {
       "type": "struct",
       "name": "Pattern",
-      "match_hash": "afa176ef1e0732861122ebd89672a675dd3d1f1e0afb52f6eb7c5d99e5fba57c",
+      "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
       "signature": "keyword_struct Pattern { ... }",
       "is_pub": true,
       "line": 12
@@ -19,7 +19,7 @@
     {
       "type": "fn_decl",
       "name": "detectPatterns",
-      "match_hash": "781b5d345c70b662a8bebd1602796f76fb0594ca48a95e974e625ed982581748",
+      "match_hash": "50d574ac7ac7a181d62103b7aa29c35a6cf3e9fba50016264c637ec90bcbbbae",
       "signature": "fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) -> []Pattern",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

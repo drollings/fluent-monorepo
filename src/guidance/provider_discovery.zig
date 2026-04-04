@@ -70,7 +70,7 @@ pub fn discoverProvider(
     return null;
 }
 
-/// Handles invocation of provider files with allocation, source data, directory, and arguments.
+/// Handles invocation of provider files with allocation and metadata parameters.
 pub fn invokeProviderFile(
     allocator: std.mem.Allocator,
     provider: Provider,
@@ -131,7 +131,7 @@ fn isExecutable(path: []const u8) bool {
     return stat.kind == .file;
 }
 
-/// Searching for a binary path in an allocator using a binary name string.
+/// Search for a binary path in memory using an allocator and returns the matching slice.
 fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) !?[]const u8 {
     const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch return null;
     defer allocator.free(path_env);
@@ -195,3 +195,9 @@ test "discoverProvider: workspace-local bin takes priority" {
         // On some systems access() may fail for non-executable files; skip.
     }
 }
+
+
+
+
+
+

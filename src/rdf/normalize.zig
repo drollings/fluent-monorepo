@@ -56,7 +56,7 @@ pub const XsdType = enum {
     other,
 };
 
-/// Represents a typed union of keywords, managing ownership and invariants for type safety.
+/// Represents a typed union of RDF keywords; managed by owner; ensures consistent key invariants.
 pub const TypedValue = union(XsdType) {
     string: void, // value already held by caller
     lang_string: void,
@@ -70,7 +70,7 @@ pub const TypedValue = union(XsdType) {
 
 const XSD = "http://www.w3.org/2001/XMLSchema#";
 
-/// Detects the XML Schema definition type from a given datatype slice, returning the corresponding XsdType value.
+/// Detects the XML Schema definition type from a datatype array, returning an XsdType enum.
 pub fn detectXsdType(datatype: ?[]const u8) XsdType {
     const dt = datatype orelse return .string;
     if (std.mem.eql(u8, dt, XSD ++ "string")) return .string;
@@ -118,7 +118,7 @@ pub fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const
     };
 }
 
-/// Represents a blank node scope in Zig, managing node structures with fixed-size buffers; owned by the system, immutable once initialized.
+/// Represents a blank node scope in Zig, managing node structures with ownership and invariants.
 pub const BlankNodeScope = struct {
     allocator: std.mem.Allocator,
     scope_id: []const u8, // e.g. file path or document IRI
@@ -220,3 +220,10 @@ test "normalize dateTime stub" {
     const tv = normalizeLiteral("2024-01-01T00:00:00Z", null, XSD ++ "dateTime");
     try testing.expectEqual(XsdType.date_time, @as(XsdType, tv));
 }
+
+
+
+
+
+
+

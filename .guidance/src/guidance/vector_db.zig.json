@@ -10,7 +10,7 @@
     {
       "type": "struct",
       "name": "SearchResult",
-      "match_hash": "c62be316f4fbfe1d2aba35409aa92249a5799f2241915bdce0ed16b4f0d6aedf",
+      "match_hash": "c6e2ab8efb9e6be0d13933ea0b7647d3aed142ce066deb3a508c04bcef8a57cb",
       "signature": "keyword_struct SearchResult { ... }",
       "is_pub": true,
       "line": 9
@@ -18,7 +18,7 @@
     {
       "type": "enum",
       "name": "GuidanceSearchMode",
-      "match_hash": "fd9a2c5962e95eb7be660e9def9ff9c7fb4998514bf222414c58e711147e5b89",
+      "match_hash": "db1df1a7e62cb6e75fa038559a937175c6f2181ea8c885e2d387e58e17d7df61",
       "signature": "keyword_enum GuidanceSearchMode { ... }",
       "is_pub": true,
       "members": [
@@ -46,7 +46,7 @@
     {
       "type": "fn_decl",
       "name": "hybridSearch",
-      "match_hash": "611be01e4147d67ebdc3a43f2a9e78cd9152f23ba22790cf14eb8919babfdf8b",
+      "match_hash": "b01ded4424414b55a83183fcc71b7e40bf6a53b7f60a7101cfe4b8125514e97a",
       "signature": "fn hybridSearch(allocator: std.mem.Allocator, keyword_results: []const SearchResult, vector_results: ?[]const SearchResult, limit: usize, config: SearchConfig) -> []SearchResult",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

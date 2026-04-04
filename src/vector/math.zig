@@ -6,7 +6,7 @@ const std = @import("std");
 
 // ── Cosine similarity ─────────────────────────────────────────────
 
-/// Calculates cosine similarity between two arrays of f32 values.
+/// Calculates cosine similarity between two arrays of floating-point values.
 pub fn cosineSimilarity(a: []const f32, b: []const f32) f32 {
     if (a.len != b.len or a.len == 0) return 0.0;
 
@@ -339,3 +339,9 @@ test "hybrid merge three-way combines all scores" {
     // RRF: at rank 0 with RRF_K=60: 0.6/60 + 0.25/60 + 0.15/60 = 0.01 + 0.004167 + 0.0025 ≈ 0.016667
     try std.testing.expect(@abs(merged[0].final_score - 0.016667) < 0.001);
 }
+
+
+
+
+
+

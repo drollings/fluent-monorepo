@@ -10,7 +10,7 @@
     {
       "type": "fn_decl",
       "name": "estimateEmbeddingTokens",
-      "match_hash": "a54a6b96cfa0a4ba8c3afbb277850c61dc46cc201cbeda845219292cf899344f",
+      "match_hash": "68f113986f6851d01f64ec34ee824729eba9edffd48b7ba7c5288797aeca1012",
       "signature": "fn estimateEmbeddingTokens(node: *const ContextNode) -> usize",
       "params": [
         { "name": "node", "type": "*const ContextNode" }

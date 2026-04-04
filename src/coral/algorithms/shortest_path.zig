@@ -105,7 +105,7 @@ const DijkstraResult = struct {
     predecessors: []u32,
 };
 
-/// Manages heap memory allocations; owns a pool of fixed-size buffers; not thread-safe.
+/// Manages heap allocations for priority queues; owns memory; ensures efficient access via heap entries.
 const HeapEntry = struct {
     node: u32,
     dist: f32,
@@ -115,7 +115,7 @@ const HeapEntry = struct {
     }
 };
 
-/// Implements Dijkstra's algorithm to find shortest paths from source to target in a graph.
+/// Implements Dijkstra's algorithm to find shortest paths in a graph using a given source node.
 fn runDijkstra(
     arena: Allocator,
     graph: *const CSRGraph,
@@ -244,3 +244,6 @@ test "ShortestPath.findPath: weighted shortest path" {
     try testing.expectEqual(@as(u32, 2), path[1]);
     try testing.expectEqual(@as(u32, 1), path[2]);
 }
+
+
+

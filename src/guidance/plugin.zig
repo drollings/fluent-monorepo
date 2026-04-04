@@ -113,3 +113,5 @@ test "LanguagePlugin interface is callable" {
     try std.testing.expectEqualStrings("test", plugin.name);
     try std.testing.expectEqual(@as(usize, 1), plugin.extensions.len);
 }
+
+

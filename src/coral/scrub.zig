@@ -79,3 +79,6 @@ test "isSyntheticComment: valid comments pass" {
     try testing.expect(!isSyntheticComment("Ring buffer for streaming price data with configurable capacity."));
     try testing.expect(!isSyntheticComment("Builds incremental dependency graph from @import declarations."));
 }
+
+
+
