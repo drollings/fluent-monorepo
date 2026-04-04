@@ -1,4 +1,4 @@
-# .guidance/.todo/ — Work Item Lifecycle
+# .guidance/todo/ — Work Item Lifecycle
 
 Each subdirectory is a **work item** that moves through a dependency chain:
 
@@ -11,17 +11,17 @@ TODO.md → TRIAGE.md → WORK.md → COMPLETE.md → COMMITTED.md
 | Stage | File | Created by | Meaning |
 |-------|------|------------|---------|
 | **TODO** | `TODO.md` | Human / agent | Work identified, not yet analyzed |
-| **TRIAGE** | `TRIAGE.md` | `make triage ITEM=<name>` | Risk assessed, steps planned |
+| **TRIAGE** | `TRIAGE.md` | `guidance triage "<name>"` | Risk assessed, steps planned |
 | **WORK** | `WORK.md` | Human / agent | Implementation in progress |
 | **COMPLETE** | `COMPLETE.md` | Human / agent | Implementation done, tests pass |
-| **COMMITTED** | `COMMITTED.md` | `make commit` | Changes committed to git |
+| **COMMITTED** | `COMMITTED.md` | `guidance commit` | Changes committed to git |
 
 ## Creating a Work Item
 
 ```bash
-mkdir .guidance/.todo/my-feature
+mkdir .guidance/todo/my-feature
 # Write the work description:
-cat > .guidance/.todo/my-feature/TODO.md << 'EOF'
+cat > .guidance/todo`/my-feature/TODO.md << 'EOF'
 # Add feature X
 
 ## Goal
@@ -37,23 +37,23 @@ Describe what needs to be done.
 EOF
 
 # Triage it (generates TRIAGE.md with risk assessment + steps):
-make triage ITEM=my-feature
+guidance triage "my-feature"
 ```
 
 ## Committing with AI-summarized message
 
 ```bash
-git add .
-make commit   # Opens editor with AI-generated commit message
+git add src/* .guidance/src/*
+guidance commit   # Opens editor with AI-generated commit message
 ```
 
 ## Makefile targets
 
 | Target | Description |
 |--------|-------------|
-| `make triage ITEM=<name>` | Generate TRIAGE.md for a TODO work item |
-| `make commit` | AI-summarize staged diff → open editor → commit |
-| `make explain QUERY=<term>` | Explain a module, function, or concept |
-| `make diary NOTE="..."` | Append timestamped diary entry |
-| `make learn` | Drain inbox files into structured knowledge |
-| `make structure` | Regenerate STRUCTURE.md from all guidance JSON |
+| `guidance explain "<term>"` | Explain a module, function, or concept |
+| `guidance triage "<name>"` | Generate TRIAGE.md for a TODO work item |
+| `guidance gen` | Regenerate STRUCTURE.md from all guidance JSON |
+| `guidance commit` | AI-summarize staged diff → open editor → commit |
+| `guidance diary "..."` | Append timestamped diary entry |
+| `guidance learn` | Drain inbox files into structured knowledge |

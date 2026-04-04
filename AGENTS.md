@@ -1,17 +1,14 @@
 # Agent Bootloader — guidance
 
-**Context**: guidance is a Zig-native, deterministic AST-guided LanceDB vector search
-database generator for NullClaw. It analyzes source files (Zig, Python, and future languages) via
-AST, generates JSON metadata files in `.guidance/src/`, and compiles them into
-`.guidance.db` for its `explain` functionality.
+**Context**: guidance is a Zig-native, deterministic-first AST-guided vector search
+database generator with local AI enhancement.  When used to search the
+codebase's capabilities and code, it can save over 90% of the tokens and tool
+calls compared to the orchestrating AI coder using other tools.
 
 ## Prime Directive
 
-1. **Current Zig knowledge**: Read `doc/skills/zig-current/SKILL.md` before writing any Zig
-2. **Project structure**: Inspect `STRUCTURE.md` and review documented
-capabilities in `doc/capabilities/**/CAPABILITY.md` 
-3. **Never guess**: use `guidance explain "<query text>" for guidance, using
-its "See Also" to pick relevant keywords, capability directories, and files
+1. **Never guess**: use `guidance explain "<query text>" for guidance, and
+follow instructions for any queries of interest
 
 ---
 
@@ -19,11 +16,9 @@ its "See Also" to pick relevant keywords, capability directories, and files
 
 ```
 1. DISCOVER (guidance):  guidance explain "<keywords or a short question>"
-                         Prefer phrases: "sync guidance json" > "json"
+                         Prefer keywords: "cmdExplain"
+                         Or, prefer a short question: "How do we sync guidance?"
                          Scan: module purpose, pattern type, skill list
-                         Short queries (≤4 words): fast path, no LLM
-                         Long queries (5+ words): LLM filter + synthesis
-                         Flags: --no-llm, --filter=skip, --staged=false
 
 2. UNDERSTAND (MCP):     Read the primary source file(s) from step 1
                          Grep callers: who @import's this file?
@@ -32,7 +27,8 @@ its "See Also" to pick relevant keywords, capability directories, and files
 3. DECIDE:               If skills match → read them
                          If not → proceed to implementation
 
-4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or other languages apart from Zig, i.e. guidance-py)
+4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or
+                         other languages apart from Zig, i.e.  guidance-py)
                          Follow source patterns and applicable skills only
 
 5. VERIFY (make):        make pre-commit
@@ -66,9 +62,9 @@ doc/
 ---
 
 **DO:**
-- Read the results of `guidance explain` for any skills
+- Run `guidance explain "<query>"` and read the results
 - Ask: "What capabilitity is used here?" before consulting skills
 
 **DON'T:**
 - Assume skills apply without validating against source code
-- Skip `guidance explain` with follow-up source reading before implementation
+- Write any code in Zig without reading `doc/skills/zig-current/SKILL.md` first
