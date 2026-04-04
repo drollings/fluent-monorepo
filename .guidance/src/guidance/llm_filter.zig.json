@@ -4,8 +4,10 @@
     "source": "src/guidance/llm_filter.zig",
     "language": "zig"
   },
+  "comment": " llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.\n\n For each prose, insight, or skill_doc Stage, asks a local LLM:\n   \"Is this content relevant to the query? Answer YES or NO.\"\n\n Code and metadata stages are always kept verbatim.\n On LLM error or unavailability, returns all input unchanged.",
   "keywords": ["LLM filtering", "relevance checking", "staged explain pipeline", "code stages", "metadata stages", "LLM integration", "memory management", "code duplication", "query processing", "stage preservation"],
-  "used_by": ["src/guidance/main.zig"],
+  "capabilities": ["coral-database", "ast-indexing", "llm-client"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -19,7 +21,6 @@
         { "name": "stages", "type": "[]const types.Stage" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Processes a query by filtering stages using an allocator and returns a cleaned slice of stages.",
       "is_pub": true,
       "line": 14
     },
@@ -36,14 +37,13 @@
         { "name": "max_keep", "type": "usize" }
       ],
       "returns": "[][]const u8",
-      "comment": "Filter \"Used in files\" (see_also) entries for relevance using the fast LLM.\nGiven a list of file paths and their context, returns only the most relevant ones.\nUses bounded context: `keyword: comment` format for each entry.\nReturns an owned slice of owned strings; caller must free.",
       "is_pub": true,
       "line": 53
     },
     {
       "type": "fn_private",
       "name": "keepAll",
-      "match_hash": "d46c911743710272b341da3159267df1a399a54ba14624cb32861896b08676f6",
+      "match_hash": "634f10a62072c2b2d8d639c66b94632c569e089fab5dff5cc9d857fbb852ad4b",
       "signature": "fn keepAll(allocator: std.mem.Allocator, entries: []const SeeAlsoEntry) -> [][]const u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
@@ -65,7 +65,6 @@
         { "name": "content", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Ask the LLM whether `content` is relevant to `query`.\nReturns true (keep) or false (discard).  Fails open on error.",
       "is_pub": false,
       "line": 161
     },
@@ -79,7 +78,6 @@
         { "name": "s", "type": "types.Stage" }
       ],
       "returns": "types.Stage",
-      "comment": "Deep-copy a Stage so the returned copy fully owns its strings.",
       "is_pub": false,
       "line": 189
     }

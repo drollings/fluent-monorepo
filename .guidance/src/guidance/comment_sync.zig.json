@@ -11,7 +11,6 @@
       "name": "CommentSyncResult",
       "match_hash": "bcd9feeebcdbe7b7e6de6ac5ad5b7fbc0c1a4e3834dc03acbe2c9dec5c14cfd2",
       "signature": "keyword_struct CommentSyncResult { ... }",
-      "comment": "Per-file result from `CommentSyncProcessor.processFile()`.",
       "is_pub": true,
       "line": 32
     },
@@ -20,7 +19,6 @@
       "name": "CommentSyncProcessor",
       "match_hash": "15586d1c4e519c2eb0c1066ffa837ea3edcd73475642f365af0b53ba013c38f8",
       "signature": "keyword_struct CommentSyncProcessor { ... }",
-      "comment": "Manages synchronization logic for comments, owns state, ensures consistent ownership across processes.",
       "is_pub": true,
       "members": [
         {
@@ -49,7 +47,6 @@
             { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "Return true when `filepath` has not been modified since its corresponding\nguidance JSON was last written.  Requires `incremental = true`.",
           "is_pub": true,
           "line": 94
         }
@@ -63,7 +60,6 @@
             { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "CommentSyncResult",
-          "comment": "Process a single source file: insert/update `///` comments and\noptionally a `//!` file header.  The source file is modified in-place\nwhen `dry_run` is false.",
           "is_pub": true,
           "line": 108
         }
@@ -79,7 +75,6 @@
             { "name": "filepath", "type": "[]const u8" }
           ],
           "returns": "?[]const u8",
-          "comment": "Generate a `///` doc comment for `member` using the LLM enhancer when\navailable.  Returns null when no comment can be produced.",
           "is_pub": false,
           "line": 326
         }
@@ -94,7 +89,6 @@
             { "name": "source", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Re-parse `source` and update the guidance JSON at `guidance_path` with\ncorrected line numbers.",
           "is_pub": false,
           "line": 350
         }
@@ -111,7 +105,6 @@
         { "name": "members", "type": "[]const types.Member" }
       ],
       "returns": "[]types.Member",
-      "comment": "Sort members by line number in descending order.",
       "is_pub": false,
       "line": 391
     },

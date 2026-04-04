@@ -12,7 +12,6 @@
       "name": "TypeId",
       "match_hash": "eef8aca451dc108d0bd36120358147b5cd561d1c7fee655b4b648e516e1fb465",
       "signature": "keyword_enum TypeId { ... }",
-      "comment": "Defines a type identifier with enum capabilities; managed centrally; immutable once defined.",
       "is_pub": true,
       "members": [
         {
@@ -141,7 +140,6 @@
         { "name": "T", "type": "type" }
       ],
       "returns": "TypeId",
-      "comment": "Converts a Zig type to its corresponding TypeId identifier.",
       "is_pub": true,
       "line": 36
     },
@@ -150,7 +148,6 @@
       "name": "TypedAccessor",
       "match_hash": "d61918491f8d3019aabfaa64c7bb6a6bf67cacb736f7ab6dc830fb33fe03d50f",
       "signature": "keyword_struct TypedAccessor { ... }",
-      "comment": "Defines a typed accessor structure for type-safe field access; manages ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -235,7 +232,6 @@
         { "name": "Host", "type": "type" }
       ],
       "returns": "type",
-      "comment": "Converts a Zig type reference to a typed accessor table, returning the underlying type.",
       "is_pub": true,
       "line": 110
     },
@@ -244,7 +240,6 @@
       "name": "TypedEditable",
       "match_hash": "8b315bdadabbe2f9eb425542acedb72bf7bfd4b49de2bb0c5ed2306c9b4b11d9",
       "signature": "keyword_struct TypedEditable { ... }",
-      "comment": "Represents a typed editable structure with strict ownership and invariants; managed via reflection.",
       "is_pub": true,
       "members": [
         {

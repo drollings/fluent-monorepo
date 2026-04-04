@@ -21,7 +21,6 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "DependencyResolver",
-      "comment": "Initializes the dependency resolver with allocator, registry, and interners, returning a resolved dependency.",
       "is_pub": true,
       "line": 24
     },
@@ -37,7 +36,6 @@
         { "name": "options", "type": "ResolverOptions" }
       ],
       "returns": "DependencyResolver",
-      "comment": "Like `init`, but accepts explicit `ResolverOptions`.",
       "is_pub": true,
       "line": 34
     },
@@ -46,7 +44,6 @@
       "name": "ResolvedBuild",
       "match_hash": "dfa71d3221c7ad7dec562ceb97e30683f592d08b0c879fc6786ceb9923507cd4",
       "signature": "keyword_struct ResolvedBuild { ... }",
-      "comment": "Manages resolved build components, tracks ownership, ensures static invariants.",
       "is_pub": true,
       "members": [
         {
@@ -74,7 +71,6 @@
         { "name": "target_names", "type": "[]const []const u8" }
       ],
       "returns": "ResolvedBuild",
-      "comment": "Simple topological sort over all transitive concrete dependencies.",
       "is_pub": true,
       "line": 59
     },
@@ -89,7 +85,6 @@
         { "name": "provided", "type": "*std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "ResolvedBuild",
-      "comment": "Abstract-aware resolution: resolves abstract dependencies via provider selection.",
       "is_pub": true,
       "line": 72
     },
@@ -103,7 +98,6 @@
         { "name": "all_needed", "type": "*std.AutoHashMap(usize, *Target)" }
       ],
       "returns": "ResolvedBuild",
-      "comment": "Kahn's topological sort on the collected target set.",
       "is_pub": false,
       "line": 92
     },
@@ -141,7 +135,6 @@
       "name": "ResolvedLevels",
       "match_hash": "b3ceb8b8d33608e61ecc6e0f2e2a17f168fc7ec0e3be4a81563bf483c4c2ea90",
       "signature": "keyword_struct ResolvedLevels { ... }",
-      "comment": "Manages resolved level configurations with a fixed-size buffer pool; ensures ownership and invariants are preserved.",
       "is_pub": true,
       "members": [
         {
@@ -169,7 +162,6 @@
         { "name": "targets", "type": "[]*Target" }
       ],
       "returns": "ResolvedLevels",
-      "comment": "Retrieves resolved levels from a dependency resolver for Zig targets.",
       "is_pub": true,
       "line": 265
     },
@@ -184,7 +176,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]u8",
-      "comment": "Generates a Zig array representation of a graph visualization based on dependency data.",
       "is_pub": true,
       "line": 326
     },

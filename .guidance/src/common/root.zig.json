@@ -4,5 +4,7 @@
     "source": "src/common/root.zig",
     "language": "zig"
   },
+  "comment": " common — Module umbrella root.\n\n This is the root of the `common` build module.  It re-exports all public\n symbols that were previously exported directly from llm.zig so that\n all existing `@import(\"common\").Foo` call sites continue to work unchanged.\n\n Additional structured sub-module namespaces (new in P2.1):\n   common.llm        — LLM client and response post-processing\n   common.embeddings — EmbeddingProvider and backends",
+  "capabilities": ["coral-database", "target-registry", "embedding-providers", "llm-client", "ast-indexing"],
   "used_by": ["src/vector/vector_db.zig"]
 }

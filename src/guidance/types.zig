@@ -303,7 +303,14 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
     if (member.returns) |r| {
         try writeEscapedString(writer, "returns", r);
     }
-    try writeFieldOrComma(writer, "comment", member.comment);
+    // Milestone 3.1: Member comments are now stored ONLY in source files (/// comments),
+    // not in JSON. This reduces JSON file size and diff noise. The match_hash still
+    // tracks comment changes for staleness detection. File/module-level comments
+    // (//! comments) are kept in JSON.
+    //
+    // DO NOT write member.comment to JSON - it will be extracted from source on load.
+    // DO NOT write member.comment_generated to JSON - it's a runtime flag only.
+
     if (member.tags.len > 0) {
         try writer.writeAll("  \"tags\": [");
         for (member.tags, 0..) |tag, i| {
@@ -764,5 +771,3 @@ test "jsonifyGuidanceDoc: doc with comment and keywords" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, json, .{});
     defer parsed.deinit();
 }
-
-

@@ -175,27 +175,11 @@ pub const SyncProcessor = struct {
     }
 
     fn stripComments(self: *SyncProcessor, members: []types.Member) void {
-        for (members) |*m| {
-            // Preserve LLM-generated comments; only strip source-extracted comments.
-            // Generated comments are tracked in JSON for hash comparison and sync.
-            if (m.comment) |c| {
-                if (!m.comment_generated) {
-                    self.allocator.free(c);
-                    m.comment = null;
-                }
-            }
-            if (m.members.len > 0) {
-                const nested: []types.Member = @constCast(m.members);
-                for (nested) |*nm| {
-                    if (nm.comment) |c| {
-                        if (!nm.comment_generated) {
-                            self.allocator.free(c);
-                            nm.comment = null;
-                        }
-                    }
-                }
-            }
-        }
+        // Comments are preserved in JSON for database sync and hash tracking.
+        // This function is retained for potential future use with file formats
+        // that cannot embed inline comments, but is currently unused for Zig.
+        _ = self;
+        _ = members;
     }
 
     pub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult {
@@ -506,22 +490,9 @@ pub const SyncProcessor = struct {
             }
         }; // end !is_zig detail block
 
-        // --- Strip source comments for Zig files ---
-        // For .zig files, /// and //! comments are the source of truth.
-        // JSON stores only structural metadata (line numbers, signatures, etc.).
-        // The comment/detail fields are reserved for file formats that cannot
-        // embed inline comments (e.g., future Python or Go support).
-        if (std.mem.endsWith(u8, rel_path, ".zig")) {
-            self.stripComments(merge_result.members);
-            if (module_comment) |c| {
-                self.allocator.free(c);
-                module_comment = null;
-            }
-            if (module_detail) |d| {
-                self.allocator.free(d);
-                module_detail = null;
-            }
-        }
+        // Comments are preserved in JSON for all file types for database sync.
+        // After comment in-filling, comments exist in BOTH source (///) and JSON,
+        // tracked by match_hash for staleness detection.
 
         // --- Reverse dependencies (used_by) ---
         const used_by = try self.findReverseDeps(rel_path);
@@ -605,6 +576,17 @@ pub const SyncProcessor = struct {
         } else if (needs_write) {
             try self.store.saveGuidance(guidance_path, doc);
             std.debug.print("Generated: {s}\n", .{guidance_path});
+        } else {
+            // No changes needed, but file was stale. Touch the JSON to mark it up-to-date.
+            // This prevents reprocessing on subsequent runs when source and JSON are in sync.
+            const marker_mod = @import("marker.zig");
+            marker_mod.touchFileAfter(guidance_path, filepath) catch |err| blk: {
+                // JSON might not exist yet (new file) - that's fine, skip touching
+                if (err != error.FileNotFound) {
+                    if (self.debug) std.debug.print("[sync] warning: failed to touch {s}: {s}\n", .{ guidance_path, @errorName(err) });
+                }
+                break :blk;
+            };
         }
 
         // Sleep for the specified timeout before processing the next file.

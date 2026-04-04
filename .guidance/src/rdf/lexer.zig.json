@@ -12,7 +12,6 @@
       "name": "TokenType",
       "match_hash": "ca88e580b50fd929bc2e67efd14f579423235d535928c2504bee58740f267d05",
       "signature": "keyword_enum TokenType { ... }",
-      "comment": "Defines a token type for keywords in the Zig lexer, managing ownership and ensuring correct parsing invariants.",
       "is_pub": true,
       "members": [
         {
@@ -113,7 +112,6 @@
       "name": "Token",
       "match_hash": "4304edd65a473119d1cbc94da4957291ea22810d66e965af353d6d5d965329db",
       "signature": "keyword_struct Token { ... }",
-      "comment": "Represents a keyword in Zig's lexer, tracking ownership and invariants for parsing. Owns a fixed-size buffer pool.",
       "is_pub": true,
       "line": 39
     },
@@ -122,7 +120,6 @@
       "name": "Lexer",
       "match_hash": "ac951e707f2d4616ef49ba664404494efdb382d1a49bb0fc973f2e29e9ab7425",
       "signature": "keyword_struct Lexer { ... }",
-      "comment": "Represents a lexer component for Zig, managing token parsing and ownership; ensures correct structure and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -146,7 +143,6 @@
             { "name": "self", "type": "*Lexer" }
           ],
           "returns": "void",
-          "comment": "Advance past whitespace and comments.",
           "is_pub": false,
           "line": 67
         }
@@ -213,7 +209,6 @@
             { "name": "start_col", "type": "u32" }
           ],
           "returns": "LexError!Token",
-          "comment": "Lex a bare numeric literal: integer, decimal, or double.\nEmitted as .literal so the parser can handle them uniformly.",
           "is_pub": false,
           "line": 290
         }

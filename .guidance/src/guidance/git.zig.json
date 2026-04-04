@@ -12,7 +12,6 @@
       "name": "GitignoreFilter",
       "match_hash": "3f778e8b387496fc61e8ceb7d9463c23e7fe55c7e78edeb331f9f76549eb76fe",
       "signature": "keyword_struct GitignoreFilter { ... }",
-      "comment": "Manages Gitignore rules for repository; owns a structured filtering system; ensures consistent ownership model.",
       "is_pub": true,
       "members": [
         {

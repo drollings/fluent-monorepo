@@ -12,7 +12,6 @@
       "name": "OntologyVersion",
       "match_hash": "cefcf21e96bf43f01a911d311d5ee40d1d9a44bbaa9b642e3087bccc160cc1e8",
       "signature": "keyword_struct OntologyVersion { ... }",
-      "comment": "Tracks ontology version changes with fixed-size buffers; managed by owner; invariant version history.",
       "is_pub": true,
       "line": 13
     },
@@ -21,7 +20,6 @@
       "name": "OntologyMigration",
       "match_hash": "aba79453c70effc7c20d824b0ed8c5cfacc6ab141ea9f98dc5e9e75d11eedcec",
       "signature": "keyword_struct OntologyMigration { ... }",
-      "comment": "Defines migration struct for ontology changes, manages invariants and lifecycle; owned by the system, not thread-safe.",
       "is_pub": true,
       "line": 29
     },
@@ -42,7 +40,6 @@
       "name": "VersionRegistry",
       "match_hash": "384e51c16f833bccd9debde66e9d1e357c862b8f2e97cda7323a99d75cb30037",
       "signature": "keyword_struct VersionRegistry { ... }",
-      "comment": "Manages version registry entries with strict ownership and invariants; ensures consistent state across operations.",
       "is_pub": true,
       "members": [
         {

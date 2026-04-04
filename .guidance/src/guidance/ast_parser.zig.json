@@ -11,7 +11,6 @@
       "name": "AstParser",
       "match_hash": "9f5213920b63badb9712c4b2eca7f126db59c04da26b04484cfbc799ebec90de",
       "signature": "keyword_struct AstParser { ... }",
-      "comment": "Manages AST parsing state, owns parsing logic, ensures invariant correctness.",
       "is_pub": true,
       "members": [
         {
@@ -208,7 +207,6 @@
             { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
           ],
           "returns": "?[]const u8",
-          "comment": "Extract the full multi-line doc comment block above a declaration.\nReturns an owned slice with all `///` lines joined by newlines, or null\nwhen no doc comment exists above the node.",
           "is_pub": true,
           "line": 336
         }
@@ -221,7 +219,6 @@
             { "name": "self", "type": "*AstParser" }
           ],
           "returns": "?[]const u8",
-          "comment": "Extract module-level `//!` comments as a single block.\nReturns an owned slice with all lines joined by newlines, or null when\nno module doc comment exists.",
           "is_pub": true,
           "line": 379
         }
@@ -246,7 +243,6 @@
             { "name": "self", "type": "*AstParser" }
           ],
           "returns": "[][]const u8",
-          "comment": "Walk the token stream for @import(\"...\") string literals and return\na slice of their string values (without surrounding quotes), owned by the caller.",
           "is_pub": true,
           "line": 415
         }
@@ -275,7 +271,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "AstParser",
-      "comment": "Converts a file path into an AstParser instance using the provided allocator.",
       "is_pub": true,
       "line": 450
     }

@@ -37,6 +37,10 @@ pub const LlmConfig = struct {
     think: ?bool = null,
     timeout_ms: u32 = 10000,
     debug: bool = false,
+    /// Show LLM prompts in debug output (separate from debug metadata).
+    /// true: print raw prompt text to stderr/stdout.
+    /// false: hide prompts even when debug=true.
+    show_prompts: bool = false,
 
     /// Returns true when thinking is explicitly enabled for this config.
     pub fn isThinkingModel(self: LlmConfig) bool {
@@ -378,3 +382,4 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
+

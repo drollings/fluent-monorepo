@@ -33,7 +33,7 @@
     {
       "type": "struct",
       "name": "Enhancer",
-      "match_hash": "17d942f761bded4ea862dfba9425bd588903c8234e2deca689984b858729d758",
+      "match_hash": "f8c7a19311799aea8ef7b8ce0d280d298336a64fa6f8931350bd44adb59c0858",
       "signature": "keyword_struct Enhancer { ... }",
       "is_pub": true,
       "members": [
@@ -48,7 +48,7 @@
           ],
           "returns": "Enhancer",
           "is_pub": true,
-          "line": 73
+          "line": 77
         }
     ,    {
           "type": "fn_decl",
@@ -60,7 +60,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 90
+          "line": 95
         }
     ,    {
           "type": "fn_decl",
@@ -72,7 +72,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 98
+          "line": 103
         }
     ,    {
           "type": "fn_private",
@@ -85,7 +85,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 104
+          "line": 109
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +101,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": true,
-          "line": 120
+          "line": 125
         }
     ,    {
           "type": "fn_decl",
@@ -118,7 +118,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": true,
-          "line": 134
+          "line": 139
         }
     ,    {
           "type": "fn_decl",
@@ -133,7 +133,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 149
+          "line": 154
         }
     ,    {
           "type": "fn_decl",
@@ -145,7 +145,7 @@
           ],
           "returns": "u32",
           "is_pub": true,
-          "line": 197
+          "line": 202
         }
     ,    {
           "type": "fn_private",
@@ -160,7 +160,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 222
+          "line": 227
         }
     ,    {
           "type": "fn_private",
@@ -173,7 +173,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 260
+          "line": 265
         }
     ,    {
           "type": "fn_private",
@@ -186,7 +186,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 267
+          "line": 272
         }
     ,    {
           "type": "fn_private",
@@ -199,7 +199,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 298
+          "line": 303
         }
     ,    {
           "type": "fn_private",
@@ -215,7 +215,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 323
+          "line": 328
         }
     ,    {
           "type": "fn_private",
@@ -232,7 +232,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 357
+          "line": 362
         }
     ,    {
           "type": "fn_private",
@@ -247,7 +247,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 404
+          "line": 409
         }
     ,    {
           "type": "fn_decl",
@@ -265,7 +265,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": true,
-          "line": 468
+          "line": 473
         }
     ,    {
           "type": "fn_private",
@@ -283,7 +283,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 496
+          "line": 501
         }
     ,    {
           "type": "fn_private",
@@ -297,7 +297,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 564
+          "line": 569
         }
     ,    {
           "type": "fn_private",
@@ -310,7 +310,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 623
+          "line": 628
         }
     ,    {
           "type": "fn_decl",
@@ -326,7 +326,7 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": true,
-          "line": 648
+          "line": 653
         }
     ,    {
           "type": "fn_private",
@@ -342,7 +342,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 697
+          "line": 702
         }
     ,    {
           "type": "fn_private",
@@ -355,7 +355,7 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": false,
-          "line": 731
+          "line": 736
         }
     ,    {
           "type": "fn_private",
@@ -368,7 +368,7 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": false,
-          "line": 768
+          "line": 773
         }
       ],
       "line": 65
@@ -383,7 +383,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 824
+      "line": 829
     },
     {
       "type": "fn_private",
@@ -396,97 +396,97 @@
       ],
       "returns": "?usize",
       "is_pub": false,
-      "line": 836
+      "line": 841
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring empty",
       "is_pub": false,
-      "line": 850
+      "line": 855
     },
     {
       "type": "test_decl",
       "name": "scoreDocstring quality",
       "is_pub": false,
-      "line": 854
+      "line": 859
     },
     {
       "type": "test_decl",
       "name": "extractTags parses hashtags",
       "is_pub": false,
-      "line": 860
+      "line": 865
     },
     {
       "type": "test_decl",
       "name": "extractTags returns empty when no Tags line",
       "is_pub": false,
-      "line": 882
+      "line": 887
     },
     {
       "type": "test_decl",
       "name": "stripTagsLine removes Tags line",
       "is_pub": false,
-      "line": 900
+      "line": 905
     },
     {
       "type": "test_decl",
       "name": "lastIndexOf basic",
       "is_pub": false,
-      "line": 916
+      "line": 921
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag extracts content",
       "is_pub": false,
-      "line": 921
+      "line": 926
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag returns null for missing tag",
       "is_pub": false,
-      "line": 928
+      "line": 933
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag handles whitespace",
       "is_pub": false,
-      "line": 934
+      "line": 939
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases extracts identifiers",
       "is_pub": false,
-      "line": 941
+      "line": 946
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases skips generic words",
       "is_pub": false,
-      "line": 962
+      "line": 967
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse handles comma-separated",
       "is_pub": false,
-      "line": 984
+      "line": 989
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse handles newline-separated",
       "is_pub": false,
-      "line": 1003
+      "line": 1008
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse limits to 5 phrases",
       "is_pub": false,
-      "line": 1019
+      "line": 1024
     },
     {
       "type": "test_decl",
       "name": "parsePhrasesResponse skips generic words",
       "is_pub": false,
-      "line": 1035
+      "line": 1040
     }
   ]
 }

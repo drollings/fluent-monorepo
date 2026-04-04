@@ -12,7 +12,6 @@
       "name": "BinaryFieldCodec",
       "match_hash": "b2de0cdee08297e269b5879c25a3605139f2d991d4273fd3503abd69294a7cd9",
       "signature": "keyword_struct BinaryFieldCodec { ... }",
-      "comment": "Encodes binary data structures; manages ownership and invariants; not thread-safe.",
       "is_pub": true,
       "members": [
         {

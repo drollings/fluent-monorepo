@@ -15,7 +15,6 @@
         { "name": "triple", "type": "Triple" }
       ],
       "returns": "bool",
-      "comment": "`FilterFn` compatible with `BatchConfig.filter_fn`.\nReturns true (accept) when the triple's subject IRI starts with any of\nthe YAGO/schema.org/RDF namespaces, or the subject is a blank node.\nReturns false (skip) for subjects from unrecognised namespaces.",
       "is_pub": true,
       "line": 37
     },
@@ -24,7 +23,6 @@
       "name": "YagoConfig",
       "match_hash": "811278e21a721ea943f842207c4ea9d75b5e8a56a20024fecfbb9e7f5ceb28a4",
       "signature": "keyword_struct YagoConfig { ... }",
-      "comment": "Manages YagoConfig settings with fixed buffers; encapsulates ownership and invariants.",
       "is_pub": true,
       "line": 64
     },
@@ -33,7 +31,6 @@
       "name": "YagoIngestor",
       "match_hash": "0e5e1fd25c231964bf86efd7d7f97cd5bb7e3796569d6d8d9e5a7c5a4f95b32b",
       "signature": "keyword_struct YagoIngestor { ... }",
-      "comment": "YAGO-specific ingestion wrapper.\n\nUsage:\n  var ingestor = YagoIngestor.init(allocator, .{});\n  var ci = CapabilityInference.init(allocator);\n  defer ci.deinit();\n  const stats = try ingestor.ingestFile(\"yago-types.ttl\", lib, &ci);",
       "is_pub": true,
       "members": [
         {
@@ -61,7 +58,6 @@
             { "name": "capability_inference", "type": "?*CapabilityInference" }
           ],
           "returns": "IngestStats",
-          "comment": "Ingest a Turtle source string.\nOptionally populate `capability_inference` with the YAGO class hierarchy.",
           "is_pub": true,
           "line": 109
         }
@@ -77,7 +73,6 @@
             { "name": "capability_inference", "type": "?*CapabilityInference" }
           ],
           "returns": "IngestStats",
-          "comment": "Ingest a Turtle file at `path`.\nRejects path components containing `..` or null bytes.\nFile size capped at 100 MB (delegated to BatchIngestor.ingestFile).",
           "is_pub": true,
           "line": 125
         }
@@ -107,7 +102,6 @@
             { "name": "path", "type": "?[]const u8" }
           ],
           "returns": "IngestStats",
-          "comment": "Parse triples without inserting into Library.\nReturns stats with triples_processed, triples_filtered populated.",
           "is_pub": false,
           "line": 159
         }
@@ -123,7 +117,6 @@
         { "name": "ci", "type": "*CapabilityInference" }
       ],
       "returns": "void",
-      "comment": "Constructs a baseline hierarchy structure from input data using Zig's capabilities.",
       "is_pub": true,
       "line": 195
     },

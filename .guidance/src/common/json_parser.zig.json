@@ -19,7 +19,6 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
-      "comment": "Reads a file from the given path and parses its contents into a Zig-safe data structure.",
       "is_pub": true,
       "line": 16
     },
@@ -35,7 +34,6 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
-      "comment": "Converts a null-terminated C string into a Zig-safe slice using the provided allocator and registry.",
       "is_pub": true,
       "line": 37
     },
@@ -52,7 +50,6 @@
         { "name": "interner", "type": "*StringInterner" }
       ],
       "returns": "void",
-      "comment": "Parse a single target entry from the JSON object map.\n\nAllocator contract: all allocations for the produced `Target` (including\nits name, command strings, and `exists` string) are made with `allocator`.\nThe caller must ensure that `allocator` is the same allocator used to\ninitialise the `registry` so that `registry.deinit()` can free them\ncorrectly.",
       "is_pub": false,
       "line": 77
     },
@@ -78,7 +75,6 @@
         { "name": "path", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Writes a Zig example string to memory using the provided allocator.",
       "is_pub": true,
       "line": 183
     },

@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Zig", "AI-generated comments", "comment detection", "LLM", "code quality", "syntax analysis", "pattern matching", "synthetic code", "code refactoring", "Zig module"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
@@ -34,7 +35,7 @@
     {
       "type": "fn_private",
       "name": "hasBoilerplateManagesPattern",
-      "match_hash": "85a9bb63a741679ccde0dc3f3c8aa7f50b03dbedc2ae61ed8da6465e642a985e",
+      "match_hash": "f72e61a8ba027ea93b4f83aad5845ca5bf9e6f686c5e51fa92cc12134a9636c8",
       "signature": "fn hasBoilerplateManagesPattern(text: []const u8) -> bool",
       "params": [
         { "name": "text", "type": "[]const u8" }

@@ -8,8 +8,17 @@
 //! advancing its mtime.  guidance then uses a simple mtime comparison to
 //! decide whether re-processing is needed:
 //!
-//!   source mtime > JSON mtime  →  stale, needs processing
-//!   source mtime ≤ JSON mtime  →  fresh, skip
+//!   - JSON absent → stale, needs processing
+//!   - JSON mtime == src_mtime - 1 second → validated, no changes, skip
+//!   - JSON mtime > src_mtime → needs processing (e.g., imported JSON)
+//!   - JSON mtime < src_mtime (but not src_mtime - 1) → stale, needs processing
+//!
+//! ## Validated Pattern
+//!
+//! When a file is processed and no meaningful changes are needed (members match,
+//! comments in sync), we set JSON mtime to src_mtime - 1 second. This creates
+//! a recognizable pattern that `fileNeedsProcessing` can identify to skip
+//! reprocessing on subsequent runs.
 //!
 //! ## Test marker
 //!
@@ -42,9 +51,25 @@ const llm = @import("common");
 ///
 /// A file is stale when its guidance JSON is absent or older than the source.
 /// `json_abs` is the absolute path to the expected `.json` guidance file.
+///
+/// Special case: when JSON mtime == src_mtime - 1 second (exactly), it means
+/// the file was validated but had no meaningful changes, so we skip reprocessing.
 pub fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) bool {
     const json_mtime = fileMtime(json_abs) orelse return true; // JSON absent → stale
     const src_mtime = fileMtime(src_abs) orelse return false; // unreadable src → skip
+
+    // Check for "validated but unchanged" pattern
+    // If JSON mtime is exactly src_mtime - 1 second, it was touched after validation
+    if (json_mtime == src_mtime - std.time.ns_per_s) {
+        return false; // Validated, no changes needed
+    }
+
+    // If JSON is newer than source, it needs processing (e.g., imported JSON)
+    if (json_mtime > src_mtime) {
+        return true;
+    }
+
+    // Otherwise, process if source is newer than JSON
     return src_mtime > json_mtime;
 }
 
@@ -97,6 +122,24 @@ pub fn touchTestMarker(marker_path: []const u8) !void {
     try llm.makePathAbsolute(parent);
     const f = try std.fs.createFileAbsolute(marker_path, .{});
     f.close();
+}
+
+/// Set `target_path` mtime to be 1 second BEFORE `ref_path` mtime.
+/// This marks the file as "validated but unchanged" - older than the source
+/// by exactly 1 second, which `fileNeedsProcessingEx` can recognize to skip
+/// reprocessing when no meaningful changes occurred.
+/// Returns error if either file cannot be accessed.
+pub fn touchFileAfter(target_path: []const u8, ref_path: []const u8) !void {
+    const ref_mtime = fileMtime(ref_path) orelse return error.FileNotFound;
+
+    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
+    defer target_file.close();
+
+    const stat = try target_file.stat();
+    // Set mtime to 1 second BEFORE source mtime (not after)
+    // This creates a recognizable pattern: validated files have mtime = src_mtime - 1
+    const new_mtime = ref_mtime - std.time.ns_per_s;
+    try target_file.updateTimes(stat.atime, new_mtime);
 }
 
 // ---------------------------------------------------------------------------

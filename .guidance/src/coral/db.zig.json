@@ -13,7 +13,6 @@
       "name": "NodeId",
       "match_hash": "cf1285d8b2f6e3870ce23b57bb88ff3a0823297dcc6605152ccfd8ff96a2d04a",
       "signature": "keyword_enum NodeId { ... }",
-      "comment": "Typed handle for a ContextNode's primary key.\nUsing an enum prevents accidental cross-assignment with SessionId or TargetId.\nConversion: nodeIdFromInt() / nodeIdToInt()",
       "is_pub": true,
       "members": [
         {
@@ -34,7 +33,6 @@
         { "name": "i", "type": "i64" }
       ],
       "returns": "NodeId",
-      "comment": "Cast an i64 SQLite row id to a NodeId.",
       "is_pub": true,
       "line": 44
     },
@@ -47,7 +45,6 @@
         { "name": "id", "type": "NodeId" }
       ],
       "returns": "i64",
-      "comment": "Extract the underlying i64 from a NodeId for SQLite binding.",
       "is_pub": true,
       "line": 49
     },
@@ -56,7 +53,6 @@
       "name": "ContextNode",
       "match_hash": "ee76451a32c1986c99265272ada49794240298a798e7557ccaf668fa26c7ee82",
       "signature": "keyword_struct ContextNode { ... }",
-      "comment": "Manages context nodes for Zig's database layer, owns state, ensures consistent initialization/deinit, not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -71,7 +67,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
-          "comment": "Create a new ContextNode with lod[0] = full_text (SharedString) and\nlod[4] = name (allocator-owned copy).  All other LOD slots are \"\".",
           "is_pub": true,
           "line": 81
         }
@@ -99,7 +94,6 @@
             { "name": "value", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Set LOD level 1–5.  Level 0 is read-only here; use setSource() instead.",
           "is_pub": true,
           "line": 106
         }
@@ -114,7 +108,6 @@
             { "name": "text", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Replace the shared source text (lod[0]).  Releases the old SharedString.",
           "is_pub": true,
           "line": 112
         }
@@ -128,7 +121,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "ContextNode",
-          "comment": "Deep-copy this node.  lod[0] is shared via clone() (no byte copy);\nlod[1..5] slots marked in lod_owned are duped into `allocator`.",
           "is_pub": true,
           "line": 121
         }
@@ -142,7 +134,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "void",
-          "comment": "Release all owned resources.  Safe to call multiple times.",
           "is_pub": true,
           "line": 146
         }
@@ -160,7 +151,6 @@
         { "name": "max_chars", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Generate a truncated summary of `text` at `max_chars`, cutting at the\nnearest sentence boundary.  Returns an allocator-owned string.",
       "is_pub": true,
       "line": 179
     },
@@ -174,7 +164,6 @@
         { "name": "full_text", "type": "[]const u8" }
       ],
       "returns": "[schema.LOD_COUNT][]const u8",
-      "comment": "Generate LOD levels 1-3 from `full_text` by deterministic truncation.\n\nReturns an array of 6 slices; slots 0, 4, 5 are empty strings (callers\nfill them separately).  Slots 1-3 are allocator-owned and must be freed.\nThe `lod_owned` bitmask for the returned values is 0b00001110 (bits 1-3).",
       "is_pub": true,
       "line": 208
     },
@@ -183,7 +172,6 @@
       "name": "KnnHit",
       "match_hash": "5c19a058b27631568e7786db5513d9e869fb4e74712f602220050064be936613",
       "signature": "keyword_struct KnnHit { ... }",
-      "comment": "KnnHit — result from in-Zig cosine similarity search.",
       "is_pub": true,
       "line": 221
     },
@@ -192,7 +180,6 @@
       "name": "EdgeType",
       "match_hash": "9ba75c7914570541f9cb4d90c43e8f32f28b825390fd8a3c56d69ee22dbd085f",
       "signature": "keyword_enum EdgeType { ... }",
-      "comment": "EdgeType — logical classification for neighbor_of edges.",
       "is_pub": true,
       "members": [
         {
@@ -234,7 +221,6 @@
             { "name": "self", "type": "EdgeType" }
           ],
           "returns": "[]const u8",
-          "comment": "SQL table name (depends_on uses its own table; others share neighbor_of).",
           "is_pub": true,
           "line": 236
         }
@@ -247,7 +233,6 @@
             { "name": "self", "type": "EdgeType" }
           ],
           "returns": "[]const u8",
-          "comment": "String stored in the `edge_type` column of neighbor_of.",
           "is_pub": true,
           "line": 245
         }
@@ -259,7 +244,6 @@
       "name": "WasmTool",
       "match_hash": "271110779a45e20af87ec49aeb3fcee7bc98d8e61d1b3df69f5d17573c423934",
       "signature": "keyword_struct WasmTool { ... }",
-      "comment": "Manages WasmTool functionality, owns runtime state, ensures consistent initialization; not thread-safe.",
       "is_pub": true,
       "line": 263
     },
@@ -268,7 +252,6 @@
       "name": "Library",
       "match_hash": "bc4f03f8759f7c15493a05166572012e928db9c63fb0fe8572ca22479a7dfffd",
       "signature": "keyword_struct Library { ... }",
-      "comment": "Library — unified database interface backed by SQLite.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -285,7 +268,6 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "*Self",
-          "comment": "Open the SQLite database.\nengine: .sqlite (persistent) or .mem (testing/ephemeral)\npath: file path for sqlite; ignored for mem",
           "is_pub": true,
           "line": 304
         }
@@ -311,7 +293,6 @@
             { "name": "sql", "type": "[]const u8" }
           ],
           "returns": "void",
-          "comment": "Run a single SQL statement (no params, no result rows).",
           "is_pub": true,
           "line": 347
         }
@@ -325,7 +306,6 @@
             { "name": "sql", "type": "[]const u8" }
           ],
           "returns": "*c.sqlite3_stmt",
-          "comment": "Prepare a statement; caller must finalize.",
           "is_pub": false,
           "line": 355
         }
@@ -350,7 +330,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Create all tables and indexes (idempotent — IF NOT EXISTS guards).",
           "is_pub": true,
           "line": 376
         }
@@ -363,7 +342,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "u32",
-          "comment": "Return the current schema version from the database.",
           "is_pub": true,
           "line": 396
         }
@@ -376,7 +354,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Apply pending migrations from current version to schema.SCHEMA_VERSION.",
           "is_pub": true,
           "line": 405
         }
@@ -390,7 +367,6 @@
             { "name": "node", "type": "ContextNode" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a ContextNode (upsert by id).\n\nNote: Uses inline sqlite3_bind_* calls rather than SqlBinder because\neach module's @cImport creates distinct sqlite3_stmt types. Future work\ncould extract sqlite3.c to a shared module for SqlBinder reuse.",
           "is_pub": true,
           "line": 429
         }
@@ -404,7 +380,6 @@
             { "name": "id", "type": "i64" }
           ],
           "returns": "?ContextNode",
-          "comment": "Fetch a ContextNode by id.  Strings in the returned node are\nallocator-owned; free with node.free(allocator).\n\nNote: Uses inline sqlite3_column_* calls rather than SqlHydrator because\neach module's @cImport creates distinct sqlite3_stmt types, and lod[0]\nrequires SharedString.Ref.init() rather than simple allocator.dupe().",
           "is_pub": true,
           "line": 479
         }
@@ -423,7 +398,6 @@
             { "name": "is_essential", "type": "bool" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a target definition.",
           "is_pub": true,
           "line": 543
         }
@@ -437,7 +411,6 @@
             { "name": "tool", "type": "WasmTool" }
           ],
           "returns": "void",
-          "comment": "Insert or replace a WasmTool record.",
           "is_pub": true,
           "line": 582
         }
@@ -451,7 +424,6 @@
             { "name": "id", "type": "i64" }
           ],
           "returns": "?WasmTool",
-          "comment": "Fetch a WasmTool by id.  Strings are allocator-owned; free with freeWasmTool().",
           "is_pub": true,
           "line": 610
         }
@@ -465,7 +437,6 @@
             { "name": "tool", "type": "WasmTool" }
           ],
           "returns": "void",
-          "comment": "Free allocator-owned strings in a WasmTool returned by fetchWasmTool().",
           "is_pub": true,
           "line": 643
         }
@@ -478,7 +449,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "void",
-          "comment": "Delete WASM tools whose `expires_at` timestamp has passed.\nNo-op for tools with null `expires_at`.",
           "is_pub": true,
           "line": 650
         }
@@ -493,7 +463,6 @@
             { "name": "to_id", "type": "i64" }
           ],
           "returns": "void",
-          "comment": "Insert a DEPENDS_ON edge (upsert by primary key).",
           "is_pub": true,
           "line": 669
         }
@@ -510,7 +479,6 @@
             { "name": "edge_type", "type": "EdgeType" }
           ],
           "returns": "void",
-          "comment": "Insert a NEIGHBOR_OF edge with cosine distance and edge type.",
           "is_pub": true,
           "line": 679
         }
@@ -525,7 +493,6 @@
             { "name": "degree", "type": "u32" }
           ],
           "returns": "void",
-          "comment": "Update context_nodes.degree for a single node.",
           "is_pub": true,
           "line": 707
         }
@@ -540,7 +507,6 @@
             { "name": "pagerank", "type": "f32" }
           ],
           "returns": "void",
-          "comment": "Update context_nodes.pagerank for a single node.",
           "is_pub": true,
           "line": 717
         }
@@ -556,7 +522,6 @@
             { "name": "level", "type": "u8" }
           ],
           "returns": "void",
-          "comment": "Update context_nodes.community_id and community_level for a single node.",
           "is_pub": true,
           "line": 727
         }
@@ -573,7 +538,6 @@
             { "name": "predicate_iri", "type": "?[]const u8" }
           ],
           "returns": "void",
-          "comment": "Update neighbor_of.weight and optionally predicate_iri for an edge.",
           "is_pub": true,
           "line": 738
         }
@@ -590,7 +554,6 @@
             { "name": "predicate_filter", "type": "?[]const u8" }
           ],
           "returns": "void",
-          "comment": "Save or replace the serialized CSR graph BLOB in csr_cache.",
           "is_pub": true,
           "line": 754
         }
@@ -604,7 +567,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "?[]u8",
-          "comment": "Load the serialized CSR BLOB from csr_cache.\nReturns allocator-owned slice, or null if no cached CSR exists.",
           "is_pub": true,
           "line": 782
         }
@@ -619,7 +581,6 @@
             { "name": "callback" }
           ],
           "returns": "void",
-          "comment": "Iterate over all edges in neighbor_of, calling `callback(from_id, to_id, weight)`.\nUsed by CSR construction and edge weight computation.\nThe callback receives arena-allocated temporaries if needed.",
           "is_pub": true,
           "line": 801
         }
@@ -634,7 +595,6 @@
             { "name": "callback" }
           ],
           "returns": "void",
-          "comment": "Iterate over (node_id, degree) pairs from GROUP BY query.\nUsed by DegreeCentrality.compute().",
           "is_pub": true,
           "line": 817
         }
@@ -648,7 +608,6 @@
             { "name": "arena", "type": "std.mem.Allocator" }
           ],
           "returns": "[]i64",
-          "comment": "Return all node IDs as a dense array (arena-owned).\nUsed by CSR construction to map node IDs to dense indices.",
           "is_pub": true,
           "line": 832
         }
@@ -662,7 +621,6 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "u32",
-          "comment": "Count outgoing edges for a single node.\nUsed by DegreeCentrality.computeForNode().",
           "is_pub": true,
           "line": 846
         }
@@ -677,7 +635,6 @@
             { "name": "callback" }
           ],
           "returns": "void",
-          "comment": "Iterate over edges with pre-fetched node degrees.\nUsed by EdgeWeights.compute() to compute PMI-inspired weights.\nCallback receives (from_id, to_id, from_degree, to_degree).",
           "is_pub": true,
           "line": 858
         }
@@ -722,7 +679,6 @@
             { "name": "knn_hits", "type": "[]const KnnHit" }
           ],
           "returns": "void",
-          "comment": "Persist NEIGHBOR_OF edges from KNN hits.\nThe center is knn_hits[0]; edges are written from center to all others.",
           "is_pub": true,
           "line": 892
         }
@@ -737,7 +693,6 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "[]i64",
-          "comment": "Fetch outgoing neighbor IDs from neighbor_of for `node_id`.\nReturns a caller-owned slice; free with `allocator.free`.",
           "is_pub": true,
           "line": 906
         }
@@ -753,7 +708,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "[]KnnHit",
-          "comment": "Fetch all ContextNode IDs with a non-empty embedding (for KNN scan).\nReturns a caller-owned slice of `{id, lod4_name}` suitable for pre-filtering.",
           "is_pub": true,
           "line": 922
         }
@@ -769,7 +723,6 @@
             { "name": "max_depth", "type": "u8" }
           ],
           "returns": "[]ContextNode",
-          "comment": "BFS traversal from root_id up to max_depth hops.\nReturns allocator-owned slice of ContextNode (all LOD strings owned by allocator).\nCaller frees with: for (nodes) |*n| n.free(allocator); allocator.free(nodes);",
           "is_pub": true,
           "line": 930
         }
@@ -782,7 +735,6 @@
             { "name": "self", "type": "*Self" }
           ],
           "returns": "usize",
-          "comment": "Return the total number of rows in context_nodes.",
           "is_pub": true,
           "line": 964
         }
@@ -796,7 +748,6 @@
             { "name": "name", "type": "[]const u8" }
           ],
           "returns": "?i64",
-          "comment": "Look up a node id by exact lod4 (name) match.\nReturns null if not found.",
           "is_pub": true,
           "line": 973
         }
@@ -812,7 +763,6 @@
             { "name": "limit", "type": "usize" }
           ],
           "returns": "[]ContextNode",
-          "comment": "Keyword search: LIKE match on lod4 (name) or lod0 (description).\nReturns allocator-owned []ContextNode ordered name-matches first.\nCaller frees: `for (nodes) |*n| n.free(allocator); allocator.free(nodes);`",
           "is_pub": true,
           "line": 989
         }
@@ -830,7 +780,6 @@
             { "name": "threshold", "type": "f32" }
           ],
           "returns": "[]ContextNode",
-          "comment": "Hybrid search: 0.65 × vector + 0.35 × keyword, returning up to `limit` nodes.\n`threshold` is the minimum vector cosine similarity (0–1) to include a node.\nFalls back to keyword-only if query_embedding is empty.\nReturns allocator-owned []ContextNode sorted by descending hybrid score.",
           "is_pub": true,
           "line": 1027
         }
@@ -845,7 +794,6 @@
             { "name": "parent_name", "type": "[]const u8" }
           ],
           "returns": "bool",
-          "comment": "isA returns true when child_id has `parent_name` anywhere in its\ntransitive rdf:type chain (via entity_types + neighbor_of BFS).\n\nUses a single recursive CTE:\n  1. Seed with direct type_ids from entity_types for child_id.\n  2. Expand through neighbor_of (is_a edges) transitively.\n  3. Match lod4 of reached type nodes against parent_name.\n\nRead-only — no mutex needed (SQLite WAL allows concurrent readers).",
           "is_pub": true,
           "line": 1106
         }
@@ -860,7 +808,6 @@
             { "name": "entity_id", "type": "i64" }
           ],
           "returns": "[]i64",
-          "comment": "Return all ancestor type IDs of `entity_id` via recursive CTE.\nUses the entity_types table populated during YAGO ingestion.\nCaller owns the returned slice.",
           "is_pub": true,
           "line": 1129
         }
@@ -875,7 +822,6 @@
             { "name": "entity_id", "type": "i64" }
           ],
           "returns": "[][]const u8",
-          "comment": "Return all ancestor type names (lod4 of type nodes) for `entity_id`\nvia the transitive type hierarchy.  Used for duck-typing capability\nresolution: a tool registered for \"Person\" also matches \"Scientist\".\n\nReturns an allocator-owned slice of interned strings from `lod4` of\nancestor context_nodes.  Caller must free both the slice and each string.",
           "is_pub": true,
           "line": 1165
         }
@@ -904,7 +850,6 @@
             { "name": "entity_id", "type": "i64" }
           ],
           "returns": "[][]const u8",
-          "comment": "Return all predicates inherited by `entity_id` via its transitive\ntype hierarchy.  Uses the `property_uses` table populated during YAGO\ningestion.  Returns an allocator-owned slice; caller must free each\nstring and the slice itself.",
           "is_pub": true,
           "line": 1219
         }
@@ -919,7 +864,6 @@
             { "name": "domain_type_id", "type": "i64" }
           ],
           "returns": "void",
-          "comment": "Insert a (predicate, domain_type_id) row into property_uses.\nIdempotent — uses INSERT OR IGNORE.",
           "is_pub": true,
           "line": 1257
         }
@@ -948,7 +892,6 @@
             { "name": "community_id", "type": "i64" }
           ],
           "returns": "?CommunityPathEntry",
-          "comment": "Find the root community for a given community_id.\nTraverses community_hierarchy upward until reaching a node with no parent.\nReturns (root_community_id, root_level) or null if community has no hierarchy.",
           "is_pub": true,
           "line": 1294
         }
@@ -963,7 +906,6 @@
             { "name": "node_id", "type": "i64" }
           ],
           "returns": "[]CommunityPathEntry",
-          "comment": "Get the full hierarchy path from a node to its root community.\nReturns an arena-owned slice of (community_id, level) ordered leaf → root.",
           "is_pub": true,
           "line": 1307
         }
@@ -978,7 +920,6 @@
             { "name": "parent_community_id", "type": "i64" }
           ],
           "returns": "[]CommunityPathEntry",
-          "comment": "Find all leaf communities (communities with no children) under a parent.\nReturns an arena-owned slice of (community_id, level).",
           "is_pub": true,
           "line": 1323
         }
@@ -1066,7 +1007,6 @@
       "name": "HydrationPipeline",
       "match_hash": "89c5b513b4f57814e4dff974813958fd639cefb31f738f6ec0ec42b746c62059",
       "signature": "keyword_struct HydrationPipeline { ... }",
-      "comment": "Implements the 3-step hydration pipeline:\n  1. Accept embedding vector (from edge LLM via HTTP)\n  2. KNN: fetch all embeddings from SQLite, compute cosine in Zig, take top-K\n  3. Persist NEIGHBOR_OF edges into SQLite for graph traversal",
       "is_pub": true,
       "members": [
         {
@@ -1092,7 +1032,6 @@
             { "name": "b", "type": "[]const f32" }
           ],
           "returns": "f32",
-          "comment": "Cosine distance between two equal-length float slices.\nReturns value in [0.0, 2.0] (0 = identical directions).",
           "is_pub": true,
           "line": 1450
         }
@@ -1107,7 +1046,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "[]KnnHit",
-          "comment": "KNN search — fetch all non-empty embeddings from SQLite, compute\ncosine distances in Zig, return top-K hits sorted by distance.",
           "is_pub": true,
           "line": 1467
         }
@@ -1121,7 +1059,6 @@
             { "name": "knn_hits", "type": "[]const KnnHit" }
           ],
           "returns": "void",
-          "comment": "Persist NEIGHBOR_OF edges from KNN hits.",
           "is_pub": true,
           "line": 1516
         }
@@ -1136,7 +1073,6 @@
             { "name": "k", "type": "usize" }
           ],
           "returns": "usize",
-          "comment": "Full hydration: KNN → persist neighbor edges.  Returns number of nodes found.",
           "is_pub": true,
           "line": 1521
         }
@@ -1148,7 +1084,6 @@
       "name": "ContextPacker",
       "match_hash": "64fc8294fa9795d4dfd3600dbac456ef57bf8753135c540d64fcb0577e1171d5",
       "signature": "keyword_struct ContextPacker { ... }",
-      "comment": "Assigns LOD levels to nodes based on BFS hop distance from semantic center.\ndistance 0 → lod0 (full text)\ndistance 1 → lod1 (summary, falls back to lod0)\ndistance 2 → lod2 (brief, falls back to lod4/name)\ndistance 3+ → lod4 (name only)",
       "is_pub": true,
       "members": [
         {
@@ -1176,7 +1111,6 @@
             { "name": "graph_distance", "type": "u32" }
           ],
           "returns": "[]const u8",
-          "comment": "Select which LOD text to use for a node at a given graph distance.",
           "is_pub": true,
           "line": 1551
         }
@@ -1192,7 +1126,6 @@
             { "name": "avg_degree", "type": "u32" }
           ],
           "returns": "u3",
-          "comment": "Select the LOD index for a node based on graph distance AND degree\nimportance (P3.2).  High-degree nodes receive more detail at the same\ndistance because they are structurally significant.\n\nReturns a LOD index in [0, 4]:\n  0 = full text, 1 = summary, 2 = brief, 3 = tiny, 4 = name only.\n\n`avg_degree` is the average out-degree across all nodes in the graph.\nPass 1 if unavailable to disable importance weighting.",
           "is_pub": true,
           "line": 1570
         }
@@ -1206,7 +1139,6 @@
             { "name": "semantic_center_id", "type": "i64" }
           ],
           "returns": "[]GraphNode",
-          "comment": "BFS from `semantic_center_id` using the neighbor_of table.\nReturns owned slice of GraphNode (caller must free with allocator.free).",
           "is_pub": true,
           "line": 1584
         }
@@ -1220,7 +1152,6 @@
             { "name": "semantic_center_id", "type": "i64" }
           ],
           "returns": "[]const u8",
-          "comment": "Pack context window text for LLM injection, respecting token budget.",
           "is_pub": true,
           "line": 1603
         }
@@ -1234,7 +1165,6 @@
             { "name": "semantic_center_id", "type": "i64" }
           ],
           "returns": "struct { text: []const u8, tokens_used: usize, nodes_included: usize }",
-          "comment": "Pack context using First-Fit Decreasing (FFD) bin-packing.\nSorts nodes by priority (LOD level weight × distance decay) and\nadds them to the context if they fit remaining budget.\n\nPriority formula: priority = lod_weight[LOD] * distance_decay^distance\nLOD weights: lod0=1.0, lod1=0.8, lod2=0.6, lod3=0.4, lod4=0.2\nDistance decay: 0.9 per hop\n\nReturns packed text and metadata about token usage.",
           "is_pub": true,
           "line": 1648
         }

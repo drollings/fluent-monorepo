@@ -10,7 +10,6 @@
       "name": "Level",
       "match_hash": "8902a0b88a5bb181526ca9c0a430e584b5f34aaf57642ae53e67e7b4585041a5",
       "signature": "keyword_enum Level { ... }",
-      "comment": "Defines a level type for structured logging, managing state and ownership with strict invariants.",
       "is_pub": true,
       "members": [
         {
@@ -69,7 +68,6 @@
       "name": "LogConfig",
       "match_hash": "8efa4f61d255c04c059b8bc166826b4119d3f72390952b8cc8ca45f39a11e033",
       "signature": "keyword_struct LogConfig { ... }",
-      "comment": "Manages logging configuration; owns struct; ensures consistent initialization and cleanup.",
       "is_pub": true,
       "line": 31
     },
@@ -78,7 +76,6 @@
       "name": "Logger",
       "match_hash": "2255b71d304e6cf503de74744c3267b57e6dafbbfe4c6aef9971f9f6e631e1d4",
       "signature": "keyword_struct Logger { ... }",
-      "comment": "Manages logging structures with ownership and invariants; ensures safe initialization/deinit.",
       "is_pub": true,
       "members": [
         {
@@ -189,7 +186,6 @@
         { "name": "logger", "type": "*Logger" }
       ],
       "returns": "void",
-      "comment": "Updates global logging configuration by setting parameters via the provided logger instance.",
       "is_pub": true,
       "line": 142
     },
@@ -199,7 +195,6 @@
       "match_hash": "66b72130b212891ba3fdd0f6386c2c17f24fa26b7aca19ea50748f9ed1e8af18",
       "signature": "fn getGlobal() -> ?*Logger",
       "returns": "?*Logger",
-      "comment": "Retrieves a global logger instance from the system.",
       "is_pub": true,
       "line": 147
     },
@@ -214,7 +209,6 @@
         { "name": "args" }
       ],
       "returns": "void",
-      "comment": "Logs a message with specified level and format, returning void.",
       "is_pub": true,
       "line": 152
     },
@@ -231,7 +225,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "*Logger",
-      "comment": "Initializes logging configuration with allocator, verbosity, quiet settings, and optional log file paths.",
       "is_pub": true,
       "line": 159
     },

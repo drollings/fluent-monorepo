@@ -4,15 +4,16 @@
     "source": "src/guidance/plugin_registry.zig",
     "language": "zig"
   },
+  "comment": " PluginRegistry — maps file extensions to LanguagePlugin descriptors.\n\n The registry is populated at startup with built-in plugins.  External\n providers (Python, Rust, …) can be registered at runtime via the config.\n\n Usage:\n   var reg = PluginRegistry.init(allocator);\n   defer reg.deinit();\n   if (reg.getForExtension(\".zig\")) |p| { ... }",
   "keywords": ["PluginRegistry", "Zig", "LanguagePlugin", "Registry", "RuntimeRegistration", "Extensibility"],
-  "used_by": ["src/guidance/main.zig"],
+  "capabilities": ["plugin-system"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
       "name": "PluginRegistry",
       "match_hash": "01beada2d510f1522a16d3e8be911980e70f55ac88e3b760c75f57f760e0d462",
       "signature": "keyword_struct PluginRegistry { ... }",
-      "comment": "Manages plugin registration and lookup; owns the registry; ensures consistent access patterns.",
       "is_pub": true,
       "members": [
         {
@@ -24,7 +25,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "Self",
-          "comment": "Initialise the registry and register all built-in plugins.",
           "is_pub": true,
           "line": 30
         }
@@ -51,7 +51,6 @@
             { "name": "p", "type": "LanguagePlugin" }
           ],
           "returns": "void",
-          "comment": "Register a plugin.  Overwrites any existing registration for the same\nextension.  The plugin descriptor is copied into owned storage.",
           "is_pub": true,
           "line": 49
         }
@@ -65,7 +64,6 @@
             { "name": "ext", "type": "[]const u8" }
           ],
           "returns": "?*const LanguagePlugin",
-          "comment": "Look up a plugin by file extension (including the leading dot).\nReturns null if no plugin is registered for the extension.",
           "is_pub": true,
           "line": 59
         }
@@ -79,7 +77,6 @@
             { "name": "path", "type": "[]const u8" }
           ],
           "returns": "?*const LanguagePlugin",
-          "comment": "Look up a plugin by source file path (extracts the extension automatically).",
           "is_pub": true,
           "line": 64
         }
@@ -93,7 +90,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Return the names of all registered languages.\nCaller owns the returned slice (strings point into plugin storage).",
           "is_pub": true,
           "line": 72
         }

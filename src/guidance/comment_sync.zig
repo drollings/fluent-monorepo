@@ -175,9 +175,13 @@ pub const CommentSyncProcessor = struct {
         for (sorted) |member| {
             const decl_line = member.line orelse continue;
 
-            // Skip private members and tests.
+            // Skip tests, comptime blocks, and methods.
+            // Tests don't need doc comments.
+            // Comptime blocks don't need doc comments.
+            // Methods inherit context from their parent struct's comment.
+            // Note: Private functions (.fn_private) are stand-alone and should get comments.
             switch (member.type) {
-                .fn_private, .method_private, .test_decl, .comptime_block => continue,
+                .test_decl, .comptime_block, .method, .method_private => continue,
                 else => {},
             }
 

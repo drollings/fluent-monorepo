@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["JSON-RPC", "Coral MCP", "STDIO", "QueueReactor", "Arena", "ContextNode", "Claude", "NullClaw", "Cursor"],
+  "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
@@ -312,7 +313,7 @@
     {
       "type": "fn_private",
       "name": "parseJsonRpc",
-      "match_hash": "3d37f747bfee38de24999c9f9494df5af5e9a99587a518cdce03ba0da3133baf",
+      "match_hash": "b1f418724e4f3fa2fa594d43df0d16534421e95609bce4d2f9992ccf3c3698d4",
       "signature": "fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },

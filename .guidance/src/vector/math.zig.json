@@ -4,7 +4,9 @@
     "source": "src/vector/math.zig",
     "language": "zig"
   },
+  "comment": " Vector operations — cosine similarity, normalization, hybrid merge.\n\n Used by guidance's SQLite vector search backend.",
   "keywords": ["Vector operations", "cosine similarity", "normalization", "hybrid merge", "AI coding assistant", "LanceDB", "serialization", "deserialization", "vector search", "numerical stability"],
+  "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {
@@ -17,7 +19,6 @@
         { "name": "b", "type": "[]const f32" }
       ],
       "returns": "f32",
-      "comment": "Cosine similarity between two vectors. Returns 0.0–1.0.\nReturns 0.0 for empty, mismatched, or degenerate inputs.",
       "is_pub": true,
       "line": 11
     },
@@ -31,7 +32,6 @@
         { "name": "v", "type": "[]const f32" }
       ],
       "returns": "[]u8",
-      "comment": "Serialize f32 vector to bytes (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 44
     },
@@ -45,7 +45,6 @@
         { "name": "bytes", "type": "[]const u8" }
       ],
       "returns": "[]f32",
-      "comment": "Deserialize bytes to f32 vector (little-endian). Caller owns result.",
       "is_pub": true,
       "line": 54
     },
@@ -54,7 +53,6 @@
       "name": "ScoredResult",
       "match_hash": "28eb14d797980a74572d28b7b3a0926bccf9f470489d77efd6894903b9c39102",
       "signature": "keyword_struct ScoredResult { ... }",
-      "comment": "Represents a scored result with fixed-size buffers; managed via ownership model; ensures data integrity across operations.",
       "is_pub": true,
       "line": 67
     },
@@ -72,7 +70,6 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
-      "comment": "Merges two sets of results using weights and limits, returning a combined ScoredResult slice.",
       "is_pub": true,
       "line": 88
     },
@@ -92,7 +89,6 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]ScoredResult",
-      "comment": "Three-way hybrid merge using Reciprocal Rank Fusion (RRF).\n\nRRF is the standard approach for fusing heterogeneous result streams.\nHandles vector, keyword, and capability results with different score distributions.\n\nRRF score = Σ(1 / (k + rank) * weight) for each list containing the item\n\nDeduplicates by id. Results sorted by RRF score descending.\nCaller owns the returned slice and must free it.",
       "is_pub": true,
       "line": 177
     },

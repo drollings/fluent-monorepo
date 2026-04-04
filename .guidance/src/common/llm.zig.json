@@ -18,7 +18,6 @@
         { "name": "close", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Strip a matched open/close tag pair from `text`.\n- If the close tag is found: returns the content after it, trimming leading whitespace.\n- If the close tag is absent (truncated): returns the content before the open tag.\n- If the open tag is absent: returns `text` unchanged.",
       "is_pub": false,
       "line": 63
     },
@@ -31,7 +30,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.\nFor unclosed tags, strips everything from the open tag to end-of-string.",
       "is_pub": true,
       "line": 77
     },
@@ -45,7 +43,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Strip LLM reasoning preamble from the start of a response.",
       "is_pub": true,
       "line": 86
     },
@@ -58,7 +55,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when an LLM response is malformed or unusable as a comment.\nCall this after stripThinkBlock / stripPreamble.  No allocations.",
       "is_pub": true,
       "line": 124
     },
@@ -71,7 +67,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig string ends with a null byte, returning true if so.",
       "is_pub": true,
       "line": 142
     },
@@ -84,7 +79,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches the expected pattern.",
       "is_pub": true,
       "line": 156
     },
@@ -97,7 +91,6 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.",
       "is_pub": true,
       "line": 169
     },
@@ -110,7 +103,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Extract the content of the first <comment>...</comment> tag in an LLM response.\nReturns a slice into `text` (no allocation).  Returns null when no tag is found.",
       "is_pub": true,
       "line": 185
     },

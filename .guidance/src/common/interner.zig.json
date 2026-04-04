@@ -16,7 +16,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "StringInterner",
-      "comment": "Initializes a memory allocator with a string interner for Zig code.",
       "is_pub": true,
       "line": 23
     },
@@ -29,7 +28,6 @@
         { "name": "self", "type": "*StringInterner" }
       ],
       "returns": "void",
-      "comment": "Releases resources associated with the StringInterner instance.",
       "is_pub": true,
       "line": 32
     },
@@ -43,7 +41,6 @@
         { "name": "str", "type": "[]const u8" }
       ],
       "returns": "usize",
-      "comment": "Intern `str`, returning its stable integer index.\nIf `str` was already interned the existing index is returned without\nallocating.  The interner owns a copy of every new string.\nThread-safe: uses double-checked locking (read lock fast path, write lock slow path).",
       "is_pub": true,
       "line": 42
     },
@@ -57,7 +54,6 @@
         { "name": "str", "type": "[]const u8" }
       ],
       "returns": "?usize",
-      "comment": "Look up the index for `str` without inserting it.\nReturns null when `str` has not been interned yet.\nThread-safe: uses shared read lock.",
       "is_pub": true,
       "line": 78
     },
@@ -71,7 +67,6 @@
         { "name": "idx", "type": "usize" }
       ],
       "returns": "?[]const u8",
-      "comment": "Return the string at `idx`, or null when `idx` is out of range.",
       "is_pub": true,
       "line": 85
     },
@@ -84,7 +79,6 @@
         { "name": "self", "type": "*const StringInterner" }
       ],
       "returns": "usize",
-      "comment": "Return the total number of interned strings.",
       "is_pub": true,
       "line": 91
     },
@@ -98,7 +92,6 @@
         { "name": "strings", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Intern every string in `strings` (results discarded; useful for pre-loading).",
       "is_pub": true,
       "line": 96
     },
@@ -113,7 +106,6 @@
         { "name": "strings", "type": "[]const []const u8" }
       ],
       "returns": "std.bit_set.DynamicBitSetUnmanaged",
-      "comment": "Intern all strings in `strings` and return a `DynamicBitSetUnmanaged`\nwith each corresponding bit set.  The bitset is allocated with\n`allocator` (not the interner's arena) and must be freed by the caller\nvia `bitset.deinit(allocator)`.",
       "is_pub": true,
       "line": 106
     },
@@ -129,7 +121,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Parse a comma-separated capability string into a `DynamicBitSetUnmanaged`.\nInterns any new names into `interner`.\nThe bitset is allocated with `allocator` and must be freed by the caller.",
       "is_pub": true,
       "line": 128
     },
@@ -144,7 +135,6 @@
         { "name": "bs", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "[]const u8",
-      "comment": "Serialise a `DynamicBitSetUnmanaged` to a comma-separated capability string.\nReturns an allocator-owned string; caller must free.",
       "is_pub": true,
       "line": 150
     },
@@ -157,7 +147,6 @@
         { "name": "self", "type": "*StringInterner" }
       ],
       "returns": "reflection.ConstraintVTable",
-      "comment": "Validates and returns a ConstraintVTable for bit-setting operations.",
       "is_pub": true,
       "line": 169
     },

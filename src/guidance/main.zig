@@ -179,7 +179,8 @@ fn printHelp() !void {
         \\  --regen               LLM-regenerate all comments
         \\  --timeout N           Sleep N seconds after each file (default: 20, set to 0 to disable)
         \\  --dry-run             Show what would change without writing
-        \\  --verbose             Print LLM prompts and raw responses
+        \\  --verbose             Show LLM metadata (api calls, responses)
+        \\  --show-prompts        Show LLM prompts in output (separate from --verbose)
         \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
         \\  -m, --model NAME      Model name (default: code:latest)
         \\

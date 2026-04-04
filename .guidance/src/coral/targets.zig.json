@@ -11,7 +11,6 @@
       "name": "TargetDef",
       "match_hash": "d09ce46e2cecd397de233bcd7ac8dc6701c46f5963265892090e86fc19b99e68",
       "signature": "keyword_struct TargetDef { ... }",
-      "comment": "Defines a target definition with fixed-size buffers; managed via ownership model; ensures correct initialization/deinit state.",
       "is_pub": true,
       "line": 48
     },
@@ -24,7 +23,6 @@
         { "name": "name", "type": "[]const u8" }
       ],
       "returns": "?*const TargetDef",
-      "comment": "Look up a target definition by name.",
       "is_pub": true,
       "line": 127
     },
@@ -34,7 +32,6 @@
       "match_hash": "1d8763431dd69e14ef43e02783a2ac2dd80dd0d36b14e7efa8d9ea9da9a091d2",
       "signature": "fn validateDependencies() -> bool",
       "returns": "bool",
-      "comment": "Verify that all dependency names exist in the definitions.",
       "is_pub": true,
       "line": 135
     },
@@ -47,7 +44,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "[]const []const u8",
-      "comment": "Compute a valid topological execution order from INGEST_TARGET_DEFS.\n\nUses Kahn's algorithm on the dependency graph encoded in `depends` slices.\nReturns an owned slice of target name slices; caller must free the outer\nslice (the name pointers themselves are static string literals).\n\nReturns `error.CyclicDependency` if the graph contains a cycle.",
       "is_pub": true,
       "line": 151
     },

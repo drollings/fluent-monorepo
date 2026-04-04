@@ -12,7 +12,6 @@
       "name": "DocComment",
       "match_hash": "918413b65a83853d3a8b6ff4298b49063805199ee679e17113964661d762f120",
       "signature": "keyword_struct DocComment { ... }",
-      "comment": "A parsed doc comment block.",
       "is_pub": true,
       "members": [
         {
@@ -25,7 +24,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "void",
-          "comment": "Free all owned memory in this DocComment.",
           "is_pub": true,
           "line": 20
         }
@@ -42,7 +40,6 @@
         { "name": "raw", "type": "[]const u8" }
       ],
       "returns": "DocComment",
-      "comment": "Parse `raw` comment text (with `///` prefixes already stripped) into a\n`DocComment`.  All returned string fields are owned by the caller.",
       "is_pub": true,
       "line": 29
     },
@@ -56,7 +53,6 @@
         { "name": "code_context", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a Zig comment slice matches expected format and returns true or false.",
       "is_pub": true,
       "line": 53
     },

@@ -17,7 +17,6 @@
         { "name": "ctx", "type": "*BuildContext" }
       ],
       "returns": "Repl",
-      "comment": "Initializes a Zig allocator with a BuildContext, preparing it for use.",
       "is_pub": true,
       "line": 14
     },
@@ -30,7 +29,6 @@
         { "name": "_", "type": "*Repl" }
       ],
       "returns": "void",
-      "comment": "Releases resources by deallocating the provided Repl instance.",
       "is_pub": true,
       "line": 22
     },
@@ -43,7 +41,6 @@
         { "name": "self", "type": "*Repl" }
       ],
       "returns": "void",
-      "comment": "Processes a Zig code snippet and executes it, returning the result or error.",
       "is_pub": true,
       "line": 25
     },

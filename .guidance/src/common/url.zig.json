@@ -16,7 +16,6 @@
         { "name": "host", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Return true when `host` resolves to the loopback interface.\nCovers the common aliases: \"localhost\", \"127.0.0.1\", \"::1\", and the\nfull 127.x.x.x range.",
       "is_pub": true,
       "line": 13
     },
@@ -29,7 +28,6 @@
         { "name": "host", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given IP slice is a private IP address and returns true or false.",
       "is_pub": true,
       "line": 22
     },
@@ -42,7 +40,6 @@
         { "name": "url", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Extract the host (without brackets, port, or path) from a URL that has\nalready been validated to start with `http://` or `https://`.",
       "is_pub": false,
       "line": 64
     },
@@ -55,7 +52,6 @@
         { "name": "url", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Validate that `url` is acceptable as an API endpoint.\n\nAllowed:\n  - `https://` URL to any *public* host\n  - `http://` URL to localhost / 127.x.x.x / ::1\n\nRejected:\n  - Empty or non-http(s) URLs         → `error.InvalidApiUrl`\n  - Plain HTTP to non-localhost host  → `error.InsecureApiUrl`\n  - Private / link-local IP ranges    → `error.SsrfBlockedUrl`",
       "is_pub": true,
       "line": 81
     },

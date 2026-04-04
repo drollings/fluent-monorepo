@@ -12,7 +12,6 @@
       "name": "TypeTag",
       "match_hash": "3f4b280ac94968209d4d6ab18f0d3278d45a8c2cc830c5014528d96c806c21d8",
       "signature": "keyword_enum TypeTag { ... }",
-      "comment": "Broad type category attached to each Accessor.\nUsed by binary IPC and the WASM schema descriptor to encode field types\nwithout requiring comptime dispatch at the call site.",
       "is_pub": true,
       "members": [
         {
@@ -101,34 +100,29 @@
       "name": "OwnershipMode",
       "match_hash": "9c1dd43ff500e556c097174fc81bd7c65bab68954b50b9eec602726235c69746",
       "signature": "keyword_enum OwnershipMode { ... }",
-      "comment": "Who owns the memory behind a field value.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "value",
-          "comment": "The struct field holds a plain value; no heap allocation involved.",
           "is_pub": false,
           "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "owned",
-          "comment": "The field is an allocator-owned heap allocation; the reflection layer\nwill call `releaseFn` when replacing or releasing the field.",
           "is_pub": false,
           "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "borrowed",
-          "comment": "The field is a borrowed pointer; the reflection layer never frees it.",
           "is_pub": false,
           "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "rc",
-          "comment": "The field is reference-counted; the reflection layer calls `releaseFn`\n(which decrements the refcount) when replacing or releasing.",
           "is_pub": false,
           "line": 55
         }
@@ -140,7 +134,6 @@
       "name": "SqlType",
       "match_hash": "1c8aa34d0a17b30c23b08703acbc447895a774a0e86c447f0485c44fefca89fe",
       "signature": "keyword_enum SqlType { ... }",
-      "comment": "SQL column type for database persistence.\nUsed by sql.zig to generate schema-aware INSERT/SELECT statements.",
       "is_pub": true,
       "members": [
         {
@@ -199,7 +192,6 @@
       "name": "FieldMeta",
       "match_hash": "c870aae02f3f118eb30d12fd67c2713bea478dfebcfd43dfd3702aac31db60af",
       "signature": "keyword_struct FieldMeta { ... }",
-      "comment": "Tracks field metadata for reflection; owned by the struct; ensures invariant access patterns.",
       "is_pub": true,
       "line": 99
     },
@@ -208,7 +200,6 @@
       "name": "Accessor",
       "match_hash": "a3c29cc537bed22cf432f544bbff1e32e37482d2d00bb44355029d01428d79e1",
       "signature": "keyword_struct Accessor { ... }",
-      "comment": "Defines a structured accessor with ownership and invariants; manages fixed-size buffers; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -221,7 +212,6 @@
             { "name": "stored", "type": "SchemaVersion" }
           ],
           "returns": "bool",
-          "comment": "Returns true if this accessor is present in `stored`.\n\nA field is present if:\n  - `stored` >= `version_added`\n  - `version_removed` is null OR `stored` < `version_removed`",
           "is_pub": true,
           "line": 241
         }
@@ -237,7 +227,6 @@
         { "name": "Host", "type": "type" }
       ],
       "returns": "type",
-      "comment": "Converts a Zig type to an editable representation, accepting a host type and returning its editable form.",
       "is_pub": true,
       "line": 263
     },
@@ -252,7 +241,6 @@
         { "name": "accessors_slice", "type": "[]const Accessor" }
       ],
       "returns": "[]const u8",
-      "comment": "Generate JSON Schema from an accessor slice.\nUsed by both Editable.describeSchema and DynamicEditable.describeSchema.",
       "is_pub": true,
       "line": 551
     },
@@ -267,7 +255,6 @@
         { "name": "indent", "type": "usize" }
       ],
       "returns": "void",
-      "comment": "Write a single field's JSON Schema property.",
       "is_pub": false,
       "line": 615
     },
@@ -280,7 +267,6 @@
         { "name": "tag", "type": "TypeTag" }
       ],
       "returns": "[]const u8",
-      "comment": "Convert TypeTag to JSON Schema type string.",
       "is_pub": false,
       "line": 796
     },
@@ -295,7 +281,6 @@
         { "name": "operation", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write role permission set as comma-separated role names.\noperation: \"read\" or \"write\"",
       "is_pub": false,
       "line": 816
     },
@@ -309,7 +294,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write escaped JSON string.",
       "is_pub": false,
       "line": 836
     },
@@ -318,7 +302,6 @@
       "name": "DynamicEditable",
       "match_hash": "bd90575620092c8ca1848915298f4a611e62e270c3bd5c4a09d5232115ce5339",
       "signature": "keyword_struct DynamicEditable { ... }",
-      "comment": "Runtime field editor backed by a raw byte buffer and a slice of Accessors.",
       "is_pub": true,
       "members": [
         {
@@ -356,7 +339,6 @@
             { "name": "self", "type": "*DynamicEditable" }
           ],
           "returns": "void",
-          "comment": "Release heap memory owned by every field that has a releaseFn.",
           "is_pub": true,
           "line": 885
         }
@@ -372,7 +354,6 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror!void",
-          "comment": "Set a field by name via string input, role-checked.",
           "is_pub": true,
           "line": 895
         }
@@ -387,7 +368,6 @@
             { "name": "role", "type": "Role" }
           ],
           "returns": "anyerror![]const u8",
-          "comment": "Get a field by name as a caller-owned string, role-checked.",
           "is_pub": true,
           "line": 907
         }
@@ -402,7 +382,6 @@
             { "name": "type_name", "type": "[]const u8" }
           ],
           "returns": "[]const u8",
-          "comment": "Generate a JSON Schema describing all fields, types, constraints, and metadata.",
           "is_pub": true,
           "line": 919
         }
@@ -416,7 +395,6 @@
             { "name": "allocator", "type": "std.mem.Allocator" }
           ],
           "returns": "[]const []const u8",
-          "comment": "Generate a list of field names for iteration.",
           "is_pub": true,
           "line": 924
         }
@@ -430,7 +408,6 @@
             { "name": "key", "type": "[]const u8" }
           ],
           "returns": "?FieldMeta",
-          "comment": "Get metadata for a specific field by name.",
           "is_pub": true,
           "line": 933
         }

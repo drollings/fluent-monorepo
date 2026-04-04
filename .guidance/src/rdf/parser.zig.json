@@ -12,7 +12,6 @@
       "name": "TermType",
       "match_hash": "1afe79cc831cd7d2959023f446b97f0f6588cbf7fc0415fce1090514686636da",
       "signature": "keyword_enum TermType { ... }",
-      "comment": "Represents a term type with enum definitions; managed via ownership model; ensures invariants are preserved.",
       "is_pub": true,
       "members": [
         {
@@ -41,7 +40,6 @@
       "name": "Literal",
       "match_hash": "2e8f7aa23f744bb8b9764baadfb5b2cad9b43b6fd608aed4036ce23665643517",
       "signature": "keyword_struct Literal { ... }",
-      "comment": "Represents a structured literal value in the parser, managing ownership and invariants for consistent interpretation.",
       "is_pub": true,
       "members": [
         {
@@ -65,7 +63,6 @@
       "name": "Term",
       "match_hash": "6d09424d77f58b7d9b2f40467c0b0e0bdcc3da821a24b9afec603696af62bb37",
       "signature": "keyword_union Term { ... }",
-      "comment": "Represents a union of keywords in Zig, managing ownership and invariants for safe term evaluation.",
       "is_pub": true,
       "members": [
         {
@@ -89,7 +86,6 @@
       "name": "Triple",
       "match_hash": "98d26bc96f040c3b63ff6eadbf683968eb9fdd8b633f28a5e5fb7a4ccc50c9dd",
       "signature": "keyword_struct Triple { ... }",
-      "comment": "Represents a triple structure with ownership model and invariants; manages fixed-size buffers.",
       "is_pub": true,
       "members": [
         {
@@ -113,7 +109,6 @@
       "name": "Parser",
       "match_hash": "c48bf2e5175eebf461bfe0ff45b4fc941bec7944ab26514448735abbaca54058",
       "signature": "keyword_struct Parser { ... }",
-      "comment": "Handles RDF parsing with a keyword structure, manages ownership and invariants; ensures correct RDF schema interpretation.",
       "is_pub": true,
       "members": [
         {
@@ -236,7 +231,6 @@
             { "name": "subj", "type": "Term" }
           ],
           "returns": "ParseError!void",
-          "comment": "Fill self.queue with all triples from one predicate-object list.",
           "is_pub": false,
           "line": 228
         }

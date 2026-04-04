@@ -11,7 +11,6 @@
       "name": "DepsGenerator",
       "match_hash": "73555f33f8b73cbb3299eaa772733959adf90116f68f1ca1e56d531ea7ef4c15",
       "signature": "keyword_struct DepsGenerator { ... }",
-      "comment": "Manages dependency resolution for Zig projects; owns a structured graph; not thread-safe by design.",
       "is_pub": true,
       "members": [
         {

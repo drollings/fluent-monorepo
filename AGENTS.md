@@ -68,3 +68,69 @@ doc/
 **DON'T:**
 - Assume skills apply without validating against source code
 - Write any code in Zig without reading `doc/skills/zig-current/SKILL.md` first
+
+---
+
+## Debugging and LLM Usage
+
+### Command-Line Flags
+
+**`--debug` / `--verbose`**:
+- Shows LLM metadata: `[enhancer] generating file doc for X`, `[enhancer] received response`
+- Hides raw prompt text (use `--show-prompts` for prompts)
+- Use for general debugging and progress tracking
+
+**`--show-prompts`**:
+- Shows complete raw prompt text sent to LLM
+- Use when debugging prompt engineering or LLM responses
+- Independent of `--debug` (can combine both)
+
+Example:
+```bash
+# View metadata only
+guidance gen --debug --file src/example.zig
+
+# View metadata + prompts
+guidance gen --debug --show-prompts --file src/example.zig
+
+# View prompts only (no metadata)
+guidance gen --show-prompts --file src/example.zig
+```
+
+### Comment Management
+
+**Source Files** (`.zig`):
+- Member comments (`///`) are the source of truth
+- File/module comments (`//!`) also stored in JSON
+
+**JSON Files** (`.guidance/src/**/*.json`):
+- Store metadata: signatures, line numbers, match_hash
+- File/module comments stored for backward compatibility
+- Member comments NOT stored (smaller files, cleaner diffs)
+
+**Database** (`.guidance.db`):
+- Synced from both JSON and source files
+- Member comments extracted from source during sync
+- Used for semantic search via `guidance explain`
+
+**Workflow**:
+```bash
+# Generate JSON without member comments
+guidance gen --file src/example.zig
+
+# View what changed (only metadata, no comment diffs)
+git diff .guidance/src/example.zig.json
+
+# Database sync extracts comments from source
+guidance gen --file src/example.zig --db .guidance.db
+```
+
+### Staleness Detection
+
+Files are processed when:
+1. **JSON absent** → needs initial generation
+2. **JSON newer than source** → needs processing (e.g., imported)
+3. **JSON older than source by >1 second** → genuinely stale
+4. **JSON = src_mtime - 1 second** → validated, skipped (no changes)
+
+The `--force` flag bypasses staleness checks for full regeneration.

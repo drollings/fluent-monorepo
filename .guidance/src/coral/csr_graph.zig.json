@@ -4,6 +4,7 @@
     "source": "src/coral/csr_graph.zig",
     "language": "zig"
   },
+  "comment": "[domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.\n\n Builds a CSR adjacency structure from the `neighbor_of` table in a Coral\n Context Library.  CSR is the canonical in-memory format for graph algorithms\n (Degree, PageRank, Dijkstra, Louvain) because it gives O(1) neighbor lookup\n and excellent cache locality.\n\n §When to build CSR:\n CSR is an ingestion-time artefact — never computed on the query path.\n Build it when Louvain community detection or Dijkstra shortest-path is needed,\n or when the graph exceeds 10K nodes (below that, SQL traversal is adequate).\n\n §Serialization (Fluent WVR Pattern 5 — extern struct BLOB):\n CSR is serialized to a BLOB for storage in the `csr_cache` table.  The header\n uses `extern struct` with `align(1)` so the bytes lay out identically on every\n platform.  The payload (offsets + targets + optional weights) follows the\n header contiguously.\n\n §Lifetime:\n All slices are arena-owned when built with `CSRGraph.build()`.  When\n deserialized from a BLOB the slices are views into the caller-owned BLOB;\n the graph itself carries no allocations.",
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],

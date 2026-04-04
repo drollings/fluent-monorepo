@@ -88,8 +88,12 @@ Then you you must read
 │   │   ├── schemas
 │   │   │   └── guidance.schema.json
 │   │   ├── COMMENT_INFILL_DESIGN.md
+│   │   ├── DEBUGGING_COMMENTS.md
 │   │   ├── DESIGN.md
+│   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
 │   │   ├── MCP.md
+│   │   ├── TODO_20260404_STREAMLINE_JSON.md
+│   │   ├── TODO_20260404_STREAMLINE_JSON_CHECKLIST.md
 │   │   └── VISION.md
 │   ├── prompts
 │   │   ├── ASSESSMENT.md
@@ -280,7 +284,7 @@ Then you you must read
 │   │   ├── plugin.zig                                      # LanguagePlugin — interface for language-specific AST providers.
 │   │   ├── plugin_registry.zig                             # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │   │   ├── provider_discovery.zig                          # External language provider discovery for guidance.
-│   │   ├── query_engine.zig                                # query_engine.zig — explain, staged, show, test, check commands.
+│   │   ├── query_engine.zig                                # [gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.
 │   │   ├── query_strategy.zig                              # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
 │   │   ├── ralph.zig                                       # ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                                     # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis

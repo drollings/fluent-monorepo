@@ -3,6 +3,7 @@ const types = @import("types.zig");
 const hash = @import("hash.zig");
 const llm = @import("common");
 const line_verify = @import("line_verify.zig");
+const comment_inserter = @import("comment_inserter.zig");
 
 /// Reads, writes, and validates guidance JSON files; owns the leak-prompt detection flag per load call.
 pub const JsonStore = struct {
@@ -453,6 +454,50 @@ pub const JsonStore = struct {
         self.allocator.free(doc.equivalents);
         for (doc.members) |m| self.freeMember(m);
         self.allocator.free(doc.members);
+    }
+
+    /// Milestone 3.2: Extract member comments from source file.
+    /// For each member with null comment, extract the /// doc comment from source
+    /// using the member's line number. This ensures comments are available in memory
+    /// even when not stored in JSON per Milestone 3.1.
+    ///
+    /// This is used by postProcessCommentSync and other code paths that load JSON
+    /// without parsing source files.
+    pub fn extractMemberCommentsFromSource(
+        self: *JsonStore,
+        doc: *types.GuidanceDoc,
+        source: []const u8,
+    ) void {
+        // Cast away const to modify members; doc is passed as mutable pointer
+        const members = @as([*]types.Member, @constCast(doc.members.ptr))[0..doc.members.len];
+        for (members) |*member| {
+            self.extractCommentsForMemberRecursive(source, member);
+        }
+    }
+
+    fn extractCommentsForMemberRecursive(
+        self: *JsonStore,
+        source: []const u8,
+        member: *types.Member,
+    ) void {
+        // Only extract if comment is null and we have a line number
+        if (member.comment == null) {
+            if (member.line) |line| {
+                if (comment_inserter.extractCommentAtLine(self.allocator, source, line)) |opt_comment| {
+                    if (opt_comment) |comment| {
+                        member.comment = comment;
+                    }
+                } else |_| {
+                    // Extract failed, leave comment as null
+                }
+            }
+        }
+
+        // Recursively process nested members
+        const nested_members = @as([*]types.Member, @constCast(member.members.ptr))[0..member.members.len];
+        for (nested_members) |*nested| {
+            self.extractCommentsForMemberRecursive(source, nested);
+        }
     }
 
     pub fn mergeMembers(self: *JsonStore, source: []const types.Member, existing: []const types.Member, preserve_existing_comments: bool) std.mem.Allocator.Error!MergeResult {

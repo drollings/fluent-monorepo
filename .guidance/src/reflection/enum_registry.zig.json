@@ -11,7 +11,6 @@
       "name": "EnumRegistry",
       "match_hash": "21e629a1098a69b01ae2892df416f51a64fe1d573622ecdcb03616467ea0b09f",
       "signature": "keyword_struct EnumRegistry { ... }",
-      "comment": "Manages enum definitions with compile-time registration; owns registry state; ensures type safety and ownership clarity.",
       "is_pub": true,
       "members": [
         {

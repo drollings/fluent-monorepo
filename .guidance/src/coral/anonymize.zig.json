@@ -11,7 +11,6 @@
       "name": "AnonymizationPattern",
       "match_hash": "ea4f86634c6a6f0d5263c6f5a1e92fa336582c5e20ba6408d5b4d5ac99e748ca",
       "signature": "keyword_enum AnonymizationPattern { ... }",
-      "comment": "Defines anonymization rules with a fixed pattern; manages key invariants; owned by the system; supports secure data handling.",
       "is_pub": true,
       "members": [
         {
@@ -112,7 +111,6 @@
         { "name": "patterns", "type": "[]const AnonymizationPattern" }
       ],
       "returns": "[]u8",
-      "comment": "Anonymize a context string by replacing detected PII patterns.\nReturns an allocator-owned string; caller must free.",
       "is_pub": true,
       "line": 43
     },
@@ -127,7 +125,6 @@
         { "name": "pattern", "type": "AnonymizationPattern" }
       ],
       "returns": "[]u8",
-      "comment": "Replace occurrences of `pattern` in `input`.\nReturns an allocator-owned string.",
       "is_pub": false,
       "line": 59
     },
@@ -141,7 +138,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace email-like tokens (word@word.tld) with [EMAIL].",
       "is_pub": false,
       "line": 81
     },
@@ -167,7 +163,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace US phone patterns (10-digit with optional separators) with [PHONE].",
       "is_pub": false,
       "line": 122
     },
@@ -181,7 +176,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace credit card patterns (16 digits with optional spaces/dashes) with [CARD].",
       "is_pub": false,
       "line": 152
     },
@@ -195,7 +189,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace international phone numbers (E.164, UK +44, EU formats) with [PHONE].\nDetects: +<country_code><digits> where total digit count is 7-15.",
       "is_pub": false,
       "line": 182
     },
@@ -209,7 +202,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace US SSN (NNN-NN-NNNN) with [SSN].",
       "is_pub": false,
       "line": 217
     },
@@ -223,7 +215,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace UK NINO (AA999999A format) with [NINO].",
       "is_pub": false,
       "line": 247
     },
@@ -237,7 +228,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace Canadian SIN (NNN-NNN-NNN) with [SIN].",
       "is_pub": false,
       "line": 280
     },
@@ -250,7 +240,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Returns true if every byte in `s` is an ASCII digit.",
       "is_pub": false,
       "line": 308
     },
@@ -264,7 +253,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace IPv4 addresses (d.d.d.d) with [IP].",
       "is_pub": false,
       "line": 314
     },
@@ -290,7 +278,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace IPv6 addresses (hex groups separated by colons) with [IP].\nDetects: at least two colon-separated hex groups totalling 4+ hex chars.",
       "is_pub": false,
       "line": 365
     },
@@ -316,7 +303,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace \"Bearer <token>\" with \"Bearer [BEARER_TOKEN]\".",
       "is_pub": false,
       "line": 400
     },
@@ -330,7 +316,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace AWS access key IDs (AKIA followed by 16 uppercase alphanumeric chars).",
       "is_pub": false,
       "line": 431
     },
@@ -344,7 +329,6 @@
         { "name": "input", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Replace generic API keys: 32+ consecutive alphanumeric chars preceded and\nfollowed by a non-alphanumeric boundary (quote, space, =, etc.).",
       "is_pub": false,
       "line": 465
     },

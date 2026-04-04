@@ -15,7 +15,6 @@
       "name": "TargetType",
       "match_hash": "e496c382d60e78e274abae607f6a4f488f9f623a583f67668026a13cdcdfdf91",
       "signature": "keyword_enum TargetType { ... }",
-      "comment": "Defines a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.",
       "is_pub": true,
       "members": [
         {
@@ -50,7 +49,6 @@
       "name": "WasmExecutor",
       "match_hash": "770f4da119ef265fd79b6f0e4d0683964faef85d05578e4e2e04232175cb154c",
       "signature": "keyword_struct WasmExecutor { ... }",
-      "comment": "Configuration for a WASM-backed executor.\nOwned strings must be freed by the target's `deinit`.",
       "is_pub": true,
       "members": [
         {
@@ -81,7 +79,6 @@
         { "name": "target_type", "type": "TargetType" }
       ],
       "returns": "Target",
-      "comment": "Initializes a Zig allocation with provided allocator and interners, returning a target slice.",
       "is_pub": true,
       "line": 60
     },
@@ -95,7 +92,6 @@
         { "name": "allocator", "type": "std.mem.Allocator" }
       ],
       "returns": "void",
-      "comment": "Releases allocated memory by deallocating the Zig object.",
       "is_pub": true,
       "line": 83
     },
@@ -111,7 +107,6 @@
         { "name": "depends", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Updates dependencies with allocator and interners, ensuring proper memory management.",
       "is_pub": true,
       "line": 101
     },
@@ -127,7 +122,6 @@
         { "name": "provides", "type": "[]const []const u8" }
       ],
       "returns": "void",
-      "comment": "Initializes a Zig array with provided allocator and string interners.",
       "is_pub": true,
       "line": 112
     },
@@ -142,7 +136,6 @@
         { "name": "cmd", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Adds a command slice to the target with specified allocator and parameters.",
       "is_pub": true,
       "line": 123
     },
@@ -155,7 +148,6 @@
         { "name": "self", "type": "*const Target" }
       ],
       "returns": "bool",
-      "comment": "Checks if a target is abstract by verifying its structure and return a boolean result.",
       "is_pub": true,
       "line": 128
     },
@@ -170,7 +162,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "bool",
-      "comment": "Checks if a dependency condition is met using allocator and bit set data.",
       "is_pub": true,
       "line": 135
     },
@@ -185,7 +176,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "std.bit_set.DynamicBitSetUnmanaged",
-      "comment": "Validates dependencies for missing functionality; returns a bit set object.",
       "is_pub": true,
       "line": 147
     },
@@ -199,7 +189,6 @@
         { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
       ],
       "returns": "usize",
-      "comment": "Calculates the distance between two targets using bit set operations.",
       "is_pub": true,
       "line": 165
     },
@@ -215,7 +204,6 @@
         { "name": "writer" }
       ],
       "returns": "void",
-      "comment": "Formats a target string using specified format options and writer.",
       "is_pub": true,
       "line": 177
     },
@@ -224,7 +212,6 @@
       "name": "TargetSchema",
       "match_hash": "f3b8fe75657788eb4bef44df49b68e5d39a2fce26d83133ecb1651fe4eb0651c",
       "signature": "keyword_struct TargetSchema { ... }",
-      "comment": "Defines a schema for target configuration with fixed-size buffers; managed via ownership model; ensures consistent initialization and deinitialization.",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
@@ -240,7 +227,6 @@
             { "name": "interner", "type": "*StringInterner" }
           ],
           "returns": "*Self",
-          "comment": "Allocate and initialise a TargetSchema for the given interner.\nFree with `destroy` when done.",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
@@ -271,7 +257,6 @@
             { "name": "target", "type": "*Target" }
           ],
           "returns": "reflection.DynamicEditable",
-          "comment": "Return a DynamicEditable view over `target`.\nThe view borrows `target`'s memory and `self`'s accessor table —\nboth must outlive the returned view.  Call `view.deinit()` when done.",
           "is_pub": true,
           "line": 291
         }

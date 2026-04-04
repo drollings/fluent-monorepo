@@ -11,7 +11,6 @@
       "name": "NodeId",
       "match_hash": "cf1285d8b2f6e3870ce23b57bb88ff3a0823297dcc6605152ccfd8ff96a2d04a",
       "signature": "keyword_enum NodeId { ... }",
-      "comment": "Represents a unique node identifier; managed via ownership model; ensures stable references.",
       "is_pub": true,
       "members": [
         {
@@ -28,7 +27,6 @@
       "name": "SessionId",
       "match_hash": "0938b85de2db2df59d2034ce6022e077eaaffbd7ea740825bf235eae0f545234",
       "signature": "keyword_enum SessionId { ... }",
-      "comment": "Uniquely identifies an agent session.",
       "is_pub": true,
       "members": [
         {
@@ -45,7 +43,6 @@
       "name": "TargetId",
       "match_hash": "ea30e6fbe3c27e832a1d49626aa2ecdc4a960ddd1c759bcb44b52e70bfaf2926",
       "signature": "keyword_enum TargetId { ... }",
-      "comment": "Uniquely identifies a Target in the DAG registry.",
       "is_pub": true,
       "members": [
         {
@@ -66,7 +63,6 @@
         { "name": "i", "type": "i64" }
       ],
       "returns": "NodeId",
-      "comment": "Converts an integer to a unique node identifier using Zig's type system.",
       "is_pub": true,
       "line": 15
     },
@@ -79,7 +75,6 @@
         { "name": "id", "type": "NodeId" }
       ],
       "returns": "i64",
-      "comment": "Converts a NodeId string to its corresponding integer value.",
       "is_pub": true,
       "line": 20
     },
@@ -92,7 +87,6 @@
         { "name": "i", "type": "i64" }
       ],
       "returns": "SessionId",
-      "comment": "Converts an integer to a sessionId, returning the corresponding Zig session ID.",
       "is_pub": true,
       "line": 25
     },
@@ -105,7 +99,6 @@
         { "name": "id", "type": "SessionId" }
       ],
       "returns": "i64",
-      "comment": "Converts a SessionId string into its corresponding integer value.",
       "is_pub": true,
       "line": 30
     },
@@ -118,7 +111,6 @@
         { "name": "i", "type": "i64" }
       ],
       "returns": "TargetId",
-      "comment": "Converts an integer to its corresponding TargetId identifier.",
       "is_pub": true,
       "line": 35
     },
@@ -131,7 +123,6 @@
         { "name": "id", "type": "TargetId" }
       ],
       "returns": "i64",
-      "comment": "Converts a TargetId string to its corresponding integer value.",
       "is_pub": true,
       "line": 40
     },

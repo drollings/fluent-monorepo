@@ -16,7 +16,6 @@
         { "name": "iri", "type": "[]const u8" }
       ],
       "returns": "i64",
-      "comment": "Deterministic i64 hash of an IRI string using Blake3 (64-bit truncation).",
       "is_pub": true,
       "line": 20
     },
@@ -30,7 +29,6 @@
         { "name": "id", "type": "[]const u8" }
       ],
       "returns": "i64",
-      "comment": "Scope-qualified i64 hash for a blank node.\nTwo blank nodes with the same local id but different scopes get different hashes.",
       "is_pub": true,
       "line": 29
     },
@@ -39,7 +37,6 @@
       "name": "XsdType",
       "match_hash": "21e517846b4415a4c89daf5488af865704043018403378f8257e3baefa60f499",
       "signature": "keyword_enum XsdType { ... }",
-      "comment": "Defines a schema for RDF keywords with XSD validation; manages ownership and invariants.",
       "is_pub": true,
       "members": [
         {
@@ -98,7 +95,6 @@
       "name": "TypedValue",
       "match_hash": "6c95d3c7f1dcc9b61545366d0e211921c5e0cbd1b82b890d2fa99ec59712105b",
       "signature": "keyword_union TypedValue { ... }",
-      "comment": "Manages a typed value set with union semantics; owned by the caller; ensures consistent key-value storage.",
       "is_pub": true,
       "line": 61
     },
@@ -111,7 +107,6 @@
         { "name": "datatype", "type": "?[]const u8" }
       ],
       "returns": "XsdType",
-      "comment": "Detect the XSD type from a datatype IRI.",
       "is_pub": true,
       "line": 75
     },
@@ -126,7 +121,6 @@
         { "name": "datatype", "type": "?[]const u8" }
       ],
       "returns": "TypedValue",
-      "comment": "Parse a literal's value string into a TypedValue.\nReturns .string / .lang_string / .other when parsing is not applicable.",
       "is_pub": true,
       "line": 93
     },
@@ -135,7 +129,6 @@
       "name": "BlankNodeScope",
       "match_hash": "b836f3e8991464e66cfab710b9dda8f386f5e9b73cdda68db1be23758cdfc223",
       "signature": "keyword_struct BlankNodeScope { ... }",
-      "comment": "BlankNodeScope — tracks blank node ID → NodeId mapping within one file/scope.",
       "is_pub": true,
       "members": [
         {
@@ -173,7 +166,6 @@
             { "name": "id", "type": "[]const u8" }
           ],
           "returns": "i64",
-          "comment": "Return stable i64 for blank node id.  Allocates on first encounter.",
           "is_pub": true,
           "line": 144
         }

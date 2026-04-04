@@ -19,7 +19,6 @@
         { "name": "returns", "type": "?[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Computes a hash from allocator, name, and parameters, returning the resulting hash value.",
       "is_pub": true,
       "line": 9
     },
@@ -34,7 +33,6 @@
         { "name": "bases", "type": "[]const []const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Generates a hash for a given Zig struct using its allocator and base data.",
       "is_pub": true,
       "line": 29
     },
@@ -47,7 +45,6 @@
         { "name": "type_str", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Converts a null-terminated C string into a normalized Zig type slice.",
       "is_pub": true,
       "line": 46
     },

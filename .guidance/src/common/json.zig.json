@@ -17,7 +17,6 @@
         { "name": "value" }
       ],
       "returns": "[]u8",
-      "comment": "Serialize `value` to pretty-printed JSON (2-space indent).\nReturns an owned allocation; caller must free.",
       "is_pub": true,
       "line": 14
     },
@@ -31,7 +30,6 @@
         { "name": "s", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Write `s` to `writer` with all JSON-special characters escaped.\nHandles `\"`, `\\`, `\\n`, `\\r`, `\\t`.  Suitable for building JSON by hand.",
       "is_pub": true,
       "line": 29
     },
@@ -46,7 +44,6 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "void",
-      "comment": "Append `text` to `buf`, escaping all JSON-special characters including\nC0 control characters (encoded as `\\uXXXX`).\nMore thorough than `writeEscaped`; use when the input may contain\narbitrary binary data.",
       "is_pub": true,
       "line": 46
     },
@@ -61,7 +58,6 @@
         { "name": "max_size", "type": "usize" }
       ],
       "returns": "?std.json.Parsed(std.json.Value)",
-      "comment": "Converts a JSON string to a Zig JSON value, handling allocator and size limits.",
       "is_pub": true,
       "line": 73
     },

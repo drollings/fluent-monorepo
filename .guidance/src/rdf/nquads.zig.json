@@ -12,7 +12,6 @@
       "name": "Quad",
       "match_hash": "aeed8101ab89620ffe6266e13fd30c5e968d94ed45232f5c419ecb7682f34d01",
       "signature": "keyword_struct Quad { ... }",
-      "comment": "Represents a quad structure for spatial queries, managed with a fixed ownership model; key invariant is consistent indexing.",
       "is_pub": true,
       "members": [
         {
@@ -36,7 +35,6 @@
       "name": "NQuadsParser",
       "match_hash": "8de2a7a9a82c5c738690aadaf85f7afd740c81d0b6696b334bde54071b898a45",
       "signature": "keyword_struct NQuadsParser { ... }",
-      "comment": "Manages NQuad parsing structures, owns parsing state, supports fixed-size buffers; not thread-safe.",
       "is_pub": true,
       "members": [
         {
@@ -73,7 +71,6 @@
             { "name": "self", "type": "*NQuadsParser" }
           ],
           "returns": "NQuadsError!?Quad",
-          "comment": "Returns next Quad or null at EOF. Caller must call quad.deinit(allocator).",
           "is_pub": true,
           "line": 55
         }

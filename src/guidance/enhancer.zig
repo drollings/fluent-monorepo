@@ -61,7 +61,7 @@ pub const SemanticPhrasesResult = struct {
     }
 };
 
-/// LLM-backed comment/keyword enricher: wraps an LlmClient and drives the infill pipeline for guidance JSON.
+/// Enhances code with runtime checks; managed centrally; ensures invariants are preserved.
 pub const Enhancer = struct {
     allocator: std.mem.Allocator,
     client: llm.LlmClient,
@@ -69,6 +69,10 @@ pub const Enhancer = struct {
     /// Owns the api_url string if we allocated it; null if config.api_url is static.
     owned_url: ?[]const u8,
     debug: bool,
+    /// Show LLM prompts in output (separate from debug metadata).
+    /// When true, raw prompt text is printed before sending to LLM.
+    /// When false, only metadata is printed in debug mode.
+    show_prompts: bool,
 
     pub fn init(allocator: std.mem.Allocator, config: llm.LlmConfig) !Enhancer {
         // Dupe the api_url so we own it and can free it in deinit.
@@ -84,6 +88,7 @@ pub const Enhancer = struct {
             .config = owned_config,
             .owned_url = owned_url,
             .debug = config.debug,
+            .show_prompts = config.show_prompts,
         };
     }
 
@@ -156,7 +161,7 @@ pub const Enhancer = struct {
         defer self.allocator.free(prompt);
 
         if (self.debug) std.debug.print("[enhancer] generating file doc for {s}\n", .{rel_path});
-        if (self.debug) std.debug.print("[enhancer] prompt (len={}):\n{s}\n", .{ prompt.len, prompt });
+        if (self.show_prompts) std.debug.print("[enhancer] prompt (len={}):\n{s}\n", .{ prompt.len, prompt });
 
         const raw = self.client.complete(prompt, self.maxTokens(600), 0.2, null) catch |err| {
             if (self.debug) std.debug.print("[enhancer] LLM error for file doc: {}\n", .{err});
@@ -226,7 +231,7 @@ pub const Enhancer = struct {
         existing_doc: ?[]const u8,
     ) !EnrichmentResult {
         if (self.debug) std.debug.print("[enhancer] enhancing {s}\n", .{name});
-        if (self.debug) std.debug.print("[enhancer] prompt:\n{s}\n---\n", .{prompt});
+        if (self.show_prompts) std.debug.print("[enhancer] prompt:\n{s}\n---\n", .{prompt});
 
         const raw = self.client.complete(prompt, self.maxTokens(DEFAULT_MAX_TOKENS), 0.3, null) catch {
             if (self.debug) std.debug.print("[enhancer] LLM unavailable for {s}\n", .{name});
@@ -1049,3 +1054,4 @@ test "parsePhrasesResponse skips generic words" {
     try std.testing.expectEqual(@as(usize, 1), result.phrases.len);
     try std.testing.expectEqualStrings("cosine similarity", result.phrases[0]);
 }
+

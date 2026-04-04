@@ -834,6 +834,9 @@ const GenArgs = struct {
     /// Sleep duration (in seconds) after processing each file. Default: 20.
     /// Set to 0 to disable.
     timeout_seconds: u64 = 20,
+    /// Show LLM prompts in debug output (separate from --debug).
+    /// Use --show-prompts to see prompts; --debug shows metadata only.
+    show_prompts: bool = false,
 
     /// Parse gen subcommand arguments. Returns error.MissingValue when a
     /// flag-with-value is the last argument (fail fast; do not silently drop).
@@ -915,6 +918,8 @@ const GenArgs = struct {
                     std.debug.print("error: --timeout requires a valid u64 value\n", .{});
                     return error.MissingValue;
                 };
+            } else if (std.mem.eql(u8, arg, "--show-prompts")) {
+                ga.show_prompts = true;
             }
         }
         return ga;
@@ -976,6 +981,7 @@ fn setupCspEnhancer(
             .model = model,
             .think = null,
             .debug = ga.verbose,
+            .show_prompts = ga.show_prompts,
         };
         const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return;
         enh_ptr.* = enhancer_mod.Enhancer.init(allocator, fallback_config) catch {
@@ -992,6 +998,7 @@ fn setupCspEnhancer(
         .model = llm_config.model,
         .think = llm_config.think,
         .debug = ga.verbose,
+        .show_prompts = ga.show_prompts,
     };
 
     const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch {
@@ -1047,6 +1054,7 @@ fn setupEnhancer(
             .model = model,
             .think = null,
             .debug = ga.verbose,
+            .show_prompts = ga.show_prompts,
         };
         processor.enhancer = enhancer_mod.Enhancer.init(allocator, fallback_config) catch |init_err| {
             std.debug.print("warning: could not init LLM enhancer: {}\n", .{init_err});
@@ -1067,6 +1075,7 @@ fn setupEnhancer(
         .model = llm_config.model,
         .think = llm_config.think,
         .debug = ga.verbose,
+        .show_prompts = ga.show_prompts,
     };
 
     if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?}\n", .{ api_url, final_config.model, final_config.think });
@@ -1099,10 +1108,8 @@ fn setupEnhancer(
             .model = thinking_config.model,
             .think = true, // Always enable thinking for detail generation
             .debug = ga.verbose,
+            .show_prompts = ga.show_prompts,
         };
-
-        if (ga.verbose) std.debug.print("DEBUG: Thinking model config - api_url: {s}, model: {s}\n", .{ thinking_llm_config.api_url, thinking_llm_config.model });
-
         processor.thinking_enhancer = enhancer_mod.Enhancer.init(allocator, thinking_llm_config) catch |err| {
             if (ga.verbose) std.debug.print("warning: could not init thinking enhancer: {}\n", .{err});
             return;
@@ -1616,6 +1623,8 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         // Filter to stale only.
         var stale: std.ArrayList([]const u8) = .{};
         defer stale.deinit(allocator);
+        var missing_count: usize = 0;
+        var newer_count: usize = 0;
         for (all_builtin.items) |src_abs| {
             const json_path = try guidanceJsonPath(
                 allocator,
@@ -1624,12 +1633,36 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
                 src_abs,
             );
             defer allocator.free(json_path);
-            if (ga.force or marker_mod.fileNeedsProcessing(src_abs, json_path))
+            const needs_processing = ga.force or marker_mod.fileNeedsProcessing(src_abs, json_path);
+            if (needs_processing) {
                 try stale.append(allocator, src_abs);
+                // Classify reason: missing JSON or source newer than JSON
+                if (!ga.force) {
+                    if (std.fs.accessAbsolute(json_path, .{})) {
+                        // JSON exists, so file is stale because source is newer
+                        newer_count += 1;
+                    } else |_| {
+                        // JSON missing
+                        missing_count += 1;
+                    }
+                }
+            }
         }
 
         if (stale.items.len > 0) {
-            stepPrint("gen: {d}/{d} zig files stale\n", .{ stale.items.len, all_builtin.items.len });
+            // Build concise reason string
+            var reason_buf: [80]u8 = undefined;
+            const reason = if (ga.force)
+                " (forced)"
+            else if (missing_count > 0 and newer_count > 0)
+                std.fmt.bufPrint(&reason_buf, " ({} newer, {} missing)", .{ newer_count, missing_count }) catch "stale"
+            else if (missing_count > 0)
+                std.fmt.bufPrint(&reason_buf, " ({} missing)", .{missing_count}) catch "stale"
+            else if (newer_count > 0)
+                std.fmt.bufPrint(&reason_buf, " ({} newer)", .{newer_count}) catch "stale"
+            else
+                "stale";
+            stepPrint("gen: {d}/{d} zig files{s}\n", .{ stale.items.len, all_builtin.items.len, reason });
             try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga);
         } else {
             stepPrint("gen: all {d} zig files up to date\n", .{all_builtin.items.len});
@@ -1823,7 +1856,33 @@ fn postProcessCommentSync(
         const json_path = std.fs.path.join(allocator, &.{ json_src_dir, entry.path }) catch continue;
         defer allocator.free(json_path);
 
-        const doc = store.loadGuidance(json_path) catch continue orelse continue;
+        var doc = store.loadGuidance(json_path) catch continue orelse continue;
+
+        // Milestone 3.2: Extract member comments from source file.
+        // Member comments are NOT stored in JSON per Milestone 3.1, so we need to
+        // extract them from source to find members with generated comments.
+        const src_rel = entry.path[0 .. entry.path.len - 5]; // strip .json
+        const src_abs = std.fs.path.join(allocator, &.{ workspace, "src", src_rel }) catch {
+            store.freeGuidanceDoc(doc);
+            continue;
+        };
+
+        const source = std.fs.cwd().readFileAllocOptions(
+            allocator,
+            src_abs,
+            10 * 1024 * 1024,
+            null,
+            .@"1",
+            0,
+        ) catch |err| {
+            std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
+            allocator.free(src_abs);
+            store.freeGuidanceDoc(doc);
+            continue;
+        };
+        // Note: source will be freed at the end of the loop iteration
+
+        store.extractMemberCommentsFromSource(&doc, source);
 
         // Check if any member has comment_generated=true.
         var has_generated = false;
@@ -1835,42 +1894,26 @@ fn postProcessCommentSync(
         }
 
         if (!has_generated) {
+            allocator.free(src_abs);
+            allocator.free(source);
             store.freeGuidanceDoc(doc);
             continue;
         }
-
-        // Convert JSON path back to source path.
-        const src_rel = entry.path[0 .. entry.path.len - 5]; // strip .json
-        const src_abs = std.fs.path.join(allocator, &.{ workspace, "src", src_rel }) catch {
-            store.freeGuidanceDoc(doc);
-            continue;
-        };
-        defer allocator.free(src_abs);
 
         if (verbose) {
             std.debug.print("post-process: {s}: writing generated comments to source\n", .{src_abs});
         }
 
         if (dry_run) {
+            allocator.free(src_abs);
+            allocator.free(source);
             store.freeGuidanceDoc(doc);
             modified_count += 1;
             continue;
         }
 
-        // Read current source.
-        const source = std.fs.cwd().readFileAllocOptions(
-            allocator,
-            src_abs,
-            10 * 1024 * 1024,
-            null,
-            .@"1",
-            0,
-        ) catch |err| {
-            std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
-            store.freeGuidanceDoc(doc);
-            continue;
-        };
-        defer allocator.free(source);
+        // Use the already-loaded source (avoid re-reading the file)
+        // Note: can't defer source here, will be freed manually
 
         // Process members in descending line order to avoid shifting.
         const sorted_members = comment_sync_mod.sortMembersByLineDesc(allocator, doc.members) catch {
@@ -1935,6 +1978,8 @@ fn postProcessCommentSync(
             // Write modified source.
             const file = std.fs.createFileAbsolute(src_abs, .{ .truncate = true }) catch |err| {
                 std.debug.print("post-process: WARN: cannot write {s}: {s}\n", .{ src_abs, @errorName(err) });
+                allocator.free(src_abs);
+                allocator.free(source);
                 store.freeGuidanceDoc(doc);
                 continue;
             };
@@ -1957,6 +2002,8 @@ fn postProcessCommentSync(
             };
         }
 
+        allocator.free(src_abs);
+        allocator.free(source);
         store.freeGuidanceDoc(doc);
     }
 

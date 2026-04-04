@@ -4,5 +4,6 @@
     "source": "src/coral/drift.zig",
     "language": "zig"
   },
+  "comment": " drift.zig — Re-exports BitSet DRIFT from src/common/drift.zig.\n\n The canonical implementation lives in `src/common/drift.zig` so it can be\n shared with guidance. Coral code continues to `@import(\"drift\")` unchanged.",
   "used_by": ["src/common/root.zig"]
 }
