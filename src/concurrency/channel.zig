@@ -352,4 +352,3 @@ test "Channel: GPA no leaks" {
     _ = ch.recv();
     ch.deinit();
 }
-

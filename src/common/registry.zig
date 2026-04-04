@@ -890,21 +890,3 @@ test "TargetBuilder: err field is null on successful register" {
     try testing.expect(b.err_any == null);
     try b.command("rm -rf build").register();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

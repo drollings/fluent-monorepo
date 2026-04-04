@@ -183,13 +183,3 @@ test "detectObserver" {
     ));
     try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
 }
-
-
-
-
-
-
-
-
-
-

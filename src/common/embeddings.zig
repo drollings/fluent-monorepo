@@ -596,10 +596,3 @@ test "EmbeddingProvider: thread_safe=true disables thread assertion" {
     defer std.testing.allocator.free(vec);
     try std.testing.expectEqual(@as(usize, 0), vec.len);
 }
-
-
-
-
-
-
-

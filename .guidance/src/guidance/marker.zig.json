@@ -97,7 +97,7 @@
     },
     {
       "type": "test_decl",
-      "name": "fileNeedsProcessing: JSON mtime = src_mtime - 1 → validated (skip)",
+      "name": "fileNeedsProcessing: JSON mtime = now + 1s → validated (skip)",
       "is_pub": false,
       "line": 191
     },
@@ -105,25 +105,25 @@
       "type": "test_decl",
       "name": "fileNeedsProcessing: JSON older by >1s → needs processing",
       "is_pub": false,
-      "line": 222
+      "line": 223
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: no marker → false",
       "is_pub": false,
-      "line": 254
+      "line": 255
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: marker newer than source → true",
       "is_pub": false,
-      "line": 275
+      "line": 276
     },
     {
       "type": "test_decl",
       "name": "testsCanBeSkipped: source newer than marker → false",
       "is_pub": false,
-      "line": 297
+      "line": 298
     }
   ]
 }

@@ -9,7 +9,7 @@
     {
       "type": "fn_decl",
       "name": "containsIgnoreCase",
-      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
+      "match_hash": "b52ace2914746aeba9a95fe8557080e7e1edf230c423b4bd089d1a96d8fda4c9",
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -22,7 +22,7 @@
     {
       "type": "fn_decl",
       "name": "containsWord",
-      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
+      "match_hash": "42e0003d20a6bda2eaa94f218d350ec0ead739372dacb316e631d2bfbcd9fcc7",
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -35,7 +35,7 @@
     {
       "type": "fn_decl",
       "name": "containsAny",
-      "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
+      "match_hash": "8e7b321f00dbfef44c7232c8a4498c41c1bbb8ac9027c77df0c7640754a5b308",
       "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -48,7 +48,7 @@
     {
       "type": "fn_decl",
       "name": "containsAnyWord",
-      "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
+      "match_hash": "b62876c03d360fd9327b224958394e7d7e8edbd6ac227241815e48643c7fde46",
       "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -61,7 +61,7 @@
     {
       "type": "fn_decl",
       "name": "hasExtension",
-      "match_hash": "67214f2a30390f2260026fc7455d417021f59f586a66b3e97c73fcdfae83a070",
+      "match_hash": "7ad11ad549f270bf774ac3744b9f6275b0814d97bd01873460cf28750d4885b0",
       "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },
@@ -74,7 +74,7 @@
     {
       "type": "fn_decl",
       "name": "isPathToken",
-      "match_hash": "29ca08119803dc0c18bd9aa975ab9cd548267e288131e7a59aea55bac07ee33e",
+      "match_hash": "93f4e5ff7e648bac8cf4515acff10b03881d4bf927d9d226cd9388d74d7c8420",
       "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },

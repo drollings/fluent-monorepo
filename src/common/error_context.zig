@@ -245,6 +245,3 @@ test "ArenaErrorContext: chain appends parent" {
     try testing.expect(std.mem.indexOf(u8, child.message, "caused by") != null);
     try testing.expect(std.mem.indexOf(u8, child.message, "FileNotFound") != null);
 }
-
-
-

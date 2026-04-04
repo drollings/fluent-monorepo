@@ -5,8 +5,7 @@ const common = @import("common");
 /// SHA-256 hex digest — delegates to src/common/hash.zig.
 pub const sha256Hex = common.sha256Hex;
 
-/// Computes a hash from allocator, name, and parameters, returning the resulting hash value.
-/// The hash is based ONLY on code signature (name, params, returns) - no comment content.
+/// Computes a hash from allocator, name, and parameters, returning a slice of hashed bytes.
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};
     defer sig_buf.deinit(allocator);
@@ -26,8 +25,7 @@ pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const t
     return sha256Hex(allocator, sig_buf.items);
 }
 
-/// Generates a hash for a given struct using allocator and base data.
-/// The hash is based ONLY on code signature (name, field_names) - no comment content.
+/// Generates a hash for a given Zig struct using its allocator and base data.
 pub fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const []const u8) ![]const u8 {
     var sig_buf: std.ArrayList(u8) = .{};
     defer sig_buf.deinit(allocator);

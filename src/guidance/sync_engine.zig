@@ -2569,17 +2569,6 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
 
         try cap_obj.put("source", .{ .string = cap.source });
 
-        // Get file mtime
-        const cap_path = try std.fs.path.join(fa, &.{ cap_dir, cap.source });
-        if (std.fs.openFileAbsolute(cap_path, .{})) |file| {
-            defer file.close();
-            const stat = file.stat() catch continue;
-            const mtime = @as(i64, @intCast(stat.mtime));
-            try cap_obj.put("mtime", .{ .integer = mtime });
-        } else |_| {
-            // file not readable, skip mtime
-        }
-
         try capabilities_arr.append(.{ .object = cap_obj });
     }
     try index_obj.put("capabilities", .{ .array = capabilities_arr });
@@ -2656,7 +2645,6 @@ pub fn reportCapabilityLifecycle(
     defer if (prev_content) |pc| allocator.free(pc);
 
     var prev_caps: std.StringHashMapUnmanaged(struct {
-        mtime: i64,
         anchors: []const []const u8,
     }) = .{};
     defer {
@@ -2680,7 +2668,6 @@ pub fn reportCapabilityLifecycle(
                             if (cap_item != .object) continue;
                             const cap_obj = cap_item.object;
                             const name = (cap_obj.get("name") orelse continue).string;
-                            const mtime = if (cap_obj.get("mtime")) |m| m.integer else 0;
 
                             var anchors_list: std.ArrayList([]const u8) = .{};
                             if (cap_obj.get("anchors")) |a| {
@@ -2694,7 +2681,6 @@ pub fn reportCapabilityLifecycle(
                             }
 
                             try prev_caps.put(allocator, try allocator.dupe(u8, name), .{
-                                .mtime = mtime,
                                 .anchors = try anchors_list.toOwnedSlice(allocator),
                             });
                         }
@@ -2720,7 +2706,7 @@ pub fn reportCapabilityLifecycle(
                 std.debug.print("[capabilities] NEW: {s}\n", .{cap.name});
             }
         } else {
-            // Check if updated (mtime changed or anchors changed)
+            // Check if anchors changed
             const prev = prev_entry.?;
             const anchors_changed = blk: {
                 if (cap.anchors.len != prev.anchors.len) break :blk true;

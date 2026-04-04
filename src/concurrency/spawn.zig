@@ -135,5 +135,3 @@ test "spawn: GPA no leaks after pool.deinit" {
     spawn(&pool, &wg, unit.toAny());
     pool.waitAndWork(&wg);
 }
-
-

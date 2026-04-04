@@ -539,6 +539,3 @@ test "lex blank node brackets" {
     const close = try lex.nextToken();
     try std.testing.expectEqual(TokenType.blank_node_close, close.type);
 }
-
-
-

@@ -200,4 +200,3 @@ test "BitSetDrift.generateFollowUps: no follow-ups when all resolved" {
     const followups = try drift.generateFollowUps(a, &needed, &available);
     try testing.expect(followups.len == 0);
 }
-
