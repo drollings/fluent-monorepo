@@ -177,6 +177,6 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
 	@# $(Q)echo "Building coral"
 	@# $(Q)zig build coral --summary failures
-	$(Q)$(TARGET_BIN) check --verbose --debug
+	$(Q)$(TARGET_BIN) check
 	$(Q)echo "✓ All checks passed. Ready to commit."
 

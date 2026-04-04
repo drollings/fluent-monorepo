@@ -12,6 +12,7 @@
       "name": "FileType",
       "match_hash": "94aaa3d6a33d442c59ee7de81aa077705f380834991b7b2a0f5709ce5c7794e3",
       "signature": "keyword_enum FileType { ... }",
+      "comment": "Classification of a source file's content type.\nUsed in the `file_type` column of `ast_nodes` and by the plugin registry\nto route non-code files to appropriate handlers.",
       "is_pub": true,
       "members": [
         {
@@ -65,6 +66,7 @@
             { "name": "ext", "type": "[]const u8" }
           ],
           "returns": "FileType",
+          "comment": "Infer FileType from a file extension.",
           "is_pub": true,
           "line": 17
         }
@@ -77,6 +79,7 @@
             { "name": "self", "type": "FileType" }
           ],
           "returns": "[]const u8",
+          "comment": "Return the canonical string stored in the `file_type` DB column.",
           "is_pub": true,
           "line": 35
         }
@@ -88,6 +91,7 @@
       "name": "MemberType",
       "match_hash": "77bb0644cedcf58c7ee95907830fc847661f03cbb56f6e4134e8b952c3eabd9a",
       "signature": "keyword_enum MemberType { ... }",
+      "comment": "Classifies a declaration extracted from an AST node (function, struct, enum, test, etc.).",
       "is_pub": true,
       "members": [
         {
@@ -158,6 +162,7 @@
       "name": "Pattern",
       "match_hash": "8b11a9732c235ec3b21887c577a3761044c5a36fc1ab8159f3e2f4eb18b6bf10",
       "signature": "keyword_struct Pattern { ... }",
+      "comment": "Named design pattern (GoF or domain) attached to a Member for discovery.",
       "is_pub": true,
       "line": 68
     },
@@ -166,14 +171,16 @@
       "name": "Param",
       "match_hash": "af50a6fe6cc9eacc97156983a19c76c443ed71068d0fb557cdae55743c108a68",
       "signature": "keyword_struct Param { ... }",
+      "comment": "One parameter of a function declaration: name, optional type annotation, and optional default value.",
       "is_pub": true,
       "line": 75
     },
     {
       "type": "struct",
       "name": "Member",
-      "match_hash": "8c31c83542994de0ced35e2820df481a31688b353c63be0d49855830816fc294",
+      "match_hash": "9ed7bc447470fcf1eea31287619a8d10b46ab963661b6ec964f6983e7e685487",
       "signature": "keyword_struct Member { ... }",
+      "comment": "Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.",
       "is_pub": true,
       "line": 82
     },
@@ -182,108 +189,123 @@
       "name": "Meta",
       "match_hash": "5b80824a2c945733e3ae8e331b59b4c63a0b607c78bb4c0c43132ca9fc79bafc",
       "signature": "keyword_struct Meta { ... }",
+      "comment": "Source-file identity: module name, relative path, and language tag stored in every guidance JSON.",
       "is_pub": true,
-      "line": 116
+      "line": 119
     },
     {
       "type": "struct",
       "name": "GuidanceDoc",
       "match_hash": "e0488260244e5fd5850b36f7f1aba5df2a3c9b29928b436927a400e4f1bc763a",
       "signature": "keyword_struct GuidanceDoc { ... }",
+      "comment": "Defines guidance documents with structured metadata; managed centrally, immutable once created.",
       "is_pub": true,
-      "line": 123
+      "line": 126
     },
     {
       "type": "struct",
       "name": "FileMatch",
       "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
       "signature": "keyword_struct FileMatch { ... }",
+      "comment": "Tracks file matches with ownership model; manages lifecycle; not thread-safe.",
       "is_pub": true,
-      "line": 149
+      "line": 152
     },
     {
       "type": "struct",
       "name": "GuidanceInfo",
       "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
       "signature": "keyword_struct GuidanceInfo { ... }",
+      "comment": "Lightweight summary of a guidance JSON returned by a search hit: path, comment, and skill/tag lists.",
       "is_pub": true,
-      "line": 157
+      "line": 160
     },
     {
       "type": "struct",
       "name": "ASTAnalysis",
       "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
       "signature": "keyword_struct ASTAnalysis { ... }",
+      "comment": "Tracks AST nodes with ownership model; ensures invariants on structure and state.",
       "is_pub": true,
-      "line": 167
+      "line": 170
     },
     {
       "type": "struct",
       "name": "QueryResult",
       "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
       "signature": "keyword_struct QueryResult { ... }",
+      "comment": "Aggregated output of the explain pipeline: matched files, guidance info, AST analysis, and LLM summary.",
       "is_pub": true,
-      "line": 178
+      "line": 181
     },
     {
       "type": "enum",
       "name": "StageKind",
       "match_hash": "e256a1f6e63deb19eee13f45b83edcaf1a9b58474ea47a4d27d833ba9b5cc7c4",
       "signature": "keyword_enum StageKind { ... }",
+      "comment": "Defines a stage kind for Zig projects, managing configuration and transitions with a fixed ownership model.",
       "is_pub": true,
       "members": [
         {
           "type": "enum_field",
           "name": "prose",
+          "comment": "Human-readable explanation from module or member comment.",
           "is_pub": false,
-          "line": 197
+          "line": 200
         }
     ,    {
           "type": "enum_field",
           "name": "code",
+          "comment": "Verbatim source code excerpt.  Never altered by LLM.",
           "is_pub": false,
-          "line": 199
+          "line": 202
         }
     ,    {
           "type": "enum_field",
           "name": "metadata",
+          "comment": "Structured metadata: keywords, see_also, skills from guidance JSON.",
           "is_pub": false,
-          "line": 201
+          "line": 204
         }
     ,    {
           "type": "enum_field",
           "name": "insight",
+          "comment": "Matching bullet from INSIGHTS.md or CAPABILITIES.md.",
           "is_pub": false,
-          "line": 203
+          "line": 206
         }
     ,    {
           "type": "enum_field",
           "name": "skill_doc",
+          "comment": "Excerpt from a SKILL.md document.",
           "is_pub": false,
-          "line": 205
+          "line": 208
         }
     ,    {
           "type": "enum_field",
           "name": "capability_doc",
+          "comment": "Excerpt from a CAPABILITY.md file.",
           "is_pub": false,
-          "line": 207
+          "line": 210
         }
     ,    {
           "type": "enum_field",
           "name": "not_found",
+          "comment": "M7: Sentinel — no relevant results found for this query.\nThe pipeline should skip synthesis and cache when this kind appears.",
           "is_pub": false,
-          "line": 210
+          "line": 213
         }
       ],
-      "line": 195
+      "line": 198
     },
     {
       "type": "struct",
       "name": "Stage",
       "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
       "signature": "keyword_struct Stage { ... }",
+      "comment": "A single unit of information collected by the staged explain pipeline.\nAll string fields are owned by this struct; call freeStage() to release.",
       "is_pub": true,
-      "line": 215
+      "line": 218
     },
     {
       "type": "fn_decl",
@@ -295,8 +317,9 @@
         { "name": "s", "type": "Stage" }
       ],
       "returns": "void",
+      "comment": "Free all allocations owned by a single Stage.",
       "is_pub": true,
-      "line": 226
+      "line": 229
     },
     {
       "type": "fn_decl",
@@ -308,16 +331,18 @@
         { "name": "stages", "type": "[]const Stage" }
       ],
       "returns": "void",
+      "comment": "Free a slice of Stages and all allocations they own.",
       "is_pub": true,
-      "line": 232
+      "line": 235
     },
     {
       "type": "struct",
       "name": "SyncResult",
-      "match_hash": "311599e172acc49d264122c1e2903728f4389a6c683d932c25c1f4d43ccb5d6a",
+      "match_hash": "060cce40007a9a221e1f855b72c28790a64d8a0874e4d2b5978e8893aab8bc7b",
       "signature": "keyword_struct SyncResult { ... }",
+      "comment": "Manages synchronization outcomes with fixed buffers; owned by the caller; ensures consistent state across operations.",
       "is_pub": true,
-      "line": 237
+      "line": 240
     },
     {
       "type": "fn_decl",
@@ -329,8 +354,9 @@
         { "name": "args" }
       ],
       "returns": "void",
+      "comment": "Print a step-progress line to stdout unconditionally (visible without --verbose).",
       "is_pub": true,
-      "line": 246
+      "line": 253
     },
     {
       "type": "fn_decl",
@@ -342,8 +368,9 @@
         { "name": "member", "type": "Member" }
       ],
       "returns": "?[]u8",
+      "comment": "Converts a Zig member to a JSON-serializable slice, handling allocator and type safety.",
       "is_pub": true,
-      "line": 256
+      "line": 263
     },
     {
       "type": "fn_private",
@@ -357,7 +384,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 361
+      "line": 368
     },
     {
       "type": "fn_private",
@@ -370,8 +397,9 @@
         { "name": "value", "type": "[]const u8" }
       ],
       "returns": "void",
+      "comment": "Writes a formatted string with escaped characters to the writer, handling null-terminated input.",
       "is_pub": false,
-      "line": 374
+      "line": 381
     },
     {
       "type": "fn_decl",
@@ -383,122 +411,123 @@
         { "name": "doc", "type": "GuidanceDoc" }
       ],
       "returns": "[]u8",
+      "comment": "Converts a GuidanceDoc into a JSON array of bytes for storage.",
       "is_pub": true,
-      "line": 381
+      "line": 388
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: zig extension maps to source",
       "is_pub": false,
-      "line": 561
+      "line": 568
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: py extension maps to source",
       "is_pub": false,
-      "line": 565
+      "line": 572
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: md extension maps to markdown",
       "is_pub": false,
-      "line": 569
+      "line": 576
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: json extension maps to config",
       "is_pub": false,
-      "line": 573
+      "line": 580
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: txt extension maps to unknown",
       "is_pub": false,
-      "line": 577
+      "line": 584
     },
     {
       "type": "test_decl",
       "name": "FileType.fromExtension: case insensitive ZIG maps to source",
       "is_pub": false,
-      "line": 581
+      "line": 588
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: source round-trip",
       "is_pub": false,
-      "line": 585
+      "line": 592
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: markdown round-trip",
       "is_pub": false,
-      "line": 589
+      "line": 596
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: config round-trip",
       "is_pub": false,
-      "line": 593
+      "line": 600
     },
     {
       "type": "test_decl",
       "name": "FileType.toStr: unknown round-trip",
       "is_pub": false,
-      "line": 597
+      "line": 604
     },
     {
       "type": "test_decl",
       "name": "freeStages: no leak on empty slice",
       "is_pub": false,
-      "line": 601
+      "line": 608
     },
     {
       "type": "test_decl",
       "name": "freeStages: frees all stage content",
       "is_pub": false,
-      "line": 607
+      "line": 614
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: minimal fn_decl contains expected JSON fields",
       "is_pub": false,
-      "line": 625
+      "line": 632
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: special chars are escaped in name",
       "is_pub": false,
-      "line": 646
+      "line": 653
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: with line field included",
       "is_pub": false,
-      "line": 665
+      "line": 672
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: with params",
       "is_pub": false,
-      "line": 684
+      "line": 691
     },
     {
       "type": "test_decl",
       "name": "jsonifyMember: no trailing comma when no members and no line",
       "is_pub": false,
-      "line": 707
+      "line": 714
     },
     {
       "type": "test_decl",
       "name": "jsonifyGuidanceDoc: minimal doc with just meta",
       "is_pub": false,
-      "line": 723
+      "line": 730
     },
     {
       "type": "test_decl",
       "name": "jsonifyGuidanceDoc: doc with comment and keywords",
       "is_pub": false,
-      "line": 740
+      "line": 747
     }
   ]
 }

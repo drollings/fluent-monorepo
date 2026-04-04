@@ -4,6 +4,7 @@
     "source": "src/guidance/vector_db.zig",
     "language": "zig"
   },
+  "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {

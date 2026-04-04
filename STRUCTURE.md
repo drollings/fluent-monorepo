@@ -87,6 +87,7 @@ Then you you must read
 │   ├── guidance
 │   │   ├── schemas
 │   │   │   └── guidance.schema.json
+│   │   ├── COMMENT_INFILL_DESIGN.md
 │   │   ├── DESIGN.md
 │   │   ├── MCP.md
 │   │   └── VISION.md

@@ -296,7 +296,12 @@ pub const SyncProcessor = struct {
                                 if (accept) {
                                     if (m.comment) |old| self.allocator.free(old);
                                     m.comment = try self.allocator.dupe(u8, new_doc);
+                                    m.comment_generated = true;
                                     result.has_changes = true;
+                                    result.comments_generated = true;
+                                    // Recompute match_hash to include the new comment.
+                                    if (m.match_hash) |old_hash| self.allocator.free(old_hash);
+                                    m.match_hash = try hash.computeMemberHash(self.allocator, m.*);
                                 }
                             }
                             if (er.tags.len > 0) {
@@ -321,7 +326,12 @@ pub const SyncProcessor = struct {
                                 if (accept) {
                                     if (m.comment) |old| self.allocator.free(old);
                                     m.comment = try self.allocator.dupe(u8, new_doc);
+                                    m.comment_generated = true;
                                     result.has_changes = true;
+                                    result.comments_generated = true;
+                                    // Recompute match_hash to include the new comment.
+                                    if (m.match_hash) |old_hash| self.allocator.free(old_hash);
+                                    m.match_hash = try hash.computeMemberHash(self.allocator, m.*);
                                 }
                             }
                             if (er.tags.len > 0) {

@@ -1720,6 +1720,23 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         validateAllJsonSchema(allocator, paths.json_dir, ga.verbose);
     }
 
+    // ── Post-processing: sync generated comments to source, fmt, correct lines ─
+    // This phase runs after all JSON files are generated and checks for members
+    // with comment_generated=true. For those files, it writes comments to source,
+    // runs fmt, and corrects line numbers.
+    if (!ga.dry_run and !ga.no_llm) {
+        _ = postProcessCommentSync(
+            allocator,
+            paths.json_dir,
+            paths.workspace,
+            &cfg,
+            ga.dry_run,
+            ga.verbose,
+        ) catch |err| {
+            std.debug.print("warning: post-process comment sync failed: {s}\n", .{@errorName(err)});
+        };
+    }
+
     if (ga.compile_db) {
         // M8.2: Auto-sync capabilities before DB sync so capability embeddings
         // and source mappings are always current.
@@ -1771,6 +1788,183 @@ fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, ver
     if (verbose or bad > 0) {
         std.debug.print("schema validation: {d} ok, {d} violations\n", .{ ok, bad });
     }
+}
+
+/// Post-processing phase for comment synchronization.
+/// Scans JSON files for members with comment_generated=true, writes comments
+/// to source, runs fmt, and corrects line numbers.
+/// Returns the count of files that were modified.
+fn postProcessCommentSync(
+    allocator: std.mem.Allocator,
+    json_dir: []const u8,
+    workspace: []const u8,
+    cfg: *const config_mod.ProjectConfig,
+    dry_run: bool,
+    verbose: bool,
+) !usize {
+    const json_src_dir = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return 0;
+    defer allocator.free(json_src_dir);
+
+    var src_dir = std.fs.openDirAbsolute(json_src_dir, .{ .iterate = true }) catch return 0;
+    defer src_dir.close();
+    var walker = src_dir.walk(allocator) catch return 0;
+    defer walker.deinit();
+
+    var store = json_store_mod.JsonStore.init(allocator);
+    // JsonStore has no deinit method - memory is managed per-call
+
+    // Collect files that have generated comments.
+    var modified_count: usize = 0;
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
+
+        const json_path = std.fs.path.join(allocator, &.{ json_src_dir, entry.path }) catch continue;
+        defer allocator.free(json_path);
+
+        const doc = store.loadGuidance(json_path) catch continue orelse continue;
+
+        // Check if any member has comment_generated=true.
+        var has_generated = false;
+        for (doc.members) |member| {
+            if (member.comment_generated) {
+                has_generated = true;
+                break;
+            }
+        }
+
+        if (!has_generated) {
+            store.freeGuidanceDoc(doc);
+            continue;
+        }
+
+        // Convert JSON path back to source path.
+        const src_rel = entry.path[0 .. entry.path.len - 5]; // strip .json
+        const src_abs = std.fs.path.join(allocator, &.{ workspace, "src", src_rel }) catch {
+            store.freeGuidanceDoc(doc);
+            continue;
+        };
+        defer allocator.free(src_abs);
+
+        if (verbose) {
+            std.debug.print("post-process: {s}: writing generated comments to source\n", .{src_abs});
+        }
+
+        if (dry_run) {
+            store.freeGuidanceDoc(doc);
+            modified_count += 1;
+            continue;
+        }
+
+        // Read current source.
+        const source = std.fs.cwd().readFileAllocOptions(
+            allocator,
+            src_abs,
+            10 * 1024 * 1024,
+            null,
+            .@"1",
+            0,
+        ) catch |err| {
+            std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
+            store.freeGuidanceDoc(doc);
+            continue;
+        };
+        defer allocator.free(source);
+
+        // Process members in descending line order to avoid shifting.
+        const sorted_members = comment_sync_mod.sortMembersByLineDesc(allocator, doc.members) catch {
+            store.freeGuidanceDoc(doc);
+            continue;
+        };
+        defer allocator.free(sorted_members);
+
+        var current_source: []const u8 = try allocator.dupe(u8, source);
+        defer allocator.free(current_source);
+        var source_changed = false;
+
+        for (sorted_members) |member| {
+            if (!member.comment_generated) continue;
+            if (member.comment == null) continue;
+
+            const decl_line = member.line orelse continue;
+            const new_comment = member.comment.?;
+
+            // Check if there's already a comment at this line.
+            const existing = try comment_inserter_mod.extractCommentAtLine(allocator, current_source, decl_line);
+            defer if (existing) |e| allocator.free(e);
+
+            if (existing == null) {
+                // No existing comment — insert.
+                const insert_res = try comment_inserter_mod.insertComment(
+                    allocator,
+                    current_source,
+                    decl_line,
+                    new_comment,
+                );
+                if (insert_res.changed) {
+                    allocator.free(current_source);
+                    current_source = insert_res.new_source;
+                    allocator.free(insert_res.line_adjustments);
+                    source_changed = true;
+                } else {
+                    insert_res.deinit(allocator);
+                }
+            } else {
+                // Existing comment — replace if different.
+                if (!std.mem.eql(u8, existing.?, new_comment)) {
+                    const replace_res = try comment_inserter_mod.replaceComment(
+                        allocator,
+                        current_source,
+                        decl_line,
+                        new_comment,
+                    );
+                    if (replace_res.changed) {
+                        allocator.free(current_source);
+                        current_source = replace_res.new_source;
+                        allocator.free(replace_res.line_adjustments);
+                        source_changed = true;
+                    } else {
+                        replace_res.deinit(allocator);
+                    }
+                }
+            }
+        }
+
+        if (source_changed) {
+            // Write modified source.
+            const file = std.fs.createFileAbsolute(src_abs, .{ .truncate = true }) catch |err| {
+                std.debug.print("post-process: WARN: cannot write {s}: {s}\n", .{ src_abs, @errorName(err) });
+                store.freeGuidanceDoc(doc);
+                continue;
+            };
+            defer file.close();
+            try file.writeAll(current_source);
+            modified_count += 1;
+
+            // Run fmt on the modified file.
+            const ext = std.fs.path.extension(src_abs);
+            if (std.mem.eql(u8, ext, ".zig")) {
+                if (cfg.fmtCommandForExt(ext)) |fmt_argv| {
+                    if (verbose) std.debug.print("fmt:      {s}\n", .{src_abs});
+                    _ = common.shell.runCommand(allocator, fmt_argv) catch {};
+                }
+            }
+
+            // Correct line numbers in JSON.
+            comment_sync_mod.correctLineNumbers(allocator, src_abs, json_dir, workspace) catch |err| {
+                std.debug.print("post-process: WARN: failed to correct lines for {s}: {s}\n", .{ src_abs, @errorName(err) });
+            };
+        }
+
+        store.freeGuidanceDoc(doc);
+    }
+
+    if (modified_count > 0 and verbose) {
+        std.debug.print("post-process: processed {d} file(s) with generated comments\n", .{modified_count});
+    }
+
+    return modified_count;
 }
 
 // =============================================================================

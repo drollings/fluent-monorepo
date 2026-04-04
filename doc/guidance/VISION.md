@@ -48,8 +48,9 @@ This is deterministic waterfall execution: each stage must pass before the next 
 **Key Invariants:**
 - JSON mtime is the universal "all stages passed" marker
 - Source mtime > JSON mtime = stale file requiring re-sync
-- `match_hash` (SHA-256 of signature) enables incremental comment preservation
+- `match_hash` (SHA-256 of signature + comment) enables incremental comment preservation
 - `guidance gen` processes only changed files; `guidance gen --force` reprocesses all
+- `comment_generated` flag tracks LLM-generated comments for source sync
 
 ### Goal 3: Token-Efficient Context for AI Coders
 
@@ -110,15 +111,27 @@ Source File (.zig/.py/.md/.json)
         ↓
     [Pattern Detection] ──→ Auto-attach GoF/domain patterns
         ↓
+    [LLM Enhancement] ──→ Generate missing comments (comment_generated=true)
+        ↓
     Guidance JSON ──→ .guidance/src/<path>.json
         ↓
+    [Post-Processing Phase] ──→ Write generated comments to source
+        │                         ↓
+        │                    [zig fmt]
+        │                         ↓
+        │                    [Line Number Correction]
+        │                         ↓
+        │                    [match_hash Recalculation]
+        │
     [Database Sync] ──→ .guidance.db (SQLite vector search)
 ```
 
 **Incremental Design:**
 - `fileNeedsProcessing()`: Compare source mtime vs JSON mtime
-- `match_hash`: SHA-256 of `signature` field; unchanged = preserve comments
+- `match_hash`: SHA-256 of `signature ++ "|||COMMENT|||" ++ comment`; unchanged = preserve comments
 - Per-file processing: `guidance gen --file src/foo.zig`
+- `comment_generated` flag: Tracks LLM-generated comments needing source sync
+- **Post-processing**: After JSON generation, scan for `comment_generated=true` members, write to source, run fmt, correct line numbers
 
 ### Component 2: Query Engine (`GuidanceDb` + `executeStaged`)
 
@@ -227,6 +240,23 @@ pub const GuidanceDoc = struct {
 };
 ```
 
+### Member (`.guidance/src/**/*.json` members[])
+
+```zig
+pub const Member = struct {
+    type: MemberType,              // fn_decl, struct, enum, etc.
+    name: []const u8,               // Member name
+    match_hash: ?[]const u8 = null, // SHA-256(signature ++ "|||COMMENT|||" ++ comment)
+    signature: ?[]const u8 = null,   // Function/struct signature
+    params: []const Param = &.{},   // Function parameters
+    returns: ?[]const u8 = null,     // Return type
+    comment: ?[]const u8 = null,     // Doc comment (///)
+    line: ?u32 = null,              // 1-based line number
+    comment_generated: bool = false, // True if LLM-generated (not from source)
+    // ... other fields
+};
+```
+
 ### Stage (Staged Query Pipeline)
 
 ```zig
@@ -288,6 +318,12 @@ CREATE TABLE ast_nodes (
 8. **Fluent WVR**: Registry, target, interner from `src/common/`
 9. **Skills/Capabilities**: Auto-attachment during pattern detection
 10. **Capability Routing**: `findMatchedCapabilityNamesForQuery()` in `executeStaged()`
+11. **Comment In-filling**: Automatic LLM-generated comment sync to source files
+    - `match_hash` includes comment: `SHA-256(signature ++ "|||COMMENT|||" ++ comment)`
+    - `comment_generated` flag tracks LLM-generated comments
+    - Post-processing phase writes generated comments to source
+    - Single fmt pass after all comment insertions
+    - Line number correction after fmt
 
 ### In Progress 🔄
 
@@ -300,6 +336,61 @@ CREATE TABLE ast_nodes (
 2. **Cross-Language Equivalents**: Link Python `bin/guidance-py` to Zig `src/guidance/` via `equivalents[]` field
 3. **Usage Extraction**: Call-site snippets during sync (grep for `AstParser.init(` patterns)
 4. **Performance Telemetry**: Query frequency tracking for LLM budget prioritization
+
+---
+
+## Comment In-filling
+
+When `guidance gen` runs with LLM enabled and a function/struct/enum lacks a `///` doc comment, the enhancer generates one and stores it in the JSON with `comment_generated=true`. A post-processing phase ensures these generated comments are written back to source:
+
+### Workflow
+
+```
+guidance gen --all-languages
+       │
+       ├─► AST Extraction → Member extraction with initial match_hash
+       │
+       ├─► Member Merge → Preserve existing comments, flag new members
+       │
+       ├─► LLM Enhancement → Generate comments for members missing them
+       │                      Sets comment_generated=true, recalculates match_hash
+       │
+       ├─► JSON Write → Save guidance JSON with comment_generated flag
+       │
+       └─► Post-Processing (if any comment_generated=true):
+            │
+            ├─► Scan JSON files for comment_generated=true members
+            │
+            ├─► Write comments to source files (bottom-up line order)
+            │
+            ├─► Run zig fmt on modified files
+            │
+            ├─► Correct line numbers in JSON (re-parse after fmt)
+            │
+            └─► Recalculate match_hash with final comments
+```
+
+### Key Invariants
+
+1. **Hash Includes Comment**: `match_hash = SHA-256(signature ++ "|||COMMENT|||" ++ comment)`
+   - Comment changes trigger regeneration check
+   - Stable comments produce stable hashes
+
+2. **Single Fmt Pass**: After all comment insertions, run `zig fmt` once on modified files
+
+3. **Automatic Workflow**: No explicit `--sync-comments` flag needed when LLM is available
+   - Generated comments are written to source automatically
+   - Line numbers corrected after fmt
+
+### Implementation
+
+| Component | Purpose |
+|-----------|---------|
+| `types.Member.comment_generated` | Flag tracking LLM-generated comments |
+| `hash.computeMemberHash()` | SHA-256 hash including comment with separator |
+| `sync.zig` | Sets `comment_generated=true` when LLM generates comment |
+| `sync_engine.postProcessCommentSync()` | Scans JSON, writes comments, runs fmt, corrects lines |
+| `comment_sync.correctLineNumbers()` | Re-parses source and updates JSON line numbers |
 
 ---
 
@@ -366,6 +457,12 @@ zig fmt src/
 guidance gen --all-languages
 ```
 **Invariant:** All source files processed. JSON mtime updated only on success.
+**Post-Processing:** When LLM generates comments:
+1. Scan JSON for `comment_generated=true` members
+2. Write generated comments to source files
+3. Run `zig fmt` on modified files
+4. Correct line numbers in JSON
+5. Recalculate `match_hash` with new comments
 
 ### Structure Phase
 ```
@@ -514,11 +611,22 @@ The result is an AI-assisted development tool that grows more capable with every
 
 ---
 
-*Vision Document v1.1 — April 2026*
+*Vision Document v1.2 — April 2026*
 
 ---
 
 ## Appendix: Comparative Analysis Summary
+
+### Comment In-filling Implementation Status
+
+See `doc/guidance/COMMENT_INFILL_DESIGN.md` for full design details.
+
+**Completed:**
+- ✅ `comment_generated` field in `types.Member`
+- ✅ `computeMemberHash()` in `hash.zig` includes comment
+- ✅ Post-processing phase in `sync_engine.zig`
+- ✅ `correctLineNumbers()` in `comment_sync.zig`
+- ✅ Single fmt pass after all comment insertions
 
 ### From GraphRAG vs Coral Context Report
 

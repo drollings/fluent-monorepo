@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms"],
+  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/json_store.zig", "src/guidance/staged.zig"],
   "members": [
     {

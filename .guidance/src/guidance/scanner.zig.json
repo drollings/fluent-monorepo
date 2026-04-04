@@ -4,6 +4,7 @@
     "source": "src/guidance/scanner.zig",
     "language": "zig"
   },
+  "capabilities": ["explain-query", "config-system", "ast-indexing"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {
