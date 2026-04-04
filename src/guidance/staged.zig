@@ -757,6 +757,28 @@ pub fn formatStaged(
         }
     }
 
+    // ── Navigation: deduplicated file:line references from code stages ────────
+    {
+        var seen_locs: std.StringHashMapUnmanaged(void) = .{};
+        defer seen_locs.deinit(allocator);
+        var any = false;
+        for (stages) |s| {
+            if (s.kind != .code) continue;
+            if (seen_locs.contains(s.source)) continue;
+            try seen_locs.put(allocator, s.source, {});
+            if (!any) {
+                try w.writeAll("**Locations:**\n");
+                any = true;
+            }
+            if (s.line) |ln| {
+                try w.print("- `{s}:{d}`\n", .{ s.source, ln });
+            } else {
+                try w.print("- `{s}`\n", .{s.source});
+            }
+        }
+        if (any) try w.writeByte('\n');
+    }
+
     try w.writeAll("---\n\n");
 
     // ── M7: not_found sentinel — render directly and return early ─────────────
@@ -1365,19 +1387,3 @@ test "formatStaged: See Also is capped at 10 unique keywords" {
     };
     try std.testing.expect(comma_count <= 9);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

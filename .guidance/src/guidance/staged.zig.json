@@ -135,7 +135,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 927
+      "line": 949
     },
     {
       "type": "fn_private",
@@ -147,7 +147,7 @@
       ],
       "returns": "types.MemberType",
       "is_pub": false,
-      "line": 965
+      "line": 987
     },
     {
       "type": "fn_decl",
@@ -163,7 +163,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 979
+      "line": 1001
     },
     {
       "type": "fn_decl",
@@ -178,7 +178,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 997
+      "line": 1019
     },
     {
       "type": "fn_decl",
@@ -192,7 +192,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": true,
-      "line": 1013
+      "line": 1035
     },
     {
       "type": "fn_private",
@@ -205,7 +205,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 1128
+      "line": 1150
     },
     {
       "type": "fn_decl",
@@ -218,7 +218,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 1138
+      "line": 1160
     },
     {
       "type": "fn_decl",
@@ -231,7 +231,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1174
+      "line": 1196
     },
     {
       "type": "fn_decl",
@@ -245,79 +245,79 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1179
+      "line": 1201
     },
     {
       "type": "test_decl",
       "name": "formatStaged: empty stages output contains header and separator",
       "is_pub": false,
-      "line": 1203
+      "line": 1225
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage with line emits source path and line number",
       "is_pub": false,
-      "line": 1211
+      "line": 1233
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage without line still emits code block",
       "is_pub": false,
-      "line": 1225
+      "line": 1247
     },
     {
       "type": "test_decl",
       "name": "formatStaged: summary appears before separator",
       "is_pub": false,
-      "line": 1239
+      "line": 1261
     },
     {
       "type": "test_decl",
       "name": "formatStaged: followup keywords produce Suggested Queries section",
       "is_pub": false,
-      "line": 1250
+      "line": 1272
     },
     {
       "type": "test_decl",
       "name": "formatStaged: skill_doc stage produces Knowledge Base section",
       "is_pub": false,
-      "line": 1260
+      "line": 1282
     },
     {
       "type": "test_decl",
       "name": "formatStaged: metadata stage with keywords prefix produces References section",
       "is_pub": false,
-      "line": 1274
+      "line": 1296
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter with description returns description",
       "is_pub": false,
-      "line": 1288
+      "line": 1310
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter without description returns first non-empty body line",
       "is_pub": false,
-      "line": 1304
+      "line": 1326
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: no front matter returns first paragraph up to blank line",
       "is_pub": false,
-      "line": 1320
+      "line": 1342
     },
     {
       "type": "test_decl",
       "name": "formatStaged: capability_doc stage renders Capability section",
       "is_pub": false,
-      "line": 1329
+      "line": 1351
     },
     {
       "type": "test_decl",
       "name": "formatStaged: See Also is capped at 10 unique keywords",
       "is_pub": false,
-      "line": 1343
+      "line": 1365
     }
   ]
 }

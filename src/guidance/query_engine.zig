@@ -1777,17 +1777,11 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     for (queries) |tq| {
         std.debug.print("## Query: `{s}`\n\n", .{tq.query});
 
-        // Run explain
-        var ea: ExplainArgs = .{ .no_llm = no_llm, .limit = 10, .verbose = verbose, .debug = debug };
-        if (db_path) |p| ea.db_path = p;
-        if (workspace) |w| ea.workspace = w;
-        if (guidance_dir) |g| ea.guidance = g;
-
         const query_text = try allocator.dupe(u8, tq.query);
         defer allocator.free(query_text);
 
-        // Capture results via internal search
-        const results = results_blk: {
+        // Capture results via the same strategy pipeline as `guidance explain`
+        const stages = stages_blk: {
             const embedder = try createEmbedderWithFallback(allocator, &cfg);
             defer embedder.deinit();
 
@@ -1797,18 +1791,27 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             };
             defer gdb.deinit();
 
-            const aliases_path = try std.fs.path.join(allocator, &.{ gdir_abs, "semantic-aliases.json" });
-            defer allocator.free(aliases_path);
-
-            var aliases_opt = vector_db_mod.loadSemanticAliases(allocator, aliases_path) catch null;
+            var aliases_opt = loadAliases(allocator, gdir_abs);
             defer if (aliases_opt) |*a| a.deinit();
 
-            const search_aliases = if (aliases_opt) |a| a else null;
-            break :results_blk try gdb.searchWithAliases(allocator, query_text, 10, search_aliases);
+            var id_strategy: query_strategy_mod.IdentifierLookupStrategy = .{};
+            var cap_strategy: query_strategy_mod.CapabilityQueryStrategy = .{};
+            var concept_strategy: query_strategy_mod.ConceptQueryStrategy = .{};
+            const strategies = query_strategy_mod.buildDefaultStrategies(&id_strategy, &cap_strategy, &concept_strategy);
+
+            break :stages_blk try query_strategy_mod.executeWithStrategy(
+                allocator,
+                &gdb,
+                query_text,
+                query_text,
+                ws,
+                aliases_opt,
+                &strategies,
+            );
         };
         defer {
-            for (results) |r| freeSearchResult(allocator, r);
-            allocator.free(results);
+            types.freeStages(allocator, stages);
+            allocator.free(stages);
         }
 
         // Score results using LLM evaluation when available
@@ -1821,21 +1824,19 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         var llm_evaluated = false;
 
         if (llm_client_opt) |*client| {
-            // Build results summary for LLM evaluation
+            // Build stages summary for LLM evaluation (mirrors actual explain output)
             var results_buf: std.ArrayList(u8) = .{};
             defer results_buf.deinit(allocator);
             const rw = results_buf.writer(allocator);
             try rw.print("Query: \"{s}\"\n\n", .{query_text});
-            if (results.len > 0) {
-                try rw.print("Found {d} results:\n\n", .{results.len});
-                for (results[0..@min(5, results.len)]) |r| {
-                    try rw.print("- {s} ({s})\n", .{ r.name, r.node_type });
-                    if (r.comment) |c| {
-                        const ctrimmed = std.mem.trim(u8, c, " \t\n\r");
-                        if (ctrimmed.len > 0) {
-                            const first_line = std.mem.indexOfScalar(u8, ctrimmed, '\n') orelse ctrimmed.len;
-                            try rw.print("  Description: {s}\n", .{ctrimmed[0..@min(first_line, 100)]});
-                        }
+            if (stages.len > 0) {
+                try rw.print("Found {d} stages:\n\n", .{stages.len});
+                for (stages[0..@min(5, stages.len)]) |s| {
+                    try rw.print("- {s} ({s})\n", .{ s.source, @tagName(s.kind) });
+                    const ctrimmed = std.mem.trim(u8, s.content, " \t\n\r");
+                    if (ctrimmed.len > 0) {
+                        const first_line = std.mem.indexOfScalar(u8, ctrimmed, '\n') orelse ctrimmed.len;
+                        try rw.print("  Content: {s}\n", .{ctrimmed[0..@min(first_line, 100)]});
                     }
                 }
             } else {
@@ -1955,13 +1956,13 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         std.debug.print("| Relevance | {s}/10 |\n", .{rel_display});
         std.debug.print("| Completeness | {s}/10 |\n", .{cmpl_display});
         std.debug.print("| Navigation | {s}/10 |\n", .{nav_display});
-        std.debug.print("| Results | {d} |\n", .{results.len});
+        std.debug.print("| Results | {d} |\n", .{stages.len});
         std.debug.print("| Evaluation | {s} |\n\n", .{eval_status});
 
-        // Show top 3 results
-        std.debug.print("**Top Results:**\n", .{});
-        for (results[0..@min(3, results.len)]) |r| {
-            std.debug.print("- `{s}` ({s}:{s})\n", .{ r.name, r.module, r.node_type });
+        // Show top 3 stages
+        std.debug.print("**Top Stages:**\n", .{});
+        for (stages[0..@min(3, stages.len)]) |s| {
+            std.debug.print("- `{s}` ({s})\n", .{ s.source, @tagName(s.kind) });
         }
         if (obs_len > 0) {
             std.debug.print("\n**Observation:** {s}\n", .{obs_buf[0..obs_len]});
@@ -2359,49 +2360,3 @@ test "isShortQuery: regular two-word queries are short" {
     try testing.expect(isShortQuery("parse file"));
     try testing.expect(isShortQuery("load config"));
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

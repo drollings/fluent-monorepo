@@ -21,6 +21,9 @@ comptime {
     _ = @import("doc_parser.zig");
     // M9: Pull in staged tests (formatStaged, capability_doc, See Also cap)
     _ = @import("staged.zig");
+    // Phase 1/2a/2b: codehealth and call_extractor tests
+    _ = @import("codehealth.zig");
+    _ = @import("call_extractor.zig");
 }
 
 // ---------------------------------------------------------------------------
@@ -1834,6 +1837,3 @@ test "extractMemberCommentsFromSource: handles nested members" {
     // Cleanup
     if (doc.members[0].members[0].comment) |c| allocator.free(c);
 }
-
-
-

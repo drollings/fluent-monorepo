@@ -11,6 +11,9 @@ pub const SearchResult = vector_db.SearchResult;
 pub const SemanticAliases = vector_db.SemanticAliases;
 pub const syncDatabase = vector_db.syncDatabase;
 pub const loadSemanticAliases = vector_db.loadSemanticAliases;
+pub const CodehealthDirective = vector_db.CodehealthDirective;
+pub const parseCodehealthDirective = vector_db.parseCodehealthDirective;
+pub const DbSyncBuilder = vector_db.DbSyncBuilder;
 
 pub const HnswIndex = hnsw.HnswIndex;
 

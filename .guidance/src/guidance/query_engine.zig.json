@@ -564,7 +564,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 2020
+      "line": 2021
     },
     {
       "type": "fn_private",
@@ -577,7 +577,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2034
+      "line": 2035
     },
     {
       "type": "fn_private",
@@ -590,7 +590,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2062
+      "line": 2063
     },
     {
       "type": "fn_decl",
@@ -603,7 +603,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2141
+      "line": 2142
     },
     {
       "type": "fn_decl",
@@ -616,7 +616,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2203
+      "line": 2204
     },
     {
       "type": "fn_decl",
@@ -629,7 +629,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2234
+      "line": 2235
     },
     {
       "type": "fn_decl",
@@ -642,55 +642,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2244
+      "line": 2245
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2316
+      "line": 2317
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2321
+      "line": 2322
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is short",
       "is_pub": false,
-      "line": 2326
+      "line": 2327
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2331
+      "line": 2332
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2336
+      "line": 2337
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2341
+      "line": 2342
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2351
+      "line": 2352
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are short",
       "is_pub": false,
-      "line": 2357
+      "line": 2358
     }
   ]
 }

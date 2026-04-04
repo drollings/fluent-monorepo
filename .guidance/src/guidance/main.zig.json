@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "064045dc7940efde685df09e56ce183000ee2b779a733a07d3c09ebe8c6daa30",
+      "match_hash": "feeecb049c139afa36c6118c132351af6bd8dd8dba4252d8e9aec74f24e0d2dc",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -18,118 +18,124 @@
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 44
+          "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 45
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 46
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 47
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 48
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "deps",
           "is_pub": false,
-          "line": 49
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 50
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 51
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 52
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 53
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 54
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "scrub",
           "is_pub": false,
-          "line": 55
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 56
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 57
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 58
+          "line": 59
         }
     ,    {
           "type": "enum_field",
           "name": "@\"cache-stats\"",
           "is_pub": false,
-          "line": 59
+          "line": 60
         }
     ,    {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 60
+          "line": 61
         }
     ,    {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 61
+          "line": 62
         }
     ,    {
           "type": "enum_field",
           "name": "scan",
           "is_pub": false,
-          "line": 62
+          "line": 63
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "codehealth",
+          "is_pub": false,
+          "line": 64
         }
       ],
-      "line": 43
+      "line": 44
     },
     {
       "type": "fn_decl",
@@ -138,7 +144,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 66
+      "line": 68
     },
     {
       "type": "fn_private",
@@ -151,7 +157,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 133
+      "line": 136
     },
     {
       "type": "fn_private",
@@ -160,7 +166,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 138
+      "line": 141
     },
     {
       "type": "fn_private",
@@ -173,7 +179,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 247
+      "line": 264
     },
     {
       "type": "fn_private",
@@ -186,7 +192,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 280
+      "line": 297
     }
   ]
 }

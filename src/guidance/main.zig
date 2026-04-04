@@ -18,6 +18,7 @@ const deps_mod = @import("deps.zig");
 const config_mod = @import("config.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 const query_engine_mod = @import("query_engine.zig");
+const codehealth_mod = @import("codehealth.zig");
 const llm = @import("common");
 
 pub const version = "0.1.0";
@@ -39,7 +40,7 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Defines a command type for managing Zig keywords, managing ownership and invariants in the compilation pipeline.
+/// Manages command execution with fixed-size buffers; owned by the system; ensures safe initialization/deinit.
 const Command = enum {
     init,
     gen,
@@ -60,6 +61,7 @@ const Command = enum {
     serve,
     ralph,
     scan,
+    codehealth,
 };
 
 /// Starts the Zig program execution by defining the entry point.
@@ -122,6 +124,7 @@ pub fn main() !void {
         .serve => query_engine_mod.cmdServe(allocator, args[2..]),
         .ralph => cmdRalph(allocator, args[2..]),
         .scan => @import("scanner.zig").cmdScan(allocator, args[2..]),
+        .codehealth => codehealth_mod.cmdCodehealth(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
@@ -165,6 +168,7 @@ fn printHelp() !void {
         \\  scrub            Blank synthetic LLM-generated comments in guidance JSON files
         \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary            Append a timestamped entry to the current work item DIARY.md
+        \\  codehealth       Detect unused modules, redundant code, and dead code candidates
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
@@ -234,6 +238,19 @@ fn printHelp() !void {
         \\  guidance deps --src src > zig.depend
         \\  guidance commit
         \\  guidance check
+        \\  guidance codehealth
+        \\  guidance codehealth --min-age=90 --format=json
+        \\  guidance codehealth --simhash-threshold=2
+        \\  guidance codehealth --extract-calls
+        \\
+        \\Codehealth options:
+        \\  --min-age=N            Minimum days since modification (default: 30)
+        \\  --format=ai            AI-optimized markdown (default)
+        \\  --format=human         Human-readable summary
+        \\  --format=json          JSON for scripting
+        \\  --simhash-threshold=N  Max Hamming distance for redundancy (default: 3)
+        \\  --extract-calls        Enable Phase 2b call graph extraction (expensive)
+        \\  --db PATH              Database path (default: .guidance.db)
         \\
     );
     try stdout.flush();
@@ -315,9 +332,4 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
-
-
-
-
-
 

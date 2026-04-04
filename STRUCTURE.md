@@ -92,6 +92,8 @@ Then you you must read
 │   │   ├── DESIGN.md
 │   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
 │   │   ├── MCP.md
+│   │   ├── TODO_20260404_CODEHEALTH.md
+│   │   ├── TODO_20260404_CODEHEALTH_CHECKLIST.md
 │   │   ├── TODO_20260404_STREAMLINE_JSON.md
 │   │   ├── TODO_20260404_STREAMLINE_JSON_CHECKLIST.md
 │   │   └── VISION.md
@@ -257,7 +259,9 @@ Then you you must read
 │   │   │   ├── markdown_plugin.zig                       # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   └── zig_plugin.zig                            # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   ├── ast_parser.zig
+│   │   ├── call_extractor.zig                              # call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.
 │   │   ├── codebase_map.zig                                # codebase_map.zig — Structural discovery layer for `guidance explain`.
+│   │   ├── codehealth.zig                                  # codehealth — detect unused modules, redundant code, and dead code candidates.
 │   │   ├── comment_cache.zig                               # comment_cache.zig — In-process cache for generated doc comments.
 │   │   ├── comment_checker.zig                             # comment_checker.zig — Comment staleness detection for guidance.
 │   │   ├── comment_inserter.zig                            # comment_inserter.zig — Insert and replace doc comments in Zig source files.
@@ -354,6 +358,7 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
+├── PROMPT_CODEHEALTH.md
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt

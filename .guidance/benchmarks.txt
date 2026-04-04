@@ -14,7 +14,6 @@ dependencies imports
 design patterns
 error handling
 memory allocation
-file matching
 gitignore filtering
 triage functionality
 structure generation
@@ -29,10 +28,11 @@ zig plugin
 markdown plugin
 Workspace root
 # Long queries (LLM synthesis path)
+How does filterStages work?
 How does the staged query pipeline work?
 What design patterns are used in this codebase?
 Where is the LLM client defined?
 How do I add a new language plugin?
 enhancer AI documentation generation
 Using embeddings for full text search
-How does this code use Cosine similarity?
+How does this code use cosine similarity?

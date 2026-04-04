@@ -691,6 +691,48 @@ pub const GuidanceDb = struct {
             }
         }
 
+        // ── Step 2l: symbol_meta table (codehealth annotation tracking) ──
+        // Stores CODEHEALTH: directives parsed from member doc comments.
+        // CASCADE keeps the index consistent when ast_nodes rows are removed.
+        {
+            const sm_sql =
+                \\CREATE TABLE IF NOT EXISTS symbol_meta (
+                \\    node_id       INTEGER NOT NULL PRIMARY KEY,
+                \\    deprecated_by TEXT,
+                \\    milestone     TEXT,
+                \\    ignore_reason TEXT,
+                \\    FOREIGN KEY (node_id) REFERENCES ast_nodes(id) ON DELETE CASCADE
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_symbol_meta_node ON symbol_meta(node_id);
+            ;
+            var sm_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(self.db, sm_sql, null, null, &sm_err);
+            if (sm_err) |msg| c.sqlite3_free(msg);
+        }
+
+        // ── Step 2m: called_by table (Phase 2b call graph extraction) ──
+        // Populated only when `guidance codehealth --extract-calls` is run.
+        // Truncate + repopulate each run to keep it fresh without incremental state.
+        {
+            const cb_sql =
+                \\CREATE TABLE IF NOT EXISTS called_by (
+                \\    id          INTEGER PRIMARY KEY,
+                \\    caller_file TEXT    NOT NULL,
+                \\    caller_line INTEGER NOT NULL,
+                \\    caller_fn   TEXT    NOT NULL,
+                \\    callee_name TEXT    NOT NULL,
+                \\    callee_file TEXT,
+                \\    callee_line INTEGER,
+                \\    confidence  TEXT    NOT NULL
+                \\);
+                \\CREATE INDEX IF NOT EXISTS idx_called_by_callee ON called_by(callee_name, callee_file);
+                \\CREATE INDEX IF NOT EXISTS idx_called_by_caller ON called_by(caller_file, caller_fn);
+            ;
+            var cb_err: [*c]u8 = null;
+            _ = c.sqlite3_exec(self.db, cb_sql, null, null, &cb_err);
+            if (cb_err) |msg| c.sqlite3_free(msg);
+        }
+
         // ── Step 5: schema version ──
         const ver_sql = "INSERT OR REPLACE INTO schema_version(version) VALUES(?1)";
         var stmt: ?*c.sqlite3_stmt = null;
@@ -1388,6 +1430,190 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_step(stmt);
     }
 
+    // ── Codehealth helpers ─────────────────────────────────────────
+
+    /// Insert or replace a symbol_meta row for the given node_id.
+    /// Any field set to null is stored as NULL in the database.
+    pub fn insertSymbolMeta(
+        self: *Self,
+        node_id: i64,
+        deprecated_by: ?[]const u8,
+        milestone: ?[]const u8,
+        ignore_reason: ?[]const u8,
+    ) void {
+        const sql =
+            \\INSERT OR REPLACE INTO symbol_meta
+            \\  (node_id, deprecated_by, milestone, ignore_reason)
+            \\VALUES (?1, ?2, ?3, ?4)
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_int64(stmt, 1, node_id);
+        if (deprecated_by) |s|
+            _ = c.sqlite3_bind_text(stmt, 2, s.ptr, @intCast(s.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 2);
+        if (milestone) |s|
+            _ = c.sqlite3_bind_text(stmt, 3, s.ptr, @intCast(s.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 3);
+        if (ignore_reason) |s|
+            _ = c.sqlite3_bind_text(stmt, 4, s.ptr, @intCast(s.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 4);
+        _ = c.sqlite3_step(stmt);
+    }
+
+    /// A module (source file) with zero importers — candidate for removal.
+    pub const UnusedModule = struct {
+        source: []const u8,
+        last_modified: i64,
+    };
+
+    /// Find source files with zero importers (used_by IS NULL or '[]').
+    /// Excludes test files. Results are sorted by source path.
+    /// Caller must free each `source` string and the returned slice.
+    pub fn findUnusedModules(
+        self: *Self,
+        allocator: std.mem.Allocator,
+    ) ![]UnusedModule {
+        const sql =
+            \\SELECT source, last_modified
+            \\FROM ast_nodes
+            \\WHERE node_type = 'module'
+            \\  AND (used_by IS NULL OR used_by = '[]' OR used_by = '')
+            \\  AND source NOT LIKE '%_test.zig'
+            \\  AND source NOT LIKE 'test/%'
+            \\ORDER BY source
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(UnusedModule, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var results: std.ArrayList(UnusedModule) = .{};
+        errdefer {
+            for (results.items) |r| allocator.free(r.source);
+            results.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const src = try dupeCol(stmt.?, 0, allocator);
+            const lm = c.sqlite3_column_int64(stmt, 1);
+            try results.append(allocator, .{ .source = src, .last_modified = lm });
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    /// A simhash entry loaded for cross-file redundancy analysis.
+    pub const SimhashEntry = struct {
+        node_id: i64,
+        simhash: u64,
+        name: []const u8,
+        node_type: []const u8,
+        source: []const u8,
+        signature: ?[]const u8,
+    };
+
+    /// Load all simhash entries for fn_decl and struct nodes (cross-file comparison).
+    /// Caller must free each field in each entry and the slice itself.
+    pub fn loadSimhashEntries(
+        self: *Self,
+        allocator: std.mem.Allocator,
+    ) ![]SimhashEntry {
+        const sql =
+            \\SELECT si.node_id, si.simhash, n.name, n.node_type, n.source, n.signature
+            \\FROM simhash_index si
+            \\JOIN ast_nodes n ON n.id = si.node_id
+            \\WHERE n.node_type IN ('fn_decl', 'struct')
+            \\ORDER BY n.source, n.name
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) {
+            return allocator.alloc(SimhashEntry, 0);
+        }
+        defer _ = c.sqlite3_finalize(stmt);
+
+        var results: std.ArrayList(SimhashEntry) = .{};
+        errdefer {
+            for (results.items) |r| {
+                allocator.free(r.name);
+                allocator.free(r.node_type);
+                allocator.free(r.source);
+                if (r.signature) |s| allocator.free(s);
+            }
+            results.deinit(allocator);
+        }
+
+        while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
+            const node_id = c.sqlite3_column_int64(stmt, 0);
+            const h: u64 = @bitCast(c.sqlite3_column_int64(stmt, 1));
+            const name = try dupeCol(stmt.?, 2, allocator);
+            const nt = try dupeCol(stmt.?, 3, allocator);
+            const src = try dupeCol(stmt.?, 4, allocator);
+            const sig_raw = c.sqlite3_column_text(stmt, 5);
+            const sig: ?[]const u8 = if (sig_raw != null)
+                try allocator.dupe(u8, std.mem.span(sig_raw))
+            else
+                null;
+            try results.append(allocator, .{
+                .node_id = node_id,
+                .simhash = h,
+                .name = name,
+                .node_type = nt,
+                .source = src,
+                .signature = sig,
+            });
+        }
+
+        return results.toOwnedSlice(allocator);
+    }
+
+    /// Insert a call site into the called_by table.
+    pub fn insertCalledBy(
+        self: *Self,
+        caller_file: []const u8,
+        caller_line: u32,
+        caller_fn: []const u8,
+        callee_name: []const u8,
+        callee_file: ?[]const u8,
+        callee_line: ?u32,
+        confidence: []const u8,
+    ) void {
+        const sql =
+            \\INSERT INTO called_by
+            \\  (caller_file, caller_line, caller_fn, callee_name, callee_file, callee_line, confidence)
+            \\VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        ;
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return;
+        defer _ = c.sqlite3_finalize(stmt);
+        _ = c.sqlite3_bind_text(stmt, 1, caller_file.ptr, @intCast(caller_file.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_int64(stmt, 2, caller_line);
+        _ = c.sqlite3_bind_text(stmt, 3, caller_fn.ptr, @intCast(caller_fn.len), SQLITE_STATIC);
+        _ = c.sqlite3_bind_text(stmt, 4, callee_name.ptr, @intCast(callee_name.len), SQLITE_STATIC);
+        if (callee_file) |cf|
+            _ = c.sqlite3_bind_text(stmt, 5, cf.ptr, @intCast(cf.len), SQLITE_STATIC)
+        else
+            _ = c.sqlite3_bind_null(stmt, 5);
+        if (callee_line) |cl|
+            _ = c.sqlite3_bind_int64(stmt, 6, cl)
+        else
+            _ = c.sqlite3_bind_null(stmt, 6);
+        _ = c.sqlite3_bind_text(stmt, 7, confidence.ptr, @intCast(confidence.len), SQLITE_STATIC);
+        _ = c.sqlite3_step(stmt);
+    }
+
+    /// Truncate the called_by table (run before repopulating with --extract-calls).
+    pub fn truncateCalledBy(self: *Self) void {
+        var err: [*c]u8 = null;
+        _ = c.sqlite3_exec(self.db, "DELETE FROM called_by", null, null, &err);
+        if (err) |msg| c.sqlite3_free(msg);
+    }
+
     /// Return candidate node IDs whose SimHash is within max_hamming bits of query_hash.
     ///
     /// This is the hot path: loads 8 bytes per node (versus 4 × DIMS bytes per embedding),
@@ -2078,11 +2304,23 @@ pub const GuidanceDb = struct {
 
         if (c.sqlite3_step(stmt) != c.SQLITE_DONE) return error.StepFailed;
 
+        const node_id = c.sqlite3_last_insert_rowid(self.db);
+
         // Index the embedding in the SimHash table for ANN pre-filtering.
         if (emb) |e| {
-            const node_id = c.sqlite3_last_insert_rowid(self.db);
             const h = simhash.simhash(e);
             self.upsertSimhash(node_id, h);
+        }
+
+        // Parse CODEHEALTH: directives from the member comment and persist them.
+        if (effective_comment) |cm| {
+            if (parseCodehealthDirective(cm)) |dir| {
+                switch (dir) {
+                    .ignore_reason => |r| self.insertSymbolMeta(node_id, null, null, r),
+                    .milestone => |v| self.insertSymbolMeta(node_id, null, v, null),
+                    .deprecated_by => |r| self.insertSymbolMeta(node_id, r, null, null),
+                }
+            }
         }
     }
 
@@ -4460,18 +4698,66 @@ test "DbSyncBuilder: each setter produces an independent copy (immutable chain)"
     try std.testing.expectEqual(@as(u32, 99), with_limit.cache_limit);
 }
 
+// =============================================================================
+// CODEHEALTH directive parsing
+// =============================================================================
 
+/// A parsed `CODEHEALTH:` directive from a member doc comment.
+pub const CodehealthDirective = union(enum) {
+    /// `CODEHEALTH: ignore <reason>` — exclude this symbol from all detection.
+    ignore_reason: []const u8,
+    /// `CODEHEALTH: milestone <version>` — planned for future release; exclude from dead-code reports.
+    milestone: []const u8,
+    /// `CODEHEALTH: deprecated <replacement>` — has a replacement symbol.
+    deprecated_by: []const u8,
+};
 
+/// Parse a `CODEHEALTH:` directive from a doc comment string.
+/// Returns null when no directive is present.
+/// The returned slice points into `comment` — no allocation.
+pub fn parseCodehealthDirective(comment: []const u8) ?CodehealthDirective {
+    const marker = "CODEHEALTH:";
+    const idx = std.mem.indexOf(u8, comment, marker) orelse return null;
+    const rest = std.mem.trimLeft(u8, comment[idx + marker.len ..], " \t");
 
+    // Terminate at the first newline so multi-line comments don't bleed in.
+    const line_end = std.mem.indexOfAny(u8, rest, "\n\r") orelse rest.len;
+    const line = std.mem.trim(u8, rest[0..line_end], " \t");
 
+    if (std.mem.startsWith(u8, line, "ignore")) {
+        const reason = std.mem.trim(u8, line["ignore".len..], " \t");
+        return .{ .ignore_reason = reason };
+    } else if (std.mem.startsWith(u8, line, "milestone")) {
+        const version = std.mem.trim(u8, line["milestone".len..], " \t");
+        return .{ .milestone = version };
+    } else if (std.mem.startsWith(u8, line, "deprecated")) {
+        const replacement = std.mem.trim(u8, line["deprecated".len..], " \t");
+        return .{ .deprecated_by = replacement };
+    }
+    return null;
+}
 
+test "parseCodehealthDirective: ignore" {
+    const dir = parseCodehealthDirective("/// CODEHEALTH: ignore vtable-impl\n/// Invoked by reactor loop.").?;
+    try std.testing.expectEqualStrings("vtable-impl", dir.ignore_reason);
+}
 
+test "parseCodehealthDirective: milestone" {
+    const dir = parseCodehealthDirective("/// CODEHEALTH: milestone v2.0\n/// Planned for distributed caching.").?;
+    try std.testing.expectEqualStrings("v2.0", dir.milestone);
+}
 
+test "parseCodehealthDirective: deprecated" {
+    const dir = parseCodehealthDirective("/// CODEHEALTH: deprecated use searchOptimized instead").?;
+    try std.testing.expectEqualStrings("use searchOptimized instead", dir.deprecated_by);
+}
 
+test "parseCodehealthDirective: no directive returns null" {
+    try std.testing.expect(parseCodehealthDirective("/// Regular doc comment") == null);
+    try std.testing.expect(parseCodehealthDirective("") == null);
+}
 
-
-
-
-
-
-
+test "parseCodehealthDirective: multiline comment extracts first line only" {
+    const dir = parseCodehealthDirective("/// CODEHEALTH: ignore test-helper\n/// other stuff here").?;
+    try std.testing.expectEqualStrings("test-helper", dir.ignore_reason);
+}
