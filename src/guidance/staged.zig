@@ -274,66 +274,55 @@ pub fn executeStagedWithAliasesOriginal(
         });
     }
 
-    // ── Check for exact name match (single-keyword query) ──────────────────────
-    // If query is a single keyword and matches a result name exactly,
-    // show only that code snippet (not multiple files).
-    const is_single_keyword = blk: {
-        var tok = std.mem.tokenizeAny(u8, query, " \t\n\r");
-        var count: usize = 0;
-        while (tok.next()) |_| {
-            count += 1;
-            if (count > 1) break :blk false;
-        }
-        break :blk count == 1;
-    };
+    // ── Code stages: per-token exact matching then top-3-files fallback ─────────
+    // For each token in the original query, find an exact name match in results
+    // and emit its code excerpt.  This handles multi-keyword queries like
+    // "filterStages dupeStage" by showing a separate excerpt for each identifier.
+    // Falls back to top-3-unique-files when no token matches exactly (e.g. for
+    // pure concept queries like "staged pipeline architecture").
+    var seen_code_by_loc: std.StringHashMapUnmanaged(void) = .{};
+    defer {
+        var kit = seen_code_by_loc.keyIterator();
+        while (kit.next()) |k| allocator.free(k.*);
+        seen_code_by_loc.deinit(allocator);
+    }
 
-    var exact_match_source: ?[]const u8 = null;
-    var exact_match_line: ?u32 = null;
-    var exact_match_node_type: ?[]const u8 = null;
-
-    if (is_single_keyword) {
-        const query_lower = std.ascii.allocLowerString(allocator, query) catch null;
-        defer if (query_lower) |ql| allocator.free(ql);
-
-        if (query_lower) |ql| {
+    var token_match_count: usize = 0;
+    {
+        var tok_it = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
+        while (tok_it.next()) |token| {
+            const token_lower = std.ascii.allocLowerString(allocator, token) catch continue;
+            defer allocator.free(token_lower);
             for (results) |r| {
                 const name_lower = std.ascii.allocLowerString(allocator, r.name) catch continue;
                 defer allocator.free(name_lower);
-                if (std.mem.eql(u8, ql, name_lower)) {
-                    exact_match_source = r.source;
-                    exact_match_line = r.line;
-                    exact_match_node_type = r.node_type;
+                if (!std.mem.eql(u8, token_lower, name_lower)) continue;
+                const line = r.line orelse break;
+                const loc_key = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, line });
+                if (seen_code_by_loc.contains(loc_key)) {
+                    allocator.free(loc_key);
                     break;
                 }
+                try seen_code_by_loc.put(allocator, loc_key, {});
+                const excerpt = extractSourceExcerptVerified(allocator, workspace, r.source, line, r.node_type, r.name) catch break;
+                if (excerpt.len > 0) {
+                    try stages.append(allocator, .{
+                        .kind = .code,
+                        .content = excerpt,
+                        .source = try allocator.dupe(u8, r.source),
+                        .line = line,
+                    });
+                    token_match_count += 1;
+                } else {
+                    allocator.free(excerpt);
+                }
+                break; // one match per token
             }
         }
     }
 
-    // ── Code stages: source excerpts ──────────────────────────────────────────
-    if (exact_match_source) |src| {
-        // Exact match: show only this code snippet
-        const line = exact_match_line orelse 1;
-        const node_type = exact_match_node_type orelse "fn_decl";
-        // Use the matched result name for line number verification.
-        const matched_name: ?[]const u8 = blk: {
-            for (results) |r| {
-                if (r.line == exact_match_line and std.mem.eql(u8, r.source, src)) {
-                    break :blk r.name;
-                }
-            }
-            break :blk null;
-        };
-        const excerpt = extractSourceExcerptVerified(allocator, workspace, src, line, node_type, matched_name) catch &.{};
-        if (excerpt.len > 0) {
-            try stages.append(allocator, .{
-                .kind = .code,
-                .content = excerpt,
-                .source = try allocator.dupe(u8, src),
-                .line = line,
-            });
-        }
-    } else {
-        // No exact match: show top 3 unique source files
+    // Fallback: no token matched exactly — show top 3 unique source files
+    if (token_match_count == 0) {
         var seen_code_files: std.StringHashMapUnmanaged(void) = .{};
         defer seen_code_files.deinit(allocator);
 
@@ -740,9 +729,9 @@ pub fn formatStaged(
     stages: []const types.Stage,
     summary: ?[]const u8,
     workspace: []const u8,
+    capabilities_dir: []const u8,
     followup_keywords: ?[]const []const u8,
 ) ![]u8 {
-    _ = workspace;
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(allocator);
     const w = out.writer(allocator);
@@ -757,30 +746,6 @@ pub fn formatStaged(
         }
     }
 
-    // ── Navigation: deduplicated file:line references from code stages ────────
-    {
-        var seen_locs: std.StringHashMapUnmanaged(void) = .{};
-        defer seen_locs.deinit(allocator);
-        var any = false;
-        for (stages) |s| {
-            if (s.kind != .code) continue;
-            if (seen_locs.contains(s.source)) continue;
-            try seen_locs.put(allocator, s.source, {});
-            if (!any) {
-                try w.writeAll("**Locations:**\n");
-                any = true;
-            }
-            if (s.line) |ln| {
-                try w.print("- `{s}:{d}`\n", .{ s.source, ln });
-            } else {
-                try w.print("- `{s}`\n", .{s.source});
-            }
-        }
-        if (any) try w.writeByte('\n');
-    }
-
-    try w.writeAll("---\n\n");
-
     // ── M7: not_found sentinel — render directly and return early ─────────────
     for (stages) |s| {
         if (s.kind != .not_found) continue;
@@ -789,19 +754,34 @@ pub fn formatStaged(
     }
 
     // ── Emit CODE stages only (prose/insight used for synthesis, not display) ──
-    var seen_code_srcs: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_code_srcs.deinit(allocator);
+    // Deduplicate by source:line so multi-keyword queries show every matched
+    // function/struct/enum even when several live in the same file.
+    var seen_code: std.StringHashMapUnmanaged(void) = .{};
+    defer {
+        var kit = seen_code.keyIterator();
+        while (kit.next()) |k| allocator.free(k.*);
+        seen_code.deinit(allocator);
+    }
 
     for (stages) |s| {
         if (s.kind != .code) continue;
-        if (seen_code_srcs.contains(s.source)) continue;
-        try seen_code_srcs.put(allocator, s.source, {});
+        const dedup_key = if (s.line) |ln|
+            try std.fmt.allocPrint(allocator, "{s}:{d}", .{ s.source, ln })
+        else
+            try allocator.dupe(u8, s.source);
+        if (seen_code.contains(dedup_key)) {
+            allocator.free(dedup_key);
+            continue;
+        }
+        try seen_code.put(allocator, dedup_key, {}); // map owns key
 
         const lang = llm.langFromPath(s.source);
         if (s.line) |ln| {
-            try w.print("## Source: `{s}:{d}`\n\n```{s}\n// {s}:{d}\n", .{ s.source, ln, lang, s.source, ln });
+            const trimmed_content = std.mem.trimRight(u8, s.content, " \t\n\r");
+            const end_ln = ln + std.mem.count(u8, trimmed_content, "\n");
+            try w.print("## Source location: `{s}:{d}-{d}`\n\n```{s}\n", .{ s.source, ln, end_ln, lang });
         } else {
-            try w.print("## Source: `{s}`\n\n```{s}\n// {s}\n", .{ s.source, lang, s.source });
+            try w.print("## Source location: `{s}`\n\n```{s}\n", .{ s.source, lang });
         }
 
         try w.print("{s}", .{s.content});
@@ -869,7 +849,9 @@ pub fn formatStaged(
                     if (seen_kw.count() >= 10) continue; // cap at 10 items
                     try seen_kw.put(allocator, p, {});
                     if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
+                    try all_keywords.append(allocator, '`');
                     try all_keywords.appendSlice(allocator, p);
+                    try all_keywords.append(allocator, '`');
                 }
             } else if (std.mem.startsWith(u8, line, "used_by: ")) {
                 // Split comma-separated paths and deduplicate.
@@ -880,7 +862,9 @@ pub fn formatStaged(
                     if (p.len == 0 or seen_see_also.contains(p)) continue;
                     try seen_see_also.put(allocator, p, {});
                     if (all_see_also.items.len > 0) try all_see_also.appendSlice(allocator, ", ");
+                    try all_see_also.append(allocator, '`');
                     try all_see_also.appendSlice(allocator, p);
+                    try all_see_also.append(allocator, '`');
                 }
             } else if (std.mem.startsWith(u8, line, "skills: ")) {
                 const v = line["skills: ".len..];
@@ -890,7 +874,9 @@ pub fn formatStaged(
                     if (p.len == 0 or seen_skills_ref.contains(p)) continue;
                     try seen_skills_ref.put(allocator, p, {});
                     if (all_skills.items.len > 0) try all_skills.appendSlice(allocator, ", ");
+                    try all_skills.append(allocator, '`');
                     try all_skills.appendSlice(allocator, p);
+                    try all_skills.append(allocator, '`');
                 }
             } else if (std.mem.startsWith(u8, line, "capabilities: ")) {
                 const v = line["capabilities: ".len..];
@@ -899,7 +885,7 @@ pub fn formatStaged(
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_caps_ref.contains(p)) continue;
                     try seen_caps_ref.put(allocator, p, {});
-                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, ", ");
+                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, "\x00");
                     try all_capabilities.appendSlice(allocator, p);
                 }
             } else if (std.mem.startsWith(u8, line, "matched_capabilities: ")) {
@@ -910,7 +896,9 @@ pub fn formatStaged(
                     if (p.len == 0 or seen_matched_caps.contains(p)) continue;
                     try seen_matched_caps.put(allocator, p, {});
                     if (all_matched_caps.items.len > 0) try all_matched_caps.appendSlice(allocator, ", ");
+                    try all_matched_caps.append(allocator, '`');
                     try all_matched_caps.appendSlice(allocator, p);
+                    try all_matched_caps.append(allocator, '`');
                 }
             }
         }
@@ -921,11 +909,31 @@ pub fn formatStaged(
             try w.writeAll("## References\n\n");
             ref_header_written = true;
         }
-        if (all_matched_caps.items.len > 0) try w.print("- **Matched Capabilities**: {s}\n", .{all_matched_caps.items});
-        if (all_keywords.items.len > 0) try w.print("- **See Also**: {s}\n", .{all_keywords.items});
-        if (all_see_also.items.len > 0) try w.print("- **Used in files**: {s}\n", .{all_see_also.items});
+        if (all_matched_caps.items.len > 0) try w.print("- **Matched capabilities**: {s}\n", .{all_matched_caps.items});
+        if (all_keywords.items.len > 0) try w.print("- **Suggested searches**: {s}\n", .{all_keywords.items});
+        if (all_see_also.items.len > 0) try w.print("- **Used in**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
-        if (all_capabilities.items.len > 0) try w.print("- **Capabilities**: {s}\n", .{all_capabilities.items});
+        if (all_capabilities.items.len > 0) {
+            try w.writeAll("- **Capabilities**: ");
+            var cap_it = std.mem.splitScalar(u8, all_capabilities.items, '\x00');
+            var cap_first = true;
+            while (cap_it.next()) |cap_name| {
+                if (!cap_first) try w.writeAll(", ");
+                cap_first = false;
+                if (capabilities_dir.len > 0) {
+                    const abs = try std.fs.path.join(allocator, &.{ capabilities_dir, cap_name, "CAPABILITY.md" });
+                    defer allocator.free(abs);
+                    const rel = if (workspace.len > 0 and std.mem.startsWith(u8, abs, workspace) and abs.len > workspace.len)
+                        abs[workspace.len + 1 ..]
+                    else
+                        abs;
+                    try w.print("`{s}`", .{rel});
+                } else {
+                    try w.print("`{s}`", .{cap_name});
+                }
+            }
+            try w.writeByte('\n');
+        }
     }
 
     // ── Suggested follow-up keywords (from LLM synthesis)──────────────────────
@@ -1222,12 +1230,11 @@ pub fn loadSkillExcerpt(
 // Tests
 // ---------------------------------------------------------------------------
 
-test "formatStaged: empty stages output contains header and separator" {
+test "formatStaged: empty stages output contains header" {
     const allocator = std.testing.allocator;
-    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", null);
+    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", "", null);
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "# Explain: myquery") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result, "---") != null);
 }
 
 test "formatStaged: code stage with line emits source path and line number" {
@@ -1258,15 +1265,21 @@ test "formatStaged: code stage without line still emits code block" {
     try std.testing.expect(std.mem.indexOf(u8, result, "const x = 1;") != null);
 }
 
-test "formatStaged: summary appears before separator" {
+test "formatStaged: summary appears before code sections" {
     const allocator = std.testing.allocator;
-    const result = try formatStaged(allocator, "q", &.{}, "This is the summary.", "/workspace", null);
+    const stages = [_]types.Stage{.{
+        .kind = .code,
+        .content = "pub fn foo() void {}\n",
+        .source = "src/foo.zig",
+        .line = 1,
+    }};
+    const result = try formatStaged(allocator, "q", &stages, "This is the summary.", "/workspace", null);
     defer allocator.free(result);
     const sum_pos = std.mem.indexOf(u8, result, "This is the summary.");
-    const sep_pos = std.mem.indexOf(u8, result, "---");
+    const src_pos = std.mem.indexOf(u8, result, "## Source location:");
     try std.testing.expect(sum_pos != null);
-    try std.testing.expect(sep_pos != null);
-    try std.testing.expect(sum_pos.? < sep_pos.?);
+    try std.testing.expect(src_pos != null);
+    try std.testing.expect(sum_pos.? < src_pos.?);
 }
 
 test "formatStaged: followup keywords produce Suggested Queries section" {
@@ -1374,7 +1387,7 @@ test "formatStaged: See Also is capped at 10 unique keywords" {
     const result = try formatStaged(allocator, "q", &stages, null, "/workspace", null);
     defer allocator.free(result);
     // Should contain See Also but only up to 10 items
-    const see_also_start = std.mem.indexOf(u8, result, "See Also") orelse {
+    const see_also_start = std.mem.indexOf(u8, result, "See also") orelse {
         try std.testing.expect(false); // must have See Also section
         return;
     };
