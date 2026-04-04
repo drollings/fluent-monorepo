@@ -106,14 +106,15 @@
     {
       "type": "fn_decl",
       "name": "formatStaged",
-      "match_hash": "703747cb1ff266a5df52040a09afb33a033524a9c250b9444b07a4cc77a56073",
-      "signature": "fn formatStaged(allocator: std.mem.Allocator, query: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8, followup_keywords: ?[]const []const u8) -> []u8",
+      "match_hash": "33937330511dacc9123f28b751d44b5c28dbd07efae7a1a93ea01fef2d8ed941",
+      "signature": "fn formatStaged(allocator: std.mem.Allocator, query: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8, capabilities_dir: []const u8, followup_keywords: ?[]const []const u8) -> []u8",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "query", "type": "[]const u8" },
         { "name": "stages", "type": "[]const types.Stage" },
         { "name": "summary", "type": "?[]const u8" },
         { "name": "workspace", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
         { "name": "followup_keywords", "type": "?[]const []const u8" }
       ],
       "returns": "[]u8",
@@ -135,7 +136,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 939
+      "line": 957
     },
     {
       "type": "fn_private",
@@ -147,7 +148,7 @@
       ],
       "returns": "types.MemberType",
       "is_pub": false,
-      "line": 977
+      "line": 995
     },
     {
       "type": "fn_decl",
@@ -163,7 +164,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 991
+      "line": 1009
     },
     {
       "type": "fn_decl",
@@ -178,7 +179,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 1009
+      "line": 1027
     },
     {
       "type": "fn_decl",
@@ -192,7 +193,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": true,
-      "line": 1025
+      "line": 1043
     },
     {
       "type": "fn_private",
@@ -205,7 +206,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 1140
+      "line": 1158
     },
     {
       "type": "fn_decl",
@@ -218,7 +219,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 1150
+      "line": 1168
     },
     {
       "type": "fn_decl",
@@ -231,7 +232,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1186
+      "line": 1204
     },
     {
       "type": "fn_decl",
@@ -245,79 +246,79 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1191
+      "line": 1209
     },
     {
       "type": "test_decl",
       "name": "formatStaged: empty stages output contains header",
       "is_pub": false,
-      "line": 1215
+      "line": 1233
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage with line emits source path and line number",
       "is_pub": false,
-      "line": 1222
+      "line": 1240
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage without line still emits code block",
       "is_pub": false,
-      "line": 1236
+      "line": 1254
     },
     {
       "type": "test_decl",
       "name": "formatStaged: summary appears before code sections",
       "is_pub": false,
-      "line": 1250
+      "line": 1268
     },
     {
       "type": "test_decl",
       "name": "formatStaged: followup keywords produce Suggested Queries section",
       "is_pub": false,
-      "line": 1267
+      "line": 1285
     },
     {
       "type": "test_decl",
       "name": "formatStaged: skill_doc stage produces Knowledge Base section",
       "is_pub": false,
-      "line": 1277
+      "line": 1295
     },
     {
       "type": "test_decl",
       "name": "formatStaged: metadata stage with keywords prefix produces References section",
       "is_pub": false,
-      "line": 1291
+      "line": 1309
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter with description returns description",
       "is_pub": false,
-      "line": 1305
+      "line": 1323
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter without description returns first non-empty body line",
       "is_pub": false,
-      "line": 1321
+      "line": 1339
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: no front matter returns first paragraph up to blank line",
       "is_pub": false,
-      "line": 1337
+      "line": 1355
     },
     {
       "type": "test_decl",
       "name": "formatStaged: capability_doc stage renders Capability section",
       "is_pub": false,
-      "line": 1346
+      "line": 1364
     },
     {
       "type": "test_decl",
       "name": "formatStaged: See Also is capped at 10 unique keywords",
       "is_pub": false,
-      "line": 1360
+      "line": 1378
     }
   ]
 }
