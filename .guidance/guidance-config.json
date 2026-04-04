@@ -19,6 +19,7 @@
     "default": "ollama:gpt:latest",
     "fast": "ollama:fast:latest",
     "thinking": "ollama:gpt:latest",
+    "batch": "ollama:gpt:latest",
     "embed": "ollama:embed:latest"
   },
   "embed": {

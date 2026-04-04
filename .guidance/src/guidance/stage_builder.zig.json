@@ -8,7 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["ast-indexing"],
+  "capabilities": ["coral-database", "ast-indexing"],
   "members": [
     {
       "type": "struct",

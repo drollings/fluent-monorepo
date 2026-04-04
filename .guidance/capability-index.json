@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1775298931862483143",
+  "generated": "1775314328412616915",
   "capabilities": [
     {
       "name": "config-system",
@@ -77,7 +77,7 @@
         "chain."
       ],
       "source": "config-system/CAPABILITY.md",
-      "mtime": 1775285439173677613
+      "mtime": 1775298932370691702
     },
     {
       "name": "plugin-system",
@@ -164,7 +164,7 @@
         "fn_decl"
       ],
       "source": "plugin-system/CAPABILITY.md",
-      "mtime": 1775285439162677729
+      "mtime": 1775298932359691722
     },
     {
       "name": "embedding-providers",
@@ -256,7 +256,7 @@
         "Sources"
       ],
       "source": "embedding-providers/CAPABILITY.md",
-      "mtime": 1775285439174677603
+      "mtime": 1775298932370691702
     },
     {
       "name": "local-model-decomposition",
@@ -380,7 +380,7 @@
         "How"
       ],
       "source": "local-model-decomposition/CAPABILITY.md",
-      "mtime": 1775285439321676055
+      "mtime": 1775298932521691428
     },
     {
       "name": "explain-query",
@@ -524,7 +524,7 @@
         "collecting"
       ],
       "source": "explain-query/CAPABILITY.md",
-      "mtime": 1775285439167677677
+      "mtime": 1775298932364691713
     },
     {
       "name": "reflection",
@@ -659,7 +659,7 @@
         "MCP"
       ],
       "source": "reflection/CAPABILITY.md",
-      "mtime": 1775285439163677719
+      "mtime": 1775298932360691721
     },
     {
       "name": "vector-search",
@@ -820,7 +820,7 @@
         "EmbeddingProvider"
       ],
       "source": "vector-search/CAPABILITY.md",
-      "mtime": 1775285439175677592
+      "mtime": 1775298932517691436
     },
     {
       "name": "ontology",
@@ -938,7 +938,7 @@
         "upgrade"
       ],
       "source": "ontology/CAPABILITY.md",
-      "mtime": 1775285439317676097
+      "mtime": 1775298932518691434
     },
     {
       "name": "coral-ingestion",
@@ -1070,7 +1070,7 @@
         "ingestor"
       ],
       "source": "coral-ingestion/CAPABILITY.md",
-      "mtime": 1775285439167677677
+      "mtime": 1775298932363691715
     },
     {
       "name": "coral-cache",
@@ -1188,7 +1188,7 @@
         "execution"
       ],
       "source": "coral-cache/CAPABILITY.md",
-      "mtime": 1775285439323676034
+      "mtime": 1775298932523691424
     },
     {
       "name": "ast-indexing",
@@ -1290,7 +1290,7 @@
         "fn_decl"
       ],
       "source": "ast-indexing/CAPABILITY.md",
-      "mtime": 1775285439325676013
+      "mtime": 1775298932525691420
     },
     {
       "name": "coral-mcp",
@@ -1411,7 +1411,7 @@
         "MCP"
       ],
       "source": "coral-mcp/CAPABILITY.md",
-      "mtime": 1775285439320676065
+      "mtime": 1775298932520691430
     },
     {
       "name": "coral-database",
@@ -1623,7 +1623,7 @@
         "root"
       ],
       "source": "coral-database/CAPABILITY.md",
-      "mtime": 1775285439172677624
+      "mtime": 1775298932368691706
     },
     {
       "name": "target-registry",
@@ -1831,7 +1831,7 @@
         "Accessor"
       ],
       "source": "target-registry/CAPABILITY.md",
-      "mtime": 1775285439173677613
+      "mtime": 1775298932369691704
     },
     {
       "name": "rdf-parsing",
@@ -1907,7 +1907,7 @@
         "canonicalization"
       ],
       "source": "rdf-parsing/CAPABILITY.md",
-      "mtime": 1775285439326676002
+      "mtime": 1775298932526691418
     },
     {
       "name": "sync-pipeline",
@@ -2017,7 +2017,7 @@
         "Sources"
       ],
       "source": "sync-pipeline/CAPABILITY.md",
-      "mtime": 1775285439320676065
+      "mtime": 1775298932520691430
     },
     {
       "name": "llm-client",
@@ -2136,7 +2136,7 @@
         "synthesis"
       ],
       "source": "llm-client/CAPABILITY.md",
-      "mtime": 1775285439321676055
+      "mtime": 1775298932521691428
     },
     {
       "name": "wasm-tools",
@@ -2297,7 +2297,7 @@
         "execution"
       ],
       "source": "wasm-tools/CAPABILITY.md",
-      "mtime": 1775285439324676023
+      "mtime": 1775298932524691422
     }
   ]
 }

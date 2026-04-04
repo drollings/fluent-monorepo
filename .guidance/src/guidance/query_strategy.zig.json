@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " query_strategy.zig — QueryStrategy VTable for intent-based query routing.\n\n Implements M2 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n Classify query intent before retrieval and route to the optimal strategy.\n\n VTable pattern follows fluent-wvr (see doc/skills/fluent-wvr/SKILL.md):\n   {ptr: *anyopaque, vtable: *const VTable} — two pointers, no inheritance.\n\n Strategy priority (lower = tried first):\n   0  IdentifierLookupStrategy  — single-token camelCase/PascalCase/snake_case\n   2  CapabilityQueryStrategy   — query matches a known capability/alias\n   4  ConceptQueryStrategy      — fallback: hybrid search + LLM synthesis",
-  "capabilities": ["explain-query", "ast-indexing"],
+  "capabilities": ["explain-query", "coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig"],
   "members": [
     {

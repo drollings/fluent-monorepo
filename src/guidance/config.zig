@@ -335,8 +335,8 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "version": "1",
             \\  "guidance_dir": "{s}",
             \\  "db_path": "{s}",
-            \\  "skills_dir": "skills",
-            \\  "capabilities_dir": "capabilities",
+            \\  "skills_dir": "doc/skills",
+            \\  "capabilities_dir": "doc/capabilities",
             \\  "src_dirs": ["src"],
             \\  "providers": {{
             \\    "local": {{
@@ -349,10 +349,11 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\    }}
             \\  }},
             \\  "models": {{
-            \\    "default": "ollama:code:latest",
-            \\    "fast": "local:code:latest",
-            \\    "thinking": "ollama:code:latest",
-            \\    "embed": "{s}"
+            \\    "default": "ollama:gpt:latest",
+            \\    "fast": "ollama:fast:latest",
+            \\    "thinking": "ollama:gpt:latest",
+            \\    "batch": "ollama:gpt:latest",
+            \\    "embed": "ollama:embed:latest"
             \\  }},
             \\  "embed": {{
             \\    "dims": {d},
@@ -369,10 +370,11 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\  "fmt_commands": {{
             \\    ".zig": ["zig", "fmt", "{{file}}"],
             \\    ".py": ["ruff", "format", "{{file}}"]
-            \\  }}
+            \\  }},
+            \\  "comment": "guidance: produces .guidance.db SQLite vector search database and .guidance/ JSON mirror."
             \\}}
             \\
-        , .{ guidance_dir, db_path, DEFAULT_EMBEDDING_PROVIDER ++ ":" ++ DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIMS, DEFAULT_EMBEDDING_CACHE_LIMIT });
+        , .{ guidance_dir, db_path, DEFAULT_EMBEDDING_DIMS, DEFAULT_EMBEDDING_CACHE_LIMIT });
 
         try file.writeAll(fbs.getWritten());
         std.debug.print("Created {s}\n", .{config_path});
@@ -410,6 +412,48 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
         \\
         \\## Key Files
         \\
+        \\# Agent Bootloader — guidance
+        \\
+        \\**Context**: guidance is a Zig-native, deterministic-first AST-guided vector search
+        \\database generator with local AI enhancement.  When used to search the
+        \\codebase's capabilities and code, it can save over 90% of the tokens and tool
+        \\calls compared to the orchestrating AI coder using other tools.
+        \\
+        \\## Prime Directive
+        \\
+        \\1. **Never guess**: use `guidance explain "<query text>" for guidance, and
+        \\follow instructions for any queries of interest
+        \\
+        \\---
+        \\
+        \\## Quick Start: RALPH Loop (Discovery → Implementation)
+        \\
+        \\```
+        \\1. DISCOVER (guidance):  guidance explain "<keywords or a short question>"
+        \\                         Prefer keywords: "cmdExplain"
+        \\                         Or, prefer a short question: "How do we sync guidance?"
+        \\                         Scan: module purpose, pattern type, skill list
+        \\
+        \\2. UNDERSTAND (MCP):     Read the primary source file(s) from step 1
+        \\                         Grep callers: who @import's this file?
+        \\                         Ask: do the listed skills actually apply?
+        \\
+        \\3. DECIDE:               If skills match → read them
+        \\                         If not → proceed to implementation
+        \\
+        \\4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or
+        \\                         other languages apart from Zig, i.e.  guidance-py)
+        \\                         Follow source patterns and applicable skills only
+        \\
+        \\5. VERIFY (make):        make pre-commit
+        \\                         build → test → lint → guidance gen → STRUCTURE.md
+        \\```
+        \\---
+        \\
+        \\## Source Layout
+        \\
+        \\```
+        \\
     );
     try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
     try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
@@ -417,25 +461,15 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
         \\- `.guidance.db` — SQLite vector search database
         \\- `STRUCTURE.md` — Project structure documentation (auto-generated)
         \\
-        \\## RALPH Loop
+        \\---
         \\
-        \\The recommended workflow is:
+        \\**DO:**
+        \\- Run `guidance explain "<query>"` and read the results
+        \\- Ask: "What capabilitity is used here?" before consulting skills
         \\
-        \\1. **DISCOVER**: `guidance explain "query"` — Search codebase
-        \\2. **UNDERSTAND**: Read source files identified by the query
-        \\3. **DECIDE**: Apply relevant skills/patterns
-        \\4. **IMPLEMENT**: Make changes
-        \\5. **VERIFY**: `guidance check` — Run tests, lint, format, guidance
-        \\
-        \\## Skills
-        \\
-    );
-    try w.print("Skills are stored in `{s}/.skills/<skill>/SKILL.md`. Reference them in source files:\n", .{guidance_dir});
-    try w.writeAll(
-        \\```zig
-        \\// file.zig  # [skill-name, another-skill] Description
-        \\```
-        \\
+        \\**DON'T:**
+        \\- Assume skills apply without validating against source code
+        \\- Write any code in Zig without reading `doc/skills/zig-current/SKILL.md` first
     );
 
     return try buf.toOwnedSlice(allocator);

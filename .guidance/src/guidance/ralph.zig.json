@@ -8,7 +8,7 @@
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
-  "capabilities": ["ast-indexing"],
+  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig"],
   "members": [
     {

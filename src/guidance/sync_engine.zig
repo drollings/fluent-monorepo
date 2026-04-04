@@ -834,9 +834,9 @@ const GenArgs = struct {
     skip_fmt: bool = false,
     /// Validate generated GuidanceDoc against schema after each file.
     validate_schema: bool = false,
-    /// Sleep duration (in seconds) after processing each file. Default: 20.
+    /// Sleep duration (in seconds) after processing each file. Default: 2.
     /// Set to 0 to disable.
-    timeout_seconds: u64 = 20,
+    timeout_seconds: u64 = 2,
     /// Show LLM prompts in debug output (separate from --debug).
     /// Use --show-prompts to see prompts; --debug shows metadata only.
     show_prompts: bool = false,
@@ -4109,7 +4109,7 @@ pub fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
         } else if (std.mem.eql(u8, arg, "--timeout")) {
             i += 1;
             if (i < args.len) {
-                ga.timeout_seconds = std.fmt.parseInt(u64, args[i], 10) catch ga.timeout_seconds;
+                ga.timeout_seconds = std.fmt.parseInt(u64, args[i], 2) catch ga.timeout_seconds;
             }
         }
     }

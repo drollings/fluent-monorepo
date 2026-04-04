@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n   guidance deps     [options]   Generate Makefile .depend file",
-  "capabilities": ["plugin-system", "explain-query", "coral-database", "config-system", "ast-indexing"],
+  "capabilities": ["explain-query", "coral-database", "config-system", "ast-indexing"],
   "members": [
     {
       "type": "enum",

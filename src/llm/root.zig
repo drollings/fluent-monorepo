@@ -35,7 +35,7 @@ pub const LlmConfig = struct {
     ///           model that was selected via the "default" or "fast" slot because
     ///           that slot happens to point to the same model as "thinking".
     think: ?bool = null,
-    timeout_ms: u32 = 10000,
+    timeout_ms: u32 = 2000,
     debug: bool = false,
     /// Show LLM prompts in debug output (separate from debug metadata).
     /// true: print raw prompt text to stderr/stdout.
