@@ -54,7 +54,7 @@ guidance gen --all-languages    # discover and invoke external providers
 ```
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (6 files, auto-discovered)
+## Sources (8 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -62,6 +62,8 @@ guidance gen --all-languages    # discover and invoke external providers
 | `src/guidance/plugin.zig` | 1.0 | defines_anchor |
 | `src/guidance/plugin_registry.zig` | 1.0 | defines_anchor |
 | `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/guidance/plugins/zig_plugin.zig` | 0.4 | path_heuristic |
 | `src/guidance/plugins/markdown_plugin.zig` | 0.4 | path_heuristic |
 

@@ -15,7 +15,6 @@
         { "name": "work_dir", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
-      "comment": "Retrieves the lifecycle state slice from the allocator and work directory.",
       "is_pub": true,
       "line": 20
     },
@@ -29,7 +28,6 @@
         { "name": "affected_count", "type": "usize" }
       ],
       "returns": "[]const u8",
-      "comment": "Assess risk level deterministically from content and file count.",
       "is_pub": true,
       "line": 35
     },
@@ -44,7 +42,6 @@
         { "name": "project_root", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Extract path-like tokens from content matching common project directories.\nReturns a deduplicated slice of owned paths (caller must free each + the slice).",
       "is_pub": true,
       "line": 64
     },
@@ -61,50 +58,34 @@
       "line": 134
     },
     {
-      "type": "fn_private",
-      "name": "addUnique",
-      "match_hash": "99aa58a4560b1591f3794ef23bb8690eba437c50375f0f4e67a4f40ab08d7edd",
-      "signature": "fn addUnique(allocator: std.mem.Allocator, list: *std.ArrayList([]const u8), path: []const u8, project_root: []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "list", "type": "*std.ArrayList([]const u8)" },
-        { "name": "path", "type": "[]const u8" },
-        { "name": "project_root", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "comment": "Add path to list if not a duplicate. Verifies existence in project_root.\nReturns true if added.",
-      "is_pub": false,
-      "line": 140
-    },
-    {
       "type": "test_decl",
       "name": "assessRisk high for delete",
       "is_pub": false,
-      "line": 164
+      "line": 146
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for refactor",
       "is_pub": false,
-      "line": 169
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "assessRisk medium for wide scope",
       "is_pub": false,
-      "line": 174
+      "line": 156
     },
     {
       "type": "test_decl",
       "name": "assessRisk low for simple change",
       "is_pub": false,
-      "line": 179
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "findAffectedFiles detects backtick paths",
       "is_pub": false,
-      "line": 184
+      "line": 166
     }
   ]
 }

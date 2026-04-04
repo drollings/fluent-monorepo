@@ -164,4 +164,3 @@ test "GitignoreFilter always excludes .git" {
     try std.testing.expect(filter.shouldIgnore("/project/.git/config"));
     try std.testing.expect(filter.shouldIgnore("/project/.zig-cache/foo"));
 }
-

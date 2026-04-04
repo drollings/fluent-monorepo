@@ -143,4 +143,3 @@ test "appendEscaped handles control chars" {
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u0001") != null);
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "normal") != null);
 }
-

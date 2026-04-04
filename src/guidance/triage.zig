@@ -137,25 +137,7 @@ fn isPathToken(s: []const u8) bool {
 
 /// Add path to list if not a duplicate. Verifies existence in project_root.
 /// Returns true if added.
-fn addUnique(
-    allocator: std.mem.Allocator,
-    list: *std.ArrayList([]const u8),
-    path: []const u8,
-    project_root: []const u8,
-) !bool {
-    // Dedup.
-    for (list.items) |existing| {
-        if (std.mem.eql(u8, existing, path)) return false;
-    }
-    // Verify existence (or allow if project_root is empty).
-    if (project_root.len > 0) {
-        const abs = try std.fs.path.join(allocator, &.{ project_root, path });
-        defer allocator.free(abs);
-        std.fs.accessAbsolute(abs, .{}) catch return false;
-    }
-    try list.append(allocator, try allocator.dupe(u8, path));
-    return true;
-}
+const addUnique = llm.shell.addUniquePath;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -205,4 +187,3 @@ test "findAffectedFiles detects backtick paths" {
     try std.testing.expect(files.len >= 1);
     try std.testing.expectEqualStrings("src/foo.zig", files[0]);
 }
-

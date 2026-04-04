@@ -768,9 +768,6 @@ test "DependencyResolver: GPA no leaks" {
     try testing.expectEqual(.ok, gpa.deinit());
 }
 
-
-
-
 test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     // Diamond: src <- obj_a, src <- obj_b, obj_a <- bin, obj_b <- bin
     // Expected levels: [src], [obj_a, obj_b], [bin]
@@ -816,5 +813,3 @@ test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     }
     try testing.expectEqual(.ok, gpa.deinit());
 }
-
-

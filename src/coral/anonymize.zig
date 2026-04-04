@@ -9,15 +9,15 @@ const std = @import("std");
 pub const AnonymizationPattern = enum {
     email,
     phone_us,
-    phone_intl,  // E.164 / UK / EU international formats
+    phone_intl, // E.164 / UK / EU international formats
     credit_card,
-    ssn_us,      // US Social Security Number NNN-NN-NNNN
-    ssn_uk,      // UK National Insurance Number
-    ssn_ca,      // Canadian Social Insurance Number
+    ssn_us, // US Social Security Number NNN-NN-NNNN
+    ssn_uk, // UK National Insurance Number
+    ssn_ca, // Canadian Social Insurance Number
     ipv4,
     ipv6,
-    api_key_bearer,  // Bearer <token>
-    api_key_aws,     // AKIA... AWS access key
+    api_key_bearer, // Bearer <token>
+    api_key_aws, // AKIA... AWS access key
     api_key_generic, // Generic 32+ char alphanumeric tokens
 
     pub fn placeholder(self: AnonymizationPattern) []const u8 {
@@ -636,4 +636,3 @@ test "anonymizeContext: no false positive on short alphanumeric" {
     defer allocator.free(result);
     try testing.expectEqualStrings(input, result);
 }
-

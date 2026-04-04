@@ -175,12 +175,14 @@ Then you you must read
 │   │   ├── local_model.zig                                 # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
 │   │   ├── logging.zig                                     # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
+│   │   ├── pattern.zig                                     # pattern.zig — Design pattern detection heuristics for Zig source code
 │   │   ├── refcount.zig                                    # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── registry.zig
 │   │   ├── repl.zig
 │   │   ├── resolver.zig
 │   │   ├── root.zig                                        # common — Module umbrella root.
 │   │   ├── shared_string.zig                               # SharedString — heap-allocated, reference-counted, immutable string.
+│   │   ├── shell.zig                                       # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                                # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── source.zig                                      # source.zig — Source code excerpt extraction helpers
 │   │   ├── str.zig                                         # str.zig — Generic string classification and inspection helpers

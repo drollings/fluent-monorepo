@@ -266,8 +266,3 @@ pub const ValidationError = error{
     UnsupportedPointerType,
     BufferTooSmall,
 };
-
-
-
-
-

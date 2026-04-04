@@ -251,3 +251,14 @@ test "resolvePath handles dot by returning base" {
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("/base", result);
 }
+
+/// Read a file's entire contents, returning null on any error.
+/// Convenience wrapper around readFileAlloc for optional semantics.
+pub fn readFileOpt(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
+    return readFileAlloc(allocator, path, max_size);
+}
+
+test "readFileOpt returns null for non-existent file" {
+    const result = readFileOpt(std.testing.allocator, "/nonexistent/path/file.txt", 1024);
+    try std.testing.expect(result == null);
+}

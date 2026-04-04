@@ -110,6 +110,3 @@ test "structHash same fields produce same hash" {
 
     try std.testing.expectEqualSlices(u8, hash1, hash2);
 }
-
-
-

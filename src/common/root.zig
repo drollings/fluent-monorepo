@@ -52,6 +52,9 @@ pub const stripThinkBlock = llm_file.stripThinkBlock;
 pub const stripPreamble = llm_file.stripPreamble;
 pub const isMalformedResponse = llm_file.isMalformedResponse;
 pub const extractCommentTag = llm_file.extractCommentTag;
+pub const llmHasDanglingEnd = llm_file.llmHasDanglingEnd;
+pub const llmIsGenericSelfRef = llm_file.llmIsGenericSelfRef;
+pub const llmIsOverlyGeneric = llm_file.llmIsOverlyGeneric;
 
 // ── Embedding providers (backward compat flat re-exports) ─────────────────────
 pub const EmbeddingProvider = embed_mod.EmbeddingProvider;
@@ -72,6 +75,7 @@ pub const ReaderState = io_mod.ReaderState;
 pub const makePathAbsolute = io_mod.makePathAbsolute;
 pub const readFileAlloc = io_mod.readFileAlloc;
 pub const readFileAllocErr = io_mod.readFileAllocErr;
+pub const readFileOpt = io_mod.readFileOpt;
 pub const resolvePath = io_mod.resolvePath;
 pub const stripPathPrefix = io_mod.stripPathPrefix;
 pub const DEFAULT_MAX_FILE_SIZE = io_mod.DEFAULT_MAX_FILE_SIZE;
@@ -116,6 +120,7 @@ pub const hasExtension = str_mod.hasExtension;
 pub const isPathToken = str_mod.isPathToken;
 pub const langFromPath = str_mod.langFromPath;
 pub const dupeStrings = str_mod.dupeStrings;
+pub const slugify = str_mod.slugify;
 pub const stripNlPrefix = str_mod.stripNlPrefix;
 pub const STOP_WORDS = str_mod.STOP_WORDS;
 pub const stripBoilerplate = str_mod.stripBoilerplate;
@@ -164,5 +169,11 @@ pub const limits = @import("limits.zig");
 /// Safe command-string tokenizer (no shell intermediary).
 pub const shell_parser = @import("shell_parser.zig");
 
+// ── Shell command execution ─────────────────────────────────────────────────────
+pub const shell = @import("shell.zig");
+
 // ── Typed ID handles ──────────────────────────────────────────────────────────
 pub const types = @import("types.zig");
+
+// ── Pattern detection ──────────────────────────────────────────────────────────
+pub const pattern = @import("pattern.zig");

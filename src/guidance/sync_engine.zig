@@ -2582,18 +2582,6 @@ pub fn reportCapabilityLifecycle(
     };
 }
 
-/// Run an arbitrary command (full argv, no template substitution).
-/// Returns true on exit code 0.
-fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
-    var child = std.process.Child.init(argv, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    try child.spawn();
-    const term = try child.wait();
-    return term == .Exited and term.Exited == 0;
-}
-
 /// Substitute `{file}` tokens in `argv_template` with `file_path`, then run
 /// the resulting command via `runCommand`.
 ///
@@ -2608,7 +2596,7 @@ fn runPhaseCommand(
     for (argv_template) |tok| {
         try argv.append(allocator, if (std.mem.eql(u8, tok, "{file}")) file_path else tok);
     }
-    return runCommand(allocator, argv.items);
+    return common.shell.runCommand(allocator, argv.items);
 }
 
 /// Walk `dir_abs` recursively and collect all files whose extension matches
@@ -3281,7 +3269,7 @@ fn runBuiltinLanguagePipeline(
                 if (ga.verbose) std.debug.print("test:     {s} skipped (test_passed marker is fresh)\n", .{language});
             } else {
                 stepPrint("test: {s} ({d} changed)\n", .{ language, stale_files.len });
-                const ok = try runCommand(allocator, argv);
+                const ok = try common.shell.runCommand(allocator, argv);
                 if (!ok) {
                     std.debug.print("error: test suite failed for language '{s}'\n", .{language});
                     return error.TestFailed;

@@ -222,5 +222,3 @@ test "normalize dateTime stub" {
     const tv = normalizeLiteral("2024-01-01T00:00:00Z", null, XSD ++ "dateTime");
     try testing.expectEqual(XsdType.date_time, @as(XsdType, tv));
 }
-
-

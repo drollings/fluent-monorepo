@@ -11,78 +11,14 @@
 ///       // Re-request infill from the LLM
 ///   }
 ///
-/// Note: isMalformedResponse logic is kept in sync with common/llm.zig.
+/// Note: isMalformedResponse uses common.llm functions for LLM validation.
 const std = @import("std");
-const string = @import("common");
+const llm = @import("common");
 
 /// Returns `true` if the comment text appears to be malformed/incomplete
-/// (from LLM generation). Synced with common/llm.zig isMalformedResponse().
+/// (from LLM generation). Delegates to common/llm.isMalformedResponse.
 pub fn isMalformedResponse(text: []const u8) bool {
-    const trimmed = std.mem.trim(u8, text, " \t\r\n");
-    if (trimmed.len == 0) return true;
-
-    if (llmHasDanglingEnd(trimmed)) return true;
-
-    const rtrimmed = std.mem.trimRight(u8, trimmed, " \t");
-    if (rtrimmed.len > 0 and rtrimmed[rtrimmed.len - 1] == '?') return true;
-
-    if (llmIsGenericSelfRef(trimmed)) return true;
-    if (llmIsOverlyGeneric(trimmed)) return true;
-
-    if (string.containsIgnoreCase(trimmed, "here's a")) return true;
-    if (string.containsIgnoreCase(trimmed, "here is a")) return true;
-    if (string.containsIgnoreCase(trimmed, "i'll ")) return true;
-    if (string.containsIgnoreCase(trimmed, "to summarize")) return true;
-    if (string.containsIgnoreCase(trimmed, "okay,")) return true;
-    if (string.containsIgnoreCase(trimmed, "ok,")) return true;
-
-    if (string.containsIgnoreCase(trimmed, "we need ")) return true;
-    if (string.containsIgnoreCase(trimmed, "let's think")) return true;
-    if (string.containsIgnoreCase(trimmed, "let's craft")) return true;
-    if (string.containsIgnoreCase(trimmed, "let's count")) return true;
-    if (string.containsIgnoreCase(trimmed, "let me think")) return true;
-    if (string.containsIgnoreCase(trimmed, "i need to ")) return true;
-
-    return false;
-}
-
-fn llmHasDanglingEnd(body: []const u8) bool {
-    const trimmed = std.mem.trimRight(u8, body, " \t.?");
-    if (trimmed.len == 0) return false;
-    var i: usize = trimmed.len;
-    while (i > 0 and trimmed[i - 1] != ' ') i -= 1;
-    const last_word = trimmed[i..];
-    const danglers = [_][]const u8{ "of", "in", "for", "from", "with", "to", "a", "an", "the" };
-    for (danglers) |d| {
-        if (std.ascii.eqlIgnoreCase(last_word, d)) return true;
-    }
-    return false;
-}
-
-fn llmIsGenericSelfRef(body: []const u8) bool {
-    const patterns = [_][]const u8{
-        "this function", "this method", "this class",
-        "this struct",   "this type",   "this module",
-    };
-    const trimmed = std.mem.trim(u8, body, " \t\r\n.");
-    for (patterns) |p| {
-        if (std.ascii.eqlIgnoreCase(trimmed, p)) return true;
-    }
-    return false;
-}
-
-fn llmIsOverlyGeneric(body: []const u8) bool {
-    const generics = [_][]const u8{
-        "function", "method",   "helper",  "util",           "utility",
-        "handler",  "callback", "wrapper", "implementation",
-    };
-    const trimmed = std.mem.trim(u8, body, " \t\r\n.");
-    if (trimmed.len > 20) return false;
-    if (std.mem.indexOfScalar(u8, trimmed, ' ') != null) return false;
-    for (generics) |g| {
-        if (std.ascii.eqlIgnoreCase(trimmed, g)) return true;
-    }
-    return false;
+    return llm.isMalformedResponse(text);
 }
 
 /// Returns `true` if `comment` is a synthetic placeholder that should be
@@ -110,7 +46,7 @@ fn hasBoilerplateManagesPattern(text: []const u8) bool {
         "no direct ownership",
     };
     for (lower_indicators) |ind| {
-        if (string.containsIgnoreCase(text, ind)) return true;
+        if (llm.containsIgnoreCase(text, ind)) return true;
     }
     return false;
 }

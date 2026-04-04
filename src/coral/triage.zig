@@ -6,7 +6,7 @@
 ///   - Recommended steps (LLM or fallback checklist)
 ///   - Lifecycle status
 const std = @import("std");
-const string = @import("common");
+const common = @import("common");
 
 /// Common source/doc file extensions for path detection.
 const SOURCE_EXTENSIONS = [_][]const u8{ "zig", "py", "md", "json", "toml", "yaml", "yml", "sh", "txt" };
@@ -35,14 +35,14 @@ pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]
 
 /// Evaluates risk based on content and affected count, returning a processed slice.
 pub fn assessRisk(content: []const u8, affected_count: usize) []const u8 {
-    const has_high = string.containsIgnoreCase(content, "delete") or
-        string.containsIgnoreCase(content, " remove ") or
-        string.containsIgnoreCase(content, "breaking");
+    const has_high = common.containsIgnoreCase(content, "delete") or
+        common.containsIgnoreCase(content, " remove ") or
+        common.containsIgnoreCase(content, "breaking");
     if (has_high) return "**High** — Destructive operations detected";
 
-    const has_medium = string.containsIgnoreCase(content, "refactor") or
-        string.containsIgnoreCase(content, "rename") or
-        string.containsIgnoreCase(content, "migration");
+    const has_medium = common.containsIgnoreCase(content, "refactor") or
+        common.containsIgnoreCase(content, "rename") or
+        common.containsIgnoreCase(content, "migration");
     if (has_medium) return "**Medium** — Structural changes detected";
 
     if (affected_count > 5) return "**Medium** — Wide scope: many affected files";
@@ -86,7 +86,7 @@ pub fn findAffectedFiles(
                 continue;
             };
             const inner = content[i + 1 .. close];
-            if (string.isPathToken(inner, &SOURCE_EXTENSIONS)) {
+            if (common.isPathToken(inner, &SOURCE_EXTENSIONS)) {
                 if (try addUnique(allocator, &found, inner, project_root)) {
                     i = close + 1;
                     continue;
@@ -112,7 +112,7 @@ pub fn findAffectedFiles(
                 end += 1;
             }
             const token = content[i..end];
-            if (token.len > prefix.len and string.hasExtension(token, &SOURCE_EXTENSIONS)) {
+            if (token.len > prefix.len and common.hasExtension(token, &SOURCE_EXTENSIONS)) {
                 _ = try addUnique(allocator, &found, token, project_root);
             }
             i = end;
@@ -132,25 +132,7 @@ pub fn findAffectedFiles(
 
 /// Add path to list if not a duplicate. Verifies existence in project_root.
 /// Returns true if added.
-fn addUnique(
-    allocator: std.mem.Allocator,
-    list: *std.ArrayList([]const u8),
-    path: []const u8,
-    project_root: []const u8,
-) !bool {
-    // Dedup.
-    for (list.items) |existing| {
-        if (std.mem.eql(u8, existing, path)) return false;
-    }
-    // Verify existence (or allow if project_root is empty).
-    if (project_root.len > 0) {
-        const abs = try std.fs.path.join(allocator, &.{ project_root, path });
-        defer allocator.free(abs);
-        std.fs.accessAbsolute(abs, .{}) catch return false;
-    }
-    try list.append(allocator, try allocator.dupe(u8, path));
-    return true;
-}
+const addUnique = common.shell.addUniquePath;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -200,5 +182,3 @@ test "findAffectedFiles detects backtick paths" {
     try std.testing.expect(files.len >= 1);
     try std.testing.expectEqualStrings("src/foo.zig", files[0]);
 }
-
-

@@ -16,7 +16,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a needle substring exists within the haystack, ignoring case sensitivity.",
       "is_pub": true,
       "line": 4
     },
@@ -30,7 +29,6 @@
         { "name": "needle", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a needle substring exists within the haystack array of bytes.",
       "is_pub": true,
       "line": 15
     },
@@ -44,7 +42,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if any keywords exist within the source string slice.",
       "is_pub": true,
       "line": 29
     },
@@ -58,7 +55,6 @@
         { "name": "keywords", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if any word from keywords appears in the given source string.",
       "is_pub": true,
       "line": 37
     },
@@ -72,7 +68,6 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if the input string contains any of the specified extensions.",
       "is_pub": true,
       "line": 45
     },
@@ -86,7 +81,6 @@
         { "name": "extensions", "type": "[]const []const u8" }
       ],
       "returns": "bool",
-      "comment": "Checks if a given slice of bytes matches a specified extension pattern.",
       "is_pub": true,
       "line": 55
     },

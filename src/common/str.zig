@@ -463,3 +463,44 @@ test "dupeStringOpt returns copy for non-empty string" {
     try std.testing.expect(result.?.ptr != original.ptr);
 }
 
+/// Convert a description string to a URL/directory-safe slug.
+/// Lowercases, replaces non-alphanumeric chars with dashes, removes leading/trailing dashes.
+/// Caps result at 40 chars.
+pub fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+    var buf: std.ArrayList(u8) = .{};
+    var prev_dash = true;
+    for (s) |c| {
+        if (std.ascii.isAlphanumeric(c)) {
+            try buf.append(allocator, std.ascii.toLower(c));
+            prev_dash = false;
+        } else if (!prev_dash and buf.items.len > 0) {
+            try buf.append(allocator, '-');
+            prev_dash = true;
+        }
+    }
+    while (buf.items.len > 0 and buf.items[buf.items.len - 1] == '-') {
+        buf.items.len -= 1;
+    }
+    if (buf.items.len == 0) try buf.appendSlice(allocator, "work-item");
+    if (buf.items.len > 40) buf.items.len = 40;
+    return buf.toOwnedSlice(allocator);
+}
+
+test "slugify converts to lowercase and replaces spaces" {
+    const result = try slugify(std.testing.allocator, "Hello World Test");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("hello-world-test", result);
+}
+
+test "slugify caps at 40 chars" {
+    const long_input = "This is a very long description that exceeds forty characters";
+    const result = try slugify(std.testing.allocator, long_input);
+    defer std.testing.allocator.free(result);
+    try std.testing.expect(@as(usize, 40) >= result.len);
+}
+
+test "slugify handles empty string" {
+    const result = try slugify(std.testing.allocator, "");
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("work-item", result);
+}

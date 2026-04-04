@@ -14,6 +14,7 @@
 //! All returned Provider values are owned by the caller; call provider.deinit().
 
 const std = @import("std");
+const common = @import("common");
 
 /// A discovered external language provider.
 pub const Provider = struct {
@@ -170,15 +171,7 @@ fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) !?[]const u
 
 /// Spawn `argv` as a child process, inheriting stdout/stderr.
 /// Returns true when the process exits with code 0.
-fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
-    var child = std.process.Child.init(argv, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Inherit;
-    child.stderr_behavior = .Inherit;
-    try child.spawn();
-    const term = try child.wait();
-    return term == .Exited and term.Exited == 0;
-}
+const runCommand = common.shell.runCommand;
 
 // ---------------------------------------------------------------------------
 // Tests

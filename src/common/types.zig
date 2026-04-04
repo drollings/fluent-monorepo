@@ -76,4 +76,3 @@ test "NodeId and SessionId are distinct types" {
     comptime try testing.expect(NodeId != TargetId);
     comptime try testing.expect(SessionId != TargetId);
 }
-

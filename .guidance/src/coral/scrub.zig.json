@@ -20,42 +20,6 @@
       "line": 20
     },
     {
-      "type": "fn_private",
-      "name": "llmHasDanglingEnd",
-      "match_hash": "92d37f5c26c6a53f32c388786ae72e68df648da5d2f890d4623e8b891ef2126b",
-      "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 49
-    },
-    {
-      "type": "fn_private",
-      "name": "llmIsGenericSelfRef",
-      "match_hash": "6dd32d83420206cc0ee18bd436409d4d01264670b0e53017c573ad5866a152db",
-      "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 62
-    },
-    {
-      "type": "fn_private",
-      "name": "llmIsOverlyGeneric",
-      "match_hash": "a8f6a14a4e9d45bf6ad4af01f523b34d4891d593d9c36b681cf8495d69ecea3f",
-      "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 74
-    },
-    {
       "type": "fn_decl",
       "name": "isSyntheticComment",
       "match_hash": "c77d79df2f20ec26deb56d66af4e13ef54eda66e7941b9b53a563e649b86efc0",
@@ -65,7 +29,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 90
+      "line": 26
     },
     {
       "type": "fn_private",
@@ -77,31 +41,31 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 100
+      "line": 36
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: empty and short are synthetic",
       "is_pub": false,
-      "line": 124
+      "line": 60
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: boilerplate manages pattern",
       "is_pub": false,
-      "line": 130
+      "line": 66
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: malformed responses are synthetic",
       "is_pub": false,
-      "line": 136
+      "line": 72
     },
     {
       "type": "test_decl",
       "name": "isSyntheticComment: valid comments pass",
       "is_pub": false,
-      "line": 142
+      "line": 78
     }
   ]
 }

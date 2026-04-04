@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "keywords": ["Provider", "discovery", "Zig", "subprocess", "JSON", "workspace", "path", "executable"],
-  "used_by": ["src/guidance/main.zig"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -25,10 +25,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 27
+          "line": 28
         }
       ],
-      "line": 19
+      "line": 20
     },
     {
       "type": "fn_decl",
@@ -42,7 +42,7 @@
       ],
       "returns": "?Provider",
       "is_pub": true,
-      "line": 41
+      "line": 42
     },
     {
       "type": "fn_decl",
@@ -58,7 +58,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 86
+      "line": 87
     },
     {
       "type": "fn_decl",
@@ -74,7 +74,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 113
+      "line": 114
     },
     {
       "type": "fn_private",
@@ -86,7 +86,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 139
+      "line": 140
     },
     {
       "type": "fn_private",
@@ -99,38 +99,25 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 154
-    },
-    {
-      "type": "fn_private",
-      "name": "runCommand",
-      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
-      "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "argv", "type": "[]const []const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 173
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "discoverProvider: returns null for unknown extension",
       "is_pub": false,
-      "line": 187
+      "line": 180
     },
     {
       "type": "test_decl",
       "name": "discoverProvider: returns null for bare extension without dot",
       "is_pub": false,
-      "line": 193
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "discoverProvider: workspace-local bin takes priority",
       "is_pub": false,
-      "line": 198
+      "line": 191
     }
   ]
 }

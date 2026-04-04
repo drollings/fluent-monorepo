@@ -570,4 +570,3 @@ test "processFile_skipsPrivateFns - no comment for private fn" {
     try std.testing.expectEqual(@as(usize, 0), result.comments_added);
     try std.testing.expect(!result.has_changes);
 }
-

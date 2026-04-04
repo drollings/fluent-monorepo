@@ -193,10 +193,3 @@ test "Logger: init and deinit" {
     defer logger.deinit();
     try testing.expectEqualStrings("test", logger.config.name);
 }
-
-
-
-
-
-
-

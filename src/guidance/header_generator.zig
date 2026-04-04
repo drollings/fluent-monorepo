@@ -139,4 +139,3 @@ test "insertFileHeader - prepends header" {
     defer allocator.free(result);
     try std.testing.expectEqualStrings("//! My module.\nconst x = 1;\n", result);
 }
-

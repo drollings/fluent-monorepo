@@ -470,6 +470,3 @@ test "JSON parsing: parseFile returns IoError for missing file" {
     const result = parseFile(testing.allocator, "/nonexistent/path/coral.json", &registry, &interner);
     try testing.expectError(ParseError.IoError, result);
 }
-
-
-

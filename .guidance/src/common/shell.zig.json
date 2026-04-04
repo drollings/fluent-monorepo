@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "module": "src.common.shell",
+    "source": "src/common/shell.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "runCommand",
+      "match_hash": "f552e8741578b3df2ac6ca092dee6fb1e5a0b78f6e4a071199893be0959eec05",
+      "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "argv", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 11
+    },
+    {
+      "type": "fn_decl",
+      "name": "addUniquePath",
+      "match_hash": "32bfe5a4133b67fbc58bb5447172bd60724fbfd85ea5a7d25c4c82a88783072b",
+      "signature": "fn addUniquePath(allocator: std.mem.Allocator, list: *std.ArrayList([]const u8), path: []const u8, project_root: []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "list", "type": "*std.ArrayList([]const u8)" },
+        { "name": "path", "type": "[]const u8" },
+        { "name": "project_root", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 23
+    },
+    {
+      "type": "test_decl",
+      "name": "runCommand returns true for successful command",
+      "is_pub": false,
+      "line": 41
+    },
+    {
+      "type": "test_decl",
+      "name": "runCommand returns false for failing command",
+      "is_pub": false,
+      "line": 46
+    },
+    {
+      "type": "test_decl",
+      "name": "addUniquePath deduplicates paths",
+      "is_pub": false,
+      "line": 51
+    }
+  ]
+}

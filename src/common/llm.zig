@@ -138,7 +138,8 @@ pub fn isMalformedResponse(text: []const u8) bool {
     return false;
 }
 
-fn llmHasDanglingEnd(body: []const u8) bool {
+/// Checks if a Zig string ends with a null byte, returning true if so.
+pub fn llmHasDanglingEnd(body: []const u8) bool {
     const trimmed = std.mem.trimRight(u8, body, " \t.?");
     if (trimmed.len == 0) return false;
     var i: usize = trimmed.len;
@@ -151,7 +152,8 @@ fn llmHasDanglingEnd(body: []const u8) bool {
     return false;
 }
 
-fn llmIsGenericSelfRef(body: []const u8) bool {
+/// Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches the expected pattern.
+pub fn llmIsGenericSelfRef(body: []const u8) bool {
     const patterns = [_][]const u8{
         "this function", "this method", "this class",
         "this struct",   "this type",   "this module",
@@ -163,7 +165,8 @@ fn llmIsGenericSelfRef(body: []const u8) bool {
     return false;
 }
 
-fn llmIsOverlyGeneric(body: []const u8) bool {
+/// Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.
+pub fn llmIsOverlyGeneric(body: []const u8) bool {
     const generics = [_][]const u8{
         "function", "method",   "helper",  "util",           "utility",
         "handler",  "callback", "wrapper", "implementation",
@@ -362,3 +365,6 @@ test "extractCommentTag: chain-of-thought before tag is ignored" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.", result.?);
 }
+
+
+

@@ -7,6 +7,7 @@ pub const TerminalError = error{
     OutOfMemory,
 };
 
+/// Retrieves the system's window size in Zig using the standard library.
 fn getWinsize() ?std.posix.winsize {
     const stdout = std.fs.File.stdout();
     if (!std.posix.isatty(stdout.handle)) return null;
@@ -247,12 +248,3 @@ test "ProgressBar init and advance" {
     bar.set(50);
     try testing.expectEqual(@as(usize, 50), bar.current);
 }
-
-
-
-
-
-
-
-
-

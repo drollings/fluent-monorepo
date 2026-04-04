@@ -18,6 +18,7 @@
         { "name": "close", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Strip a matched open/close tag pair from `text`.\n- If the close tag is found: returns the content after it, trimming leading whitespace.\n- If the close tag is absent (truncated): returns the content before the open tag.\n- If the open tag is absent: returns `text` unchanged.",
       "is_pub": false,
       "line": 63
     },
@@ -30,6 +31,7 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Strip <think>...</think> or [THINK]...[/THINK] blocks from LLM response.\nFor unclosed tags, strips everything from the open tag to end-of-string.",
       "is_pub": true,
       "line": 77
     },
@@ -43,6 +45,7 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "[]const u8",
+      "comment": "Strip LLM reasoning preamble from the start of a response.",
       "is_pub": true,
       "line": 86
     },
@@ -55,11 +58,12 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "bool",
+      "comment": "Return true when an LLM response is malformed or unusable as a comment.\nCall this after stripThinkBlock / stripPreamble.  No allocations.",
       "is_pub": true,
       "line": 124
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "llmHasDanglingEnd",
       "match_hash": "92d37f5c26c6a53f32c388786ae72e68df648da5d2f890d4623e8b891ef2126b",
       "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
@@ -67,11 +71,12 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "is_pub": false,
-      "line": 141
+      "comment": "Checks if a Zig string ends with a null byte, returning true if so.",
+      "is_pub": true,
+      "line": 142
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "llmIsGenericSelfRef",
       "match_hash": "6dd32d83420206cc0ee18bd436409d4d01264670b0e53017c573ad5866a152db",
       "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
@@ -79,11 +84,12 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "is_pub": false,
-      "line": 154
+      "comment": "Checks if a Zig body slice represents a valid self-referential structure, returning true if it matches the expected pattern.",
+      "is_pub": true,
+      "line": 156
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "llmIsOverlyGeneric",
       "match_hash": "a8f6a14a4e9d45bf6ad4af01f523b34d4891d593d9c36b681cf8495d69ecea3f",
       "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
@@ -91,8 +97,9 @@
         { "name": "body", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "is_pub": false,
-      "line": 166
+      "comment": "Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.",
+      "is_pub": true,
+      "line": 169
     },
     {
       "type": "fn_decl",
@@ -103,104 +110,105 @@
         { "name": "text", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
+      "comment": "Extract the content of the first <comment>...</comment> tag in an LLM response.\nReturns a slice into `text` (no allocation).  Returns null when no tag is found.",
       "is_pub": true,
-      "line": 182
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 259
+      "line": 262
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 270
+      "line": 273
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 274
+      "line": 277
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 278
+      "line": 281
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 294
+      "line": 297
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 299
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 304
+      "line": 307
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 308
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 314
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 320
+      "line": 323
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 327
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 333
+      "line": 336
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 340
+      "line": 343
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 347
+      "line": 350
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 352
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: chain-of-thought before tag is ignored",
       "is_pub": false,
-      "line": 356
+      "line": 359
     }
   ]
 }

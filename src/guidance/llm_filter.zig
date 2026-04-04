@@ -194,4 +194,3 @@ fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) !types.Stage {
         .line = s.line,
     };
 }
-
