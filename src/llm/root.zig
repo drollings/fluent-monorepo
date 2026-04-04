@@ -60,6 +60,7 @@ pub const LlmConfig = struct {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
+/// Writes a formatted string with escaped characters to the writer, handling null-terminated input.
 fn writeEscapedString(writer: anytype, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
@@ -377,5 +378,3 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
-
-

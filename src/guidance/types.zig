@@ -370,6 +370,7 @@ fn writeFieldOrComma(writer: anytype, key: []const u8, value: ?[]const u8) !void
 /// Delegates to common.jsonWriteEscaped to avoid code duplication.
 const writeEscapedValue = common.jsonWriteEscaped;
 
+/// Writes a formatted string with escaped characters to the writer, handling null-terminated input.
 fn writeEscapedString(writer: anytype, key: []const u8, value: []const u8) !void {
     try writer.print("  \"{s}\": \"", .{key});
     try writeEscapedValue(writer, value);
