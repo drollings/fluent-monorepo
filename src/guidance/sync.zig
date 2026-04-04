@@ -176,16 +176,22 @@ pub const SyncProcessor = struct {
 
     fn stripComments(self: *SyncProcessor, members: []types.Member) void {
         for (members) |*m| {
+            // Preserve LLM-generated comments; only strip source-extracted comments.
+            // Generated comments are tracked in JSON for hash comparison and sync.
             if (m.comment) |c| {
-                self.allocator.free(c);
-                m.comment = null;
+                if (!m.comment_generated) {
+                    self.allocator.free(c);
+                    m.comment = null;
+                }
             }
             if (m.members.len > 0) {
                 const nested: []types.Member = @constCast(m.members);
                 for (nested) |*nm| {
                     if (nm.comment) |c| {
-                        self.allocator.free(c);
-                        nm.comment = null;
+                        if (!nm.comment_generated) {
+                            self.allocator.free(c);
+                            nm.comment = null;
+                        }
                     }
                 }
             }
