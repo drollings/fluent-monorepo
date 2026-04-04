@@ -67,14 +67,12 @@ fn buildNotFoundStages(
     }
 
     // Stage 1: Not-found prose message
-    const msg = try std.fmt.allocPrint(allocator,
-        "No code found matching '{s}' in this codebase. " ++
+    const msg = try std.fmt.allocPrint(allocator, "No code found matching '{s}' in this codebase. " ++
         "The query did not match any indexed source files with sufficient confidence.\n\n" ++
         "Try:\n" ++
         "- A more specific identifier (e.g. a function or struct name)\n" ++
         "- A different keyword from the codebase vocabulary\n" ++
-        "- Running `guidance gen` if the code was recently added",
-        .{query});
+        "- Running `guidance gen` if the code was recently added", .{query});
     try stages.append(allocator, .{
         .kind = .not_found,
         .content = msg,
@@ -113,11 +111,13 @@ fn anyResultIsRelevant(results: []const SearchResult, original_query: []const u8
     while (tok_it.next()) |tok| {
         if (tok.len < 3) continue;
         // Skip common stop words that don't identify content
-        const stop_words = [_][]const u8{ "how", "the", "what", "does", "this", "that",
-            "where", "which", "work", "make", "into", "with", "using", "use" };
+        const stop_words = [_][]const u8{ "how", "the", "what", "does", "this", "that", "where", "which", "work", "make", "into", "with", "using", "use" };
         var is_stop = false;
         for (stop_words) |sw| {
-            if (std.ascii.eqlIgnoreCase(tok, sw)) { is_stop = true; break; }
+            if (std.ascii.eqlIgnoreCase(tok, sw)) {
+                is_stop = true;
+                break;
+            }
         }
         if (is_stop) continue;
 
@@ -1033,7 +1033,7 @@ pub fn extractExcerptFromSource(
 
 /// Build a metadata Stage from a guidance JSON file.
 /// Returns null when the file is absent or has no useful metadata.
-fn buildMetadataStage(
+pub fn buildMetadataStage(
     allocator: std.mem.Allocator,
     json_path: []const u8,
     source: []const u8,
@@ -1160,7 +1160,7 @@ fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]con
 
 /// Load skill names (short names like "zig-current") from a guidance JSON file.
 /// Returns an owned slice of owned strings; caller frees.
-fn loadSkillNamesFromJson(
+pub fn loadSkillNamesFromJson(
     allocator: std.mem.Allocator,
     json_path: []const u8,
 ) ![][]const u8 {
@@ -1394,4 +1394,3 @@ test "formatStaged: See Also is capped at 10 unique keywords" {
     };
     try std.testing.expect(comma_count <= 9);
 }
-

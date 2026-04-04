@@ -2560,4 +2560,3 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
-

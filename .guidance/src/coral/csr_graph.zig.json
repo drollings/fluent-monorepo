@@ -7,7 +7,7 @@
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
-  "used_by": ["src/coral/main.zig"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "struct",

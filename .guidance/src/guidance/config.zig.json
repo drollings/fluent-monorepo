@@ -8,7 +8,7 @@
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "capabilities": ["config-system"],
-  "used_by": ["src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",

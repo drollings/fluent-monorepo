@@ -4,6 +4,7 @@
     "source": "src/coral/delegation.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "struct",

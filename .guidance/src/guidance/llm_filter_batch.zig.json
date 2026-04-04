@@ -4,6 +4,7 @@
     "source": "src/guidance/llm_filter_batch.zig",
     "language": "zig"
   },
+  "capabilities": ["llm-client"],
   "members": [
     {
       "type": "fn_decl",

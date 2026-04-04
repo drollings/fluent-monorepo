@@ -4,6 +4,7 @@
     "source": "src/coral/quantized_embedding.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "embedding-providers", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig"],
   "members": [
     {

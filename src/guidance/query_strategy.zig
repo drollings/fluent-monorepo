@@ -100,9 +100,10 @@ pub const QueryStrategy = struct {
 // =============================================================================
 //
 // Matches single-token queries that look like identifiers: camelCase, PascalCase,
-// snake_case. Bypasses hybrid search — does direct member name lookup in DB.
-// Returns .code stage with source location + .prose from member comment.
-// No LLM synthesis needed.
+// snake_case. Routes through the staged pipeline like all other queries,
+// ensuring keyword queries get the same LLM synthesis and capability integration
+// as natural language queries. The staged pipeline automatically prioritizes
+// exact name matches in its scoring.
 
 /// Implementation struct for identifier lookup.
 pub const IdentifierLookupStrategy = struct {
@@ -129,75 +130,19 @@ fn identifierExecute(
     aliases: ?vector_db_mod.SemanticAliases,
 ) anyerror![]types.Stage {
     _ = ptr;
-    // Direct name lookup — falls through to staged pipeline if not found.
-    const exact = db.findExactNameMatch(allocator, query, 5) catch &[_]SearchResult{};
-    defer {
-        for (exact) |r| GuidanceDb.freeSearchResult(allocator, r);
-        allocator.free(exact);
-    }
-
-    if (exact.len == 0) {
-        // No exact match — fall through to concept strategy path.
-        return staged_mod.executeStagedWithAliasesOriginal(
-            allocator,
-            db,
-            query,
-            original_query,
-            workspace,
-            aliases,
-        );
-    }
-
-    // Build stages from exact match results.
-    var stages: std.ArrayList(types.Stage) = .{};
-    errdefer {
-        types.freeStages(allocator, stages.items);
-        stages.deinit(allocator);
-    }
-
-    for (exact[0..@min(3, exact.len)]) |r| {
-        // Prose: member comment
-        if (r.comment) |c| {
-            if (c.len > 0) {
-                const src = if (r.line) |ln|
-                    try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, ln })
-                else
-                    try allocator.dupe(u8, r.source);
-                try stages.append(allocator, .{
-                    .kind = .prose,
-                    .content = try allocator.dupe(u8, c),
-                    .source = src,
-                    .line = r.line,
-                });
-            }
-        }
-        // Prose: module detail (if this is a module node)
-        if (r.detail) |d| {
-            if (std.mem.eql(u8, r.node_type, "module") and d.len > 30) {
-                try stages.append(allocator, .{
-                    .kind = .prose,
-                    .content = try allocator.dupe(u8, d[0..@min(600, d.len)]),
-                    .source = try allocator.dupe(u8, r.source),
-                    .line = r.line,
-                });
-            }
-        }
-    }
-
-    // If we got nothing useful, fall through to staged pipeline.
-    if (stages.items.len == 0) {
-        stages.deinit(allocator);
-        return staged_mod.executeStagedWithAliasesOriginal(
-            allocator,
-            db,
-            query,
-            original_query,
-            workspace,
-            aliases,
-        );
-    }
-
-    return stages.toOwnedSlice(allocator);
+    // Delegate to the staged pipeline for unified processing.
+    // The staged pipeline handles both keyword and natural language queries,
+    // prioritizing exact name matches and providing consistent LLM synthesis.
+    // This ensures keyword queries get the same rich output: source code,
+    // capabilities, skills, metadata, and LLM-synthesized explanations.
+    return staged_mod.executeStagedWithAliasesOriginal(
+        allocator,
+        db,
+        query,
+        original_query,
+        workspace,
+        aliases,
+    );
 }
 
 const identifier_vtable: QueryStrategy.VTable = .{

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["explain-query", "coral-database", "ast-indexing"],
-  "used_by": ["src/guidance/query_engine.zig"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/scanner.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -19,7 +19,6 @@
         { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Collect all stages for a query by searching the vector/keyword database\nand loading supporting data from guidance JSON files.\n\nReturned slice is owned by the caller; free with types.freeStages() then\nallocator.free(slice).",
       "is_pub": true,
       "line": 29
     },
@@ -36,7 +35,6 @@
         { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Executes a Zig stage with optional alias resolution, returning the processed stage.",
       "is_pub": true,
       "line": 39
     },
@@ -51,7 +49,6 @@
         { "name": "db", "type": "*GuidanceDb" }
       ],
       "returns": "[]types.Stage",
-      "comment": "M7: Build \"not found\" stages when search results are below confidence threshold.\nReturns an owned slice of stages; caller must call types.freeStages() + allocator.free().",
       "is_pub": false,
       "line": 58
     },
@@ -65,9 +62,8 @@
         { "name": "original_query", "type": "[]const u8" }
       ],
       "returns": "bool",
-      "comment": "M7: Check if any result is relevant to the original query tokens.\nReturns true if at least one result name or source contains a query token.",
       "is_pub": false,
-      "line": 110
+      "line": 108
     },
     {
       "type": "fn_decl",
@@ -83,7 +79,6 @@
         { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Executes a Zig stage with original query and aliases, returning the processed stage.",
       "is_pub": true,
       "line": 138
     },
@@ -104,7 +99,6 @@
         { "name": "limit", "type": "usize" }
       ],
       "returns": "[]types.Stage",
-      "comment": "Follow metadata breadcrumbs: used_by paths and skill refs found in the top\nsearch results.  Returns a NEW slice of additional stages to append.\nCaller owns returned slice and must free with types.freeStages() + free(slice).",
       "is_pub": true,
       "line": 656
     },
@@ -122,7 +116,6 @@
         { "name": "followup_keywords", "type": "?[]const []const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Format a []Stage slice into clean markdown output.\nIf `summary` is non-null it is prepended as the synthesized answer block.\nIf `followup_keywords` is non-null, they are appended as suggested queries.\nReturns an owned allocation; caller must free.",
       "is_pub": true,
       "line": 748
     },
@@ -140,7 +133,6 @@
         { "name": "member_name", "type": "?[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Like `extractSourceExcerpt` but verifies (and corrects) the line number\nbefore extracting, using `member_name` to locate the declaration.\nLogs a debug warning when the line number was stale.\n`member_name` may be null; in that case no verification is performed.",
       "is_pub": true,
       "line": 941
     },
@@ -153,7 +145,6 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "types.MemberType",
-      "comment": "Map a node_type string (as stored in the DB) to the corresponding MemberType.",
       "is_pub": false,
       "line": 979
     },
@@ -170,7 +161,6 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Load source file and extract an excerpt starting at `start_line` (1-based).\nExtracts complete functions/structs by tracking brace depth.\nFor functions: extracts the entire function.\nFor structs/enums/unions: abbreviates to signatures.\nReturns an owned allocation; caller must free.",
       "is_pub": true,
       "line": 997
     },
@@ -186,12 +176,11 @@
         { "name": "node_type", "type": "[]const u8" }
       ],
       "returns": "[]u8",
-      "comment": "Extract a complete logical unit (function/struct/etc) starting at `start_line` (1-based).\nUses brace counting to find the end of the scope.\nFor functions: extracts the entire function (no line limit).\nFor structs/enums/unions: abbreviates to declarations only.\nReturns an owned allocation.",
       "is_pub": true,
       "line": 1019
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "buildMetadataStage",
       "match_hash": "6f71ac91a6140629c0b0a386493d21db41afcf839134be8ae1e53059f5fd6c3e",
       "signature": "fn buildMetadataStage(allocator: std.mem.Allocator, json_path: []const u8, source: []const u8) -> ?types.Stage",
@@ -201,8 +190,7 @@
         { "name": "source", "type": "[]const u8" }
       ],
       "returns": "?types.Stage",
-      "comment": "Build a metadata Stage from a guidance JSON file.\nReturns null when the file is absent or has no useful metadata.",
-      "is_pub": false,
+      "is_pub": true,
       "line": 1036
     },
     {
@@ -215,12 +203,11 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Load just the module-level comment from a guidance JSON file.\nReturns an owned string or null.",
       "is_pub": false,
       "line": 1152
     },
     {
-      "type": "fn_private",
+      "type": "fn_decl",
       "name": "loadSkillNamesFromJson",
       "match_hash": "e59a3cdaa9116bc75ebc438021091de150e20ce9f41793dc1671a5cbedf5ebec",
       "signature": "fn loadSkillNamesFromJson(allocator: std.mem.Allocator, json_path: []const u8) -> [][]const u8",
@@ -229,8 +216,7 @@
         { "name": "json_path", "type": "[]const u8" }
       ],
       "returns": "[][]const u8",
-      "comment": "Load skill names (short names like \"zig-current\") from a guidance JSON file.\nReturns an owned slice of owned strings; caller frees.",
-      "is_pub": false,
+      "is_pub": true,
       "line": 1163
     },
     {
@@ -243,7 +229,6 @@
         { "name": "content", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Parse the first description / first paragraph from the content of a SKILL.md file.\n\nDelegates to doc_parser.parseSkillDocContent for unified parsing logic.\nReturns an owned string; `content` is not modified.",
       "is_pub": true,
       "line": 1202
     },
@@ -258,7 +243,6 @@
         { "name": "skill_name", "type": "[]const u8" }
       ],
       "returns": "?[]const u8",
-      "comment": "Load the first paragraph / description from a SKILL.md file.\nReturns an owned string or null.",
       "is_pub": true,
       "line": 1208
     },

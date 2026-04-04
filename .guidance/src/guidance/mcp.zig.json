@@ -4,6 +4,7 @@
     "source": "src/guidance/mcp.zig",
     "language": "zig"
   },
+  "capabilities": ["explain-query"],
   "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
   "members": [
     {

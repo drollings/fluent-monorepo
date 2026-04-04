@@ -118,7 +118,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 116
+      "line": 117
     },
     {
       "type": "fn_private",
@@ -136,7 +136,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 122
+      "line": 123
     },
     {
       "type": "fn_private",
@@ -150,7 +150,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 224
+      "line": 169
     },
     {
       "type": "fn_private",
@@ -168,7 +168,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 240
+      "line": 185
     },
     {
       "type": "fn_private",
@@ -182,7 +182,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 281
+      "line": 226
     },
     {
       "type": "fn_private",
@@ -200,7 +200,7 @@
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 291
+      "line": 236
     },
     {
       "type": "fn_decl",
@@ -218,7 +218,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 324
+      "line": 269
     },
     {
       "type": "fn_decl",
@@ -232,7 +232,7 @@
       ],
       "returns": "[3]QueryStrategy",
       "is_pub": true,
-      "line": 352
+      "line": 297
     },
     {
       "type": "fn_decl",
@@ -244,7 +244,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 370
+      "line": 315
     },
     {
       "type": "fn_private",
@@ -256,25 +256,25 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 389
+      "line": 334
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: single camelCase identifier",
       "is_pub": false,
-      "line": 409
+      "line": 354
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects multi-word queries",
       "is_pub": false,
-      "line": 416
+      "line": 361
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier: rejects empty and too-long",
       "is_pub": false,
-      "line": 422
+      "line": 367
     }
   ]
 }

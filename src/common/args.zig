@@ -186,4 +186,3 @@ test "parseCommonArgs: defaults when no args given" {
     try testing.expectEqualStrings("local:code:latest", args.model);
     try testing.expectEqual(@as(usize, 0), args.positional.len);
 }
-

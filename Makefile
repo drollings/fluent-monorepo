@@ -71,7 +71,7 @@ $(GUIDANCE_DB): | $(TARGET_BIN)
 	$(Q)touch $@
 
 .PHONY: commit
-commit: $(TARGET_BIN) ## Generate AI commit message from staged diff + guidance JSON context
+commit: $(TARGET_BIN) | STRUCTURE.md ## Generate AI commit message from staged diff + guidance JSON context
 	$(Q)$(TARGET_BIN) commit $(if $(DRY_RUN),--dry-run) $(if $(DEBUG),--debug)
 
 ##@ Python Language Provider
@@ -175,11 +175,8 @@ STRUCTURE.md: $(GUIDANCE_DB) | $(TARGET_BIN)
 # guidance check handles incremental detection via JSON mtime comparison.
 .PHONY: pre-commit
 pre-commit: STRUCTURE.md ## Run full RALPH loop via guidance check
-	$(Q)echo "Building all binaries"
-	$(Q)zig build --summary failures
-	$(Q)$(TARGET_BIN) check
+	@# $(Q)echo "Building coral"
+	@# $(Q)zig build coral --summary failures
+	$(Q)$(TARGET_BIN) check --verbose --debug
 	$(Q)echo "✓ All checks passed. Ready to commit."
 
-.PHONY: fmt
-fmt: ## Format all Zig source files
-	$(Q)zig fmt $(SRC_DIR)/

@@ -4,6 +4,7 @@
     "source": "src/guidance/json_store.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/structure.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
