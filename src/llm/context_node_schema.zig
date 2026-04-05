@@ -507,7 +507,7 @@ test "ContextNodeSchema: access denied on protected field" {
     var view = try schema_ptr.viewOf(allocator, &node);
     defer view.deinit();
 
-    const result = view.set("id", "99", .player);
+    const result = view.set("id", "99", .user);
     try testing.expectError(error.AccessDenied, result);
 }
 

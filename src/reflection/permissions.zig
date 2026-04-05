@@ -11,8 +11,8 @@ pub const Role = enum(u3) {
     creator,
     staff,
     world,
-    script,
-    player,
+    tool,
+    user,
 };
 
 /// Defines permission roles with ownership and access rules; central to access control logic.
@@ -21,22 +21,22 @@ pub const RolePermissions = packed struct(u18) {
     creator_read: bool = false,
     staff_read: bool = false,
     world_read: bool = false,
-    script_read: bool = false,
-    player_read: bool = false,
+    tool_read: bool = false,
+    user_read: bool = false,
 
     coder_write: bool = false,
     creator_write: bool = false,
     staff_write: bool = false,
     world_write: bool = false,
-    script_write: bool = false,
-    player_write: bool = false,
+    tool_write: bool = false,
+    user_write: bool = false,
 
     coder_derive: bool = false,
     creator_derive: bool = false,
     staff_derive: bool = false,
     world_derive: bool = false,
-    script_derive: bool = false,
-    player_derive: bool = false,
+    tool_derive: bool = false,
+    user_derive: bool = false,
 
     pub fn canRead(self: RolePermissions, role: Role) bool {
         return switch (role) {
@@ -44,8 +44,8 @@ pub const RolePermissions = packed struct(u18) {
             .creator => self.creator_read,
             .staff => self.staff_read,
             .world => self.world_read,
-            .script => self.script_read,
-            .player => self.player_read,
+            .tool => self.tool_read,
+            .user => self.user_read,
         };
     }
 
@@ -55,8 +55,8 @@ pub const RolePermissions = packed struct(u18) {
             .creator => self.creator_write,
             .staff => self.staff_write,
             .world => self.world_write,
-            .script => self.script_write,
-            .player => self.player_write,
+            .tool => self.tool_write,
+            .user => self.user_write,
         };
     }
 
@@ -66,8 +66,8 @@ pub const RolePermissions = packed struct(u18) {
             .creator => self.creator_derive,
             .staff => self.staff_derive,
             .world => self.world_derive,
-            .script => self.script_derive,
-            .player => self.player_derive,
+            .tool => self.tool_derive,
+            .user => self.user_derive,
         };
     }
 };
@@ -78,20 +78,20 @@ pub const perm_all: RolePermissions = .{
     .creator_read = true,
     .staff_read = true,
     .world_read = true,
-    .script_read = true,
-    .player_read = true,
+    .tool_read = true,
+    .user_read = true,
     .coder_write = true,
     .creator_write = true,
     .staff_write = true,
     .world_write = true,
-    .script_write = true,
-    .player_write = true,
+    .tool_write = true,
+    .user_write = true,
     .coder_derive = true,
     .creator_derive = true,
     .staff_derive = true,
     .world_derive = true,
-    .script_derive = true,
-    .player_derive = true,
+    .tool_derive = true,
+    .user_derive = true,
 };
 
 /// Only the coder role has full access.  Use for engine-internal fields.
@@ -119,8 +119,8 @@ pub const perm_public_read: RolePermissions = .{
     .creator_read = true,
     .staff_read = true,
     .world_read = true,
-    .script_read = true,
-    .player_read = true,
+    .tool_read = true,
+    .user_read = true,
     .coder_write = true,
     .creator_write = true,
 };

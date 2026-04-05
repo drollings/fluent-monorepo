@@ -105,34 +105,34 @@ const TestConfig = struct {
 
 test "Editable: set and get integer" {
     var config: TestConfig = .{};
-    try config.editable.set(testing.allocator, "port", "9000", .player);
+    try config.editable.set(testing.allocator, "port", "9000", .user);
     try testing.expectEqual(@as(u16, 9000), config.port);
-    const val = try config.editable.get(testing.allocator, "port", .player);
+    const val = try config.editable.get(testing.allocator, "port", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("9000", val);
 }
 
 test "Editable: set and get float" {
     var config: TestConfig = .{};
-    try config.editable.set(testing.allocator, "timeout", "45.5", .player);
+    try config.editable.set(testing.allocator, "timeout", "45.5", .user);
     try testing.expectEqual(@as(f32, 45.5), config.timeout);
-    const val = try config.editable.get(testing.allocator, "timeout", .player);
+    const val = try config.editable.get(testing.allocator, "timeout", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualSlices(u8, "45.5", val[0..4]);
 }
 
 test "Editable: set and get bool" {
     var config: TestConfig = .{};
-    try config.editable.set(testing.allocator, "enabled", "true", .player);
+    try config.editable.set(testing.allocator, "enabled", "true", .user);
     try testing.expect(config.enabled);
-    const val = try config.editable.get(testing.allocator, "enabled", .player);
+    const val = try config.editable.get(testing.allocator, "enabled", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("true", val);
 }
 
 test "Editable: field not found" {
     var config: TestConfig = .{};
-    const result = config.editable.set(testing.allocator, "nonexistent", "value", .player);
+    const result = config.editable.set(testing.allocator, "nonexistent", "value", .user);
     try testing.expectError(error.FieldNotFound, result);
 }
 
@@ -181,16 +181,16 @@ const TestEnum = struct {
 
 test "Editable: enum field set and get" {
     var obj: TestEnum = .{};
-    try obj.editable.set(testing.allocator, "status", "active", .player);
+    try obj.editable.set(testing.allocator, "status", "active", .user);
     try testing.expectEqual(Status.active, obj.status);
-    const val = try obj.editable.get(testing.allocator, "status", .player);
+    const val = try obj.editable.get(testing.allocator, "status", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("active", val);
 }
 
 test "Editable: enum invalid value propagates error" {
     var obj: TestEnum = .{};
-    const result = obj.editable.set(testing.allocator, "status", "invalid", .player);
+    const result = obj.editable.set(testing.allocator, "status", "invalid", .user);
     try testing.expectError(error.InvalidEnum, result);
 }
 
@@ -223,11 +223,11 @@ const TestArray = struct {
 
 test "Editable: array set and get" {
     var obj: TestArray = .{};
-    try obj.editable.set(testing.allocator, "scores", "1, 2, 3", .player);
+    try obj.editable.set(testing.allocator, "scores", "1, 2, 3", .user);
     try testing.expectEqual(@as(u8, 1), obj.scores[0]);
     try testing.expectEqual(@as(u8, 2), obj.scores[1]);
     try testing.expectEqual(@as(u8, 3), obj.scores[2]);
-    const val = try obj.editable.get(testing.allocator, "scores", .player);
+    const val = try obj.editable.get(testing.allocator, "scores", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("[1,2,3]", val);
 }
@@ -241,10 +241,10 @@ const TestVector = struct {
 
 test "Editable: vector set and get" {
     var obj: TestVector = .{};
-    try obj.editable.set(testing.allocator, "vec", "1.0, 2.0, 3.0, 4.0", .player);
+    try obj.editable.set(testing.allocator, "vec", "1.0, 2.0, 3.0, 4.0", .user);
     try testing.expectEqual(@as(f32, 1.0), obj.vec[0]);
     try testing.expectEqual(@as(f32, 2.0), obj.vec[1]);
-    const val = try obj.editable.get(testing.allocator, "vec", .player);
+    const val = try obj.editable.get(testing.allocator, "vec", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("[1,2,3,4]", val);
 }
@@ -282,14 +282,14 @@ test "DynamicEditable: role-based permission" {
     const u32_vtable = Constraint(u32);
 
     const accessors = [_]Accessor{
-        .{ .name = "admin_field", .offset = 0, .permissions = .{ .coder_write = true, .player_read = true }, .constraint = &u32_vtable },
+        .{ .name = "admin_field", .offset = 0, .permissions = .{ .coder_write = true, .user_read = true }, .constraint = &u32_vtable },
     };
 
     var dyn = try DynamicEditable.init(testing.allocator, &buffer, &accessors);
     defer dyn.deinit();
 
     try dyn.set("admin_field", "100", .coder);
-    const result = dyn.set("admin_field", "200", .player);
+    const result = dyn.set("admin_field", "200", .user);
     try testing.expectError(error.AccessDenied, result);
 }
 
@@ -301,7 +301,7 @@ test "RolePermissions: canRead and canWrite methods" {
     const perms: RolePermissions = .{ .staff_read = true, .staff_write = true };
     try testing.expect(perms.canRead(.staff));
     try testing.expect(perms.canWrite(.staff));
-    try testing.expect(!perms.canRead(.player));
+    try testing.expect(!perms.canRead(.user));
     try testing.expect(!perms.canWrite(.coder));
 }
 
@@ -313,7 +313,7 @@ test "Editable: access denied on read" {
     };
     var dyn = try DynamicEditable.init(testing.allocator, &buffer, &accessors);
     defer dyn.deinit();
-    const result = dyn.get("val", .player);
+    const result = dyn.get("val", .user);
     try testing.expectError(error.AccessDenied, result);
 }
 
@@ -852,27 +852,27 @@ test "M5: nested struct: set via dot-notation path" {
     const alloc = gpa.allocator();
 
     var cfg: AppConfig = .{};
-    try cfg.editable.set(alloc, "db.host", "remote.example.com", .player);
+    try cfg.editable.set(alloc, "db.host", "remote.example.com", .user);
     defer alloc.free(cfg.db.host);
     try testing.expectEqualStrings("remote.example.com", cfg.db.host);
 }
 
 test "M5: nested struct: get via dot-notation path" {
     var cfg: AppConfig = .{};
-    const val = try cfg.editable.get(testing.allocator, "db.port", .player);
+    const val = try cfg.editable.get(testing.allocator, "db.port", .user);
     defer testing.allocator.free(val);
     try testing.expectEqualStrings("5432", val);
 }
 
 test "M5: nested struct: non-nested field still works" {
     var cfg: AppConfig = .{};
-    try cfg.editable.set(testing.allocator, "timeout_ms", "9999", .player);
+    try cfg.editable.set(testing.allocator, "timeout_ms", "9999", .user);
     try testing.expectEqual(@as(u32, 9999), cfg.timeout_ms);
 }
 
 test "M5: nested struct: unknown path returns FieldNotFound" {
     var cfg: AppConfig = .{};
-    const result = cfg.editable.set(testing.allocator, "db.nonexistent", "x", .player);
+    const result = cfg.editable.set(testing.allocator, "db.nonexistent", "x", .user);
     try testing.expectError(error.FieldNotFound, result);
 }
 
@@ -917,7 +917,7 @@ test "M6: Editable.set: custom_validate rejects invalid value" {
     var obj: Validated = .{};
     try testing.expectError(
         error.CustomValidationFailed,
-        obj.editable.set(alloc, "name", "hi", .player),
+        obj.editable.set(alloc, "name", "hi", .user),
     );
     // Name unchanged.
     try testing.expectEqualStrings("hello", obj.name);
@@ -942,10 +942,10 @@ test "M6: Editable.set: enum_values rejects invalid value" {
     var obj: EnumField = .{};
     try testing.expectError(
         error.InvalidEnumValue,
-        obj.editable.set(alloc, "mode", "superuser", .player),
+        obj.editable.set(alloc, "mode", "superuser", .user),
     );
     // Valid value goes through.
-    try obj.editable.set(alloc, "mode", "write", .player);
+    try obj.editable.set(alloc, "mode", "write", .user);
     defer alloc.free(obj.mode);
     try testing.expectEqualStrings("write", obj.mode);
 }
@@ -968,9 +968,9 @@ test "M6: Editable.set: pattern rejects invalid value" {
     var obj: PatField = .{};
     try testing.expectError(
         error.PatternMismatch,
-        obj.editable.set(alloc, "slug", "my-slug", .player),
+        obj.editable.set(alloc, "slug", "my-slug", .user),
     );
-    try obj.editable.set(alloc, "slug", "slug-abc", .player);
+    try obj.editable.set(alloc, "slug", "slug-abc", .user);
     defer alloc.free(obj.slug);
     try testing.expectEqualStrings("slug-abc", obj.slug);
 }
@@ -993,7 +993,7 @@ test "M6: validateAll: passes when all fields satisfy rules" {
     };
 
     var obj: Checked = .{};
-    try obj.editable.validateAll(testing.allocator, .player);
+    try obj.editable.validateAll(testing.allocator, .user);
 }
 
 test "M6: validateAll: returns error when a field violates rules" {
@@ -1014,7 +1014,7 @@ test "M6: validateAll: returns error when a field violates rules" {
     };
 
     var obj: Checked = .{};
-    try testing.expectError(error.CustomValidationFailed, obj.editable.validateAll(testing.allocator, .player));
+    try testing.expectError(error.CustomValidationFailed, obj.editable.validateAll(testing.allocator, .user));
 }
 
 

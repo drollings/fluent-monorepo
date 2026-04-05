@@ -809,8 +809,8 @@ fn typeTagToJsonSchema(tag: TypeTag) []const u8 {
 
 /// Describes role permissions by processing a list of operations and writing results to a writer.
 fn describeRoleSet(writer: anytype, perms: RolePermissions, comptime operation: []const u8) !void {
-    const role_names: [6][]const u8 = .{ "coder", "creator", "staff", "world", "script", "player" };
-    const roles: [6]Role = .{ .coder, .creator, .staff, .world, .script, .player };
+    const role_names: [6][]const u8 = .{ "coder", "creator", "staff", "world", "tool", "user" };
+    const roles: [6]Role = .{ .coder, .creator, .staff, .world, .tool, .user };
     var first = true;
     for (role_names, roles) |name, role| {
         const allowed = if (std.mem.eql(u8, operation, "read"))
