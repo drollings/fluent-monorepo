@@ -209,7 +209,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 750
+      "line": 733
     },
     {
       "type": "fn_private",
@@ -222,7 +222,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 770
+      "line": 753
     },
     {
       "type": "fn_private",
@@ -235,7 +235,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 782
+      "line": 765
     },
     {
       "type": "fn_private",
@@ -248,7 +248,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 817
+      "line": 800
     },
     {
       "type": "fn_private",
@@ -263,7 +263,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 852
+      "line": 835
     },
     {
       "type": "fn_private",
@@ -278,7 +278,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 876
+      "line": 859
     },
     {
       "type": "fn_private",
@@ -293,7 +293,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 887
+      "line": 870
     },
     {
       "type": "fn_private",
@@ -310,7 +310,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 920
+      "line": 903
     },
     {
       "type": "fn_private",
@@ -323,7 +323,7 @@
       ],
       "returns": "?vector_db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 1016
+      "line": 999
     },
     {
       "type": "fn_private",
@@ -337,7 +337,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 1023
+      "line": 1006
     },
     {
       "type": "fn_private",
@@ -351,7 +351,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1070
+      "line": 1053
     },
     {
       "type": "fn_private",
@@ -365,7 +365,7 @@
       ],
       "returns": "[]const []const u8",
       "is_pub": false,
-      "line": 1095
+      "line": 1078
     },
     {
       "type": "fn_private",
@@ -384,24 +384,23 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1148
+      "line": 1131
     },
     {
       "type": "fn_private",
       "name": "emitStagedOutput",
-      "match_hash": "405702d65556ac29a2fa29f1f86c9d4006e8c7493eb1ecd76b0a1f657c5f41f6",
-      "signature": "fn emitStagedOutput(allocator: std.mem.Allocator, query_text: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8, capabilities_dir: []const u8) -> void",
+      "match_hash": "eadc35565d90b09c6f803ae8e07567f9a23539da318da932558730b530a6120f",
+      "signature": "fn emitStagedOutput(allocator: std.mem.Allocator, query_text: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8) -> void",
       "params": [
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "query_text", "type": "[]const u8" },
         { "name": "stages", "type": "[]const types.Stage" },
         { "name": "summary", "type": "?[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "capabilities_dir", "type": "[]const u8" }
+        { "name": "workspace", "type": "[]const u8" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1424
+      "line": 1407
     },
     {
       "type": "fn_decl",
@@ -414,7 +413,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 1441
+      "line": 1423
     },
     {
       "type": "fn_decl",
@@ -427,7 +426,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1446
+      "line": 1428
     },
     {
       "type": "fn_decl",
@@ -440,7 +439,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 1451
+      "line": 1433
     },
     {
       "type": "fn_decl",
@@ -453,7 +452,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 1456
+      "line": 1438
     },
     {
       "type": "fn_decl",
@@ -468,7 +467,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1461
+      "line": 1443
     },
     {
       "type": "fn_decl",
@@ -483,7 +482,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 1466
+      "line": 1448
     },
     {
       "type": "fn_decl",
@@ -498,7 +497,7 @@
       ],
       "returns": "[]usize",
       "is_pub": true,
-      "line": 1471
+      "line": 1453
     },
     {
       "type": "fn_decl",
@@ -510,7 +509,64 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 1476
+      "line": 1458
+    },
+    {
+      "type": "fn_private",
+      "name": "parseCapabilityFrontmatter",
+      "match_hash": "bcd764c93969608e191edf7d1eed491022dd34ea49f0180da8fb97faa675e027",
+      "signature": "fn parseCapabilityFrontmatter(allocator: std.mem.Allocator, cap_path: []const u8) -> ?IndexCapability",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cap_path", "type": "[]const u8" }
+      ],
+      "returns": "?IndexCapability",
+      "is_pub": false,
+      "line": 1472
+    },
+    {
+      "type": "fn_private",
+      "name": "isIndexStale",
+      "match_hash": "07fb585a0d64bdf1eced962794297bf0abd82fcdc8bc5097e41c51b6850fd7f9",
+      "signature": "fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabilities_dir: []const u8, structure_path: []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "index_path", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "structure_path", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 1506
+    },
+    {
+      "type": "fn_private",
+      "name": "generateIndexMd",
+      "match_hash": "ac1696350f89aa839933611d7d946534c572282690cbbe7ed014e6e1f6f98795",
+      "signature": "fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capabilities_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "guidance_dir", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 1537
+    },
+    {
+      "type": "fn_private",
+      "name": "showIndexIntro",
+      "match_hash": "32961e6b7461406a4ae4a4ecda19a3cc649473138e735cf7c488f4d4af6c14f2",
+      "signature": "fn showIndexIntro(allocator: std.mem.Allocator, _: []const u8, guidance_dir: []const u8, capabilities_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "_", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 1616
     },
     {
       "type": "fn_decl",
@@ -523,7 +579,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1485
+      "line": 1640
     },
     {
       "type": "struct",
@@ -531,7 +587,7 @@
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 1597
+      "line": 1752
     },
     {
       "type": "struct",
@@ -539,7 +595,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 1606
+      "line": 1761
     },
     {
       "type": "fn_decl",
@@ -552,7 +608,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1615
+      "line": 1770
     },
     {
       "type": "fn_private",
@@ -564,7 +620,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 2024
+      "line": 2179
     },
     {
       "type": "fn_private",
@@ -577,7 +633,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2038
+      "line": 2193
     },
     {
       "type": "fn_private",
@@ -590,7 +646,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2066
+      "line": 2221
     },
     {
       "type": "fn_decl",
@@ -603,7 +659,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2145
+      "line": 2300
     },
     {
       "type": "fn_decl",
@@ -616,7 +672,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2207
+      "line": 2362
     },
     {
       "type": "fn_decl",
@@ -629,7 +685,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2238
+      "line": 2393
     },
     {
       "type": "fn_decl",
@@ -642,55 +698,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2248
+      "line": 2403
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2320
+      "line": 2475
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2325
+      "line": 2480
     },
     {
       "type": "test_decl",
-      "name": "isShortQuery: two words is short",
+      "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2330
+      "line": 2485
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2335
+      "line": 2490
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2340
+      "line": 2495
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2345
+      "line": 2500
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2355
+      "line": 2510
     },
     {
       "type": "test_decl",
-      "name": "isShortQuery: regular two-word queries are short",
+      "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2361
+      "line": 2516
     }
   ]
 }

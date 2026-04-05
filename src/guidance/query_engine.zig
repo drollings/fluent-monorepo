@@ -211,12 +211,12 @@ fn isShortQuery(query: []const u8) bool {
         }
     }
 
-    // Word count: 2 or fewer = short (no LLM filter)
+    // Word count: 1 or fewer = short (no LLM filter)
     var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
     var count: usize = 0;
     while (tok.next()) |_| {
         count += 1;
-        if (count > 2) return false;
+        if (count > 1) return false;
     }
     return true;
 }
@@ -599,26 +599,9 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     };
     defer db.deinit();
 
-    // ── TIER 0: Empty query → hot files ─────────────────────────────────────
+    // ── TIER 0: Empty query → INDEX.md introduction ─────────────────────────────
     if (is_empty_query) {
-        const hot = db.listHotFiles(allocator, ea.limit) catch &.{};
-        defer {
-            for (hot) |r| freeSearchResult(allocator, r);
-            allocator.free(hot);
-        }
-        var ws: llm.WriterState = .{};
-        ws.initStdout();
-        const w = ws.writer();
-        try w.print("# Hot Files\n\n", .{});
-        if (hot.len == 0) {
-            try w.print("No hot files yet. Run `guidance explain <query>` to start tracking.\n", .{});
-        } else {
-            for (hot, 0..) |r, rank| {
-                try w.print("{d}. `{s}` — {s} (query_count: {d:.0})\n", .{ rank + 1, r.source, r.name, r.score });
-            }
-        }
-        try w.flush();
-        db.logQuery("", 0, hot.len, "TIER0");
+        try showIndexIntro(allocator, workspace, guidance_dir, cfg.capabilities_dir);
         return;
     }
 
@@ -1259,14 +1242,14 @@ fn cmdExplainStaged(
 
     // M7: not_found sentinel — emit directly, skip synthesis and cache.
     if (stages_raw[0].kind == .not_found) {
-        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace, ea.capabilities_dir);
+        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace);
     }
 
     // ── Fast path: no LLM ─────────────────────────────────────────────────────
     if (!use_llm or client_opt == null) {
         if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
         for (stages_raw) |s| db.incrementQueryCountForFile(s.source);
-        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace, ea.capabilities_dir);
+        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace);
     }
 
     // ── LLM path ─────────────────────────────────────────────────────────────
@@ -1355,7 +1338,7 @@ fn cmdExplainStaged(
     const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
     const synth_result = if (cached_summary == null)
         synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
-            return emitStagedOutput(allocator, query_text, combined.items, null, workspace, ea.capabilities_dir);
+            return emitStagedOutput(allocator, query_text, combined.items, null, workspace);
         }
     else
         synthesize_mod.SynthesisResult{ .summary = null, .followup_keywords = null };
@@ -1417,19 +1400,18 @@ fn cmdExplainStaged(
         if (merged_followups) |mf| allocator.free(mf);
     };
 
-    return emitStagedOutput(allocator, query_text, combined.items, effective_summary, workspace, ea.capabilities_dir);
+    return emitStagedOutput(allocator, query_text, combined.items, effective_summary, workspace);
 }
 
-/// Processes query data into staged output format using provided allocator and parameters.
+/// Processes query stages and outputs results using an allocator, handling Zig-specific data structures.
 fn emitStagedOutput(
     allocator: std.mem.Allocator,
     query_text: []const u8,
     stages: []const types.Stage,
     summary: ?[]const u8,
     workspace: []const u8,
-    capabilities_dir: []const u8,
 ) !void {
-    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace, capabilities_dir);
+    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace);
     defer allocator.free(output);
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -1475,6 +1457,179 @@ pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, t
 /// Checks if a query string is short enough for public use, returning true or false.
 pub fn isShortQueryPub(query: []const u8) bool {
     return isShortQuery(query);
+}
+
+// =============================================================================
+// INDEX.md introduction (empty query)
+// =============================================================================
+
+const IndexCapability = struct {
+    name: []const u8,
+    description: []const u8,
+};
+
+/// Converts a Zig source snippet into an IndexCapability type, handling allocator and path inputs.
+fn parseCapabilityFrontmatter(allocator: std.mem.Allocator, cap_path: []const u8) ?IndexCapability {
+    const content = std.fs.cwd().readFileAlloc(allocator, cap_path, 64 * 1024) catch return null;
+    defer allocator.free(content);
+
+    if (!std.mem.startsWith(u8, content, "---")) return null;
+
+    const end_frontmatter = std.mem.indexOf(u8, content[3..], "---") orelse return null;
+    const frontmatter = content[3 .. 3 + end_frontmatter];
+
+    var name: ?[]const u8 = null;
+    var description: ?[]const u8 = null;
+
+    var lines = std.mem.splitScalar(u8, frontmatter, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "name:")) {
+            name = std.mem.trim(u8, line["name:".len..], " \t\r");
+        } else if (std.mem.startsWith(u8, line, "description:")) {
+            description = std.mem.trim(u8, line["description:".len..], " \t\r");
+        }
+    }
+
+    const n = name orelse return null;
+    const d = description orelse return null;
+
+    const name_owned = allocator.dupe(u8, n) catch return null;
+    const desc_owned = allocator.dupe(u8, d) catch {
+        allocator.free(name_owned);
+        return null;
+    };
+
+    return .{ .name = name_owned, .description = desc_owned };
+}
+
+/// Checks if an index path is outdated based on allocator and directory constraints.
+fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabilities_dir: []const u8, structure_path: []const u8) bool {
+    const index_mtime = marker_mod.fileMtime(index_path);
+
+    if (index_mtime == null) return true;
+    const idx_mtime = index_mtime.?;
+
+    if (marker_mod.fileMtime(structure_path)) |smt| {
+        if (smt > idx_mtime) return true;
+    }
+
+    std.fs.accessAbsolute(capabilities_dir, .{}) catch return false;
+    var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return false;
+    defer cap_dir.close();
+
+    var walker = cap_dir.walk(allocator) catch return false;
+    defer walker.deinit();
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, "CAPABILITY.md")) continue;
+        const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
+        defer allocator.free(full);
+        if (marker_mod.fileMtime(full)) |cap_mt| {
+            if (cap_mt > idx_mtime) return true;
+        }
+    }
+
+    return false;
+}
+
+/// Generates an MD format index using allocator, guidance_dir, and capabilities_dir parameters.
+fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capabilities_dir: []const u8) !void {
+    const index_path = try std.fs.path.join(allocator, &.{ guidance_dir, "INDEX.md" });
+    defer allocator.free(index_path);
+
+    const cwd = try std.process.getCwdAlloc(allocator);
+    defer allocator.free(cwd);
+    const structure_path = try std.fs.path.join(allocator, &.{ cwd, "STRUCTURE.md" });
+    defer allocator.free(structure_path);
+
+    if (!isIndexStale(allocator, index_path, capabilities_dir, structure_path)) {
+        return;
+    }
+
+    var capabilities: std.ArrayList(IndexCapability) = .{};
+    defer {
+        for (capabilities.items) |cap| {
+            allocator.free(cap.name);
+            allocator.free(cap.description);
+        }
+        capabilities.deinit(allocator);
+    }
+
+    std.fs.accessAbsolute(capabilities_dir, .{}) catch return;
+    var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return;
+    defer cap_dir.close();
+
+    var walker = cap_dir.walk(allocator) catch return;
+    defer walker.deinit();
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, "CAPABILITY.md")) continue;
+        const full = try std.fs.path.join(allocator, &.{ capabilities_dir, entry.path });
+        if (parseCapabilityFrontmatter(allocator, full)) |cap| {
+            try capabilities.append(allocator, cap);
+        }
+        allocator.free(full);
+    }
+
+    std.mem.sort(IndexCapability, capabilities.items, {}, struct {
+        fn lessThan(_: void, a: IndexCapability, b: IndexCapability) bool {
+            return std.mem.lessThan(u8, a.name, b.name);
+        }
+    }.lessThan);
+
+    var out: std.ArrayList(u8) = .{};
+    defer out.deinit(allocator);
+    const w = out.writer(allocator);
+
+    try w.print("# guidance — AST-guided Vector Search\n\n", .{});
+    try w.print("`guidance explain \"<query>\"` is the first stop to gain relevant context about this codebase.\n\n", .{});
+    try w.print("A single keyword like `cmdExplain` triggers a deterministic search without LLM synthesis. Queries with spaces use the LLM for synthesis.\n\n", .{});
+    try w.print("**Example:**  \n", .{});
+    try w.print("```\n", .{});
+    try w.print("guidance explain \"cmdExplain\"\n", .{});
+    try w.print("```\n\n", .{});
+    try w.print("Look up suggested search terms from results to discover related features. Use regular file tools once you're confident about the implementation.\n\n", .{});
+    try w.print("**Important:** Run `guidance explain` to check for existing features before writing duplicate code.\n\n", .{});
+    try w.print("---\n\n", .{});
+    try w.print("## Capabilities\n\n", .{});
+
+    for (capabilities.items) |cap| {
+        try w.print("- **{s}**: {s}\n", .{ cap.name, cap.description });
+    }
+
+    try w.print("\n---\n\n", .{});
+    try w.print("Run `guidance explain \"<keyword>\"` to explore any capability.\n", .{});
+
+    const index_content = try out.toOwnedSlice(allocator);
+    defer allocator.free(index_content);
+
+    const index_dir = std.fs.path.dirname(index_path) orelse guidance_dir;
+    std.fs.makeDirAbsolute(index_dir) catch {};
+    const file = try std.fs.createFileAbsolute(index_path, .{ .truncate = true });
+    defer file.close();
+    try file.writeAll(index_content);
+}
+
+/// Displays an introductory index section for the query engine, using allocator and guidance data.
+fn showIndexIntro(allocator: std.mem.Allocator, _: []const u8, guidance_dir: []const u8, capabilities_dir: []const u8) !void {
+    try generateIndexMd(allocator, guidance_dir, capabilities_dir);
+
+    const index_path = try std.fs.path.join(allocator, &.{ guidance_dir, "INDEX.md" });
+    defer allocator.free(index_path);
+
+    const content = std.fs.cwd().readFileAlloc(allocator, index_path, 64 * 1024) catch |err| {
+        std.debug.print("Error reading INDEX.md: {s}\n", .{@errorName(err)});
+        return;
+    };
+    defer allocator.free(content);
+
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const w = ws.writer();
+    try w.writeAll(content);
+    try w.flush();
 }
 
 // =============================================================================
@@ -2327,9 +2482,9 @@ test "isShortQuery: one word is short" {
     try testing.expect(isShortQuery("  bar  "));
 }
 
-test "isShortQuery: two words is short" {
-    try testing.expect(isShortQuery("foo bar"));
-    try testing.expect(isShortQuery("one two"));
+test "isShortQuery: two words is not short" {
+    try testing.expect(!isShortQuery("foo bar"));
+    try testing.expect(!isShortQuery("one two"));
 }
 
 test "isShortQuery: three words is not short" {
@@ -2358,9 +2513,9 @@ test "isShortQuery: question words case insensitive" {
     try testing.expect(!isShortQuery("Where IS bar"));
 }
 
-test "isShortQuery: regular two-word queries are short" {
-    try testing.expect(isShortQuery("sync json"));
-    try testing.expect(isShortQuery("parse file"));
-    try testing.expect(isShortQuery("load config"));
+test "isShortQuery: regular two-word queries are not short" {
+    try testing.expect(!isShortQuery("sync json"));
+    try testing.expect(!isShortQuery("parse file"));
+    try testing.expect(!isShortQuery("load config"));
 }
 

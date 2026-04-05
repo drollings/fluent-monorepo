@@ -491,7 +491,7 @@ test "explainGrepFile finds matching lines" {
 test "isShortQuery returns true for short queries" {
     try std.testing.expect(main.isShortQueryPub("sync"));
     try std.testing.expect(main.isShortQueryPub("cmdExplain"));
-    try std.testing.expect(main.isShortQueryPub("get member"));
+    try std.testing.expect(main.isShortQueryPub("cosineSimilarity"));
 }
 
 test "isShortQuery returns false for long queries" {

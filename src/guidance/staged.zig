@@ -722,14 +722,13 @@ pub fn expandFollowUps(
 // Output formatting (M9)
 // ---------------------------------------------------------------------------
 
-/// Processes a Zig code snippet to format it into a structured output using provided allocator and stages.
+/// Converts a Zig code snippet into a formatted string using allocator and stage data.
 pub fn formatStaged(
     allocator: std.mem.Allocator,
     query: []const u8,
     stages: []const types.Stage,
     summary: ?[]const u8,
-    workspace: []const u8,
-    capabilities_dir: []const u8,
+    _: []const u8,
 ) ![]u8 {
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(allocator);
@@ -927,7 +926,7 @@ pub fn formatStaged(
             ref_header_written = true;
         }
         if (all_matched_caps.items.len > 0) try w.print("- **Matched capabilities**: {s}\n", .{all_matched_caps.items});
-        if (all_see_also.items.len > 0) try w.print("- **Used most in**: {s}\n", .{all_see_also.items});
+        if (all_see_also.items.len > 0) try w.print("- **Files used most in**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
         if (all_capabilities.items.len > 0) {
             try w.writeAll("- **Capabilities**: ");
@@ -936,17 +935,7 @@ pub fn formatStaged(
             while (cap_it.next()) |cap_name| {
                 if (!cap_first) try w.writeAll(", ");
                 cap_first = false;
-                if (capabilities_dir.len > 0) {
-                    const abs = try std.fs.path.join(allocator, &.{ capabilities_dir, cap_name, "CAPABILITY.md" });
-                    defer allocator.free(abs);
-                    const rel = if (workspace.len > 0 and std.mem.startsWith(u8, abs, workspace) and abs.len > workspace.len)
-                        abs[workspace.len + 1 ..]
-                    else
-                        abs;
-                    try w.print("`{s}`", .{rel});
-                } else {
-                    try w.print("`{s}`", .{cap_name});
-                }
+                try w.print("`{s}`", .{cap_name});
             }
             try w.writeByte('\n');
         }
@@ -1238,7 +1227,7 @@ pub fn loadSkillExcerpt(
 
 test "formatStaged: empty stages output contains header" {
     const allocator = std.testing.allocator;
-    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", "");
+    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "# Explain: myquery") != null);
 }
@@ -1251,7 +1240,7 @@ test "formatStaged: code stage with line emits source path and line number" {
         .source = "src/foo.zig",
         .line = 10,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "src/foo.zig:10") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "pub fn foo()") != null);
@@ -1265,7 +1254,7 @@ test "formatStaged: code stage without line still emits code block" {
         .source = "src/bar.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "src/bar.zig") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "const x = 1;") != null);
@@ -1279,7 +1268,7 @@ test "formatStaged: summary appears before code sections" {
         .source = "src/foo.zig",
         .line = 1,
     }};
-    const result = try formatStaged(allocator, "q", &stages, "This is the summary.", "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, "This is the summary.", "/workspace");
     defer allocator.free(result);
     const sum_pos = std.mem.indexOf(u8, result, "This is the summary.");
     const src_pos = std.mem.indexOf(u8, result, "## Source location:");
@@ -1296,7 +1285,7 @@ test "formatStaged: skill_doc stage produces Knowledge Base section" {
         .source = "zig-current",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## Knowledge Base") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "zig-current") != null);
@@ -1310,7 +1299,7 @@ test "formatStaged: metadata stage with keywords prefix produces References sect
         .source = "src/types.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## References") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "vtable") != null);
@@ -1365,7 +1354,7 @@ test "formatStaged: capability_doc stage renders Capability section" {
         .source = "embedding-providers",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "embed", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "embed", &stages, null, "/workspace");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## Capability: embedding-providers") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "EmbeddingProvider") != null);
@@ -1379,7 +1368,7 @@ test "formatStaged: keywords are capped at 10 unique items" {
         .source = "src/foo.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace");
     defer allocator.free(result);
     const see_also_start = std.mem.indexOf(u8, result, "Other terms to search") orelse {
         try std.testing.expect(false); // must have Other terms section
@@ -1393,3 +1382,4 @@ test "formatStaged: keywords are capped at 10 unique items" {
     };
     try std.testing.expect(comma_count <= 8); // 9 items in "Other terms" = 8 commas
 }
+
