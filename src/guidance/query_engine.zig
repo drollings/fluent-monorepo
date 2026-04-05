@@ -518,6 +518,8 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
                 return;
             }
             ea.model = args[i];
+        } else if (std.mem.eql(u8, arg, "--debug")) {
+            ea.debug = true;
         } else if (std.mem.eql(u8, arg, "--no-llm")) {
             ea.no_llm = true;
         } else if (std.mem.eql(u8, arg, "--no-drift")) {
@@ -1138,6 +1140,12 @@ fn cmdExplainStaged(
     fast_model_ref: []const u8,
     ea: ExplainArgs,
 ) !void {
+    // Debug output at function entry - always print to stderr
+    std.debug.print("[DEBUG] cmdExplainStaged called\n", .{});
+    std.debug.print("[DEBUG]   ea.debug = {}\n", .{ea.debug});
+    std.debug.print("[DEBUG]   ea.no_llm = {}\n", .{ea.no_llm});
+    std.debug.print("[DEBUG]   query_text = \"{s}\"\n", .{query_text});
+
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
     defer allocator.free(skills_dir);
 
@@ -1152,6 +1160,25 @@ fn cmdExplainStaged(
         .force => true,
         .auto => !isShortQuery(query_text),
     };
+
+    if (ea.debug) {
+        const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
+        const word_count = blk: {
+            var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
+            var count: usize = 0;
+            while (tok.next()) |_| count += 1;
+            break :blk count;
+        };
+        std.debug.print("[DEBUG] Query classification:\n", .{});
+        std.debug.print("[DEBUG]   query: \"{s}\"\n", .{query_text});
+        std.debug.print("[DEBUG]   word_count: {d}\n", .{word_count});
+        std.debug.print("[DEBUG]   isShortQuery: {}\n", .{isShortQuery(query_text)});
+        std.debug.print("[DEBUG] Pipeline settings:\n", .{});
+        std.debug.print("[DEBUG]   use_llm: {}\n", .{use_llm});
+        std.debug.print("[DEBUG]   use_filter: {}\n", .{use_filter});
+        std.debug.print("[DEBUG]   filter_mode: {s}\n", .{@tagName(ea.filter)});
+        std.debug.print("[DEBUG]   staged: {}\n", .{ea.staged});
+    }
 
     // Create the LLM client for filtering (default model)
     var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch |err| blk: {
@@ -1196,6 +1223,13 @@ fn cmdExplainStaged(
                     for (terms) |t| allocator.free(t);
                     allocator.free(terms);
                 }
+                if (ea.debug) {
+                    std.debug.print("[DEBUG] Key term extraction:\n", .{});
+                    std.debug.print("[DEBUG]   terms extracted: {d}\n", .{terms.len});
+                    for (terms, 0..) |t, i| {
+                        std.debug.print("[DEBUG]   [{d}] \"{s}\"\n", .{ i, t });
+                    }
+                }
                 var buf: std.ArrayList(u8) = .{};
                 defer buf.deinit(allocator);
                 try buf.appendSlice(allocator, query_text);
@@ -1209,6 +1243,17 @@ fn cmdExplainStaged(
     }
 
     const effective_query = expanded_query orelse query_text;
+
+    if (ea.debug) {
+        std.debug.print("[DEBUG] Query processing:\n", .{});
+        std.debug.print("[DEBUG]   original: \"{s}\"\n", .{query_text});
+        std.debug.print("[DEBUG]   effective: \"{s}\"\n", .{effective_query});
+        if (expanded_query) |_| {
+            std.debug.print("[DEBUG]   was_expanded: true\n", .{});
+        } else {
+            std.debug.print("[DEBUG]   was_expanded: false\n", .{});
+        }
+    }
 
     // M2: Route through QueryStrategy VTable for intent-based dispatch.
     var id_strategy: query_strategy_mod.IdentifierLookupStrategy = .{};
@@ -1240,6 +1285,17 @@ fn cmdExplainStaged(
         return;
     }
 
+    if (ea.debug) {
+        std.debug.print("[DEBUG] Search results (stages_raw):\n", .{});
+        std.debug.print("[DEBUG]   total_count: {d}\n", .{stages_raw.len});
+        var idx: usize = 0;
+        for (stages_raw) |s| {
+            if (idx >= 5) break;
+            std.debug.print("[DEBUG]   [{d}] kind={s} source=\"{s}\"\n", .{ idx, @tagName(s.kind), s.source });
+            idx += 1;
+        }
+    }
+
     // M7: not_found sentinel — emit directly, skip synthesis and cache.
     if (stages_raw[0].kind == .not_found) {
         return emitStagedOutput(allocator, query_text, stages_raw, null, workspace);
@@ -1267,15 +1323,39 @@ fn cmdExplainStaged(
 
     const working_stages: []const types.Stage = stages_filtered orelse stages_raw;
 
+    if (ea.debug) {
+        std.debug.print("[DEBUG] LLM filter:\n", .{});
+        std.debug.print("[DEBUG]   filter_applied: {}\n", .{stages_filtered != null});
+        std.debug.print("[DEBUG]   stages_before: {d}\n", .{stages_raw.len});
+        std.debug.print("[DEBUG]   stages_after: {d}\n", .{working_stages.len});
+    }
+
     // M7: Follow-up expansion — re-search to gather used_by for expansion inputs.
     // M4: Expand to top-3 results with score filtering (score >= 0.35).
     const SEE_ALSO_TOP_N: usize = 3;
     const SEE_ALSO_MIN_SCORE: f64 = 0.35;
 
+    if (ea.debug) {
+        std.debug.print("[DEBUG] Expansion search:\n", .{});
+        std.debug.print("[DEBUG]   query: \"{s}\"\n", .{effective_query});
+        std.debug.print("[DEBUG]   aliases_loaded: {}\n", .{aliases_opt != null});
+    }
+
     const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
     defer {
         for (expansion_results) |r| freeSearchResult(allocator, r);
         allocator.free(expansion_results);
+    }
+
+    if (ea.debug) {
+        std.debug.print("[DEBUG] Expansion results:\n", .{});
+        std.debug.print("[DEBUG]   total_count: {d}\n", .{expansion_results.len});
+        var idx: usize = 0;
+        for (expansion_results) |r| {
+            if (idx >= 5) break;
+            std.debug.print("[DEBUG]   [{d}] source=\"{s}\" score={d:.3}\n", .{ idx, r.source, r.score });
+            idx += 1;
+        }
     }
 
     // Increment query_count for files returned in search results (hot files tracking).
@@ -1329,13 +1409,26 @@ fn cmdExplainStaged(
     const query_hash = hash_mod.sha256Hex(allocator, query_text) catch null;
     defer if (query_hash) |qh| allocator.free(qh);
 
+    if (ea.debug) {
+        std.debug.print("[DEBUG] Synthesis:\n", .{});
+        std.debug.print("[DEBUG]   query_hash: {s}\n", .{query_hash orelse "(null)"});
+    }
+
     const cached_summary: ?[]const u8 = if (query_hash) |qh|
         db.loadCachedSynthesis(allocator, qh) catch null
     else
         null;
     defer if (cached_summary) |cs| allocator.free(cs);
 
+    if (ea.debug) {
+        std.debug.print("[DEBUG]   cache_hit: {}\n", .{cached_summary != null});
+    }
+
     const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
+    if (ea.debug) {
+        std.debug.print("[DEBUG]   using_fast_model: {}\n", .{fast_client_opt != null});
+    }
+
     const synth_result = if (cached_summary == null)
         synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
             return emitStagedOutput(allocator, query_text, combined.items, null, workspace);
@@ -2518,4 +2611,3 @@ test "isShortQuery: regular two-word queries are not short" {
     try testing.expect(!isShortQuery("parse file"));
     try testing.expect(!isShortQuery("load config"));
 }
-

@@ -31,8 +31,8 @@ guidance:                 Query → SQLite Search → Cached Result
 
 **Key Outcomes:**
 - Sub-100ms latency for cached patterns
-- Zero API cost for deterministic queries (≤2 words, no question pattern)
-- Local LLM synthesis only for novel queries (>2 words or question patterns)
+- Zero API cost for deterministic queries (single keyword, no LLM)
+- Local LLM synthesis only for novel queries (>1 word or question patterns)
 - Full auditability through `.guidance.db` query log
 
 ### Goal 2: RALPH Loop Orchestration
@@ -337,6 +337,18 @@ CREATE TABLE ast_nodes (
     - Post-processing phase writes generated comments to source
     - Single fmt pass after all comment insertions
     - Line number correction after fmt
+12. **TIER 0/1/2/3 Query Classification**:
+    - TIER 0 (empty): Shows INDEX.md introduction with capability listing
+    - TIER 1 (single keyword ≤1 word): Deterministic exact name match, no LLM
+    - TIER 2 (multi-keyword, no question): Per-token exact matching + keyword search
+    - TIER 3 (question or >1 word): Hybrid + LLM filter + synthesis
+13. **Per-Token Exact Matching**: Multi-keyword queries (e.g. `"filterStages dupeStage"`) show a separate code excerpt for each matched identifier
+14. **`--debug` flag**: Logs query classification, pipeline settings, search results, and synthesis cache hits
+15. **INDEX.md Generation**: Empty query generates/displays `.guidance/INDEX.md` listing all capabilities
+16. **codehealth Command**: Periodic audit tool for dead code detection
+    - Phase 1: Module-level detection (zero-importer files)
+    - Phase 2a: SimHash redundancy detection across files
+    - Phase 2b: Symbol-level call graph via `call_extractor.zig`
 
 ### In Progress 🔄
 
@@ -347,8 +359,7 @@ CREATE TABLE ast_nodes (
 
 1. **LOD Context Packing**: Level-of-detail pyramid for token optimization (like Coral's context packing)
 2. **Cross-Language Equivalents**: Link Python `bin/guidance-py` to Zig `src/guidance/` via `equivalents[]` field
-3. **Usage Extraction**: Call-site snippets during sync (grep for `AstParser.init(` patterns)
-4. **Performance Telemetry**: Query frequency tracking for LLM budget prioritization
+3. **Performance Telemetry**: Query frequency tracking for LLM budget prioritization
 
 ---
 
@@ -534,16 +545,18 @@ guidance and Coral Context share a common architecture foundation. This section 
 | `vector_db.zig` | SQLite hybrid search | Guidance-specific |
 | `sync.zig` | AST sync pipeline | Guidance-specific |
 | `llm_filter.zig` | Batch LLM filtering | Replaces per-stage filtering |
+| `codehealth.zig` | Dead code and redundancy detection | Manual audit tool, not RALPH |
+| `call_extractor.zig` | AST-based call site extraction | Phase 2b, runs with --extract-calls |
 
 ### Integration Points
 
 ```
 Query Classification:
   ┌─────────────────────────────────────────────────────────────┐
-  │ TIER 0: Empty → Hot Files (files with most matches    <5ms  │
-  │ TIER 1: Identifier → Deterministic Name Lookup        <10ms │
-  │ TIER 2: Short (≤2 words) → Semantic Alias + Keyword   <50ms │
-  │ TIER 3: Question → ContextPacker → Batch LLM          200ms+│
+  │ TIER 0: Empty → INDEX.md with capability listing    <5ms   │
+  │ TIER 1: Single keyword → Exact name match            <10ms │
+  │ TIER 2: Multi-keyword → Per-token matching           <50ms │
+  │ TIER 3: Question (>1 word) → Hybrid + LLM           200ms+ │
   └─────────────────────────────────────────────────────────────┘
 
 Context Packing (from Coral):
@@ -592,31 +605,25 @@ Follow-Up Generation (from Coral):
    - `drift.zig` → `src/common/drift.zig`
    - Guidance imports: `const ContextPacker = @import("common").ContextPacker;`
 
-2. **TIER 0/1/2 Query Classification**:
-   - TIER 0: Empty query → hot files (highest number of keyword matches)
-   - TIER 1: Identifier pattern (`filterStages`, `cache.L1Cache`) → deterministic name lookup, no LLM
-   - TIER 2: Short query (≤2 words, no question) → keyword + semantic alias
-   - TIER 3: Question pattern (>2 words or `?`) → batch LLM filter + synthesis
-
-3. **Batch LLM Filtering**:
+2. **Batch LLM Filtering**:
    - Replace per-stage `askRelevant()` with single batch call
    - Gather all prose/insight/skill stages into one prompt
    - Use ContextPacker for token budget before LLM
+
+3. **codehealth Phase 2b Completion**:
+   - Finish `findUnusedSymbols()` and `findTestOnlySymbols()` queries
+   - Integrate `call_extractor.zig` with `--extract-calls` flag
 
 ### Mid-Term (3-4 Sprints)
 
 1. **Hot Files Tracking**:
    - Add `last_queried` timestamp to `ast_nodes` table
-   - Implement `listHotFiles(allocator, limit)` returning most recently modified
-   - Empty query dispatches to hot files list
+   - Implement `listHotFiles(allocator, limit)` returning most recently modified files
+   - Extend INDEX.md to show recently queried capabilities
 
-2. **Identifier Pattern Detection**:
-   - Add `detectIdentifierPattern(query)` returning `?IdentifierMatch`
-   - Single word, no spaces → TIER 1 (deterministic)
-   - Contains `.` → method/field pattern
-   - PascalCase → struct pattern
-
-3. **Cross-Language Equivalents**: Link related implementations
+2. **codehealth Enhancements**:
+   - Symbol-level call graph queries (Phase 2b complete)
+   - Test-only symbol detection
 
 ### Long-Term (5+ Sprints)
 
@@ -637,12 +644,13 @@ guidance is evolving from a code navigation tool into a fully-capable determinis
 - **Token-efficient context** for AI coders
 - **Human-in-the-loop orchestration** via `guidance check`
 - **Transparent caching** through `.guidance.db`
+- **Periodic code health audits** via `guidance codehealth`
 
 The result is an AI-assisted development tool that grows more capable with every use while remaining fast, deterministic, and auditable.
 
 ---
 
-*Vision Document v1.3 — April 2026*
+*Vision Document v1.4 — April 2026*
 
 ---
 
@@ -687,19 +695,20 @@ See `doc/guidance/TODO_20260404_STREAMLINE_JSON.md` for full design details.
 | No identifier detection | All queries go to LLM if >2 words | TIER 1 for `filterStages` pattern |
 | Per-stage LLM filtering | N LLM calls for N prose stages | Batch into single call |
 | No token budget | All stages emitted | ContextPacker from coral |
-| No empty query handling | Error | Hot files list |
+| No empty query handling | Error | INDEX.md with capability listing |
 
 **Implemented fixes:**
-- TIER 0/1/2/3 classification (this document)
-- Batch LLM filtering (Near-Term #3)
-- ContextPacker integration (Near-Term #1)
+- TIER 0/1/2/3 classification ✅ (TIER 0 now shows INDEX.md with capabilities)
+- Batch LLM filtering (Near-Term #3) ✅
+- ContextPacker integration (Near-Term #1) ✅
+- Empty query handling ✅ (INDEX.md generation)
 
 ### From codedb2 (Zig)
 
 **Applicable patterns:**
 - **WordIndex**: O(1) inverted index for identifiers — guidance already has semantic-aliases
 - **TrigramIndex**: Substring search acceleration — guidance uses SimHash + cosine
-- **Hot files**: Recently modified tracking — adopt for TIER 0 (empty query)
+- **Hot files**: Recently modified tracking — implement as separate capability
 - **Version store**: Append-only log — guidance uses `.guidance.db` SQLite
 
 **Not applicable:**
