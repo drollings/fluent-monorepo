@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "feeecb049c139afa36c6118c132351af6bd8dd8dba4252d8e9aec74f24e0d2dc",
+      "match_hash": "d084ee60d8bc2eebbbb22326a563b1be3e4685c03a31fed96c6f5953ded1fd5b",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -82,57 +82,51 @@
         }
     ,    {
           "type": "enum_field",
-          "name": "scrub",
+          "name": "todo",
           "is_pub": false,
           "line": 56
         }
     ,    {
           "type": "enum_field",
-          "name": "todo",
+          "name": "diary",
           "is_pub": false,
           "line": 57
         }
     ,    {
           "type": "enum_field",
-          "name": "diary",
+          "name": "telemetry",
           "is_pub": false,
           "line": 58
         }
     ,    {
           "type": "enum_field",
-          "name": "telemetry",
+          "name": "@\"cache-stats\"",
           "is_pub": false,
           "line": 59
         }
     ,    {
           "type": "enum_field",
-          "name": "@\"cache-stats\"",
+          "name": "serve",
           "is_pub": false,
           "line": 60
         }
     ,    {
           "type": "enum_field",
-          "name": "serve",
+          "name": "ralph",
           "is_pub": false,
           "line": 61
         }
     ,    {
           "type": "enum_field",
-          "name": "ralph",
+          "name": "scan",
           "is_pub": false,
           "line": 62
         }
     ,    {
           "type": "enum_field",
-          "name": "scan",
-          "is_pub": false,
-          "line": 63
-        }
-    ,    {
-          "type": "enum_field",
           "name": "codehealth",
           "is_pub": false,
-          "line": 64
+          "line": 63
         }
       ],
       "line": 44
@@ -144,7 +138,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 68
+      "line": 67
     },
     {
       "type": "fn_private",
@@ -157,7 +151,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 136
+      "line": 134
     },
     {
       "type": "fn_private",
@@ -166,7 +160,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 141
+      "line": 139
     },
     {
       "type": "fn_private",
@@ -179,7 +173,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 264
+      "line": 260
     },
     {
       "type": "fn_private",
@@ -192,7 +186,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 297
+      "line": 293
     }
   ]
 }

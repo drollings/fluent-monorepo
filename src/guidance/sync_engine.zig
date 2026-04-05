@@ -20,7 +20,6 @@ const provider_mod = @import("provider_discovery.zig");
 const comment_sync_mod = @import("comment_sync.zig");
 const json_store_mod = @import("json_store.zig");
 const comment_inserter_mod = @import("comment_inserter.zig");
-const scrub_mod = @import("scrub.zig");
 const todo_mod = @import("todo.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
@@ -3772,128 +3771,6 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
         migrated_members,
         migrated_files,
     });
-}
-
-// ---------------------------------------------------------------------------
-// scrub — blank synthetic LLM-generated comments in guidance JSON files
-// ---------------------------------------------------------------------------
-
-/// Processes memory allocation parameters to scrub data in sync engine.
-pub fn cmdScrub(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var dry_run = false;
-    var guidance_dir_arg: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--dry-run")) {
-            dry_run = true;
-        } else if (std.mem.eql(u8, arg, "--guidance-dir") or std.mem.eql(u8, arg, "-g")) {
-            i += 1;
-            if (i < args.len) guidance_dir_arg = args[i];
-        }
-    }
-
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-
-    const src_json_dir = try std.fs.path.join(allocator, &.{ cwd, guidance_dir_arg, "src" });
-    defer allocator.free(src_json_dir);
-
-    var json_dir = std.fs.openDirAbsolute(src_json_dir, .{ .iterate = true }) catch {
-        std.debug.print("scrub: cannot open {s}\n", .{src_json_dir});
-        return;
-    };
-    defer json_dir.close();
-
-    var walker = try json_dir.walk(allocator);
-    defer walker.deinit();
-
-    var total_files: usize = 0;
-    var scrubbed_files: usize = 0;
-    var total_blanked: usize = 0;
-
-    while (try walker.next()) |entry| {
-        if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
-
-        const json_path = try std.fs.path.join(allocator, &.{ src_json_dir, entry.path });
-        defer allocator.free(json_path);
-
-        total_files += 1;
-
-        // Load raw bytes.
-        const file = std.fs.openFileAbsolute(json_path, .{}) catch continue;
-        const raw = file.readToEndAlloc(allocator, 4 * 1024 * 1024) catch {
-            file.close();
-            continue;
-        };
-        file.close();
-        defer allocator.free(raw);
-
-        // Parse JSON.
-        var parsed = std.json.parseFromSlice(std.json.Value, allocator, raw, .{}) catch continue;
-        defer parsed.deinit();
-
-        // Count comments before scrubbing for reporting.
-        const blanked_before = total_blanked;
-        _ = blanked_before;
-
-        // Scrub synthetic comments.
-        var file_blanked: usize = 0;
-        if (parsed.value == .object) {
-            file_blanked += scrubCount(&parsed.value);
-        }
-
-        if (file_blanked == 0) continue;
-        total_blanked += file_blanked;
-        scrubbed_files += 1;
-
-        if (dry_run) {
-            std.debug.print("scrub (dry-run): would blank {d} comment(s) in {s}\n", .{ file_blanked, entry.path });
-            continue;
-        }
-
-        // Serialize and write back.
-        var buf: std.io.Writer.Allocating = .init(allocator);
-        defer buf.deinit();
-        try std.json.Stringify.value(parsed.value, .{ .whitespace = .indent_2 }, &buf.writer);
-        try buf.writer.writeByte('\n');
-
-        const wfile = try std.fs.createFileAbsolute(json_path, .{ .truncate = true });
-        defer wfile.close();
-        try wfile.writeAll(buf.written());
-
-        std.debug.print("scrub: blanked {d} comment(s) in {s}\n", .{ file_blanked, entry.path });
-    }
-
-    std.debug.print("scrub: {d} files checked, {d} modified, {d} comments blanked{s}\n", .{
-        total_files,
-        scrubbed_files,
-        total_blanked,
-        if (dry_run) " (dry-run)" else "",
-    });
-}
-
-/// Calculates the number of valid JSON tokens in a given value.
-fn scrubCount(value: *std.json.Value) usize {
-    if (value.* != .object) return 0;
-    var count: usize = 0;
-    const obj = &value.object;
-
-    if (obj.getPtr("comment")) |cv| {
-        if (cv.* == .string and cv.string.len > 0 and scrub_mod.isSyntheticComment(cv.string)) {
-            cv.* = .{ .string = "" };
-            count += 1;
-        }
-    }
-    if (obj.getPtr("members")) |mv| {
-        if (mv.* == .array) {
-            for (mv.array.items) |*member| {
-                count += scrubCount(member);
-            }
-        }
-    }
-    return count;
 }
 
 // ---------------------------------------------------------------------------

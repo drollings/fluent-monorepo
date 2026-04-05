@@ -35,7 +35,7 @@ AI-native codebases in several fundamental ways:
 - Typical AI-native codebases treat LLM output as primary; here it's cached metadata
 2. Documentation as Cached Computation
 - Uses match_hash (SHA-256 of signatures) for surgical incremental updates
-- LLM-generated comments are stored, validated, and scrubbed for quality
+- LLM-generated comments are validated for quality
 - Typical: LLM re-generates context each session; here: idempotent, reusable artifacts
 3. Human-in-the-Loop by Design
 - RALPH loop: Discover → Understand → Decide → Implement → Verify

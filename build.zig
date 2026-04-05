@@ -452,7 +452,7 @@ pub fn build(b: *std.Build) void {
     wasm_tests.linkLibC();
     wasm_tests.linkSystemLibrary("sqlite3");
 
-    // -- Coral main integration test (pulls in schema, db, context_node_schema, scrub) --
+    // -- Coral main integration test (pulls in schema, db, context_node_schema) --
     // -- Coral batch ingestion tests (batch.zig + rdf + ontology) --
     const coral_batch_tests = b.addTest(.{
         .root_module = b.createModule(.{

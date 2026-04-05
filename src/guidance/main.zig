@@ -53,7 +53,6 @@ const Command = enum {
     check,
     show,
     @"test",
-    scrub,
     todo,
     diary,
     telemetry,
@@ -116,7 +115,6 @@ pub fn main() !void {
         .check => sync_engine_mod.cmdCheck(allocator, args[2..]),
         .show => query_engine_mod.cmdShow(allocator, args[2..]),
         .@"test" => query_engine_mod.cmdTest(allocator, args[2..]),
-        .scrub => sync_engine_mod.cmdScrub(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
@@ -164,8 +162,6 @@ fn printHelp() !void {
         \\  commit          Generate AI commit message from staged diff + guidance
         \\  show            Show vector embeddings from .guidance.db (Markdown)
         \\  test            Benchmark explain queries against module-level comments
-        \\  sync-comments    Insert/update /// doc comments in Zig source files
-        \\  scrub            Blank synthetic LLM-generated comments in guidance JSON files
         \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary            Append a timestamped entry to the current work item DIARY.md
         \\  codehealth       Detect unused modules, redundant code, and dead code candidates
@@ -332,3 +328,4 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+

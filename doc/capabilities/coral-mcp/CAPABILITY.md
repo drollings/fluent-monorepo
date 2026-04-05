@@ -55,7 +55,7 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 - `src/coral/main.zig` — `coral mcp` subcommand entry point
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (42 files, auto-discovered)
+## Sources (41 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -94,7 +94,6 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 | `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
 | `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
-| `src/coral/scrub.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
 | `src/coral/metrics.zig` | 0.4 | path_heuristic |

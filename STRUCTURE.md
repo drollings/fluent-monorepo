@@ -235,7 +235,6 @@ Then you you must read
 │   │   ├── pattern.zig
 │   │   ├── quantized_embedding.zig                         # quantized_embedding.zig — int8 Quantized Embeddings for Memory Efficiency
 │   │   ├── schema.zig                                      # schema.zig — Coral Context SQLite Schema (DDL + Queries)
-│   │   ├── scrub.zig                                       # scrub.zig — Comment quality filter for ast-guidance infill pipeline.
 │   │   ├── session.zig                                     # session.zig — Coral Session Persistence (SQLite + FTS5)
 │   │   ├── targets.zig                                     # targets.zig — Ingestion DAG Target Definitions
 │   │   ├── token_budget.zig                                # token_budget.zig — Token Estimation for Context Packing (M7.1)
@@ -290,7 +289,6 @@ Then you you must read
 │   │   ├── ralph.zig                                       # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                                     # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                            # schema_validator.zig — GuidanceDoc field validation.
-│   │   ├── scrub.zig                                       # scrub.zig — Synthetic comment detection and scrubbing.
 │   │   ├── simhash.zig                                     # simhash.zig — 64-bit SimHash for near-duplicate detection.
 │   │   ├── stage_builder.zig                               # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                                      # staged.zig — Staged explain pipeline for `guidance explain`.
