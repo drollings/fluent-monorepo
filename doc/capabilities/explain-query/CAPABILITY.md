@@ -1,6 +1,6 @@
 ---
 name: explain-query
-description: Natural language codebase query engine that uses LanceDB hybrid vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
+description: Natural language codebase query engine that uses SimHash vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.
 anchors:
   - cmdExplain
   - executeStaged
@@ -50,7 +50,7 @@ make explain QUERY="how does incremental sync work"
 
 | Backend | Database | Search type |
 |---------|----------|-------------|
-| LanceDB (default) | `.guidance.db` | Hybrid vector + keyword |
+| SQLite (default) | `.guidance.db` | Hybrid vector + keyword |
 
 The hybrid search combines:
 - **Vector search**: Cosine similarity on embeddings stored as BLOBs in SQLite

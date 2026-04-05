@@ -77,8 +77,9 @@ Then you you must read
 │   │   │   └── CAPABILITY.md
 │   │   ├── vector-search
 │   │   │   └── CAPABILITY.md
-│   │   └── wasm-tools
-│   │       └── CAPABILITY.md
+│   │   ├── wasm-tools
+│   │   │   └── CAPABILITY.md
+│   │   └── INDEX.md
 │   ├── coral
 │   │   ├── CHANGELOG.md
 │   │   ├── DETAILS.md
@@ -92,11 +93,6 @@ Then you you must read
 │   │   ├── DESIGN.md
 │   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
 │   │   ├── MCP.md
-│   │   ├── PROMPT_CODEHEALTH.md
-│   │   ├── TODO_20260404_CODEHEALTH.md
-│   │   ├── TODO_20260404_CODEHEALTH_CHECKLIST.md
-│   │   ├── TODO_20260404_STREAMLINE_JSON.md
-│   │   ├── TODO_20260404_STREAMLINE_JSON_CHECKLIST.md
 │   │   └── VISION.md
 │   ├── prompts
 │   │   ├── ASSESSMENT.md
@@ -107,6 +103,9 @@ Then you you must read
 │   │   ├── GUIDANCE_HERMES_COMPARISON.md
 │   │   ├── GUIDANCE_HERMES_SYNTHESIS.md
 │   │   ├── PROMPT.md
+│   │   ├── PROMPT_CODEHEALTH.md
+│   │   ├── PROMPT_REVIEW_AIDER_WORKFLOW.md
+│   │   ├── PROMPT_REVIEW_CHATSCRIPT.
 │   │   ├── PROMPT_ROADMAP.md
 │   │   ├── PROMPT_VISION.md
 │   │   ├── REPORT_GRAPHRAG.md
@@ -131,6 +130,10 @@ Then you you must read
 │   │   ├── TEST_EXPLAIN.md
 │   │   ├── TEST_EXPLAIN_PROMPT.md
 │   │   ├── TEST_EXPLAIN_RESULTS.md
+│   │   ├── TODO_20260404_CODEHEALTH.md
+│   │   ├── TODO_20260404_CODEHEALTH_CHECKLIST.md
+│   │   ├── TODO_20260404_STREAMLINE_JSON.md
+│   │   ├── TODO_20260404_STREAMLINE_JSON_CHECKLIST.md
 │   │   ├── TODO_GAPS.md
 │   │   ├── TODO_GAPS_20260329.md
 │   │   ├── TODO_GAPS_20260329_CHECKLIST.md
@@ -359,8 +362,6 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
-├── PROMPT_REVIEW_AIDER_WORKFLOW.md
-├── PROMPT_REVIEW_CHATSCRIPT.
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
@@ -369,7 +370,8 @@ Then you you must read
 ├── REVIEW_OMO_EXPLORER.md
 ├── ROADMAP_20260402_AIDER.md
 ├── ROADMAP_20260404_INTENTS.md
-├── ROADMAP_20260405_DETERMINISTIC_SM.md
+├── ROADMAP_20260405_DETERMINISTIC_SEARCH.md
+├── ROADMAP_20260405_REVIEWED_INTENTS.md
 ├── ROADMAP_20260405_UNIFIED_INTENTS.md
 └── STRUCTURE.md
 ```

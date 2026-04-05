@@ -585,6 +585,13 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
     defer allocator.free(guidance_dir);
 
+    // ── TIER 0: Empty query → INDEX.md introduction ─────────────────────────────
+    // Check before database open - no DB needed for INDEX display
+    if (is_empty_query) {
+        try showIndexIntro(allocator, workspace, guidance_dir, cfg.capabilities_dir, &cfg);
+        return;
+    }
+
     // ── Open .guidance.db ─────────────────────────────────────────────────────
     std.fs.accessAbsolute(db_path, .{}) catch {
         std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
@@ -600,12 +607,6 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         return;
     };
     defer db.deinit();
-
-    // ── TIER 0: Empty query → INDEX.md introduction ─────────────────────────────
-    if (is_empty_query) {
-        try showIndexIntro(allocator, workspace, guidance_dir, cfg.capabilities_dir);
-        return;
-    }
 
     // ── Staged pipeline (default) ──────────────────────────────────────────────
     if (ea.staged) {
@@ -1626,9 +1627,47 @@ fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabiliti
     return false;
 }
 
-/// Generates an MD format index using allocator, guidance_dir, and capabilities_dir parameters.
-fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capabilities_dir: []const u8) !void {
-    const index_path = try std.fs.path.join(allocator, &.{ guidance_dir, "INDEX.md" });
+/// Summarizes a capability description to 120 characters or less using the thinking model.
+fn summarizeCapabilityDescription(
+    allocator: std.mem.Allocator,
+    client: *llm.LlmClient,
+    name: []const u8,
+    description: []const u8,
+) anyerror!?[]const u8 {
+    const prompt = std.fmt.allocPrint(allocator,
+        \\Summarize this capability in 120 characters or less. Be precise and concise.
+        \\Capability: {s}
+        \\Description: {s}
+        \\Respond with only the summarized text, no explanation.
+    , .{ name, description }) catch return null;
+    defer allocator.free(prompt);
+
+    const raw = client.complete(prompt, 100, 0.0, null) catch return null;
+    const response = raw orelse return null;
+    defer allocator.free(response);
+
+    const stripped = llm.stripThinkBlock(response);
+    const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
+    if (trimmed.len == 0) return null;
+
+    // Ensure 120 chars or less
+    if (trimmed.len <= 120) return try allocator.dupe(u8, trimmed);
+
+    // Find a good break point near 120 chars
+    const trunc = trimmed[0..@min(120, trimmed.len)];
+    const last_space = std.mem.lastIndexOfScalar(u8, trunc, ' ') orelse 77;
+    const summary = trunc[0..last_space];
+    return try std.fmt.allocPrint(allocator, "{s}...", .{summary});
+}
+
+/// Generates a metadata index structure using provided allocator, guidance and capabilities data.
+fn generateIndexMd(
+    allocator: std.mem.Allocator,
+    guidance_dir: []const u8,
+    capabilities_dir: []const u8,
+    cfg: *const config_mod.ProjectConfig,
+) !void {
+    const index_path = try std.fs.path.join(allocator, &.{ capabilities_dir, "INDEX.md" });
     defer allocator.free(index_path);
 
     const cwd = try std.process.getCwdAlloc(allocator);
@@ -1672,6 +1711,28 @@ fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capab
         }
     }.lessThan);
 
+    // Try to create LLM client for summarization
+    var llm_api_url_to_free: ?[]const u8 = null;
+    defer if (llm_api_url_to_free) |url| allocator.free(url);
+
+    var llm_client_opt: ?llm.LlmClient = blk: {
+        const resolved = resolveLlmConfigForThinking(
+            allocator,
+            cfg,
+            cfg.model_thinking,
+            null,
+        ) catch break :blk null;
+        llm_api_url_to_free = resolved.api_url;
+        const llm_config = llm.LlmConfig{
+            .api_url = resolved.api_url,
+            .model = resolved.model,
+            .think = resolved.think,
+            .debug = false,
+        };
+        break :blk llm.LlmClient.init(allocator, llm_config) catch null;
+    };
+    defer if (llm_client_opt) |*c| c.deinit();
+
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(allocator);
     const w = out.writer(allocator);
@@ -1689,7 +1750,20 @@ fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capab
     try w.print("## Capabilities\n\n", .{});
 
     for (capabilities.items) |cap| {
-        try w.print("- **{s}**: {s}\n", .{ cap.name, cap.description });
+        const desc = if (llm_client_opt) |*client| blk: {
+            const summary = summarizeCapabilityDescription(allocator, client, cap.name, cap.description) catch null;
+            break :blk summary;
+        } else null;
+
+        const effective_desc = if (desc) |d| d else blk: {
+            // Fallback: truncate at 120 chars
+            if (cap.description.len <= 120) break :blk allocator.dupe(u8, cap.description) catch break :blk cap.description;
+            const trunc = cap.description[0..77];
+            break :blk std.fmt.allocPrint(allocator, "{s}...", .{trunc}) catch cap.description;
+        };
+        defer if (desc != null) allocator.free(effective_desc);
+
+        try w.print("- **{s}**: {s}\n", .{ cap.name, effective_desc });
     }
 
     try w.print("\n---\n\n", .{});
@@ -1705,11 +1779,17 @@ fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capab
     try file.writeAll(index_content);
 }
 
-/// Displays an introductory index section for the query engine, using allocator and guidance data.
-fn showIndexIntro(allocator: std.mem.Allocator, _: []const u8, guidance_dir: []const u8, capabilities_dir: []const u8) !void {
-    try generateIndexMd(allocator, guidance_dir, capabilities_dir);
+/// Displays an introductory index section using allocator, guidance, and configuration data.
+fn showIndexIntro(
+    allocator: std.mem.Allocator,
+    _: []const u8,
+    guidance_dir: []const u8,
+    capabilities_dir: []const u8,
+    cfg: *const config_mod.ProjectConfig,
+) !void {
+    try generateIndexMd(allocator, guidance_dir, capabilities_dir, cfg);
 
-    const index_path = try std.fs.path.join(allocator, &.{ guidance_dir, "INDEX.md" });
+    const index_path = try std.fs.path.join(allocator, &.{ capabilities_dir, "INDEX.md" });
     defer allocator.free(index_path);
 
     const content = std.fs.cwd().readFileAlloc(allocator, index_path, 64 * 1024) catch |err| {

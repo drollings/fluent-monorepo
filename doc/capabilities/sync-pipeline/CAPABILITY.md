@@ -37,12 +37,12 @@ The guidance JSON mtime acts as a "all phases passed" marker — it is only touc
 ## Database sync
 
 After all source files are processed:
-- `.guidance.db` is updated from `.guidance/src/` JSON files (LanceDB vector search)
+- `.guidance.db` is updated from `.guidance/src/` JSON files (SimHash vector search)
 
 ## Key files
 
 - `src/guidance/sync.zig` — `SyncProcessor`, per-file pipeline
-- `src/vector/vector_db.zig` — `syncDatabase` (LanceDB-style SQLite backend)
+- `src/vector/vector_db.zig` — `syncDatabase` (SQLite backend)
 - `src/guidance/hash.zig` — `matchHash` computation
 - `src/guidance/marker.zig` — `fileNeedsProcessing` staleness check
 
