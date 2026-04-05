@@ -722,7 +722,7 @@ pub fn expandFollowUps(
 // Output formatting (M9)
 // ---------------------------------------------------------------------------
 
-/// Processes a Zig code snippet to format it according to specified stages and constraints.
+/// Processes a Zig code snippet to format it into a structured output using provided allocator and stages.
 pub fn formatStaged(
     allocator: std.mem.Allocator,
     query: []const u8,
@@ -730,7 +730,6 @@ pub fn formatStaged(
     summary: ?[]const u8,
     workspace: []const u8,
     capabilities_dir: []const u8,
-    followup_keywords: ?[]const []const u8,
 ) ![]u8 {
     var out: std.ArrayList(u8) = .{};
     defer out.deinit(allocator);
@@ -814,6 +813,8 @@ pub fn formatStaged(
     var ref_header_written = false;
     var all_keywords: std.ArrayList(u8) = .{};
     defer all_keywords.deinit(allocator);
+    var keyword_list: std.ArrayList([]const u8) = .{};
+    defer keyword_list.deinit(allocator);
     var all_see_also: std.ArrayList(u8) = .{};
     defer all_see_also.deinit(allocator);
     var all_skills: std.ArrayList(u8) = .{};
@@ -846,12 +847,10 @@ pub fn formatStaged(
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_kw.contains(p)) continue;
+                    if (std.ascii.eqlIgnoreCase(p, query)) continue;
                     if (seen_kw.count() >= 10) continue; // cap at 10 items
                     try seen_kw.put(allocator, p, {});
-                    if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
-                    try all_keywords.append(allocator, '`');
-                    try all_keywords.appendSlice(allocator, p);
-                    try all_keywords.append(allocator, '`');
+                    try keyword_list.append(allocator, p);
                 }
             } else if (std.mem.startsWith(u8, line, "used_by: ")) {
                 // Split comma-separated paths and deduplicate.
@@ -904,13 +903,30 @@ pub fn formatStaged(
         }
     }
 
-    if (all_keywords.items.len > 0 or all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0 or all_matched_caps.items.len > 0) {
+    if (keyword_list.items.len > 0) {
+        const first_keyword = keyword_list.items[0];
+        for (keyword_list.items[1..]) |kw| {
+            if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
+            try all_keywords.append(allocator, '`');
+            try all_keywords.appendSlice(allocator, kw);
+            try all_keywords.append(allocator, '`');
+        }
+        if (!ref_header_written) {
+            try w.writeAll("## References\n\n");
+            ref_header_written = true;
+        }
+        try w.print("- **Recommended search command**: `guidance explain \"{s}\"`\n", .{first_keyword});
+        if (all_keywords.items.len > 0) {
+            try w.print("- **Other terms to search**: {s}\n", .{all_keywords.items});
+        }
+    }
+
+    if (all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0 or all_matched_caps.items.len > 0) {
         if (!ref_header_written) {
             try w.writeAll("## References\n\n");
             ref_header_written = true;
         }
         if (all_matched_caps.items.len > 0) try w.print("- **Matched capabilities**: {s}\n", .{all_matched_caps.items});
-        if (all_keywords.items.len > 0) try w.print("- **Suggested searches**: {s}\n", .{all_keywords.items});
         if (all_see_also.items.len > 0) try w.print("- **Used most in**: {s}\n", .{all_see_also.items});
         if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
         if (all_capabilities.items.len > 0) {
@@ -933,16 +949,6 @@ pub fn formatStaged(
                 }
             }
             try w.writeByte('\n');
-        }
-    }
-
-    // ── Suggested follow-up keywords (from LLM synthesis)──────────────────────
-    if (followup_keywords) |kw| {
-        if (kw.len > 0) {
-            try w.writeAll("\n## Suggested Queries\n\n");
-            for (kw) |k| {
-                try w.print("- `{s}`\n", .{k});
-            }
         }
     }
 
@@ -1232,7 +1238,7 @@ pub fn loadSkillExcerpt(
 
 test "formatStaged: empty stages output contains header" {
     const allocator = std.testing.allocator;
-    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "myquery", &.{}, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "# Explain: myquery") != null);
 }
@@ -1245,7 +1251,7 @@ test "formatStaged: code stage with line emits source path and line number" {
         .source = "src/foo.zig",
         .line = 10,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "src/foo.zig:10") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "pub fn foo()") != null);
@@ -1259,7 +1265,7 @@ test "formatStaged: code stage without line still emits code block" {
         .source = "src/bar.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "src/bar.zig") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "const x = 1;") != null);
@@ -1273,23 +1279,13 @@ test "formatStaged: summary appears before code sections" {
         .source = "src/foo.zig",
         .line = 1,
     }};
-    const result = try formatStaged(allocator, "q", &stages, "This is the summary.", "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, "This is the summary.", "/workspace", "");
     defer allocator.free(result);
     const sum_pos = std.mem.indexOf(u8, result, "This is the summary.");
     const src_pos = std.mem.indexOf(u8, result, "## Source location:");
     try std.testing.expect(sum_pos != null);
     try std.testing.expect(src_pos != null);
     try std.testing.expect(sum_pos.? < src_pos.?);
-}
-
-test "formatStaged: followup keywords produce Suggested Queries section" {
-    const allocator = std.testing.allocator;
-    const kws = [_][]const u8{ "alpha search", "beta filter" };
-    const result = try formatStaged(allocator, "q", &.{}, null, "/workspace", "", &kws);
-    defer allocator.free(result);
-    try std.testing.expect(std.mem.indexOf(u8, result, "## Suggested Queries") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result, "alpha search") != null);
-    try std.testing.expect(std.mem.indexOf(u8, result, "beta filter") != null);
 }
 
 test "formatStaged: skill_doc stage produces Knowledge Base section" {
@@ -1300,7 +1296,7 @@ test "formatStaged: skill_doc stage produces Knowledge Base section" {
         .source = "zig-current",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## Knowledge Base") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "zig-current") != null);
@@ -1314,7 +1310,7 @@ test "formatStaged: metadata stage with keywords prefix produces References sect
         .source = "src/types.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## References") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "vtable") != null);
@@ -1369,35 +1365,31 @@ test "formatStaged: capability_doc stage renders Capability section" {
         .source = "embedding-providers",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "embed", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "embed", &stages, null, "/workspace", "");
     defer allocator.free(result);
     try std.testing.expect(std.mem.indexOf(u8, result, "## Capability: embedding-providers") != null);
     try std.testing.expect(std.mem.indexOf(u8, result, "EmbeddingProvider") != null);
 }
 
-test "formatStaged: See Also is capped at 10 unique keywords" {
+test "formatStaged: keywords are capped at 10 unique items" {
     const allocator = std.testing.allocator;
-    // Build metadata stage with 15 keywords
     const stages = [_]types.Stage{.{
         .kind = .metadata,
         .content = "keywords: a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15",
         .source = "src/foo.zig",
         .line = null,
     }};
-    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "", null);
+    const result = try formatStaged(allocator, "q", &stages, null, "/workspace", "");
     defer allocator.free(result);
-    // Should contain See Also but only up to 10 items
-    const see_also_start = std.mem.indexOf(u8, result, "See also") orelse {
-        try std.testing.expect(false); // must have See Also section
+    const see_also_start = std.mem.indexOf(u8, result, "Other terms to search") orelse {
+        try std.testing.expect(false); // must have Other terms section
         return;
     };
     const see_also_line_end = std.mem.indexOfScalar(u8, result[see_also_start..], '\n') orelse result.len - see_also_start;
     const see_also_line = result[see_also_start .. see_also_start + see_also_line_end];
-    // Count commas in the line — 9 commas = 10 items (max)
     var comma_count: usize = 0;
     for (see_also_line) |ch| if (ch == ',') {
         comma_count += 1;
     };
-    try std.testing.expect(comma_count <= 9);
+    try std.testing.expect(comma_count <= 8); // 9 items in "Other terms" = 8 commas
 }
-

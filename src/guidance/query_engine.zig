@@ -1259,14 +1259,14 @@ fn cmdExplainStaged(
 
     // M7: not_found sentinel — emit directly, skip synthesis and cache.
     if (stages_raw[0].kind == .not_found) {
-        return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace, ea.capabilities_dir);
+        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace, ea.capabilities_dir);
     }
 
     // ── Fast path: no LLM ─────────────────────────────────────────────────────
     if (!use_llm or client_opt == null) {
         if (use_llm and ea.verbose) std.debug.print("LLM unavailable, using fast path\n", .{});
         for (stages_raw) |s| db.incrementQueryCountForFile(s.source);
-        return emitStagedOutput(allocator, query_text, stages_raw, null, null, workspace, ea.capabilities_dir);
+        return emitStagedOutput(allocator, query_text, stages_raw, null, workspace, ea.capabilities_dir);
     }
 
     // ── LLM path ─────────────────────────────────────────────────────────────
@@ -1355,7 +1355,7 @@ fn cmdExplainStaged(
     const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
     const synth_result = if (cached_summary == null)
         synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
-            return emitStagedOutput(allocator, query_text, combined.items, null, null, workspace, ea.capabilities_dir);
+            return emitStagedOutput(allocator, query_text, combined.items, null, workspace, ea.capabilities_dir);
         }
     else
         synthesize_mod.SynthesisResult{ .summary = null, .followup_keywords = null };
@@ -1417,7 +1417,7 @@ fn cmdExplainStaged(
         if (merged_followups) |mf| allocator.free(mf);
     };
 
-    return emitStagedOutput(allocator, query_text, combined.items, effective_summary, merged_followups, workspace, ea.capabilities_dir);
+    return emitStagedOutput(allocator, query_text, combined.items, effective_summary, workspace, ea.capabilities_dir);
 }
 
 /// Processes query data into staged output format using provided allocator and parameters.
@@ -1426,11 +1426,10 @@ fn emitStagedOutput(
     query_text: []const u8,
     stages: []const types.Stage,
     summary: ?[]const u8,
-    followup_keywords: ?[]const []const u8,
     workspace: []const u8,
     capabilities_dir: []const u8,
 ) !void {
-    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace, capabilities_dir, followup_keywords);
+    const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace, capabilities_dir);
     defer allocator.free(output);
     var ws: llm.WriterState = .{};
     ws.initStdout();
@@ -2364,5 +2363,4 @@ test "isShortQuery: regular two-word queries are short" {
     try testing.expect(isShortQuery("parse file"));
     try testing.expect(isShortQuery("load config"));
 }
-
 
