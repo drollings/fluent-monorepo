@@ -4,7 +4,7 @@
     "source": "src/common/source.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/llm.zig", "src/common/root.zig"],
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "enum",

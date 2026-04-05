@@ -4,7 +4,6 @@
     "source": "src/coral/targets.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "YAGO", "ingestion pipeline", "target definitions", "dependency management", "modular design", "command pattern", "dependency validation", "ANN indexing", "verification"],
   "capabilities": ["coral-ingestion", "coral-database", "target-registry", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/executor.zig"],
   "members": [

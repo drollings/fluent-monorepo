@@ -411,5 +411,3 @@ test "SessionDB persists to tmpDir" {
         try testing.expectEqual(@as(usize, 1), results.len);
     }
 }
-
-

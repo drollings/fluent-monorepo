@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " PluginRegistry — maps file extensions to LanguagePlugin descriptors.\n\n The registry is populated at startup with built-in plugins.  External\n providers (Python, Rust, …) can be registered at runtime via the config.\n\n Usage:\n   var reg = PluginRegistry.init(allocator);\n   defer reg.deinit();\n   if (reg.getForExtension(\".zig\")) |p| { ... }",
-  "keywords": ["PluginRegistry", "Zig", "LanguagePlugin", "Registry", "RuntimeRegistration", "Extensibility"],
   "capabilities": ["plugin-system"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [

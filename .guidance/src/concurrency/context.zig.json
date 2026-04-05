@@ -8,7 +8,7 @@
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
-  "used_by": ["src/common/llm.zig", "src/common/repl.zig", "src/common/root.zig", "src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig"],
+  "used_by": ["src/common/repl.zig", "src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig", "src/dag/root.zig"],
   "members": [
     {
       "type": "struct",

@@ -4,7 +4,6 @@
     "source": "src/reflection/binary.zig",
     "language": "zig"
   },
-  "keywords": ["BinaryFieldCodec", "struct fields", "binary encoding", "reflection", "Zig", "data types", "error handling", "wire format"],
   "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig"],
   "members": [

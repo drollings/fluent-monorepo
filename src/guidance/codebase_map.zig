@@ -577,19 +577,3 @@ test "looksLikeIdentifier via ENTRY_EXACT: main is an entry point" {
     try std.testing.expect(isEntryPointName("handleRequest"));
     try std.testing.expect(!isEntryPointName("parseToken"));
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1273,23 +1273,3 @@ test "verifyWithTests: empty test cases returns true" {
     const result = verifyWithTests(testing.allocator, &[_]u8{}, &[_]ToolTestCase{});
     try testing.expect(result);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -117,6 +117,3 @@ test "simhash: short embedding (shorter than DIMS) doesn't panic" {
     const short: [10]f32 = [_]f32{0.5} ** 10;
     _ = simhash(&short); // must not panic or overflow
 }
-
-
-

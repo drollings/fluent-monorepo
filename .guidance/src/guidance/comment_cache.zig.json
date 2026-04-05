@@ -4,7 +4,6 @@
     "source": "src/guidance/comment_cache.zig",
     "language": "zig"
   },
-  "keywords": ["CommentCache", "Zig", "Cache", "In-process", "LLM", "Comment Generation", "Memory Management", "Struct", "Function"],
   "members": [
     {
       "type": "struct",

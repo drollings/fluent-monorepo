@@ -257,5 +257,3 @@ test "Louvain: two strong cliques merge fewer communities" {
     try testing.expect(seen.count() >= 1);
     try testing.expect(seen.count() <= 4);
 }
-
-

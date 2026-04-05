@@ -1,8 +1,9 @@
 const std = @import("std");
 const Target = @import("target.zig").Target;
 const TargetType = @import("target.zig").TargetType;
-const StringInterner = @import("interner.zig").StringInterner;
-const builder_error_mod = @import("builder_error.zig");
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
+const builder_error_mod = common.builder_error;
 pub const BuilderError = builder_error_mod.BuilderError;
 pub const BuilderPhase = builder_error_mod.Phase;
 const joinStringSlice = builder_error_mod.joinStringSlice;
@@ -890,21 +891,3 @@ test "TargetBuilder: err field is null on successful register" {
     try testing.expect(b.err_any == null);
     try b.command("rm -rf build").register();
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

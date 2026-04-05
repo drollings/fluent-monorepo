@@ -45,6 +45,8 @@ pub fn build(b: *std.Build) void {
     // `common` — full umbrella: reflection, interner, registry, target, hash,
     // context, repl, json_parser, embeddings, etc.
     // All sub-modules are within src/common/ so relative imports are valid.
+    // Note: common does NOTimport dag to avoid circular dependency.
+    // DAG types are defined in src/dag/ and consumers should import from "dag" module directly.
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/root.zig"),
         .target = target,
@@ -52,6 +54,17 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "llm", .module = llm_module },
             .{ .name = "reflection", .module = reflection_module },
+        },
+    });
+
+    // `dag` — DAG execution engine (Target, Registry, Resolver, Executor).
+    // Uses named module imports for common (interner, builder_error).
+    const dag_module = b.createModule(.{
+        .root_source_file = b.path("src/dag/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "common", .module = common_module }, .{ .name = "reflection", .module = reflection_module },
         },
     });
 
@@ -109,7 +122,7 @@ pub fn build(b: *std.Build) void {
     // Uses named module deps only (no relative imports) so it does not conflict
     // with coral_db_module when both appear in the same compilation (e.g. wasm_tests).
     const coral_schema_module = b.createModule(.{
-        .root_source_file = b.path("src/coral/context_node_schema.zig"),
+        .root_source_file = b.path("src/llm/context_node_schema.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -188,6 +201,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "dag", .module = dag_module },
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "coral_batch", .module = coral_batch_module },
                 .{ .name = "ontology", .module = ontology_module },
@@ -312,10 +326,11 @@ pub fn build(b: *std.Build) void {
 
     const registry_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/registry.zig"),
+            .root_source_file = b.path("src/dag/registry.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
+                .{ .name = "common", .module = common_module },
                 .{ .name = "reflection", .module = reflection_module },
             },
         }),
@@ -369,7 +384,7 @@ pub fn build(b: *std.Build) void {
     // so it can be tested standalone without file-conflict issues.
     const context_node_schema_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/context_node_schema.zig"),
+            .root_source_file = b.path("src/llm/context_node_schema.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -390,6 +405,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "dag", .module = dag_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
@@ -400,7 +416,7 @@ pub fn build(b: *std.Build) void {
     coral_cache_tests.linkSystemLibrary("sqlite3");
 
     // -- Coral MCP server tests --
-    // mcp.zig imports cache.zig (relative) which requires common, coral_db, wasm, local_model.
+    // mcp.zig imports cache.zig (relative) which requires common, coral_db, dag, wasm, local_model.
     const coral_mcp_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/coral/mcp.zig"),
@@ -409,6 +425,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "dag", .module = dag_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "local_model", .module = local_model_module },
@@ -517,10 +534,11 @@ pub fn build(b: *std.Build) void {
     // -- Resolver tests (M3.1 getLevels) --
     const resolver_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/resolver.zig"),
+            .root_source_file = b.path("src/dag/resolver.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
+                .{ .name = "common", .module = common_module },
                 .{ .name = "reflection", .module = reflection_module },
             },
         }),
@@ -807,7 +825,7 @@ pub fn build(b: *std.Build) void {
     // -- Coral Context Compressor tests (P2.3) --
     const coral_context_compressor_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/context_compressor.zig"),
+            .root_source_file = b.path("src/llm/context_compressor.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -815,7 +833,7 @@ pub fn build(b: *std.Build) void {
 
     const coral_context_packer_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/context_packer.zig"),
+            .root_source_file = b.path("src/llm/context_packer.zig"),
             .target = target,
             .optimize = optimize,
         }),

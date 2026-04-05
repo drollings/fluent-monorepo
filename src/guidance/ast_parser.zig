@@ -459,5 +459,3 @@ pub fn parseFile(allocator: std.mem.Allocator, path: []const u8) !AstParser {
         return err;
     };
 }
-
-

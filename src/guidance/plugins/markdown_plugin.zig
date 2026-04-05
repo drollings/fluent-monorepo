@@ -255,7 +255,3 @@ test "FileType.fromExtension" {
     try std.testing.expectEqual(types.FileType.config, types.FileType.fromExtension(".toml"));
     try std.testing.expectEqual(types.FileType.unknown, types.FileType.fromExtension(".xyz"));
 }
-
-
-
-

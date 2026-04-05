@@ -45,12 +45,11 @@ Before calling the embedding API, the provider computes `SHA-256(model_name + "\
 Plain HTTP is only permitted for localhost/127.x/::1 addresses. Remote embedding endpoints must use HTTPS.
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (4 files, auto-discovered)
+## Sources (3 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/common/embeddings.zig` | 1.0 | defines_anchor |
-| `src/common/llm.zig` | 0.9 | used_by |
 | `src/common/root.zig` | 0.9 | used_by |
 | `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
 

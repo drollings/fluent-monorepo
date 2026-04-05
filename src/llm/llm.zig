@@ -1,60 +1,23 @@
-//! common — Shared utilities and LLM client for guidance, vector, and coral.
+//! llm.zig — LLM response post-processing for guidance and coral.
 //!
-//! This file is the module root for the `common` build module.
-//! It re-exports from sub-modules so consumers can write
-//! `@import("common").LlmClient` etc. without knowing the source file.
-//!
-//! Sub-modules:
-//!   src/llm/root.zig       — LlmClient, LlmConfig, LlmError (pure HTTP, no str deps)
-//!   src/common/embeddings  — EmbeddingProvider, Ollama/OpenAI clients, factory
-//!   src/common/args        — CommonArgs, parseCommonArgs
-//!   src/common/io          — WriterState, ReaderState, path helpers
-//!   src/common/source      — NodeType, extractExcerpt, extractSimpleExcerpt
-//!   src/common/hash        — sha256Hex, contentHashWithModel, blake3, etc.
-//!   src/common/json        — jsonStringifyAlloc, jsonWriteEscaped, parseJsonFile
-//!   src/common/str         — containsIgnoreCase, looksLikeIdentifier, etc.
-//!   src/common/url         — isLocalHost, validateHttpsOrLocalHttp
+//! This file is part of the `llm` build module.
+//! It provides post-processing functions for LLM output:
+//!   stripThinkBlock, extractCommentTag, isMalformedResponse, stripPreamble
 
 const std = @import("std");
-const args = @import("args.zig");
-const io = @import("io.zig");
-const source = @import("source.zig");
-const hash_mod = @import("hash.zig");
-const json_mod = @import("json.zig");
-const str_mod = @import("str.zig");
-const url_mod = @import("url.zig");
-const embed_mod = @import("embeddings.zig");
 
-// ---------------------------------------------------------------------------
-// Sub-module namespace exports — structured access for Coral and future tools
-// ---------------------------------------------------------------------------
-/// Field-level reflection: ConstraintVTable, Accessor, Editable(T), DynamicEditable.
-pub const reflection = @import("reflection");
-/// String interning with arena storage + bitset ConstraintVTable bridge.
-pub const interner = @import("interner.zig");
-/// Target DAG registry: TargetRegistry, TargetBuilder (fluent DSL).
-pub const registry = @import("registry.zig");
-/// Target/TargetType/ExecutorKind value types shared across build & coral.
-pub const target = @import("target.zig");
-/// Hash utilities: sha256Hex, contentHashWithModel, blake3Hash, hashString.
-pub const hash = @import("hash.zig");
-/// BuildContext for DAG execution.
-pub const context = @import("context.zig");
-/// Interactive REPL for coral.
-pub const repl = @import("repl.zig");
-/// JSON target-file parser.
-pub const json_parser = @import("json_parser.zig");
+/// Checks if a needle substring exists within the haystack, ignoring case sensitivity.
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > haystack.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
+    }
+    return false;
+}
 
-// ── LLM inference (src/llm/) ─────────────────────────────────────
-const llm = @import("llm");
-
-pub const LlmError = llm.LlmError;
-pub const LlmConfig = llm.LlmConfig;
-pub const LlmClient = llm.LlmClient;
-
-// ── LLM response post-processing (depends on str_mod, lives here) ─
-// These validators operate on LLM output text and use string utilities
-// that are part of this module — keeping them here avoids circular deps.
+// ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Removes tags from a Zig string slice, returning a cleaned version.
 fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) []const u8 {
@@ -69,16 +32,36 @@ fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) []const 
     return std.mem.trim(u8, text[0..tag_start], " \t\r\n");
 }
 
-/// Removes unwanted blocks from the input text slice.
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/// Strips think-block tags from LLM output (e.g. <think>reasoning</think>).
 pub fn stripThinkBlock(text: []const u8) []const u8 {
-    if (std.mem.indexOf(u8, text, "<think>") != null)
-        return stripTagBlock(text, "<think>", "</think>");
-    if (std.mem.indexOf(u8, text, "[THINK]") != null)
-        return stripTagBlock(text, "[THINK]", "[/THINK]");
+    if (std.mem.indexOf(u8, text, "<think>")) |think_start| {
+        const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "</think>");
+        if (think_end) |te| {
+            const after = te + 8;
+            if (after >= text.len) return "";
+            var start = after;
+            while (start < text.len and (text[start] == ' ' or text[start] == '\n')) start += 1;
+            return text[start..];
+        }
+        return std.mem.trim(u8, text[0..think_start], " \t\r\n");
+    }
+    if (std.mem.indexOf(u8, text, "[THINK]")) |think_start| {
+        const think_end = std.mem.indexOfPos(u8, text, think_start + 7, "[/THINK]");
+        if (think_end) |te| {
+            const after = te + 8;
+            if (after >= text.len) return "";
+            var start = after;
+            while (start < text.len and (text[start] == ' ' or text[start] == '\n')) start += 1;
+            return text[start..];
+        }
+        return std.mem.trim(u8, text[0..think_start], " \t\r\n");
+    }
     return text;
 }
 
-/// Removes leading zeros from a Zig array slice, returning a trimmed version.
+/// Removes leading preamble lines from LLM output.
 pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return allocator.dupe(u8, trimmed);
@@ -106,16 +89,14 @@ pub fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) ![]const u8
     return allocator.dupe(u8, trimmed);
 }
 
-/// Patterns that, when found anywhere in an LLM response, indicate it is a
-/// preamble / meta-commentary rather than a usable doc comment.
-/// Adding a new pattern is a single-line change here; no if-chain to edit.
+/// Patterns that indicate an LLM preamble rather than a usable doc comment.
 const llm_preamble_patterns = [_][]const u8{
     "here's a",    "here is a",   "i'll ",        "to summarize",
     "okay,",       "ok,",         "we need ",     "let's think",
     "let's craft", "let's count", "let me think", "i need to ",
 };
 
-/// Checks if the provided text slice meets Zig's format requirements and returns true for malformed inputs.
+/// Returns true if the LLM response appears malformed.
 pub fn isMalformedResponse(text: []const u8) bool {
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0) return true;
@@ -128,13 +109,13 @@ pub fn isMalformedResponse(text: []const u8) bool {
     if (llmIsOverlyGeneric(trimmed)) return true;
 
     inline for (llm_preamble_patterns) |pattern| {
-        if (str_mod.containsIgnoreCase(trimmed, pattern)) return true;
+        if (containsIgnoreCase(trimmed, pattern)) return true;
     }
     return false;
 }
 
-/// Checks if a Zig string ends with a null byte, returning true if so.
-pub fn llmHasDanglingEnd(body: []const u8) bool {
+/// Checks if a Zig code snippet ends with a null byte, indicating a dangling end.
+fn llmHasDanglingEnd(body: []const u8) bool {
     const trimmed = std.mem.trimRight(u8, body, " \t.?");
     if (trimmed.len == 0) return false;
     var i: usize = trimmed.len;
@@ -147,8 +128,8 @@ pub fn llmHasDanglingEnd(body: []const u8) bool {
     return false;
 }
 
-/// Checks if the provided body is a valid Zig array of bytes, returning true if it represents a self-ref type.
-pub fn llmIsGenericSelfRef(body: []const u8) bool {
+/// Checks if a Zig structure represents a valid self-referential LLM model.
+fn llmIsGenericSelfRef(body: []const u8) bool {
     const patterns = [_][]const u8{
         "this function", "this method", "this class",
         "this struct",   "this type",   "this module",
@@ -161,7 +142,7 @@ pub fn llmIsGenericSelfRef(body: []const u8) bool {
 }
 
 /// Checks if the provided body is overly generic by evaluating its structure and returns true if it matches.
-pub fn llmIsOverlyGeneric(body: []const u8) bool {
+fn llmIsOverlyGeneric(body: []const u8) bool {
     const generics = [_][]const u8{
         "function", "method",   "helper",  "util",           "utility",
         "handler",  "callback", "wrapper", "implementation",
@@ -175,7 +156,7 @@ pub fn llmIsOverlyGeneric(body: []const u8) bool {
     return false;
 }
 
-/// Extracts the comment tag from a Zig string slice, returning its slice.
+/// Extracts content from <comment> tags in LLM output.
 pub fn extractCommentTag(text: []const u8) ?[]const u8 {
     const open = "<comment>";
     const close = "</comment>";
@@ -187,71 +168,20 @@ pub fn extractCommentTag(text: []const u8) ?[]const u8 {
     return content;
 }
 
-// ── Embedding providers (src/common/embeddings.zig) ──────────────
-pub const EmbeddingProvider = embed_mod.EmbeddingProvider;
-pub const NoopEmbedding = embed_mod.NoopEmbedding;
-pub const OllamaEmbedding = embed_mod.OllamaEmbedding;
-pub const OpenAiEmbedding = embed_mod.OpenAiEmbedding;
-pub const createEmbeddingProvider = embed_mod.createEmbeddingProvider;
-pub const parseOllamaResponse = embed_mod.parseOllamaResponse;
-pub const parseOpenAiResponse = embed_mod.parseOpenAiResponse;
+/// Returns true if text is blank or a plausible doc comment.
+pub fn isBlankOrPlausible(text: []const u8) bool {
+    const trimmed = std.mem.trim(u8, text, " \t\r\n");
+    if (trimmed.len == 0) return true;
+    if (trimmed.len < 3) return false;
+    return !isMalformedResponse(trimmed);
+}
 
-// ── CLI args ─────────────────────────────────────────────────────
-pub const CommonArgs = args.CommonArgs;
-pub const parseCommonArgs = args.parseCommonArgs;
+// ── String utilities ────────────────────────────────────────────────────────
+// Note: String utilities (looksLikeIdentifier, langFromPath, etc.) are
+// available via @import("common").string or directly from common module.
+// llm.zig only needs containsIgnoreCase which is defined locally above.
 
-// ── I/O helpers ──────────────────────────────────────────────────
-pub const WriterState = io.WriterState;
-pub const ReaderState = io.ReaderState;
-pub const makePathAbsolute = io.makePathAbsolute;
-pub const readFileAlloc = io.readFileAlloc;
-pub const readFileAllocErr = io.readFileAllocErr;
-pub const resolvePath = io.resolvePath;
-pub const stripPathPrefix = io.stripPathPrefix;
-pub const DEFAULT_MAX_FILE_SIZE = io.DEFAULT_MAX_FILE_SIZE;
-
-// ── Source excerpt extraction ─────────────────────────────────────
-pub const NodeType = source.NodeType;
-pub const DEFAULT_MAX_LINES = source.DEFAULT_MAX_LINES;
-pub const extractExcerpt = source.extractExcerpt;
-pub const extractSimpleExcerpt = source.extractSimpleExcerpt;
-
-// ── Hash utilities ────────────────────────────────────────────────
-pub const sha256Hex = hash_mod.sha256Hex;
-pub const contentHashWithModel = hash_mod.contentHashWithModel;
-pub const HashAlgorithm = hash_mod.HashAlgorithm;
-pub const hashFile = hash_mod.hashFile;
-pub const hashBatch = hash_mod.hashBatch;
-pub const hashString = hash_mod.hashString;
-pub const blake3Hash = hash_mod.blake3Hash;
-pub const blake3Hex = hash_mod.blake3Hex;
-pub const HashState = hash_mod.HashState;
-pub const BatchHashResult = hash_mod.BatchHashResult;
-
-// ── JSON utilities ────────────────────────────────────────────────
-pub const jsonStringifyAlloc = json_mod.jsonStringifyAlloc;
-pub const jsonWriteEscaped = json_mod.writeEscaped;
-pub const jsonAppendEscaped = json_mod.appendEscaped;
-pub const parseJsonFile = json_mod.parseJsonFile;
-
-// ── String utilities ──────────────────────────────────────────────
-pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
-pub const isTestPath = str_mod.isTestPath;
-pub const skillNameFromRef = str_mod.skillNameFromRef;
-pub const containsIgnoreCase = str_mod.containsIgnoreCase;
-pub const containsWord = str_mod.containsWord;
-pub const containsAny = str_mod.containsAny;
-pub const containsAnyWord = str_mod.containsAnyWord;
-pub const hasExtension = str_mod.hasExtension;
-pub const isPathToken = str_mod.isPathToken;
-pub const langFromPath = str_mod.langFromPath;
-pub const dupeStrings = str_mod.dupeStrings;
-
-// ── URL utilities ─────────────────────────────────────────────────
-pub const isLocalHost = url_mod.isLocalHost;
-pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
-
-// ── Tests for response post-processing ───────────────────────────
+// ── Tests ───────────────────────────────────────────────────────────────────
 
 test "stripThinkBlock removes think tags" {
     const text1 = "<think>Some thinking</think>\nActual response";
@@ -260,7 +190,7 @@ test "stripThinkBlock removes think tags" {
     const text2 = "No think tags here";
     try std.testing.expectEqualStrings(text2, stripThinkBlock(text2));
 
-    const text3 = "<think>Only think</think>";
+    const text3 = "<think>Only think\n</think>";
     try std.testing.expectEqualStrings("", stripThinkBlock(text3));
 }
 
@@ -359,11 +289,3 @@ test "extractCommentTag: chain-of-thought before tag is ignored" {
     try std.testing.expect(result != null);
     try std.testing.expectEqualStrings("[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.", result.?);
 }
-
-
-
-
-
-
-
-

@@ -137,4 +137,3 @@ test "AgentLoopTools: handle returns error for unknown tool" {
 test "AgentLoopTools: RESERVED list has 4 entries" {
     try testing.expectEqual(@as(usize, 4), AgentLoopTools.RESERVED.len);
 }
-

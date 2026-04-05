@@ -4,8 +4,7 @@
     "source": "src/common/hash.zig",
     "language": "zig"
   },
-  "keywords": ["SHA256", "contentHashWithModel", "hashFile", "hashBatch", "allocator", "cryptographic", "hashing", "Zig"],
-  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",

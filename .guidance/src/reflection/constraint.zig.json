@@ -4,7 +4,6 @@
     "source": "src/reflection/constraint.zig",
     "language": "zig"
   },
-  "keywords": ["ConstraintVTable", "ConstraintSet", "ConstraintGet", "DynamicEditable", "StringInterner", "Allocator", "Context", "BinarySerialization"],
   "capabilities": ["reflection"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/typed.zig"],
   "members": [

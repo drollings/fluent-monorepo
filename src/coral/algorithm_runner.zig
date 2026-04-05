@@ -181,4 +181,3 @@ test "AlgorithmRunner: computeCommunities clears community dirty flag" {
     try runner.computeCommunities(arena.allocator(), MockLibrary{});
     try testing.expect(!runner.community_dirty);
 }
-

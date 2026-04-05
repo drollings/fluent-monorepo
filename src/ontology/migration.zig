@@ -121,7 +121,3 @@ test "latest returns null when empty" {
     defer reg.deinit();
     try testing.expect(reg.latest() == null);
 }
-
-
-
-

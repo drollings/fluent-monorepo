@@ -88,7 +88,7 @@ An arena-backed fluent builder for assembling the binary payload will be added i
 
 | File | Confidence | Reason |
 |------|-----------|--------|
-| `src/coral/context_node_schema.zig` | 1.0 | defines_anchor |
+| `src/llm/context_node_schema.zig` | 1.0 | defines_anchor |
 | `src/coral/db.zig` | 1.0 | defines_anchor |
 | `src/wasm/execution_request.zig` | 0.4 | path_heuristic |
 | `src/wasm/wasm.zig` | 0.4 | path_heuristic |

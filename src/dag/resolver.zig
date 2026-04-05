@@ -1,7 +1,7 @@
 const std = @import("std");
 const Target = @import("target.zig").Target;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
-const StringInterner = @import("interner.zig").StringInterner;
+const StringInterner = @import("common").interner.StringInterner;
 
 pub const ResolverError = error{ CircularDependency, TargetNotFound };
 
@@ -817,16 +817,3 @@ test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     }
     try testing.expectEqual(.ok, gpa.deinit());
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,15 +1,13 @@
 {
   "meta": {
-    "module": "src.common.resolver",
-    "source": "src/common/resolver.zig",
+    "module": "src.dag.resolver",
+    "source": "src/dag/resolver.zig",
     "language": "zig"
   },
-  "keywords": ["Zig dependency resolution", "topological sort", "abstract dependencies", "registry", "interners", "allocator", "error handling", "module design", "Zig compiler"],
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["target-registry"],
-  "used_by": ["src/common/context.zig", "src/common/registry.zig"],
+  "used_by": ["src/dag/context.zig", "src/dag/registry.zig", "src/dag/root.zig"],
   "members": [
     {
       "type": "fn_decl",

@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.\n\n For each prose, insight, or skill_doc Stage, asks a local LLM:\n   \"Is this content relevant to the query? Answer YES or NO.\"\n\n Code and metadata stages are always kept verbatim.\n On LLM error or unavailability, returns all input unchanged.",
-  "keywords": ["LLM filtering", "relevance checking", "staged explain pipeline", "code stages", "metadata stages", "LLM integration", "memory management", "code duplication", "query processing", "stage preservation"],
   "capabilities": ["coral-database", "ast-indexing", "llm-client"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [

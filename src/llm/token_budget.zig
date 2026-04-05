@@ -163,6 +163,3 @@ test "ProportionalBudget: community 15%, text 50%, entity 35% of 8000" {
     try testing.expectEqual(@as(usize, 4000), b.textTokens());
     try testing.expectEqual(@as(usize, 2800), b.entityTokens());
 }
-
-
-

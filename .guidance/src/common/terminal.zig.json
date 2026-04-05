@@ -4,7 +4,6 @@
     "source": "src/common/terminal.zig",
     "language": "zig"
   },
-  "keywords": ["Terminal API", "Memory Management", "User Interaction", "System Calls", "Progress Bar", "Zig Standard Library"],
   "members": [
     {
       "type": "fn_private",

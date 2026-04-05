@@ -4,7 +4,6 @@
     "source": "src/guidance/comment_inserter.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms"],
   "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/comment_sync.zig", "src/guidance/json_store.zig", "src/guidance/sync_engine.zig"],
   "members": [

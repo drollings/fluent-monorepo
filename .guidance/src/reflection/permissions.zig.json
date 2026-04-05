@@ -4,14 +4,13 @@
     "source": "src/reflection/permissions.zig",
     "language": "zig"
   },
-  "keywords": ["Role-based permissions", "Zig module", "Coral Context", "permission system", "role abstraction", "bitmasking", "access control", "enum", "struct", "API design"],
   "capabilities": ["reflection"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/typed.zig"],
   "members": [
     {
       "type": "enum",
       "name": "Role",
-      "match_hash": "636ad8ae77ed4bbd2baecf67711260be55d2deabedbdf763cb1954eb5e1e17bd",
+      "match_hash": "f4ddd2b6cb75420a405f54b4ed2adeb1eea46772f1d17d34d6379f16eb1a03de",
       "signature": "keyword_enum Role { ... }",
       "is_pub": true,
       "members": [
@@ -41,13 +40,13 @@
         }
     ,    {
           "type": "enum_field",
-          "name": "script",
+          "name": "tool",
           "is_pub": false,
           "line": 14
         }
     ,    {
           "type": "enum_field",
-          "name": "player",
+          "name": "user",
           "is_pub": false,
           "line": 15
         }
@@ -57,7 +56,7 @@
     {
       "type": "struct",
       "name": "RolePermissions",
-      "match_hash": "3bad71ad1cc494287bd5fed2502c327d93b4b98b2fec67cfc3d1b4d716f7beec",
+      "match_hash": "f99b8abc12d5e5da0b7dee2d0994c32fd86216d3027cfe5a1cbe1be66401cec6",
       "signature": "keyword_struct RolePermissions { ... }",
       "is_pub": true,
       "members": [

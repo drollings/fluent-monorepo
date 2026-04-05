@@ -4,7 +4,6 @@
     "source": "src/common/cli.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms", "CLI", "Argument parsing", "Memory management"],
   "members": [
     {
       "type": "struct",

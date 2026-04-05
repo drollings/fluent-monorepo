@@ -4,7 +4,6 @@
     "source": "src/common/local_model.zig",
     "language": "zig"
   },
-  "keywords": ["LLM client", "task decomposition", "fallback", "memory management", "JSON parsing", "recursion limit"],
   "capabilities": ["local-model-decomposition", "llm-client"],
   "members": [
     {

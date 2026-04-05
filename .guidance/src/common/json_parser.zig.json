@@ -4,9 +4,8 @@
     "source": "src/common/json_parser.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names", "domain concepts", "design patterns", "technical terms"],
   "capabilities": ["ast-indexing", "target-registry"],
-  "used_by": ["src/common/llm.zig", "src/common/repl.zig", "src/common/root.zig"],
+  "used_by": ["src/common/repl.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -21,7 +20,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 16
+      "line": 17
     },
     {
       "type": "fn_decl",
@@ -36,7 +35,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 37
+      "line": 38
     },
     {
       "type": "fn_private",
@@ -52,7 +51,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 71
+      "line": 72
     },
     {
       "type": "fn_private",
@@ -64,7 +63,7 @@
       ],
       "returns": "TargetType",
       "is_pub": false,
-      "line": 155
+      "line": 156
     },
     {
       "type": "fn_decl",
@@ -77,85 +76,85 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 178
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "JSON parsing",
       "is_pub": false,
-      "line": 229
+      "line": 230
     },
     {
       "type": "test_decl",
       "name": "JSON parsing GPA no leaks",
       "is_pub": false,
-      "line": 256
+      "line": 257
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: invalid JSON returns error",
       "is_pub": false,
-      "line": 296
+      "line": 297
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: non-object root returns error",
       "is_pub": false,
-      "line": 306
+      "line": 307
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: empty object produces zero targets",
       "is_pub": false,
-      "line": 316
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — phony",
       "is_pub": false,
-      "line": 326
+      "line": 327
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — file (exists key)",
       "is_pub": false,
-      "line": 342
+      "line": 343
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — command (commands key)",
       "is_pub": false,
-      "line": 359
+      "line": 360
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — abstract (no distinguishing key)",
       "is_pub": false,
-      "line": 377
+      "line": 378
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: essential and check_mtime fields",
       "is_pub": false,
-      "line": 393
+      "line": 394
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: depends and provides are recorded",
       "is_pub": false,
-      "line": 416
+      "line": 417
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: multiple commands are all stored",
       "is_pub": false,
-      "line": 441
+      "line": 442
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: parseFile returns IoError for missing file",
       "is_pub": false,
-      "line": 459
+      "line": 460
     }
   ]
 }

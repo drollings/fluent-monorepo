@@ -4,7 +4,6 @@
     "source": "src/common/format.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names", "domain concepts", "design patterns", "technical terms"],
   "members": [
     {
       "type": "struct",

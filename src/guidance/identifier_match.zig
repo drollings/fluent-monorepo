@@ -199,8 +199,3 @@ test "shouldSkipLLMSynthesis: natural language does not bypass" {
     try testing.expect(!shouldSkipLLMSynthesis("how does filterStages work?", false));
     try testing.expect(!shouldSkipLLMSynthesis("vector search", false));
 }
-
-
-
-
-

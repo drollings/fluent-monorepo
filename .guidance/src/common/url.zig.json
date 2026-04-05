@@ -4,8 +4,7 @@
     "source": "src/common/url.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "URL validation", "HTTPS", "localhost", "API security", "string matching", "error handling"],
-  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "fn_decl",

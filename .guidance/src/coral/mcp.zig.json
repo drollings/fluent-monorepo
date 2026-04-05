@@ -4,7 +4,6 @@
     "source": "src/coral/mcp.zig",
     "language": "zig"
   },
-  "keywords": ["JSON-RPC", "Coral MCP", "STDIO", "QueueReactor", "Arena", "ContextNode", "Claude", "NullClaw", "Cursor"],
   "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
   "members": [

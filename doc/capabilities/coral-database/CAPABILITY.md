@@ -75,7 +75,7 @@ Graph edges between nodes are typed via `EdgeType`:
 - `src/coral/context_node_schema.zig` — Binary IPC schema, `BINARY_SCHEMA_VERSION`, `BinaryHeader`, `PayloadType`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (70 files, auto-discovered)
+## Sources (67 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -106,14 +106,12 @@ Graph edges between nodes are typed via `EdgeType`:
 | `src/guidance/sync.zig` | 0.9 | used_by |
 | `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/guidance/synthesize.zig` | 0.9 | used_by |
-| `src/coral/context_compressor.zig` | 0.4 | path_heuristic |
 | `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
 | `src/coral/triage.zig` | 0.4 | path_heuristic |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/cli.zig` | 0.4 | path_heuristic |
 | `src/coral/http_transport.zig` | 0.4 | path_heuristic |
 | `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
-| `src/coral/context_packer.zig` | 0.4 | path_heuristic |
 | `src/coral/targets.zig` | 0.4 | path_heuristic |
 | `src/coral/token_budget.zig` | 0.4 | path_heuristic |
 | `src/coral/config.zig` | 0.4 | path_heuristic |
@@ -143,7 +141,6 @@ Graph edges between nodes are typed via `EdgeType`:
 | `src/coral/scrub.zig` | 0.4 | path_heuristic |
 | `src/coral/main.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
-| `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
 | `src/coral/metrics.zig` | 0.4 | path_heuristic |
 | `src/coral/session.zig` | 0.4 | path_heuristic |

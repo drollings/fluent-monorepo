@@ -381,5 +381,3 @@ test "CSRGraph: out-of-range node returns empty neighbors" {
     try testing.expectEqual(@as(usize, 0), g.neighbors(99).len);
     try testing.expectEqual(@as(u32, 0), g.degree(99));
 }
-
-

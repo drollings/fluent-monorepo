@@ -118,5 +118,3 @@ pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, no
 
     return try patterns.toOwnedSlice(allocator);
 }
-
-

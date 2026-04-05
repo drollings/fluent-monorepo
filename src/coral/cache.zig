@@ -12,7 +12,7 @@ const coral_db = @import("coral_db");
 const wasm_mod = @import("wasm");
 const hashutil = @import("common");
 const local_model = @import("local_model");
-const common_registry = @import("common").registry;
+const common_registry = @import("dag").registry;
 const BuilderError = common_registry.BuilderError;
 const BuilderPhase = common_registry.BuilderPhase;
 const logIfError = common_registry.logIfError;
@@ -1318,10 +1318,3 @@ test "ParallelRouter: routeBatch with empty input" {
     defer allocator.free(results);
     try testing.expectEqual(@as(usize, 0), results.len);
 }
-
-
-
-
-
-
-

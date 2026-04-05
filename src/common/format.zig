@@ -316,12 +316,3 @@ test "formatJson: simple struct" {
     try testing.expect(std.mem.indexOf(u8, result, "\"test\"") != null);
     try testing.expect(std.mem.indexOf(u8, result, "42") != null);
 }
-
-
-
-
-
-
-
-
-

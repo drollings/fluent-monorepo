@@ -267,4 +267,3 @@ test "loadSections with empty path lists" {
 
     try testing.expectEqualStrings("", prompt);
 }
-

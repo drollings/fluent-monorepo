@@ -1,9 +1,10 @@
 {
   "meta": {
-    "module": "src.common.dag_executor",
-    "source": "src/common/dag_executor.zig",
+    "module": "src.dag.dag_executor",
+    "source": "src/dag/dag_executor.zig",
     "language": "zig"
   },
+  "used_by": ["src/dag/root.zig"],
   "members": [
     {
       "type": "struct",

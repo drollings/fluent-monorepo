@@ -696,17 +696,3 @@ test "queryChecklistStatus: nonexistent dir returns zeros" {
     try t.expectEqual(@as(usize, 0), result.total);
     try t.expectEqual(@as(usize, 0), result.incomplete);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

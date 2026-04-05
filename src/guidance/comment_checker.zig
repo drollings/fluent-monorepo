@@ -101,5 +101,3 @@ test "isHashStale triggers regeneration path" {
     // Verify: same hash means no regeneration needed.
     try std.testing.expect(!isHashStale("samehash", "samehash"));
 }
-
-

@@ -248,13 +248,3 @@ test "ProgressBar init and advance" {
     bar.set(50);
     try testing.expectEqual(@as(usize, 50), bar.current);
 }
-
-
-
-
-
-
-
-
-
-

@@ -4,8 +4,7 @@
     "source": "src/common/json.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms", "JSON", "Zig"],
-  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "fn_decl",

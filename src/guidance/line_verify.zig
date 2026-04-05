@@ -232,10 +232,3 @@ test "verifyMemberLine - no line recorded" {
     defer result.deinit(allocator);
     try std.testing.expect(!result.verified);
 }
-
-
-
-
-
-
-

@@ -295,8 +295,3 @@ test "parseDocContent: multiline description truncated to 300 chars" {
     try std.testing.expect(excerpt.description != null);
     try std.testing.expectEqual(@as(usize, 300), excerpt.description.?.len);
 }
-
-
-
-
-

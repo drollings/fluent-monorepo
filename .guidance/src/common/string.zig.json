@@ -4,12 +4,12 @@
     "source": "src/common/string.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "string utilities", "case-insensitive search", "keyword detection", "file extensions", "byte manipulation", "bytecode", "pattern matching", "string functions"],
+  "used_by": ["src/common/pattern.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "containsIgnoreCase",
-      "match_hash": "b52ace2914746aeba9a95fe8557080e7e1edf230c423b4bd089d1a96d8fda4c9",
+      "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -17,12 +17,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 4
+      "line": 9
     },
     {
       "type": "fn_decl",
       "name": "containsWord",
-      "match_hash": "42e0003d20a6bda2eaa94f218d350ec0ead739372dacb316e631d2bfbcd9fcc7",
+      "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
       "params": [
         { "name": "haystack", "type": "[]const u8" },
@@ -30,12 +30,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 15
+      "line": 20
     },
     {
       "type": "fn_decl",
       "name": "containsAny",
-      "match_hash": "8e7b321f00dbfef44c7232c8a4498c41c1bbb8ac9027c77df0c7640754a5b308",
+      "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
       "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -43,12 +43,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 29
+      "line": 34
     },
     {
       "type": "fn_decl",
       "name": "containsAnyWord",
-      "match_hash": "b62876c03d360fd9327b224958394e7d7e8edbd6ac227241815e48643c7fde46",
+      "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
       "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
       "params": [
         { "name": "source", "type": "[]const u8" },
@@ -56,12 +56,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 37
+      "line": 42
     },
     {
       "type": "fn_decl",
       "name": "hasExtension",
-      "match_hash": "7ad11ad549f270bf774ac3744b9f6275b0814d97bd01873460cf28750d4885b0",
+      "match_hash": "67214f2a30390f2260026fc7455d417021f59f586a66b3e97c73fcdfae83a070",
       "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },
@@ -69,12 +69,12 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 45
+      "line": 50
     },
     {
       "type": "fn_decl",
       "name": "isPathToken",
-      "match_hash": "93f4e5ff7e648bac8cf4515acff10b03881d4bf927d9d226cd9388d74d7c8420",
+      "match_hash": "29ca08119803dc0c18bd9aa975ab9cd548267e288131e7a59aea55bac07ee33e",
       "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
       "params": [
         { "name": "s", "type": "[]const u8" },
@@ -82,43 +82,353 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 55
+      "line": 60
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase",
       "is_pub": false,
-      "line": 60
+      "line": 65
     },
     {
       "type": "test_decl",
       "name": "containsWord",
       "is_pub": false,
-      "line": 69
+      "line": 74
     },
     {
       "type": "test_decl",
       "name": "containsAny",
       "is_pub": false,
-      "line": 77
+      "line": 82
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord",
       "is_pub": false,
-      "line": 84
+      "line": 89
     },
     {
       "type": "test_decl",
       "name": "hasExtension",
       "is_pub": false,
-      "line": 90
+      "line": 95
     },
     {
       "type": "test_decl",
       "name": "isPathToken",
       "is_pub": false,
-      "line": 98
+      "line": 103
+    },
+    {
+      "type": "fn_decl",
+      "name": "looksLikeIdentifier",
+      "match_hash": "e83302f980d853ea7c01ccd648c9f5f8bfd64c7d7f3cf11bd30f055ff71f22e0",
+      "signature": "fn looksLikeIdentifier(token: []const u8) -> bool",
+      "params": [
+        { "name": "token", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 112
+    },
+    {
+      "type": "fn_decl",
+      "name": "isTestPath",
+      "match_hash": "5f085f475423eb0a8b0dd595f513ebe75164a3ae7b0a8499cac049709f8695b2",
+      "signature": "fn isTestPath(rel_path: []const u8) -> bool",
+      "params": [
+        { "name": "rel_path", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 130
+    },
+    {
+      "type": "fn_decl",
+      "name": "skillNameFromRef",
+      "match_hash": "f6fc702df2201a7cf70fda3f21fb1d8a29f5ef4a9dcbec425c1245a03fcff73f",
+      "signature": "fn skillNameFromRef(ref: []const u8) -> []const u8",
+      "params": [
+        { "name": "ref", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 146
+    },
+    {
+      "type": "fn_decl",
+      "name": "langFromPath",
+      "match_hash": "bad2ce8f34135954f00db94e5af60010e132d90f1cae1af4581ed216fa02fbb2",
+      "signature": "fn langFromPath(path: []const u8) -> []const u8",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 156
+    },
+    {
+      "type": "fn_decl",
+      "name": "dupeStrings",
+      "match_hash": "dc915ca1f604bc1cfa756da90fec70ff4171bfbfc10e9cf939c6803b18c5a268",
+      "signature": "fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "strs", "type": "[]const []const u8" }
+      ],
+      "returns": "[][]const u8",
+      "is_pub": true,
+      "line": 166
+    },
+    {
+      "type": "fn_decl",
+      "name": "dupeString",
+      "match_hash": "fbcd7c48901bed48afd278b7b125b2f62b99966a0ee80616a149f614d3d77cea",
+      "signature": "fn dupeString(allocator: std.mem.Allocator, s: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 181
+    },
+    {
+      "type": "fn_decl",
+      "name": "dupeStringOpt",
+      "match_hash": "1b451b4770dd4d7b4fb37136499817118b39887f4223e65f84cfad1a2aa0cb7f",
+      "signature": "fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "opt", "type": "?[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 187
+    },
+    {
+      "type": "fn_decl",
+      "name": "stripBoilerplate",
+      "match_hash": "c56921142090f8e4dd08c2b113fff2ce2b6316f5ca933156ab39987847a4c2aa",
+      "signature": "fn stripBoilerplate(comment: []const u8) -> []const u8",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 212
+    },
+    {
+      "type": "fn_decl",
+      "name": "isNoisyComment",
+      "match_hash": "67ab0a765e7b6c378e3394e80948062139a6358d9d30df638456c4f3ef8354c5",
+      "signature": "fn isNoisyComment(comment: []const u8) -> bool",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 223
+    },
+    {
+      "type": "fn_decl",
+      "name": "stripNlPrefix",
+      "match_hash": "e7161a7902fa22b05c3f595d5137f5c5b5d32f5fe96b1ad4dff84ee7762ca773",
+      "signature": "fn stripNlPrefix(query: []const u8) -> []const u8",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 267
+    },
+    {
+      "type": "test_decl",
+      "name": "looksLikeIdentifier snake_case",
+      "is_pub": false,
+      "line": 285
+    },
+    {
+      "type": "test_decl",
+      "name": "looksLikeIdentifier camelCase and PascalCase",
+      "is_pub": false,
+      "line": 290
+    },
+    {
+      "type": "test_decl",
+      "name": "containsWord whole-word match",
+      "is_pub": false,
+      "line": 296
+    },
+    {
+      "type": "test_decl",
+      "name": "containsAny matches any keyword",
+      "is_pub": false,
+      "line": 304
+    },
+    {
+      "type": "test_decl",
+      "name": "containsAnyWord whole-word multi-keyword",
+      "is_pub": false,
+      "line": 311
+    },
+    {
+      "type": "test_decl",
+      "name": "hasExtension matches without dot",
+      "is_pub": false,
+      "line": 317
+    },
+    {
+      "type": "test_decl",
+      "name": "isPathToken detects paths and extensions",
+      "is_pub": false,
+      "line": 325
+    },
+    {
+      "type": "test_decl",
+      "name": "containsIgnoreCase finds substring",
+      "is_pub": false,
+      "line": 333
+    },
+    {
+      "type": "test_decl",
+      "name": "langFromPath maps extensions",
+      "is_pub": false,
+      "line": 340
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStrings produces independent copies",
+      "is_pub": false,
+      "line": 348
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStrings handles empty slice",
+      "is_pub": false,
+      "line": 363
+    },
+    {
+      "type": "test_decl",
+      "name": "looksLikeIdentifier rejects plain words",
+      "is_pub": false,
+      "line": 369
+    },
+    {
+      "type": "test_decl",
+      "name": "stripNlPrefix removes interrogative prefix",
+      "is_pub": false,
+      "line": 376
+    },
+    {
+      "type": "test_decl",
+      "name": "stripNlPrefix leaves identifiers unchanged",
+      "is_pub": false,
+      "line": 384
+    },
+    {
+      "type": "test_decl",
+      "name": "stripNlPrefix is case-insensitive on prefix",
+      "is_pub": false,
+      "line": 390
+    },
+    {
+      "type": "test_decl",
+      "name": "stripBoilerplate removes leading phrase",
+      "is_pub": false,
+      "line": 395
+    },
+    {
+      "type": "test_decl",
+      "name": "stripBoilerplate trims leading whitespace",
+      "is_pub": false,
+      "line": 402
+    },
+    {
+      "type": "test_decl",
+      "name": "isNoisyComment: short comment is noisy",
+      "is_pub": false,
+      "line": 406
+    },
+    {
+      "type": "test_decl",
+      "name": "isNoisyComment: hex dump is noisy",
+      "is_pub": false,
+      "line": 411
+    },
+    {
+      "type": "test_decl",
+      "name": "isNoisyComment: prose is not noisy",
+      "is_pub": false,
+      "line": 415
+    },
+    {
+      "type": "test_decl",
+      "name": "STOP_WORDS contains expected words",
+      "is_pub": false,
+      "line": 420
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeString produces independent copy",
+      "is_pub": false,
+      "line": 428
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeString returns null for empty string",
+      "is_pub": false,
+      "line": 436
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns null for null input",
+      "is_pub": false,
+      "line": 441
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns null for empty string",
+      "is_pub": false,
+      "line": 446
+    },
+    {
+      "type": "test_decl",
+      "name": "dupeStringOpt returns copy for non-empty string",
+      "is_pub": false,
+      "line": 451
+    },
+    {
+      "type": "fn_decl",
+      "name": "slugify",
+      "match_hash": "828aca300e0dea36f99a766e5072f29e19d911f3bae8e2224bdc47e3351917ea",
+      "signature": "fn slugify(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 461
+    },
+    {
+      "type": "test_decl",
+      "name": "slugify converts to lowercase and replaces spaces",
+      "is_pub": false,
+      "line": 481
+    },
+    {
+      "type": "test_decl",
+      "name": "slugify caps at 40 chars",
+      "is_pub": false,
+      "line": 487
+    },
+    {
+      "type": "test_decl",
+      "name": "slugify handles empty string",
+      "is_pub": false,
+      "line": 494
     }
   ]
 }

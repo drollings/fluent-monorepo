@@ -105,6 +105,3 @@ test "validateSource: empty returns false" {
 test "validateSource: non-empty returns true" {
     try testing.expect(validateSource("fn main() void {}"));
 }
-
-
-

@@ -124,5 +124,3 @@ pub fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast
     }
     return names.toOwnedSlice(allocator);
 }
-
-

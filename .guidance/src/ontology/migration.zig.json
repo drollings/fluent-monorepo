@@ -4,7 +4,6 @@
     "source": "src/ontology/migration.zig",
     "language": "zig"
   },
-  "keywords": ["OntologyVersion", "OntologyMigration", "Zig", "YAGO", "Migration", "Registry", "MemoryManagement"],
   "capabilities": ["ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [

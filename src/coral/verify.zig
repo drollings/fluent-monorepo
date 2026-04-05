@@ -228,8 +228,3 @@ test "report serializes error count" {
     try testing.expectEqual(@as(usize, 1), report.errors.items.len);
     try testing.expect(report.hasErrors());
 }
-
-
-
-
-

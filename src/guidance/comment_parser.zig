@@ -123,6 +123,3 @@ test "isWellFormedComment - TODO marker" {
 test "isWellFormedComment - valid" {
     try std.testing.expect(isWellFormedComment("Returns the sum of all elements.", ""));
 }
-
-
-

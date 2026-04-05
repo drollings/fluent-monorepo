@@ -4,8 +4,7 @@
     "source": "src/llm/root.zig",
     "language": "zig"
   },
-  "comment": " llm — General-purpose LLM inference client.\n\n Provides:\n   LlmError    — error set for all LLM operations\n   LlmConfig   — endpoint, model, timeout, think-mode settings\n   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)\n\n Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives\n in src/common/llm.zig alongside the string utilities they depend on.",
-  "keywords": ["LLM", "Zig", "HTTP client", "error handling", "configuration", "string utilities"],
+  "comment": " llm — General-purpose LLM inference client.\n\n Provides:\n   LlmError    — error set for all LLM operations\n   LlmConfig   — endpoint, model, timeout, think-mode settings\n   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)\n\n Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives\n in src/llm/llm.zig alongside the string utilities they depend on.",
   "capabilities": ["llm-client"],
   "used_by": ["src/vector/vector_db.zig"],
   "members": [
@@ -26,7 +25,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 46
+          "line": 49
         }
     ,    {
           "type": "fn_decl",
@@ -38,7 +37,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 52
+          "line": 55
         }
     ,    {
           "type": "fn_decl",
@@ -50,10 +49,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 60
+          "line": 63
         }
       ],
-      "line": 27
+      "line": 30
     },
     {
       "type": "fn_private",
@@ -66,7 +65,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 68
+      "line": 79
     },
     {
       "type": "struct",
@@ -86,7 +85,7 @@
           ],
           "returns": "LlmClient",
           "is_pub": true,
-          "line": 97
+          "line": 108
         }
     ,    {
           "type": "fn_decl",
@@ -98,7 +97,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 124
+          "line": 135
         }
     ,    {
           "type": "fn_decl",
@@ -114,7 +113,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": true,
-          "line": 129
+          "line": 140
         }
     ,    {
           "type": "fn_private",
@@ -128,7 +127,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": false,
-          "line": 173
+          "line": 184
         }
     ,    {
           "type": "fn_private",
@@ -141,7 +140,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 207
+          "line": 218
         }
     ,    {
           "type": "fn_decl",
@@ -153,10 +152,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 276
+          "line": 287
         }
       ],
-      "line": 84
+      "line": 95
     },
     {
       "type": "fn_private",
@@ -168,37 +167,37 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 315
+      "line": 326
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/chat/completions URL uses it directly",
       "is_pub": false,
-      "line": 343
+      "line": 354
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/completions URL normalises to v1/chat/completions",
       "is_pub": false,
-      "line": 356
+      "line": 367
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with OpenAI API URL sets is_openai_format",
       "is_pub": false,
-      "line": 369
+      "line": 380
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString escapes properly",
       "is_pub": false,
-      "line": 382
+      "line": 393
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString does not escape braces",
       "is_pub": false,
-      "line": 390
+      "line": 401
     }
   ]
 }

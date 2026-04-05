@@ -269,4 +269,3 @@ test "QuantizedEmbedding.serialize/deserialize" {
         try testing.expectEqual(a, b);
     }
 }
-

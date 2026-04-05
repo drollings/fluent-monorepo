@@ -308,7 +308,3 @@ test "CodebaseScanner: scan on empty workspace returns low confidence" {
     // Just verify no crash and confidence is set.
     try std.testing.expect(scanner.confidence == .low or scanner.confidence == .medium);
 }
-
-
-
-

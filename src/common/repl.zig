@@ -1,9 +1,10 @@
 const std = @import("std");
 const BuildContext = @import("context.zig").BuildContext;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
-const StringInterner = @import("interner.zig").StringInterner;
-const json_parser = @import("json_parser.zig");
-const io = @import("io.zig");
+const json_parser_mod = @import("json_parser.zig");
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
+const io = common.io;
 
 pub const Repl = @This();
 
@@ -107,7 +108,7 @@ fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !boo
             return true;
         };
 
-        json_parser.parseFile(self.allocator, filepath, self.ctx.registry, self.ctx.interner) catch |err| {
+        json_parser_mod.parseFile(self.allocator, filepath, self.ctx.registry, self.ctx.interner) catch |err| {
             try writer.print("Failed to load '{s}': {}\n", .{ filepath, err });
             return true;
         };
@@ -155,8 +156,3 @@ fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !v
         });
     }
 }
-
-
-
-
-

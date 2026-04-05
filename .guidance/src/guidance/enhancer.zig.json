@@ -4,7 +4,6 @@
     "source": "src/guidance/enhancer.zig",
     "language": "zig"
   },
-  "keywords": ["Zig enhancement", "LLM integration", "documentation generation", "code comments", "API documentation"],
   "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

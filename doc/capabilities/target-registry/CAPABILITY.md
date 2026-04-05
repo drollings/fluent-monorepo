@@ -78,17 +78,16 @@ These are static compile-time-known targets; `IngestTargetDefs` uses stack-alloc
 - `src/coral/targets.zig` — `IngestTargetDefs`, YAGO pipeline constants
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Sources (8 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
-| `src/common/registry.zig` | 1.0 | defines_anchor |
-| `src/common/context.zig` | 0.9 | used_by |
-| `src/common/json_parser.zig` | 0.9 | used_by |
-| `src/common/llm.zig` | 0.9 | used_by |
-| `src/common/repl.zig` | 0.9 | used_by |
-| `src/common/resolver.zig` | 0.9 | used_by |
-| `src/common/root.zig` | 0.9 | used_by |
-| `src/common/target.zig` | 0.7 | keyword_overlap |
+| `src/dag/registry.zig` | 1.0 | defines_anchor |
+| `src/dag/context.zig` | 0.9 | used_by |
+| `src/dag/json_parser.zig` | 0.9 | used_by |
+| `src/dag/repl.zig` | 0.9 | used_by |
+| `src/dag/resolver.zig` | 0.9 | used_by |
+| `src/dag/root.zig` | 0.9 | used_by |
+| `src/dag/target.zig` | 0.7 | keyword_overlap |
 | `src/coral/targets.zig` | 0.4 | path_heuristic |
 

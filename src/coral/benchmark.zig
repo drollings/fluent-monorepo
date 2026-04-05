@@ -457,8 +457,3 @@ test "Arena allocation overhead is reasonable" {
     try testing.expect(avg_ns > 0);
     try testing.expect(avg_ns < 10_000_000); // 10ms per arena cycle in debug is acceptable
 }
-
-
-
-
-

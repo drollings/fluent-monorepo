@@ -9,7 +9,7 @@
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
   "capabilities": ["embedding-providers"],
-  "used_by": ["src/common/llm.zig", "src/common/root.zig"],
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",

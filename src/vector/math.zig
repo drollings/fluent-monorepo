@@ -339,9 +339,3 @@ test "hybrid merge three-way combines all scores" {
     // RRF: at rank 0 with RRF_K=60: 0.6/60 + 0.25/60 + 0.15/60 = 0.01 + 0.004167 + 0.0025 ≈ 0.016667
     try std.testing.expect(@abs(merged[0].final_score - 0.016667) < 0.001);
 }
-
-
-
-
-
-

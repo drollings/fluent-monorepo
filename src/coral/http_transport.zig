@@ -486,7 +486,3 @@ test "HttpTransport: SSE event format" {
     try testing.expectEqualStrings("{\"result\":42}", event.data);
     try testing.expectEqualStrings("123", event.id.?);
 }
-
-
-
-

@@ -535,9 +535,3 @@ test "ContextNodeSchema: sql_type is correctly set on all accessors" {
     try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[9].sql_type); // confidence
     try testing.expectEqual(reflection.SqlType.integer, schema_ptr.accessors[10].sql_type); // provenance_id
 }
-
-
-
-
-
-

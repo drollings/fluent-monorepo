@@ -4,7 +4,6 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "Coral", "MCP", "Database", "Allocator", "Reactor", "Command-Line", "API", "Modular", "Performance"],
   "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "members": [
     {
@@ -14,7 +13,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 26
+      "line": 27
     },
     {
       "type": "fn_private",
@@ -26,13 +25,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 477
+      "line": 478
     },
     {
       "type": "test_decl",
       "name": "coral: core module imports compile",
       "is_pub": false,
-      "line": 523
+      "line": 524
     }
   ]
 }

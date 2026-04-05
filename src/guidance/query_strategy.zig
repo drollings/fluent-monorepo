@@ -371,15 +371,3 @@ test "looksLikeIdentifier: rejects empty and too-long" {
     // 65 chars — too long
     try std.testing.expect(!looksLikeIdentifier("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 }
-
-
-
-
-
-
-
-
-
-
-
-

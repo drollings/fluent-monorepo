@@ -429,7 +429,3 @@ test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     try testing.expectEqual(@as(usize, 100), stats.triples_processed);
     try testing.expect(stats.nodes_created > 0);
 }
-
-
-
-

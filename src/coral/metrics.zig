@@ -282,5 +282,3 @@ test "CoralMetrics: thread-safe concurrent observe" {
 
     try testing.expectEqual(@as(u64, N_THREADS * N_OBS), m.l1Hits());
 }
-
-

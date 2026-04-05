@@ -137,5 +137,3 @@ test "DelegationConfig: defaults are sane" {
     try testing.expectEqual(@as(usize, 50), cfg.iteration_budget);
     try testing.expect(!cfg.inherit_memory);
 }
-
-

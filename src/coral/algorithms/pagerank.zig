@@ -183,5 +183,3 @@ test "PageRank: star graph — center has highest rank" {
     // Node 0 (hub) should have higher rank than leaves.
     try testing.expect(scores[0] > scores[1]);
 }
-
-

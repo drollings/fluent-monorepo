@@ -189,8 +189,3 @@ test "ToolRegistry: availability=false skips check" {
     const defs = try reg.getDefinitions(arena.allocator(), null, false);
     try testing.expectEqual(@as(usize, 1), defs.len);
 }
-
-
-
-
-

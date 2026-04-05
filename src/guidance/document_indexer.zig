@@ -386,14 +386,3 @@ test "GuidanceJsonIndexer: produceStages includes detail prose" {
     try std.testing.expect(stages.len >= 1);
     try std.testing.expectEqual(types.StageKind.prose, stages[0].kind);
 }
-
-
-
-
-
-
-
-
-
-
-

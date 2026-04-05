@@ -6,9 +6,12 @@
 //!   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)
 //!
 //! Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives
-//! in src/common/llm.zig alongside the string utilities they depend on.
+//! in src/llm/llm.zig alongside the string utilities they depend on.
 
 const std = @import("std");
+const llm_mod = @import("llm.zig");
+
+pub const token_budget = @import("token_budget.zig");
 
 // ── Error set ────────────────────────────────────────────────────────────────
 
@@ -61,6 +64,14 @@ pub const LlmConfig = struct {
         return std.mem.indexOf(u8, api_url, "/api/chat") != null;
     }
 };
+
+// ── Response post-processing re-exports from llm.zig ─────────────────────────
+
+pub const stripThinkBlock = llm_mod.stripThinkBlock;
+pub const isMalformedResponse = llm_mod.isMalformedResponse;
+pub const extractCommentTag = llm_mod.extractCommentTag;
+pub const stripPreamble = llm_mod.stripPreamble;
+pub const isBlankOrPlausible = llm_mod.isBlankOrPlausible;
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -394,7 +405,3 @@ test "writeEscapedString does not escape braces" {
     try writeEscapedString(writer, "{key: value}");
     try std.testing.expectEqualStrings("{key: value}", fbs.getWritten());
 }
-
-
-
-

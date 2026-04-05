@@ -683,15 +683,3 @@ test "McpServer: missing required field returns error" {
     // Should return an error (missing required "query" field)
     try testing.expect(std.mem.indexOf(u8, resp, "error") != null);
 }
-
-
-
-
-
-
-
-
-
-
-
-

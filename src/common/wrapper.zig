@@ -244,5 +244,3 @@ test "wrapIf: build-mode selection compiles correctly" {
     // Just verify it compiles and returns a value (exact value depends on build mode).
     _ = handler(1);
 }
-
-

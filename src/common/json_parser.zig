@@ -2,7 +2,8 @@ const std = @import("std");
 const Target = @import("target.zig").Target;
 const TargetType = @import("target.zig").TargetType;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
-const StringInterner = @import("interner.zig").StringInterner;
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
 
 pub const ParseError = error{
     InvalidJson,
@@ -465,8 +466,3 @@ test "JSON parsing: parseFile returns IoError for missing file" {
     const result = parseFile(testing.allocator, "/nonexistent/path/coral.json", &registry, &interner);
     try testing.expectError(ParseError.IoError, result);
 }
-
-
-
-
-

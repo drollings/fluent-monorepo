@@ -251,6 +251,3 @@ test "LogContext: GPA no leaks" {
     try testing.expect(ctx != null);
     LogContext.clear();
 }
-
-
-

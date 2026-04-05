@@ -4,7 +4,6 @@
     "source": "src/ontology/mapper.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "RDF", "YAGO", "SQLite", "ContextNode", "TripleMapper", "LOD", "Data Transformation", "Memory Management"],
   "capabilities": ["coral-ingestion", "ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [

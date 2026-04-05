@@ -179,7 +179,3 @@ test "validateHttpsOrLocalHttp allows public https" {
     try validateHttpsOrLocalHttp("https://api.openai.com/v1/embeddings");
     try validateHttpsOrLocalHttp("https://example.com/api");
 }
-
-
-
-

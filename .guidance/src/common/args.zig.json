@@ -4,7 +4,7 @@
     "source": "src/common/args.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/common/root.zig"],
+  "used_by": ["src/common/cli.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "struct",

@@ -4,7 +4,6 @@
     "source": "src/coral/cache.zig",
     "language": "zig"
   },
-  "keywords": ["cache hierarchy", "tiered routing", "query optimization", "L1 cache", "L2 cache", "L3 graph search", "semantic search", "LLM fallback", "performance tuning", "memory allocation"],
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],

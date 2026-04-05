@@ -1,12 +1,10 @@
 {
   "meta": {
-    "module": "src.common.registry",
-    "source": "src/common/registry.zig",
+    "module": "src.dag.registry",
+    "source": "src/dag/registry.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "Registry", "Targets", "Interners", "Providers", "Memory Management", "Compiler", "Abstraction"],
-  "capabilities": ["target-registry"],
-  "used_by": ["src/common/context.zig", "src/common/json_parser.zig", "src/common/llm.zig", "src/common/repl.zig", "src/common/resolver.zig", "src/common/root.zig"],
+  "used_by": ["src/dag/context.zig", "src/dag/json_parser.zig", "src/dag/repl.zig", "src/dag/resolver.zig", "src/dag/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -19,7 +17,7 @@
       ],
       "returns": "TargetRegistry",
       "is_pub": true,
-      "line": 20
+      "line": 21
     },
     {
       "type": "fn_decl",
@@ -31,7 +29,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 31
+      "line": 32
     },
     {
       "type": "fn_decl",
@@ -44,7 +42,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 48
+      "line": 49
     },
     {
       "type": "fn_decl",
@@ -57,7 +55,7 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 55
+      "line": 56
     },
     {
       "type": "fn_decl",
@@ -70,7 +68,7 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 60
+      "line": 61
     },
     {
       "type": "fn_decl",
@@ -83,7 +81,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 65
+      "line": 66
     },
     {
       "type": "fn_decl",
@@ -96,7 +94,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 73
+      "line": 74
     },
     {
       "type": "fn_private",
@@ -109,7 +107,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 92
+      "line": 93
     },
     {
       "type": "fn_decl",
@@ -122,7 +120,7 @@
       ],
       "returns": "?[]*Target",
       "is_pub": true,
-      "line": 104
+      "line": 105
     },
     {
       "type": "fn_decl",
@@ -135,7 +133,7 @@
       ],
       "returns": "?[]*Target",
       "is_pub": true,
-      "line": 112
+      "line": 113
     },
     {
       "type": "fn_decl",
@@ -147,7 +145,7 @@
       ],
       "returns": "usize",
       "is_pub": true,
-      "line": 118
+      "line": 119
     },
     {
       "type": "fn_decl",
@@ -160,7 +158,7 @@
       ],
       "returns": "[]*Target",
       "is_pub": true,
-      "line": 123
+      "line": 124
     },
     {
       "type": "fn_decl",
@@ -173,7 +171,7 @@
       ],
       "returns": "[]*Target",
       "is_pub": true,
-      "line": 138
+      "line": 139
     },
     {
       "type": "struct",
@@ -192,7 +190,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 186
+          "line": 187
         }
     ,    {
           "type": "fn_private",
@@ -209,7 +207,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 190
+          "line": 191
         }
     ,    {
           "type": "fn_decl",
@@ -222,7 +220,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 201
+          "line": 202
         }
     ,    {
           "type": "fn_decl",
@@ -235,7 +233,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 211
+          "line": 212
         }
     ,    {
           "type": "fn_decl",
@@ -248,7 +246,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 221
+          "line": 222
         }
     ,    {
           "type": "fn_decl",
@@ -260,7 +258,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 235
+          "line": 236
         }
     ,    {
           "type": "fn_decl",
@@ -273,7 +271,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 241
+          "line": 242
         }
     ,    {
           "type": "fn_decl",
@@ -286,7 +284,7 @@
           ],
           "returns": "*TargetBuilder",
           "is_pub": true,
-          "line": 253
+          "line": 254
         }
     ,    {
           "type": "fn_decl",
@@ -298,10 +296,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 263
+          "line": 264
         }
       ],
-      "line": 172
+      "line": 173
     },
     {
       "type": "fn_decl",
@@ -315,7 +313,7 @@
       ],
       "returns": "TargetBuilder",
       "is_pub": true,
-      "line": 290
+      "line": 291
     },
     {
       "type": "fn_private",
@@ -329,7 +327,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 313
+      "line": 314
     },
     {
       "type": "fn_decl",
@@ -343,7 +341,7 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 332
+      "line": 333
     },
     {
       "type": "fn_decl",
@@ -358,157 +356,157 @@
       ],
       "returns": "?*Target",
       "is_pub": true,
-      "line": 358
+      "line": 359
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry basic operations",
       "is_pub": false,
-      "line": 393
+      "line": 394
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry GPA no leaks",
       "is_pub": false,
-      "line": 409
+      "line": 410
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex returns the correct target",
       "is_pub": false,
-      "line": 437
+      "line": 438
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getByBitIndex for unknown index returns null",
       "is_pub": false,
-      "line": 453
+      "line": 454
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: remove drops the target",
       "is_pub": false,
-      "line": 462
+      "line": 463
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: listNames returns sorted names",
       "is_pub": false,
-      "line": 487
+      "line": 488
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: essentialTargets returns only essential ones",
       "is_pub": false,
-      "line": 513
+      "line": 514
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: abstractTargets returns only abstract ones",
       "is_pub": false,
-      "line": 535
+      "line": 536
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: getProviders and getProvidersForName",
       "is_pub": false,
-      "line": 558
+      "line": 559
     },
     {
       "type": "test_decl",
       "name": "TargetRegistry: get returns null for unknown name",
       "is_pub": false,
-      "line": 589
+      "line": 590
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: basic fluent registration",
       "is_pub": false,
-      "line": 602
+      "line": 603
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: depends and provides interned correctly",
       "is_pub": false,
-      "line": 618
+      "line": 619
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: feature parity with imperative style",
       "is_pub": false,
-      "line": 633
+      "line": 634
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: multiple commands accumulate",
       "is_pub": false,
-      "line": 673
+      "line": 674
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: id field set via fluent",
       "is_pub": false,
-      "line": 688
+      "line": 689
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: GPA no leaks — happy path",
       "is_pub": false,
-      "line": 700
+      "line": 701
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: integrates with DependencyResolver end-to-end",
       "is_pub": false,
-      "line": 720
+      "line": 721
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: exact match returns target",
       "is_pub": false,
-      "line": 753
+      "line": 754
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: empty registry returns null",
       "is_pub": false,
-      "line": 773
+      "line": 774
     },
     {
       "type": "test_decl",
       "name": "resolveByCapability: closest partial match returned",
       "is_pub": false,
-      "line": 788
+      "line": 789
     },
     {
       "type": "test_decl",
       "name": "resolveByCapabilityWithHierarchy: matches via ancestor capability",
       "is_pub": false,
-      "line": 810
+      "line": 811
     },
     {
       "type": "test_decl",
       "name": "resolveByCapabilityWithHierarchy: no ancestors returns same as resolveByCapability",
       "is_pub": false,
-      "line": 833
+      "line": 834
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: arena freed on happy path — GPA no leaks",
       "is_pub": false,
-      "line": 852
+      "line": 853
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: err accumulates and surfaces cause",
       "is_pub": false,
-      "line": 868
+      "line": 869
     },
     {
       "type": "test_decl",
       "name": "TargetBuilder: err field is null on successful register",
       "is_pub": false,
-      "line": 881
+      "line": 882
     }
   ]
 }

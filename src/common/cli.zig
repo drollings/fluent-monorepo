@@ -210,6 +210,3 @@ test "CommandRegistry: names returns sorted list" {
     try testing.expectEqualStrings("middle", names[1]);
     try testing.expectEqualStrings("zebra", names[2]);
 }
-
-
-

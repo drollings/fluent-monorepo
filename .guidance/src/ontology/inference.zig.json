@@ -4,7 +4,6 @@
     "source": "src/ontology/inference.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "inference engine", "RDFS", "OWL", "rule-based reasoning", "ontology", "transitivity", "materialization"],
   "capabilities": ["ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [

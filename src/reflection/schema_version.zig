@@ -149,5 +149,3 @@ test "checkCompatible: different major returns SchemaMismatch" {
 test "SchemaVersion: SCHEMA_CURRENT compatible with itself" {
     try testing.expect(SCHEMA_CURRENT.compatible(SCHEMA_CURRENT));
 }
-
-

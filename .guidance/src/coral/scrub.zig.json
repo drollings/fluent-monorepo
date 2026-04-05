@@ -4,7 +4,6 @@
     "source": "src/coral/scrub.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "AI-generated comments", "comment detection", "LLM", "code quality", "syntax analysis", "pattern matching", "synthetic code", "code refactoring", "Zig module"],
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig", "src/guidance/sync_engine.zig"],
   "members": [

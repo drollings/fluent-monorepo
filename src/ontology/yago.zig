@@ -389,11 +389,3 @@ test "isSubclassOf: unrelated classes" {
 test "isSubclassOf: unknown child IRI" {
     try testing.expect(!isSubclassOf("http://unknown/Foo", NS_YAGO ++ "Entity"));
 }
-
-
-
-
-
-
-
-

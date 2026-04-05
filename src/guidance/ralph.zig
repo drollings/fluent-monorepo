@@ -423,18 +423,3 @@ test "QueryRecord: can be appended to ArrayList" {
     try std.testing.expectEqual(@as(usize, 1), history.items.len);
     try std.testing.expectEqualStrings("cmdExplain", history.items[0].query);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

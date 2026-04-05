@@ -1,10 +1,10 @@
 {
   "meta": {
-    "module": "src.common.token_budget",
-    "source": "src/common/token_budget.zig",
+    "module": "src.llm.token_budget",
+    "source": "src/llm/token_budget.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig", "src/coral/main.zig"],
+  "used_by": ["src/coral/main.zig", "src/llm/root.zig"],
   "members": [
     {
       "type": "fn_decl",

@@ -359,9 +359,3 @@ test "indexSolutionWithTool: no code block still indexes node" {
     );
     try testing.expect(try lib.countNodes() >= 1);
 }
-
-
-
-
-
-

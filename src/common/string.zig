@@ -152,67 +152,6 @@ pub fn skillNameFromRef(ref: []const u8) []const u8 {
     return base;
 }
 
-// =============================================================================
-// String search helpers — from coral/src/common/string.zig
-// =============================================================================
-
-/// Checks if a needle substring exists within the haystack array of bytes.
-pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (!std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) continue;
-        const left_ok = i == 0 or !std.ascii.isAlphanumeric(haystack[i - 1]);
-        const right_end = i + needle.len;
-        const right_ok = right_end >= haystack.len or !std.ascii.isAlphanumeric(haystack[right_end]);
-        if (left_ok and right_ok) return true;
-    }
-    return false;
-}
-
-/// Checks if any keywords exist within the source string slice.
-pub fn containsAny(source: []const u8, keywords: []const []const u8) bool {
-    for (keywords) |kw| {
-        if (containsIgnoreCase(source, kw)) return true;
-    }
-    return false;
-}
-
-/// Checks if any word from keywords appears in the source string.
-pub fn containsAnyWord(source: []const u8, keywords: []const []const u8) bool {
-    for (keywords) |kw| {
-        if (containsWord(source, kw)) return true;
-    }
-    return false;
-}
-
-/// Checks if the input slice contains a specified extension, returning true if found.
-pub fn hasExtension(s: []const u8, extensions: []const []const u8) bool {
-    const dot = std.mem.lastIndexOfScalar(u8, s, '.') orelse return false;
-    const ext = s[dot + 1 ..];
-    for (extensions) |known| {
-        if (std.mem.eql(u8, ext, known)) return true;
-    }
-    return false;
-}
-
-/// Checks if a given slice of bytes matches a specified extension pattern, returning true or false.
-pub fn isPathToken(s: []const u8, extensions: []const []const u8) bool {
-    if (s.len < 3) return false;
-    return hasExtension(s, extensions) or std.mem.indexOf(u8, s, "/") != null;
-}
-
-/// Checks if a needle substring exists within the haystack, ignoring case, and returns true or false.
-pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
-    }
-    return false;
-}
-
 /// Converts a null-terminated C string slice into a Zig array of characters.
 pub fn langFromPath(path: []const u8) []const u8 {
     if (std.mem.endsWith(u8, path, ".zig")) return "zig";
@@ -239,7 +178,7 @@ pub fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) ![][]
 }
 
 /// Converts a null-terminated string into a Zig-safe slice, handling memory allocation internally.
-pub fn dupeString(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
+pub fn dupeString(allocator: std.mem.Allocator, s: []const u8) !?[]const u8 {
     if (s.len == 0) return null;
     return try allocator.dupe(u8, s);
 }
@@ -557,20 +496,3 @@ test "slugify handles empty string" {
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("work-item", result);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

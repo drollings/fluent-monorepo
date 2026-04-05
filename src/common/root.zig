@@ -1,15 +1,19 @@
 //! common — Module umbrella root.
 //!
 //! This is the root of the `common` build module.  It re-exports all public
-//! symbols that were previously exported directly from llm.zig so that
-//! all existing `@import("common").Foo` call sites continue to work unchanged.
+//! symbols from internal files for convenient access.
 //!
-//! Additional structured sub-module namespaces (new in P2.1):
+//! Additional structured sub-module namespaces (P2.1):
 //!   common.llm        — LLM client and response post-processing
 //!   common.embeddings — EmbeddingProvider and backends
+//!
+//! Note (after file moves): DAG types (Target, TargetRegistry, etc.) have been
+//! moved to the `dag` module. Import via `@import("dag")` instead.
+//! Similarly, token_budget and context_packer are in the `llm` module.
 
 const std = @import("std");
-const llm_file = @import("llm.zig");
+
+// ── Named module imports (from build.zig) ───────────────────────────────────────
 const llm_mod = @import("llm");
 const embed_mod = @import("embeddings.zig");
 const args_mod = @import("args.zig");
@@ -17,44 +21,39 @@ const io_mod = @import("io.zig");
 const source_mod = @import("source.zig");
 const hash_mod = @import("hash.zig");
 const json_mod = @import("json.zig");
-const str_mod = @import("str.zig");
+const string_mod = @import("string.zig");
 const url_mod = @import("url.zig");
+const builder_error_mod = @import("builder_error.zig");
 
 // ── Named sub-module namespaces ───────────────────────────────────────────────
 /// LLM inference client and response post-processing.
-pub const llm = llm_file;
+pub const llm = llm_mod;
+/// I/O helpers: WriterState, ReaderState, readFileAlloc, etc.
+pub const io = io_mod;
 /// Embedding providers (Noop, Ollama, OpenAI) and factory.
 pub const embeddings = embed_mod;
 /// Field-level reflection: ConstraintVTable, Accessor, Editable(T), DynamicEditable.
 pub const reflection = @import("reflection");
 /// String interning with arena storage + bitset ConstraintVTable bridge.
 pub const interner = @import("interner.zig");
-/// Target DAG registry: TargetRegistry, TargetBuilder (fluent DSL).
-pub const registry = @import("registry.zig");
-/// Target/TargetType/ExecutorKind value types shared across build & coral.
-pub const target = @import("target.zig");
 /// Hash utilities: sha256Hex, contentHashWithModel, blake3Hash, hashString.
 pub const hash = hash_mod;
-/// BuildContext for DAG execution.
-pub const context = @import("context.zig");
-/// Interactive REPL for coral.
-pub const repl = @import("repl.zig");
-/// JSON target-file parser.
-pub const json_parser = @import("json_parser.zig");
+/// Builder error types for fluent builder chains (Phase, BuilderError, etc.).
+pub const builder_error = builder_error_mod;
 
 // ── LLM types (flat re-exports for backward compatibility) ────────────────────
 pub const LlmError = llm_mod.LlmError;
 pub const LlmConfig = llm_mod.LlmConfig;
 pub const LlmClient = llm_mod.LlmClient;
 
-// ── LLM response post-processing (backward compat flat re-exports) ────────────
-pub const stripThinkBlock = llm_file.stripThinkBlock;
-pub const stripPreamble = llm_file.stripPreamble;
-pub const isMalformedResponse = llm_file.isMalformedResponse;
-pub const extractCommentTag = llm_file.extractCommentTag;
-pub const llmHasDanglingEnd = llm_file.llmHasDanglingEnd;
-pub const llmIsGenericSelfRef = llm_file.llmIsGenericSelfRef;
-pub const llmIsOverlyGeneric = llm_file.llmIsOverlyGeneric;
+// ── LLM response post-processing (moved to src/llm/llm.zig) ────────────────────
+// Note: These functions are now in the llm module. Access via @import("llm").
+// The LlmClient types are from src/llm/root.zig.
+pub const stripThinkBlock = llm_mod.stripThinkBlock;
+pub const isMalformedResponse = llm_mod.isMalformedResponse;
+pub const extractCommentTag = llm_mod.extractCommentTag;
+pub const stripPreamble = llm_mod.stripPreamble;
+pub const isBlankOrPlausible = llm_mod.isBlankOrPlausible;
 
 // ── Embedding providers (backward compat flat re-exports) ─────────────────────
 pub const EmbeddingProvider = embed_mod.EmbeddingProvider;
@@ -109,22 +108,22 @@ pub const parseJsonFile = json_mod.parseJsonFile;
 pub const SharedString = @import("shared_string.zig").SharedString;
 
 // ── String utilities ──────────────────────────────────────────────────────────
-pub const looksLikeIdentifier = str_mod.looksLikeIdentifier;
-pub const isTestPath = str_mod.isTestPath;
-pub const skillNameFromRef = str_mod.skillNameFromRef;
-pub const containsIgnoreCase = str_mod.containsIgnoreCase;
-pub const containsWord = str_mod.containsWord;
-pub const containsAny = str_mod.containsAny;
-pub const containsAnyWord = str_mod.containsAnyWord;
-pub const hasExtension = str_mod.hasExtension;
-pub const isPathToken = str_mod.isPathToken;
-pub const langFromPath = str_mod.langFromPath;
-pub const dupeStrings = str_mod.dupeStrings;
-pub const slugify = str_mod.slugify;
-pub const stripNlPrefix = str_mod.stripNlPrefix;
-pub const STOP_WORDS = str_mod.STOP_WORDS;
-pub const stripBoilerplate = str_mod.stripBoilerplate;
-pub const isNoisyComment = str_mod.isNoisyComment;
+pub const looksLikeIdentifier = string_mod.looksLikeIdentifier;
+pub const isTestPath = string_mod.isTestPath;
+pub const skillNameFromRef = string_mod.skillNameFromRef;
+pub const containsIgnoreCase = string_mod.containsIgnoreCase;
+pub const containsWord = string_mod.containsWord;
+pub const containsAny = string_mod.containsAny;
+pub const containsAnyWord = string_mod.containsAnyWord;
+pub const hasExtension = string_mod.hasExtension;
+pub const isPathToken = string_mod.isPathToken;
+pub const langFromPath = string_mod.langFromPath;
+pub const dupeStrings = string_mod.dupeStrings;
+pub const slugify = string_mod.slugify;
+pub const stripNlPrefix = string_mod.stripNlPrefix;
+pub const STOP_WORDS = string_mod.STOP_WORDS;
+pub const stripBoilerplate = string_mod.stripBoilerplate;
+pub const isNoisyComment = string_mod.isNoisyComment;
 
 // ── Reference-counted VTable handles (M7) ─────────────────────────────────────
 pub const refcount = @import("refcount.zig");
@@ -155,7 +154,9 @@ pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── Token budget estimation ───────────────────────────────────────────────────
 /// Lightweight token estimator (1 tok ≈ 4 bytes) shared by guidance and coral.
-pub const token_budget = @import("token_budget.zig");
+/// Note: token_budget has been moved to llm module. Access via @import("llm").token_budget
+/// or via @import("common").token_budget (this re-export).
+pub const token_budget = llm_mod.token_budget;
 
 // ── BitSet DRIFT ──────────────────────────────────────────────────────────────
 /// Deterministic follow-up query generation (shared by guidance and coral).

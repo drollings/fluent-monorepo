@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " Vector operations — cosine similarity, normalization, hybrid merge.\n\n Used by guidance's SQLite vector search backend.",
-  "keywords": ["Vector operations", "cosine similarity", "normalization", "hybrid merge", "AI coding assistant", "LanceDB", "serialization", "deserialization", "vector search", "numerical stability"],
   "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig"],
   "members": [

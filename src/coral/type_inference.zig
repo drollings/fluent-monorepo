@@ -172,4 +172,3 @@ test "TypeInference: unknown class returns false" {
     try testing.expect(!ti.isSubclassOf(99, 1)); // unknown child
     try testing.expect(!ti.isSubclassOf(1, 99)); // unknown ancestor
 }
-

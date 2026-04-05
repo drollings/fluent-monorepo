@@ -280,5 +280,3 @@ test "DagExecutor: essential handler failure propagates" {
     // With no handlers registered, run completes without error.
     try exec.run(&ctx, &.{targets.TARGET_DOWNLOAD});
 }
-
-

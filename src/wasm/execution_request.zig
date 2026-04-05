@@ -18,7 +18,7 @@ const BinaryHeader = context_node_schema.BinaryHeader;
 const BinaryExecutionRequest = context_node_schema.BinaryExecutionRequest;
 const BinaryExecutionResult = context_node_schema.BinaryExecutionResult;
 
-const registry_mod = @import("common").registry;
+const registry_mod = @import("dag").registry;
 const BuilderError = registry_mod.BuilderError;
 const BuilderPhase = registry_mod.BuilderPhase;
 
@@ -284,5 +284,3 @@ test "ExecutionRequestBuilder: empty input builds valid payload" {
     try testing.expectEqual(@as(i64, 99), req.target_id);
     try testing.expectEqual(@as(u32, 0), req.input_len);
 }
-
-

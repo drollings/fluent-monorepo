@@ -7,7 +7,7 @@
 /// All functions operate purely on `[]const u8` source text with optional
 /// `std.zig.Ast` parameters for future AST-aware detection.
 const std = @import("std");
-const str_mod = @import("str.zig");
+const str_mod = @import("string.zig");
 
 const containsCI = str_mod.containsIgnoreCase;
 const containsAny = str_mod.containsAny;
@@ -183,13 +183,3 @@ test "detectObserver" {
     ));
     try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
 }
-
-
-
-
-
-
-
-
-
-

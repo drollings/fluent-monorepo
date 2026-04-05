@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.\n\n Handles .zig and .zon files.  Parses with Zig's stdlib AST, extracting\n top-level declarations and imports.",
-  "keywords": ["ZigPlugin", "ASTParser", "LanguagePlugin", "ZigSource", "ModuleDerivation", "PluginArchitecture", "CodeExtraction", "CompilerIntegration"],
   "capabilities": ["plugin-system"],
   "members": [
     {

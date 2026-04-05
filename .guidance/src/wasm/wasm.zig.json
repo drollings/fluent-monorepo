@@ -4,7 +4,6 @@
     "source": "src/wasm/wasm.zig",
     "language": "zig"
   },
-  "keywords": ["WebAssembly", "Zig", "sandboxing", "dynamic loading", "execution pipeline", "Extism", "binary IPC", "LLM integration", "secure execution", "tool lifecycle"],
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],

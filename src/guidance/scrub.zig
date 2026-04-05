@@ -245,8 +245,3 @@ test "scrubJsonValue: preserves real comment" {
     const changed = scrubJsonValue(&parsed.value);
     try t.expect(!changed);
 }
-
-
-
-
-

@@ -195,9 +195,3 @@ test "discoverProvider: workspace-local bin takes priority" {
         // On some systems access() may fail for non-executable files; skip.
     }
 }
-
-
-
-
-
-

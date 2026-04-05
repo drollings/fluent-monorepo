@@ -1382,4 +1382,3 @@ test "formatStaged: keywords are capped at 10 unique items" {
     };
     try std.testing.expect(comma_count <= 8); // 9 items in "Other terms" = 8 commas
 }
-

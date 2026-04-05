@@ -255,8 +255,3 @@ test "ContextPacker: max_stages enforced" {
     // head(1) + body capped at max_stages=3 minus head=1 → 2 body + tail(1)
     try testing.expect(result.len <= 4);
 }
-
-
-
-
-

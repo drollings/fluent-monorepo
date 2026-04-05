@@ -1,6 +1,6 @@
 const std = @import("std");
-const interner_mod = @import("interner.zig");
-const StringInterner = interner_mod.StringInterner;
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
 const reflection = @import("reflection");
 
 /// Defines a fixed-size buffer pool with ownership and lifecycle management; ensures safe allocation/deallocation.
@@ -228,8 +228,8 @@ pub const TargetSchema = struct {
     /// Free with `destroy` when done.
     pub fn create(allocator: std.mem.Allocator, interner: *StringInterner) !*Self {
         const self = try allocator.create(Self);
-        self.depends_vtable = interner_mod.bitSetConstraint(interner);
-        self.provides_vtable = interner_mod.bitSetConstraint(interner);
+        self.depends_vtable = common.interner.bitSetConstraint(interner);
+        self.provides_vtable = common.interner.bitSetConstraint(interner);
         // Build accessors now — pointers into self.depends_vtable /
         // self.provides_vtable are stable because self is heap-allocated.
         self.accessors[0] = .{
@@ -692,16 +692,3 @@ test "TargetSchema: GPA no leaks" {
     const p = try view.get("provides", .coder);
     allocator.free(p);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -483,19 +483,3 @@ test "isSupportedExtension: known extensions" {
     try std.testing.expect(!isSupportedExtension(".md"));
     try std.testing.expect(!isSupportedExtension(".json"));
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

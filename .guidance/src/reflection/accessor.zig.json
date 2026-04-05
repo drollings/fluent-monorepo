@@ -4,7 +4,6 @@
     "source": "src/reflection/accessor.zig",
     "language": "zig"
   },
-  "keywords": ["Accessor", "DynamicEditable", "FieldMeta", "OwnershipMode", "Permissions", "Constraint"],
   "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/validate.zig"],
   "members": [

@@ -246,11 +246,3 @@ test "readFileOpt returns null for non-existent file" {
     const result = readFileOpt(std.testing.allocator, "/nonexistent/path/file.txt", 1024);
     try std.testing.expect(result == null);
 }
-
-
-
-
-
-
-
-

@@ -301,5 +301,3 @@ test "parseCommand quoted argument concatenation" {
     try std.testing.expectEqual(@as(usize, 1), args.len);
     try std.testing.expectEqualStrings("foobar", args[0]);
 }
-
-

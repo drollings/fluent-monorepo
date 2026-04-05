@@ -4,7 +4,6 @@
     "source": "src/ontology/yago.zig",
     "language": "zig"
   },
-  "keywords": ["YAGO 4.5 ontology", "Zig module", "ontology schema", "class registry", "property lookup", "data modeling", "semantic web", "ontology design", "Zig structs", "API functions"],
   "capabilities": ["ontology"],
   "used_by": ["src/ontology/mapper.zig", "src/ontology/migration.zig", "src/ontology/root.zig"],
   "members": [

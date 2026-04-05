@@ -157,7 +157,3 @@ test "deriveModule strips extension and converts slashes" {
     const m2 = try deriveModule(arena.allocator(), "./src/main.zig");
     try std.testing.expectEqualStrings("src.main", m2);
 }
-
-
-
-

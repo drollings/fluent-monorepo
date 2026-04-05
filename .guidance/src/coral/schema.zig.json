@@ -4,7 +4,7 @@
     "source": "src/coral/schema.zig",
     "language": "zig"
   },
-  "keywords": ["Zig schema", "Coral Context", "SQLite", "context nodes", "targets", "dependencies", "wasm tools", "provenance", "entity types", "LOD"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/db.zig"],
   "members": [
     {

@@ -196,6 +196,3 @@ test "GlobalSearch: high confidence skips frontier" {
     const result = try gs.search(a, "q", &summaries, TestReducer{});
     try testing.expect(!result.used_frontier); // 0.95 >= 0.7
 }
-
-
-

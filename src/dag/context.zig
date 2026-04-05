@@ -2,8 +2,9 @@ const std = @import("std");
 const Target = @import("target.zig").Target;
 const TargetRegistry = @import("registry.zig").TargetRegistry;
 const DependencyResolver = @import("resolver.zig").DependencyResolver;
-const StringInterner = @import("interner.zig").StringInterner;
-const shell_parser = @import("shell_parser.zig");
+const common = @import("common");
+const StringInterner = common.interner.StringInterner;
+const shell_parser = common.shell_parser;
 
 pub const BuildError = error{
     ExecutionFailed,
@@ -531,10 +532,3 @@ test "BuildContext: GPA no leaks across a multi-target build" {
 
     try testing.expectEqual(.ok, gpa.deinit());
 }
-
-
-
-
-
-
-

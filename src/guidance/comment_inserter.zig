@@ -308,10 +308,3 @@ test "formatDocComment - multi-line" {
     defer allocator.free(formatted);
     try std.testing.expectEqualStrings("/// Line one.\n/// Line two.\n", formatted);
 }
-
-
-
-
-
-
-

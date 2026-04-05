@@ -930,15 +930,3 @@ pub const DynamicEditable = struct {
         return self.accessors[index].meta;
     }
 };
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,12 +1,13 @@
 const std = @import("std");
 const common = @import("common");
+const dag = @import("dag");
 const coral_db = @import("coral_db");
 const mcp = @import("mcp.zig");
 const batch_mod = @import("coral_batch");
 const yago_ingest_mod = @import("yago_ingest.zig");
 const StringInterner = common.interner.StringInterner;
-const TargetRegistry = common.registry.TargetRegistry;
-const BuildContext = common.context.BuildContext;
+const TargetRegistry = dag.TargetRegistry;
+const BuildContext = dag.BuildContext;
 const Repl = common.repl.Repl;
 const json_parser = common.json_parser;
 const llm = common;
@@ -531,5 +532,3 @@ test "coral: core module imports compile" {
     _ = @import("http_transport.zig"); // M4.1 HTTP/SSE transport
     _ = @import("quantized_embedding.zig"); // P5.2 int8 embeddings
 }
-
-

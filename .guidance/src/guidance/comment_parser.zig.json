@@ -4,7 +4,6 @@
     "source": "src/guidance/comment_parser.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "comment parser", "DocComment", "parsing", "validation", "memory management", "Zig API", "code analysis"],
   "used_by": ["src/guidance/comment_checker.zig", "src/guidance/sync.zig"],
   "members": [
     {

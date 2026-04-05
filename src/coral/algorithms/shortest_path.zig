@@ -244,6 +244,3 @@ test "ShortestPath.findPath: weighted shortest path" {
     try testing.expectEqual(@as(u32, 2), path[1]);
     try testing.expectEqual(@as(u32, 1), path[2]);
 }
-
-
-

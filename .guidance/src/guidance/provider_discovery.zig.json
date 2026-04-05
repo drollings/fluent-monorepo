@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " External language provider discovery for guidance.\n\n Searches for provider binaries named `guidance-{ext_bare}` in:\n   1. `{workspace}/bin/guidance-{ext_bare}`   (workspace-local, highest priority)\n   2. PATH lookup for `guidance-{ext_bare}`   (system-wide)\n\n Provider protocol — subprocess invocation:\n   guidance-py sync --file {src_abs} --output {json_dir}\n   guidance-py sync --scan {src_dir} --output {json_dir}\n\n Providers must write guidance JSON files compatible with the existing format\n to `{json_dir}/src/{relative_path}{ext}.json`.\n\n All returned Provider values are owned by the caller; call provider.deinit().",
-  "keywords": ["Provider", "discovery", "Zig", "subprocess", "JSON", "workspace", "path", "executable"],
   "capabilities": ["plugin-system"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [

@@ -947,4 +947,3 @@ test "HnswIndex: basic connectivity verification" {
     std.log.warn("Total layer 0 connections: {d}\n", .{total_connections});
     try testing.expect(total_connections > 0);
 }
-

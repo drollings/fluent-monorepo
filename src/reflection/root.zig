@@ -1016,8 +1016,3 @@ test "M6: validateAll: returns error when a field violates rules" {
     var obj: Checked = .{};
     try testing.expectError(error.CustomValidationFailed, obj.editable.validateAll(testing.allocator, .user));
 }
-
-
-
-
-

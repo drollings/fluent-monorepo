@@ -218,5 +218,3 @@ test "AtomicRefCount: inc then dec to zero returns true" {
     try testing.expect(!rc.dec()); // → 1, not zero
     try testing.expect(rc.dec()); // → 0, returns true
 }
-
-

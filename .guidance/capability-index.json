@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1775355442536587928",
+  "generated": "1775373750035446771",
   "capabilities": [
     {
       "name": "config-system",
@@ -2068,7 +2068,6 @@
         "strips",
         "arrays",
         "format",
-        "keyword_overlap",
         "LlmClient",
         "parsing",
         "detects",

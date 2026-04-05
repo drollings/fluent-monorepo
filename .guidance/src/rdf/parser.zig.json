@@ -4,7 +4,6 @@
     "source": "src/rdf/parser.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "RDF parser", "streaming", "memory efficiency", "tokenizer", "parser", "RDF syntax"],
   "capabilities": ["rdf-parsing", "coral-ingestion"],
   "used_by": ["src/rdf/normalize.zig", "src/rdf/nquads.zig", "src/rdf/root.zig"],
   "members": [

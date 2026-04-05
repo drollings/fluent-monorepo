@@ -995,14 +995,3 @@ test "isThinkingModelRef: bare model ref (no provider prefix) — not treated as
     // match "deepseek-r1:7b", so this correctly returns false.
     try std.testing.expect(!cfg.isThinkingModelRef("deepseek-r1:7b"));
 }
-
-
-
-
-
-
-
-
-
-
-

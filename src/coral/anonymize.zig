@@ -634,22 +634,3 @@ test "anonymizeContext: no false positive on short alphanumeric" {
     defer allocator.free(result);
     try testing.expectEqualStrings(input, result);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

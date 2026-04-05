@@ -92,6 +92,7 @@ Then you you must read
 │   │   ├── DESIGN.md
 │   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
 │   │   ├── MCP.md
+│   │   ├── PROMPT_CODEHEALTH.md
 │   │   ├── TODO_20260404_CODEHEALTH.md
 │   │   ├── TODO_20260404_CODEHEALTH_CHECKLIST.md
 │   │   ├── TODO_20260404_STREAMLINE_JSON.md
@@ -166,8 +167,6 @@ Then you you must read
 │   │   ├── args.zig
 │   │   ├── builder_error.zig                               # builder_error.zig — Structured error type for fluent builder chains.
 │   │   ├── cli.zig
-│   │   ├── context.zig
-│   │   ├── dag_executor.zig                                # dag_executor.zig — M6.1 Parallel DAG Execution
 │   │   ├── drift.zig                                       # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                                  # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── error_context.zig                               # error_context.zig — Structured error context for non-builder code paths.
@@ -178,25 +177,19 @@ Then you you must read
 │   │   ├── json.zig                                        # json.zig — Generic JSON serialization helpers
 │   │   ├── json_parser.zig
 │   │   ├── limits.zig                                      # limits.zig — Shared resource-limit constants
-│   │   ├── llm.zig                                         # common — Shared utilities and LLM client for guidance, vector, and coral.
 │   │   ├── local_model.zig                                 # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
 │   │   ├── logging.zig                                     # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 │   │   ├── pattern.zig                                     # pattern.zig — Design pattern detection heuristics for Zig source code
 │   │   ├── refcount.zig                                    # refcount.zig — Reference-counted VTable handle wrapper (M7).
-│   │   ├── registry.zig
 │   │   ├── repl.zig
-│   │   ├── resolver.zig
 │   │   ├── root.zig                                        # common — Module umbrella root.
 │   │   ├── shared_string.zig                               # SharedString — heap-allocated, reference-counted, immutable string.
 │   │   ├── shell.zig                                       # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                                # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── source.zig                                      # source.zig — Source code excerpt extraction helpers
-│   │   ├── str.zig                                         # str.zig — Generic string classification and inspection helpers
-│   │   ├── string.zig
-│   │   ├── target.zig
+│   │   ├── string.zig                                      # string.zig — Generic string classification and inspection helpers
 │   │   ├── terminal.zig
-│   │   ├── token_budget.zig                                # token_budget.zig — Token Estimation (shared between guidance and coral).
 │   │   ├── types.zig                                       # Represents a unique node identifier with fixed ownership; managed via init/deinit; not thread-safe.
 │   │   ├── url.zig                                         # url.zig — Generic URL validation helpers
 │   │   └── wrapper.zig                                     # wrapper.zig — Conditional and composable comptime wrappers (M9).
@@ -224,9 +217,6 @@ Then you you must read
 │   │   ├── cache_test.zig                                  # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                                         # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                                      # Coral project configuration loader.
-│   │   ├── context_compressor.zig                          # context_compressor.zig — Context Compression for Token Budget Management
-│   │   ├── context_node_schema.zig
-│   │   ├── context_packer.zig                              # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
 │   │   ├── csr_graph.zig                                   # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                          # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── delegation.zig                                  # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
@@ -254,6 +244,13 @@ Then you you must read
 │   │   ├── type_inference.zig                              # type_inference.zig — Type Inference Cache (P3.7)
 │   │   ├── verify.zig                                      # verify.zig — Ingestion Verification and Integrity Checking
 │   │   └── yago_ingest.zig                                 # yago_ingest.zig — YAGO 4.5 Baseline Ingestion (M3.2)
+│   ├── dag
+│   │   ├── context.zig
+│   │   ├── dag_executor.zig                                # dag_executor.zig — M6.1 Parallel DAG Execution
+│   │   ├── registry.zig
+│   │   ├── resolver.zig
+│   │   ├── root.zig                                        # dag — DAG execution engine for build systems.
+│   │   └── target.zig
 │   ├── guidance
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig                       # MarkdownPlugin — extracts sections and metadata from Markdown files.
@@ -307,7 +304,12 @@ Then you you must read
 │   │   ├── types.zig
 │   │   └── vector_db.zig                                   # vector_db.zig — Hybrid keyword + vector search for guidance generation.
 │   ├── llm
-│   │   └── root.zig                                        # llm — General-purpose LLM inference client.
+│   │   ├── context_compressor.zig                          # context_compressor.zig — Context Compression for Token Budget Management
+│   │   ├── context_node_schema.zig
+│   │   ├── context_packer.zig                              # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
+│   │   ├── llm.zig                                         # llm.zig — LLM response post-processing for guidance and coral.
+│   │   ├── root.zig                                        # llm — General-purpose LLM inference client.
+│   │   └── token_budget.zig                                # token_budget.zig — Token Estimation (shared between guidance and coral).
 │   ├── ontology
 │   │   ├── inference.zig                                   # inference.zig — Ontology Inference Engine (R5)
 │   │   ├── mapper.zig                                      # mapper.zig — Triple → ContextNode Mapper
@@ -340,9 +342,10 @@ Then you you must read
 │   │   ├── simhash.zig                                     # simhash.zig — Charikar SimHash for approximate nearest-neighbour pre-filtering.
 │   │   ├── simhash_projections.zig                         # simhash_projections.zig — auto-generated by bin/gen_simhash_projections.py
 │   │   └── vector_db.zig                                   # guidance SQLite vector search database (cosine similarity via BLOB storage).
-│   └── wasm
-│       ├── execution_request.zig                             # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
-│       └── wasm.zig                                          # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
+│   ├── wasm
+│   │   ├── execution_request.zig                           # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
+│   │   └── wasm.zig                                        # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
+│   └── REVIEW_GEMINI_UNIFIED_CHATSCRIPT_ARBONEL_GUIDANCE.md
 ├── tools
 ├── vendor
 │   └── sqlite3
@@ -358,10 +361,15 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
-├── PROMPT_CODEHEALTH.md
+├── PROMPT_REVIEW_AIDER_WORKFLOW.md
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
+├── REVIEW_GUIDANCE_SEARCH_ENGINE.md
+├── REVIEW_OMO_EXPLORER.md
 ├── ROADMAP_20260402_AIDER.md
+├── ROADMAP_20260404_INTENTS.md
+├── ROADMAP_20260405_DETERMINISTIC_SM.md
+├── ROADMAP_20260405_UNIFIED_INTENTS.md
 └── STRUCTURE.md
 ```

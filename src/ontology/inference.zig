@@ -587,11 +587,3 @@ test "CapabilityInference: inferCapabilities traverses subClassOf chain" {
     try testing.expect(caps.contains("has_name"));
     try testing.expect(!caps.contains("has_altitude"));
 }
-
-
-
-
-
-
-
-

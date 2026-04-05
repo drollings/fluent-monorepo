@@ -4,9 +4,8 @@
     "source": "src/guidance/hash.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "SHA-256", "structHash", "APIHash", "normalizeType"],
   "capabilities": ["coral-database", "ast-indexing"],
-  "used_by": ["src/common/embeddings.zig", "src/common/llm.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",

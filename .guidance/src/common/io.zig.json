@@ -4,11 +4,10 @@
     "source": "src/common/io.zig",
     "language": "zig"
   },
-  "keywords": ["Unique API names (structs", "functions)", "Domain concepts", "Design patterns", "Technical terms"],
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "used_by": ["src/common/cli.zig", "src/common/llm.zig", "src/common/log.zig", "src/common/repl.zig", "src/common/root.zig", "src/common/terminal.zig"],
+  "used_by": ["src/common/cli.zig", "src/common/log.zig", "src/common/root.zig", "src/common/terminal.zig"],
   "members": [
     {
       "type": "struct",

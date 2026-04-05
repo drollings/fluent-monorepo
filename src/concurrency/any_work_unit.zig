@@ -231,6 +231,3 @@ test "WorkUnit: thread transfer — create on A, run on B" {
     thread.join();
     try testing.expect(executed);
 }
-
-
-

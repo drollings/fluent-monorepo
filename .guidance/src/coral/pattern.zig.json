@@ -4,7 +4,6 @@
     "source": "src/coral/pattern.zig",
     "language": "zig"
   },
-  "keywords": ["Zig", "pattern detection", "AST", "GoF", "domain patterns", "skill references", "memory management", "modular design", "pattern recognition", "code analysis"],
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig"],
   "members": [

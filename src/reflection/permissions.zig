@@ -124,5 +124,3 @@ pub const perm_public_read: RolePermissions = .{
     .coder_write = true,
     .creator_write = true,
 };
-
-

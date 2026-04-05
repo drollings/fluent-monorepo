@@ -772,5 +772,3 @@ test "JsonStore: dupeSkills deep copies skills" {
     try testing.expectEqualSlices(u8, "skill2", copy[1].ref);
     try testing.expect(copy[1].context == null);
 }
-
-

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
-  "used_by": ["src/common/root.zig", "src/coral/main.zig"],
+  "used_by": ["src/coral/main.zig", "src/llm/root.zig"],
   "members": [
     {
       "type": "fn_decl",

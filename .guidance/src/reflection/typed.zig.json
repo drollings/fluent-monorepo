@@ -4,7 +4,6 @@
     "source": "src/reflection/typed.zig",
     "language": "zig"
   },
-  "keywords": ["TypedAccessor", "TypedEditable", "ConstraintVTable", "RolePermissions", "TypeId", "Permissions", "Zig"],
   "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig"],
   "members": [
