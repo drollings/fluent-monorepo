@@ -106,7 +106,7 @@ pub fn findRedundantPairs(
             // Only compare same node_type.
             if (!std.mem.eql(u8, a.node_type, b.node_type)) continue;
 
-            const dist: u6 = @truncate(@popCount(@as(u64, @bitCast(a.simhash ^ b.simhash))));
+            const dist: u6 = @truncate(vector.hammingDistance(a.simhash, b.simhash));
             if (dist > threshold) continue;
 
             // Skip generic × generic unless identical.

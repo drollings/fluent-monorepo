@@ -5,6 +5,7 @@ const common = @import("common");
 pub const math = @import("math.zig");
 pub const vector_db = @import("vector_db.zig");
 pub const hnsw = @import("hnsw.zig");
+pub const simhash = @import("simhash.zig");
 
 pub const GuidanceDb = vector_db.GuidanceDb;
 pub const SearchResult = vector_db.SearchResult;
@@ -31,3 +32,12 @@ pub const hybridMerge = math.hybridMerge;
 pub const hybridMergeThree = math.hybridMergeThree;
 pub const ScoredResult = math.ScoredResult;
 pub const IdScore = math.IdScore;
+
+// SimHash exports (from simhash.zig)
+pub const SIMHASH_BITS = simhash.SIMHASH_BITS;
+pub const SIMHASH_DIMS = simhash.SIMHASH_DIMS;
+pub const embeddingHash = simhash.embeddingHash;
+pub const hammingDistance = simhash.hammingDistance;
+pub const similar = simhash.similar;
+pub const maxHamming = simhash.maxHamming;
+pub const TokenSimHash = simhash.TokenSimHash;

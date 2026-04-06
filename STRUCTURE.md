@@ -36,8 +36,11 @@ Then you you must read
 ```
 .
 ├── bin
-│   ├── gen_simhash_projections.py
-│   └── guidance-py
+│   ├── gen_simhash_projections.py                                  # Generate 64x384 random unit vectors for SimHash random projection LSH.
+│   ├── guidance-cpp
+│   ├── guidance-php
+│   ├── guidance-py
+│   └── guidance-ts
 ├── data
 │   └── yago-4.5.0.2-tiny
 │       └── yago-tiny.ttl
@@ -91,14 +94,11 @@ Then you you must read
 │   │   ├── COMMENT_INFILL_DESIGN.md
 │   │   ├── DEBUGGING_COMMENTS.md
 │   │   ├── DESIGN.md
-│   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
 │   │   ├── MCP.md
 │   │   └── VISION.md
 │   ├── prompts
 │   │   ├── ARBONEL_HOW_TO_WRITE_A_SEARCH_ENGINE.md
-│   │   ├── ASSESSMENT.md
 │   │   ├── CODEGRAFF.md
-│   │   ├── CRITIQUE_EVALUATION.md
 │   │   ├── EXPLAIN_BENCHMARK_20260402_QWEN36.md
 │   │   ├── GEMINI_FLUENT_WVR_CRITIQUE.md
 │   │   ├── GUIDANCE_HERMES_COMPARISON.md
@@ -106,16 +106,17 @@ Then you you must read
 │   │   ├── PROMPT.md
 │   │   ├── PROMPT_CODEHEALTH.md
 │   │   ├── PROMPT_FIX.md
+│   │   ├── PROMPT_GUIDANCE_PROGRAMMING_LANGUAGE-CPP.md
+│   │   ├── PROMPT_GUIDANCE_PROGRAMMING_LANGUAGE-PHP.md
+│   │   ├── PROMPT_GUIDANCE_PROGRAMMING_LANGUAGE-RS.md
+│   │   ├── PROMPT_GUIDANCE_PROGRAMMING_LANGUAGE.md
+│   │   ├── PROMPT_OMO_SEARCH.md
 │   │   ├── PROMPT_REVIEW_AIDER_LEARN.md
 │   │   ├── PROMPT_REVIEW_AIDER_WORKFLOW.md
 │   │   ├── PROMPT_REVIEW_CHATSCRIPT.
 │   │   ├── PROMPT_ROADMAP.md
 │   │   ├── PROMPT_VISION.md
 │   │   ├── REPORT_GRAPHRAG.md
-│   │   ├── REVIEW_20260328.md
-│   │   ├── REVIEW_GEMINI_UNIFIED_CHATSCRIPT_ARBONEL_GUIDANCE.md
-│   │   ├── REVIEW_GUIDANCE_SEARCH_ENGINE.md
-│   │   ├── REVIEW_OMO_EXPLORER.md
 │   │   ├── ROADMAP_20260402_AIDER.md
 │   │   ├── ROADMAP_20260403_FLUENT_GUIDANCE.md
 │   │   ├── ROADMAP_20260403_FLUENT_GUIDANCE_CHECKLIST.md
@@ -151,6 +152,24 @@ Then you you must read
 │   │   ├── TODO_REVERSE_ENGINEER.md
 │   │   ├── TODO_REVIEW_20260328.md
 │   │   └── TODO_REVIEW_20260328_CHECKLIST.md
+│   ├── reports
+│   │   ├── ASSESSMENT.md
+│   │   ├── CRITIQUE_EVALUATION.md
+│   │   ├── IMPLEMENTATION_SUMMARY_20260404.md
+│   │   ├── REVIEW_20260328.md
+│   │   ├── REVIEW_GEMINI_UNIFIED_CHATSCRIPT_ARBONEL_GUIDANCE.md
+│   │   ├── REVIEW_GUIDANCE_SEARCH_ENGINE.md
+│   │   └── REVIEW_OMO_EXPLORER.md
+│   ├── reviews
+│   │   ├── REVIEW_20260405_AIDER.md
+│   │   ├── REVIEW_20260405_BLOOP.md
+│   │   ├── REVIEW_20260405_CHATSCRIPT.md
+│   │   ├── REVIEW_20260405_CODEDB.md
+│   │   ├── REVIEW_20260405_COZO.md
+│   │   ├── REVIEW_20260405_GITNEXUS.md
+│   │   ├── REVIEW_20260405_GRAPHRAG.md
+│   │   ├── REVIEW_20260405_OMO.md
+│   │   └── REVIEW_20260405_OPENCODE.md
 │   └── skills
 │       ├── fluent-wvr
 │       │   └── SKILL.md
@@ -305,7 +324,6 @@ Then you you must read
 │   │   ├── ralph.zig                                             # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                                           # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                                  # schema_validator.zig — GuidanceDoc field validation.
-│   │   ├── simhash.zig                                           # simhash.zig — 64-bit SimHash for near-duplicate detection.
 │   │   ├── stage_builder.zig                                     # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                                            # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                                         # STRUCTURE.md generator.
@@ -317,6 +335,12 @@ Then you you must read
 │   │   ├── triage.zig                                            # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
 │   │   ├── types.zig
 │   │   └── vector_db.zig                                         # vector_db.zig — Hybrid keyword + vector search for guidance generation.
+│   ├── guidance-cpp
+│   │   └── main.cpp                                              # guidance-cpp: C++ AST provider for the guidance system
+│   ├── guidance-rs
+│   │   └── src
+│   │       └── main.rs
+│   ├── guidance-rust
 │   ├── llm
 │   │   ├── context_compressor.zig                                # context_compressor.zig — Context Compression for Token Budget Management
 │   │   ├── context_packer.zig                                    # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
@@ -352,7 +376,7 @@ Then you you must read
 │   │   ├── hnsw.zig                                              # hnsw.zig — M5.1 HNSW (Hierarchical Navigable Small World) Index
 │   │   ├── math.zig                                              # Vector operations — cosine similarity, normalization, hybrid merge.
 │   │   ├── root.zig                                              # guidance vector module — cosine search, embeddings, hybrid merge.
-│   │   ├── simhash.zig                                           # simhash.zig — Charikar SimHash for approximate nearest-neighbour pre-filtering.
+│   │   ├── simhash.zig                                           # simhash.zig — Locality-sensitive hashing for embeddings and tokens.
 │   │   ├── simhash_projections.zig                               # simhash_projections.zig — auto-generated by bin/gen_simhash_projections.py
 │   │   └── vector_db.zig                                         # guidance SQLite vector search database (cosine similarity via BLOB storage).
 │   └── wasm
@@ -367,12 +391,14 @@ Then you you must read
 ├── AGENTS.md
 ├── build.zig
 ├── build.zig.zon
+├── Cargo.toml
 ├── CLAUDE.md
 ├── LICENSE
 ├── LICENSE-Commercial-Requirement
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
+├── package.json
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt

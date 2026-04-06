@@ -1,0 +1,298 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+import * as ts from 'typescript';
+
+// ============================================================================
+// Configuration & Constants
+// ============================================================================
+const PROJECT_ROOT = process.cwd();
+const SRC_DIR = path.join(PROJECT_ROOT, 'src');
+const DEFAULT_OUTPUT_DIR = '.guidance';
+
+// ============================================================================
+// Canonical Signer (Match Hash)
+// ============================================================================
+class CanonicalSigner {
+    static normalizeType(typeStr?: string | null): string {
+        if (!typeStr) return 'void';
+        let s = typeStr.trim();
+        if (s === 'null' || s === 'undefined') return 'void';
+        return s.replace(/\s+/g, ''); // Remove all spaces for canonical format
+    }
+
+    static computeHash(signatureStr: string): string {
+        return crypto.createHash('sha256').update(signatureStr).digest('hex');
+    }
+
+    static apiHash(name: string, args: any[], returns?: string | null): string {
+        const argsStr = args.map(a => `${a.name}:${CanonicalSigner.normalizeType(a.type)}`).join(',');
+        const ret = CanonicalSigner.normalizeType(returns);
+        const sigStr = `${name}(${argsStr})->${ret}`;
+        return CanonicalSigner.computeHash(sigStr);
+    }
+}
+
+// ============================================================================
+// Pattern Detection (TypeScript AST)
+// ============================================================================
+class PatternDetector {
+    static detect(node: ts.Node): any[] {
+        const patterns: any[] = [];
+
+        // Detect Singleton
+        if (ts.isClassDeclaration(node)) {
+            const hasStaticInstance = node.members.some(m =>
+                ts.isPropertyDeclaration(m) &&
+                m.modifiers?.some(mod => mod.kind === ts.SyntaxKind.StaticKeyword) &&
+                m.name.getText().toLowerCase().includes('instance')
+            );
+            const hasGetInstance = node.members.some(m =>
+                ts.isMethodDeclaration(m) && m.name.getText() === 'getInstance'
+            );
+            if (hasStaticInstance || hasGetInstance) {
+                patterns.push({
+                    name: "Singleton (GoF)",
+                    type: "GoF",
+                    ref: "doc/skills/gof-patterns/SKILL.md#singleton"
+                });
+            }
+        }
+
+        // Detect Factory
+        if (ts.isClassDeclaration(node) && node.name?.text.includes('Factory')) {
+             patterns.push({
+                name: "Factory (GoF)",
+                type: "GoF",
+                ref: "doc/skills/gof-patterns/SKILL.md#factory"
+            });
+        }
+
+        return patterns;
+    }
+}
+
+// ============================================================================
+// AST Parsing & Mapping
+// ============================================================================
+function processSourceFile(filePath: string): any[] {
+    const sourceCode = fs.readFileSync(filePath, 'utf-8');
+    const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
+
+    const members: any[] = [];
+
+    function extractJSDoc(node: ts.Node): string | null {
+        const jsDocTags = ts.getJSDocTags(node);
+        if (jsDocTags.length > 0) {
+            return jsDocTags[0].comment?.toString() || null;
+        }
+        return null;
+    }
+
+    function parseParameters(params: ts.NodeArray<ts.ParameterDeclaration>): any[] {
+        return params.map(p => ({
+            name: p.name.getText(),
+            type: p.type ? p.type.getText() : null,
+            default: p.initializer ? p.initializer.getText() : null
+        }));
+    }
+
+    ts.forEachChild(sourceFile, node => {
+        const isExported = node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+
+        if (ts.isFunctionDeclaration(node) && node.name) {
+            const name = node.name.text;
+            const params = parseParameters(node.parameters);
+            const returns = node.type ? node.type.getText() : null;
+            const argsStr = params.map(p => p.name).join(', ');
+
+            members.push({
+                name,
+                type: isExported ? 'fn_decl' : 'fn_private',
+                signature: `fn ${name}(${argsStr}) -> ${CanonicalSigner.normalizeType(returns)}`,
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+                match_hash: CanonicalSigner.apiHash(name, params, returns),
+                comment: extractJSDoc(node),
+                params,
+                returns: returns || "void",
+                patterns: PatternDetector.detect(node),
+                tags: [],
+                is_pub: isExported,
+                members: [],
+                skills: [],
+                capabilities: [],
+                equivalents: []
+            });
+        }
+
+        if (ts.isClassDeclaration(node) && node.name) {
+            const name = node.name.text;
+            const bases = node.heritageClauses?.flatMap(h => h.types.map(t => t.expression.getText())).join(', ') || '';
+            const classMembers: any[] = [];
+
+            node.members.forEach(m => {
+                if (ts.isMethodDeclaration(m) && m.name) {
+                    const mName = m.name.getText();
+                    const isPub = !m.modifiers?.some(mod => mod.kind === ts.SyntaxKind.PrivateKeyword);
+                    const params = parseParameters(m.parameters);
+                    const returns = m.type ? m.type.getText() : null;
+
+                    classMembers.push({
+                        name: mName,
+                        type: isPub ? 'method' : 'method_private',
+                        signature: `fn ${mName}(self, ${params.map(p=>p.name).join(', ')}) -> ${CanonicalSigner.normalizeType(returns)}`,
+                        line: sourceFile.getLineAndCharacterOfPosition(m.getStart()).line + 1,
+                        match_hash: CanonicalSigner.apiHash(`${name}.${mName}`, params, returns),
+                        comment: extractJSDoc(m),
+                        params,
+                        returns: returns || "void",
+                        patterns: [],
+                        tags: [],
+                        is_pub: isPub,
+                        members: [],
+                        skills: [],
+                        capabilities: [],
+                        equivalents: []
+                    });
+                }
+            });
+
+            members.push({
+                name,
+                type: 'struct',
+                signature: `class ${name}(${bases})`,
+                line: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+                match_hash: CanonicalSigner.computeHash(`class ${name}(${bases})`),
+                comment: extractJSDoc(node),
+                params: [],
+                returns: null,
+                patterns: PatternDetector.detect(node),
+                tags: [],
+                is_pub: isExported,
+                members: classMembers,
+                skills: [],
+                capabilities: [],
+                equivalents: []
+            });
+        }
+    });
+
+    return members;
+}
+
+// ============================================================================
+// Core Operations
+// ============================================================================
+function getEquivalentFiles(relPath: string): string[] {
+    const parsed = path.parse(relPath);
+    const stems = [`${parsed.name}.py`, `${parsed.name}.zig`, `${parsed.name}.rs`];
+    return stems
+        .map(s => path.join(parsed.dir, s))
+        .filter(p => fs.existsSync(path.join(PROJECT_ROOT, p)));
+}
+
+function processModule(filePath: string, outputDir: string, dryRun: boolean): boolean {
+    const relPath = path.relative(PROJECT_ROOT, filePath);
+    const jsonPath = path.join(outputDir, 'src', `${relPath}.json`);
+
+    // Incremental check
+    if (fs.existsSync(jsonPath)) {
+        const srcTime = fs.statSync(filePath).mtimeMs;
+        const jsonTime = fs.statSync(jsonPath).mtimeMs;
+        if (srcTime <= jsonTime) return false;
+    }
+
+    const members = processSourceFile(filePath);
+
+    const doc = {
+        meta: {
+            module: relPath.replace(/\.ts$/, '').replace(/[\/\\]/g, '.'),
+            source: relPath,
+            language: "typescript"
+        },
+        comment: null,
+        detail: null,
+        keywords: [],
+        skills: [],
+        capabilities: [],
+        hashtags: [],
+        used_by: [], // To be populated by reverse dependency scanner
+        members: members
+    };
+
+    if (!dryRun) {
+        fs.mkdirSync(path.dirname(jsonPath), { recursive: true });
+        fs.writeFileSync(jsonPath, JSON.stringify(doc, null, 2));
+
+        // Advance mtime slightly into the future to establish 'validated' marker
+        const now = Date.now();
+        fs.utimesSync(jsonPath, new Date(now), new Date(now + 1000));
+        console.log(`Generated: ${jsonPath}`);
+    }
+
+    return true;
+}
+
+// ============================================================================
+// CLI Entry Point
+// ============================================================================
+function main() {
+    const args = process.argv.slice(2);
+    const command = args[0];
+
+    if (command === 'sync') {
+        const scanIdx = args.indexOf('--scan');
+        const fileIdx = args.indexOf('--file');
+        const outIdx = args.indexOf('--output');
+        const dryRun = args.includes('--dry-run');
+
+        const outputDir = outIdx !== -1 ? path.resolve(args[outIdx + 1]) : path.resolve(DEFAULT_OUTPUT_DIR);
+
+        let filesToProcess: string[] = [];
+
+        if (fileIdx !== -1) {
+            filesToProcess.push(path.resolve(args[fileIdx + 1]));
+        } else if (scanIdx !== -1) {
+            const scanDir = path.resolve(args[scanIdx + 1]);
+            const walk = (dir: string) => {
+                let results: string[] = [];
+                const list = fs.readdirSync(dir);
+                list.forEach(file => {
+                    file = path.resolve(dir, file);
+                    const stat = fs.statSync(file);
+                    if (stat && stat.isDirectory() && !file.includes('node_modules')) {
+                        results = results.concat(walk(file));
+                    } else if (file.endsWith('.ts') && !file.endsWith('.d.ts')) {
+                        results.push(file);
+                    }
+                });
+                return results;
+            };
+            filesToProcess = walk(scanDir);
+        } else {
+            console.error("Error: --scan or --file required.");
+            process.exit(1);
+        }
+
+        let synced = 0;
+        for (const file of filesToProcess) {
+            if (processModule(file, outputDir, dryRun)) synced++;
+        }
+
+        console.log(`✓ Sync complete: ${synced}/${filesToProcess.length} stale TypeScript file(s) updated.`);
+    }
+    else if (command === 'scrub') {
+        // Implement blanking of synthetic comments here matching `guidance-py`
+        console.log("Scrub command initialized...");
+    }
+    else {
+        console.log(`
+Usage:
+  guidance-ts sync --scan <dir> --output <dir> [--infill] [--regen] [--debug]
+  guidance-ts sync --file <path> --output <dir> [--infill] [--regen] [--debug]
+  guidance-ts scrub --scan <dir>
+        `);
+    }
+}
+
+main();

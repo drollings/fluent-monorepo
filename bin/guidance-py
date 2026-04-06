@@ -604,13 +604,24 @@ def _canonical_member(m: Dict) -> Dict:
         "line": m.get("line"),
         "match_hash": m.get("match_hash", ""),
         "signature": m.get("signature", ""),
-        "comment": m.get("comment", m.get("docstring", "")),
-        "params": [{"name": a.get("name", ""), "type": a.get("type", ""), "default": a.get("default")} for a in m.get("args", m.get("params", []))],
-        "returns": m.get("returns", ""),
+        "params": [],"returns": m.get("returns", ""),
         "patterns": m.get("patterns", []),
         "tags": m.get("tags", []),
         "members": [_canonical_member(n) for n in m.get("members", [])],
-    }
+    }# Build params, omitting null defaults for cleaner output
+    for a in m.get("args", m.get("params", [])):
+        param = {"name": a.get("name", ""), "type": a.get("type", "")}
+        if a.get("default") is not None:
+            param["default"] = a["default"]
+        result["params"].append(param)
+    if m.get("comment"):
+        result["comment"] = m["comment"]
+    if m.get("skills"):
+        result["skills"] = m["skills"]
+    if m.get("capabilities"):
+        result["capabilities"] = m["capabilities"]
+    if m.get("equivalents"):
+        result["equivalents"] = m["equivalents"]
     if result["line"] is None:
         del result["line"]
     return result
@@ -640,6 +651,7 @@ def build_canonical_doc(
     detail: Optional[str] = None,
     keywords: Optional[List[str]] = None,
     capabilities: Optional[List[str]] = None,
+    equivalents: Optional[List[str]] = None,
 ) -> Dict:
     doc: Dict[str, Any] = {
         "meta": meta,
@@ -655,6 +667,8 @@ def build_canonical_doc(
         doc["keywords"] = keywords
     if capabilities:
         doc["capabilities"] = capabilities
+    if equivalents:
+        doc["equivalents"] = equivalents
     return doc
 
 
@@ -829,6 +843,15 @@ class ModuleProcessor:
         detail = existing_doc.get("detail")
         keywords = existing_doc.get("keywords", [])
         capabilities = existing_doc.get("capabilities", [])
+        equivalents = existing_doc.get("equivalents", [])
+
+        # Load capabilities from database if not present
+        if not capabilities:
+            capabilities = self._load_capabilities_from_db(str(rel_path))
+
+        # Find cross-language equivalents
+        if not equivalents:
+            equivalents = self._find_equivalents(rel_path)
 
         existing_members_map = {m["name"]: m for m in existing_doc.get("members", [])}
         merged_members = []
@@ -856,7 +879,7 @@ class ModuleProcessor:
         module_comment = _apply_skill_prefix(module_comment, skills)
 
         meta = {"module": self._get_fqname(rel_path), "source": str(rel_path), "language": "python"}
-        doc = build_canonical_doc(meta, module_comment, skills, hashtags, used_by, merged_members, detail, keywords, capabilities)
+        doc = build_canonical_doc(meta, module_comment, skills, hashtags, used_by, merged_members, detail, keywords, capabilities, equivalents)
 
         existing_json_str = json_path.read_text(encoding="utf-8").strip() if json_path.exists() else ""
         new_json_str = json.dumps(doc, indent=2)
@@ -1045,6 +1068,59 @@ class ModuleProcessor:
             if any(p in content for p in patterns_to_find):
                 found.append(this_rel)
         return sorted(found)
+
+    def _find_equivalents(self, rel_path: Path) -> List[str]:
+        """Find cross-language equivalent files (Python → Zig).
+
+        Heuristics (applied in order):
+          1. Same directory, same stem, different extension:
+             bin/foo.py ↔ src/foo.zig (bin/ ↔ src/ mapping)
+          2. Same directory in src/:
+             src/guidance/foo.py ↔ src/guidance/foo.zig
+
+        Returns a list of relative paths to equivalent files (may be empty).
+        """
+        found: List[str] = []
+        stem = rel_path.stem
+        parent = rel_path.parent
+
+        # Check for bin/ ↔ src/ mapping
+        if parent.parts and parent.parts[0] == "bin":
+            # bin/foo.py → src/foo.zig
+            zig_path = self.project_root / "src" / f"{stem}.zig"
+            if zig_path.exists():
+                found.append(f"src/{stem}.zig")
+
+        # Check for same-directory equivalent in src/
+        if parent.parts and parent.parts[0] == "src":
+            zig_path = self.project_root / parent / f"{stem}.zig"
+            if zig_path.exists():
+                found.append(str(parent / f"{stem}.zig"))
+
+        return sorted(found)
+
+    def _load_capabilities_from_db(self, rel_path: str) -> List[str]:
+        """Load capabilities for a file from the guidance database.
+
+        Reads from .guidance.db (SQLite) if available.
+        Returns an empty list if the database or table doesn't exist.
+        """
+        db_path = self.project_root / ".guidance.db"
+        if not db_path.exists():
+            return []
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT capability_name FROM capability_sources WHERE source_path = ?",
+                (rel_path,)
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            return [row[0] for row in rows]
+        except Exception:
+            return []
 
     def _ai_comment(self, member: Dict, module_context: str, source_preview: str) -> Optional[str]:
         if not self.llm:

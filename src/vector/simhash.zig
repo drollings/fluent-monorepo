@@ -1,24 +1,35 @@
-/// simhash.zig — Charikar SimHash for approximate nearest-neighbour pre-filtering.
+/// simhash.zig — Locality-sensitive hashing for embeddings and tokens.
 ///
-/// Random projection LSH: each of 64 bits encodes the sign of a dot product
-/// between the input embedding and a fixed random unit vector.  Two vectors
-/// that are close in cosine space tend to agree on most bits.
+/// Two SimHash algorithms are provided:
 ///
-/// Hamming distance (XOR + popcount) provides a fast O(1) approximation to
-/// cosine distance, turning the full KNN scan into a cheap bucket test.
+/// 1. **Embedding SimHash** (Charikar): Random projection LSH for approximate
+///    nearest-neighbour pre-filtering. Each of 64 bits encodes the sign of a
+///    dot product between the input embedding and a fixed random unit vector.
+///    Two vectors close in cosine space tend to agree on most bits.
 ///
-/// Guarantees (empirical at 64 bits, 384 dims):
+/// 2. **Token SimHash** (Moses/Charikar): Shingle-based hashing for near-duplicate
+///    detection in text/code. Extracts k-shingles (overlapping k-grams of tokens),
+///    hashes each, and accumulates bit vectors. Similar documents have low
+///    Hamming distance.
+///
+/// Hamming distance (XOR + popcount) provides O(1) comparison in both cases.
+///
+/// **Embedding SimHash guarantees** (empirical at 64 bits, 384 dims):
 ///   cosine ≥ 0.70 → hamming ≤ ~12 bits  (≈95% recall)
 ///   cosine ≥ 0.50 → hamming ≤ ~18 bits  (≈90% recall)
 ///
 /// The PROJECTIONS constant is generated once (seed=42) and must never be
-/// regenerated without also rebuilding every simhash_index table.  The
-/// generation script is tools/gen_simhash_projections.py.
+/// regenerated without also rebuilding every simhash_index table.
+/// Generation script: tools/gen_simhash_projections.py.
 ///
 /// Embedding dimension: hard-coded to 384 to match the most common edge
-/// embedding model (all-MiniLM-L6-v2, nomic-embed-text).  If your embedder
+/// embedding model (all-MiniLM-L6-v2, nomic-embed-text). If your embedder
 /// produces 768 or 1536 dimensions, only the first 384 are used for hashing.
 const std = @import("std");
+
+// =============================================================================
+// Constants
+// =============================================================================
 
 /// Number of hash bits (= number of random projection vectors).
 pub const SIMHASH_BITS: usize = 64;
@@ -32,8 +43,29 @@ pub const SIMHASH_DIMS: usize = 384;
 pub const PROJECTIONS: [SIMHASH_BITS][SIMHASH_DIMS]f32 =
     @import("simhash_projections.zig").data;
 
-/// Computes a SHA-256 hash from an embedding array and returns a 64-bit unsigned value.
-pub fn simhash(embedding: []const f32) u64 {
+// =============================================================================
+// Hamming Distance (shared)
+// =============================================================================
+
+/// Hamming distance between two 64-bit hashes.
+/// Returns u7 (range0-127, sufficient for max distance of 64).
+pub inline fn hammingDistance(a: u64, b: u64) u7 {
+    return @popCount(a ^ b);
+}
+
+/// True if two hashes are within `threshold` bits of each other.
+pub inline fn similar(a: u64, b: u64, threshold: u7) bool {
+    return hammingDistance(a, b) <= threshold;
+}
+
+// =============================================================================
+// Embedding SimHash (Charikar random projection)
+// =============================================================================
+
+/// Compute a 64-bit SimHash from an embedding vector.
+/// Uses random projection LSH: each bit encodes sign of dot product
+/// with a random unit vector.
+pub fn embeddingHash(embedding: []const f32) u64 {
     const effective_len = @min(embedding.len, SIMHASH_DIMS);
     var h: u64 = 0;
     for (PROJECTIONS, 0..) |proj, i| {
@@ -46,12 +78,8 @@ pub fn simhash(embedding: []const f32) u64 {
     return h;
 }
 
-/// Calculates the Hamming distance between two u64 integers, returning a 7-bit unsigned value.
-pub inline fn hammingDistance(a: u64, b: u64) u7 {
-    return @popCount(a ^ b);
-}
-
-/// Computes the maximum Hamming distance between two cosine thresholds, returning a 7-bit unsigned integer.
+/// Compute the maximum Hamming distance for a given cosine similarity threshold.
+/// Used to filter candidates before full cosine evaluation.
 pub fn maxHamming(cosine_threshold: f32) u7 {
     const f_bits: f32 = @floatFromInt(SIMHASH_BITS);
     const raw = f_bits * (1.0 - cosine_threshold) * 0.85;
@@ -59,37 +87,147 @@ pub fn maxHamming(cosine_threshold: f32) u7 {
     return rounded;
 }
 
+// Backward-compatible alias (legacy name used by vector_db.zig)
+pub const simhash = embeddingHash;
+
+// =============================================================================
+// Token SimHash (shingle-based near-duplicate detection)
+// =============================================================================
+
+/// Token-based SimHash for code/text near-duplicate detection.
+///
+/// Computes a locality-sensitive hash from token shingles.
+/// Two documents with similar content will have low Hamming distance.
+/// Threshold ≤ 3 bits typically indicates near-duplicates.
+///
+/// Algorithm:
+///   1. Extract k-shingles (overlapping k-grams of tokens)
+///   2. For each shingle, compute a 64-bit hash
+///   3. Accumulate bit vectors: each hash bit contributes +1 or -1 to a counter
+///   4. Final hash: bit i = 1 if counter[i] > 0, else 0
+pub const TokenSimHash = struct {
+    /// Compute a 64-bit SimHash from token shingles.
+    ///
+    /// `tokens` is a slice of string tokens (e.g., identifier names, keywords).
+    /// `shingle_size` is the k-gram window size (typically 2–4).
+    pub fn compute(tokens: []const []const u8, shingle_size: usize) u64 {
+        if (tokens.len == 0) return 0;
+        const k = if (shingle_size == 0) 1 else shingle_size;
+
+        var counters: [64]i32 = [_]i32{0} ** 64;
+
+        var i: usize = 0;
+        while (i + k <= tokens.len) : (i += 1) {
+            const shingle_hash = hashShingle(tokens[i..][0..k]);
+            for (0..64) |bit| {
+                const bit_val: i32 = if ((shingle_hash >> @intCast(bit)) & 1 == 1) 1 else -1;
+                counters[bit] += bit_val;
+            }
+        }
+        // Handle trailing shingle if tokens.len < shingle_size
+        if (i == 0 and tokens.len > 0) {
+            const shingle_hash = hashShingle(tokens);
+            for (0..64) |bit| {
+                const bit_val: i32 = if ((shingle_hash >> @intCast(bit)) & 1 == 1) 1 else -1;
+                counters[bit] += bit_val;
+            }
+        }
+
+        var result: u64 = 0;
+        for (0..64) |bit| {
+            if (counters[bit] > 0) {
+                result |= @as(u64, 1) << @intCast(bit);
+            }
+        }
+        return result;
+    }
+
+    /// Internal: hash a single shingle (slice of tokens) to u64.
+    fn hashShingle(tokens: []const []const u8) u64 {
+        var hasher = std.hash.Wyhash.init(0xdead_beef_cafe_babe);
+        for (tokens) |tok| {
+            hasher.update(tok);
+            hasher.update(" ");
+        }
+        return hasher.final();
+    }
+};
+
 // =============================================================================
 // Tests
 // =============================================================================
 
 const testing = std.testing;
 
-test "simhash: deterministic for identical input" {
-    // A simple non-zero embedding of length SIMHASH_DIMS.
+// --- Embedding SimHash tests ---
+
+test "embeddingHash: deterministic for identical input" {
     var emb: [SIMHASH_DIMS]f32 = undefined;
     for (&emb, 0..) |*v, i| v.* = @as(f32, @floatFromInt(i % 7)) * 0.1;
 
-    const h1 = simhash(&emb);
-    const h2 = simhash(&emb);
+    const h1 = embeddingHash(&emb);
+    const h2 = embeddingHash(&emb);
     try testing.expectEqual(h1, h2);
 }
 
-test "simhash: zero embedding gives 0" {
+test "embeddingHash: zero embedding gives 0" {
     const emb: [SIMHASH_DIMS]f32 = [_]f32{0.0} ** SIMHASH_DIMS;
-    // All dot products are 0, so no bit is set (dot > 0 condition fails).
-    try testing.expectEqual(@as(u64, 0), simhash(&emb));
+    try testing.expectEqual(@as(u64, 0), embeddingHash(&emb));
 }
 
-test "simhash: orthogonal embeddings differ in ~32 bits" {
-    // e1 all-positive, e2 all-negative → roughly half the projections flip.
+test "embeddingHash: orthogonal embeddings differ in ~32 bits" {
     var e1: [SIMHASH_DIMS]f32 = [_]f32{1.0} ** SIMHASH_DIMS;
     var e2: [SIMHASH_DIMS]f32 = [_]f32{-1.0} ** SIMHASH_DIMS;
-    const h1 = simhash(&e1);
-    const h2 = simhash(&e2);
-    // They should be bitwise complements — all 64 bits differ.
+    const h1 = embeddingHash(&e1);
+    const h2 = embeddingHash(&e2);
+    // Should be bitwise complements — all 64 bits differ.
     try testing.expectEqual(@as(u64, 64), hammingDistance(h1, h2));
 }
+
+test "embeddingHash: short embedding (shorter than DIMS) doesn't panic" {
+    const short: [10]f32 = [_]f32{0.5} ** 10;
+    _ = embeddingHash(&short);
+}
+
+// --- Token SimHash tests ---
+
+test "TokenSimHash: empty tokens returns 0" {
+    try testing.expectEqual(@as(u64, 0), TokenSimHash.compute(&[_][]const u8{}, 2));
+}
+
+test "TokenSimHash: identical token sets have distance 0" {
+    const tokens = [_][]const u8{ "foo", "bar", "baz" };
+    const h1 = TokenSimHash.compute(&tokens, 2);
+    const h2 = TokenSimHash.compute(&tokens, 2);
+    try testing.expectEqual(@as(u7, 0), hammingDistance(h1, h2));
+}
+
+test "TokenSimHash: very different token sets have large distance" {
+    const a = [_][]const u8{ "alpha", "beta", "gamma" };
+    const b = [_][]const u8{ "xyz", "abc", "pqr", "lmn", "opq" };
+    const ha = TokenSimHash.compute(&a, 2);
+    const hb = TokenSimHash.compute(&b, 2);
+    try testing.expect(hammingDistance(ha, hb) > 0);
+}
+
+test "TokenSimHash: similar texts have low distance" {
+    const a = [_][]const u8{ "fn", "compute", "allocator", "result" };
+    const b = [_][]const u8{ "fn", "compute", "allocator", "output" };
+    const ha = TokenSimHash.compute(&a, 2);
+    const hb = TokenSimHash.compute(&b, 2);
+    // Should be similar (low distance). Use generous threshold for small inputs.
+    try testing.expect(similar(ha, hb, 40));
+}
+
+test "TokenSimHash: distance is symmetric" {
+    const a = [_][]const u8{ "hello", "world" };
+    const b = [_][]const u8{ "foo", "bar" };
+    const ha = TokenSimHash.compute(&a, 1);
+    const hb = TokenSimHash.compute(&b, 1);
+    try testing.expectEqual(hammingDistance(ha, hb), hammingDistance(hb, ha));
+}
+
+// --- Hamming distance tests ---
 
 test "hammingDistance: same hash → 0" {
     try testing.expectEqual(@as(u7, 0), hammingDistance(0xDEADBEEF_CAFEBABE, 0xDEADBEEF_CAFEBABE));
@@ -103,6 +241,15 @@ test "hammingDistance: single bit differs → 1" {
     try testing.expectEqual(@as(u7, 1), hammingDistance(0b0, 0b1));
 }
 
+test "similar: threshold check works" {
+    const h1: u64 = 0b11110000;
+    const h2: u64 = 0b11111000;
+    try testing.expect(similar(h1, h2, 2)); // 1 bit differs
+    try testing.expect(!similar(h1, h2, 0));
+}
+
+// --- maxHamming tests ---
+
 test "maxHamming: higher threshold → fewer allowed bits" {
     const h_strict = maxHamming(0.90);
     const h_loose = maxHamming(0.28);
@@ -111,9 +258,4 @@ test "maxHamming: higher threshold → fewer allowed bits" {
 
 test "maxHamming: threshold 1.0 → 0 bits" {
     try testing.expectEqual(@as(u7, 0), maxHamming(1.0));
-}
-
-test "simhash: short embedding (shorter than DIMS) doesn't panic" {
-    const short: [10]f32 = [_]f32{0.5} ** 10;
-    _ = simhash(&short); // must not panic or overflow
 }

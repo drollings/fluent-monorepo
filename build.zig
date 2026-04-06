@@ -565,10 +565,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // -- Guidance simhash tests (Task 3.2) --
-    const guidance_simhash_tests = b.addTest(.{
+    // -- SimHash tests (Task 3.2) --
+    const simhash_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/guidance/simhash.zig"),
+            .root_source_file = b.path("src/vector/simhash.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -892,7 +892,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(coral_executor_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_frontier_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_vector_db_tests).step);
-    test_step.dependOn(&b.addRunArtifact(guidance_simhash_tests).step);
+    test_step.dependOn(&b.addRunArtifact(simhash_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_frontier_tool_compiler_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_anonymize_tests).step);
     test_step.dependOn(&b.addRunArtifact(resolver_tests).step);
