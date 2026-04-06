@@ -9,7 +9,7 @@
     {
       "type": "struct",
       "name": "GitignoreFilter",
-      "match_hash": "3f778e8b387496fc61e8ceb7d9463c23e7fe55c7e78edeb331f9f76549eb76fe",
+      "match_hash": "f1de6d10367be3719c12e9b62e66d534cc776922972e418f9766c1dc5bff5b40",
       "signature": "keyword_struct GitignoreFilter { ... }",
       "is_pub": true,
       "members": [
@@ -24,7 +24,7 @@
           ],
           "returns": "GitignoreFilter",
           "is_pub": true,
-          "line": 12
+          "line": 13
         }
     ,    {
           "type": "fn_decl",
@@ -36,7 +36,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 22
+          "line": 24
         }
     ,    {
           "type": "fn_decl",
@@ -49,7 +49,32 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 29
+          "line": 36
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "loadTrackedFiles",
+          "match_hash": "bfac9a7754dca49fbc602d2e07dda3e6201a782c15c44ff6e8a22082870b2875",
+          "signature": "fn loadTrackedFiles(self: *GitignoreFilter) -> void",
+          "params": [
+            { "name": "self", "type": "*GitignoreFilter" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 74
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isTracked",
+          "match_hash": "f1f72be51d71effefa232d76fa27e01c89fe5cfd22bcbd4c1401ac75ba4c833c",
+          "signature": "fn isTracked(self: *const GitignoreFilter, abs_path: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const GitignoreFilter" },
+            { "name": "abs_path", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 116
         }
     ,    {
           "type": "fn_decl",
@@ -62,7 +87,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 64
+          "line": 123
         }
       ],
       "line": 5
@@ -78,7 +103,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 95
+      "line": 154
     },
     {
       "type": "fn_private",
@@ -91,19 +116,19 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 124
+      "line": 183
     },
     {
       "type": "test_decl",
       "name": "globMatch basic patterns",
       "is_pub": false,
-      "line": 154
+      "line": 213
     },
     {
       "type": "test_decl",
       "name": "GitignoreFilter always excludes .git",
       "is_pub": false,
-      "line": 162
+      "line": 221
     }
   ]
 }

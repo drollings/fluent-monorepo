@@ -69,6 +69,9 @@ pub const StructureGenerator = struct {
         defer self.allocator.free(gitignore_path);
         self.gitignore.loadFromFile(gitignore_path) catch {};
 
+        // Load tracked files from git index.
+        self.gitignore.loadTrackedFiles() catch {};
+
         // Parse existing comments before overwriting.
         var old_comments = try self.parseOldComments();
         defer {
@@ -133,6 +136,12 @@ pub const StructureGenerator = struct {
 
             const abs = try std.fs.path.join(self.allocator, &.{ dir_path, entry.name });
             if (self.gitignore.shouldIgnore(abs)) {
+                self.allocator.free(abs);
+                continue;
+            }
+
+            // Skip files not tracked in git.
+            if (entry.kind == .file and !self.gitignore.isTracked(abs)) {
                 self.allocator.free(abs);
                 continue;
             }
