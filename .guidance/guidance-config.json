@@ -16,10 +16,10 @@
     }
   },
   "models": {
-    "default": "ollama:gpt:latest",
+    "default": "ollama:code:latest",
     "fast": "ollama:fast:latest",
-    "thinking": "ollama:gpt:latest",
-    "batch": "ollama:gpt:latest",
+    "thinking": "ollama:code:latest",
+    "batch": "ollama:code:latest",
     "embed": "ollama:embed:latest"
   },
   "embed": {
