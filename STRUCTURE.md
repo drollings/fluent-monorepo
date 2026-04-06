@@ -104,6 +104,7 @@ Then you you must read
 │   │   ├── GUIDANCE_HERMES_SYNTHESIS.md
 │   │   ├── PROMPT.md
 │   │   ├── PROMPT_CODEHEALTH.md
+│   │   ├── PROMPT_FIX.md
 │   │   ├── PROMPT_REVIEW_AIDER_WORKFLOW.md
 │   │   ├── PROMPT_REVIEW_CHATSCRIPT.
 │   │   ├── PROMPT_ROADMAP.md
@@ -187,7 +188,7 @@ Then you you must read
 │   │   ├── refcount.zig                                    # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── repl.zig
 │   │   ├── root.zig                                        # common — Module umbrella root.
-│   │   ├── shared_string.zig                               # SharedString — heap-allocated, reference-counted, immutable string.
+│   │   ├── shared_string.zig                               # SharedString — heap-allocated, reference-counted, copy-on-write immutable string.
 │   │   ├── shell.zig                                       # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                                # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── source.zig                                      # source.zig — Source code excerpt extraction helpers
@@ -362,9 +363,19 @@ Then you you must read
 ├── LICENSE-Contributor-Agreement
 ├── Makefile
 ├── mise.toml
+├── PROMPT_REVIEW_AIDER_WORKFLOW.md
 ├── pyproject.toml
 ├── README.md
 ├── requirements.txt
+├── REVIEW_20260405_AIDER.md
+├── REVIEW_20260405_BLOOP.md
+├── REVIEW_20260405_CHATSCRIPT.md
+├── REVIEW_20260405_CODEDB.md
+├── REVIEW_20260405_COZO.md
+├── REVIEW_20260405_GITNEXUS.md
+├── REVIEW_20260405_GRAPHRAG.md
+├── REVIEW_20260405_OMO.md
+├── REVIEW_20260405_OPENCODE.md
 ├── REVIEW_GEMINI_UNIFIED_CHATSCRIPT_ARBONEL_GUIDANCE.md
 ├── REVIEW_GUIDANCE_SEARCH_ENGINE.md
 ├── REVIEW_OMO_EXPLORER.md

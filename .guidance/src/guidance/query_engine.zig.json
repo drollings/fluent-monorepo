@@ -583,7 +583,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1779
+      "line": 1783
     },
     {
       "type": "fn_decl",
@@ -596,7 +596,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1809
+      "line": 1813
     },
     {
       "type": "struct",
@@ -604,7 +604,7 @@
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 1921
+      "line": 1925
     },
     {
       "type": "struct",
@@ -612,7 +612,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 1930
+      "line": 1934
     },
     {
       "type": "fn_decl",
@@ -625,7 +625,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1939
+      "line": 1943
     },
     {
       "type": "fn_private",
@@ -637,7 +637,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 2348
+      "line": 2352
     },
     {
       "type": "fn_private",
@@ -650,7 +650,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2362
+      "line": 2366
     },
     {
       "type": "fn_private",
@@ -663,7 +663,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2390
+      "line": 2394
     },
     {
       "type": "fn_decl",
@@ -676,7 +676,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2469
+      "line": 2473
     },
     {
       "type": "fn_decl",
@@ -689,7 +689,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2531
+      "line": 2535
     },
     {
       "type": "fn_decl",
@@ -702,7 +702,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2562
+      "line": 2566
     },
     {
       "type": "fn_decl",
@@ -715,55 +715,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2572
+      "line": 2576
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2644
+      "line": 2648
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2649
+      "line": 2653
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2654
+      "line": 2658
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2659
+      "line": 2663
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2664
+      "line": 2668
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2669
+      "line": 2673
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2679
+      "line": 2683
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2685
+      "line": 2689
     }
   ]
 }

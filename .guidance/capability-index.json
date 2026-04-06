@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1775423295897032831",
+  "generated": "1775436603673728278",
   "capabilities": [
     {
       "name": "config-system",
@@ -380,7 +380,7 @@
     },
     {
       "name": "explain-query",
-      "description": "Natural language codebase query engine that uses LanceDB hybrid vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.",
+      "description": "Natural language codebase query engine that uses SimHash vector+keyword search with LLM synthesis to answer questions about how code works, surfacing relevant source locations, skills, and capabilities.",
       "anchors": [
         "cmdExplain",
         "executeStaged",
@@ -403,7 +403,6 @@
         "executeStaged",
         "used_by",
         "skills",
-        "LanceDB",
         "edit",
         "make",
         "SQL",
@@ -1943,7 +1942,7 @@
         "used_by",
         "fileNeedsProcessing",
         "line",
-        "LanceDB",
+        "SimHash",
         "clear",
         "exist",
         "edit",
