@@ -218,7 +218,7 @@ pub fn indexSolution(
     for (1..4) |i| {
         if (lod[i].len > 0) {
             node.setLod(@intCast(i), lod[i]);
-            node.lod_owned |= @as(u8, 1) << @intCast(i);
+            node.content.lod_owned |= @as(u8, 1) << @intCast(i);
             lod[i] = ""; // transferred — don't double-free in defer
         }
     }

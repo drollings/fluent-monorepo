@@ -884,7 +884,7 @@ pub const QueueReactor = struct {
         } else {
             for (result.nodes, 0..) |node, i| {
                 if (i > 0) try summary_buf.appendSlice(self.allocator, ", ");
-                try summary_buf.appendSlice(self.allocator, node.lod[4]); // lod4 = name
+                try summary_buf.appendSlice(self.allocator, node.content.lod[4]); // lod4 = name
             }
         }
 

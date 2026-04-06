@@ -1260,6 +1260,10 @@ fn syncCapabilitiesIfStale(
         return;
     };
 
+    if (verbose) std.debug.print("[sync] pruning dead sources from AUTO-SOURCES sections\n", .{});
+    stepPrint("gen: prune-capability-sources\n", .{});
+    pruneCapabilitySources(allocator, json_dir, capabilities_dir, verbose);
+
     if (verbose) std.debug.print("[sync] running discover-capability-sources\n", .{});
     stepPrint("gen: discover-capability-sources\n", .{});
 
@@ -2807,6 +2811,132 @@ fn collectFilesWithExts(
 // ---------------------------------------------------------------------------
 // discover-capability-sources — anchor-based source discovery
 // ---------------------------------------------------------------------------
+
+/// Parsed source row from AUTO-SOURCES table.
+const ParsedSourceRow = struct {
+    source_path: []const u8,
+    confidence: f32,
+    reason: []const u8,
+};
+
+/// Prunes dead source file references from AUTO-SOURCES sections in CAPABILITY.md files.
+/// Runs before cmdDiscoverCapabilitySources to remove references to files that no longer exist.
+fn pruneCapabilitySources(
+    allocator: std.mem.Allocator,
+    json_dir: []const u8,
+    capabilities_dir: []const u8,
+    verbose: bool,
+) void {
+    const workspace_root = std.fs.path.dirname(json_dir) orelse return;
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const fa = arena.allocator();
+
+    std.fs.accessAbsolute(capabilities_dir, .{}) catch return;
+    var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return;
+    defer cap_dir.close();
+    var walker = cap_dir.walk(allocator) catch return;
+    defer walker.deinit();
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.path, "CAPABILITY.md")) continue;
+
+        const md_abs = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
+        defer allocator.free(md_abs);
+
+        const content = std.fs.cwd().readFileAlloc(fa, md_abs, 512 * 1024) catch continue;
+        const marker = "<!-- AUTO-SOURCES:";
+        const marker_pos = std.mem.indexOf(u8, content, marker);
+
+        const auto_section_start = if (marker_pos) |p| p + marker.len else continue;
+        const after_marker = content[auto_section_start..];
+        const nl_pos = std.mem.indexOfScalar(u8, after_marker, '\n') orelse 0;
+        const table_content = std.mem.trimLeft(u8, after_marker[nl_pos..], "\n ");
+
+        var rows = std.mem.splitScalar(u8, table_content, '\n');
+        var parsed_rows: std.ArrayList(ParsedSourceRow) = .{};
+        defer parsed_rows.deinit(fa);
+
+        var header_found = false;
+        while (rows.next()) |row| {
+            const trimmed = std.mem.trim(u8, row, " \t\r");
+            if (trimmed.len == 0) continue;
+            if (!header_found) {
+                if (std.mem.startsWith(u8, trimmed, "| File")) header_found = true;
+                continue;
+            }
+            if (!std.mem.startsWith(u8, trimmed, "|")) continue;
+            if (std.mem.startsWith(u8, trimmed, "|------")) continue;
+
+            const inner = trimmed[1..];
+            const last_bar = std.mem.lastIndexOfScalar(u8, inner, '|') orelse continue;
+            const first_cell = std.mem.trim(u8, inner[0..last_bar], " \t|");
+            const second_cell = std.mem.trim(u8, inner[last_bar + 1 ..], " \t|");
+
+            const path_start = std.mem.indexOfScalar(u8, first_cell, '`') orelse continue;
+            const path_end = std.mem.lastIndexOfScalar(u8, first_cell, '`') orelse continue;
+            if (path_end <= path_start) continue;
+            const source_path = first_cell[path_start + 1 .. path_end];
+
+            const conf = std.fmt.parseFloat(f32, std.mem.trim(u8, second_cell, " \t")) catch continue;
+            const reason = std.mem.trim(u8, inner[last_bar + 1 ..], " \t|");
+
+            parsed_rows.append(fa, .{
+                .source_path = fa.dupe(u8, source_path) catch continue,
+                .confidence = conf,
+                .reason = fa.dupe(u8, reason) catch continue,
+            }) catch continue;
+        }
+
+        var filtered_rows: std.ArrayList(ParsedSourceRow) = .{};
+        defer filtered_rows.deinit(fa);
+        var removed_count: usize = 0;
+
+        for (parsed_rows.items) |row| {
+            const full_path = std.fs.path.join(fa, &.{ workspace_root, row.source_path }) catch continue;
+            std.fs.accessAbsolute(full_path, .{}) catch {
+                removed_count += 1;
+                continue;
+            };
+            filtered_rows.append(fa, row) catch continue;
+        }
+
+        if (removed_count == 0) continue;
+
+        if (verbose) {
+            const cap_name = std.fs.path.basename(std.fs.path.dirname(md_abs) orelse md_abs);
+            std.debug.print("[prune] {s}: removed {d} dead source(s)\n", .{ cap_name, removed_count });
+        }
+
+        const deduped = pruneCapabilitySourcesDedup(fa, filtered_rows.items) catch continue;
+        const md_abs_alloc = allocator.dupe(u8, md_abs) catch continue;
+        defer allocator.free(md_abs_alloc);
+        updateCapabilitySourcesSection(allocator, md_abs_alloc, deduped, verbose) catch |err| {
+            if (verbose) std.debug.print("[prune] WARN: failed to update {s}: {s}\n", .{ md_abs, @errorName(err) });
+        };
+    }
+}
+
+fn pruneCapabilitySourcesDedup(allocator: std.mem.Allocator, rows: []const ParsedSourceRow) ![]const DiscoveredSource {
+    var seen: std.StringHashMapUnmanaged(usize) = .{};
+    defer seen.deinit(allocator);
+    var result: std.ArrayList(DiscoveredSource) = .{};
+    errdefer result.deinit(allocator);
+
+    for (rows) |row| {
+        if (seen.get(row.source_path)) |idx| {
+            if (row.confidence > result.items[idx].confidence) {
+                result.items[idx] = .{ .capability_name = "", .source_path = row.source_path, .confidence = row.confidence, .reason = row.reason };
+            }
+        } else {
+            try seen.put(allocator, row.source_path, result.items.len);
+            try result.append(allocator, .{ .capability_name = "", .source_path = row.source_path, .confidence = row.confidence, .reason = row.reason });
+        }
+    }
+    return result.toOwnedSlice(allocator);
+}
 
 /// Manages confidence level metadata; owned by the sync engine; ensures invariant accuracy across runs.
 const ConfidenceLevels = struct {

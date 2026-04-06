@@ -23,6 +23,7 @@ const std = @import("std");
 pub const schema = @import("schema.zig");
 const reflection = @import("common").reflection;
 pub const SharedString = @import("common").SharedString;
+pub const ContentNode = @import("common").ContentNode;
 
 const c = @cImport({
     @cInclude("sqlite3.h");
@@ -55,12 +56,12 @@ pub fn nodeIdToInt(id: NodeId) i64 {
 /// Manages context nodes for Zig's database layer, owns state, ensures consistent initialization/deinit, not thread-safe.
 pub const ContextNode = struct {
     id: i64,
-    /// Ref-counted backing store for lod[0].  Non-null for nodes created via
-    /// init() or fetched from the DB.  lod_owned bit 0 must always be clear.
-    source: ?SharedString.Ref = null,
-    lod: [schema.LOD_COUNT][]const u8,
-    /// Bitmask: bit i set → lod[i] is allocator-owned.  Bit 0 always clear.
-    lod_owned: u8 = 0,
+    /// LOD text pyramid and SharedString backing store.
+    content: ContentNode = .{
+        .source = null,
+        .lod = [_][]const u8{ "", "", "", "", "", "" },
+        .lod_owned = 0,
+    },
     embedding: []const f32,
     valid_from: f64,
     valid_to: ?f64,
@@ -77,16 +78,15 @@ pub const ContextNode = struct {
     /// Create a new ContextNode with lod[0] = full_text (SharedString) and
     /// lod[4] = name (allocator-owned copy).  All other LOD slots are "".
     pub fn init(id: i64, name: []const u8, full_text: []const u8, allocator: std.mem.Allocator) !ContextNode {
-        const src = try SharedString.Ref.init(allocator, full_text);
-        errdefer src.deinit(allocator);
+        var content = try ContentNode.init(allocator, full_text);
+        errdefer content.free(allocator);
         const name_copy = try allocator.dupe(u8, name);
-        errdefer allocator.free(name_copy);
+        content.lod[4] = name_copy;
+        content.lod_owned |= 1 << 4;
 
         return ContextNode{
             .id = id,
-            .source = src,
-            .lod = [_][]const u8{ src.slice(), "", "", "", name_copy, "" },
-            .lod_owned = 1 << 4, // only lod[4] (name) is allocator-owned
+            .content = content,
             .embedding = &[_]f32{},
             .valid_from = @floatFromInt(std.time.timestamp()),
             .valid_to = null,
@@ -96,66 +96,30 @@ pub const ContextNode = struct {
     }
 
     pub fn getLod(self: *const ContextNode, level: u3) []const u8 {
-        if (level >= schema.LOD_COUNT) return "";
-        return self.lod[level];
+        return self.content.getLod(level);
     }
 
     /// Set LOD level 1–5.  Level 0 is read-only here; use setSource() instead.
     pub fn setLod(self: *ContextNode, level: u3, value: []const u8) void {
-        if (level == 0 or level >= schema.LOD_COUNT) return;
-        self.lod[level] = value;
+        self.content.setLod(level, value);
     }
 
     /// Replace the shared source text (lod[0]).  Releases the old SharedString.
     pub fn setSource(self: *ContextNode, allocator: std.mem.Allocator, text: []const u8) !void {
-        const new_src = try SharedString.Ref.init(allocator, text);
-        if (self.source) |old| old.deinit(allocator);
-        self.source = new_src;
-        self.lod[0] = new_src.slice();
+        return self.content.setSource(allocator, text);
     }
 
     /// Deep-copy this node.  lod[0] is shared via clone() (no byte copy);
     /// lod[1..5] slots marked in lod_owned are duped into `allocator`.
     pub fn clone(self: *const ContextNode, allocator: std.mem.Allocator) !ContextNode {
         var copy = self.*;
-        copy.lod_owned = 0;
-
-        // lod[0]: clone the SharedString ref or dupe the raw slice.
-        if (self.source) |src| {
-            copy.source = src.clone();
-            copy.lod[0] = copy.source.?.slice();
-        } else if (self.lod_owned & 1 != 0) {
-            copy.lod[0] = try allocator.dupe(u8, self.lod[0]);
-            copy.lod_owned |= 1;
-        }
-
-        // lod[1..5]: dupe allocator-owned slots.
-        for (1..schema.LOD_COUNT) |i| {
-            if (self.lod_owned & (@as(u8, 1) << @intCast(i)) != 0) {
-                copy.lod[i] = try allocator.dupe(u8, self.lod[i]);
-                copy.lod_owned |= @as(u8, 1) << @intCast(i);
-            }
-        }
-
+        copy.content = try self.content.clone(allocator);
         return copy;
     }
 
     /// Release all owned resources.  Safe to call multiple times.
     pub fn free(self: *ContextNode, allocator: std.mem.Allocator) void {
-        // lod[0]: release via SharedString ref.
-        if (self.source) |src| {
-            src.deinit(allocator);
-            self.source = null;
-            self.lod[0] = "";
-        }
-        // lod[1..5]: free allocator-owned slots (bit 0 must always be clear).
-        for (&self.lod, 0..) |*slot, i| {
-            if (self.lod_owned & (@as(u8, 1) << @intCast(i)) != 0) {
-                allocator.free(slot.*);
-                slot.* = "";
-                self.lod_owned &= ~(@as(u8, 1) << @intCast(i));
-            }
-        }
+        self.content.free(allocator);
     }
 };
 
@@ -434,7 +398,7 @@ pub const Library = struct {
 
         _ = c.sqlite3_bind_int64(stmt, 1, node.id);
         inline for (0..schema.LOD_COUNT) |i| {
-            _ = c.sqlite3_bind_text(stmt, @intCast(i + 2), node.lod[i].ptr, @intCast(node.lod[i].len), SQLITE_STATIC);
+            _ = c.sqlite3_bind_text(stmt, @intCast(i + 2), node.content.lod[i].ptr, @intCast(node.content.lod[i].len), SQLITE_STATIC);
         }
         const emb_bytes = std.mem.sliceAsBytes(node.embedding);
         _ = c.sqlite3_bind_blob(stmt, 8, emb_bytes.ptr, @intCast(emb_bytes.len), SQLITE_STATIC);
@@ -484,7 +448,6 @@ pub const Library = struct {
 
         var node = ContextNode{
             .id = id,
-            .lod = [_][]const u8{ "", "", "", "", "", "" },
             .embedding = &[_]f32{},
             .valid_from = c.sqlite3_column_double(stmt, 7),
             .valid_to = blk: {
@@ -512,8 +475,8 @@ pub const Library = struct {
             const col_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 0));
             const s = if (ptr != null) ptr[0..col_len] else "";
             const src = try SharedString.Ref.init(self.allocator, s);
-            node.source = src;
-            node.lod[0] = src.slice();
+            node.content.source = src;
+            node.content.lod[0] = src.slice();
             // bit 0 stays clear — lod[0] lifetime managed by source.
         }
         // lod[1..5]: allocator-owned copies.
@@ -521,8 +484,8 @@ pub const Library = struct {
             const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, @intCast(i));
             const col_len: usize = @intCast(c.sqlite3_column_bytes(stmt, @intCast(i)));
             const s = if (ptr != null) ptr[0..col_len] else "";
-            node.lod[i] = try self.allocator.dupe(u8, s);
-            node.lod_owned |= @as(u8, 1) << @intCast(i);
+            node.content.lod[i] = try self.allocator.dupe(u8, s);
+            node.content.lod_owned |= @as(u8, 1) << @intCast(i);
         }
 
         return node;
@@ -1537,10 +1500,10 @@ pub const ContextPacker = struct {
     pub fn selectLod(self: *Self, node: ContextNode, graph_distance: u32) []const u8 {
         _ = self;
         return switch (graph_distance) {
-            0 => node.lod[0],
-            1 => if (node.lod[1].len > 0) node.lod[1] else node.lod[0],
-            2 => if (node.lod[2].len > 0) node.lod[2] else node.lod[4],
-            else => node.lod[4],
+            0 => node.content.lod[0],
+            1 => if (node.content.lod[1].len > 0) node.content.lod[1] else node.content.lod[0],
+            2 => if (node.content.lod[2].len > 0) node.content.lod[2] else node.content.lod[4],
+            else => node.content.lod[4],
         };
     }
 
@@ -1610,9 +1573,9 @@ pub const ContextPacker = struct {
                 try context_buffer.appendSlice(self.allocator, "\n---\n");
                 token_budget -= estimated_tokens;
             } else {
-                const name_tokens = node.lod[4].len / self.chars_per_token;
+                const name_tokens = node.content.lod[4].len / self.chars_per_token;
                 if (name_tokens <= token_budget) {
-                    try context_buffer.appendSlice(self.allocator, node.lod[4]);
+                    try context_buffer.appendSlice(self.allocator, node.content.lod[4]);
                     try context_buffer.appendSlice(self.allocator, "\n");
                     token_budget -= name_tokens;
                 }
@@ -1668,14 +1631,14 @@ pub const ContextPacker = struct {
             // Select LOD based on distance.
             const lod_level: usize = switch (gnode.graph_distance) {
                 0 => 0,
-                1 => if (node.lod[1].len > 0) 1 else 0,
-                2 => if (node.lod[2].len > 0) 2 else 4,
+                1 => if (node.content.lod[1].len > 0) 1 else 0,
+                2 => if (node.content.lod[2].len > 0) 2 else 4,
                 else => 4,
             };
 
             const text = blk: {
                 for (lod_level..6) |lvl| {
-                    if (node.lod[lvl].len > 0) break :blk node.lod[lvl];
+                    if (node.content.lod[lvl].len > 0) break :blk node.content.lod[lvl];
                 }
                 break :blk "";
             };
@@ -1751,8 +1714,8 @@ test "ContextNode init" {
     var node = try ContextNode.init(0xDEADBEEF, "test_node", "Full content.", testing.allocator);
     defer node.free(testing.allocator);
     try testing.expectEqual(@as(i64, 0xDEADBEEF), node.id);
-    try testing.expectEqualStrings("test_node", node.lod[4]);
-    try testing.expectEqualStrings("Full content.", node.lod[0]);
+    try testing.expectEqualStrings("test_node", node.content.lod[4]);
+    try testing.expectEqualStrings("Full content.", node.content.lod[0]);
     try testing.expect(node.valid_to == null);
     try testing.expectEqual(@as(usize, 0), node.embedding.len);
 }
@@ -1760,13 +1723,13 @@ test "ContextNode init" {
 test "ContextNode LOD fields" {
     var node = try ContextNode.init(1, "alpha", "Full text here.", testing.allocator);
     defer node.free(testing.allocator);
-    node.lod[1] = "Summary.";
-    node.lod[2] = "Brief.";
-    node.lod[3] = "Tiny.";
-    try testing.expectEqualStrings("Full text here.", node.lod[0]);
-    try testing.expectEqualStrings("Summary.", node.lod[1]);
-    try testing.expectEqualStrings("Brief.", node.lod[2]);
-    try testing.expectEqualStrings("Tiny.", node.lod[3]);
+    node.content.lod[1] = "Summary.";
+    node.content.lod[2] = "Brief.";
+    node.content.lod[3] = "Tiny.";
+    try testing.expectEqualStrings("Full text here.", node.content.lod[0]);
+    try testing.expectEqualStrings("Summary.", node.content.lod[1]);
+    try testing.expectEqualStrings("Brief.", node.content.lod[2]);
+    try testing.expectEqualStrings("Tiny.", node.content.lod[3]);
 }
 
 test "ContextNode getLod/setLod" {
@@ -1831,9 +1794,9 @@ test "ContextPacker: LOD selection" {
 
     var node = try ContextNode.init(1, "test", "Full content here for testing purposes.", testing.allocator);
     defer node.free(testing.allocator);
-    node.lod[1] = "Summary text.";
-    node.lod[2] = "Brief.";
-    node.lod[3] = "Tiny";
+    node.content.lod[1] = "Summary text.";
+    node.content.lod[2] = "Brief.";
+    node.content.lod[3] = "Tiny";
 
     try testing.expectEqualStrings("Full content here for testing purposes.", packer.selectLod(node, 0));
     try testing.expectEqualStrings("Summary text.", packer.selectLod(node, 1));
@@ -1879,8 +1842,8 @@ test "Library: insert and fetch ContextNode" {
 
     var fetched = (try lib.fetchNode(@as(i64, 0xABCDEF01))).?;
     defer fetched.free(lib.allocator);
-    try testing.expectEqualStrings("hello", fetched.lod[4]);
-    try testing.expectEqualStrings("Hello world.", fetched.lod[0]);
+    try testing.expectEqualStrings("hello", fetched.content.lod[4]);
+    try testing.expectEqualStrings("Hello world.", fetched.content.lod[0]);
 }
 
 test "Library: insert and fetch ContextNode round-trip all fields" {
@@ -1902,9 +1865,11 @@ test "Library: insert and fetch ContextNode round-trip all fields" {
 
     var node = ContextNode{
         .id = 0x1234_5678,
-        .source = src,
-        .lod = [_][]const u8{ src.slice(), lod1_copy, lod2_copy, lod3_copy, name_copy, lod5_copy },
-        .lod_owned = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
+        .content = .{
+            .source = src,
+            .lod = [_][]const u8{ src.slice(), lod1_copy, lod2_copy, lod3_copy, name_copy, lod5_copy },
+            .lod_owned = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
+        },
         .embedding = &emb_data,
         .valid_from = 1_700_000_000.0,
         .valid_to = 1_800_000_000.0,
@@ -1921,12 +1886,12 @@ test "Library: insert and fetch ContextNode round-trip all fields" {
     var fetched = (try lib.fetchNode(@as(i64, 0x1234_5678))).?;
     defer fetched.free(lib.allocator);
 
-    try testing.expectEqualStrings("Full text round-trip.", fetched.lod[0]);
-    try testing.expectEqualStrings("brief", fetched.lod[1]);
-    try testing.expectEqualStrings("medium", fetched.lod[2]);
-    try testing.expectEqualStrings("detailed", fetched.lod[3]);
-    try testing.expectEqualStrings("rt_name", fetched.lod[4]);
-    try testing.expectEqualStrings("extra", fetched.lod[5]);
+    try testing.expectEqualStrings("Full text round-trip.", fetched.content.lod[0]);
+    try testing.expectEqualStrings("brief", fetched.content.lod[1]);
+    try testing.expectEqualStrings("medium", fetched.content.lod[2]);
+    try testing.expectEqualStrings("detailed", fetched.content.lod[3]);
+    try testing.expectEqualStrings("rt_name", fetched.content.lod[4]);
+    try testing.expectEqualStrings("extra", fetched.content.lod[5]);
     try testing.expectEqual(@as(i32, 42), fetched.confidence);
     try testing.expectEqual(@as(i32, 7), fetched.provenance_id);
     try testing.expectApproxEqAbs(@as(f64, 1_700_000_000.0), fetched.valid_from, 0.001);
@@ -2006,13 +1971,13 @@ test "Library: upsert overwrites existing node" {
 
     var updated = try ContextNode.init(0x42, "updated", "Second content.", lib.allocator);
     defer updated.free(lib.allocator);
-    updated.lod[1] = "Short summary.";
+    updated.content.lod[1] = "Short summary.";
     try lib.insertNode(updated);
 
     var fetched = (try lib.fetchNode(0x42)).?;
     defer fetched.free(lib.allocator);
-    try testing.expectEqualStrings("updated", fetched.lod[4]);
-    try testing.expectEqualStrings("Second content.", fetched.lod[0]);
+    try testing.expectEqualStrings("updated", fetched.content.lod[4]);
+    try testing.expectEqualStrings("Second content.", fetched.content.lod[0]);
 }
 
 test "Library: initSchema is idempotent" {
@@ -2159,7 +2124,7 @@ test "ContextPacker: selectLod distance 3 always returns name" {
     var packer = ContextPacker.init(allocator, lib, 500);
     var node = try ContextNode.init(99, "n", "Full.", testing.allocator);
     defer node.free(testing.allocator);
-    node.lod[3] = "Tiny";
+    node.content.lod[3] = "Tiny";
 
     try testing.expectEqualStrings("n", packer.selectLod(node, 3));
     try testing.expectEqualStrings("n", packer.selectLod(node, 50));
@@ -2274,11 +2239,11 @@ test "ContextPacker: BFS distance → LOD assignment → token-budget downgrade"
     const full_text = "This is the full LOD-0 description of the center node. " ** 4; // ~224 chars
     var center = try ContextNode.init(100, "center_node", full_text, allocator);
     defer center.free(allocator);
-    center.lod[1] = try allocator.dupe(u8, "Center summary.");
-    center.lod[2] = try allocator.dupe(u8, "Center brief.");
-    center.lod[3] = try allocator.dupe(u8, "Center snippet.");
+    center.content.lod[1] = try allocator.dupe(u8, "Center summary.");
+    center.content.lod[2] = try allocator.dupe(u8, "Center brief.");
+    center.content.lod[3] = try allocator.dupe(u8, "Center snippet.");
     // lod[4] already set to "center_node" by init(); do not replace to avoid leak.
-    center.lod_owned |= 0b001110; // mark lod[1..3] as allocator-owned (bit 4 already set by init)
+    center.content.lod_owned |= 0b001110; // mark lod[1..3] as allocator-owned (bit 4 already set by init)
     try lib.insertNode(center);
 
     // Insert 5 leaf nodes (ids 101-105), connect each to center via neighbor_of
@@ -2546,3 +2511,4 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
+

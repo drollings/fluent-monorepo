@@ -107,6 +107,15 @@ pub const parseJsonFile = json_mod.parseJsonFile;
 /// Reference-counted immutable string.  Use SharedString.Ref as the handle.
 pub const SharedString = @import("shared_string.zig").SharedString;
 
+// ── Content node ──────────────────────────────────────────────────────────────
+/// LOD text pyramid backed by a ref-counted SharedString.  Common primitive
+/// for ContextNode and any subsystem needing multi-level text representation.
+pub const ContentNode = @import("content_node.zig").ContentNode;
+
+// ── LOD count ─────────────────────────────────────────────────────────────────
+/// Number of LOD text slots per ContentNode (= 6).
+pub const LOD_COUNT = @import("types.zig").LOD_COUNT;
+
 // ── String utilities ──────────────────────────────────────────────────────────
 pub const looksLikeIdentifier = string_mod.looksLikeIdentifier;
 pub const isTestPath = string_mod.isTestPath;

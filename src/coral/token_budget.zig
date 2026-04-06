@@ -28,7 +28,7 @@ pub const ProportionalBudget = common_budget.ProportionalBudget;
 /// Calculates the estimated embedding token count for a given context node.
 pub fn estimateEmbeddingTokens(node: *const ContextNode) usize {
     var total: usize = NODE_SCHEMA_OVERHEAD_TOKENS;
-    for (node.lod) |level_text| {
+    for (node.content.lod) |level_text| {
         total += estimate(level_text);
     }
     return total;
@@ -43,7 +43,7 @@ const testing = std.testing;
 test "estimateEmbeddingTokens includes overhead" {
     var node = ContextNode{
         .id = 1,
-        .lod = [_][]const u8{ "hello", "", "", "", "", "" },
+        .content = .{ .lod = [_][]const u8{ "hello", "", "", "", "", "" } },
         .embedding = &[_]f32{},
         .valid_from = 0,
         .valid_to = null,

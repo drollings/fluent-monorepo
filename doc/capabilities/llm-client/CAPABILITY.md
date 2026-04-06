@@ -61,7 +61,7 @@ const clean = stripThinkBlock(raw);
 - `src/guidance/staged.zig` — guidance synthesis consumer
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (10 files, auto-discovered)
+## Sources (9 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -71,7 +71,6 @@ const clean = stripThinkBlock(raw);
 | `src/vector/vector_db.zig` | 0.9 | used_by |
 | `src/llm/context_packer.zig` | 0.4 | path_heuristic |
 | `src/guidance/llm_filter.zig` | 0.4 | path_heuristic |
-| `src/llm/context_node_schema.zig` | 0.4 | path_heuristic |
 | `src/guidance/llm_filter_batch.zig` | 0.4 | path_heuristic |
 | `src/llm/token_budget.zig` | 0.4 | path_heuristic |
 | `src/llm/context_compressor.zig` | 0.4 | path_heuristic |

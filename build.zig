@@ -122,7 +122,7 @@ pub fn build(b: *std.Build) void {
     // Uses named module deps only (no relative imports) so it does not conflict
     // with coral_db_module when both appear in the same compilation (e.g. wasm_tests).
     const coral_schema_module = b.createModule(.{
-        .root_source_file = b.path("src/llm/context_node_schema.zig"),
+        .root_source_file = b.path("src/coral/context_node_schema.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -363,6 +363,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/coral/schema.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
         }),
     });
 
@@ -384,7 +387,7 @@ pub fn build(b: *std.Build) void {
     // so it can be tested standalone without file-conflict issues.
     const context_node_schema_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/llm/context_node_schema.zig"),
+            .root_source_file = b.path("src/coral/context_node_schema.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{

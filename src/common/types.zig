@@ -1,3 +1,8 @@
+/// Number of LOD (Level of Detail) text slots per content node.
+/// lod[0]=full, lod[1]=summary(800), lod[2]=brief(240), lod[3]=tiny(80),
+/// lod[4]=name, lod[5]=reserved.
+pub const LOD_COUNT: usize = 6;
+
 /// Represents a unique node identifier with fixed ownership; managed via init/deinit; not thread-safe.
 pub const NodeId = enum(i64) { _ };
 

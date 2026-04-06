@@ -62,7 +62,7 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 - `src/coral/config.zig` — `YAGO_TYPE_WHITELIST` constant
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (43 files, auto-discovered)
+## Sources (44 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -104,6 +104,7 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 | `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
 | `src/coral/main.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
+| `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
 | `src/coral/metrics.zig` | 0.4 | path_heuristic |
 | `src/coral/session.zig` | 0.4 | path_heuristic |

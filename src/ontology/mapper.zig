@@ -64,7 +64,6 @@ pub const PendingNode = struct {
     pub fn toContextNode(self: *const PendingNode, allocator: std.mem.Allocator) !ContextNode {
         var node = ContextNode{
             .id = self.id,
-            .lod = [_][]const u8{ "", "", "", "", "", "" },
             .embedding = &[_]f32{},
             .valid_from = @floatFromInt(std.time.timestamp()),
             .valid_to = null,
@@ -73,10 +72,11 @@ pub const PendingNode = struct {
         };
         for (self.lod, 0..) |arr, i| {
             if (arr.items.len > 0) {
-                node.lod[i] = try allocator.dupe(u8, arr.items);
+                node.content.lod[i] = try allocator.dupe(u8, arr.items);
             } else {
-                node.lod[i] = try allocator.dupe(u8, "");
+                node.content.lod[i] = try allocator.dupe(u8, "");
             }
+            node.content.lod_owned |= @as(u8, 1) << @intCast(i);
         }
         return node;
     }
@@ -227,7 +227,7 @@ pub const TripleMapper = struct {
         while (it.next()) |entry| {
             const cn = try entry.value_ptr.toContextNode(self.allocator);
             defer {
-                for (cn.lod) |l| {
+                for (cn.content.lod) |l| {
                     self.allocator.free(l);
                 }
             }
@@ -515,9 +515,9 @@ test "mapper: pending node to ContextNode" {
     const node_pending = mapper.nodes.getPtr("http://example.org/bob").?;
     const cn = try node_pending.toContextNode(testing.allocator);
     defer {
-        for (cn.lod) |l| {
+        for (cn.content.lod) |l| {
             testing.allocator.free(l);
         }
     }
-    try testing.expectEqualStrings("Bob", cn.lod[4]);
+    try testing.expectEqualStrings("Bob", cn.content.lod[4]);
 }

@@ -1,6 +1,7 @@
 const std = @import("std");
 const reflection = @import("common").reflection;
 const SharedString = @import("common").SharedString;
+const ContentNode = @import("common").ContentNode;
 const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const schema = coral_db.schema;
@@ -69,9 +70,9 @@ pub const BinaryContextNode = extern struct {
         result.provenance_id = node.provenance_id;
         for (0..schema.LOD_COUNT) |i| {
             result.lod_offsets[i] = @intCast(offset);
-            result.lod_lengths[i] = @intCast(node.lod[i].len);
-            @memcpy(buffer[offset..][0..node.lod[i].len], node.lod[i]);
-            offset += node.lod[i].len;
+            result.lod_lengths[i] = @intCast(node.content.lod[i].len);
+            @memcpy(buffer[offset..][0..node.content.lod[i].len], node.content.lod[i]);
+            offset += node.content.lod[i].len;
         }
         result.header.payload_size = @intCast(offset);
         return result;
@@ -99,8 +100,6 @@ pub const BinaryContextNode = extern struct {
         if (bin.header.version != 1) return error.UnsupportedVersion;
         var node = ContextNode{
             .id = bin.id,
-            .lod = [_][]const u8{ "", "", "", "", "", "" },
-            .lod_owned = 0,
             .embedding = &[_]f32{},
             .valid_from = @floatFromInt(bin.valid_from_ts),
             .valid_to = if (bin.valid_to_ts == 0) null else @floatFromInt(bin.valid_to_ts),
@@ -111,14 +110,14 @@ pub const BinaryContextNode = extern struct {
         // the same ownership model as nodes created via ContextNode.init().
         const lod0_slice = bin.getLod(buffer, 0);
         const src = try SharedString.Ref.init(allocator, lod0_slice);
-        node.source = src;
-        node.lod[0] = src.slice();
+        node.content.source = src;
+        node.content.lod[0] = src.slice();
         // lod[1..5]: allocator-owned copies (bit 0 stays clear).
         for (1..schema.LOD_COUNT) |i| {
             const lod_slice = bin.getLod(buffer, @intCast(i));
             if (lod_slice.len > 0) {
-                node.lod[i] = try allocator.dupe(u8, lod_slice);
-                node.lod_owned |= @as(u8, 1) << @intCast(i);
+                node.content.lod[i] = try allocator.dupe(u8, lod_slice);
+                node.content.lod_owned |= @as(u8, 1) << @intCast(i);
             }
         }
         return node;
@@ -245,7 +244,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[1] = .{
             .name = "lod0",
-            .offset = @offsetOf(ContextNode, "lod") + 0 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 0 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod0,
             // lod[0] is owned by the SharedString ref (node.source), not by the
@@ -258,7 +257,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[2] = .{
             .name = "lod1",
-            .offset = @offsetOf(ContextNode, "lod") + 1 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 1 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod1,
             .type_tag = .string_owned,
@@ -268,7 +267,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[3] = .{
             .name = "lod2",
-            .offset = @offsetOf(ContextNode, "lod") + 2 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 2 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod2,
             .type_tag = .string_owned,
@@ -278,7 +277,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[4] = .{
             .name = "lod3",
-            .offset = @offsetOf(ContextNode, "lod") + 3 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 3 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod3,
             .type_tag = .string_owned,
@@ -288,7 +287,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[5] = .{
             .name = "lod4",
-            .offset = @offsetOf(ContextNode, "lod") + 4 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 4 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod4,
             .type_tag = .string_owned,
@@ -298,7 +297,7 @@ pub const ContextNodeSchema = struct {
         };
         self.accessors[6] = .{
             .name = "lod5",
-            .offset = @offsetOf(ContextNode, "lod") + 5 * @sizeOf([]const u8),
+            .offset = @offsetOf(ContextNode, "content") + @offsetOf(ContentNode, "lod") + 5 * @sizeOf([]const u8),
             .permissions = reflection.perm_all,
             .constraint = &lod_vtables.lod5,
             .type_tag = .string_owned,
@@ -371,7 +370,7 @@ pub const ContextNodeSchema = struct {
         size += @sizeOf(i32) + @sizeOf(i32);
         for (0..schema.LOD_COUNT) |i| {
             size += @sizeOf(u32) * 2;
-            size += node.lod[i].len;
+            size += node.content.lod[i].len;
         }
         return size;
     }
@@ -486,10 +485,10 @@ test "BinaryContextNode: round-trip serialization" {
     defer restored.free(allocator);
 
     try testing.expectEqual(original.id, restored.id);
-    try testing.expectEqualStrings("full text content here", restored.lod[0]);
-    try testing.expectEqualStrings("summary", restored.lod[1]);
-    try testing.expectEqualStrings("brief", restored.lod[2]);
-    try testing.expectEqualStrings("test_name", restored.lod[4]);
+    try testing.expectEqualStrings("full text content here", restored.content.lod[0]);
+    try testing.expectEqualStrings("summary", restored.content.lod[1]);
+    try testing.expectEqualStrings("brief", restored.content.lod[2]);
+    try testing.expectEqualStrings("test_name", restored.content.lod[4]);
     try testing.expectEqual(@as(i32, 95), restored.confidence);
     try testing.expectEqual(@as(i32, 7), restored.provenance_id);
 }

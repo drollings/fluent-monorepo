@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-database"],
-  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/document_indexer.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/llm_filter_batch.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig", "src/guidance/schema_validator.zig", "src/guidance/stage_builder.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
+  "used_by": ["src/common/content_node.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/comment_checker.zig", "src/guidance/comment_inserter.zig", "src/guidance/comment_sync.zig", "src/guidance/document_indexer.zig", "src/guidance/hash.zig", "src/guidance/header_generator.zig", "src/guidance/json_store.zig", "src/guidance/line_verify.zig", "src/guidance/llm_filter.zig", "src/guidance/llm_filter_batch.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig", "src/guidance/schema_validator.zig", "src/guidance/stage_builder.zig", "src/guidance/staged.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/synthesize.zig"],
   "members": [
     {
       "type": "enum",
@@ -18,10 +18,10 @@
           "type": "enum_field",
           "name": "_",
           "is_pub": false,
-          "line": 2
+          "line": 7
         }
       ],
-      "line": 2
+      "line": 7
     },
     {
       "type": "enum",
@@ -34,10 +34,10 @@
           "type": "enum_field",
           "name": "_",
           "is_pub": false,
-          "line": 5
+          "line": 10
         }
       ],
-      "line": 5
+      "line": 10
     },
     {
       "type": "enum",
@@ -50,10 +50,10 @@
           "type": "enum_field",
           "name": "_",
           "is_pub": false,
-          "line": 8
+          "line": 13
         }
       ],
-      "line": 8
+      "line": 13
     },
     {
       "type": "fn_decl",
@@ -65,7 +65,7 @@
       ],
       "returns": "NodeId",
       "is_pub": true,
-      "line": 15
+      "line": 20
     },
     {
       "type": "fn_decl",
@@ -77,7 +77,7 @@
       ],
       "returns": "i64",
       "is_pub": true,
-      "line": 20
+      "line": 25
     },
     {
       "type": "fn_decl",
@@ -89,7 +89,7 @@
       ],
       "returns": "SessionId",
       "is_pub": true,
-      "line": 25
+      "line": 30
     },
     {
       "type": "fn_decl",
@@ -101,7 +101,7 @@
       ],
       "returns": "i64",
       "is_pub": true,
-      "line": 30
+      "line": 35
     },
     {
       "type": "fn_decl",
@@ -113,7 +113,7 @@
       ],
       "returns": "TargetId",
       "is_pub": true,
-      "line": 35
+      "line": 40
     },
     {
       "type": "fn_decl",
@@ -125,31 +125,31 @@
       ],
       "returns": "i64",
       "is_pub": true,
-      "line": 40
+      "line": 45
     },
     {
       "type": "test_decl",
       "name": "NodeId: round-trip through int",
       "is_pub": false,
-      "line": 51
+      "line": 56
     },
     {
       "type": "test_decl",
       "name": "SessionId: round-trip through int",
       "is_pub": false,
-      "line": 56
+      "line": 61
     },
     {
       "type": "test_decl",
       "name": "TargetId: round-trip through int",
       "is_pub": false,
-      "line": 61
+      "line": 66
     },
     {
       "type": "test_decl",
       "name": "NodeId and SessionId are distinct types",
       "is_pub": false,
-      "line": 66
+      "line": 71
     }
   ]
 }

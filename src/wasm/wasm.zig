@@ -356,8 +356,8 @@ pub fn hostGetNodeLod1(
 
     // Allocate in WASM memory and copy
     const wasm_plugin = @as(ExtismPlugin, @ptrCast(plugin));
-    const ptr = extism.extism_alloc(wasm_plugin, node.lod[1].len);
-    extism.extism_store(wasm_plugin, ptr, node.lod[1].ptr, node.lod[1].len);
+    const ptr = extism.extism_alloc(wasm_plugin, node.content.lod[1].len);
+    extism.extism_store(wasm_plugin, ptr, node.content.lod[1].ptr, node.content.lod[1].len);
 
     outputs[0] = .{ .t = .ptr, .v = ptr };
 }
