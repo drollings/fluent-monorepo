@@ -478,6 +478,77 @@ pub fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
     return buf.toOwnedSlice(allocator);
 }
 
+// =============================================================================
+// Sentence truncation — for LOD text pyramids
+// =============================================================================
+
+/// Truncates text at a sentence boundary within max_chars.
+/// Searches backwards for `. `, `! `, `? `, `.\n` within the budget.
+/// Falls back to word boundary, then hard cut if no boundary found.
+pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
+    if (text.len <= max_chars) return allocator.dupe(u8, text);
+
+    const window = text[0..max_chars];
+    // Search backwards for a sentence-end token.
+    var i: usize = max_chars;
+    while (i > max_chars / 2) : (i -= 1) {
+        const ch = window[i - 1];
+        const next = if (i < max_chars) window[i] else ' ';
+        if ((ch == '.' or ch == '!' or ch == '?') and (next == ' ' or next == '\n')) {
+            return allocator.dupe(u8, text[0..i]);
+        }
+    }
+    // Fallback: word boundary
+    i = max_chars;
+    while (i > max_chars / 2) : (i -= 1) {
+        if (window[i - 1] == ' ') {
+            return allocator.dupe(u8, std.mem.trimRight(u8, text[0 .. i - 1], " \t"));
+        }
+    }
+    // Hard cut if no boundary found.
+    return allocator.dupe(u8, text[0..max_chars]);
+}
+
+/// Extracts the first line of a doc comment (for skeleton summaries).
+/// For `/// Function description` returns `Function description`.
+/// For `//! Module description` returns `Module description`.
+/// Strips leading `/// ` or `//! ` prefix and trailing newlines.
+pub fn firstCommentLine(comment: []const u8) []const u8 {
+    if (comment.len == 0) return "";
+
+    // Skip leading whitespace
+    var start: usize = 0;
+    while (start < comment.len and (comment[start] == ' ' or comment[start] == '\t')) {
+        start += 1;
+    }
+
+    // Strip /// or //! prefix
+    if (start + 3 <= comment.len) {
+        if ((comment[start] == '/' and comment[start + 1] == '/' and comment[start + 2] == '/') or
+            (comment[start] == '/' and comment[start + 1] == '!' and comment[start + 2] == '/'))
+        {
+            start += 3;
+            // Skip space after ///
+            while (start < comment.len and comment[start] == ' ') {
+                start += 1;
+            }
+        }
+    }
+
+    // Find end of first line
+    var end = start;
+    while (end < comment.len and comment[end] != '\n' and comment[end] != '\r') {
+        end += 1;
+    }
+
+    // Trim trailing whitespace
+    while (end > start and (comment[end - 1] == ' ' or comment[end - 1] == '\t')) {
+        end -= 1;
+    }
+
+    return comment[start..end];
+}
+
 test "slugify converts to lowercase and replaces spaces" {
     const result = try slugify(std.testing.allocator, "Hello World Test");
     defer std.testing.allocator.free(result);
@@ -495,4 +566,47 @@ test "slugify handles empty string" {
     const result = try slugify(std.testing.allocator, "");
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("work-item", result);
+}
+
+test "truncateAtSentence returns input if within limit" {
+    const result = try truncateAtSentence(std.testing.allocator, "Short text.", 100);
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("Short text.", result);
+}
+
+test "truncateAtSentence truncates at sentence boundary" {
+    const result = try truncateAtSentence(std.testing.allocator, "First sentence. Second sentence here.", 20);
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("First sentence.", result);
+}
+
+test "truncateAtSentence truncates at word boundary when no sentence" {
+    const result = try truncateAtSentence(std.testing.allocator, "No punctuation here but we need to truncate", 20);
+    defer std.testing.allocator.free(result);
+    try std.testing.expectEqualStrings("No punctuation here", result);
+}
+
+test "firstCommentLine strips /// prefix" {
+    try std.testing.expectEqualStrings("Function description", firstCommentLine("/// Function description"));
+    try std.testing.expectEqualStrings("Brief", firstCommentLine("/// Brief"));
+}
+
+test "firstCommentLine strips //! prefix" {
+    try std.testing.expectEqualStrings("Module description", firstCommentLine("//! Module description"));
+}
+
+test "firstCommentLine handles leading whitespace" {
+    try std.testing.expectEqualStrings("Text", firstCommentLine("  /// Text"));
+}
+
+test "firstCommentLine stops at newline" {
+    try std.testing.expectEqualStrings("First line", firstCommentLine("/// First line\n/// Second line"));
+}
+
+test "firstCommentLine handles empty string" {
+    try std.testing.expectEqualStrings("", firstCommentLine(""));
+}
+
+test "firstCommentLine handles plain text (no prefix)" {
+    try std.testing.expectEqualStrings("Just text", firstCommentLine("Just text"));
 }

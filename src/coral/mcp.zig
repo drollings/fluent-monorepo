@@ -209,7 +209,7 @@ pub const McpServer = struct {
 
             const len = content_length orelse continue;
 
-            // P3: Reject requests larger than 10 MB (see common/limits.zig MAX_MCP_REQUEST_SIZE).
+            // P3: Reject requests larger than 10 MB (see common/constants.zig MAX_MCP_REQUEST_SIZE).
             const MAX_MCP_REQUEST_SIZE: usize = 10 * 1024 * 1024;
             if (len > MAX_MCP_REQUEST_SIZE) {
                 // Drain remaining headers/body to keep the connection clean, then signal error.

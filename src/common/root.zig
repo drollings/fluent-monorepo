@@ -133,6 +133,8 @@ pub const stripNlPrefix = string_mod.stripNlPrefix;
 pub const STOP_WORDS = string_mod.STOP_WORDS;
 pub const stripBoilerplate = string_mod.stripBoilerplate;
 pub const isNoisyComment = string_mod.isNoisyComment;
+pub const truncateAtSentence = string_mod.truncateAtSentence;
+pub const firstCommentLine = string_mod.firstCommentLine;
 
 // ── Reference-counted VTable handles (M7) ─────────────────────────────────────
 pub const refcount = @import("refcount.zig");
@@ -171,9 +173,9 @@ pub const token_budget = llm_mod.token_budget;
 /// Deterministic follow-up query generation (shared by guidance and coral).
 pub const drift = @import("drift.zig");
 
-// ── Resource limits ───────────────────────────────────────────────────────────
+// ── Constants ───────────────────────────────────────────────────────────
 /// Shared size/count caps for file reads, MCP requests, KNN scans, etc.
-pub const limits = @import("limits.zig");
+pub const constants = @import("constants.zig");
 
 // ── Shell command parser ──────────────────────────────────────────────────────
 /// Safe command-string tokenizer (no shell intermediary).

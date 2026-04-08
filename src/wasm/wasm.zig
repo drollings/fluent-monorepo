@@ -305,7 +305,7 @@ pub const HostFunctionContext = struct {
     allocator: std.mem.Allocator,
     /// Total host-function calls made in the current plugin invocation.
     call_count: u32 = 0,
-    /// Maximum calls allowed per invocation (see limits.zig MAX_WASM_HOST_CALLS).
+    /// Maximum calls allowed per invocation (see constants.zig MAX_WASM_HOST_CALLS).
     max_calls: u32 = 10_000,
 
     /// Reset the call counter at the start of each plugin invocation.

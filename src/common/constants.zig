@@ -1,8 +1,8 @@
-/// limits.zig — Shared resource-limit constants
+/// constants.zig — Shared resource-limit constants
 ///
 /// Single source of truth for all size/count caps used across the codebase.
 /// Import from any module that has `common` as a dependency:
-///   const limits = @import("common").limits;
+///   const constants = @import("common").constants;
 ///
 /// For modules without the `common` dependency (e.g. coral_batch), reference
 /// the value directly and add a comment pointing to this file.

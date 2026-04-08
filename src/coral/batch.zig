@@ -173,7 +173,7 @@ pub const BatchIngestor = struct {
     }
 
     /// Ingest a Turtle file at the given path.
-    /// Enforces a 100 MB size cap (see src/common/limits.zig MAX_FILE_SIZE).
+    /// Enforces a 100 MB size cap (see src/common/constants.zig MAX_FILE_SIZE).
     /// Rejects paths containing `..` components to prevent directory traversal.
     pub fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) !IngestStats {
         // P2: Reject path traversal components.
@@ -183,7 +183,7 @@ pub const BatchIngestor = struct {
 
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
-        // P1: 100 MB limit — was 4 GB (see src/common/limits.zig MAX_FILE_SIZE).
+        // P1: 100 MB limit — was 4 GB (see src/common/constants.zig MAX_FILE_SIZE).
         const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
         const source = try file.readToEndAlloc(self.allocator, MAX_FILE_SIZE);
         defer self.allocator.free(source);

@@ -1,0 +1,239 @@
+{
+  "meta": {
+    "module": "src.guidance.skeleton",
+    "source": "src/guidance/skeleton.zig",
+    "language": "zig"
+  },
+  "comment": " skeleton.zig — File and struct skeleton extraction for token-efficient discovery.\n\n Implements the \"File Skeleton\" pattern from VISION.md:\n - TIER 2: `guidance explain \"filename.zig\"` → show signatures + comments only\n - TIER 3: `guidance explain \"StructName\"` → show struct members only\n\n Private members are omitted from skeleton views to reduce noise and token usage.",
+  "used_by": ["src/guidance/query_engine.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "classifyQuery",
+      "match_hash": "bf3e0e35fb614555bebb827bad13120ccc20e67d69e06d992cae067134247c0e",
+      "signature": "fn classifyQuery(allocator: std.mem.Allocator, query: []const u8, capabilities_dir: []const u8, workspace: []const u8, guidance_dir: []const u8) -> TierMatch",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "TierMatch",
+      "is_pub": true,
+      "line": 34
+    },
+    {
+      "type": "fn_private",
+      "name": "isCapabilityName",
+      "match_hash": "289ea02e5494523cc0e64f7e5ee6a4b7c10294046aa835287d946169294cce96",
+      "signature": "fn isCapabilityName(allocator: std.mem.Allocator, query: []const u8, capabilities_dir: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 64
+    },
+    {
+      "type": "fn_private",
+      "name": "normalizeCapabilityName",
+      "match_hash": "163455cdf55ebf2ea83e9797e264c8442ca75f37b638f311b02efb33e8a85175",
+      "signature": "fn normalizeCapabilityName(allocator: std.mem.Allocator, input: []const u8) -> error{OutOfMemory}![]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}![]const u8",
+      "is_pub": false,
+      "line": 82
+    },
+    {
+      "type": "fn_private",
+      "name": "isFilePathMatch",
+      "match_hash": "13c0b77395af36a5cdf7cbc2ccf0ce8a5bbf994e335570a9b2adb5f5a382b915",
+      "signature": "fn isFilePathMatch(allocator: std.mem.Allocator, query: []const u8, workspace: []const u8, guidance_dir: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 106
+    },
+    {
+      "type": "fn_private",
+      "name": "checkFileExists",
+      "match_hash": "7359b147231ebb3eb8f678a22697a80b75413f7e2e50d375e1c128caa8e0e86b",
+      "signature": "fn checkFileExists(allocator: std.mem.Allocator, rel_path: []const u8, workspace: []const u8, guidance_dir: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "rel_path", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 163
+    },
+    {
+      "type": "fn_private",
+      "name": "srcToGuidanceJson",
+      "match_hash": "df8c20a17c88c107dda91449aaf3b08d44ace068920ff4594e531e83fb34fea2",
+      "signature": "fn srcToGuidanceJson(allocator: std.mem.Allocator, src_path: []const u8, guidance_dir: []const u8) -> error{OutOfMemory}![]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "src_path", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}![]const u8",
+      "is_pub": false,
+      "line": 183
+    },
+    {
+      "type": "fn_private",
+      "name": "jsonPathToSrcPath",
+      "match_hash": "ef6675d0b5808aa7c0cca47cfd0f40d42495c4d468b06323cab958d00df554a7",
+      "signature": "fn jsonPathToSrcPath(allocator: std.mem.Allocator, json_path: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "json_path", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 194
+    },
+    {
+      "type": "fn_private",
+      "name": "isStructNameMatch",
+      "match_hash": "3b2ac47174e20ef72327973e8f4564bd84e981e8b85c22d609e5dc0e216ba4a0",
+      "signature": "fn isStructNameMatch(allocator: std.mem.Allocator, query: []const u8, guidance_dir: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 204
+    },
+    {
+      "type": "fn_private",
+      "name": "findStructNameInJson",
+      "match_hash": "ed11c71979d46566f34473aeb357fb49e68aa1e3293d7f64e9afabfd21138635",
+      "signature": "fn findStructNameInJson(allocator: std.mem.Allocator, query: []const u8, json_dir: []const u8, rel_path: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "rel_path", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 235
+    },
+    {
+      "type": "fn_private",
+      "name": "looksLikeIdentifier",
+      "match_hash": "9599a60a845f4a9c12667a8f3b632524021279a756150c9fca06d3134e06cca9",
+      "signature": "fn looksLikeIdentifier(query: []const u8) -> bool",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 275
+    },
+    {
+      "type": "fn_decl",
+      "name": "generateFileSkeleton",
+      "match_hash": "4c724e644ab36cab3606479e3d3ba95384852a3fb78bafc2ffe8203bc6f73a84",
+      "signature": "fn generateFileSkeleton(allocator: std.mem.Allocator, src_path: []const u8, workspace: []const u8, guidance_dir: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "src_path", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 287
+    },
+    {
+      "type": "fn_decl",
+      "name": "generateStructSkeleton",
+      "match_hash": "e79055672b9396a69a9612701433803fe075dfd6340df42b0856b7ca36f528c3",
+      "signature": "fn generateStructSkeleton(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "struct_name", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 469
+    },
+    {
+      "type": "fn_private",
+      "name": "findAndGenerateStructSkeleton",
+      "match_hash": "effaa2890298c03c61de9ae835ef98692df223d21cb63bf6d0473dcd9ea14496",
+      "signature": "fn findAndGenerateStructSkeleton(allocator: std.mem.Allocator, struct_name: []const u8, json_dir: []const u8, rel_path: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "struct_name", "type": "[]const u8" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "rel_path", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 495
+    },
+    {
+      "type": "fn_private",
+      "name": "generateStructSkeletonFromJson",
+      "match_hash": "5f44ca7eb7b538a119a3cce45f893722e21063973e43d980c3930cc58c815fc4",
+      "signature": "fn generateStructSkeletonFromJson(allocator: std.mem.Allocator, obj: std.json.ObjectMap, struct_name: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "obj", "type": "std.json.ObjectMap" },
+        { "name": "struct_name", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": false,
+      "line": 534
+    },
+    {
+      "type": "fn_decl",
+      "name": "renderCapabilityDocument",
+      "match_hash": "6d10f426f7782615bb370ecd89f2f406a2282e02f7648e7325c3fc09112105f9",
+      "signature": "fn renderCapabilityDocument(allocator: std.mem.Allocator, cap_name: []const u8, capabilities_dir: []const u8, llm_client: ?*llm.LlmClient, natural_lang_query: bool) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cap_name", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "llm_client", "type": "?*llm.LlmClient" },
+        { "name": "natural_lang_query", "type": "bool" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": true,
+      "line": 612
+    },
+    {
+      "type": "fn_private",
+      "name": "parseCapabilityDescription",
+      "match_hash": "2b5a4d2343f88925d876b7985074768b4b4529ebf7fd03cefab34f7b4ba12f6a",
+      "signature": "fn parseCapabilityDescription(allocator: std.mem.Allocator, content: []const u8) -> error{OutOfMemory}!?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "error{OutOfMemory}!?[]const u8",
+      "is_pub": false,
+      "line": 675
+    }
+  ]
+}

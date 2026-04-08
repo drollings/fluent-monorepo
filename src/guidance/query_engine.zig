@@ -29,6 +29,7 @@ const stepPrint = types.stepPrint;
 const StringInterner = llm.interner.StringInterner;
 const BitSetDrift = llm.drift.BitSetDrift;
 const hash_mod = @import("hash.zig");
+const skeleton_mod = @import("skeleton.zig");
 
 // =============================================================================
 // explain — shared types
@@ -590,6 +591,52 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     if (is_empty_query) {
         try showIndexIntro(allocator, workspace, guidance_dir, cfg.capabilities_dir, &cfg);
         return;
+    }
+
+    // ── TIER 1/2/3: Capability, file, and struct skeleton routing ────────────────
+    // Check for capability name, file path, or struct name before database lookup
+    const tier_match = try skeleton_mod.classifyQuery(
+        allocator,
+        query_text,
+        cfg.capabilities_dir,
+        workspace,
+        guidance_dir,
+    );
+    defer {
+        switch (tier_match) {
+            .capability => |cap| allocator.free(cap),
+            .file_path => |fp| allocator.free(fp),
+            .struct_name => |sn| allocator.free(sn),
+            .none => {},
+        }
+    }
+
+    // Determine if query has natural language (requires summarization)
+    const has_natural_language = blk: {
+        const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
+        // Question mark or multi-word query indicates natural language
+        if (trimmed.len > 0 and trimmed[trimmed.len - 1] == '?') break :blk true;
+        var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
+        var count: usize = 0;
+        while (tok.next()) |_| count += 1;
+        if (count > 2) break :blk true; // Multi-word query likely natural language
+        break :blk false;
+    };
+
+    switch (tier_match) {
+        .capability => |cap_name| {
+            try handleCapabilityQuery(allocator, cap_name, cfg.capabilities_dir, query_text, has_natural_language, &cfg);
+            return;
+        },
+        .file_path => |file_path| {
+            try handleFileSkeletonQuery(allocator, file_path, workspace, guidance_dir, query_text);
+            return;
+        },
+        .struct_name => |struct_name| {
+            try handleStructSkeletonQuery(allocator, struct_name, guidance_dir, query_text);
+            return;
+        },
+        .none => {},
     }
 
     // ── Open .guidance.db ─────────────────────────────────────────────────────
@@ -1803,6 +1850,146 @@ fn showIndexIntro(
     const w = ws.writer();
     try w.writeAll(content);
     try w.flush();
+}
+
+// =============================================================================
+// TIER 1/2/3 handlers — capability, file skeleton, struct skeleton
+// =============================================================================
+
+/// Handles TIER 1: capability name match → show CAPABILITY.md content.
+fn handleCapabilityQuery(
+    allocator: std.mem.Allocator,
+    cap_name: []const u8,
+    capabilities_dir: []const u8,
+    query_text: []const u8,
+    natural_lang: bool,
+    cfg: *const config_mod.ProjectConfig,
+) !void {
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    // Try to load and render capability document
+    const cap_path = try std.fs.path.join(allocator, &.{ capabilities_dir, cap_name, "CAPABILITY.md" });
+    defer allocator.free(cap_path);
+
+    const content = std.fs.cwd().readFileAlloc(allocator, cap_path, 256 * 1024) catch |err| {
+        try stdout.print("# Capability: {s}\n\nError reading capability file: {s}\n", .{ cap_name, @errorName(err) });
+        try stdout.flush();
+        return;
+    };
+    defer allocator.free(content);
+
+    // Strip frontmatter
+    const display_content = blk: {
+        if (std.mem.startsWith(u8, content, "---")) {
+            if (std.mem.indexOf(u8, content[3..], "---")) |end_fm| {
+                const start = 3 + end_fm + 3;
+                if (start < content.len and content[start] == '\n') {
+                    break :blk content[start + 1 ..];
+                }
+                break :blk content[start..];
+            }
+        }
+        break :blk content;
+    };
+
+    // If natural language query, use LLM to summarize relevant parts
+    if (natural_lang) {
+        var llm_client_opt: ?llm.LlmClient = blk: {
+            var resolved_url_to_free: ?[]const u8 = null;
+            defer if (resolved_url_to_free) |url| allocator.free(url);
+            const resolved = resolveLlmConfigForThinking(allocator, cfg, cfg.model_thinking, null) catch break :blk null;
+            resolved_url_to_free = resolved.resolved_url;
+            const llm_config: llm.LlmConfig = .{
+                .api_url = resolved.api_url,
+                .model = resolved.model,
+                .think = resolved.think,
+                .debug = false,
+            };
+            break :blk llm.LlmClient.init(allocator, llm_config) catch null;
+        };
+        defer if (llm_client_opt) |*c| c.deinit();
+
+        if (llm_client_opt) |*client| {
+            const prompt = try std.fmt.allocPrint(allocator,
+                \\Extract and summarize ONLY the sections relevant to this query. Be concise.
+                \\Include file:line references where available.
+                \\
+                \\Query: {s}
+                \\Capability: {s}
+                \\
+                \\Content:
+                \\{s}
+                \\
+                \\Return a focused summary with relevant code snippets.
+            , .{ query_text, cap_name, display_content });
+            defer allocator.free(prompt);
+
+            const response = client.complete(prompt, 800, 0.1, null) catch null;
+            if (response) |raw| {
+                defer allocator.free(raw);
+                const stripped = llm.stripThinkBlock(raw);
+                try stdout.print("# {s}\n\n{s}\n", .{ cap_name, std.mem.trim(u8, stripped, " \t\n\r") });
+                try stdout.print("\n---\n\nSource: `{s}`\n", .{cap_path});
+                try stdout.flush();
+                return;
+            }
+        }
+    }
+
+    // Default: show full content
+    try stdout.print("# {s}\n\n{s}\n", .{ cap_name, display_content });
+    try stdout.flush();
+}
+
+/// Handles TIER 2: file path match → show file skeleton.
+fn handleFileSkeletonQuery(
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    workspace: []const u8,
+    guidance_dir: []const u8,
+    query_text: []const u8,
+) !void {
+    _ = query_text;
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    const skeleton = skeleton_mod.generateFileSkeleton(allocator, file_path, workspace, guidance_dir);
+
+    if (skeleton) |skel| {
+        defer allocator.free(skel);
+        try stdout.print("# File: `{s}`\n\n{s}\n", .{ file_path, skel });
+        try stdout.print("\n---\n\nRun `guidance explain \"<function-name>\"` to see specific function documentation.\n", .{});
+    } else {
+        try stdout.print("# File: `{s}`\n\nUnable to generate skeleton. File may not be indexed.\n\nRun `guidance gen` to index this file.\n", .{file_path});
+    }
+    try stdout.flush();
+}
+
+/// Handles TIER 3: struct name match → show struct skeleton.
+fn handleStructSkeletonQuery(
+    allocator: std.mem.Allocator,
+    struct_name: []const u8,
+    guidance_dir: []const u8,
+    query_text: []const u8,
+) !void {
+    _ = query_text;
+    var ws: llm.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
+
+    if (skeleton) |skel| {
+        defer allocator.free(skel);
+        try stdout.print("# Struct: `{s}`\n\n{s}\n", .{ struct_name, skel });
+        try stdout.print("\n---\n\nRun `guidance explain \"<method-name>\"` to see specific method documentation.\n", .{});
+    } else {
+        try stdout.print("# Struct: `{s}`\n\nStruct not found in indexed files.\n\nRun `guidance gen` to index your source files.\n", .{struct_name});
+    }
+    try stdout.flush();
 }
 
 // =============================================================================

@@ -136,30 +136,9 @@ pub const ContextNode = struct {
 // `.\n`) within the budget.  If no sentence boundary exists within 80% of
 // the budget it falls back to word-boundary truncation.
 
-/// Truncates a text slice to a specified length, ensuring it fits within memory constraints.
-pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
-    if (text.len <= max_chars) return allocator.dupe(u8, text);
-
-    const window = text[0..max_chars];
-    // Search backwards for a sentence-end token.
-    var i: usize = max_chars;
-    while (i > max_chars / 2) : (i -= 1) {
-        const ch = window[i - 1];
-        const next = if (i < max_chars) window[i] else ' ';
-        if ((ch == '.' or ch == '!' or ch == '?') and (next == ' ' or next == '\n')) {
-            return allocator.dupe(u8, text[0..i]);
-        }
-    }
-    // Fallback: word boundary
-    i = max_chars;
-    while (i > max_chars / 2) : (i -= 1) {
-        if (window[i - 1] == ' ') {
-            return allocator.dupe(u8, std.mem.trimRight(u8, text[0 .. i - 1], " \t"));
-        }
-    }
-    // Hard cut if no boundary found.
-    return allocator.dupe(u8, text[0..max_chars]);
-}
+/// Re-export of truncateAtSentence from common/string.zig
+/// for use by generateLodSlices and other callers in coral.
+pub const truncateAtSentence = @import("common").truncateAtSentence;
 
 /// Generates a list of LOD slices from the provided text using an allocator.
 pub fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) ![schema.LOD_COUNT][]const u8 {
@@ -2511,4 +2490,3 @@ test "Library.getInheritedProperties: returns predicates via type hierarchy" {
     try testing.expect(found_name);
     try testing.expect(found_birth);
 }
-

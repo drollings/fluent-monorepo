@@ -124,6 +124,7 @@ Then you you must read
 │   │   ├── args.zig
 │   │   ├── builder_error.zig                     # builder_error.zig — Structured error type for fluent builder chains.
 │   │   ├── cli.zig
+│   │   ├── constants.zig                         # constants.zig — Shared resource-limit constants
 │   │   ├── content_node.zig                      # content_node.zig — ContentNode: LOD text pyramid backed by SharedString
 │   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
@@ -135,7 +136,6 @@ Then you you must read
 │   │   ├── io.zig                                # io.zig — Shared buffered I/O helpers
 │   │   ├── json.zig                              # json.zig — Generic JSON serialization helpers
 │   │   ├── json_parser.zig
-│   │   ├── limits.zig                            # limits.zig — Shared resource-limit constants
 │   │   ├── local_model.zig                       # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
 │   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WEAVER.

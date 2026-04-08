@@ -39,9 +39,6 @@ pub const Pattern = struct {
     ref: ?[]const u8 = null,
 };
 
-pub const DOMAIN_SKILL_BASE = "guidance/skills/domain_patterns/SKILL.md";
-pub const GOF_SKILL_BASE = "guidance/skills/gof-patterns/SKILL.md";
-
 /// Checks if the input slice represents a valid ring buffer structure.
 pub fn detectRingBuffer(source: []const u8) bool {
     const keywords = [_][]const u8{ "ring", "ringbuffer", "circular", "fifo", "deque" };

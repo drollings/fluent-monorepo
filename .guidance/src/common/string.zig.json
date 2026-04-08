@@ -413,22 +413,102 @@
       "line": 461
     },
     {
+      "type": "fn_decl",
+      "name": "truncateAtSentence",
+      "match_hash": "e2e1e81a2bab26886517a4fddde7e4ff8bddf5c8e7afdda758426da6e4d54dda",
+      "signature": "fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "text", "type": "[]const u8" },
+        { "name": "max_chars", "type": "usize" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 488
+    },
+    {
+      "type": "fn_decl",
+      "name": "firstCommentLine",
+      "match_hash": "b3933860203326d5b2a89a858e02df3262341820663f95b89b9550272b643186",
+      "signature": "fn firstCommentLine(comment: []const u8) -> []const u8",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 516
+    },
+    {
       "type": "test_decl",
       "name": "slugify converts to lowercase and replaces spaces",
       "is_pub": false,
-      "line": 481
+      "line": 552
     },
     {
       "type": "test_decl",
       "name": "slugify caps at 40 chars",
       "is_pub": false,
-      "line": 487
+      "line": 558
     },
     {
       "type": "test_decl",
       "name": "slugify handles empty string",
       "is_pub": false,
-      "line": 494
+      "line": 565
+    },
+    {
+      "type": "test_decl",
+      "name": "truncateAtSentence returns input if within limit",
+      "is_pub": false,
+      "line": 571
+    },
+    {
+      "type": "test_decl",
+      "name": "truncateAtSentence truncates at sentence boundary",
+      "is_pub": false,
+      "line": 577
+    },
+    {
+      "type": "test_decl",
+      "name": "truncateAtSentence truncates at word boundary when no sentence",
+      "is_pub": false,
+      "line": 583
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine strips /// prefix",
+      "is_pub": false,
+      "line": 589
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine strips //! prefix",
+      "is_pub": false,
+      "line": 594
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine handles leading whitespace",
+      "is_pub": false,
+      "line": 598
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine stops at newline",
+      "is_pub": false,
+      "line": 602
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine handles empty string",
+      "is_pub": false,
+      "line": 606
+    },
+    {
+      "type": "test_decl",
+      "name": "firstCommentLine handles plain text (no prefix)",
+      "is_pub": false,
+      "line": 610
     }
   ]
 }
