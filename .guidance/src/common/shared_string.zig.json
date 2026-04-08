@@ -7,7 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/content_node.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -29,23 +29,24 @@
           ],
           "returns": "[*]u8",
           "is_pub": false,
-          "line": 69
+          "line": 101
         }
     ,    {
           "type": "fn_private",
           "name": "create",
-          "match_hash": "a44c8142ca5dce2dfafa4288abdbbd358e29bd0e5af0b03270e8aecc7a9c6ad8",
-          "signature": "fn create(allocator: std.mem.Allocator, str: []const u8) -> *SharedString",
+          "match_hash": "6115431813f8dfedd82871c9036524fab95810abe9df34382ec5be01e5f7302a",
+          "signature": "fn create(allocator: std.mem.Allocator, str: []const u8, min_cap: usize) -> Error!*SharedString",
           "params": [
             { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "str", "type": "[]const u8" }
+            { "name": "str", "type": "[]const u8" },
+            { "name": "min_cap", "type": "usize" }
           ],
-          "returns": "*SharedString",
+          "returns": "Error!*SharedString",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": false,
-          "line": 77
+          "line": 109
         }
     ,    {
           "type": "fn_private",
@@ -58,7 +59,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 89
+          "line": 129
         }
     ,    {
           "type": "fn_private",
@@ -70,7 +71,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 102
+          "line": 143
         }
     ,    {
           "type": "fn_private",
@@ -82,7 +83,7 @@
           ],
           "returns": "bool",
           "is_pub": false,
-          "line": 110
+          "line": 151
         }
     ,    {
           "type": "fn_decl",
@@ -94,76 +95,142 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 125
+          "line": 166
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "sliceZ",
+          "match_hash": "36115c58d9e01e17a31b23977edbe7db9f1d1d499ce4f2a7914e6f398513dca8",
+          "signature": "fn sliceZ(self: *const SharedString) -> [:0]const u8",
+          "params": [
+            { "name": "self", "type": "*const SharedString" }
+          ],
+          "returns": "[:0]const u8",
+          "is_pub": true,
+          "line": 174
         }
       ],
-      "line": 55
+      "line": 73
     },
     {
       "type": "test_decl",
       "name": "SharedString: basic create and read",
       "is_pub": false,
-      "line": 244
+      "line": 345
     },
     {
       "type": "test_decl",
       "name": "SharedString: empty string",
       "is_pub": false,
-      "line": 256
+      "line": 357
     },
     {
       "type": "test_decl",
       "name": "SharedString: clone shares allocation, both deinit safely",
       "is_pub": false,
-      "line": 268
+      "line": 369
     },
     {
       "type": "test_decl",
       "name": "SharedString: ref_count reaches zero exactly once",
       "is_pub": false,
-      "line": 288
+      "line": 389
     },
     {
       "type": "test_decl",
       "name": "SharedString: slice pointer stability across clones",
       "is_pub": false,
-      "line": 305
+      "line": 406
     },
     {
       "type": "test_decl",
       "name": "SharedString: fused allocation — header and bytes are contiguous",
       "is_pub": false,
-      "line": 320
+      "line": 421
     },
     {
       "type": "test_decl",
       "name": "SharedString: mutate in-place when exclusive and fits",
       "is_pub": false,
-      "line": 333
+      "line": 434
     },
     {
       "type": "test_decl",
       "name": "SharedString: mutate CoW when shared",
       "is_pub": false,
-      "line": 349
+      "line": 450
     },
     {
       "type": "test_decl",
       "name": "SharedString: mutate CoW when new content is larger",
       "is_pub": false,
-      "line": 369
+      "line": 470
     },
     {
       "type": "test_decl",
       "name": "SharedString: mutate in-place zero-pads tail",
       "is_pub": false,
-      "line": 384
+      "line": 485
     },
     {
       "type": "test_decl",
       "name": "SharedString: mutate to empty string",
       "is_pub": false,
-      "line": 402
+      "line": 503
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: sliceZ is NUL-terminated",
+      "is_pub": false,
+      "line": 516
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: sliceZ remains valid after in-place mutate",
+      "is_pub": false,
+      "line": 530
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: initCapacity reserves headroom, avoids CoW on grow",
+      "is_pub": false,
+      "line": 549
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: initCapacity with min_capacity < str.len uses str.len",
+      "is_pub": false,
+      "line": 565
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: eql, eqlSlice, order",
+      "is_pub": false,
+      "line": 576
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: hash is content-based",
+      "is_pub": false,
+      "line": 605
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: format prints contents",
+      "is_pub": false,
+      "line": 623
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: HashContext usable with std.HashMap",
+      "is_pub": false,
+      "line": 636
+    },
+    {
+      "type": "test_decl",
+      "name": "SharedString: mutate grow-after-shrink reuses capacity",
+      "is_pub": false,
+      "line": 668
     }
   ]
 }

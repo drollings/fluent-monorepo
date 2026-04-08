@@ -6,7 +6,7 @@
 /// one contiguous allocation, eliminating the two-allocation cost of the naive
 /// design and improving cache locality.
 ///
-///   [ SharedString header | ... string bytes ... ]
+///   [ SharedString header | ... string bytes (cap) ... ]
 ///   ^-- aligned to @alignOf(SharedString)
 ///
 /// ## Ownership model
@@ -14,29 +14,45 @@
 ///   Ref.init(allocator, str)   → new allocation, ref_count = 1.
 ///   ref.clone()                → bumps count, returns second handle.
 ///   ref.deinit(allocator)      → decrements count; zeros + frees when it hits 0.
-///   ref.mutate(allocator, new) → in-place if exclusive and fits; CoW otherwise.
+///   ref.mutate(allocator, new) → in-place if exclusive and fits in cap;
+///                                CoW otherwise.
 ///
 /// ## Copy-on-write
 ///
-///   `mutate()` is safe to call on any Ref regardless of share count:
-///   - Exclusive owner and new content fits in the current allocation:
-///     CAS ref_count 1 → MUTATING, overwrite in-place, restore to 1.
-///   - Shared (or exclusive but needs resize):
-///     Allocate new header+bytes first, then release the old ref.
-///   The MUTATING sentinel prevents a concurrent clone() from producing
-///   a handle to bytes mid-overwrite (TOCTOU guard).
+///   `mutate()` is safe to call on any Ref:
+///   - Exclusive owner (ref_count == 1) and new content fits in `cap`:
+///     overwrite bytes in-place, update len, zero the unused tail.
+///   - Shared, or new content exceeds cap:
+///     allocate a new header+bytes, then release the old ref.
+///
+///   Exclusivity is implied by ref_count == 1 observed by the owning thread:
+///   no other thread can legitimately obtain a Ref to this allocation without
+///   already holding one (which would make the count ≥ 2).  A data race on
+///   the Ref *struct* itself is Undefined Behavior and cannot be papered over
+///   by the payload; we therefore do not attempt to synchronise concurrent
+///   mutate/clone on the *same* Ref value.
 ///
 /// ## Thread safety
 ///
-///   ref_count ops use acquire/release ordering (std.atomic §RefCount).
-///   Bytes are immutable between a clone() and the next mutate().
-///   mutate() is safe to call concurrently on different Refs to the same
-///   allocation — the CAS ensures only one wins exclusive in-place access.
+///   ref_count ops use the standard Arc fence protocol (std.atomic §RefCount):
+///   monotonic on increment, release on decrement, acquire fence on final drop.
+///   Bytes are immutable between a clone() and the next mutate() on the
+///   *exclusive* path.  Different Refs to the same allocation never take the
+///   in-place path (count ≥ 2), so the bytes they observe are stable for the
+///   lifetime of their handle.
 ///
 /// ## Security
 ///
-///   destroy() zeroes the string bytes before returning the allocation to
-///   the allocator, preventing residual data in heap free lists.
+///   destroy() zeroes the string bytes (full `cap`) before returning the
+///   allocation to the allocator, preventing residual data in heap free lists.
+///   mutate() zeroes the unused tail after an in-place shrink, so the
+///   invariant "bytes in [len..cap] are zero" holds at all observable points.
+///
+/// ## Size limits
+///
+///   `len` and `cap` are `u32`, capping any single SharedString at 4 GiB.
+///   This saves 8 bytes of header overhead on 64-bit systems versus `usize`
+///   and is more than sufficient for every expected use case.
 ///
 /// ## Allocator choice
 ///
@@ -46,10 +62,12 @@
 ///   unnecessary.  Use std.testing.allocator (or DebugAllocator) in tests.
 const std = @import("std");
 
-/// Sentinel: ref_count value meaning "in-place mutation in progress".
-/// A concurrent clone() that observes this value must treat the string
-/// as shared (spin until count returns to a normal value or fall back to CoW).
-const MUTATING: u32 = std.math.maxInt(u32) - 1;
+/// Returned by init/mutate when the requested content exceeds the u32
+/// capacity limit (4 GiB - 1).  See the "Size limits" section in the
+/// SharedString doc comment.
+pub const Error = std.mem.Allocator.Error || error{StringTooLong};
+
+const MAX_LEN: usize = std.math.maxInt(u32);
 
 /// Manages shared string data with ownership and lifetime control; ensures safe access across contexts.
 pub const SharedString = struct {
@@ -57,10 +75,24 @@ pub const SharedString = struct {
     len: u32,
     /// Allocated byte capacity for the string region (>= len always).
     /// Tracks the original allocation size so destroy() can free correctly
-    /// even after an in-place mutate() that shrinks len.
+    /// and so mutate() can reuse capacity after an in-place shrink.
     cap: u32,
     // String bytes immediately follow this struct in the same allocation.
     // Access via bytesPtr().
+    //
+    // Invariants:
+    //   - bytes in [len..cap] are zero
+    //   - the backing allocation is always (cap + 1) bytes long so that
+    //     byte[len] is a guaranteed NUL terminator for sliceZ() / C interop
+    //   - len <= cap <= MAX_LEN (= u32 max)
+
+    comptime {
+        // bytesPtr() assumes the payload begins exactly at @sizeOf(SharedString)
+        // with no trailing padding.  If a future field introduces padding, this
+        // assertion will fail loudly at compile time.
+        std.debug.assert(@sizeOf(SharedString) == 3 * @sizeOf(u32));
+        std.debug.assert(@alignOf(SharedString) == @alignOf(u32));
+    }
 
     // -----------------------------------------------------------------------
     // Internal: byte access
@@ -74,23 +106,32 @@ pub const SharedString = struct {
     // Internal: allocation / deallocation
     // -----------------------------------------------------------------------
 
-    fn create(allocator: std.mem.Allocator, str: []const u8) !*SharedString {
-        const total = @sizeOf(SharedString) + str.len;
+    fn create(allocator: std.mem.Allocator, str: []const u8, min_cap: usize) Error!*SharedString {
+        const want_cap = @max(str.len, min_cap);
+        if (want_cap > MAX_LEN) return error.StringTooLong;
+        // +1 for the guaranteed NUL terminator at byte[len].
+        const total = @sizeOf(SharedString) + want_cap + 1;
         const align_of = comptime std.mem.Alignment.fromByteUnits(@alignOf(SharedString));
         const raw = try allocator.alignedAlloc(u8, align_of, total);
         const self: *SharedString = @ptrCast(raw.ptr);
         self.ref_count = std.atomic.Value(u32).init(1);
         self.len = @intCast(str.len);
-        self.cap = @intCast(str.len);
-        if (str.len > 0) @memcpy(self.bytesPtr()[0..str.len], str);
+        self.cap = @intCast(want_cap);
+        const bp = self.bytesPtr();
+        if (str.len > 0) @memcpy(bp[0..str.len], str);
+        // Zero [len..cap] to establish the invariant, and byte[cap] as the
+        // final terminator slot.  (byte[len] is covered by this memset as
+        // long as len < cap; if len == cap, byte[cap] covers it.)
+        @memset(bp[str.len .. want_cap + 1], 0);
         return self;
     }
 
     fn destroy(self: *SharedString, allocator: std.mem.Allocator) void {
         // Security zero: prevent residual string data in heap free lists.
-        // Zero up to cap (the original allocation size), not just len.
-        if (self.cap > 0) @memset(self.bytesPtr()[0..self.cap], 0);
-        const total = @sizeOf(SharedString) + self.cap;
+        // Zero the full cap + terminator slot (original allocation payload).
+        const payload_len: usize = @as(usize, self.cap) + 1;
+        @memset(self.bytesPtr()[0..payload_len], 0);
+        const total = @sizeOf(SharedString) + payload_len;
         const raw: [*]align(@alignOf(SharedString)) u8 = @ptrCast(self);
         allocator.free(raw[0..total]);
     }
@@ -100,8 +141,8 @@ pub const SharedString = struct {
     // -----------------------------------------------------------------------
 
     fn acquire(self: *SharedString) void {
-        // Monotonic: we only need the increment to be visible before any
-        // subsequent release on the same thread.
+        // Monotonic: standard Arc clone ordering.  The acquire fence on the
+        // final drop synchronises with all prior releases.
         _ = self.ref_count.fetchAdd(1, .monotonic);
     }
 
@@ -126,6 +167,14 @@ pub const SharedString = struct {
         return self.bytesPtr()[0..self.len];
     }
 
+    /// The immutable string contents as a NUL-terminated slice, suitable
+    /// for passing directly to C APIs.  The byte at `[len]` is guaranteed
+    /// to be `0` at all observable times; this is maintained by `create()`
+    /// (tail zero) and `mutate()` (re-zero on every write).
+    pub fn sliceZ(self: *const SharedString) [:0]const u8 {
+        return self.bytesPtr()[0..self.len :0];
+    }
+
     // -----------------------------------------------------------------------
     // Ref — the public owner handle
     // -----------------------------------------------------------------------
@@ -137,32 +186,25 @@ pub const SharedString = struct {
 
         /// Allocate a new SharedString from `str` and return the first Ref
         /// (ref_count = 1).
-        pub fn init(allocator: std.mem.Allocator, str: []const u8) !Ref {
-            return .{ .ptr = try SharedString.create(allocator, str) };
+        pub fn init(allocator: std.mem.Allocator, str: []const u8) Error!Ref {
+            return .{ .ptr = try SharedString.create(allocator, str, 0) };
+        }
+
+        /// Allocate a new SharedString from `str` with at least `min_capacity`
+        /// bytes of capacity reserved.  Use this when you know the string will
+        /// grow shortly after creation to avoid an immediate CoW realloc.
+        pub fn initCapacity(
+            allocator: std.mem.Allocator,
+            str: []const u8,
+            min_capacity: usize,
+        ) Error!Ref {
+            return .{ .ptr = try SharedString.create(allocator, str, min_capacity) };
         }
 
         /// Increment the ref count and return a second handle to the same
         /// allocation.  Both handles must eventually be passed to `deinit`.
-        ///
-        /// If the allocation is currently being mutated (MUTATING sentinel),
-        /// this spins until the mutation completes before incrementing.
         pub fn clone(self: Ref) Ref {
-            // Spin if a mutate() is mid-flight on this allocation.
-            // In practice this is extremely rare (requires exact scheduling
-            // collision); the loop terminates as soon as mutate() restores
-            // the count to 1.
-            while (true) {
-                const cur = self.ptr.ref_count.load(.acquire);
-                if (cur == MUTATING) {
-                    // Yield to avoid busy-burning the CPU in the rare case.
-                    std.atomic.spinLoopHint();
-                    continue;
-                }
-                // CAS: only increment if count hasn't changed under us.
-                if (self.ptr.ref_count.cmpxchgWeak(cur, cur + 1, .acquire, .monotonic) == null) {
-                    break;
-                }
-            }
+            self.ptr.acquire();
             return .{ .ptr = self.ptr };
         }
 
@@ -180,6 +222,54 @@ pub const SharedString = struct {
             return self.ptr.slice();
         }
 
+        /// NUL-terminated view of the contents for C interop.
+        /// Valid as long as this Ref is alive.
+        pub fn sliceZ(self: Ref) [:0]const u8 {
+            return self.ptr.sliceZ();
+        }
+
+        /// Byte-wise equality.  Two Refs that share the same underlying
+        /// allocation short-circuit to true.
+        pub fn eql(self: Ref, other: Ref) bool {
+            if (self.ptr == other.ptr) return true;
+            return std.mem.eql(u8, self.slice(), other.slice());
+        }
+
+        /// Byte-wise equality against a raw string.
+        pub fn eqlSlice(self: Ref, other: []const u8) bool {
+            return std.mem.eql(u8, self.slice(), other);
+        }
+
+        /// Lexicographic ordering, compatible with std.sort.
+        pub fn order(self: Ref, other: Ref) std.math.Order {
+            if (self.ptr == other.ptr) return .eq;
+            return std.mem.order(u8, self.slice(), other.slice());
+        }
+
+        /// 64-bit hash of the contents, suitable for std.HashMap /
+        /// std.AutoHashMap-style containers when used via a custom Context.
+        pub fn hash(self: Ref) u64 {
+            return std.hash.Wyhash.hash(0, self.slice());
+        }
+
+        /// std.fmt integration: prints the string contents directly.
+        /// Enables `std.debug.print("{f}", .{my_ref})` and friends.
+        pub fn format(self: Ref, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+            try writer.writeAll(self.slice());
+        }
+
+        /// Context type for use with `std.HashMap(Ref, V, Ref.HashContext, ...)`.
+        /// Hashes and compares by string content, not pointer identity, so two
+        /// separately-allocated Refs with the same bytes map to the same slot.
+        pub const HashContext = struct {
+            pub fn hash(_: HashContext, key: Ref) u64 {
+                return key.hash();
+            }
+            pub fn eql(_: HashContext, a: Ref, b: Ref) bool {
+                return a.eql(b);
+            }
+        };
+
         /// Byte length of the string.
         pub fn len(self: Ref) usize {
             return self.ptr.len;
@@ -187,47 +277,58 @@ pub const SharedString = struct {
 
         /// Replace the string content.
         ///
-        /// Three cases:
+        /// Two cases:
         ///
-        ///   Case 1 — exclusive owner, new content fits in existing allocation:
-        ///     CAS ref_count 1 → MUTATING.  Overwrite bytes in-place.
-        ///     Restore ref_count to 1.  `self.ptr` is unchanged.
+        ///   Case 1 — exclusive owner (ref_count == 1) and new content fits
+        ///            in the existing `cap`:
+        ///     Overwrite bytes in-place, update len, zero the unused tail.
+        ///     `self.ptr` is unchanged.
         ///
-        ///   Case 2 — exclusive owner, new content is larger (needs resize):
-        ///     Allocate new header+bytes.  Release old allocation (frees it,
-        ///     since we were the sole owner).  Update self.ptr.
-        ///
-        ///   Case 3 — shared owner (ref_count > 1):
-        ///     Allocate new header+bytes.  Release old ref (does not free;
-        ///     other owners still hold references).  Update self.ptr.
+        ///   Case 2 — shared owner OR new content exceeds cap:
+        ///     Allocate new header+bytes.  Release the old ref (which frees
+        ///     the old allocation if we were the sole owner, otherwise leaves
+        ///     it alive for the other holders).  Update `self.ptr`.
         ///
         /// After mutate() returns, `self` is the sole owner of a Ref whose
         /// slice() returns new_content.
-        pub fn mutate(self: *Ref, allocator: std.mem.Allocator, new_content: []const u8) !void {
-            // Case 1: try to claim exclusive in-place write via CAS.
-            if (new_content.len <= self.ptr.len) {
-                // Attempt to lock: 1 → MUTATING.
-                if (self.ptr.ref_count.cmpxchgStrong(1, MUTATING, .acquire, .monotonic) == null) {
-                    // We have exclusive access.  Overwrite and zero-pad tail.
-                    const bp = self.ptr.bytesPtr();
-                    @memcpy(bp[0..new_content.len], new_content);
-                    // Zero the unused tail bytes to avoid leaking old content.
-                    if (new_content.len < self.ptr.len) {
-                        @memset(bp[new_content.len..self.ptr.len], 0);
-                    }
-                    self.ptr.len = @intCast(new_content.len);
-                    // Restore: release the MUTATING sentinel.
-                    self.ptr.ref_count.store(1, .release);
-                    return;
+        pub fn mutate(self: *Ref, allocator: std.mem.Allocator, new_content: []const u8) Error!void {
+            if (new_content.len > MAX_LEN) return error.StringTooLong;
+            // Case 1: exclusive and fits in capacity.
+            //
+            // ref_count == 1 observed by this thread implies no other thread
+            // holds a Ref to this allocation, so no concurrent clone() or
+            // mutate() on *another* Ref can race with us.  A race on this
+            // *same* Ref value from another thread would be a data race on
+            // the Ref struct itself (UB), outside what this type can defend
+            // against.
+            if (new_content.len <= self.ptr.cap and
+                self.ptr.ref_count.load(.acquire) == 1)
+            {
+                const bp = self.ptr.bytesPtr();
+                const old_len = self.ptr.len;
+                if (new_content.len > 0) @memcpy(bp[0..new_content.len], new_content);
+                // Preserve both invariants:
+                //   - bytes in [new_len..cap] are zero
+                //   - byte[new_len] is the NUL terminator for sliceZ()
+                // [old_len..cap] was already zero (and byte[cap] was already
+                // zero as the prior terminator slot), so we only need to zero
+                // the region that was previously visible: [new_len..old_len].
+                // When growing within cap (new_len > old_len) the target
+                // terminator position byte[new_len] was already zero by the
+                // prior invariant, so no extra write is needed.
+                if (new_content.len < old_len) {
+                    @memset(bp[new_content.len..old_len], 0);
                 }
+                self.ptr.len = @intCast(new_content.len);
+                return;
             }
 
-            // Case 2 / 3: allocate new, then release old.
-            // Allocate first so we never leave self in an inconsistent state.
-            const new_ptr = try SharedString.create(allocator, new_content);
+            // Case 2: allocate new, then release old.
+            // Allocate first so we never leave self in an inconsistent state
+            // on allocation failure.
+            const new_ptr = try SharedString.create(allocator, new_content, 0);
             const old_ptr = self.ptr;
             self.ptr = new_ptr;
-            // Release old (frees it if we were the last owner).
             if (old_ptr.releaseRef()) {
                 old_ptr.destroy(allocator);
             }
@@ -412,3 +513,189 @@ test "SharedString: mutate to empty string" {
     try testing.expectEqual(@as(usize, 0), ref.len());
 }
 
+test "SharedString: sliceZ is NUL-terminated" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    const ref = try SharedString.Ref.init(allocator, "hello");
+    defer ref.deinit(allocator);
+
+    const z = ref.sliceZ();
+    try testing.expectEqualStrings("hello", z);
+    // Sentinel byte at [len] is 0.
+    try testing.expectEqual(@as(u8, 0), z.ptr[z.len]);
+}
+
+test "SharedString: sliceZ remains valid after in-place mutate" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    var ref = try SharedString.Ref.initCapacity(allocator, "hi", 16);
+    defer ref.deinit(allocator);
+
+    try ref.mutate(allocator, "bigger!");
+    const z = ref.sliceZ();
+    try testing.expectEqualStrings("bigger!", z);
+    try testing.expectEqual(@as(u8, 0), z.ptr[z.len]);
+
+    try ref.mutate(allocator, "x");
+    const z2 = ref.sliceZ();
+    try testing.expectEqualStrings("x", z2);
+    try testing.expectEqual(@as(u8, 0), z2.ptr[z2.len]);
+}
+
+test "SharedString: initCapacity reserves headroom, avoids CoW on grow" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    var ref = try SharedString.Ref.initCapacity(allocator, "hi", 32);
+    defer ref.deinit(allocator);
+    const original_ptr = ref.ptr;
+    try testing.expectEqual(@as(u32, 32), ref.ptr.cap);
+    try testing.expectEqual(@as(u32, 2), ref.ptr.len);
+
+    try ref.mutate(allocator, "this fits in thirty-two bytes!!!");
+    try testing.expectEqual(original_ptr, ref.ptr); // in-place, no CoW
+    try testing.expectEqualStrings("this fits in thirty-two bytes!!!", ref.slice());
+}
+
+test "SharedString: initCapacity with min_capacity < str.len uses str.len" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    const ref = try SharedString.Ref.initCapacity(allocator, "longer string", 3);
+    defer ref.deinit(allocator);
+    try testing.expectEqual(@as(u32, 13), ref.ptr.cap);
+    try testing.expectEqualStrings("longer string", ref.slice());
+}
+
+test "SharedString: eql, eqlSlice, order" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    const a = try SharedString.Ref.init(allocator, "apple");
+    defer a.deinit(allocator);
+    const b = try SharedString.Ref.init(allocator, "apple");
+    defer b.deinit(allocator);
+    const c = try SharedString.Ref.init(allocator, "banana");
+    defer c.deinit(allocator);
+    const a_clone = a.clone();
+    defer a_clone.deinit(allocator);
+
+    // Content equality across distinct allocations.
+    try testing.expect(a.eql(b));
+    try testing.expect(!a.eql(c));
+    // Same-allocation fast path.
+    try testing.expect(a.eql(a_clone));
+    // Raw-slice comparison.
+    try testing.expect(a.eqlSlice("apple"));
+    try testing.expect(!a.eqlSlice("APPLE"));
+    // Ordering.
+    try testing.expectEqual(std.math.Order.lt, a.order(c));
+    try testing.expectEqual(std.math.Order.gt, c.order(a));
+    try testing.expectEqual(std.math.Order.eq, a.order(b));
+    try testing.expectEqual(std.math.Order.eq, a.order(a_clone));
+}
+
+test "SharedString: hash is content-based" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    const a = try SharedString.Ref.init(allocator, "key");
+    defer a.deinit(allocator);
+    const b = try SharedString.Ref.init(allocator, "key");
+    defer b.deinit(allocator);
+    const c = try SharedString.Ref.init(allocator, "different");
+    defer c.deinit(allocator);
+
+    try testing.expectEqual(a.hash(), b.hash());
+    try testing.expect(a.hash() != c.hash());
+    // Matches raw std.hash.Wyhash of the slice.
+    try testing.expectEqual(std.hash.Wyhash.hash(0, "key"), a.hash());
+}
+
+test "SharedString: format prints contents" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    const ref = try SharedString.Ref.init(allocator, "hello world");
+    defer ref.deinit(allocator);
+
+    const rendered = try std.fmt.allocPrint(allocator, "<{f}>", .{ref});
+    defer allocator.free(rendered);
+    try testing.expectEqualStrings("<hello world>", rendered);
+}
+
+test "SharedString: HashContext usable with std.HashMap" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    var map = std.HashMap(
+        SharedString.Ref,
+        u32,
+        SharedString.Ref.HashContext,
+        std.hash_map.default_max_load_percentage,
+    ).init(allocator);
+    defer {
+        var it = map.keyIterator();
+        while (it.next()) |k| k.deinit(allocator);
+        map.deinit();
+    }
+
+    const k1 = try SharedString.Ref.init(allocator, "alpha");
+    try map.put(k1, 1);
+    const k2 = try SharedString.Ref.init(allocator, "beta");
+    try map.put(k2, 2);
+
+    // Lookup with a distinct allocation having the same content.
+    const probe = try SharedString.Ref.init(allocator, "alpha");
+    defer probe.deinit(allocator);
+    try testing.expectEqual(@as(?u32, 1), map.get(probe));
+
+    const probe2 = try SharedString.Ref.init(allocator, "gamma");
+    defer probe2.deinit(allocator);
+    try testing.expectEqual(@as(?u32, null), map.get(probe2));
+}
+
+test "SharedString: mutate grow-after-shrink reuses capacity" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer testing.expectEqual(.ok, gpa.deinit()) catch {};
+    const allocator = gpa.allocator();
+
+    // Start with cap = len = 11.
+    var ref = try SharedString.Ref.init(allocator, "eleven char");
+    defer ref.deinit(allocator);
+    const original_ptr = ref.ptr;
+    try testing.expectEqual(@as(u32, 11), ref.ptr.cap);
+
+    // Shrink to 5: in-place, cap unchanged.
+    try ref.mutate(allocator, "short");
+    try testing.expectEqual(original_ptr, ref.ptr);
+    try testing.expectEqual(@as(u32, 11), ref.ptr.cap);
+    try testing.expectEqual(@as(u32, 5), ref.ptr.len);
+
+    // Grow back to 8: must still be in-place (8 <= cap=11).
+    // Previous buggy impl would CoW here because 8 > len=5.
+    try ref.mutate(allocator, "eightchr");
+    try testing.expectEqual(original_ptr, ref.ptr);
+    try testing.expectEqualStrings("eightchr", ref.slice());
+    try testing.expectEqual(@as(u32, 11), ref.ptr.cap);
+
+    // Grow to exactly cap: still in-place.
+    try ref.mutate(allocator, "01234567890"[0..11]);
+    try testing.expectEqual(original_ptr, ref.ptr);
+    try testing.expectEqualStrings("01234567890", ref.slice());
+
+    // Exceed cap: CoW.
+    try ref.mutate(allocator, "twelve chars");
+    try testing.expect(ref.ptr != original_ptr);
+    try testing.expectEqualStrings("twelve chars", ref.slice());
+}
