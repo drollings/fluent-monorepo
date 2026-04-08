@@ -111,6 +111,18 @@
     },
     {
       "type": "fn_decl",
+      "name": "fnv1a64",
+      "match_hash": "1f825107d815f6a5854e666fc480679de8b8a4fdb5e1ac0e87cac998e53fba3c",
+      "signature": "fn fnv1a64(input: []const u8) -> u64",
+      "params": [
+        { "name": "input", "type": "[]const u8" }
+      ],
+      "returns": "u64",
+      "is_pub": true,
+      "line": 140
+    },
+    {
+      "type": "fn_decl",
       "name": "hashString",
       "match_hash": "a7d3b62b9d41e8664bfcfc8cb55e79150277332b4717712c91dad2de148351e9",
       "signature": "fn hashString(allocator: std.mem.Allocator, data: []const u8, algorithm: HashAlgorithm) -> []const u8",
@@ -121,7 +133,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 139
+      "line": 152
     },
     {
       "type": "fn_decl",
@@ -133,7 +145,7 @@
       ],
       "returns": "[32]u8",
       "is_pub": true,
-      "line": 167
+      "line": 180
     },
     {
       "type": "fn_decl",
@@ -146,7 +158,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 174
+      "line": 187
     },
     {
       "type": "struct",
@@ -165,7 +177,7 @@
           ],
           "returns": "HashState",
           "is_pub": true,
-          "line": 187
+          "line": 200
         }
     ,    {
           "type": "fn_decl",
@@ -178,7 +190,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 195
+          "line": 208
         }
     ,    {
           "type": "fn_decl",
@@ -191,70 +203,70 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 204
+          "line": 217
         }
       ],
-      "line": 181
+      "line": 194
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 232
+      "line": 245
     },
     {
       "type": "test_decl",
       "name": "sha256Hex is deterministic",
       "is_pub": false,
-      "line": 238
+      "line": 251
     },
     {
       "type": "test_decl",
       "name": "sha256Hex differs for different inputs",
       "is_pub": false,
-      "line": 246
+      "line": 259
     },
     {
       "type": "test_decl",
       "name": "contentHashWithModel is deterministic and model-sensitive",
       "is_pub": false,
-      "line": 254
+      "line": 267
     },
     {
       "type": "test_decl",
       "name": "hashString: sha256",
       "is_pub": false,
-      "line": 262
+      "line": 275
     },
     {
       "type": "test_decl",
       "name": "hashString: blake3",
       "is_pub": false,
-      "line": 268
+      "line": 281
     },
     {
       "type": "test_decl",
       "name": "blake3Hash returns 32 bytes",
       "is_pub": false,
-      "line": 274
+      "line": 287
     },
     {
       "type": "test_decl",
       "name": "blake3Hex produces 64-char hex",
       "is_pub": false,
-      "line": 279
+      "line": 292
     },
     {
       "type": "test_decl",
       "name": "HashState incremental matches single-pass sha256",
       "is_pub": false,
-      "line": 285
+      "line": 298
     },
     {
       "type": "test_decl",
       "name": "HashAlgorithm digestLength",
       "is_pub": false,
-      "line": 301
+      "line": 314
     }
   ]
 }

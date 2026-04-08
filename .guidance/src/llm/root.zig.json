@@ -25,7 +25,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 49
+          "line": 50
         }
     ,    {
           "type": "fn_decl",
@@ -37,7 +37,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 55
+          "line": 56
         }
     ,    {
           "type": "fn_decl",
@@ -49,10 +49,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 63
+          "line": 64
         }
       ],
-      "line": 30
+      "line": 31
     },
     {
       "type": "fn_private",
@@ -65,7 +65,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 79
+      "line": 80
     },
     {
       "type": "struct",
@@ -85,7 +85,7 @@
           ],
           "returns": "LlmClient",
           "is_pub": true,
-          "line": 108
+          "line": 109
         }
     ,    {
           "type": "fn_decl",
@@ -97,7 +97,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 135
+          "line": 136
         }
     ,    {
           "type": "fn_decl",
@@ -113,7 +113,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": true,
-          "line": 140
+          "line": 141
         }
     ,    {
           "type": "fn_private",
@@ -127,7 +127,7 @@
           ],
           "returns": "LlmError!?[]const u8",
           "is_pub": false,
-          "line": 184
+          "line": 185
         }
     ,    {
           "type": "fn_private",
@@ -140,7 +140,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 218
+          "line": 219
         }
     ,    {
           "type": "fn_decl",
@@ -152,10 +152,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 287
+          "line": 288
         }
       ],
-      "line": 95
+      "line": 96
     },
     {
       "type": "fn_private",
@@ -167,37 +167,37 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 326
+      "line": 327
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/chat/completions URL uses it directly",
       "is_pub": false,
-      "line": 354
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with v1/completions URL normalises to v1/chat/completions",
       "is_pub": false,
-      "line": 367
+      "line": 368
     },
     {
       "type": "test_decl",
       "name": "LlmClient init with OpenAI API URL sets is_openai_format",
       "is_pub": false,
-      "line": 380
+      "line": 381
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString escapes properly",
       "is_pub": false,
-      "line": 393
+      "line": 394
     },
     {
       "type": "test_decl",
       "name": "writeEscapedString does not escape braces",
       "is_pub": false,
-      "line": 401
+      "line": 402
     }
   ]
 }

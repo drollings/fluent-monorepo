@@ -1,10 +1,10 @@
 {
   "meta": {
-    "module": "src.coral.delegation",
-    "source": "src/coral/delegation.zig",
+    "module": "src.common.delegation",
+    "source": "src/common/delegation.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",

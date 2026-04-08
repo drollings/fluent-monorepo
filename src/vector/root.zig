@@ -41,3 +41,6 @@ pub const hammingDistance = simhash.hammingDistance;
 pub const similar = simhash.similar;
 pub const maxHamming = simhash.maxHamming;
 pub const TokenSimHash = simhash.TokenSimHash;
+
+pub const quantized_embedding = @import("quantized_embedding.zig");
+pub const QuantizedEmbedding = quantized_embedding.QuantizedEmbedding;

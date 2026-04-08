@@ -302,14 +302,7 @@ pub const L1HashCache = struct {
 
     /// FNV-1a 64-bit hash — stable, fast, suitable for cache keys.
     pub fn hashQuery(query: []const u8) u64 {
-        const FNV_OFFSET: u64 = 14695981039346656037;
-        const FNV_PRIME: u64 = 1099511628211;
-        var h: u64 = FNV_OFFSET;
-        for (query) |byte| {
-            h ^= byte;
-            h *%= FNV_PRIME;
-        }
-        return h;
+        return hashutil.hash.fnv1a64(query);
     }
 };
 

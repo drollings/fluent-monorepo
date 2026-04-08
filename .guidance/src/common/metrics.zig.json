@@ -1,0 +1,110 @@
+{
+  "meta": {
+    "module": "src.common.metrics",
+    "source": "src/common/metrics.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig", "src/coral/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "LatencyHistogram",
+      "match_hash": "51d063c5a4cb70941f88efd03150653d87d5e30b7399074eaed68cdd085eb191",
+      "signature": "keyword_struct LatencyHistogram { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "6e5a0260d97c4f2219e22ccd129c365ccc6d80e790199f9375c9213a76fe39a6",
+          "signature": "fn init() -> LatencyHistogram",
+          "returns": "LatencyHistogram",
+          "is_pub": true,
+          "line": 36
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "observe",
+          "match_hash": "71d81e2725e2360e172ccc59957c8162077eb9ba9fe91b6b83a7628a5370f92c",
+          "signature": "fn observe(self: *LatencyHistogram, latency_ms: u64) -> void",
+          "params": [
+            { "name": "self", "type": "*LatencyHistogram" },
+            { "name": "latency_ms", "type": "u64" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 43
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "cumulativeBucket",
+          "match_hash": "0d252a674e881e4280fd512fd812c6a71032efe9b44430b253a942f8861ab6ec",
+          "signature": "fn cumulativeBucket(self: *const LatencyHistogram, idx: usize) -> u64",
+          "params": [
+            { "name": "self", "type": "*const LatencyHistogram" },
+            { "name": "idx", "type": "usize" }
+          ],
+          "returns": "u64",
+          "is_pub": true,
+          "line": 59
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "estimatePercentile",
+          "match_hash": "db5ada9d3127e4e477482a1c6d80af96ff5726a28a1b70d79cd164e91d6f0f8f",
+          "signature": "fn estimatePercentile(self: *const LatencyHistogram, p: f64) -> u64",
+          "params": [
+            { "name": "self", "type": "*const LatencyHistogram" },
+            { "name": "p", "type": "f64" }
+          ],
+          "returns": "u64",
+          "is_pub": true,
+          "line": 71
+        }
+      ],
+      "line": 26
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: observe increments count and sum",
+      "is_pub": false,
+      "line": 91
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: observe routes to correct bucket",
+      "is_pub": false,
+      "line": 99
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: large value goes to +Inf bucket",
+      "is_pub": false,
+      "line": 109
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: cumulative bucket includes earlier buckets",
+      "is_pub": false,
+      "line": 115
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: estimatePercentile returns 0 when empty",
+      "is_pub": false,
+      "line": 123
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: estimatePercentile p50 with known observations",
+      "is_pub": false,
+      "line": 128
+    },
+    {
+      "type": "test_decl",
+      "name": "LatencyHistogram: thread-safe concurrent observe",
+      "is_pub": false,
+      "line": 138
+    }
+  ]
+}

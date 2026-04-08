@@ -187,3 +187,12 @@ pub const types = @import("types.zig");
 
 // ── Pattern detection ──────────────────────────────────────────────────────────
 pub const pattern = @import("pattern.zig");
+
+// ── Latency metrics (LatencyHistogram, BUCKET_MS, BUCKET_COUNT) ───────────────
+pub const metrics = @import("metrics.zig");
+
+// ── Agent delegation (DelegationConfig, DelegationResult, Delegation) ─────────
+pub const delegation = @import("delegation.zig");
+
+// ── FNV-1a hash (fnv1a64) ─────────────────────────────────────────────────────
+pub const fnv1a64 = hash_mod.fnv1a64;

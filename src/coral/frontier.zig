@@ -14,7 +14,7 @@ const coral_db = @import("coral_db");
 const ContextNode = coral_db.ContextNode;
 const ContextPacker = coral_db.ContextPacker;
 const schema = coral_db.schema;
-const anonymize_mod = @import("anonymize.zig");
+const anonymize_mod = @import("llm").anonymize;
 const tool_compiler = @import("frontier_tool_compiler.zig");
 const wasm_mod = @import("wasm");
 

@@ -135,6 +135,19 @@ pub fn hashBatch(
     return results;
 }
 
+/// FNV-1a 64-bit hash — non-cryptographic, stable, fast, suitable for cache keys.
+/// Uses the standard FNV-1a offset basis and prime.
+pub fn fnv1a64(input: []const u8) u64 {
+    const FNV_OFFSET: u64 = 14695981039346656037;
+    const FNV_PRIME: u64 = 1099511628211;
+    var h: u64 = FNV_OFFSET;
+    for (input) |byte| {
+        h ^= byte;
+        h *%= FNV_PRIME;
+    }
+    return h;
+}
+
 /// Converts a byte slice into a Zig hash using the provided algorithm.
 pub fn hashString(
     allocator: std.mem.Allocator,

@@ -12,6 +12,7 @@ const std = @import("std");
 const llm_mod = @import("llm.zig");
 
 pub const token_budget = @import("token_budget.zig");
+pub const anonymize = @import("anonymize.zig");
 
 // ── Error set ────────────────────────────────────────────────────────────────
 

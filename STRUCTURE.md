@@ -93,7 +93,6 @@ Then you you must read
 │   │   ├── MCP.md
 │   │   └── VISION.md
 │   ├── prompts
-│   ├── reports
 │   ├── reviews
 │   └── skills
 │       ├── fluent-wvr
@@ -169,7 +168,6 @@ Then you you must read
 │   │   │   └── union_find.zig                  # union_find.zig — Union-Find with path compression and union by size.
 │   │   ├── agent_loop.zig                        # agent_loop.zig — Agent-Loop Reserved Tools (P4.2)
 │   │   ├── algorithm_runner.zig                  # algorithm_runner.zig — Algorithm Runner with Strict Ingestion/Query Separation (P3.6)
-│   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── benchmark.zig                         # benchmark.zig — G5 Performance Benchmarks
 │   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing
@@ -179,7 +177,6 @@ Then you you must read
 │   │   ├── context_node_schema.zig
 │   │   ├── csr_graph.zig                         # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
-│   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── drift.zig                             # drift.zig — Re-exports BitSet DRIFT from src/common/drift.zig.
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
@@ -193,7 +190,6 @@ Then you you must read
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
 │   │   ├── pattern.zig
-│   │   ├── quantized_embedding.zig               # quantized_embedding.zig — int8 Quantized Embeddings for Memory Efficiency
 │   │   ├── schema.zig                            # schema.zig — Coral Context SQLite Schema (DDL + Queries)
 │   │   ├── session.zig                           # session.zig — Coral Session Persistence (SQLite + FTS5)
 │   │   ├── targets.zig                           # targets.zig — Ingestion DAG Target Definitions

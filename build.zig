@@ -528,6 +528,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
@@ -583,10 +584,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // -- Coral anonymize tests (Task 8.2) --
+    // -- LLM anonymize tests (moved from coral/ Task 8.2) --
     const coral_anonymize_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/anonymize.zig"),
+            .root_source_file = b.path("src/llm/anonymize.zig"),
             .target = target,
             .optimize = optimize,
         }),

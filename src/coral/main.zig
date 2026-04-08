@@ -529,5 +529,5 @@ test "coral: core module imports compile" {
     _ = @import("token_budget.zig"); // M7.1 TokenEstimator
     _ = @import("metrics.zig"); // M8.1 LatencyHistogram
     _ = @import("http_transport.zig"); // M4.1 HTTP/SSE transport
-    _ = @import("quantized_embedding.zig"); // P5.2 int8 embeddings
+    // quantized_embedding moved to src/vector/quantized_embedding.zig (P5.2 int8 embeddings)
 }
