@@ -51,5 +51,5 @@ Plain HTTP is only permitted for localhost/127.x/::1 addresses. Remote embedding
 |------|-----------|--------|
 | `src/common/embeddings.zig` | 1.0 | defines_anchor |
 | `src/common/root.zig` | 0.9 | used_by |
-| `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
+| `src/vector/quantized_embedding.zig` | 0.4 | path_heuristic |
 

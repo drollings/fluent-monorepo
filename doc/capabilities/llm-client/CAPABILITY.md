@@ -7,11 +7,13 @@ anchors:
   - LlmError
   - stripThinkBlock
   - isMalformedResponse
+  - anonymizeContext
+  - AnonymizationPattern
 ---
 
 # LLM Client
 
-`src/llm/root.zig` exports `LlmClient` and `LlmConfig`, a thin HTTP wrapper over OpenAI-compatible `/v1/chat/completions` endpoints. Post-processing helpers live in `src/common/llm.zig` alongside string utilities.
+`src/llm/root.zig` exports `LlmClient` and `LlmConfig`, a thin HTTP wrapper over OpenAI-compatible `/v1/chat/completions` endpoints. Post-processing helpers live in `src/llm/llm.zig`.
 
 ## LlmConfig
 
@@ -53,18 +55,33 @@ defer allocator.free(raw);
 const clean = stripThinkBlock(raw);
 ```
 
+## PII anonymization
+
+`src/llm/anonymize.zig` strips PII from context before it is sent to frontier LLMs. Eleven pattern types: email, US/intl phone, credit card, US/UK/CA SSN, IPv4/IPv6, Bearer token, AWS key, generic 32-char alphanumeric token.
+
+```zig
+const result = try anonymize.anonymizeContext(allocator, raw_context, &.{
+    .email, .ipv4, .api_key_bearer, .api_key_aws,
+});
+defer allocator.free(result);
+```
+
+Patterns are applied in sequence; result of one pass becomes input of the next. Access via `@import("llm").anonymize`.
+
 ## Key files
 
-- `src/llm/root.zig` — `LlmError`, `LlmConfig`, `LlmClient`
-- `src/common/llm.zig` — `stripThinkBlock`, `isMalformedResponse`, `parseJsonArray`, string helpers
+- `src/llm/root.zig` — `LlmError`, `LlmConfig`, `LlmClient`; re-exports `anonymize` namespace
+- `src/llm/llm.zig` — `stripThinkBlock`, `isMalformedResponse`, `extractCommentTag`, `stripPreamble`
+- `src/llm/anonymize.zig` — `AnonymizationPattern`, `anonymizeContext`
 - `src/common/local_model.zig` — primary consumer (`LocalDecomposer`)
 - `src/guidance/staged.zig` — guidance synthesis consumer
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Sources (10 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
+| `src/llm/anonymize.zig` | 1.0 | defines_anchor |
 | `src/llm/root.zig` | 1.0 | defines_anchor |
 | `src/llm/llm.zig` | 1.0 | defines_anchor |
 | `src/common/local_model.zig` | 1.0 | defines_anchor |

@@ -1841,7 +1841,17 @@ fn postProcessCommentSync(
             .@"1",
             0,
         ) catch |err| {
-            std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
+            if (err == error.FileNotFound) {
+                // Source file was deleted — the JSON is an orphan.  Remove it so
+                // discover-capability-sources cannot emit stale AUTO-SOURCES entries.
+                std.fs.deleteFileAbsolute(json_path) catch {};
+                if (verbose) std.debug.print(
+                    "post-process: removed orphaned JSON for deleted source {s}\n",
+                    .{src_abs},
+                );
+            } else {
+                std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
+            }
             allocator.free(src_abs);
             store.freeGuidanceDoc(doc);
             continue;

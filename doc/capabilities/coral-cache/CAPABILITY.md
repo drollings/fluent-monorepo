@@ -45,7 +45,7 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 - `src/common/local_model.zig` — `LocalDecomposer` (L4.5)
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (41 files, auto-discovered)
+## Sources (38 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -69,11 +69,8 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 | `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
 | `src/coral/batch.zig` | 0.4 | path_heuristic |
 | `src/coral/executor.zig` | 0.4 | path_heuristic |
-| `src/coral/delegation.zig` | 0.4 | path_heuristic |
 | `src/coral/fixtures.zig` | 0.4 | path_heuristic |
-| `src/coral/quantized_embedding.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
-| `src/coral/anonymize.zig` | 0.4 | path_heuristic |
 | `src/coral/cache_test.zig` | 0.4 | path_heuristic |
 | `src/coral/pattern.zig` | 0.4 | path_heuristic |
 | `src/coral/schema.zig` | 0.4 | path_heuristic |

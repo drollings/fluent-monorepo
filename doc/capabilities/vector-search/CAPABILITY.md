@@ -8,6 +8,7 @@ anchors:
   - hybridSearch
   - SemanticAliases
   - cosineSimilarity
+  - QuantizedEmbedding
 ---
 
 # Vector Search
@@ -46,11 +47,11 @@ Example: `"guidance database module — function syncDatabase: synchronises the 
 
 ## Key files
 
-- `src/vector/vector_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`
-- `src/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`
+- `src/vector/vector_db.zig` — `GuidanceDb`, `vectorSearch`, `keywordSearch`, `hybridSearch`, `SemanticAliases`, `DbSyncBuilder`
+- `src/vector/math.zig` — `cosineSimilarity`, `vecToBytes`, `bytesToVec`, `hybridMerge`, `hybridMergeThree`
+- `src/vector/quantized_embedding.zig` — `QuantizedEmbedding` (int8, 4× memory reduction, edge deployments)
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable (moved from `src/vector/` in P1.3)
-- `src/vector/vector_db.zig` — `SemanticAliases`, `loadSemanticAliases`, `DbSyncBuilder.withAliases`
-- `src/vector/root.zig` — re-exports `SemanticAliases`, `loadSemanticAliases`
+- `src/vector/root.zig` — re-exports all of the above
 
 ## Semantic alias expansion
 
@@ -65,6 +66,18 @@ const aliases = try loadSemanticAliases(allocator, ".guidance/semantic-aliases.j
 
 `DbSyncBuilder` exposes `withAliases(SemanticAliases)` to pass pre-loaded aliases into `syncDatabase`.
 
+## Quantized embeddings
+
+`src/vector/quantized_embedding.zig` provides int8 quantization for memory-constrained deployments (4× footprint reduction). Suitable as a preliminary filter before full-precision reranking.
+
+```zig
+var qe = try QuantizedEmbedding.fromF32(allocator, f32_vec);
+defer qe.deinit(allocator);
+const sim = qe.cosineSimilarity(other_qe); // int8 arithmetic, no float sqrt
+```
+
+Serialization format: `[dim: u32LE][scale: f32LE][data: dim × i8]`. Accessible via `@import("vector").QuantizedEmbedding`.
+
 ## Performance notes
 
 - Embedding cache (`embedding_cache` table) avoids redundant API calls on re-sync
@@ -72,13 +85,14 @@ const aliases = try loadSemanticAliases(allocator, ".guidance/semantic-aliases.j
 - Partial index `WHERE embedding IS NOT NULL` keeps the scan fast
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (6 files, auto-discovered)
+## Sources (7 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/vector/vector_db.zig` | 1.0 | defines_anchor |
 | `src/vector/math.zig` | 1.0 | defines_anchor |
 | `src/guidance/vector_db.zig` | 1.0 | defines_anchor |
+| `src/vector/quantized_embedding.zig` | 1.0 | defines_anchor |
 | `src/vector/root.zig` | 0.9 | used_by |
 | `src/vector/hnsw.zig` | 0.4 | path_heuristic |
 | `src/vector/simhash.zig` | 0.4 | path_heuristic |
