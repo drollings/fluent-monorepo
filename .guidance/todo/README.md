@@ -28,8 +28,8 @@ cat > .guidance/todo`/my-feature/TODO.md << 'EOF'
 Describe what needs to be done.
 
 ## Files to change
-- src/foo.py
-- bin/guidance.py
+- src/common/foo.zig
+- src/guidance/main.zig
 
 ## Acceptance criteria
 - Tests pass
