@@ -105,7 +105,8 @@ pub const parseJsonFile = json_mod.parseJsonFile;
 
 // ── Shared string ─────────────────────────────────────────────────────────────
 /// Reference-counted immutable string.  Use SharedString.Ref as the handle.
-pub const SharedString = @import("shared_string.zig").SharedString;
+/// Imported from the external zigsharedstring package.
+pub const SharedString = @import("zigsharedstring").SharedString;
 
 // ── Content node ──────────────────────────────────────────────────────────────
 /// LOD text pyramid backed by a ref-counted SharedString.  Common primitive

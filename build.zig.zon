@@ -8,6 +8,9 @@
             .url = "git+https://github.com/rockorager/libvaxis#main",
             .hash = "12202d749c8bbeb60229b288857f6ade589090a300cee8d64b81c9b8d8ea87947deb",
         },
+        .zigsharedstring = .{
+            .path = "../zigsharedstring",
+        },
     },
     .paths = .{
         "build.zig",

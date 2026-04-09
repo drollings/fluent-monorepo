@@ -13,6 +13,11 @@ pub fn build(b: *std.Build) void {
     });
     _ = vaxis; // Reserved for future TUI work; remove _ when coral TUI lands.
 
+    const zigsharedstring = b.dependency("zigsharedstring", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // -------------------------------------------------------------------------
     // Core named modules
     // -------------------------------------------------------------------------
@@ -47,6 +52,7 @@ pub fn build(b: *std.Build) void {
     // All sub-modules are within src/common/ so relative imports are valid.
     // Note: common does NOTimport dag to avoid circular dependency.
     // DAG types are defined in src/dag/ and consumers should import from "dag" module directly.
+    // SharedString is imported from the external zigsharedstring package.
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/root.zig"),
         .target = target,
@@ -54,6 +60,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "llm", .module = llm_module },
             .{ .name = "reflection", .module = reflection_module },
+            .{ .name = "zigsharedstring", .module = zigsharedstring.module("zigsharedstring") },
         },
     });
 

@@ -17,7 +17,7 @@
 /// ContentNode is a common primitive reused by ContextNode (coral) and any
 /// other subsystem that needs a SharedString-backed LOD text pyramid.
 const std = @import("std");
-const SharedString = @import("shared_string.zig").SharedString;
+const SharedString = @import("zigsharedstring").SharedString;
 const LOD_COUNT = @import("types.zig").LOD_COUNT;
 
 /// Text content at multiple levels of detail, backed by a ref-counted SharedString for lod[0].
