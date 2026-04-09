@@ -54,20 +54,20 @@ pub const ContentNode = struct {
     /// Replace the shared source text (lod[0]).  Releases the old SharedString.
     pub fn setSource(self: *ContentNode, allocator: std.mem.Allocator, text: []const u8) !void {
         const new_src = try SharedString.Ref.init(allocator, text);
-        if (self.source) |old| old.deinit(allocator);
+        if (self.source) |old| old.release(allocator);
         self.source = new_src;
         self.lod[0] = new_src.slice();
     }
 
-    /// Deep-copy this node.  lod[0] is shared via clone() (no byte copy);
+    /// Deep-copy this node.  lod[0] is shared via retain() (no byte copy);
     /// lod[1..5] slots marked in lod_owned are duped into `allocator`.
     pub fn clone(self: *const ContentNode, allocator: std.mem.Allocator) !ContentNode {
         var copy = self.*;
         copy.lod_owned = 0;
 
-        // lod[0]: clone the SharedString ref or dupe the raw slice.
+        // lod[0]: retain the SharedString ref or dupe the raw slice.
         if (self.source) |src| {
-            copy.source = src.clone();
+            copy.source = src.retain();
             copy.lod[0] = copy.source.?.slice();
         } else if (self.lod_owned & 1 != 0) {
             copy.lod[0] = try allocator.dupe(u8, self.lod[0]);
@@ -89,7 +89,7 @@ pub const ContentNode = struct {
     pub fn free(self: *ContentNode, allocator: std.mem.Allocator) void {
         // lod[0]: release via SharedString ref.
         if (self.source) |src| {
-            src.deinit(allocator);
+            src.release(allocator);
             self.source = null;
             self.lod[0] = "";
         }

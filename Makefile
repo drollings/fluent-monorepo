@@ -196,7 +196,7 @@ clean: clean-db ## Remove build artifacts and markers (keeps venv and .guidance 
 
 .PHONY: clean-db
 clean-db: ## Remove build artifacts and markers (keeps venv and .guidance config)
-	$(Q)rm -rf .$(GUIDANCE_DB)
+	$(Q)rm -f $(GUIDANCE_DB)
 
 .PHONY: clean-all
 clean-all: clean ## Remove stale JSON files from .guidance/src

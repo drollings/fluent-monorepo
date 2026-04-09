@@ -109,7 +109,7 @@ pub const ContextNode = struct {
         return self.content.setSource(allocator, text);
     }
 
-    /// Deep-copy this node.  lod[0] is shared via clone() (no byte copy);
+    /// Deep-copy this node.  lod[0] is shared via retain() (no byte copy);
     /// lod[1..5] slots marked in lod_owned are duped into `allocator`.
     pub fn clone(self: *const ContextNode, allocator: std.mem.Allocator) !ContextNode {
         var copy = self.*;

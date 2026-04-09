@@ -62,11 +62,10 @@ fn buildNotFoundStages(
     }
 
     // Stage 1: Not-found prose message
-    const msg = try std.fmt.allocPrint(allocator, "No code found matching '{s}' in this codebase. " ++
-        "The query did not match any indexed source files with sufficient confidence.\n\n" ++
+    const msg = try std.fmt.allocPrint(allocator, "The query '{s}' did not match any indexed source files with sufficient confidence.\n\n" ++
         "Try:\n" ++
+        "- Running `guidance explain` to see the main index of indexed subjects.\n" ++
         "- A more specific identifier (e.g. a function or struct name)\n" ++
-        "- A different keyword from the codebase vocabulary\n" ++
         "- Running `guidance gen` if the code was recently added", .{query});
     try stages.append(allocator, .{
         .kind = .not_found,

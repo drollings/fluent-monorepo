@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "d084ee60d8bc2eebbbb22326a563b1be3e4685c03a31fed96c6f5953ded1fd5b",
+      "match_hash": "3981d9b03150b2c240447279b91287c5b03fadaba80b197c283edfcbe244db32",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -18,118 +18,112 @@
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 45
+          "line": 43
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 46
+          "line": 44
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 47
+          "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 48
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 49
-        }
-    ,    {
-          "type": "enum_field",
-          "name": "deps",
-          "is_pub": false,
-          "line": 50
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 51
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 52
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 53
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 54
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 55
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 56
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 57
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 58
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "@\"cache-stats\"",
           "is_pub": false,
-          "line": 59
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 60
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 61
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "scan",
           "is_pub": false,
-          "line": 62
+          "line": 59
         }
     ,    {
           "type": "enum_field",
           "name": "codehealth",
           "is_pub": false,
-          "line": 63
+          "line": 60
         }
       ],
-      "line": 44
+      "line": 42
     },
     {
       "type": "fn_decl",
@@ -138,7 +132,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 67
+      "line": 64
     },
     {
       "type": "fn_private",
@@ -151,7 +145,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 134
+      "line": 130
     },
     {
       "type": "fn_private",
@@ -160,7 +154,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 139
+      "line": 135
     },
     {
       "type": "fn_private",
@@ -173,20 +167,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 260
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdDeps",
-      "match_hash": "5fb19e1220b91320c8a6949b16271b7ca65590e887b78de94feaca1ed838b7e4",
-      "signature": "fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 293
+      "line": 254
     }
   ]
 }

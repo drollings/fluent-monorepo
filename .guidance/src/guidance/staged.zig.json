@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output",
-  "capabilities": ["explain-query", "coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/query_strategy.zig", "src/guidance/scanner.zig"],
   "members": [
     {
@@ -64,7 +63,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 102
+      "line": 101
     },
     {
       "type": "fn_decl",
@@ -81,7 +80,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 132
+      "line": 131
     },
     {
       "type": "fn_decl",
@@ -101,7 +100,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 637
+      "line": 636
     },
     {
       "type": "fn_decl",
@@ -117,7 +116,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 726
+      "line": 725
     },
     {
       "type": "fn_decl",
@@ -134,7 +133,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 952
+      "line": 951
     },
     {
       "type": "fn_private",
@@ -146,7 +145,7 @@
       ],
       "returns": "types.MemberType",
       "is_pub": false,
-      "line": 990
+      "line": 989
     },
     {
       "type": "fn_decl",
@@ -162,7 +161,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 1004
+      "line": 1003
     },
     {
       "type": "fn_decl",
@@ -177,7 +176,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 1022
+      "line": 1021
     },
     {
       "type": "fn_decl",
@@ -191,7 +190,7 @@
       ],
       "returns": "?types.Stage",
       "is_pub": true,
-      "line": 1038
+      "line": 1037
     },
     {
       "type": "fn_private",
@@ -204,7 +203,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 1153
+      "line": 1152
     },
     {
       "type": "fn_decl",
@@ -217,7 +216,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 1163
+      "line": 1162
     },
     {
       "type": "fn_decl",
@@ -230,7 +229,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1199
+      "line": 1198
     },
     {
       "type": "fn_decl",
@@ -244,73 +243,73 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1204
+      "line": 1203
     },
     {
       "type": "test_decl",
       "name": "formatStaged: empty stages output contains header",
       "is_pub": false,
-      "line": 1228
+      "line": 1227
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage with line emits source path and line number",
       "is_pub": false,
-      "line": 1235
+      "line": 1234
     },
     {
       "type": "test_decl",
       "name": "formatStaged: code stage without line still emits code block",
       "is_pub": false,
-      "line": 1249
+      "line": 1248
     },
     {
       "type": "test_decl",
       "name": "formatStaged: summary appears before code sections",
       "is_pub": false,
-      "line": 1263
+      "line": 1262
     },
     {
       "type": "test_decl",
       "name": "formatStaged: skill_doc stage produces Knowledge Base section",
       "is_pub": false,
-      "line": 1280
+      "line": 1279
     },
     {
       "type": "test_decl",
       "name": "formatStaged: metadata stage with keywords prefix produces References section",
       "is_pub": false,
-      "line": 1294
+      "line": 1293
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter with description returns description",
       "is_pub": false,
-      "line": 1308
+      "line": 1307
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: YAML front matter without description returns first non-empty body line",
       "is_pub": false,
-      "line": 1324
+      "line": 1323
     },
     {
       "type": "test_decl",
       "name": "parseSkillDocContent: no front matter returns first paragraph up to blank line",
       "is_pub": false,
-      "line": 1340
+      "line": 1339
     },
     {
       "type": "test_decl",
       "name": "formatStaged: capability_doc stage renders Capability section",
       "is_pub": false,
-      "line": 1349
+      "line": 1348
     },
     {
       "type": "test_decl",
       "name": "formatStaged: keywords are capped at 10 unique items",
       "is_pub": false,
-      "line": 1363
+      "line": 1362
     }
   ]
 }

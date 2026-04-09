@@ -2286,7 +2286,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var benchmark_results: std.ArrayList(BenchmarkResult) = .empty;
     defer {
         for (benchmark_results.items) |*result| {
-            result.query.deinit(allocator);
+            result.query.release(allocator);
         }
         benchmark_results.deinit(allocator);
     }

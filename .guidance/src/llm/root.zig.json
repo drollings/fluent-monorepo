@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " llm — General-purpose LLM inference client.\n\n Provides:\n   LlmError    — error set for all LLM operations\n   LlmConfig   — endpoint, model, timeout, think-mode settings\n   LlmClient   — HTTP chat-completion client (OpenAI + Ollama)\n\n Response post-processing (stripThinkBlock, isMalformedResponse, etc.) lives\n in src/llm/llm.zig alongside the string utilities they depend on.",
-  "capabilities": ["llm-client"],
   "used_by": ["src/vector/vector_db.zig"],
   "members": [
     {

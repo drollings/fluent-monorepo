@@ -24,7 +24,6 @@ const todo_mod = @import("todo.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
 const query_engine_mod = @import("query_engine.zig");
-const deps_mod = @import("deps.zig");
 const schema_validator_mod = @import("schema_validator.zig");
 const doc_parser_mod = @import("doc_parser.zig");
 const llm = @import("common");

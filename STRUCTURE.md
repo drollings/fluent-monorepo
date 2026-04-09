@@ -222,7 +222,6 @@ Then you you must read
 │   │   ├── comment_parser.zig                    # comment_parser.zig — Doc comment parsing and quality validation for guidance.
 │   │   ├── comment_sync.zig                      # comment_sync.zig — Source-code-first comment sync workflow for guidance.
 │   │   ├── config.zig                            # guidance project configuration loader.
-│   │   ├── deps.zig
 │   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
 │   │   ├── document_indexer.zig                  # [gof-patterns]  document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
@@ -247,6 +246,7 @@ Then you you must read
 │   │   ├── ralph.zig                             # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                           # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
+│   │   ├── skeleton.zig                          # skeleton.zig — File and struct skeleton extraction for token-efficient discovery.
 │   │   ├── stage_builder.zig                     # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                         # STRUCTURE.md generator.
@@ -263,7 +263,6 @@ Then you you must read
 │   ├── guidance-rs
 │   │   └── src
 │   │       └── main.rs
-│   ├── guidance-rust
 │   ├── llm
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── context_compressor.zig                # context_compressor.zig — Context Compression for Token Budget Management

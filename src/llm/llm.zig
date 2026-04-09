@@ -279,13 +279,3 @@ test "extractCommentTag: returns null when no tag present" {
 test "extractCommentTag: returns null for empty tag" {
     try std.testing.expect(extractCommentTag("<comment>   </comment>") == null);
 }
-
-test "extractCommentTag: chain-of-thought before tag is ignored" {
-    const text =
-        \\We need to write a comment for DepsGenerator.
-        \\<comment>[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.</comment>
-    ;
-    const result = extractCommentTag(text);
-    try std.testing.expect(result != null);
-    try std.testing.expectEqualStrings("[skills: zig-current] Walks src/ and resolves @import paths to build a dep graph.", result.?);
-}

@@ -9,12 +9,10 @@
 //!   guidance status   [options]   Report generation status
 //!   guidance clean    [options]   Remove .guidance/ and .guidance.db
 //!   guidance structure [options]  Update STRUCTURE.md from guidance JSON
-//!   guidance deps     [options]   Generate Makefile .depend file
 
 const std = @import("std");
 const types = @import("types.zig");
 const structure_mod = @import("structure.zig");
-const deps_mod = @import("deps.zig");
 const config_mod = @import("config.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 const query_engine_mod = @import("query_engine.zig");
@@ -40,14 +38,13 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Manages command execution with fixed-size buffers; owned by the system; ensures safe initialization/deinit.
+/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
 const Command = enum {
     init,
     gen,
     status,
     clean,
     structure,
-    deps,
     explain,
     commit,
     check,
@@ -109,7 +106,6 @@ pub fn main() !void {
         .status => sync_engine_mod.cmdStatus(allocator, args[2..]),
         .clean => sync_engine_mod.cmdClean(allocator, args[2..]),
         .structure => cmdStructure(allocator, args[2..]),
-        .deps => cmdDeps(allocator, args[2..]),
         .explain => query_engine_mod.cmdExplain(allocator, args[2..]),
         .commit => sync_engine_mod.cmdCommit(allocator, args[2..]),
         .check => sync_engine_mod.cmdCheck(allocator, args[2..]),
@@ -156,7 +152,6 @@ fn printHelp() !void {
         \\  status     Show generation status (synced, stale, missing)
         \\  clean      Remove .guidance/src and .guidance.db
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
-        \\  deps       Generate Makefile .depend file from Zig imports
         \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
         \\  check           Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit          Generate AI commit message from staged diff + guidance
@@ -231,7 +226,6 @@ fn printHelp() !void {
         \\  guidance show --filter=keywords
         \\  guidance clean
         \\  guidance structure
-        \\  guidance deps --src src > zig.depend
         \\  guidance commit
         \\  guidance check
         \\  guidance codehealth
@@ -286,30 +280,6 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
 }
 
 // =============================================================================
-// deps — thin wrapper (delegates to deps_mod)
-// =============================================================================
-
-/// Processes allocation arguments to prepare dependency data structure.
-fn cmdDeps(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var src_dir: []const u8 = "src";
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--src")) {
-            i += 1;
-            if (i >= args.len) return;
-            src_dir = args[i];
-        }
-    }
-
-    const cwd = try std.process.getCwdAlloc(allocator);
-    defer allocator.free(cwd);
-
-    var deps_gen = deps_mod.DepsGenerator.init(allocator, cwd);
-    try deps_gen.generateDependencies(src_dir);
-}
-
-// =============================================================================
 // Re-exports for tests.zig (public wrapper surface)
 // =============================================================================
 
@@ -328,4 +298,5 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
+
 

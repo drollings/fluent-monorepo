@@ -220,12 +220,6 @@
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
       "line": 279
-    },
-    {
-      "type": "test_decl",
-      "name": "extractCommentTag: chain-of-thought before tag is ignored",
-      "is_pub": false,
-      "line": 283
     }
   ]
 }
