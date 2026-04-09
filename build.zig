@@ -18,6 +18,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const zigrc = b.dependency("zigrc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // -------------------------------------------------------------------------
     // Core named modules
     // -------------------------------------------------------------------------
@@ -53,6 +58,7 @@ pub fn build(b: *std.Build) void {
     // Note: common does NOTimport dag to avoid circular dependency.
     // DAG types are defined in src/dag/ and consumers should import from "dag" module directly.
     // SharedString is imported from the external zigsharedstring package.
+    // Arc, Rc, and reference-counting primitives from the external zigrc package.
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/root.zig"),
         .target = target,
@@ -61,6 +67,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "llm", .module = llm_module },
             .{ .name = "reflection", .module = reflection_module },
             .{ .name = "zigsharedstring", .module = zigsharedstring.module("zigsharedstring") },
+            .{ .name = "zigrc", .module = zigrc.module("zigrc") },
         },
     });
 

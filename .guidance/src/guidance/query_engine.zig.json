@@ -8,7 +8,6 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["explain-query", "plugin-system", "coral-database", "config-system", "coral-mcp", "sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/main.zig", "src/guidance/mcp.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

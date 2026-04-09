@@ -11,6 +11,9 @@
         .zigsharedstring = .{
             .path = "../zigsharedstring",
         },
+        .zigrc = .{
+            .path = "../../development/zig/zigrc",
+        },
     },
     .paths = .{
         "build.zig",

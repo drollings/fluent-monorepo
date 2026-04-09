@@ -144,7 +144,6 @@ Then you you must read
 │   │   ├── refcount.zig                          # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── repl.zig
 │   │   ├── root.zig                              # common — Module umbrella root.
-│   │   ├── shared_string.zig                     # SharedString — heap-allocated, reference-counted, copy-on-write immutable string.
 │   │   ├── shell.zig                             # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                      # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── source.zig                            # source.zig — Source code excerpt extraction helpers

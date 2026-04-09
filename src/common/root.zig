@@ -108,6 +108,21 @@ pub const parseJsonFile = json_mod.parseJsonFile;
 /// Imported from the external zigsharedstring package.
 pub const SharedString = @import("zigsharedstring").SharedString;
 
+// ── Reference counting (zigrc) ────────────────────────────────────────────────
+/// Single-threaded reference counting: Rc(T), SecureRc(T).
+pub const rc = @import("zigrc");
+/// Convenience re-exports from zigrc for direct access.
+pub const Rc = rc.Rc;
+pub const SecureRc = rc.SecureRc;
+pub const RcAligned = rc.RcAligned;
+pub const RcUnmanaged = rc.RcUnmanaged;
+pub const RcAlignedUnmanaged = rc.RcAlignedUnmanaged;
+pub const Arc = rc.Arc;
+pub const SecureArc = rc.SecureArc;
+pub const ArcAligned = rc.ArcAligned;
+pub const ArcUnmanaged = rc.ArcUnmanaged;
+pub const ArcAlignedUnmanaged = rc.ArcAlignedUnmanaged;
+
 // ── Content node ──────────────────────────────────────────────────────────────
 /// LOD text pyramid backed by a ref-counted SharedString.  Common primitive
 /// for ContextNode and any subsystem needing multi-level text representation.
