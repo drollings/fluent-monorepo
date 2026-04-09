@@ -67,7 +67,7 @@ help: ## Show this help
 # This rule is kept for direct `make .explain.db` invocations.
 $(GUIDANCE_DB): | $(TARGET_BIN)
 	$(Q)echo "Syncing database: $@"
-	$(Q)$(TARGET_BIN) gen --workspace . --json-dir $(GUIDANCE_DIR) --db $@ --timeout 1
+	$(Q)$(TARGET_BIN) check --workspace . --json-dir $(GUIDANCE_DIR) --db $@ --timeout 1
 	$(Q)touch $@
 
 .PHONY: commit

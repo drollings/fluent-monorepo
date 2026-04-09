@@ -21,6 +21,12 @@ doc/Legacy
 
 # guidance test_passed marker (auto-generated)
 .guidance/.marks/
+.guidance-cpp-build/
+.guidance/bin/
+.guidance/capabilities
+.guidance/skills
+bin/guidance-cpp
+data/
 
 # =============================================================================
 # Python Virtual Environments & Package Management
