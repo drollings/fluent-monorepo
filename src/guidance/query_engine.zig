@@ -233,7 +233,7 @@ fn collectSkillExcerpts(
     guidance_dir: []const u8,
     workspace: []const u8,
 ) ![]SkillExcerpt {
-    var out: std.ArrayList(SkillExcerpt) = .{};
+    var out: std.ArrayList(SkillExcerpt) = .empty;
     errdefer {
         for (out.items) |se| {
             allocator.free(se.name);
@@ -270,7 +270,7 @@ fn collectSourceExcerpts(
     search_terms: []const []const u8,
     workspace: []const u8,
 ) ![]ExcerptEntry {
-    var out: std.ArrayList(ExcerptEntry) = .{};
+    var out: std.ArrayList(ExcerptEntry) = .empty;
     errdefer {
         for (out.items) |e| {
             allocator.free(e.label);
@@ -280,7 +280,7 @@ fn collectSourceExcerpts(
     }
 
     // Re-sort: exact-name-match first, then non-test, then score.
-    var sorted: std.ArrayList(SearchResult) = .{};
+    var sorted: std.ArrayList(SearchResult) = .empty;
     defer sorted.deinit(allocator);
     for (results) |r| try sorted.append(allocator, r);
     std.sort.insertion(SearchResult, sorted.items, search_terms, struct {
@@ -334,7 +334,7 @@ fn grepTopFiles(
     search_terms: []const []const u8,
     workspace: []const u8,
 ) ![]FileMatchItem {
-    var out: std.ArrayList(FileMatchItem) = .{};
+    var out: std.ArrayList(FileMatchItem) = .empty;
     errdefer {
         for (out.items) |fm| allocator.free(fm.lines);
         out.deinit(allocator);
@@ -404,7 +404,7 @@ fn renderExplainOutput(
 
     // Keywords: public non-test members from primary source JSON, excluding search terms.
     {
-        var kw_buf: std.ArrayList(u8) = .{};
+        var kw_buf: std.ArrayList(u8) = .empty;
         defer kw_buf.deinit(allocator);
         var kw_count: usize = 0;
 
@@ -431,7 +431,7 @@ fn renderExplainOutput(
 
     // See also: used_by from top result + secondary file paths.
     {
-        var see_buf: std.ArrayList(u8) = .{};
+        var see_buf: std.ArrayList(u8) = .empty;
         defer see_buf.deinit(allocator);
         var see_count: usize = 0;
 
@@ -718,7 +718,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     }
 
     // Build normalised search terms (lowercase tokens).
-    var search_terms: std.ArrayList([]const u8) = .{};
+    var search_terms: std.ArrayList([]const u8) = .empty;
     defer {
         for (search_terms.items) |t| allocator.free(t);
         search_terms.deinit(allocator);
@@ -787,7 +787,7 @@ fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]
     const ub_val = parsed.value.object.get("used_by") orelse return null;
     if (ub_val != .array) return null;
 
-    var out: std.ArrayList([]const u8) = .{};
+    var out: std.ArrayList([]const u8) = .empty;
     for (ub_val.array.items) |item| {
         if (item != .string) continue;
         out.append(allocator, allocator.dupe(u8, item.string) catch continue) catch continue;
@@ -819,7 +819,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
     const skills_val = parsed.value.object.get("skills") orelse return null;
     if (skills_val != .array) return null;
 
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     for (skills_val.array.items) |item| {
         // skills[] entries may be strings or objects with a "ref" field.
         const ref: []const u8 = switch (item) {
@@ -854,7 +854,7 @@ fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[
     const members_val = parsed.value.object.get("members") orelse return null;
     if (members_val != .array) return null;
 
-    var out: std.ArrayList([]const u8) = .{};
+    var out: std.ArrayList([]const u8) = .empty;
     for (members_val.array.items) |item| {
         if (item != .object) continue;
         // Skip non-public members.
@@ -928,7 +928,7 @@ fn explainGrepFile(
     const content = f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return &.{};
     defer allocator.free(content);
 
-    var line_numbers: std.ArrayList(usize) = .{};
+    var line_numbers: std.ArrayList(usize) = .empty;
     errdefer line_numbers.deinit(allocator);
     var it = std.mem.splitScalar(u8, content, '\n');
     var line_no: usize = 0;
@@ -958,7 +958,7 @@ fn buildLlmSummary(
     skill_excerpts_in: []const SkillExcerpt,
     excerpts_in: []const ExcerptEntry,
 ) !?[]const u8 {
-    var kb: std.ArrayList(u8) = .{};
+    var kb: std.ArrayList(u8) = .empty;
     defer kb.deinit(allocator);
     const kbw = kb.writer(allocator);
 
@@ -1011,7 +1011,7 @@ fn buildLlmSummary(
     }
 
     // 4. Build skill-name string for the instruction.
-    var skill_names_buf: std.ArrayList(u8) = .{};
+    var skill_names_buf: std.ArrayList(u8) = .empty;
     defer skill_names_buf.deinit(allocator);
     for (skill_excerpts_in, 0..) |se, si| {
         if (si > 0) try skill_names_buf.appendSlice(allocator, ", ");
@@ -1069,7 +1069,7 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
     const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
     if (trimmed.len == 0) return null;
 
-    var terms: std.ArrayList([]const u8) = .{};
+    var terms: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (terms.items) |t| allocator.free(t);
         terms.deinit(allocator);
@@ -1134,7 +1134,7 @@ fn computeDriftFollowUps(
     defer interner.deinit();
 
     // Collect needed words (from query)
-    var needed_words: std.ArrayList([]const u8) = .{};
+    var needed_words: std.ArrayList([]const u8) = .empty;
     defer {
         for (needed_words.items) |w| allocator.free(w);
         needed_words.deinit(allocator);
@@ -1144,7 +1144,7 @@ fn computeDriftFollowUps(
     if (needed_words.items.len == 0) return try allocator.alloc([]const u8, 0);
 
     // Collect available words (from result modules and symbol names)
-    var avail_words: std.ArrayList([]const u8) = .{};
+    var avail_words: std.ArrayList([]const u8) = .empty;
     defer {
         for (avail_words.items) |w| allocator.free(w);
         avail_words.deinit(allocator);
@@ -1278,7 +1278,7 @@ fn cmdExplainStaged(
                         std.debug.print("[DEBUG]   [{d}] \"{s}\"\n", .{ i, t });
                     }
                 }
-                var buf: std.ArrayList(u8) = .{};
+                var buf: std.ArrayList(u8) = .empty;
                 defer buf.deinit(allocator);
                 try buf.appendSlice(allocator, query_text);
                 for (terms) |t| {
@@ -1409,11 +1409,11 @@ fn cmdExplainStaged(
     // Increment query_count for files returned in search results (hot files tracking).
     for (expansion_results) |r| db.incrementQueryCountForFile(r.source);
 
-    var fp_list: std.ArrayList([]const u8) = .{};
+    var fp_list: std.ArrayList([]const u8) = .empty;
     defer fp_list.deinit(allocator);
-    var src_list: std.ArrayList([]const u8) = .{};
+    var src_list: std.ArrayList([]const u8) = .empty;
     defer src_list.deinit(allocator);
-    var ub_list: std.ArrayList([]const []const u8) = .{};
+    var ub_list: std.ArrayList([]const []const u8) = .empty;
     defer ub_list.deinit(allocator);
 
     // M4: Only include results with score >= SEE_ALSO_MIN_SCORE, up to SEE_ALSO_TOP_N
@@ -1424,7 +1424,7 @@ fn cmdExplainStaged(
         try ub_list.append(allocator, r.used_by);
     }
 
-    var existing_srcs: std.ArrayList([]const u8) = .{};
+    var existing_srcs: std.ArrayList([]const u8) = .empty;
     defer existing_srcs.deinit(allocator);
     for (working_stages) |s| {
         if (s.kind == .code or s.kind == .prose) try existing_srcs.append(allocator, s.source);
@@ -1447,7 +1447,7 @@ fn cmdExplainStaged(
     };
 
     // Combine working + extra stages (borrows — no new string copies).
-    var combined: std.ArrayList(types.Stage) = .{};
+    var combined: std.ArrayList(types.Stage) = .empty;
     defer combined.deinit(allocator); // only frees the ArrayList spine; strings owned by above slices
     for (working_stages) |s| try combined.append(allocator, s);
     if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
@@ -1498,7 +1498,7 @@ fn cmdExplainStaged(
         if (synth_result.summary) |summary| {
             if (query_hash) |qh| {
                 // Compute signature_hash from stage file paths for future invalidation.
-                var sig_buf: std.ArrayList(u8) = .{};
+                var sig_buf: std.ArrayList(u8) = .empty;
                 defer sig_buf.deinit(allocator);
                 const sig_writer = sig_buf.writer(allocator);
                 for (combined.items) |s| {
@@ -1680,9 +1680,10 @@ fn summarizeCapabilityDescription(
     client: *llm.LlmClient,
     name: []const u8,
     description: []const u8,
+    intended_len: u16,
 ) anyerror!?[]const u8 {
     const prompt = std.fmt.allocPrint(allocator,
-        \\Summarize this capability in 120 characters or less. Be precise and concise.
+        \\Summarize this capability in intended_len characters or less. Be precise and concise.
         \\Capability: {s}
         \\Description: {s}
         \\Respond with only the summarized text, no explanation.
@@ -1697,12 +1698,12 @@ fn summarizeCapabilityDescription(
     const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
     if (trimmed.len == 0) return null;
 
-    // Ensure 120 chars or less
-    if (trimmed.len <= 120) return try allocator.dupe(u8, trimmed);
+    // Ensure intended_len chars or less
+    if (trimmed.len <= intended_len) return try allocator.dupe(u8, trimmed);
 
-    // Find a good break point near 120 chars
-    const trunc = trimmed[0..@min(120, trimmed.len)];
-    const last_space = std.mem.lastIndexOfScalar(u8, trunc, ' ') orelse 77;
+    // Find a good break point near intended_len chars
+    const trunc = trimmed[0..@min(intended_len, trimmed.len)];
+    const last_space = std.mem.lastIndexOfScalar(u8, trunc, ' ') orelse intended_len - 3;
     const summary = trunc[0..last_space];
     return try std.fmt.allocPrint(allocator, "{s}...", .{summary});
 }
@@ -1726,7 +1727,7 @@ fn generateIndexMd(
         return;
     }
 
-    var capabilities: std.ArrayList(IndexCapability) = .{};
+    var capabilities: std.ArrayList(IndexCapability) = .empty;
     defer {
         for (capabilities.items) |cap| {
             allocator.free(cap.name);
@@ -1780,7 +1781,7 @@ fn generateIndexMd(
     };
     defer if (llm_client_opt) |*c| c.deinit();
 
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
     const w = out.writer(allocator);
 
@@ -1798,7 +1799,7 @@ fn generateIndexMd(
 
     for (capabilities.items) |cap| {
         const desc = if (llm_client_opt) |*client| blk: {
-            const summary = summarizeCapabilityDescription(allocator, client, cap.name, cap.description) catch null;
+            const summary = summarizeCapabilityDescription(allocator, client, cap.name, cap.description, 240) catch null;
             break :blk summary;
         } else null;
 
@@ -2254,7 +2255,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Load queries: from benchmarks.txt, single query arg, or generate from module comments
     const all_queries = if (single_query) |sq| blk: {
-        var single: std.ArrayList(TestQuery) = .{};
+        var single: std.ArrayList(TestQuery) = .empty;
         try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
         break :blk try single.toOwnedSlice(allocator);
     } else blk: {
@@ -2341,7 +2342,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         if (llm_client_opt) |*client| {
             // Build stages summary for LLM evaluation (mirrors actual explain output)
-            var results_buf: std.ArrayList(u8) = .{};
+            var results_buf: std.ArrayList(u8) = .empty;
             defer results_buf.deinit(allocator);
             const rw = results_buf.writer(allocator);
             try rw.print("Query: \"{s}\"\n\n", .{query_text});
@@ -2558,7 +2559,7 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
     const content = try file.readToEndAlloc(allocator, 512 * 1024);
     defer allocator.free(content);
 
-    var queries: std.ArrayList(TestQuery) = .{};
+    var queries: std.ArrayList(TestQuery) = .empty;
     errdefer {
         for (queries.items) |q| allocator.free(q.query);
         queries.deinit(allocator);
@@ -2577,7 +2578,7 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
 
 /// Generates test queries for the guidance engine using provided allocator and directory data.
 fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
-    var queries: std.ArrayList(TestQuery) = .{};
+    var queries: std.ArrayList(TestQuery) = .empty;
     errdefer {
         for (queries.items) |q| {
             allocator.free(q.query);
@@ -2767,7 +2768,7 @@ pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     // Join args into the query (supports multi-word without quotes).
-    var query_buf: std.ArrayList(u8) = .{};
+    var query_buf: std.ArrayList(u8) = .empty;
     defer query_buf.deinit(allocator);
     for (args, 0..) |a, i| {
         if (i > 0) try query_buf.append(allocator, ' ');

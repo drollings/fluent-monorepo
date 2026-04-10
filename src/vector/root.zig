@@ -15,6 +15,7 @@ pub const loadSemanticAliases = vector_db.loadSemanticAliases;
 pub const CodehealthDirective = vector_db.CodehealthDirective;
 pub const parseCodehealthDirective = vector_db.parseCodehealthDirective;
 pub const DbSyncBuilder = vector_db.DbSyncBuilder;
+pub const sqlite = vector_db.c;
 
 pub const HnswIndex = hnsw.HnswIndex;
 

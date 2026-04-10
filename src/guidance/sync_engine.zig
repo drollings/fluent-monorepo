@@ -1149,6 +1149,40 @@ fn processFiles(
     return total;
 }
 
+fn databaseHasTables(db_path: []const u8) bool {
+    const c = vector_db_mod.sqlite;
+    const db_path_z = std.fmt.allocPrintSentinel(std.heap.page_allocator, "{s}", .{db_path}, 0) catch return false;
+    defer std.heap.page_allocator.free(db_path_z);
+
+    var db: ?*c.sqlite3 = null;
+    const rc = c.sqlite3_open(db_path_z.ptr, &db);
+    if (rc != c.SQLITE_OK) {
+        if (db) |d| _ = c.sqlite3_close(d);
+        return false;
+    }
+    defer _ = c.sqlite3_close(db);
+
+    var stmt: ?*c.sqlite3_stmt = null;
+    const sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ast_nodes'";
+    const prep_rc = c.sqlite3_prepare_v2(db, sql, -1, &stmt, null);
+    if (prep_rc != c.SQLITE_OK) return false;
+    defer _ = c.sqlite3_finalize(stmt);
+
+    if (c.sqlite3_step(stmt) != c.SQLITE_ROW) return false;
+    const table_count = c.sqlite3_column_int(stmt, 0);
+    if (table_count == 0) return false;
+
+    var stmt2: ?*c.sqlite3_stmt = null;
+    const sql2 = "SELECT COUNT(*) FROM ast_nodes";
+    const prep_rc2 = c.sqlite3_prepare_v2(db, sql2, -1, &stmt2, null);
+    if (prep_rc2 != c.SQLITE_OK) return false;
+    defer _ = c.sqlite3_finalize(stmt2);
+
+    if (c.sqlite3_step(stmt2) != c.SQLITE_ROW) return false;
+    const row_count = c.sqlite3_column_int(stmt2, 0);
+    return row_count > 0;
+}
+
 /// Checks if the guidance database is up-to-date using provided storage, paths, and capabilities.
 fn guidanceDbIsUpToDate(
     allocator: std.mem.Allocator,
@@ -1157,6 +1191,8 @@ fn guidanceDbIsUpToDate(
     capabilities_dir: []const u8,
 ) bool {
     const db_mtime = marker_mod.fileMtime(db_path) orelse return false;
+
+    if (!databaseHasTables(db_path)) return false;
 
     // Top-level config and data files in json_dir.
     const top_level = [_][]const u8{

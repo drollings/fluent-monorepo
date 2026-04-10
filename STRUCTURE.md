@@ -166,6 +166,9 @@ Then you you must read
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── benchmark.zig                         # benchmark.zig — G5 Performance Benchmarks
 │   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing (re-export facade)
+│   │   ├── cache_l1.zig                          # cache_l1.zig — L1/L1Hash Cache Types
+│   │   ├── cache_reactor.zig                     # [gof-patterns]  cache_reactor.zig — QueueReactorBuilder and QueueReactor.
+│   │   ├── cache_router.zig                      # cache_router.zig — ParallelRouter for batched concurrent query routing.
 │   │   ├── cache_test.zig                        # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                            # Coral project configuration loader.
@@ -183,6 +186,7 @@ Then you you must read
 │   │   ├── main.zig
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
+│   │   ├── root.zig                              # coral/root.zig — Public API re-exports for the coral module.
 │   │   ├── schema.zig                            # schema.zig — Coral Context SQLite Schema (DDL + Queries)
 │   │   ├── session.zig                           # session.zig — Coral Session Persistence (SQLite + FTS5)
 │   │   ├── targets.zig                           # targets.zig — Ingestion DAG Target Definitions
@@ -205,6 +209,7 @@ Then you you must read
 │   │   │   ├── extractor.zig                   # call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.
 │   │   │   └── main.zig                        # codehealth — detect unused modules, redundant code, and dead code candidates.
 │   │   ├── comments
+│   │   │   ├── core.zig                        # comments/core.zig — Merged doc comment processing for guidance.
 │   │   │   ├── header.zig                      # header_generator.zig — File header comment generation for guidance.
 │   │   │   ├── inserter.zig                    # comment_inserter.zig — Insert and replace doc comments in Zig source files.
 │   │   │   └── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
@@ -219,8 +224,10 @@ Then you you must read
 │   │   │   └── synthesize.zig                  # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │   │   ├── sync
 │   │   │   ├── json_store.zig                  # JSON store for guidance sync — reads/writes .guidance/src/**/*.json files.
+│   │   │   ├── json_writer.zig                 # sync/json_writer.zig — JSON serialization for guidance documents.
 │   │   │   ├── line_verify.zig                 # line_verify.zig — Declaration-level line number verification for guidance.
 │   │   │   └── marker.zig                      # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   ├── agents_md.zig                         # AGENTS.md content generator for guidance init.
 │   │   ├── ast_parser.zig                        # AST parser for Zig source files — extracts declarations and comments.
 │   │   ├── codebase_map.zig                      # codebase_map.zig — Structural discovery layer for `guidance explain`.
 │   │   ├── config.zig                            # [gof-patterns]  guidance project configuration loader.
@@ -298,6 +305,7 @@ Then you you must read
 │   │   └── vector_db.zig                         # guidance SQLite vector search database (cosine similarity via BLOB storage).
 │   └── wasm
 │       ├── execution_request.zig                   # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
+│       ├── root.zig                                # wasm — WebAssembly Sandboxing (Extism)
 │       └── wasm.zig                                # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
 ├── tools
 ├── vendor
