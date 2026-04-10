@@ -4,6 +4,8 @@
     "source": "src/guidance/sync.zig",
     "language": "zig"
   },
+  "comment": " Sync engine for guidance — processes source files and generates JSON metadata.",
+  "capabilities": ["sync-pipeline", "coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

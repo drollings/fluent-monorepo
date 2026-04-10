@@ -16,7 +16,6 @@
 const std = @import("std");
 const common = @import("common");
 
-/// Manages provider discovery structures with fixed-size buffers; owned by the provider; ensures consistent state across initialization and cleanup.
 pub const Provider = struct {
     /// Human-readable language name derived from the extension (e.g. "py", "rs").
     name: []const u8,

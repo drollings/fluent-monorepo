@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "module": "src.guidance.query.synthesize",
+    "source": "src/guidance/query/synthesize.zig",
+    "language": "zig"
+  },
+  "comment": " synthesize.zig — LLM-based synthesis for the staged explain pipeline.\n\n Combines prose stages and module detail into an answer proportionate to query detail.\n Uses fast model with cached detail context.",
+  "members": [
+    {
+      "type": "fn_private",
+      "name": "isDirectLookup",
+      "match_hash": "6d38d27c1a3c71d0e938093329fd0155440d520fa10e46727c80839b2887c717",
+      "signature": "fn isDirectLookup(query: []const u8) -> bool",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 18
+    },
+    {
+      "type": "fn_decl",
+      "name": "synthesize",
+      "match_hash": "6f02d3f501903e7b6ec98993b968295749d3cd486a4c7d81754ddd5fe4dfad9a",
+      "signature": "fn synthesize(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> SynthesisResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "stages", "type": "[]const types.Stage" }
+      ],
+      "returns": "SynthesisResult",
+      "is_pub": true,
+      "line": 41
+    },
+    {
+      "type": "fn_decl",
+      "name": "extractProseSources",
+      "match_hash": "55ea4e851e2988e819a890810884e847cc106d98394c8e88acb0e494c896ea02",
+      "signature": "fn extractProseSources(allocator: std.mem.Allocator, stages: []const types.Stage) -> []const []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "stages", "type": "[]const types.Stage" }
+      ],
+      "returns": "[]const []const u8",
+      "is_pub": true,
+      "line": 351
+    },
+    {
+      "type": "fn_decl",
+      "name": "stripAbsenceSentences",
+      "match_hash": "4a01da80e5abbf20ae7d1da74c7a3c94443f159459a744ceb072bb483c473bf4",
+      "signature": "fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": true,
+      "line": 366
+    }
+  ]
+}

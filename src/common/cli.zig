@@ -11,7 +11,6 @@ pub const CliError = error{
     OutOfMemory,
 };
 
-/// Manages command execution logic, owns CLI workflow; ensures consistent initialization and cleanup.
 pub const Command = struct {
     name: []const u8,
     description: []const u8,
@@ -20,7 +19,6 @@ pub const Command = struct {
     examples: []const u8 = "",
 };
 
-/// Manages command registrations with a centralized structure; owned by the CLI; ensures unique key storage.
 pub const CommandRegistry = struct {
     commands: std.StringHashMapUnmanaged(Command),
     allocator: std.mem.Allocator,
@@ -60,7 +58,6 @@ pub const CommandRegistry = struct {
     }
 };
 
-/// Manages app configuration and state; owned by the project; ensures consistent initialization and cleanup.
 pub const App = struct {
     name: []const u8,
     description: []const u8,
@@ -91,7 +88,7 @@ pub const App = struct {
         try self.registry.register(cmd);
     }
 
-    pub fn printHelp(self: *const App, writer: *std.Io.Writer) !void {
+    pub fn printHelp(self: *const App, allocator: std.mem.Allocator, writer: *std.Io.Writer) !void {
         try writer.print("{s} - {s}\n\n", .{ self.name, self.description });
         try writer.print("Usage: {s} [options] <command> [args]\n\n", .{self.name});
         try writer.writeAll("Global options:\n");
@@ -103,8 +100,8 @@ pub const App = struct {
         try writer.writeAll("  --force              Force execution\n");
         try writer.writeAll("\nCommands:\n");
 
-        const cmd_names = try self.registry.names(std.heap.page_allocator);
-        defer std.heap.page_allocator.free(cmd_names);
+        const cmd_names = try self.registry.names(allocator);
+        defer allocator.free(cmd_names);
 
         for (cmd_names) |cmd_name| {
             if (self.registry.get(cmd_name)) |cmd| {
@@ -113,11 +110,11 @@ pub const App = struct {
         }
     }
 
-    pub fn run(self: *App, argv: []const []const u8) !i32 {
+    pub fn run(self: *App, allocator: std.mem.Allocator, argv: []const []const u8) !i32 {
         var positional: std.ArrayListUnmanaged([]const u8) = .{};
-        defer positional.deinit(std.heap.page_allocator);
+        defer positional.deinit(allocator);
 
-        self.global_args = parseCommonArgs(argv, &positional, std.heap.page_allocator) catch |err| {
+        self.global_args = parseCommonArgs(argv, &positional, allocator) catch |err| {
             switch (err) {
                 error.MissingValue => {
                     std.log.err("Flag requires a value argument", .{});
@@ -132,7 +129,7 @@ pub const App = struct {
         const stdout = ws.writer();
 
         if (self.global_args.show_help) {
-            try self.printHelp(stdout);
+            try self.printHelp(allocator, stdout);
             try stdout.flush();
             return 0;
         }
@@ -144,7 +141,7 @@ pub const App = struct {
         }
 
         if (positional.items.len == 0) {
-            try self.printHelp(stdout);
+            try self.printHelp(allocator, stdout);
             try stdout.flush();
             return 0;
         }
@@ -156,7 +153,7 @@ pub const App = struct {
             for (positional.items[1..]) |_| {
                 _ = iter.skip();
             }
-            return (cmd.handler(&iter, std.heap.page_allocator) catch |err| {
+            return (cmd.handler(&iter, allocator) catch |err| {
                 switch (err) {
                     CliError.UnknownCommand => {
                         try stdout.print("Unknown command: {s}\n", .{cmd_name});

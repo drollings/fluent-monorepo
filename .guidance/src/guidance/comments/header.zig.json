@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "module": "src.guidance.comments.header",
+    "source": "src/guidance/comments/header.zig",
+    "language": "zig"
+  },
+  "comment": " header_generator.zig — File header comment generation for guidance.\n\n Generates `//!`-style module doc comments for Zig source files.\n These replace the `detail` field in JSON files as the authoritative\n source of module-level documentation.",
+  "used_by": ["src/guidance/comments/sync.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "generateFileHeader",
+      "match_hash": "ff7ea3fe30dcdee2ec1c23139c3d34c7617aff3e1e4fed4fb6a5ca5d64fd91e9",
+      "signature": "fn generateFileHeader(allocator: std.mem.Allocator, rel_path: []const u8, members: []const types.Member, source_preview: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "rel_path", "type": "[]const u8" },
+        { "name": "members", "type": "[]const types.Member" },
+        { "name": "source_preview", "type": "[]const u8" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 10
+    },
+    {
+      "type": "fn_decl",
+      "name": "insertFileHeader",
+      "match_hash": "4402d26cc8176750bbef17ddd112664bd773623d706049b2ec0ad575df954202",
+      "signature": "fn insertFileHeader(allocator: std.mem.Allocator, source: []const u8, header: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "header", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 73
+    },
+    {
+      "type": "fn_decl",
+      "name": "sourceHasModuleDoc",
+      "match_hash": "a39df19a788b6d8d52af4d5ace8f56f706c8f30295d66f700a5d4d0b15008865",
+      "signature": "fn sourceHasModuleDoc(source: []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 87
+    },
+    {
+      "type": "test_decl",
+      "name": "sourceHasModuleDoc - with header",
+      "is_pub": false,
+      "line": 101
+    },
+    {
+      "type": "test_decl",
+      "name": "sourceHasModuleDoc - without header",
+      "is_pub": false,
+      "line": 106
+    },
+    {
+      "type": "test_decl",
+      "name": "generateFileHeader - returns null when header exists",
+      "is_pub": false,
+      "line": 111
+    },
+    {
+      "type": "test_decl",
+      "name": "generateFileHeader - generates header for new file",
+      "is_pub": false,
+      "line": 118
+    },
+    {
+      "type": "test_decl",
+      "name": "insertFileHeader - prepends header",
+      "is_pub": false,
+      "line": 133
+    }
+  ]
+}

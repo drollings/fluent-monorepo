@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "comment": " mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).\n\n Implements the Model Context Protocol server for guidance, allowing AI\n agents to use guidance tools (explain, gen, check, status) via MCP.\n\n Transport: STDIO (stdin → request, stdout → response)\n Protocol:  JSON-RPC 2.0\n\n Tools exposed:\n   explain — AST-guided code search (maps to cmdExplain)\n   gen     — regenerate guidance JSON + .guidance.db\n   check   — run the full RALPH loop (test → lint → fmt → guidance)\n   status  — report generation status",
-  "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
+  "capabilities": ["explain-query"],
+  "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -13,7 +14,7 @@
       "match_hash": "2b345c894ea6745785bd353c470d9ee6f03cee527e4f280160c3c1f4d41eb3c0",
       "signature": "keyword_struct Request { ... }",
       "is_pub": false,
-      "line": 28
+      "line": 27
     },
     {
       "type": "fn_private",
@@ -26,7 +27,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 35
+      "line": 34
     },
     {
       "type": "fn_private",
@@ -40,7 +41,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 52
+      "line": 51
     },
     {
       "type": "fn_private",
@@ -55,7 +56,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 64
+      "line": 63
     },
     {
       "type": "fn_private",
@@ -69,7 +70,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 83
+      "line": 82
     },
     {
       "type": "fn_private",
@@ -82,7 +83,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 94
+      "line": 93
     },
     {
       "type": "fn_private",
@@ -98,7 +99,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 109
+      "line": 108
     },
     {
       "type": "fn_decl",
@@ -111,7 +112,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 196
+      "line": 195
     }
   ]
 }

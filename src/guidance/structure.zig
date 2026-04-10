@@ -1,8 +1,8 @@
-/// STRUCTURE.md generator.
-///
-/// Mirrors Python's StructureGenerator class in guidance.py.
-/// Walks the project directory tree (respecting .gitignore), annotates each
-/// file entry with a one-line comment sourced from:
+//! STRUCTURE.md generator.
+//!
+//! Mirrors Python's StructureGenerator class in guidance.py.
+//! Walks the project directory tree (respecting .gitignore), annotates each
+//! file entry with a one-line comment sourced from:
 ///   1. The corresponding guidance JSON `comment` field (first line).
 ///   2. The comment already present in the existing STRUCTURE.md (preserved).
 ///
@@ -10,7 +10,7 @@
 /// Comments are right-aligned to a common column (≥60, or longest line + 2).
 const std = @import("std");
 const git_mod = @import("git.zig");
-const json_store = @import("json_store.zig");
+const json_store = @import("sync/json_store.zig");
 const common = @import("common");
 
 /// A single entry in the directory tree.
@@ -21,7 +21,6 @@ const TreeEntry = union(enum) {
     file: FileEntry,
 };
 
-/// Manages file entry metadata; owned by the module; ensures consistent state across initialization and cleanup.
 const FileEntry = struct {
     /// The tree prefix string (e.g. "│   ├── ").
     prefix: []const u8,

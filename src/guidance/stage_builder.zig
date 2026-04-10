@@ -19,7 +19,6 @@ const types = @import("types.zig");
 // StageBuilder VTable
 // =============================================================================
 
-/// Manages stage transitions with a fixed-size buffer pool; owns lifecycle; not thread-safe.
 pub const StageBuilder = struct {
     ptr: *anyopaque,
     vtable: *const VTable,

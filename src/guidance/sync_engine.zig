@@ -13,13 +13,13 @@ const enhancer_mod = @import("enhancer.zig");
 const config_mod = @import("config.zig");
 const plugin_mod = @import("plugin.zig");
 const plugin_registry = @import("plugin_registry.zig");
-const llm_filter_mod = @import("llm_filter.zig");
-const synthesize_mod = @import("synthesize.zig");
-const marker_mod = @import("marker.zig");
+const llm_filter_mod = @import("query/llm_filter.zig");
+const synthesize_mod = @import("query/synthesize.zig");
+const marker_mod = @import("sync/marker.zig");
 const provider_mod = @import("provider_discovery.zig");
-const comment_sync_mod = @import("comment_sync.zig");
-const json_store_mod = @import("json_store.zig");
-const comment_inserter_mod = @import("comment_inserter.zig");
+const comment_sync_mod = @import("comments/sync.zig");
+const json_store_mod = @import("sync/json_store.zig");
+const comment_inserter_mod = @import("comments/inserter.zig");
 const todo_mod = @import("todo.zig");
 const sync_mod = @import("sync.zig");
 const structure_mod = @import("structure.zig");
@@ -27,6 +27,7 @@ const query_engine_mod = @import("query_engine.zig");
 const schema_validator_mod = @import("schema_validator.zig");
 const doc_parser_mod = @import("doc_parser.zig");
 const llm = @import("llm");
+const agents_md_mod = @import("agents_md.zig");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const stepPrint = types.stepPrint;
@@ -143,7 +144,7 @@ pub fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     } else {
         // Create new AGENTS.md
-        const agents_content = try config_mod.generateAgentsMdContent(allocator, guidance_dir);
+        const agents_content = try agents_md_mod.generateAgentsMdContent(allocator, guidance_dir);
         defer allocator.free(agents_content);
 
         const file = std.fs.createFileAbsolute(agents_path, .{}) catch |err| {
@@ -238,7 +239,6 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
-/// Manages commit metadata structures; owns commit data; ensures consistent state across processes.
 const CommitMemberInfo = struct {
     name: []const u8, // owned
     line: ?u32,
@@ -791,7 +791,6 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
 // gen
 // =============================================================================
 
-/// Manages generation parameters for sync engine; owns configuration struct; ensures consistent initialization.
 const GenArgs = struct {
     file: ?[]const u8 = null, // single-file mode (--file)
     scan: ?[]const u8 = null, // directory scan mode (--scan)
@@ -929,7 +928,6 @@ const GenArgs = struct {
     }
 };
 
-/// Manages resolved path generation structures, owns path data, ensures consistent state across invocations.
 const ResolvedGenPaths = struct {
     workspace: []const u8,
     json_dir: []const u8,
@@ -2387,7 +2385,6 @@ fn isCapabilityKeywordToken(tok: []const u8) bool {
     return has_upper or has_underscore or has_dot or tok.len >= 4;
 }
 
-/// Manages synchronization primitives; owned by the engine; ensures consistent state across operations.
 pub const CapabilityEntry = struct {
     name: []const u8,
     description: ?[]const u8,
@@ -2957,7 +2954,6 @@ const ConfidenceLevels = struct {
     const path_heuristic: f32 = 0.4;
 };
 
-/// Manages discovery metadata for sync engine; owns discovery state; ensures consistent ownership.
 const DiscoveredSource = struct {
     capability_name: []const u8,
     source_path: []const u8,

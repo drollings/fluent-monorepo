@@ -53,7 +53,6 @@ pub const GlobalSearchConfig = struct {
 // GlobalSearch
 // ---------------------------------------------------------------------------
 
-/// Manages global search keywords with a fixed-size structure; owned by the application; ensures consistent state across sessions.
 pub const GlobalSearch = struct {
     config: GlobalSearchConfig,
 

@@ -4,6 +4,7 @@
     "source": "src/guidance/vector_db.zig",
     "language": "zig"
   },
+  "comment": " vector_db.zig — Hybrid keyword + vector search for guidance generation.\n\n Provides a combined search mode that fuses keyword (BM25-style rank)\n and vector (cosine similarity) scores via Reciprocal Rank Fusion (RRF).\n Falls back gracefully to keyword-only when no embedding is provided.",
   "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig"],
   "members": [
@@ -13,7 +14,7 @@
       "match_hash": "c6e2ab8efb9e6be0d13933ea0b7647d3aed142ce066deb3a508c04bcef8a57cb",
       "signature": "keyword_struct SearchResult { ... }",
       "is_pub": true,
-      "line": 9
+      "line": 8
     },
     {
       "type": "enum",
@@ -26,22 +27,22 @@
           "type": "enum_field",
           "name": "keyword_only",
           "is_pub": false,
-          "line": 25
+          "line": 23
         }
     ,    {
           "type": "enum_field",
           "name": "hybrid",
           "is_pub": false,
-          "line": 26
+          "line": 24
         }
     ,    {
           "type": "enum_field",
           "name": "embedding_only",
           "is_pub": false,
-          "line": 27
+          "line": 25
         }
       ],
-      "line": 24
+      "line": 22
     },
     {
       "type": "fn_decl",
@@ -57,25 +58,25 @@
       ],
       "returns": "[]SearchResult",
       "is_pub": true,
-      "line": 31
+      "line": 29
     },
     {
       "type": "test_decl",
       "name": "hybridSearch: keyword-only returns sorted results",
       "is_pub": false,
-      "line": 96
+      "line": 94
     },
     {
       "type": "test_decl",
       "name": "hybridSearch: vector results boost existing keyword matches",
       "is_pub": false,
-      "line": 112
+      "line": 110
     },
     {
       "type": "test_decl",
       "name": "hybridSearch: empty inputs return empty slice",
       "is_pub": false,
-      "line": 132
+      "line": 130
     }
   ]
 }

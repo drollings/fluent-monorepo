@@ -1,5 +1,8 @@
 //! logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 //!
+//! Request-scoped structured logging with timing and correlation.
+//! For global log configuration and output, see common.log.Logger.
+//!
 //! ## Design
 //!
 //! `LogContext` is a thread-local struct that propagates request-scoped metadata
@@ -37,7 +40,6 @@ const std = @import("std");
 
 // ── LogContext ────────────────────────────────────────────────────────────────
 
-/// Manages logging context with fixed buffers; owned by the module; ensures consistent log output.
 pub const LogContext = struct {
     request_id: ?[]const u8 = null,
     user_id: ?[]const u8 = null,

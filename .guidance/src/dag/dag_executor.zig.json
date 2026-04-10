@@ -91,7 +91,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 87
+          "line": 86
         }
     ,    {
           "type": "fn_decl",
@@ -103,7 +103,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 103
+          "line": 102
         }
     ,    {
           "type": "fn_decl",
@@ -116,7 +116,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 119
+          "line": 118
         }
     ,    {
           "type": "fn_decl",
@@ -128,7 +128,7 @@
           ],
           "returns": "[]DagResult",
           "is_pub": true,
-          "line": 127
+          "line": 126
         }
     ,    {
           "type": "fn_private",
@@ -142,7 +142,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 203
+          "line": 204
         }
     ,    {
           "type": "fn_private",
@@ -154,28 +154,28 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 213
+          "line": 214
         }
       ],
-      "line": 64
+      "line": 63
     },
     {
       "type": "test_decl",
       "name": "DagNode: init pending",
       "is_pub": false,
-      "line": 278
+      "line": 280
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: empty DAG",
       "is_pub": false,
-      "line": 289
+      "line": 291
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: single node",
       "is_pub": false,
-      "line": 309
+      "line": 311
     }
   ]
 }

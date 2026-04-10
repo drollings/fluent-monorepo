@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -17,28 +18,28 @@
           "type": "enum_field",
           "name": "not_started",
           "is_pub": false,
-          "line": 22
+          "line": 21
         }
     ,    {
           "type": "enum_field",
           "name": "in_progress",
           "is_pub": false,
-          "line": 23
+          "line": 22
         }
     ,    {
           "type": "enum_field",
           "name": "completed",
           "is_pub": false,
-          "line": 24
+          "line": 23
         }
     ,    {
           "type": "enum_field",
           "name": "failed",
           "is_pub": false,
-          "line": 25
+          "line": 24
         }
       ],
-      "line": 21
+      "line": 20
     },
     {
       "type": "struct",
@@ -46,7 +47,7 @@
       "match_hash": "627f9aa68dd09dcda9621541355dd554120342351dd98b37bb068b09c3798b59",
       "signature": "keyword_struct Checkpoint { ... }",
       "is_pub": true,
-      "line": 33
+      "line": 31
     },
     {
       "type": "struct",
@@ -65,7 +66,7 @@
           ],
           "returns": "IngestArgs",
           "is_pub": true,
-          "line": 56
+          "line": 53
         }
     ,    {
           "type": "fn_decl",
@@ -77,10 +78,10 @@
           ],
           "returns": "BatchConfig",
           "is_pub": true,
-          "line": 88
+          "line": 85
         }
       ],
-      "line": 48
+      "line": 45
     },
     {
       "type": "struct",
@@ -99,7 +100,7 @@
           ],
           "returns": "CheckpointStore",
           "is_pub": true,
-          "line": 111
+          "line": 107
         }
     ,    {
           "type": "fn_decl",
@@ -111,7 +112,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 118
+          "line": 114
         }
     ,    {
           "type": "fn_decl",
@@ -124,7 +125,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 126
+          "line": 122
         }
     ,    {
           "type": "fn_decl",
@@ -137,52 +138,52 @@
           ],
           "returns": "?Checkpoint",
           "is_pub": true,
-          "line": 141
+          "line": 137
         }
       ],
-      "line": 107
+      "line": 103
     },
     {
       "type": "test_decl",
       "name": "parse ingest args source",
       "is_pub": false,
-      "line": 160
+      "line": 156
     },
     {
       "type": "test_decl",
       "name": "parse ingest args batch size",
       "is_pub": false,
-      "line": 166
+      "line": 162
     },
     {
       "type": "test_decl",
       "name": "parse ingest args status flag",
       "is_pub": false,
-      "line": 172
+      "line": 168
     },
     {
       "type": "test_decl",
       "name": "parse ingest args resume",
       "is_pub": false,
-      "line": 178
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "ingest args default batch size",
       "is_pub": false,
-      "line": 184
+      "line": 180
     },
     {
       "type": "test_decl",
       "name": "checkpoint store save and retrieve",
       "is_pub": false,
-      "line": 190
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "checkpoint store returns null for unknown source",
       "is_pub": false,
-      "line": 208
+      "line": 204
     }
   ]
 }

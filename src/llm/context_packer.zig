@@ -33,7 +33,6 @@ pub const Stage = struct {
     relevance_score: f32 = 1.0,
 };
 
-/// Manages context packing configurations with fixed-size buffers; owned by the context packer; ensures consistent state across initialization and deinitialization.
 pub const ContextPackConfig = struct {
     /// Number of leading prose stages to protect unconditionally (module docs).
     head_protect: usize = 2,
@@ -53,7 +52,6 @@ pub const ContextPackConfig = struct {
 
 const token_budget = @import("token_budget.zig");
 
-/// Manages context packing structures, owns buffer allocations, ensures consistent state across lifecycle.
 pub const ContextPacker = struct {
     config: ContextPackConfig,
 

@@ -55,7 +55,6 @@ pub const ReaderState = io_mod.ReaderState;
 pub const makePathAbsolute = io_mod.makePathAbsolute;
 pub const readFileAlloc = io_mod.readFileAlloc;
 pub const readFileAllocErr = io_mod.readFileAllocErr;
-pub const readFileOpt = io_mod.readFileOpt;
 pub const resolvePath = io_mod.resolvePath;
 pub const stripPathPrefix = io_mod.stripPathPrefix;
 pub const DEFAULT_MAX_FILE_SIZE = io_mod.DEFAULT_MAX_FILE_SIZE;
@@ -119,6 +118,7 @@ pub const isTestPath = string_mod.isTestPath;
 pub const skillNameFromRef = string_mod.skillNameFromRef;
 pub const containsIgnoreCase = string_mod.containsIgnoreCase;
 pub const containsWord = string_mod.containsWord;
+pub const containsIdentWord = string_mod.containsIdentWord;
 pub const containsAny = string_mod.containsAny;
 pub const containsAnyWord = string_mod.containsAnyWord;
 pub const hasExtension = string_mod.hasExtension;
@@ -187,8 +187,14 @@ pub const pattern = @import("pattern.zig");
 // ── Latency metrics (LatencyHistogram, BUCKET_MS, BUCKET_COUNT) ───────────────
 pub const metrics = @import("metrics.zig");
 
-// ── Agent delegation (DelegationConfig, DelegationResult, Delegation) ─────────
-pub const delegation = @import("delegation.zig");
-
 // ── FNV-1a hash (fnv1a64) ─────────────────────────────────────────────────────
 pub const fnv1a64 = hash_mod.fnv1a64;
+
+// ── Format utilities (Table, Column) ─────────────────────────────────────────────
+pub const format = @import("format.zig");
+
+// ── Terminal utilities ──────────────────────────────────────────────────────────
+pub const terminal = @import("terminal.zig");
+
+// ── Global logger (Logger, LogConfig, setupLogging) ─────────────────────────────
+pub const log = @import("log.zig");

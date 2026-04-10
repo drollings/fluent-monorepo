@@ -35,7 +35,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 48
+          "line": 47
         }
     ,    {
           "type": "fn_decl",
@@ -47,7 +47,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 57
+          "line": 56
         }
     ,    {
           "type": "fn_decl",
@@ -59,7 +59,7 @@
           ],
           "returns": "u32",
           "is_pub": true,
-          "line": 61
+          "line": 60
         }
     ,    {
           "type": "fn_decl",
@@ -73,7 +73,7 @@
           ],
           "returns": "[]f32",
           "is_pub": true,
-          "line": 69
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -85,10 +85,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 76
+          "line": 75
         }
       ],
-      "line": 31
+      "line": 30
     },
     {
       "type": "struct",
@@ -107,7 +107,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 89
+          "line": 88
         }
     ,    {
           "type": "fn_private",
@@ -119,7 +119,7 @@
           ],
           "returns": "u32",
           "is_pub": false,
-          "line": 93
+          "line": 92
         }
     ,    {
           "type": "fn_private",
@@ -133,7 +133,7 @@
           ],
           "returns": "anyerror![]f32",
           "is_pub": false,
-          "line": 97
+          "line": 96
         }
     ,    {
           "type": "fn_private",
@@ -145,7 +145,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 101
+          "line": 100
         }
     ,    {
           "type": "fn_decl",
@@ -157,10 +157,10 @@
           ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
-          "line": 115
+          "line": 114
         }
       ],
-      "line": 84
+      "line": 83
     },
     {
       "type": "struct",
@@ -182,7 +182,7 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 135
+          "line": 134
         }
     ,    {
           "type": "fn_decl",
@@ -194,7 +194,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 159
+          "line": 158
         }
     ,    {
           "type": "fn_private",
@@ -207,7 +207,7 @@
           ],
           "returns": "[]u8",
           "is_pub": false,
-          "line": 165
+          "line": 164
         }
     ,    {
           "type": "fn_private",
@@ -219,7 +219,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 169
+          "line": 168
         }
     ,    {
           "type": "fn_private",
@@ -231,7 +231,7 @@
           ],
           "returns": "u32",
           "is_pub": false,
-          "line": 173
+          "line": 172
         }
     ,    {
           "type": "fn_private",
@@ -245,7 +245,7 @@
           ],
           "returns": "anyerror![]f32",
           "is_pub": false,
-          "line": 178
+          "line": 177
         }
     ,    {
           "type": "fn_private",
@@ -257,7 +257,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 223
+          "line": 222
         }
     ,    {
           "type": "fn_decl",
@@ -269,10 +269,10 @@
           ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
-          "line": 235
+          "line": 234
         }
       ],
-      "line": 123
+      "line": 122
     },
     {
       "type": "fn_decl",
@@ -285,7 +285,7 @@
       ],
       "returns": "[]f32",
       "is_pub": true,
-      "line": 241
+      "line": 240
     },
     {
       "type": "struct",
@@ -308,7 +308,7 @@
           ],
           "returns": "*Self",
           "is_pub": true,
-          "line": 286
+          "line": 285
         }
     ,    {
           "type": "fn_decl",
@@ -320,7 +320,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 314
+          "line": 313
         }
     ,    {
           "type": "fn_private",
@@ -333,7 +333,7 @@
           ],
           "returns": "[]u8",
           "is_pub": false,
-          "line": 321
+          "line": 320
         }
     ,    {
           "type": "fn_private",
@@ -345,7 +345,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 339
+          "line": 338
         }
     ,    {
           "type": "fn_private",
@@ -357,7 +357,7 @@
           ],
           "returns": "u32",
           "is_pub": false,
-          "line": 343
+          "line": 342
         }
     ,    {
           "type": "fn_private",
@@ -371,7 +371,7 @@
           ],
           "returns": "anyerror![]f32",
           "is_pub": false,
-          "line": 348
+          "line": 347
         }
     ,    {
           "type": "fn_private",
@@ -383,7 +383,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 397
+          "line": 396
         }
     ,    {
           "type": "fn_decl",
@@ -395,10 +395,10 @@
           ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
-          "line": 409
+          "line": 408
         }
       ],
-      "line": 277
+      "line": 276
     },
     {
       "type": "fn_decl",
@@ -411,7 +411,7 @@
       ],
       "returns": "[]f32",
       "is_pub": true,
-      "line": 415
+      "line": 414
     },
     {
       "type": "fn_decl",
@@ -430,67 +430,67 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": true,
-      "line": 460
+      "line": 459
     },
     {
       "type": "test_decl",
       "name": "NoopEmbedding returns empty vector",
       "is_pub": false,
-      "line": 516
+      "line": 515
     },
     {
       "type": "test_decl",
       "name": "OllamaEmbedding init and deinit",
       "is_pub": false,
-      "line": 527
+      "line": 526
     },
     {
       "type": "test_decl",
       "name": "OllamaEmbedding rejects insecure remote http",
       "is_pub": false,
-      "line": 535
+      "line": 534
     },
     {
       "type": "test_decl",
       "name": "parseOllamaResponse valid",
       "is_pub": false,
-      "line": 540
+      "line": 539
     },
     {
       "type": "test_decl",
       "name": "parseOpenAiResponse valid",
       "is_pub": false,
-      "line": 548
+      "line": 547
     },
     {
       "type": "test_decl",
       "name": "createEmbeddingProvider noop",
       "is_pub": false,
-      "line": 555
+      "line": 554
     },
     {
       "type": "test_decl",
       "name": "contentHashWithModel is deterministic and model-sensitive",
       "is_pub": false,
-      "line": 561
+      "line": 560
     },
     {
       "type": "test_decl",
       "name": "EmbeddingProvider: thread_id set on creation thread",
       "is_pub": false,
-      "line": 571
+      "line": 570
     },
     {
       "type": "test_decl",
       "name": "EmbeddingProvider: same-thread embed succeeds (thread_id assertion not triggered)",
       "is_pub": false,
-      "line": 579
+      "line": 578
     },
     {
       "type": "test_decl",
       "name": "EmbeddingProvider: thread_safe=true disables thread assertion",
       "is_pub": false,
-      "line": 588
+      "line": 587
     }
   ]
 }

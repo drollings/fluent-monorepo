@@ -17,7 +17,6 @@ const std = @import("std");
 const http = std.http;
 const net = std.net;
 
-/// Manages McP transport logic, owns buffers, handles initialization/deinit; ensures consistent state across sessions.
 pub const McpHandler = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -36,7 +35,6 @@ pub const McpHandler = struct {
     }
 };
 
-/// Manages SSE event data structures; owned by the module; ensures consistent state across runs.
 pub const SseEvent = struct {
     event: []const u8 = "message",
     data: []const u8,
@@ -434,7 +432,6 @@ test "McpHandler VTable interface compiles" {
 // Run with `zig test --test-filter "integration"` to enable.
 // =============================================================================
 
-/// Manages HTTP transport logic for Zig, owns transport state, ensures consistent initialization and cleanup.
 const TestMcpHandler = struct {
     response: []const u8,
     called: bool = false,

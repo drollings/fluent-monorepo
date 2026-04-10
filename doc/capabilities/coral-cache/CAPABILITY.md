@@ -45,13 +45,14 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 - `src/common/local_model.zig` — `LocalDecomposer` (L4.5)
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (36 files, auto-discovered)
+## Sources (39 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
-| `src/coral/cache.zig` | 1.0 | defines_anchor |
-| `src/coral/main.zig` | 0.9 | used_by |
-| `src/coral/mcp.zig` | 0.9 | used_by |
+| `src/coral/cache_l1.zig` | 1.0 | defines_anchor |
+| `src/coral/cache_reactor.zig` | 1.0 | defines_anchor |
+| `src/coral/cache.zig` | 0.9 | used_by |
+| `src/coral/cache_router.zig` | 0.9 | used_by |
 | `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/cli.zig` | 0.4 | path_heuristic |
@@ -68,7 +69,7 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 | `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
 | `src/coral/batch.zig` | 0.4 | path_heuristic |
 | `src/coral/executor.zig` | 0.4 | path_heuristic |
-| `src/coral/fixtures.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
 | `src/coral/cache_test.zig` | 0.4 | path_heuristic |
 | `src/coral/schema.zig` | 0.4 | path_heuristic |
@@ -76,8 +77,10 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 | `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
 | `src/coral/type_inference.zig` | 0.4 | path_heuristic |
 | `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
+| `src/coral/mcp.zig` | 0.4 | path_heuristic |
 | `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
+| `src/coral/main.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
 | `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |

@@ -15,7 +15,6 @@ const builtin = @import("builtin");
 
 // ── Phase ─────────────────────────────────────────────────────────────────────
 
-/// Defines a phase with enum keywords, manages ownership, ensures invariants; not thread-safe.
 pub const Phase = enum {
     depends,
     provides,
@@ -31,7 +30,6 @@ pub const Phase = enum {
 
 // ── BuilderError ──────────────────────────────────────────────────────────────
 
-/// Handles build-time errors with strict ownership and invariants; ensures consistent state management.
 pub const BuilderError = struct {
     phase: Phase,
     /// Field name (static string literal; not arena-allocated).

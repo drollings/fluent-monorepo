@@ -93,7 +93,7 @@
           ],
           "returns": "ArenaErrorContext",
           "is_pub": true,
-          "line": 113
+          "line": 112
         }
     ,    {
           "type": "fn_decl",
@@ -108,10 +108,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 145
+          "line": 144
         }
       ],
-      "line": 105
+      "line": 104
     },
     {
       "type": "fn_decl",
@@ -125,55 +125,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 156
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: init with all fields",
       "is_pub": false,
-      "line": 172
+      "line": 171
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: value truncation",
       "is_pub": false,
-      "line": 180
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: simple operation",
       "is_pub": false,
-      "line": 187
+      "line": 186
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: format with all fields",
       "is_pub": false,
-      "line": 194
+      "line": 193
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: format without field",
       "is_pub": false,
-      "line": 205
+      "line": 204
     },
     {
       "type": "test_decl",
       "name": "ErrorContext: toMessage arena allocation",
       "is_pub": false,
-      "line": 215
+      "line": 214
     },
     {
       "type": "test_decl",
       "name": "ArenaErrorContext: init allocates from arena",
       "is_pub": false,
-      "line": 224
+      "line": 223
     },
     {
       "type": "test_decl",
       "name": "ArenaErrorContext: chain appends parent",
       "is_pub": false,
-      "line": 236
+      "line": 235
     }
   ]
 }

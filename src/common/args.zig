@@ -1,6 +1,5 @@
 const std = @import("std");
 
-/// Manages common argument structures; owned by the module; ensures consistent initialization and cleanup.
 pub const CommonArgs = struct {
     // Intelligence / LLM
     debug: bool = false,

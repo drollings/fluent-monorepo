@@ -34,7 +34,6 @@ const std = @import("std");
 const Context = @import("context.zig").Context;
 const AnyWorkUnit = @import("any_work_unit.zig").AnyWorkUnit;
 
-/// Manages error group state with fixed buffers; owned by the caller; ensures consistent error handling across threads.
 pub const ErrorGroup = struct {
     const Self = @This();
 
@@ -127,7 +126,6 @@ pub const ErrorGroup = struct {
 const testing = std.testing;
 const WorkUnit = @import("any_work_unit.zig").WorkUnit;
 
-/// Manages error handling counts; owns state; ensures consistent failure tracking across threads.
 const CountOrFailHandler = struct {
     counter: *std.atomic.Value(usize),
     should_error: bool = false,

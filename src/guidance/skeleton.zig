@@ -9,8 +9,8 @@
 const std = @import("std");
 const types = @import("types.zig");
 const llm = @import("llm");
-const json_store_mod = @import("json_store.zig");
-const comment_inserter = @import("comment_inserter.zig");
+const json_store_mod = @import("sync/json_store.zig");
+const comment_inserter = @import("comments/inserter.zig");
 
 // Import string functions from common
 const truncateAtSentence = @import("common").truncateAtSentence;

@@ -19,7 +19,6 @@ const types = @import("types.zig");
 // DocumentMetadata
 // =============================================================================
 
-/// Manages document metadata structures, owns metadata pools, ensures consistent access patterns.
 pub const DocumentMetadata = struct {
     keywords: []const []const u8 = &.{},
     capabilities: []const []const u8 = &.{},
@@ -49,7 +48,6 @@ pub fn freeMetadata(allocator: std.mem.Allocator, m: DocumentMetadata) void {
 // DocumentIndexer VTable
 // =============================================================================
 
-/// Manages document indexing structures, owns dynamic buffers, and ensures consistent state across operations.
 pub const DocumentIndexer = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -132,7 +130,6 @@ pub const DocumentIndexer = struct {
 // Produces stages from the guidance JSON metadata: prose from detail/comment,
 // code from source excerpts (when available), metadata from keywords/skills.
 
-/// Manages guidance JSON indexing logic, owns struct state, ensures consistent key structures across operations.
 pub const GuidanceJsonIndexerImpl = struct {
     allocator: std.mem.Allocator,
     doc: *const types.GuidanceDoc,

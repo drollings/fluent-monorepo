@@ -1,7 +1,7 @@
+//! Gitignore-aware file filtering for guidance scanner.
 const std = @import("std");
 const common = @import("common");
 
-/// Manages Gitignore rules for repository; owns a structured filtering system; ensures consistent ownership model.
 pub const GitignoreFilter = struct {
     allocator: std.mem.Allocator,
     patterns: [][]const u8,

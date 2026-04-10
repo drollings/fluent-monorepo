@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -17,34 +18,34 @@
           "type": "enum_field",
           "name": "count_mismatch",
           "is_pub": false,
-          "line": 15
+          "line": 14
         }
     ,    {
           "type": "enum_field",
           "name": "orphan_node",
           "is_pub": false,
-          "line": 16
+          "line": 15
         }
     ,    {
           "type": "enum_field",
           "name": "invalid_iri",
           "is_pub": false,
-          "line": 17
+          "line": 16
         }
     ,    {
           "type": "enum_field",
           "name": "missing_label",
           "is_pub": false,
-          "line": 18
+          "line": 17
         }
     ,    {
           "type": "enum_field",
           "name": "dangling_blank_node",
           "is_pub": false,
-          "line": 19
+          "line": 18
         }
       ],
-      "line": 14
+      "line": 13
     },
     {
       "type": "enum",
@@ -57,22 +58,22 @@
           "type": "enum_field",
           "name": "no_type",
           "is_pub": false,
-          "line": 24
+          "line": 22
         }
     ,    {
           "type": "enum_field",
           "name": "no_description",
           "is_pub": false,
-          "line": 25
+          "line": 23
         }
     ,    {
           "type": "enum_field",
           "name": "blank_node_heavy",
           "is_pub": false,
-          "line": 26
+          "line": 24
         }
       ],
-      "line": 23
+      "line": 21
     },
     {
       "type": "struct",
@@ -91,7 +92,7 @@
           ],
           "returns": "IngestionReport",
           "is_pub": true,
-          "line": 48
+          "line": 46
         }
     ,    {
           "type": "fn_decl",
@@ -103,7 +104,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 59
+          "line": 57
         }
     ,    {
           "type": "fn_decl",
@@ -115,10 +116,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 66
+          "line": 64
         }
       ],
-      "line": 40
+      "line": 38
     },
     {
       "type": "struct",
@@ -126,7 +127,7 @@
       "match_hash": "26d6aafbbd8b8d9d2c291ff300e80e308e1117bfe3aa6e9a2d8909a311b49c72",
       "signature": "keyword_struct VerifierConfig { ... }",
       "is_pub": true,
-      "line": 76
+      "line": 74
     },
     {
       "type": "struct",
@@ -146,7 +147,7 @@
           ],
           "returns": "Verifier",
           "is_pub": true,
-          "line": 90
+          "line": 88
         }
     ,    {
           "type": "fn_decl",
@@ -160,7 +161,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 95
+          "line": 93
         }
     ,    {
           "type": "fn_decl",
@@ -176,46 +177,46 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 131
+          "line": 129
         }
       ],
-      "line": 86
+      "line": 84
     },
     {
       "type": "test_decl",
       "name": "report initialized empty",
       "is_pub": false,
-      "line": 154
+      "line": 152
     },
     {
       "type": "test_decl",
       "name": "verify stats count match",
       "is_pub": false,
-      "line": 161
+      "line": 159
     },
     {
       "type": "test_decl",
       "name": "verify stats count mismatch",
       "is_pub": false,
-      "line": 169
+      "line": 167
     },
     {
       "type": "test_decl",
       "name": "verify mapper with labelled nodes - no warnings",
       "is_pub": false,
-      "line": 178
+      "line": 176
     },
     {
       "type": "test_decl",
       "name": "verify mapper missing label generates warning",
       "is_pub": false,
-      "line": 200
+      "line": 198
     },
     {
       "type": "test_decl",
       "name": "report serializes error count",
       "is_pub": false,
-      "line": 223
+      "line": 221
     }
   ]
 }

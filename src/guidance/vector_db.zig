@@ -1,11 +1,10 @@
-/// vector_db.zig — Hybrid keyword + vector search for guidance generation.
-///
-/// Provides a combined search mode that fuses keyword (BM25-style rank)
-/// and vector (cosine similarity) scores via Reciprocal Rank Fusion (RRF).
-/// Falls back gracefully to keyword-only when no embedding is provided.
+//! vector_db.zig — Hybrid keyword + vector search for guidance generation.
+//!
+//! Provides a combined search mode that fuses keyword (BM25-style rank)
+//! and vector (cosine similarity) scores via Reciprocal Rank Fusion (RRF).
+//! Falls back gracefully to keyword-only when no embedding is provided.
 const std = @import("std");
 
-/// Manages search result data structures; owned by the module; ensures consistent data invariants.
 pub const SearchResult = struct {
     id: i64,
     score: f32,
@@ -20,7 +19,6 @@ pub const SearchConfig = struct {
     keyword_weight: f32 = 0.35,
 };
 
-/// Manages guidance search modes with fixed buffers; owned by the system; ensures consistent state across operations.
 pub const GuidanceSearchMode = enum {
     keyword_only,
     hybrid,

@@ -4,7 +4,8 @@
     "source": "src/guidance/enhancer.zig",
     "language": "zig"
   },
-  "used_by": ["src/guidance/comment_sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
+  "comment": " AI Docstring Enhancer for Zig guidance generation.\n\n Mirrors Python's AIDocstringEnhancer class in guidance.py.\n Generates descriptions (≤240 chars) for functions, structs, and files\n by calling the configured LLM endpoint.  The enhancer is opt-in: sync",
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",

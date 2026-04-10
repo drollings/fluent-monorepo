@@ -40,7 +40,6 @@ pub fn sessionIdToInt(id: SessionId) i64 {
 // replacing the hardcoded input_schema strings.
 // ---------------------------------------------------------------------------
 
-/// Manages query parameters for Coral queries, owns state, ensures consistent invariants across runs.
 const CoralQueryParams = struct {
     query: []const u8,
     pub const editable: reflection.Editable(@This()) = .{};
@@ -79,7 +78,6 @@ const InsertNodeParams = struct {
     }
 };
 
-/// Defines configuration parameters for Zig compilation; manages ownership and invariants during build.
 const ExplainParams = struct {
     name: []const u8,
     max_tokens: i64 = 4096,
@@ -169,7 +167,6 @@ const JsonRpcRequest = struct {
 // McpServer
 // ---------------------------------------------------------------------------
 
-/// Manages McpServer instances with fixed buffers; owned by the module; ensures consistent state across operations.
 pub const McpServer = struct {
     allocator: std.mem.Allocator,
     reactor: *QueueReactor,

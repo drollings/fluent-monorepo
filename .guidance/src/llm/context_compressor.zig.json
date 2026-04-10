@@ -7,6 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["llm-client"],
   "used_by": ["src/llm/root.zig"],
   "members": [
     {
@@ -20,28 +21,28 @@
           "type": "enum_field",
           "name": "user",
           "is_pub": false,
-          "line": 19
+          "line": 18
         }
     ,    {
           "type": "enum_field",
           "name": "assistant",
           "is_pub": false,
-          "line": 20
+          "line": 19
         }
     ,    {
           "type": "enum_field",
           "name": "tool_call",
           "is_pub": false,
-          "line": 21
+          "line": 20
         }
     ,    {
           "type": "enum_field",
           "name": "tool_result",
           "is_pub": false,
-          "line": 22
+          "line": 21
         }
       ],
-      "line": 18
+      "line": 17
     },
     {
       "type": "struct",
@@ -49,7 +50,7 @@
       "match_hash": "a7dfc8a7113368f5dbe343ace1cbd3cc8d3aa04f0264a3c8d674d9a9e9a55927",
       "signature": "keyword_struct Message { ... }",
       "is_pub": true,
-      "line": 26
+      "line": 24
     },
     {
       "type": "fn_decl",
@@ -61,7 +62,7 @@
       ],
       "returns": "usize",
       "is_pub": true,
-      "line": 37
+      "line": 35
     },
     {
       "type": "struct",
@@ -82,7 +83,7 @@
           ],
           "returns": "[]Message",
           "is_pub": true,
-          "line": 59
+          "line": 56
         }
     ,    {
           "type": "fn_private",
@@ -97,7 +98,7 @@
           ],
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
-          "line": 93
+          "line": 90
         }
     ,    {
           "type": "fn_private",
@@ -112,7 +113,7 @@
           ],
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
-          "line": 124
+          "line": 121
         }
     ,    {
           "type": "fn_private",
@@ -126,7 +127,7 @@
           ],
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
-          "line": 161
+          "line": 158
         }
     ,    {
           "type": "fn_private",
@@ -139,10 +140,10 @@
           ],
           "returns": "?usize",
           "is_pub": false,
-          "line": 199
+          "line": 196
         }
       ],
-      "line": 46
+      "line": 43
     },
     {
       "type": "fn_private",
@@ -159,55 +160,55 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 215
+      "line": 212
     },
     {
       "type": "test_decl",
       "name": "estimateTokens basic",
       "is_pub": false,
-      "line": 219
+      "line": 216
     },
     {
       "type": "test_decl",
       "name": "compress empty messages",
       "is_pub": false,
-      "line": 226
+      "line": 223
     },
     {
       "type": "test_decl",
       "name": "compress under budget — no pruning",
       "is_pub": false,
-      "line": 233
+      "line": 230
     },
     {
       "type": "test_decl",
       "name": "compress phase 2 — drop from beginning when over budget",
       "is_pub": false,
-      "line": 244
+      "line": 241
     },
     {
       "type": "test_decl",
       "name": "compress phase 1 — prune bulky tool results outside protect_tail",
       "is_pub": false,
-      "line": 261
+      "line": 258
     },
     {
       "type": "test_decl",
       "name": "compress phase 1 — small tool results inside protect_tail are kept",
       "is_pub": false,
-      "line": 279
+      "line": 276
     },
     {
       "type": "test_decl",
       "name": "compress phase 3 — orphan tool_call removed when result pruned",
       "is_pub": false,
-      "line": 297
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "compress protect_tail keeps recent messages intact",
       "is_pub": false,
-      "line": 329
+      "line": 326
     }
   ]
 }

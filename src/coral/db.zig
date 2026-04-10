@@ -53,7 +53,6 @@ pub fn nodeIdToInt(id: NodeId) i64 {
 // §3.1 ContextNode — universal semantic entity
 // ---------------------------------------------------------------------------
 
-/// Manages context nodes for Zig's database layer, owns state, ensures consistent initialization/deinit, not thread-safe.
 pub const ContextNode = struct {
     id: i64,
     /// LOD text pyramid and SharedString backing store.
@@ -160,7 +159,6 @@ pub const KnnHit = struct {
     distance: f32, // cosine distance in [0, 2]; 0 = identical
 };
 
-/// Defines edge type constraints with fixed buffers; managed by owner; ensures consistent state across operations.
 pub const EdgeType = enum(i16) {
     depends_on = 0,
     provides_capability = 1,
@@ -195,7 +193,6 @@ pub const GraphNode = struct {
     graph_distance: u32,
 };
 
-/// Manages WasmTool functionality with fixed buffers; owned by the module; ensures consistent state across operations.
 pub const WasmTool = struct {
     id: i64 = 0,
     target_id: i64 = 0,
@@ -221,7 +218,6 @@ pub const StorageEngine = enum {
     sqlite, // persistent file
 };
 
-/// Manages database connections with fixed-size buffers; owned by the library; ensures consistent state across operations.
 pub const Library = struct {
     const Self = @This();
 
@@ -1366,7 +1362,6 @@ pub const Library = struct {
 // §3.3 HydrationPipeline — in-Zig KNN → persist neighbor edges
 // ---------------------------------------------------------------------------
 
-/// Manages hydration data flow, owns buffers, ensures consistent state; not thread-safe.
 pub const HydrationPipeline = struct {
     const Self = @This();
 
@@ -1462,7 +1457,6 @@ pub const HydrationPipeline = struct {
 // §3.4 ContextPacker — LOD selection algorithm
 // ---------------------------------------------------------------------------
 
-/// Manages context packing buffers with fixed-size allocations; owned by the runtime; ensures consistent memory layout.
 pub const ContextPacker = struct {
     const Self = @This();
 

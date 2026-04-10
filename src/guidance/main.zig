@@ -16,7 +16,7 @@ const structure_mod = @import("structure.zig");
 const config_mod = @import("config.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 const query_engine_mod = @import("query_engine.zig");
-const codehealth_mod = @import("codehealth.zig");
+const codehealth_mod = @import("codehealth/main.zig");
 const common = @import("common");
 
 pub const version = "0.1.0";
@@ -38,7 +38,6 @@ pub const std_options: std.Options = .{
     }.log,
 };
 
-/// Defines a command with fixed enumeration, managed centrally; ensures consistent behavior across instances.
 const Command = enum {
     init,
     gen,

@@ -124,7 +124,6 @@ Then you you must read
 │   │   ├── cli.zig
 │   │   ├── constants.zig                         # constants.zig — Shared resource-limit constants
 │   │   ├── content_node.zig                      # content_node.zig — ContentNode: LOD text pyramid backed by SharedString
-│   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                        # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── error_context.zig                     # error_context.zig — Structured error context for non-builder code paths.
@@ -133,13 +132,11 @@ Then you you must read
 │   │   ├── interner.zig                          # interner.zig — String interning with optional bitset support.
 │   │   ├── io.zig                                # io.zig — Shared buffered I/O helpers
 │   │   ├── json.zig                              # json.zig — Generic JSON serialization helpers
-│   │   ├── json_parser.zig
-│   │   ├── log.zig
+│   │   ├── log.zig                               # Global logger with console + file output.
 │   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 │   │   ├── metrics.zig                           # metrics.zig — Generic latency histogram primitive (M8.1)
 │   │   ├── pattern.zig                           # pattern.zig — Design pattern detection heuristics for Zig source code
 │   │   ├── refcount.zig                          # refcount.zig — Reference-counted VTable handle wrapper (M7).
-│   │   ├── repl.zig
 │   │   ├── root.zig                              # common — Module umbrella root.
 │   │   ├── shell.zig                             # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                      # shell_parser.zig — Safe command-string tokenizer
@@ -168,15 +165,15 @@ Then you you must read
 │   │   ├── algorithm_runner.zig                  # algorithm_runner.zig — Algorithm Runner with Strict Ingestion/Query Separation (P3.6)
 │   │   ├── batch.zig                             # batch.zig — Streaming Batch Ingestion Pipeline
 │   │   ├── benchmark.zig                         # benchmark.zig — G5 Performance Benchmarks
-│   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing
+│   │   ├── cache.zig                             # cache.zig — 5-Tier Cache Hierarchy for Query Routing (re-export facade)
 │   │   ├── cache_test.zig                        # cache_test.zig — Integration tests for L1-L5 routing pipeline
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                            # Coral project configuration loader.
 │   │   ├── context_node_schema.zig
 │   │   ├── csr_graph.zig                         # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
+│   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
-│   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
 │   │   ├── frontier_tool_compiler.zig            # frontier_tool_compiler.zig — Compiles LLM-generated source into WASM tools.
 │   │   ├── frozen_snapshot.zig                   # frozen_snapshot.zig — Frozen State Snapshot for Session Prompt Stability
@@ -197,45 +194,49 @@ Then you you must read
 │   ├── dag
 │   │   ├── context.zig
 │   │   ├── dag_executor.zig                      # dag_executor.zig — M6.1 Parallel DAG Execution
+│   │   ├── json_parser.zig
 │   │   ├── registry.zig
+│   │   ├── repl.zig
 │   │   ├── resolver.zig
 │   │   ├── root.zig                              # dag — DAG execution engine for build systems.
 │   │   └── target.zig
 │   ├── guidance
+│   │   ├── codehealth
+│   │   │   ├── extractor.zig                   # call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.
+│   │   │   └── main.zig                        # codehealth — detect unused modules, redundant code, and dead code candidates.
+│   │   ├── comments
+│   │   │   ├── header.zig                      # header_generator.zig — File header comment generation for guidance.
+│   │   │   ├── inserter.zig                    # comment_inserter.zig — Insert and replace doc comments in Zig source files.
+│   │   │   └── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   └── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
-│   │   ├── ast_parser.zig
-│   │   ├── call_extractor.zig                    # call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.
+│   │   ├── query
+│   │   │   ├── identifier.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
+│   │   │   ├── llm_filter.zig                  # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
+│   │   │   ├── llm_filter_batch.zig            # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
+│   │   │   ├── strategy.zig                    # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
+│   │   │   └── synthesize.zig                  # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
+│   │   ├── sync
+│   │   │   ├── json_store.zig                  # JSON store for guidance sync — reads/writes .guidance/src/**/*.json files.
+│   │   │   ├── line_verify.zig                 # line_verify.zig — Declaration-level line number verification for guidance.
+│   │   │   └── marker.zig                      # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   ├── ast_parser.zig                        # AST parser for Zig source files — extracts declarations and comments.
 │   │   ├── codebase_map.zig                      # codebase_map.zig — Structural discovery layer for `guidance explain`.
-│   │   ├── codehealth.zig                        # codehealth — detect unused modules, redundant code, and dead code candidates.
-│   │   ├── comment_cache.zig                     # comment_cache.zig — In-process cache for generated doc comments.
-│   │   ├── comment_checker.zig                   # comment_checker.zig — Comment staleness detection for guidance.
-│   │   ├── comment_inserter.zig                  # comment_inserter.zig — Insert and replace doc comments in Zig source files.
-│   │   ├── comment_parser.zig                    # comment_parser.zig — Doc comment parsing and quality validation for guidance.
-│   │   ├── comment_sync.zig                      # comment_sync.zig — Source-code-first comment sync workflow for guidance.
-│   │   ├── config.zig                            # guidance project configuration loader.
+│   │   ├── config.zig                            # [gof-patterns]  guidance project configuration loader.
 │   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
 │   │   ├── document_indexer.zig                  # [gof-patterns]  document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
-│   │   ├── git.zig
-│   │   ├── hash.zig
-│   │   ├── header_generator.zig                  # header_generator.zig — File header comment generation for guidance.
-│   │   ├── identifier_match.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
+│   │   ├── git.zig                               # Gitignore-aware file filtering for guidance scanner.
+│   │   ├── hash.zig                              # Hash utilities for guidance — computes stable hashes for API signatures and struct members.
 │   │   ├── infer_capabilities.zig                # infer_capabilities.zig — M4: InferCapabilities — Capability Discovery Without CAPABILITY.md
-│   │   ├── json_store.zig
-│   │   ├── line_verify.zig                       # line_verify.zig — Declaration-level line number verification for guidance.
-│   │   ├── llm_filter.zig                        # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
-│   │   ├── llm_filter_batch.zig                  # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
 │   │   ├── main.zig                              # guidance — AST-guided SQLite vector search database generator.
-│   │   ├── marker.zig                            # Mtime-based change detection for guidance's incremental RALPH loop.
 │   │   ├── mcp.zig                               # mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).
-│   │   ├── pattern.zig
+│   │   ├── pattern.zig                           # Pattern detection for Zig AST nodes — detects GoF and domain patterns.
 │   │   ├── plugin.zig                            # LanguagePlugin — interface for language-specific AST providers.
 │   │   ├── plugin_registry.zig                   # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
 │   │   ├── provider_discovery.zig                # External language provider discovery for guidance.
 │   │   ├── query_engine.zig                      # [gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.
-│   │   ├── query_strategy.zig                    # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
 │   │   ├── ralph.zig                             # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
 │   │   ├── scanner.zig                           # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
 │   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
@@ -243,13 +244,12 @@ Then you you must read
 │   │   ├── stage_builder.zig                     # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── structure.zig                         # STRUCTURE.md generator.
-│   │   ├── sync.zig
+│   │   ├── sync.zig                              # Sync engine for guidance — processes source files and generates JSON metadata.
 │   │   ├── sync_engine.zig                       # sync_engine.zig — init, commit, gen, status, clean, pipeline, and utility commands.
-│   │   ├── synthesize.zig                        # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
-│   │   ├── tests.zig                             # Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
+│   │   ├── tests.zig                             # [gof-patterns]  Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
 │   │   ├── todo.zig                              # todo.zig — Work item lifecycle tracking for guidance.
 │   │   ├── triage.zig                            # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
-│   │   ├── types.zig
+│   │   ├── types.zig                             # Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
 │   │   └── vector_db.zig                         # vector_db.zig — Hybrid keyword + vector search for guidance generation.
 │   ├── guidance-cpp
 │   │   └── main.cpp                              # guidance-cpp: C++ AST provider for the guidance system

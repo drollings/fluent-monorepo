@@ -1,3 +1,4 @@
+//! Pattern detection for Zig AST nodes — detects GoF and domain patterns.
 const std = @import("std");
 const types = @import("types.zig");
 const common = @import("common");

@@ -84,9 +84,9 @@ Patterns are applied in sequence; result of one pass becomes input of the next. 
 | `src/llm/anonymize.zig` | 1.0 | defines_anchor |
 | `src/llm/llm.zig` | 1.0 | defines_anchor |
 | `src/llm/root.zig` | 0.9 | used_by |
+| `src/guidance/query/llm_filter.zig` | 0.4 | path_heuristic |
 | `src/llm/context_packer.zig` | 0.4 | path_heuristic |
-| `src/guidance/llm_filter.zig` | 0.4 | path_heuristic |
-| `src/guidance/llm_filter_batch.zig` | 0.4 | path_heuristic |
 | `src/llm/token_budget.zig` | 0.4 | path_heuristic |
+| `src/guidance/query/llm_filter_batch.zig` | 0.4 | path_heuristic |
 | `src/llm/context_compressor.zig` | 0.4 | path_heuristic |
 

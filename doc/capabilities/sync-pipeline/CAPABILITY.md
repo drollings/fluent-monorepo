@@ -57,15 +57,18 @@ guidance gen --infill           # fill missing LLM comments
 ```
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (7 files, auto-discovered)
+## Sources (10 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/guidance/sync.zig` | 1.0 | defines_anchor |
-| `src/guidance/marker.zig` | 1.0 | defines_anchor |
+| `src/guidance/sync/marker.zig` | 1.0 | defines_anchor |
 | `src/vector/vector_db.zig` | 1.0 | defines_anchor |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
 | `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/vector/root.zig` | 0.9 | used_by |
-| `src/guidance/comment_sync.zig` | 0.9 | used_by |
+| `src/guidance/comments/sync.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync/json_writer.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync/line_verify.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync/json_store.zig` | 0.4 | path_heuristic |
 

@@ -13,7 +13,7 @@
       "match_hash": "cefcf21e96bf43f01a911d311d5ee40d1d9a44bbaa9b642e3087bccc160cc1e8",
       "signature": "keyword_struct OntologyVersion { ... }",
       "is_pub": true,
-      "line": 13
+      "line": 12
     },
     {
       "type": "struct",
@@ -21,7 +21,7 @@
       "match_hash": "aba79453c70effc7c20d824b0ed8c5cfacc6ab141ea9f98dc5e9e75d11eedcec",
       "signature": "keyword_struct OntologyMigration { ... }",
       "is_pub": true,
-      "line": 29
+      "line": 27
     },
     {
       "type": "fn_private",
@@ -33,7 +33,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": false,
-      "line": 37
+      "line": 35
     },
     {
       "type": "struct",
@@ -52,7 +52,7 @@
           ],
           "returns": "VersionRegistry",
           "is_pub": true,
-          "line": 59
+          "line": 56
         }
     ,    {
           "type": "fn_decl",
@@ -64,7 +64,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 66
+          "line": 63
         }
     ,    {
           "type": "fn_decl",
@@ -77,7 +77,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 74
+          "line": 71
         }
     ,    {
           "type": "fn_decl",
@@ -89,28 +89,28 @@
           ],
           "returns": "?OntologyVersion",
           "is_pub": true,
-          "line": 87
+          "line": 84
         }
       ],
-      "line": 55
+      "line": 52
     },
     {
       "type": "test_decl",
       "name": "version recorded and retrieved",
       "is_pub": false,
-      "line": 99
+      "line": 96
     },
     {
       "type": "test_decl",
       "name": "migration stub is no-op",
       "is_pub": false,
-      "line": 115
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "latest returns null when empty",
       "is_pub": false,
-      "line": 119
+      "line": 116
     }
   ]
 }

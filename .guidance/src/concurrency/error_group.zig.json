@@ -26,7 +26,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 51
+          "line": 50
         }
     ,    {
           "type": "fn_decl",
@@ -38,7 +38,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 68
+          "line": 67
         }
     ,    {
           "type": "fn_decl",
@@ -51,7 +51,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 76
+          "line": 75
         }
     ,    {
           "type": "fn_decl",
@@ -63,7 +63,7 @@
           ],
           "returns": "?anyerror",
           "is_pub": true,
-          "line": 86
+          "line": 85
         }
     ,    {
           "type": "fn_decl",
@@ -75,7 +75,7 @@
           ],
           "returns": "[]anyerror",
           "is_pub": true,
-          "line": 96
+          "line": 95
         }
     ,    {
           "type": "fn_private",
@@ -88,10 +88,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 103
+          "line": 102
         }
       ],
-      "line": 38
+      "line": 37
     },
     {
       "type": "struct",
@@ -112,46 +112,46 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 135
+          "line": 133
         }
       ],
-      "line": 131
+      "line": 129
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: wait returns null when all units succeed",
       "is_pub": false,
-      "line": 143
+      "line": 141
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: wait returns first error when one unit fails",
       "is_pub": false,
-      "line": 167
+      "line": 165
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: waitAll collects all errors",
       "is_pub": false,
-      "line": 198
+      "line": 196
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: first error cancels context; subsequent units observe cancellation",
       "is_pub": false,
-      "line": 224
+      "line": 222
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: wait blocks until all units complete (including post-error)",
       "is_pub": false,
-      "line": 257
+      "line": 255
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail",
       "is_pub": false,
-      "line": 304
+      "line": 302
     }
   ]
 }

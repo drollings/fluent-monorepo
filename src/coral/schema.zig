@@ -87,9 +87,6 @@ pub const DDL_PROVIDES_CAPABILITY: []const u8 =
 /// NEIGHBOR_OF: semantic similarity / KNN-derived edge.
 /// distance: cosine distance [0.0, 2.0].
 /// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence" | "rdf_property"
-/// NEIGHBOR_OF: semantic similarity / KNN-derived edge.
-/// distance: cosine distance [0.0, 2.0].
-/// edge_type: "neighbor_of" | "semantic_similarity" | "temporal_sequence" | "rdf_property"
 /// weight: co-occurrence edge weight (default 1.0; updated by EdgeWeights algorithm).
 /// predicate_iri: optional RDF predicate IRI for typed edges from YAGO ingestion.
 pub const DDL_NEIGHBOR_OF: []const u8 =

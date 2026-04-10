@@ -14,12 +14,12 @@ const config_mod = @import("config.zig");
 const plugin_mod = @import("plugin.zig");
 const plugin_registry = @import("plugin_registry.zig");
 const staged_mod = @import("staged.zig");
-const query_strategy_mod = @import("query_strategy.zig");
-const llm_filter_mod = @import("llm_filter.zig");
-const synthesize_mod = @import("synthesize.zig");
-const marker_mod = @import("marker.zig");
+const query_strategy_mod = @import("query/strategy.zig");
+const llm_filter_mod = @import("query/llm_filter.zig");
+const synthesize_mod = @import("query/synthesize.zig");
+const marker_mod = @import("sync/marker.zig");
 const provider_mod = @import("provider_discovery.zig");
-const json_store_mod = @import("json_store.zig");
+const json_store_mod = @import("sync/json_store.zig");
 const sync_mod = @import("sync.zig");
 const llm = @import("llm");
 const GuidanceDb = vector_db_mod.GuidanceDb;
@@ -43,7 +43,7 @@ const ExcerptEntry = struct {
     code: []const u8, // owned: pruned source block
     lang: []const u8, // borrowed constant
 };
-/// Manages file match metadata; owns data structures; ensures consistent state across operations.
+/// File match metadata with path, count, and line numbers.
 const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
 
 // =============================================================================
@@ -157,7 +157,7 @@ pub fn resolveLlmConfigForThinking(
     };
 }
 
-/// Manages filter mode configurations with ownership and invariants; central to query engine logic.
+/// LLM filter mode for query results (auto, force, skip).
 const FilterMode = enum {
     /// Auto-detect: apply LLM filter only for long queries (5+ words).
     auto,
@@ -167,7 +167,7 @@ const FilterMode = enum {
     skip,
 };
 
-/// Manages query parameters and options; owned by the engine; ensures consistent argument handling.
+/// Command-line arguments for the explain command.
 const ExplainArgs = struct {
     query_str: ?[]const u8 = null,
     limit: usize = 10,
@@ -1454,7 +1454,7 @@ fn cmdExplainStaged(
 
     // M8: LLM synthesis (use fast model if available, else default).
     // Check LLM synthesis cache before calling the model.
-    const query_hash = hash_mod.sha256Hex(allocator, query_text) catch null;
+    const query_hash = common.sha256Hex(allocator, query_text) catch null;
     defer if (query_hash) |qh| allocator.free(qh);
 
     if (ea.debug) {
@@ -1505,7 +1505,7 @@ fn cmdExplainStaged(
                     sig_writer.writeAll(s.source) catch {};
                     sig_writer.writeByte(0) catch {};
                 }
-                const sig_hash = hash_mod.sha256Hex(allocator, sig_buf.items) catch null;
+                const sig_hash = common.sha256Hex(allocator, sig_buf.items) catch null;
                 defer if (sig_hash) |sh| allocator.free(sh);
                 db.storeSynthesisCache(qh, summary, sig_hash orelse qh);
             }
@@ -2117,7 +2117,6 @@ const TestQuery = struct {
     observations: []const u8 = "",
 };
 
-/// Tracks benchmark metrics with a fixed-size buffer pool; managed by owner; not thread-safe.
 const BenchmarkResult = struct {
     query: common.SharedString.Ref,
     acc: u8,

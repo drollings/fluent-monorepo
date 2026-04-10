@@ -12,11 +12,11 @@
 ///
 /// For richer context with arena allocation, use BuilderError instead.
 const std = @import("std");
+const builder_error = @import("builder_error.zig");
 
 /// Maximum bytes copied from a user-supplied value into an ErrorContext.
-const max_value_len: usize = 128;
+const max_value_len = builder_error.max_value_len;
 
-/// Manages error context structures, owns state, ensures invariants; not thread-safe.
 pub const ErrorContext = struct {
     /// Operation that failed (static string literal).
     operation: []const u8,
@@ -101,7 +101,6 @@ pub const ErrorContext = struct {
     }
 };
 
-/// Manages arena error context with fixed-size buffers; owned by Arena; ensures consistent state across operations.
 pub const ArenaErrorContext = struct {
     operation: []const u8,
     field: ?[]const u8,

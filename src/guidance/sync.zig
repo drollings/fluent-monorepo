@@ -1,17 +1,17 @@
+//! Sync engine for guidance — processes source files and generates JSON metadata.
 const std = @import("std");
 const types = @import("types.zig");
 const ast_parser = @import("ast_parser.zig");
-const json_store = @import("json_store.zig");
+const json_store = @import("sync/json_store.zig");
 const hash = @import("hash.zig");
 const enhancer_mod = @import("enhancer.zig");
 const common = @import("common");
-const comment_parser = @import("comment_parser.zig");
+const core = @import("comments/core.zig");
 
 /// Maps source file path (relative to project) to capability names.
 /// Owned by SyncProcessor and freed in deinit.
 const CapabilitiesMap = std.StringHashMapUnmanaged([][]const u8);
 
-/// Manages synchronization state with fixed buffers; owned by the module; ensures consistent access patterns.
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -252,7 +252,7 @@ pub const SyncProcessor = struct {
         if (self.debug) {
             for (merge_result.members) |m| {
                 if (m.comment) |c| {
-                    if (!comment_parser.isWellFormedComment(c, "")) {
+                    if (!core.isWellFormedComment(c, "")) {
                         std.debug.print("[sync] {s}: member '{s}' has malformed comment\n", .{ filepath, m.name });
                     }
                 }
@@ -584,7 +584,7 @@ pub const SyncProcessor = struct {
         } else {
             // No changes needed but still touch JSON to update its mtime to "now + 1 second".
             // This ensures subsequent runs don't re-check this file.
-            const marker_mod = @import("marker.zig");
+            const marker_mod = @import("sync/marker.zig");
             marker_mod.touchFileNowPlusOne(guidance_path) catch |err| {
                 if (self.debug) std.debug.print("[sync] warning: failed to touch {s}: {s}\n", .{ guidance_path, @errorName(err) });
             };

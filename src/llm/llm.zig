@@ -6,6 +6,7 @@
 //!   LocalDecomposer, DecomposerConfig  — query decomposition
 
 const std = @import("std");
+const common = @import("common");
 
 // ── Error set ────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,6 @@ pub const LlmError = error{
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-/// Defines configuration settings for the LLM model; manages ownership and invariants during initialization.
 pub const LlmConfig = struct {
     api_url: []const u8,
     model: []const u8,
@@ -61,21 +61,6 @@ pub const LlmConfig = struct {
 
 // ── HTTP client ────────────────────────────────────────────────────────────────
 
-/// Writes a null-terminated string to a writer, handling escaped characters properly.
-fn writeEscapedString(writer: anytype, s: []const u8) !void {
-    for (s) |c| {
-        switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => try writer.writeByte(c),
-        }
-    }
-}
-
-/// Manages LLM client operations with fixed buffers; owned by the system; ensures consistent state across invocations.
 pub const LlmClient = struct {
     allocator: std.mem.Allocator,
     config: LlmConfig,
@@ -133,11 +118,11 @@ pub const LlmClient = struct {
         try writer.writeAll("\",\"messages\":[");
         if (system) |sys| {
             try writer.writeAll("{\"role\":\"system\",\"content\":\"");
-            try writeEscapedString(writer, sys);
+            try common.jsonWriteEscaped(writer, sys);
             try writer.writeAll("\"},");
         }
         try writer.writeAll("{\"role\":\"user\",\"content\":\"");
-        try writeEscapedString(writer, prompt);
+        try common.jsonWriteEscaped(writer, prompt);
         try writer.writeAll("\"}]");
 
         var temp_buf: [32]u8 = undefined;
@@ -304,17 +289,6 @@ pub const LlmClient = struct {
     }
 };
 
-/// Checks if a needle substring exists within the haystack, ignoring case sensitivity.
-fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len == 0) return true;
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return true;
-    }
-    return false;
-}
-
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Removes tags from a Zig string slice, returning a cleaned version.
@@ -407,7 +381,7 @@ pub fn isMalformedResponse(text: []const u8) bool {
     if (llmIsOverlyGeneric(trimmed)) return true;
 
     inline for (llm_preamble_patterns) |pattern| {
-        if (containsIgnoreCase(trimmed, pattern)) return true;
+        if (common.containsIgnoreCase(trimmed, pattern)) return true;
     }
     return false;
 }
@@ -473,11 +447,6 @@ pub fn isBlankOrPlausible(text: []const u8) bool {
     if (trimmed.len < 3) return false;
     return !isMalformedResponse(trimmed);
 }
-
-// ── String utilities ────────────────────────────────────────────────────────
-// Note: String utilities (looksLikeIdentifier, langFromPath, etc.) are
-// available via @import("common").string or directly from common module.
-// llm.zig only needs containsIgnoreCase which is defined locally above.
 
 // ---------------------------------------------------------------------------
 // Config

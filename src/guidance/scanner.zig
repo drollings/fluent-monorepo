@@ -21,7 +21,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const codebase_map_mod = @import("codebase_map.zig");
 const document_indexer_mod = @import("document_indexer.zig");
-const query_strategy_mod = @import("query_strategy.zig");
+const query_strategy_mod = @import("query/strategy.zig");
 const infer_capabilities_mod = @import("infer_capabilities.zig");
 const staged_mod = @import("staged.zig");
 const vector_db_mod = @import("vector");
@@ -36,7 +36,6 @@ const GuidanceDb = vector_db_mod.GuidanceDb;
 // Confidence tier
 // =============================================================================
 
-/// Defines confidence tiers for scoring; managed centrally; ensures consistent evaluation logic.
 pub const ConfidenceTier = enum {
     /// AST analysis + CAPABILITY.md + STRUCTURE.md all present.
     high,
@@ -50,7 +49,6 @@ pub const ConfidenceTier = enum {
 // CodebaseScanner
 // =============================================================================
 
-/// Manages scanner state and codebase analysis; owns scanning logic; not thread-safe.
 pub const CodebaseScanner = struct {
     allocator: std.mem.Allocator,
     workspace: []const u8,

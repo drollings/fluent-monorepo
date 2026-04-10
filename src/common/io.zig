@@ -10,7 +10,6 @@ const std = @import("std");
 
 pub const BUFFER_SIZE = 4096;
 
-/// Manages writer state for Zig IO, owns buffers, supports initialization/deinit, not thread-safe.
 pub const WriterState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
     fw: std.fs.File.Writer = undefined,
@@ -164,7 +163,10 @@ test "makePathAbsolute is idempotent for existing paths" {
 /// Default maximum file size for readFileAlloc (10 MB).
 pub const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-/// Reads a file into a memory-allocated Zig slice, returning the content as a slice of bytes.
+/// Reads a file into a newly-allocated buffer.
+/// Returns null if the file cannot be opened or read.
+/// NOTE: OutOfMemory is also returned as null. Use readFileAllocErr()
+/// for explicit error propagation.
 pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
@@ -235,14 +237,4 @@ test "resolvePath handles dot by returning base" {
     const result = try resolvePath(std.testing.allocator, "/base", ".");
     defer std.testing.allocator.free(result);
     try std.testing.expectEqualStrings("/base", result);
-}
-
-/// Reads a file path and allocates memory for its contents, returning a slice of bytes.
-pub fn readFileOpt(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
-    return readFileAlloc(allocator, path, max_size);
-}
-
-test "readFileOpt returns null for non-existent file" {
-    const result = readFileOpt(std.testing.allocator, "/nonexistent/path/file.txt", 1024);
-    try std.testing.expect(result == null);
 }

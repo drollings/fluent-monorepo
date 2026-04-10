@@ -4,7 +4,7 @@
     "source": "src/common/hash.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/json_store.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -43,19 +43,19 @@
           "type": "enum_field",
           "name": "sha256",
           "is_pub": false,
-          "line": 42
+          "line": 41
         }
     ,    {
           "type": "enum_field",
           "name": "sha512",
           "is_pub": false,
-          "line": 43
+          "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "blake3",
           "is_pub": false,
-          "line": 44
+          "line": 43
         }
     ,    {
           "type": "fn_decl",
@@ -67,10 +67,10 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 46
+          "line": 45
         }
       ],
-      "line": 41
+      "line": 40
     },
     {
       "type": "fn_decl",
@@ -84,7 +84,22 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 56
+      "line": 55
+    },
+    {
+      "type": "fn_private",
+      "name": "hashFileGeneric",
+      "match_hash": "3d1f3941dfa1e4e429850d7d4d2f33bbc309e69f5eec0ef1449d6be4e2a5a2cd",
+      "signature": "fn hashFileGeneric(allocator: std.mem.Allocator, buf: *[65536]u8, file: std.fs.File, hasher) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "buf", "type": "*[65536]u8" },
+        { "name": "file", "type": "std.fs.File" },
+        { "name": "hasher" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": false,
+      "line": 72
     },
     {
       "type": "struct",
@@ -92,7 +107,7 @@
       "match_hash": "cf64cfb3f02d2a51975bb70cb19680210a82df4724a5ce8633ca50243cf936dd",
       "signature": "keyword_struct BatchHashResult { ... }",
       "is_pub": true,
-      "line": 107
+      "line": 91
     },
     {
       "type": "fn_decl",
@@ -107,7 +122,7 @@
       ],
       "returns": "[]BatchHashResult",
       "is_pub": true,
-      "line": 114
+      "line": 98
     },
     {
       "type": "fn_decl",
@@ -119,7 +134,7 @@
       ],
       "returns": "u64",
       "is_pub": true,
-      "line": 140
+      "line": 124
     },
     {
       "type": "fn_decl",
@@ -133,7 +148,21 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 152
+      "line": 136
+    },
+    {
+      "type": "fn_private",
+      "name": "computeHashHex",
+      "match_hash": "5bb2cf086d0dd141c161f5f1a2e801d09988bbaa525f19f1fa5998e9c6dcc2fc",
+      "signature": "fn computeHashHex(allocator: std.mem.Allocator, data: []const u8, HashType: type) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "data", "type": "[]const u8" },
+        { "name": "HashType", "type": "type" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": false,
+      "line": 148
     },
     {
       "type": "fn_decl",
@@ -145,7 +174,7 @@
       ],
       "returns": "[32]u8",
       "is_pub": true,
-      "line": 180
+      "line": 156
     },
     {
       "type": "fn_decl",
@@ -158,7 +187,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 187
+      "line": 163
     },
     {
       "type": "struct",
@@ -177,7 +206,7 @@
           ],
           "returns": "HashState",
           "is_pub": true,
-          "line": 200
+          "line": 175
         }
     ,    {
           "type": "fn_decl",
@@ -190,7 +219,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 208
+          "line": 183
         }
     ,    {
           "type": "fn_decl",
@@ -203,70 +232,83 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 217
+          "line": 192
         }
       ],
-      "line": 194
+      "line": 169
+    },
+    {
+      "type": "fn_private",
+      "name": "finalizeHashHex",
+      "match_hash": "6cb023fffa73fbee9b2adce29dc6b332f524f50812f77d5510ec65072a4153e1",
+      "signature": "fn finalizeHashHex(allocator: std.mem.Allocator, hasher) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "hasher" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": false,
+      "line": 201
     },
     {
       "type": "test_decl",
       "name": "sha256Hex produces correct length",
       "is_pub": false,
-      "line": 245
+      "line": 213
     },
     {
       "type": "test_decl",
       "name": "sha256Hex is deterministic",
       "is_pub": false,
-      "line": 251
+      "line": 219
     },
     {
       "type": "test_decl",
       "name": "sha256Hex differs for different inputs",
       "is_pub": false,
-      "line": 259
+      "line": 227
     },
     {
       "type": "test_decl",
       "name": "contentHashWithModel is deterministic and model-sensitive",
       "is_pub": false,
-      "line": 267
+      "line": 235
     },
     {
       "type": "test_decl",
       "name": "hashString: sha256",
       "is_pub": false,
-      "line": 275
+      "line": 243
     },
     {
       "type": "test_decl",
       "name": "hashString: blake3",
       "is_pub": false,
-      "line": 281
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "blake3Hash returns 32 bytes",
       "is_pub": false,
-      "line": 287
+      "line": 255
     },
     {
       "type": "test_decl",
       "name": "blake3Hex produces 64-char hex",
       "is_pub": false,
-      "line": 292
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "HashState incremental matches single-pass sha256",
       "is_pub": false,
-      "line": 298
+      "line": 266
     },
     {
       "type": "test_decl",
       "name": "HashAlgorithm digestLength",
       "is_pub": false,
-      "line": 314
+      "line": 282
     }
   ]
 }

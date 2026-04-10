@@ -60,7 +60,6 @@ pub const DagCallbacks = struct {
     }
 };
 
-/// Manages DagExecutor logic, owns execution context, ensures consistent state across invocations.
 pub const DagExecutor = struct {
     const Self = @This();
 
@@ -73,8 +72,8 @@ pub const DagExecutor = struct {
     nodes: std.AutoHashMapUnmanaged(i64, DagNode),
     /// Completed nodes
     completed: std.AutoHashMapUnmanaged(i64, void),
-    /// Failed nodes
-    failed: std.AutoHashMapUnmanaged(i64, []const u8),
+    /// Failed nodes (key is heap-allocated pointer to preserve address stability)
+    failed: std.AutoHashMapUnmanaged(*i64, []const u8),
     /// Results from all executions
     results: std.ArrayListUnmanaged(DagResult),
     /// Condition variable for completion
@@ -105,7 +104,7 @@ pub const DagExecutor = struct {
         self.completed.deinit(self.allocator);
         var it = self.failed.iterator();
         while (it.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
+            self.allocator.destroy(entry.key_ptr.*);
         }
         self.failed.deinit(self.allocator);
         for (self.results.items) |r| {
@@ -172,7 +171,9 @@ pub const DagExecutor = struct {
             }
 
             // Wait for some completions.
-            self.cv.wait(self.mu) catch {};
+            self.cv.wait(self.mu) catch {
+                std.log.debug("condition variable wait interrupted", .{});
+            };
             self.mu.unlock();
 
             // Find newly ready nodes.
@@ -246,8 +247,9 @@ pub const DagExecutor = struct {
             if (result.success) {
                 self.completed.putAssumeCapacity(node_id, {});
             } else {
-                const owned_id = try self.allocator.dupe(i64, &[_]i64{node_id});
-                try self.failed.putAssumeCapacity(owned_id[0], result.error_message orelse "unknown error");
+                const owned_id_ptr = try self.allocator.create(i64);
+                owned_id_ptr.* = node_id;
+                try self.failed.putAssumeCapacity(owned_id_ptr, result.error_message orelse "unknown error");
             }
 
             // Copy output if needed.

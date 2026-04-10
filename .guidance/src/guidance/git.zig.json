@@ -4,6 +4,7 @@
     "source": "src/guidance/git.zig",
     "language": "zig"
   },
+  "comment": " Gitignore-aware file filtering for guidance scanner.",
   "used_by": ["src/guidance/structure.zig"],
   "members": [
     {

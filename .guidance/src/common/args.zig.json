@@ -12,7 +12,7 @@
       "match_hash": "e7b27209767c4e9b12c8b77607bdb0978a42681b5ba1a149b4c497120e959c3f",
       "signature": "keyword_struct CommonArgs { ... }",
       "is_pub": true,
-      "line": 4
+      "line": 3
     },
     {
       "type": "fn_decl",
@@ -26,49 +26,49 @@
       ],
       "returns": "CommonArgs",
       "is_pub": true,
-      "line": 36
+      "line": 35
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: basic flags",
       "is_pub": false,
-      "line": 100
+      "line": 99
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: model and api-url with set flags",
       "is_pub": false,
-      "line": 113
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: positional arguments collected",
       "is_pub": false,
-      "line": 126
+      "line": 125
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: --file and --llm-query",
       "is_pub": false,
-      "line": 139
+      "line": 138
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: unknown flags are skipped (permissive mode)",
       "is_pub": false,
-      "line": 150
+      "line": 149
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: missing value for -m returns error",
       "is_pub": false,
-      "line": 161
+      "line": 160
     },
     {
       "type": "test_decl",
       "name": "parseCommonArgs: defaults when no args given",
       "is_pub": false,
-      "line": 170
+      "line": 169
     }
   ]
 }

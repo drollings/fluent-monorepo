@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
-  "used_by": ["src/coral/main.zig", "src/guidance/query_engine.zig"],
+  "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "enum",
@@ -64,10 +64,10 @@
           ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
-          "line": 47
+          "line": 46
         }
       ],
-      "line": 44
+      "line": 43
     },
     {
       "type": "struct",
@@ -86,10 +86,10 @@
           ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
-          "line": 64
+          "line": 63
         }
       ],
-      "line": 60
+      "line": 59
     },
     {
       "type": "struct",
@@ -108,10 +108,10 @@
           ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
-          "line": 87
+          "line": 85
         }
       ],
-      "line": 83
+      "line": 81
     },
     {
       "type": "fn_private",
@@ -124,7 +124,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 109
+      "line": 107
     },
     {
       "type": "struct",
@@ -132,7 +132,7 @@
       "match_hash": "3ad24ce6f16488fa534fe36f7369d88f3931c123523bced498a992f5eb52995c",
       "signature": "keyword_struct ToolDef { ... }",
       "is_pub": true,
-      "line": 126
+      "line": 124
     },
     {
       "type": "struct",
@@ -140,7 +140,7 @@
       "match_hash": "ba93b010fe244fd50407ae4876013cf1ea1d1fb14d3206945c93142d807b05be",
       "signature": "keyword_struct JsonRpcRequest { ... }",
       "is_pub": false,
-      "line": 161
+      "line": 159
     },
     {
       "type": "struct",
@@ -161,7 +161,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 185
+          "line": 182
         }
     ,    {
           "type": "fn_decl",
@@ -174,7 +174,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 240
+          "line": 237
         }
     ,    {
           "type": "fn_private",
@@ -188,7 +188,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 259
+          "line": 256
         }
     ,    {
           "type": "fn_private",
@@ -202,7 +202,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 272
+          "line": 269
         }
     ,    {
           "type": "fn_private",
@@ -216,7 +216,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 287
+          "line": 284
         }
     ,    {
           "type": "fn_private",
@@ -230,7 +230,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 323
+          "line": 320
         }
     ,    {
           "type": "fn_private",
@@ -245,7 +245,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 357
+          "line": 354
         }
     ,    {
           "type": "fn_private",
@@ -260,7 +260,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 388
+          "line": 385
         }
     ,    {
           "type": "fn_private",
@@ -275,7 +275,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 430
+          "line": 427
         }
     ,    {
           "type": "fn_private",
@@ -291,7 +291,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 489
+          "line": 486
         }
     ,    {
           "type": "fn_private",
@@ -304,10 +304,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 503
+          "line": 500
         }
       ],
-      "line": 173
+      "line": 170
     },
     {
       "type": "fn_private",
@@ -320,7 +320,7 @@
       ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
-      "line": 516
+      "line": 513
     },
     {
       "type": "fn_private",
@@ -333,37 +333,37 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 541
+      "line": 538
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest initialize",
       "is_pub": false,
-      "line": 561
+      "line": 558
     },
     {
       "type": "test_decl",
       "name": "McpServer: handleRequest tools/list",
       "is_pub": false,
-      "line": 586
+      "line": 583
     },
     {
       "type": "test_decl",
       "name": "McpServer: tools/call coral_query routes to L5",
       "is_pub": false,
-      "line": 612
+      "line": 609
     },
     {
       "type": "test_decl",
       "name": "McpServer: unknown method returns error -32601",
       "is_pub": false,
-      "line": 639
+      "line": 636
     },
     {
       "type": "test_decl",
       "name": "McpServer: missing required field returns error",
       "is_pub": false,
-      "line": 663
+      "line": 660
     }
   ]
 }

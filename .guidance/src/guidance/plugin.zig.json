@@ -36,7 +36,7 @@
           ],
           "returns": "ParsedFile",
           "is_pub": true,
-          "line": 52
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
@@ -50,16 +50,16 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 62
+          "line": 61
         }
       ],
-      "line": 30
+      "line": 29
     },
     {
       "type": "test_decl",
       "name": "LanguagePlugin interface is callable",
       "is_pub": false,
-      "line": 75
+      "line": 74
     }
   ]
 }

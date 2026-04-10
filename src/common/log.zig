@@ -1,7 +1,12 @@
+//! Global logger with console + file output.
+//!
+//! For request-scoped structured logging, see common.logging.LogContext.
+//! These two modules are complementary: Logger handles output destinations,
+//! LogContext attaches metadata (request ID, timing).
+
 const std = @import("std");
 const io = @import("io.zig");
 
-/// Defines a level type for structured logging with fixed-size buffers; manages ownership and invariants.
 pub const Level = enum {
     debug,
     info,
@@ -27,7 +32,6 @@ pub const Level = enum {
     }
 };
 
-/// Manages configuration settings for logging; owned by the module; ensures consistent initialization and cleanup.
 pub const LogConfig = struct {
     level: Level = .info,
     show_timestamp: bool = false,
@@ -136,7 +140,7 @@ pub const Logger = struct {
     }
 };
 
-var global_logger: ?*Logger = null;
+threadlocal var global_logger: ?*Logger = null;
 
 /// Updates global logging configuration by setting a logger instance.
 pub fn setGlobal(logger: *Logger) void {

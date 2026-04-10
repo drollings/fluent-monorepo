@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " builder_error.zig — Structured error type for fluent builder chains.\n\n Replaces bare `?anyerror` in builder structs with rich context:\n   - Which phase the error occurred in (depends, provides, command, …)\n   - Which field was being set\n   - What value was supplied (truncated to 128 bytes)\n   - Which constraint was violated\n   - The underlying anyerror cause\n\n All strings except field/constraint names are allocated from the builder's\n arena; the arena is deinited by the terminal method (register / build / sync).",
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/error_context.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -18,37 +18,37 @@
           "type": "enum_field",
           "name": "depends",
           "is_pub": false,
-          "line": 20
+          "line": 19
         }
     ,    {
           "type": "enum_field",
           "name": "provides",
           "is_pub": false,
-          "line": 21
+          "line": 20
         }
     ,    {
           "type": "enum_field",
           "name": "command",
           "is_pub": false,
-          "line": 22
+          "line": 21
         }
     ,    {
           "type": "enum_field",
           "name": "registration",
           "is_pub": false,
-          "line": 23
+          "line": 22
         }
     ,    {
           "type": "enum_field",
           "name": "validation",
           "is_pub": false,
-          "line": 24
+          "line": 23
         }
     ,    {
           "type": "enum_field",
           "name": "initialization",
           "is_pub": false,
-          "line": 25
+          "line": 24
         }
     ,    {
           "type": "fn_decl",
@@ -60,10 +60,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 27
+          "line": 26
         }
       ],
-      "line": 19
+      "line": 18
     },
     {
       "type": "struct",
@@ -87,7 +87,7 @@
           ],
           "returns": "*BuilderError",
           "is_pub": true,
-          "line": 53
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
@@ -102,7 +102,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 90
+          "line": 88
         }
     ,    {
           "type": "fn_decl",
@@ -116,10 +116,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 102
+          "line": 100
         }
       ],
-      "line": 35
+      "line": 33
     },
     {
       "type": "fn_decl",
@@ -131,7 +131,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 119
+      "line": 117
     },
     {
       "type": "fn_decl",
@@ -144,61 +144,61 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 129
+      "line": 127
     },
     {
       "type": "test_decl",
       "name": "BuilderError: init captures field, value, constraint, cause",
       "is_pub": false,
-      "line": 157
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "BuilderError: value is truncated to max_value_len",
       "is_pub": false,
-      "line": 174
+      "line": 172
     },
     {
       "type": "test_decl",
       "name": "BuilderError: null field and constraint format correctly",
       "is_pub": false,
-      "line": 186
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "BuilderError: format writes message",
       "is_pub": false,
-      "line": 196
+      "line": 194
     },
     {
       "type": "test_decl",
       "name": "BuilderError: chain appends parent message",
       "is_pub": false,
-      "line": 211
+      "line": 209
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: empty returns empty",
       "is_pub": false,
-      "line": 224
+      "line": 222
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: single name",
       "is_pub": false,
-      "line": 231
+      "line": 229
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: multiple names comma-separated",
       "is_pub": false,
-      "line": 238
+      "line": 236
     },
     {
       "type": "test_decl",
       "name": "BuilderError: GPA no leaks",
       "is_pub": false,
-      "line": 245
+      "line": 243
     }
   ]
 }

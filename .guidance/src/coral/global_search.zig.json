@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -39,7 +40,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 62
+          "line": 61
         }
     ,    {
           "type": "fn_decl",
@@ -55,40 +56,40 @@
           ],
           "returns": "GlobalSearchResult",
           "is_pub": true,
-          "line": 76
+          "line": 75
         }
       ],
-      "line": 57
+      "line": 56
     },
     {
       "type": "test_decl",
       "name": "GlobalSearch: empty summaries returns no-results answer",
       "is_pub": false,
-      "line": 126
+      "line": 125
     },
     {
       "type": "test_decl",
       "name": "GlobalSearch: sorts by avg_pagerank descending",
       "is_pub": false,
-      "line": 136
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "GlobalSearch: max_communities caps number of sources",
       "is_pub": false,
-      "line": 153
+      "line": 152
     },
     {
       "type": "test_decl",
       "name": "GlobalSearch: low confidence triggers frontier flag",
       "is_pub": false,
-      "line": 174
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "GlobalSearch: high confidence skips frontier",
       "is_pub": false,
-      "line": 187
+      "line": 186
     }
   ]
 }

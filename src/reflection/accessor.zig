@@ -183,7 +183,6 @@ pub const RequiresWhenEntry = struct {
 // § 3b  Accessor descriptor
 // ============================================================
 
-/// Defines a structured accessor with ownership and invariants; manages fixed-size buffers; not thread-safe.
 pub const Accessor = struct {
     name: []const u8,
     offset: usize,

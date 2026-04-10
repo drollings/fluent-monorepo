@@ -20,7 +20,6 @@ const Allocator = std.mem.Allocator;
 // Public types
 // ---------------------------------------------------------------------------
 
-/// Manages tool registry entries with fixed-size buffers; owned by the system; ensures consistent state across operations.
 pub const Tool = struct {
     /// Unique name used in LLM tool calls.
     name: []const u8,
@@ -34,7 +33,6 @@ pub const Tool = struct {
     is_available: ?*const fn () bool = null,
 };
 
-/// Manages tool definitions with a fixed-size buffer pool; owned by the tool registry; ensures consistent state across operations.
 pub const ToolDefinition = struct {
     name: []const u8,
     description: []const u8,
@@ -45,7 +43,6 @@ pub const ToolDefinition = struct {
 // ToolRegistry
 // ---------------------------------------------------------------------------
 
-/// Manages tool registry entries with ownership and invariants; ensures consistent access patterns.
 pub const ToolRegistry = struct {
     tools: std.ArrayListUnmanaged(Tool) = .empty,
 

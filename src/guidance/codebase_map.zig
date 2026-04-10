@@ -38,7 +38,6 @@ pub const BuildSystem = enum {
     }
 };
 
-/// Manages entry point logic with fixed buffers; owned by the module; ensures consistent initialization.
 pub const EntryPoint = struct {
     /// Function/struct name: "main", "cmdExplain", "handleRequest"
     name: []const u8,
@@ -50,7 +49,6 @@ pub const EntryPoint = struct {
     kind: enum { main_fn, cmd_fn, cli_handler, test_fn, server_fn, other },
 };
 
-/// Manages directory entries with ownership and invariants; designed for single ownership and not thread-safe.
 pub const DirectoryEntry = struct {
     /// Relative path from workspace root
     path: []const u8,

@@ -1,0 +1,302 @@
+{
+  "meta": {
+    "module": "src.guidance.comments.core",
+    "source": "src/guidance/comments/core.zig",
+    "language": "zig"
+  },
+  "comment": " comments/core.zig — Merged doc comment processing for guidance.\n\n Consolidates parser, checker, and cache into a single module for\n clarity and to enforce the max_comment_len constant in one place.",
+  "used_by": ["src/guidance/comments/sync.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "DocComment",
+      "match_hash": "918413b65a83853d3a8b6ff4298b49063805199ee679e17113964661d762f120",
+      "signature": "keyword_struct DocComment { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "3169f66bb3870bfbf531860a6d41ec37e949ceb27a2bd481862422a2475ba93a",
+          "signature": "fn deinit(self: DocComment, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "DocComment" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 20
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "fn_decl",
+      "name": "parseDocComment",
+      "match_hash": "f9f92e2e97fbd4eeaff1c6b53c0aa9508bc493a97d7f90973e09bc2ab2aa1646",
+      "signature": "fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) -> DocComment",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "raw", "type": "[]const u8" }
+      ],
+      "returns": "DocComment",
+      "is_pub": true,
+      "line": 27
+    },
+    {
+      "type": "fn_decl",
+      "name": "isWellFormedComment",
+      "match_hash": "93731d94c2171be7f0655c1527fe1da86d64f4ab9188a795b09dedaa195e86fc",
+      "signature": "fn isWellFormedComment(comment: []const u8, code_context: []const u8) -> bool",
+      "params": [
+        { "name": "comment", "type": "[]const u8" },
+        { "name": "code_context", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 49
+    },
+    {
+      "type": "fn_decl",
+      "name": "checkCommentStaleness",
+      "match_hash": "37744bc224799b7a49a582d882442b485dc4058abdd6fcef231cabc10875cb6b",
+      "signature": "fn checkCommentStaleness(existing_comment: []const u8, member: types.Member, source_context: []const u8) -> CheckResult",
+      "params": [
+        { "name": "existing_comment", "type": "[]const u8" },
+        { "name": "member", "type": "types.Member" },
+        { "name": "source_context", "type": "[]const u8" }
+      ],
+      "returns": "CheckResult",
+      "is_pub": true,
+      "line": 83
+    },
+    {
+      "type": "fn_decl",
+      "name": "isHashStale",
+      "match_hash": "b5c72a8c04c36d5a6cfeea7b281fc127c195ce018ca623db0a7a76bd0fb43be8",
+      "signature": "fn isHashStale(stored_hash: ?[]const u8, current_hash: ?[]const u8) -> bool",
+      "params": [
+        { "name": "stored_hash", "type": "?[]const u8" },
+        { "name": "current_hash", "type": "?[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 100
+    },
+    {
+      "type": "struct",
+      "name": "Key",
+      "match_hash": "8d7ace118ac07d043ae24e9c1395c60bd47e962701dceb5f4de23445685c12f0",
+      "signature": "keyword_struct Key { ... }",
+      "is_pub": false,
+      "line": 110
+    },
+    {
+      "type": "struct",
+      "name": "CommentCache",
+      "match_hash": "d382bc1cb69217dc56d5fffeb087382d6b03110a5f3a198f4a5dda746fdca760",
+      "signature": "keyword_struct CommentCache { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "f77a63b590f41f4792ad1c26b7a5913c1404430d53cb9916bbd23b066f7e86bf",
+          "signature": "fn init(allocator: std.mem.Allocator) -> CommentCache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "CommentCache",
+          "is_pub": true,
+          "line": 125
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "109474b26570e353340963be8aec74404577659de45afbcbc486b5e291482ef6",
+          "signature": "fn deinit(self: *CommentCache) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 129
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isValid",
+          "match_hash": "24a4636e7116dc42648d2103d99cbe96b43ed5513f9fe39a5c96be8b88d6248d",
+          "signature": "fn isValid(self: *const CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 139
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "89f702c6cda31ee6821a7345fa644b2e0b87a1db0d4c350e455469361464dbfa",
+          "signature": "fn get(self: *const CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*const CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "is_pub": true,
+          "line": 151
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "put",
+          "match_hash": "af3b0e45533c5ae513c70f5c3a06a6dafd9f3046a6c7e60e218559bc95fffbac",
+          "signature": "fn put(self: *CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8, comment: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" },
+            { "name": "comment", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 164
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "invalidateFile",
+          "match_hash": "29be69d87c7ae14e6aad8a7441216d107a72caf129c85cd308a2dba6216f1a4b",
+          "signature": "fn invalidateFile(self: *CommentCache, file_path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" },
+            { "name": "file_path", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 192
+        }
+      ],
+      "line": 121
+    },
+    {
+      "type": "test_decl",
+      "name": "parseDocComment - simple single line",
+      "is_pub": false,
+      "line": 219
+    },
+    {
+      "type": "test_decl",
+      "name": "parseDocComment - multi-line",
+      "is_pub": false,
+      "line": 230
+    },
+    {
+      "type": "test_decl",
+      "name": "isWellFormedComment - empty",
+      "is_pub": false,
+      "line": 240
+    },
+    {
+      "type": "test_decl",
+      "name": "isWellFormedComment - too long",
+      "is_pub": false,
+      "line": 244
+    },
+    {
+      "type": "test_decl",
+      "name": "isWellFormedComment - leaked prompt",
+      "is_pub": false,
+      "line": 250
+    },
+    {
+      "type": "test_decl",
+      "name": "isWellFormedComment - TODO marker",
+      "is_pub": false,
+      "line": 255
+    },
+    {
+      "type": "test_decl",
+      "name": "isWellFormedComment - valid",
+      "is_pub": false,
+      "line": 259
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCommentStaleness - valid comment",
+      "is_pub": false,
+      "line": 263
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCommentStaleness - empty comment",
+      "is_pub": false,
+      "line": 269
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCommentStaleness - leaked prompt",
+      "is_pub": false,
+      "line": 275
+    },
+    {
+      "type": "test_decl",
+      "name": "checkCommentStaleness - too long",
+      "is_pub": false,
+      "line": 281
+    },
+    {
+      "type": "test_decl",
+      "name": "isHashStale - different hashes",
+      "is_pub": false,
+      "line": 289
+    },
+    {
+      "type": "test_decl",
+      "name": "isHashStale - same hash",
+      "is_pub": false,
+      "line": 293
+    },
+    {
+      "type": "test_decl",
+      "name": "isHashStale - null hash",
+      "is_pub": false,
+      "line": 297
+    },
+    {
+      "type": "test_decl",
+      "name": "isHashStale triggers regeneration path",
+      "is_pub": false,
+      "line": 302
+    },
+    {
+      "type": "test_decl",
+      "name": "CommentCache - put and get",
+      "is_pub": false,
+      "line": 309
+    },
+    {
+      "type": "test_decl",
+      "name": "CommentCache - stale hash returns null",
+      "is_pub": false,
+      "line": 320
+    },
+    {
+      "type": "test_decl",
+      "name": "CommentCache - missing key returns null",
+      "is_pub": false,
+      "line": 330
+    },
+    {
+      "type": "test_decl",
+      "name": "CommentCache - isValid",
+      "is_pub": false,
+      "line": 339
+    }
+  ]
+}

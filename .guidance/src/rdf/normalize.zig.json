@@ -43,52 +43,52 @@
           "type": "enum_field",
           "name": "string",
           "is_pub": false,
-          "line": 49
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "lang_string",
           "is_pub": false,
-          "line": 50
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "integer",
           "is_pub": false,
-          "line": 51
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "decimal",
           "is_pub": false,
-          "line": 52
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "double",
           "is_pub": false,
-          "line": 53
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "boolean",
           "is_pub": false,
-          "line": 54
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "date_time",
           "is_pub": false,
-          "line": 55
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "other",
           "is_pub": false,
-          "line": 56
+          "line": 55
         }
       ],
-      "line": 48
+      "line": 47
     },
     {
       "type": "union",
@@ -96,7 +96,7 @@
       "match_hash": "6c95d3c7f1dcc9b61545366d0e211921c5e0cbd1b82b890d2fa99ec59712105b",
       "signature": "keyword_union TypedValue { ... }",
       "is_pub": true,
-      "line": 60
+      "line": 58
     },
     {
       "type": "fn_decl",
@@ -108,7 +108,7 @@
       ],
       "returns": "XsdType",
       "is_pub": true,
-      "line": 74
+      "line": 72
     },
     {
       "type": "fn_decl",
@@ -122,7 +122,7 @@
       ],
       "returns": "TypedValue",
       "is_pub": true,
-      "line": 91
+      "line": 89
     },
     {
       "type": "struct",
@@ -142,7 +142,7 @@
           ],
           "returns": "BlankNodeScope",
           "is_pub": true,
-          "line": 127
+          "line": 125
         }
     ,    {
           "type": "fn_decl",
@@ -154,7 +154,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 135
+          "line": 133
         }
     ,    {
           "type": "fn_decl",
@@ -167,76 +167,76 @@
           ],
           "returns": "i64",
           "is_pub": true,
-          "line": 142
+          "line": 140
         }
       ],
-      "line": 122
+      "line": 120
     },
     {
       "type": "test_decl",
       "name": "IRI hash is deterministic",
       "is_pub": false,
-      "line": 157
+      "line": 155
     },
     {
       "type": "test_decl",
       "name": "different IRIs produce different hashes",
       "is_pub": false,
-      "line": 164
+      "line": 162
     },
     {
       "type": "test_decl",
       "name": "blank node scoping",
       "is_pub": false,
-      "line": 170
+      "line": 168
     },
     {
       "type": "test_decl",
       "name": "blank node different scopes produce different IDs",
       "is_pub": false,
-      "line": 181
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "normalize integer literal",
       "is_pub": false,
-      "line": 187
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "normalize decimal literal",
       "is_pub": false,
-      "line": 193
+      "line": 191
     },
     {
       "type": "test_decl",
       "name": "normalize boolean literal true",
       "is_pub": false,
-      "line": 198
+      "line": 196
     },
     {
       "type": "test_decl",
       "name": "normalize boolean literal false",
       "is_pub": false,
-      "line": 204
+      "line": 202
     },
     {
       "type": "test_decl",
       "name": "normalize lang string",
       "is_pub": false,
-      "line": 209
+      "line": 207
     },
     {
       "type": "test_decl",
       "name": "normalize plain string",
       "is_pub": false,
-      "line": 214
+      "line": 212
     },
     {
       "type": "test_decl",
       "name": "normalize dateTime stub",
       "is_pub": false,
-      "line": 219
+      "line": 217
     }
   ]
 }

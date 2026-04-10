@@ -43,7 +43,6 @@ const HANDLER_OVERRIDES = [_]HandlerOverride{
     .{ .name = targets.TARGET_MAP, .handler = handleYagoMap },
 };
 
-/// Manages execution context for Dag messages; owns state; not thread-safe.
 pub const DagExecutor = struct {
     const Self = @This();
 

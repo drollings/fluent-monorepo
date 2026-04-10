@@ -1,3 +1,4 @@
+//! AST parser for Zig source files — extracts declarations and comments.
 const std = @import("std");
 const types = @import("types.zig");
 const hash = @import("hash.zig");

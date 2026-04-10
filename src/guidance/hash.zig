@@ -1,9 +1,9 @@
+//! Hash utilities for guidance — computes stable hashes for API signatures and struct members.
 const std = @import("std");
 const types = @import("types.zig");
 const common = @import("common");
 
-/// SHA-256 hex digest — delegates to src/common/hash.zig.
-pub const sha256Hex = common.sha256Hex;
+const sha256Hex = common.sha256Hex;
 
 /// Computes a hash from allocator, name, and parameters, returning a slice of hash values.
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {

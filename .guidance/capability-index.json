@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1775798276517100685",
+  "generated": "1775833559263443985",
   "capabilities": [
     {
       "name": "config-system",
@@ -1977,6 +1977,7 @@
         "clear",
         "exist",
         "edit",
+        "path_heuristic",
         "regen",
         "Sync",
         "does",
@@ -2213,6 +2214,7 @@
         "payload",
         "PayloadType",
         "schema",
+        "used_by",
         "capabilities_bitset",
         "extism_plugin_call",
         "freed",

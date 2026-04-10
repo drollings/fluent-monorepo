@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "module": "src.guidance.comments.inserter",
+    "source": "src/guidance/comments/inserter.zig",
+    "language": "zig"
+  },
+  "comment": " comment_inserter.zig — Insert and replace doc comments in Zig source files.\n\n Provides utilities to:\n   - Insert a `///` doc comment block above a declaration at a given line\n   - Replace an existing doc comment block above a declaration",
+  "used_by": ["src/guidance/comments/sync.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "InsertResult",
+      "match_hash": "97c8048fa258475c027c5f864d7c14e2ac0b8cae874c7acf1e7cc56a901facc0",
+      "signature": "keyword_struct InsertResult { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "0bb67120fdb96affdf09b56634ee7796a399a9407c6f9ba991538f792b1dac08",
+          "signature": "fn deinit(self: InsertResult, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "InsertResult" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 27
+        }
+      ],
+      "line": 19
+    },
+    {
+      "type": "fn_decl",
+      "name": "insertComment",
+      "match_hash": "e980f4d4dc480bdd77e490f4baf6f6158c6d392d4a1738884b6b50517608aa07",
+      "signature": "fn insertComment(allocator: std.mem.Allocator, source: []const u8, line: u32, comment: []const u8) -> InsertResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "line", "type": "u32" },
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "InsertResult",
+      "is_pub": true,
+      "line": 34
+    },
+    {
+      "type": "fn_decl",
+      "name": "replaceComment",
+      "match_hash": "522226f6f44ef3a5ea3ba83f00766595bd63587b753fbddf1f9c8d784aad328d",
+      "signature": "fn replaceComment(allocator: std.mem.Allocator, source: []const u8, line: u32, comment: []const u8) -> InsertResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "line", "type": "u32" },
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "InsertResult",
+      "is_pub": true,
+      "line": 85
+    },
+    {
+      "type": "fn_decl",
+      "name": "extractCommentAtLine",
+      "match_hash": "0d7fc232d8b783aceca7f5f9451172829134b9cf1a07764b1fc46fbd8724148e",
+      "signature": "fn extractCommentAtLine(allocator: std.mem.Allocator, source: []const u8, line: u32) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "line", "type": "u32" }
+      ],
+      "returns": "?[]const u8",
+      "is_pub": true,
+      "line": 159
+    },
+    {
+      "type": "fn_decl",
+      "name": "formatDocComment",
+      "match_hash": "4269d9dcd1a34d8ed1bf1c113b26c8251c888702f9a86e0843851bc5cab3a05d",
+      "signature": "fn formatDocComment(allocator: std.mem.Allocator, comment: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "comment", "type": "[]const u8" }
+      ],
+      "returns": "[]const u8",
+      "is_pub": true,
+      "line": 205
+    },
+    {
+      "type": "fn_private",
+      "name": "countLines",
+      "match_hash": "ec4250bb9b5c163e2f68463450329cd4410577f8e74a8acc725d3041b58acdd2",
+      "signature": "fn countLines(text: []const u8) -> u32",
+      "params": [
+        { "name": "text", "type": "[]const u8" }
+      ],
+      "returns": "u32",
+      "is_pub": false,
+      "line": 224
+    },
+    {
+      "type": "fn_private",
+      "name": "emptyResult",
+      "match_hash": "7249e19f6554e2fc7a42b2b7a621e4f8cbd8e729a05c7b86caba3b1f39b1dc78",
+      "signature": "fn emptyResult(allocator: std.mem.Allocator) -> InsertResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
+      "returns": "InsertResult",
+      "is_pub": false,
+      "line": 233
+    },
+    {
+      "type": "test_decl",
+      "name": "insertComment - basic",
+      "is_pub": false,
+      "line": 245
+    },
+    {
+      "type": "test_decl",
+      "name": "insertComment - line beyond source",
+      "is_pub": false,
+      "line": 261
+    },
+    {
+      "type": "test_decl",
+      "name": "replaceComment - existing comment replaced",
+      "is_pub": false,
+      "line": 268
+    },
+    {
+      "type": "test_decl",
+      "name": "extractCommentAtLine - finds comment",
+      "is_pub": false,
+      "line": 283
+    },
+    {
+      "type": "test_decl",
+      "name": "extractCommentAtLine - no comment",
+      "is_pub": false,
+      "line": 297
+    },
+    {
+      "type": "test_decl",
+      "name": "formatDocComment - multi-line",
+      "is_pub": false,
+      "line": 305
+    }
+  ]
+}

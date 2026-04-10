@@ -20,6 +20,44 @@
       "line": 9
     },
     {
+      "type": "fn_private",
+      "name": "isAlphanumericBoundary",
+      "match_hash": "39fd9ed2227a43dc77adc9421678ab41621edb466480d95f8a891ec56f11380e",
+      "signature": "fn isAlphanumericBoundary(c: u8) -> bool",
+      "params": [
+        { "name": "c", "type": "u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 19
+    },
+    {
+      "type": "fn_private",
+      "name": "isIdentBoundary",
+      "match_hash": "6a18ca407537456d33e96a0383da80818928b6f296a92da37710c49c803f1c7a",
+      "signature": "fn isIdentBoundary(c: u8) -> bool",
+      "params": [
+        { "name": "c", "type": "u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 23
+    },
+    {
+      "type": "fn_private",
+      "name": "containsWordWithBoundary",
+      "match_hash": "910cca228c9841db0df7e44a05c08dca16d630ae174163f17f8b915821fda643",
+      "signature": "fn containsWordWithBoundary(haystack: []const u8, needle: []const u8, boundary_fn: *const fn (u8) bool) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" },
+        { "name": "boundary_fn", "type": "*const fn (u8) bool" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 27
+    },
+    {
       "type": "fn_decl",
       "name": "containsWord",
       "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
@@ -30,7 +68,20 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 20
+      "line": 41
+    },
+    {
+      "type": "fn_decl",
+      "name": "containsIdentWord",
+      "match_hash": "d5a6868ca5776e5f65e7d238dfac41bd373cdb5fa9de93cbb70de0c5600f0774",
+      "signature": "fn containsIdentWord(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 46
     },
     {
       "type": "fn_decl",
@@ -43,7 +94,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 34
+      "line": 51
     },
     {
       "type": "fn_decl",
@@ -56,7 +107,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 42
+      "line": 59
     },
     {
       "type": "fn_decl",
@@ -69,7 +120,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 50
+      "line": 67
     },
     {
       "type": "fn_decl",
@@ -82,43 +133,43 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 60
+      "line": 77
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase",
       "is_pub": false,
-      "line": 65
+      "line": 82
     },
     {
       "type": "test_decl",
       "name": "containsWord",
       "is_pub": false,
-      "line": 74
+      "line": 91
     },
     {
       "type": "test_decl",
       "name": "containsAny",
       "is_pub": false,
-      "line": 82
+      "line": 99
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord",
       "is_pub": false,
-      "line": 89
+      "line": 106
     },
     {
       "type": "test_decl",
       "name": "hasExtension",
       "is_pub": false,
-      "line": 95
+      "line": 112
     },
     {
       "type": "test_decl",
       "name": "isPathToken",
       "is_pub": false,
-      "line": 103
+      "line": 120
     },
     {
       "type": "fn_decl",
@@ -130,7 +181,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 112
+      "line": 129
     },
     {
       "type": "fn_decl",
@@ -142,7 +193,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 130
+      "line": 147
     },
     {
       "type": "fn_decl",
@@ -154,7 +205,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 146
+      "line": 163
     },
     {
       "type": "fn_decl",
@@ -166,7 +217,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 156
+      "line": 173
     },
     {
       "type": "fn_decl",
@@ -179,7 +230,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 166
+      "line": 183
     },
     {
       "type": "fn_decl",
@@ -192,7 +243,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 181
+      "line": 198
     },
     {
       "type": "fn_decl",
@@ -205,7 +256,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 187
+      "line": 204
     },
     {
       "type": "fn_decl",
@@ -217,7 +268,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 212
+      "line": 229
     },
     {
       "type": "fn_decl",
@@ -229,7 +280,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 223
+      "line": 240
     },
     {
       "type": "fn_decl",
@@ -241,163 +292,163 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 267
+      "line": 284
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier snake_case",
       "is_pub": false,
-      "line": 285
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier camelCase and PascalCase",
       "is_pub": false,
-      "line": 290
+      "line": 307
     },
     {
       "type": "test_decl",
       "name": "containsWord whole-word match",
       "is_pub": false,
-      "line": 296
+      "line": 313
     },
     {
       "type": "test_decl",
       "name": "containsAny matches any keyword",
       "is_pub": false,
-      "line": 304
+      "line": 321
     },
     {
       "type": "test_decl",
       "name": "containsAnyWord whole-word multi-keyword",
       "is_pub": false,
-      "line": 311
+      "line": 328
     },
     {
       "type": "test_decl",
       "name": "hasExtension matches without dot",
       "is_pub": false,
-      "line": 317
+      "line": 334
     },
     {
       "type": "test_decl",
       "name": "isPathToken detects paths and extensions",
       "is_pub": false,
-      "line": 325
+      "line": 342
     },
     {
       "type": "test_decl",
       "name": "containsIgnoreCase finds substring",
       "is_pub": false,
-      "line": 333
+      "line": 350
     },
     {
       "type": "test_decl",
       "name": "langFromPath maps extensions",
       "is_pub": false,
-      "line": 340
+      "line": 357
     },
     {
       "type": "test_decl",
       "name": "dupeStrings produces independent copies",
       "is_pub": false,
-      "line": 348
+      "line": 365
     },
     {
       "type": "test_decl",
       "name": "dupeStrings handles empty slice",
       "is_pub": false,
-      "line": 363
+      "line": 380
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier rejects plain words",
       "is_pub": false,
-      "line": 369
+      "line": 386
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix removes interrogative prefix",
       "is_pub": false,
-      "line": 376
+      "line": 393
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix leaves identifiers unchanged",
       "is_pub": false,
-      "line": 384
+      "line": 401
     },
     {
       "type": "test_decl",
       "name": "stripNlPrefix is case-insensitive on prefix",
       "is_pub": false,
-      "line": 390
+      "line": 407
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate removes leading phrase",
       "is_pub": false,
-      "line": 395
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "stripBoilerplate trims leading whitespace",
       "is_pub": false,
-      "line": 402
+      "line": 419
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: short comment is noisy",
       "is_pub": false,
-      "line": 406
+      "line": 423
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: hex dump is noisy",
       "is_pub": false,
-      "line": 411
+      "line": 428
     },
     {
       "type": "test_decl",
       "name": "isNoisyComment: prose is not noisy",
       "is_pub": false,
-      "line": 415
+      "line": 432
     },
     {
       "type": "test_decl",
       "name": "STOP_WORDS contains expected words",
       "is_pub": false,
-      "line": 420
+      "line": 437
     },
     {
       "type": "test_decl",
       "name": "dupeString produces independent copy",
       "is_pub": false,
-      "line": 428
+      "line": 445
     },
     {
       "type": "test_decl",
       "name": "dupeString returns null for empty string",
       "is_pub": false,
-      "line": 436
+      "line": 453
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns null for null input",
       "is_pub": false,
-      "line": 441
+      "line": 458
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns null for empty string",
       "is_pub": false,
-      "line": 446
+      "line": 463
     },
     {
       "type": "test_decl",
       "name": "dupeStringOpt returns copy for non-empty string",
       "is_pub": false,
-      "line": 451
+      "line": 468
     },
     {
       "type": "fn_decl",
@@ -410,7 +461,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 461
+      "line": 478
     },
     {
       "type": "fn_decl",
@@ -424,7 +475,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 488
+      "line": 505
     },
     {
       "type": "fn_decl",
@@ -436,79 +487,79 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 516
+      "line": 533
     },
     {
       "type": "test_decl",
       "name": "slugify converts to lowercase and replaces spaces",
       "is_pub": false,
-      "line": 552
+      "line": 569
     },
     {
       "type": "test_decl",
       "name": "slugify caps at 40 chars",
       "is_pub": false,
-      "line": 558
+      "line": 575
     },
     {
       "type": "test_decl",
       "name": "slugify handles empty string",
       "is_pub": false,
-      "line": 565
+      "line": 582
     },
     {
       "type": "test_decl",
       "name": "truncateAtSentence returns input if within limit",
       "is_pub": false,
-      "line": 571
+      "line": 588
     },
     {
       "type": "test_decl",
       "name": "truncateAtSentence truncates at sentence boundary",
       "is_pub": false,
-      "line": 577
+      "line": 594
     },
     {
       "type": "test_decl",
       "name": "truncateAtSentence truncates at word boundary when no sentence",
       "is_pub": false,
-      "line": 583
+      "line": 600
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine strips /// prefix",
       "is_pub": false,
-      "line": 589
+      "line": 606
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine strips //! prefix",
       "is_pub": false,
-      "line": 594
+      "line": 611
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine handles leading whitespace",
       "is_pub": false,
-      "line": 598
+      "line": 615
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine stops at newline",
       "is_pub": false,
-      "line": 602
+      "line": 619
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine handles empty string",
       "is_pub": false,
-      "line": 606
+      "line": 623
     },
     {
       "type": "test_decl",
       "name": "firstCommentLine handles plain text (no prefix)",
       "is_pub": false,
-      "line": 610
+      "line": 627
     }
   ]
 }

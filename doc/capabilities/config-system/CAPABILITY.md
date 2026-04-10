@@ -55,7 +55,7 @@ Model names use the format `"provider:modelname"`, e.g. `"local:code:latest"`. T
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/guidance/config.zig` | 1.0 | defines_anchor |
-| `src/guidance/codehealth.zig` | 0.9 | used_by |
+| `src/coral/root.zig` | 0.9 | used_by |
 | `src/guidance/main.zig` | 0.9 | used_by |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
 | `src/guidance/scanner.zig` | 0.9 | used_by |

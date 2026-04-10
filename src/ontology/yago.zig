@@ -49,7 +49,6 @@ pub const PropertyRange = enum {
     any, // unconstrained
 };
 
-/// Represents a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
 pub const OntologyProperty = struct {
     iri: []const u8,
     label: []const u8,

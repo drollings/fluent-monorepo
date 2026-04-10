@@ -3,13 +3,10 @@
 /// lod[4]=name, lod[5]=reserved.
 pub const LOD_COUNT: usize = 6;
 
-/// Represents a unique node identifier with fixed ownership; managed via init/deinit; not thread-safe.
 pub const NodeId = enum(i64) { _ };
 
-/// Represents a unique session identifier, managed centrally with strict ownership and invariants.
 pub const SessionId = enum(i64) { _ };
 
-/// Defines a target identifier for Zig's enum, managing ownership and ensuring type safety across modules.
 pub const TargetId = enum(i64) { _ };
 
 // ---------------------------------------------------------------------------

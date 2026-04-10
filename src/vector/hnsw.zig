@@ -12,7 +12,6 @@
 /// using Hierarchical Navigable Small World graphs" by Malkov & Yashunin (2018).
 const std = @import("std");
 
-/// Tracks index positions with fixed-size buffers; managed via ownership; not thread-safe.
 pub const HnswIndex = struct {
     const Self = @This();
 

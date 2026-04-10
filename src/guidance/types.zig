@@ -1,7 +1,9 @@
+//! Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
 const std = @import("std");
 const common = @import("common");
+const json_writer = @import("sync/json_writer.zig");
 
-/// Defines file type metadata with ownership and invariants; manages file lifecycle without thread safety.
+/// File type enum for source, markdown, config, data, pdf, audio, unknown.
 pub const FileType = enum {
     source, // Zig, Python, Rust, Go, etc.
     markdown, // .md, .markdown
@@ -43,7 +45,7 @@ pub const FileType = enum {
     }
 };
 
-/// Defines a fixed-size member type with ownership and invariants; managed via init/deinit; not thread-safe.
+/// AST member type enum (fn_decl, struct, enum, etc.).
 pub const MemberType = enum {
     fn_decl,
     fn_private,
@@ -57,26 +59,17 @@ pub const MemberType = enum {
     method_private,
 };
 
-pub const PatternType = enum {
-    Domain,
-    GoF,
-};
+pub const PatternType = common.pattern.PatternType;
+pub const Pattern = common.pattern.Pattern;
 
-/// Defines a pattern for structured data handling, managing ownership and invariants in Zig code.
-pub const Pattern = struct {
-    name: []const u8,
-    type: PatternType,
-    ref: ?[]const u8 = null,
-};
-
-/// Defines a parameter struct for configuration; encapsulates settings with ownership and invariants.
+/// Function parameter (name, optional type, optional default value).
 pub const Param = struct {
     name: []const u8,
     type: ?[]const u8 = null,
     default: ?[]const u8 = null,
 };
 
-/// Defines a fixed-size buffer structure with ownership and invariants; managed via init/deinit; not thread-safe.
+/// A parsed AST declaration extracted from a source file.
 pub const Member = struct {
     type: MemberType,
     name: []const u8,
@@ -146,7 +139,6 @@ pub const GuidanceDoc = struct {
     equivalents: []const []const u8 = &.{},
 };
 
-/// Tracks file matches with ownership model; manages lifecycle; not thread-safe.
 pub const FileMatch = struct {
     filename: []const u8,
     filepath: []const u8,
@@ -154,7 +146,6 @@ pub const FileMatch = struct {
     line_context: []const u8 = "",
 };
 
-/// Holds guidance metadata with fixed-size buffers; managed via ownership; not thread-safe.
 pub const GuidanceInfo = struct {
     path: []const u8,
     comment: []const u8 = "",
@@ -175,7 +166,7 @@ pub const ASTAnalysis = struct {
     signature_preview: []const u8 = "",
 };
 
-/// Represents query results with ownership and invariants; managed via a single lifecycle; not thread-safe.
+/// Query result with file matches, AST analysis, and suggestions.
 pub const QueryResult = struct {
     query: []const u8,
     file_matches: []const FileMatch = &.{},
@@ -192,7 +183,7 @@ pub const QueryResult = struct {
 // Staged explain pipeline types
 // ---------------------------------------------------------------------------
 
-/// Defines a stage kind for Zig projects, managing configuration and transitions with strict ownership and invariants.
+/// Stage kind enum for the staged explain pipeline.
 pub const StageKind = enum {
     /// Human-readable explanation from module or member comment.
     prose,
@@ -211,7 +202,7 @@ pub const StageKind = enum {
     not_found,
 };
 
-/// Defines a stage for structured guidance, manages ownership, ensures invariant state across execution.
+/// A single stage in the staged explain pipeline.
 pub const Stage = struct {
     kind: StageKind,
     /// Content to display (prose text, code block, metadata text, etc.).
@@ -233,7 +224,7 @@ pub fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) void {
     for (stages) |s| freeStage(allocator, s);
 }
 
-/// Manages synchronization outcomes with fixed buffers; owned by the caller; ensures consistent state across operations.
+/// Result of a sync operation (members added/updated/removed).
 pub const SyncResult = struct {
     filepath: []const u8,
     members_added: usize = 0,
@@ -253,318 +244,8 @@ pub fn stepPrint(comptime fmt: []const u8, args: anytype) void {
     std.fs.File.stdout().writeAll(msg) catch {};
 }
 
-/// Serialize `value` to pretty-printed JSON.  Delegates to src/common/json.zig.
-pub const jsonStringifyAlloc = common.jsonStringifyAlloc;
-
-/// Converts a Zig member to a JSON-serializable slice, handling allocator and type safety.
-pub fn jsonifyMember(allocator: std.mem.Allocator, member: Member) !?[]u8 {
-    var list: std.ArrayList(u8) = .{};
-    errdefer list.deinit(allocator);
-    const writer = list.writer(allocator);
-
-    try writer.writeAll("{\n");
-    try writer.print("  \"type\": \"{s}\",\n", .{@tagName(member.type)});
-    try writeEscapedString(writer, "name", member.name);
-
-    if (member.match_hash) |h| {
-        try writer.writeAll("  \"match_hash\": \"");
-        try writeEscapedValue(writer, h);
-        try writer.writeAll("\",\n");
-    }
-    if (member.signature) |s| {
-        try writeEscapedString(writer, "signature", s);
-    }
-    if (member.params.len > 0) {
-        try writer.writeAll("  \"params\": [\n");
-        for (member.params, 0..) |param, i| {
-            try writer.writeAll("    { ");
-            try writer.writeAll("\"name\": \"");
-            try writeEscapedValue(writer, param.name);
-            try writer.writeAll("\"");
-            if (param.type) |t| {
-                try writer.writeAll(", \"type\": \"");
-                try writeEscapedValue(writer, t);
-                try writer.writeAll("\"");
-            }
-            if (param.default) |d| {
-                try writer.writeAll(", \"default\": \"");
-                try writeEscapedValue(writer, d);
-                try writer.writeAll("\"");
-            }
-            try writer.writeAll(" }");
-            if (i < member.params.len - 1) try writer.writeAll(",");
-            try writer.writeAll("\n");
-        }
-        try writer.writeAll("  ],\n");
-    }
-    if (member.returns) |r| {
-        try writeEscapedString(writer, "returns", r);
-    }
-    // Milestone 3.1: Member comments are now stored ONLY in source files (/// comments),
-    // not in JSON. This reduces JSON file size and diff noise. The match_hash still
-    // tracks comment changes for staleness detection. File/module-level comments
-    // (//! comments) are kept in JSON.
-    //
-    // DO NOT write member.comment to JSON - it will be extracted from source on load.
-    // DO NOT write member.comment_generated to JSON - it's a runtime flag only.
-
-    if (member.tags.len > 0) {
-        try writer.writeAll("  \"tags\": [");
-        for (member.tags, 0..) |tag, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.print("\"{s}\"", .{tag});
-        }
-        try writer.writeAll("],\n");
-    }
-    if (member.patterns.len > 0) {
-        try writer.writeAll("  \"patterns\": [\n");
-        for (member.patterns, 0..) |pat, i| {
-            try writer.writeAll("    { \"name\": \"");
-            try writeEscapedValue(writer, pat.name);
-            try writer.writeAll("\", \"type\": \"");
-            try writeEscapedValue(writer, @tagName(pat.type));
-            try writer.writeAll("\"");
-            if (pat.ref) |ref| {
-                try writer.writeAll(", \"ref\": \"");
-                try writeEscapedValue(writer, ref);
-                try writer.writeAll("\"");
-            }
-            try writer.writeAll(" }");
-            if (i < member.patterns.len - 1) try writer.writeAll(",");
-            try writer.writeAll("\n");
-        }
-        try writer.writeAll("  ],\n");
-    }
-    const is_pub_has_more = member.members.len > 0 or member.line != null;
-    try writer.print("  \"is_pub\": {}{s}\n", .{ member.is_pub, if (is_pub_has_more) "," else "" });
-
-    if (member.members.len > 0) {
-        try writer.writeAll("  \"members\": [\n");
-        for (member.members, 0..) |nested, i| {
-            if (i > 0) try writer.writeAll(",");
-            const nested_json = try jsonifyMember(allocator, nested);
-            if (nested_json) |nj| {
-                defer allocator.free(nj);
-                try writer.writeAll("    ");
-                for (nj) |c| {
-                    if (c == '\n') {
-                        try writer.writeAll("\n    ");
-                    } else {
-                        try writer.writeByte(c);
-                    }
-                }
-                try writer.writeAll("\n");
-            }
-        }
-        try writer.writeAll("  ]");
-        if (member.line != null) {
-            try writer.writeAll(",");
-        }
-        try writer.writeAll("\n");
-    }
-    if (member.line) |l| {
-        try writer.print("  \"line\": {}\n", .{l});
-    }
-    try writer.writeAll("}");
-    return @as(?[]u8, try list.toOwnedSlice(allocator));
-}
-
-/// Writes a field or comma to the writer, handling null-terminated strings.
-fn writeFieldOrComma(writer: anytype, key: []const u8, value: ?[]const u8) !void {
-    if (value) |v| {
-        try writeEscapedString(writer, key, v);
-    }
-    // Omit field entirely when null — matches jsonifyGuidanceDoc behaviour for
-    // the file-level comment and keeps JSON clean for infill-eligible members.
-}
-
-/// Escapes JSON special characters in a string value.
-/// Delegates to common.jsonWriteEscaped to avoid code duplication.
-const writeEscapedValue = common.jsonWriteEscaped;
-
-/// Writes a formatted string with escaped characters to the writer, handling null-terminated input.
-fn writeEscapedString(writer: anytype, key: []const u8, value: []const u8) !void {
-    try writer.print("  \"{s}\": \"", .{key});
-    try writeEscapedValue(writer, value);
-    try writer.writeAll("\",\n");
-}
-
-/// Converts a GuidanceDoc into a JSON array of bytes for storage.
-pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: GuidanceDoc) ![]u8 {
-    var list: std.ArrayList(u8) = .{};
-    errdefer list.deinit(allocator);
-    const writer = list.writer(allocator);
-
-    try writer.writeAll("{\n");
-    try writer.writeAll("  \"meta\": {\n");
-    try writer.writeAll("    \"module\": \"");
-    try writeEscapedValue(writer, doc.meta.module);
-    try writer.writeAll("\",\n");
-    try writer.writeAll("    \"source\": \"");
-    try writeEscapedValue(writer, doc.meta.source);
-    try writer.writeAll("\",\n");
-    try writer.writeAll("    \"language\": \"");
-    try writeEscapedValue(writer, doc.meta.language);
-    try writer.writeAll("\"\n");
-    const meta_has_more = doc.comment != null or doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0;
-    if (meta_has_more) {
-        try writer.writeAll("  },\n");
-    } else {
-        try writer.writeAll("  }\n");
-    }
-
-    if (doc.comment) |d| {
-        try writer.writeAll("  \"comment\": \"");
-        try writeEscapedValue(writer, d);
-        // Only write comma if there are more fields to follow
-        if (doc.detail != null or doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("\",\n");
-        } else {
-            try writer.writeAll("\"\n");
-        }
-    }
-
-    if (doc.detail) |d| {
-        try writer.writeAll("  \"detail\": \"");
-        try writeEscapedValue(writer, d);
-        // Only write comma if there are more fields to follow
-        if (doc.keywords.len > 0 or doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("\",\n");
-        } else {
-            try writer.writeAll("\"\n");
-        }
-    }
-
-    if (doc.keywords.len > 0) {
-        try writer.writeAll("  \"keywords\": [");
-        for (doc.keywords, 0..) |kw, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("\"");
-            try writeEscapedValue(writer, kw);
-            try writer.writeAll("\"");
-        }
-        // Only write comma if there are more fields to follow
-        if (doc.skills.len > 0 or doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("],\n");
-        } else {
-            try writer.writeAll("]\n");
-        }
-    }
-
-    if (doc.skills.len > 0) {
-        try writer.writeAll("  \"skills\": [\n");
-        for (doc.skills, 0..) |skill, i| {
-            try writer.writeAll("    { \"ref\": \"");
-            try writeEscapedValue(writer, skill.ref);
-            try writer.writeAll("\"");
-            if (skill.context) |ctx| {
-                try writer.writeAll(", \"context\": \"");
-                try writeEscapedValue(writer, ctx);
-                try writer.writeAll("\"");
-            }
-            try writer.writeAll(" }");
-            if (i < doc.skills.len - 1) try writer.writeAll(",");
-            try writer.writeAll("\n");
-        }
-        // Only write comma if there are more fields to follow
-        if (doc.capabilities.len > 0 or doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("  ],\n");
-        } else {
-            try writer.writeAll("  ]\n");
-        }
-    }
-
-    // M4: Write capabilities array
-    if (doc.capabilities.len > 0) {
-        try writer.writeAll("  \"capabilities\": [");
-        for (doc.capabilities, 0..) |cap, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("\"");
-            try writeEscapedValue(writer, cap);
-            try writer.writeAll("\"");
-        }
-        // Only write comma if there are more fields to follow
-        if (doc.hashtags.len > 0 or doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("],\n");
-        } else {
-            try writer.writeAll("]\n");
-        }
-    }
-
-    if (doc.hashtags.len > 0) {
-        try writer.writeAll("  \"hashtags\": [");
-        for (doc.hashtags, 0..) |tag, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("\"");
-            try writeEscapedValue(writer, tag);
-            try writer.writeAll("\"");
-        }
-        // Only write comma if there are more fields to follow
-        if (doc.used_by.len > 0 or doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("],\n");
-        } else {
-            try writer.writeAll("]\n");
-        }
-    }
-
-    if (doc.used_by.len > 0) {
-        try writer.writeAll("  \"used_by\": [");
-        for (doc.used_by, 0..) |u, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("\"");
-            try writeEscapedValue(writer, u);
-            try writer.writeAll("\"");
-        }
-        // Only write comma if there are more fields to follow
-        if (doc.equivalents.len > 0 or doc.members.len > 0) {
-            try writer.writeAll("],\n");
-        } else {
-            try writer.writeAll("]\n");
-        }
-    }
-
-    if (doc.equivalents.len > 0) {
-        try writer.writeAll("  \"equivalents\": [");
-        for (doc.equivalents, 0..) |e, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("\"");
-            try writeEscapedValue(writer, e);
-            try writer.writeAll("\"");
-        }
-        if (doc.members.len > 0) {
-            try writer.writeAll("],\n");
-        } else {
-            try writer.writeAll("]\n");
-        }
-    }
-
-    if (doc.members.len > 0) {
-        try writer.writeAll("  \"members\": [\n");
-        for (doc.members, 0..) |member, i| {
-            const member_json = try jsonifyMember(allocator, member);
-            if (member_json) |mj| {
-                defer allocator.free(mj);
-                try writer.writeAll("    ");
-                for (mj) |c| {
-                    if (c == '\n') {
-                        try writer.writeAll("\n    ");
-                    } else {
-                        try writer.writeByte(c);
-                    }
-                }
-            }
-            if (i < doc.members.len - 1) {
-                try writer.writeAll(",\n");
-            } else {
-                try writer.writeAll("\n");
-            }
-        }
-        try writer.writeAll("  ]\n");
-    }
-
-    try writer.writeAll("}\n");
-    return list.toOwnedSlice(allocator);
-}
+pub const jsonifyMember = json_writer.jsonifyMember;
+pub const jsonifyGuidanceDoc = json_writer.jsonifyGuidanceDoc;
 
 // ---------------------------------------------------------------------------
 // Tests

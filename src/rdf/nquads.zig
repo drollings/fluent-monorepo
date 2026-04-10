@@ -35,7 +35,6 @@ pub const NQuadsError = error{
     OutOfMemory,
 };
 
-/// Manages NQuad parsing structures, owns parsing state, supports fixed-size buffers; not thread-safe.
 pub const NQuadsParser = struct {
     allocator: std.mem.Allocator,
     lines: std.mem.SplitIterator(u8, .scalar),

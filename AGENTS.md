@@ -41,8 +41,32 @@ follow instructions for any queries of interest
 
 ```
 src/
-  guidance/      Zig core engine (AST parser, sync, lance_db, structure, deps)
-  common/           Zig shared LLM HTTP client and arg helpers
+  guidance/      Zig core engine
+    main.zig           CLI dispatcher
+    config.zig         Configuration management
+    sync_engine.zig    Sync subcommands (init, gen, status, clean, commit, check, todo, diary)
+    query_engine.zig   Query subcommands (explain, show, test, telemetry, cache-stats, serve)
+    types.zig          Shared types (FileType, MemberType, Param, Member, etc.)
+    enhancer.zig       LLM enhancement for comment generation
+    staged.zig         Stage collection for explain pipeline
+    vector_db.zig      SQLite hybrid search engine
+    scanner.zig        Source file discovery
+    codehealth/        Dead code detection (main.zig, extractor.zig)
+    comments/          Comment management (core.zig, header.zig, inserter.zig, sync.zig)
+    query/             Query pipeline (identifier.zig, strategy.zig, llm_filter.zig, llm_filter_batch.zig, synthesize.zig)
+    sync/              Sync infrastructure (json_store.zig, json_writer.zig, line_verify.zig, marker.zig)
+  common/           Zig shared utilities (string, hash, format, terminal, log, etc.)
+                    Note: common/ contains no domain-specific logic; no imports from dag/, coral/, or guidance/
+  dag/             DAG core (Target, TargetRegistry, DependencyResolver, DagExecutor, repl.zig, json_parser.zig)
+  coral/           Coral Context (db, batch, cache, executor, targets, config, mcp, etc.)
+                    Note: delegation.zig moved here from common/
+  llm/             LLM HTTP client (Ollama/OpenAI)
+  ontology/        Ontology types
+  rdf/             RDF/triple handling
+  reflection/       Reflection layer
+  vector/          Vector/embedding utilities
+  wasm/            Wasm tooling
+  concurrency/     Concurrency primitives
 bin/
   guidance       Compiled binary — zig-out/bin/guidance (via zig build)
   guidance-py    Python AST provider (Python files → .guidance/ JSON)

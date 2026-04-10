@@ -13,7 +13,6 @@ pub const BuildError = error{
     CircularDependency,
 };
 
-/// Tracks build outcomes with invariants; managed by owner; not thread-safe.
 pub const BuildResult = struct {
     success: bool,
     targets_built: usize,

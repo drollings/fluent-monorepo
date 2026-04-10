@@ -32,7 +32,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 41
+          "line": 40
         }
     ,    {
           "type": "fn_decl",
@@ -46,28 +46,28 @@
           ],
           "returns": "[]f32",
           "is_pub": true,
-          "line": 49
+          "line": 48
         }
       ],
-      "line": 36
+      "line": 35
     },
     {
       "type": "test_decl",
       "name": "PageRank: single-node graph",
       "is_pub": false,
-      "line": 117
+      "line": 116
     },
     {
       "type": "test_decl",
       "name": "PageRank: two-node cycle converges",
       "is_pub": false,
-      "line": 138
+      "line": 137
     },
     {
       "type": "test_decl",
       "name": "PageRank: star graph — center has highest rank",
       "is_pub": false,
-      "line": 163
+      "line": 162
     }
   ]
 }

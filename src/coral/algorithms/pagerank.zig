@@ -32,7 +32,6 @@ pub const PageRankConfig = struct {
     max_iterations: u32 = 20,
 };
 
-/// Manages PageRank data structures, owns a fixed-size buffer, and ensures consistent state across operations.
 pub const PageRank = struct {
     config: PageRankConfig,
 

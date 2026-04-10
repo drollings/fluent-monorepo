@@ -7,6 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["target-registry"],
   "used_by": ["src/dag/context.zig", "src/dag/json_parser.zig", "src/dag/registry.zig", "src/dag/resolver.zig", "src/dag/root.zig"],
   "members": [
     {
@@ -230,7 +231,7 @@
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
           ],
           "is_pub": true,
-          "line": 229
+          "line": 228
         }
     ,    {
           "type": "fn_decl",
@@ -243,7 +244,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 283
+          "line": 282
         }
     ,    {
           "type": "fn_decl",
@@ -257,136 +258,136 @@
           ],
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
-          "line": 290
+          "line": 289
         }
       ],
-      "line": 210
+      "line": 209
     },
     {
       "type": "test_decl",
       "name": "Target creation and basic operations",
       "is_pub": false,
-      "line": 303
+      "line": 302
     },
     {
       "type": "test_decl",
       "name": "Target depends and provides",
       "is_pub": false,
-      "line": 315
+      "line": 314
     },
     {
       "type": "test_decl",
       "name": "Target GPA no leaks",
       "is_pub": false,
-      "line": 330
+      "line": 329
     },
     {
       "type": "test_decl",
       "name": "Target: dependsSatisfiedBy — no deps always satisfied",
       "is_pub": false,
-      "line": 356
+      "line": 355
     },
     {
       "type": "test_decl",
       "name": "Target: dependsSatisfiedBy — satisfied when all deps available",
       "is_pub": false,
-      "line": 369
+      "line": 368
     },
     {
       "type": "test_decl",
       "name": "Target: dependsSatisfiedBy — not satisfied when dep missing",
       "is_pub": false,
-      "line": 388
+      "line": 387
     },
     {
       "type": "test_decl",
       "name": "Target: missingDepends — empty when all satisfied",
       "is_pub": false,
-      "line": 411
+      "line": 410
     },
     {
       "type": "test_decl",
       "name": "Target: missingDepends — returns unsatisfied bits",
       "is_pub": false,
-      "line": 431
+      "line": 430
     },
     {
       "type": "test_decl",
       "name": "Target: distanceFrom — zero when no deps",
       "is_pub": false,
-      "line": 456
+      "line": 455
     },
     {
       "type": "test_decl",
       "name": "Target: distanceFrom — counts missing deps",
       "is_pub": false,
-      "line": 469
+      "line": 468
     },
     {
       "type": "test_decl",
       "name": "Target: distanceFrom — zero when all deps satisfied",
       "is_pub": false,
-      "line": 489
+      "line": 488
     },
     {
       "type": "test_decl",
       "name": "Target: abstract type with commands is NOT abstract",
       "is_pub": false,
-      "line": 512
+      "line": 511
     },
     {
       "type": "test_decl",
       "name": "Target: abstract type with exists is NOT abstract",
       "is_pub": false,
-      "line": 523
+      "line": 522
     },
     {
       "type": "test_decl",
       "name": "Target: phony type is never abstract regardless",
       "is_pub": false,
-      "line": 534
+      "line": 533
     },
     {
       "type": "test_decl",
       "name": "Target: format includes name and type tag",
       "is_pub": false,
-      "line": 548
+      "line": 547
     },
     {
       "type": "test_decl",
       "name": "Target: format includes [essential] for essential targets",
       "is_pub": false,
-      "line": 564
+      "line": 563
     },
     {
       "type": "test_decl",
       "name": "Target: executor defaults to native",
       "is_pub": false,
-      "line": 584
+      "line": 583
     },
     {
       "type": "test_decl",
       "name": "Target: id is i64",
       "is_pub": false,
-      "line": 594
+      "line": 593
     },
     {
       "type": "test_decl",
       "name": "TargetSchema: viewOf set/get essential via reflection",
       "is_pub": false,
-      "line": 608
+      "line": 607
     },
     {
       "type": "test_decl",
       "name": "TargetSchema: viewOf set/get depends via BitSetConstraint",
       "is_pub": false,
-      "line": 632
+      "line": 631
     },
     {
       "type": "test_decl",
       "name": "TargetSchema: GPA no leaks",
       "is_pub": false,
-      "line": 671
+      "line": 670
     }
   ]
 }

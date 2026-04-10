@@ -15,7 +15,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const codebase_map_mod = @import("codebase_map.zig");
-const query_strategy_mod = @import("query_strategy.zig");
+const query_strategy_mod = @import("query/strategy.zig");
 const vector_db_mod = @import("vector");
 
 const CodebaseMap = codebase_map_mod.CodebaseMap;
@@ -27,10 +27,10 @@ const GuidanceDb = vector_db_mod.GuidanceDb;
 // State machine types
 // =============================================================================
 
-/// Manages RalphState instances with fixed-size buffers; encapsulates ownership and invariants.
+/// RALPH loop state enum.
 pub const RalphState = enum { read, ask, learn, plan, help, done };
 
-/// Manages query records with fixed-size buffers; owned by the caller; ensures consistent state across operations.
+/// A single query record with intent and result count.
 pub const QueryRecord = struct {
     query: []const u8,
     intent: QueryIntent,
@@ -38,7 +38,7 @@ pub const QueryRecord = struct {
     had_synthesis: bool,
 };
 
-/// Manages relationships with fixed-size buffers; encapsulates ownership and invariants.
+/// A relationship between two code entities (calls, imports, implements, extends).
 pub const Relationship = struct {
     from: []const u8,
     to: []const u8,
@@ -46,7 +46,7 @@ pub const Relationship = struct {
     confidence: f32,
 };
 
-/// Manages RalphContext state with fixed buffers; encapsulates ownership and lifecycle; not thread-safe.
+/// Context for RALPH loop execution.
 pub const RalphContext = struct {
     allocator: std.mem.Allocator,
     state: RalphState,

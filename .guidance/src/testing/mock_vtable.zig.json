@@ -29,7 +29,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 49
+          "line": 48
         }
     ,    {
           "type": "fn_decl",
@@ -41,7 +41,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 58
+          "line": 57
         }
     ,    {
           "type": "fn_decl",
@@ -54,7 +54,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 70
+          "line": 69
         }
     ,    {
           "type": "fn_decl",
@@ -67,7 +67,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 78
+          "line": 77
         }
     ,    {
           "type": "fn_private",
@@ -79,7 +79,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 86
+          "line": 85
         }
     ,    {
           "type": "fn_private",
@@ -91,7 +91,7 @@
           ],
           "returns": "u32",
           "is_pub": false,
-          "line": 90
+          "line": 89
         }
     ,    {
           "type": "fn_private",
@@ -105,7 +105,7 @@
           ],
           "returns": "anyerror![]f32",
           "is_pub": false,
-          "line": 94
+          "line": 93
         }
     ,    {
           "type": "fn_private",
@@ -117,7 +117,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 119
+          "line": 118
         }
     ,    {
           "type": "fn_decl",
@@ -129,7 +129,7 @@
           ],
           "returns": "EmbeddingHandle",
           "is_pub": true,
-          "line": 136
+          "line": 135
         }
     ,    {
           "type": "fn_decl",
@@ -143,7 +143,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 146
+          "line": 145
         }
     ,    {
           "type": "fn_decl",
@@ -157,7 +157,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 160
+          "line": 159
         }
     ,    {
           "type": "fn_decl",
@@ -170,10 +170,10 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 171
+          "line": 170
         }
       ],
-      "line": 36
+      "line": 35
     },
     {
       "type": "struct",
@@ -181,7 +181,7 @@
       "match_hash": "da4744bf9cd7515683627f75c332ab3e33a47962255051313e34411aa7b5bae6",
       "signature": "keyword_struct EmbeddingVTable { ... }",
       "is_pub": true,
-      "line": 192
+      "line": 191
     },
     {
       "type": "struct",
@@ -200,7 +200,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 204
+          "line": 202
         }
     ,    {
           "type": "fn_decl",
@@ -212,7 +212,7 @@
           ],
           "returns": "u32",
           "is_pub": true,
-          "line": 208
+          "line": 206
         }
     ,    {
           "type": "fn_decl",
@@ -226,7 +226,7 @@
           ],
           "returns": "[]f32",
           "is_pub": true,
-          "line": 212
+          "line": 210
         }
     ,    {
           "type": "fn_decl",
@@ -238,64 +238,64 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 216
+          "line": 214
         }
       ],
-      "line": 200
+      "line": 198
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: init and deinit",
       "is_pub": false,
-      "line": 225
+      "line": 223
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: records embed call",
       "is_pub": false,
-      "line": 231
+      "line": 229
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: setEmbedResult returns configured vector",
       "is_pub": false,
-      "line": 244
+      "line": 242
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: setEmbedError returns configured error",
       "is_pub": false,
-      "line": 260
+      "line": 258
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: assertCallCount passes",
       "is_pub": false,
-      "line": 271
+      "line": 269
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: assertCalledWith passes for matching text",
       "is_pub": false,
-      "line": 285
+      "line": 283
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: default returns empty vector",
       "is_pub": false,
-      "line": 296
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: name and dimensions",
       "is_pub": false,
-      "line": 307
+      "line": 305
     },
     {
       "type": "test_decl",
       "name": "MockEmbeddingProvider: GPA no leaks",
       "is_pub": false,
-      "line": 316
+      "line": 314
     }
   ]
 }

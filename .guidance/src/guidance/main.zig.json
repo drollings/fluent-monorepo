@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON",
+  "capabilities": ["explain-query", "coral-database", "config-system", "ast-indexing"],
   "members": [
     {
       "type": "enum",
@@ -17,112 +18,112 @@
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 43
+          "line": 42
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 44
+          "line": 43
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 45
+          "line": 44
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 46
+          "line": 45
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 47
+          "line": 46
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 48
+          "line": 47
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 49
+          "line": 48
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 50
+          "line": 49
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 51
+          "line": 50
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 52
+          "line": 51
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 53
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 54
+          "line": 53
         }
     ,    {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 55
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "@\"cache-stats\"",
           "is_pub": false,
-          "line": 56
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 57
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 58
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "scan",
           "is_pub": false,
-          "line": 59
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "codehealth",
           "is_pub": false,
-          "line": 60
+          "line": 59
         }
       ],
-      "line": 42
+      "line": 41
     },
     {
       "type": "fn_decl",
@@ -131,7 +132,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 64
+      "line": 63
     },
     {
       "type": "fn_private",
@@ -144,7 +145,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 130
+      "line": 129
     },
     {
       "type": "fn_private",
@@ -153,7 +154,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 135
+      "line": 134
     },
     {
       "type": "fn_private",
@@ -166,7 +167,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 254
+      "line": 253
     }
   ]
 }

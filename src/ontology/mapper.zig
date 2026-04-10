@@ -116,7 +116,6 @@ pub const MappingConfig = struct {
     scope: []const u8 = "default",
 };
 
-/// Manages mapping transformations between Zig types; owns state, ensures consistent key structures; key invariants preserve reference integrity.
 pub const TripleMapper = struct {
     allocator: std.mem.Allocator,
     config: MappingConfig,

@@ -26,7 +26,6 @@ pub const ParsedFile = struct {
     members: []const types.Member,
 };
 
-/// Manages language plugin configurations; owns a stateful structure; ensures consistent initialization and cleanup.
 pub const LanguagePlugin = struct {
     /// Human-readable name (e.g. "zig", "python").
     name: []const u8,

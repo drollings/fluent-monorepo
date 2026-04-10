@@ -16,8 +16,8 @@ pub const registry = @import("registry.zig");
 pub const resolver = @import("resolver.zig");
 pub const dag_executor = @import("dag_executor.zig");
 pub const context = @import("context.zig");
-pub const repl = @import("common").repl;
-pub const json_parser = @import("common").json_parser;
+pub const repl = @import("repl.zig");
+pub const json_parser = @import("json_parser.zig");
 
 pub const Target = target.Target;
 pub const TargetType = target.TargetType;

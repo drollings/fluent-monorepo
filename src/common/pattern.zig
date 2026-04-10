@@ -10,22 +10,9 @@ const std = @import("std");
 const str_mod = @import("string.zig");
 
 const containsCI = str_mod.containsIgnoreCase;
+const containsWord = str_mod.containsWord;
 const containsAny = str_mod.containsAny;
 const containsAnyWord = str_mod.containsAnyWord;
-
-/// Checks if a needle substring exists within the haystack array of bytes.
-pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
-    if (needle.len > haystack.len) return false;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (!std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) continue;
-        const left_ok = i == 0 or !std.ascii.isAlphanumeric(haystack[i - 1]);
-        const right_end = i + needle.len;
-        const right_ok = right_end >= haystack.len or !std.ascii.isAlphanumeric(haystack[right_end]);
-        if (left_ok and right_ok) return true;
-    }
-    return false;
-}
 
 pub const PatternType = enum {
     Domain,
@@ -150,14 +137,6 @@ pub fn detectTemplateMethod(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Ind
         break :blk count >= 2;
     };
     return has_unreachable and calls_hooks;
-}
-
-test "containsWord whole-word match" {
-    try std.testing.expect(containsWord("Ring Buffer implementation", "ring"));
-    try std.testing.expect(containsWord("Ring Buffer implementation", "buffer"));
-    try std.testing.expect(!containsWord("dupeStrings", "ring"));
-    try std.testing.expect(!containsWord("RingBuffer", "ring"));
-    try std.testing.expect(containsWord("configure the ring", "ring"));
 }
 
 test "detectRingBuffer" {

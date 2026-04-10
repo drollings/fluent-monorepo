@@ -24,7 +24,7 @@ const Library = coral_db.Library;
 const common = @import("common");
 const reflection = common.reflection;
 const hash_mod = common.hash;
-const target_mod = common.target;
+const target_mod = @import("dag").target;
 const ExecutorKind = target_mod.ExecutorKind;
 const context_node_schema = @import("coral_schema");
 
@@ -55,7 +55,7 @@ pub const ExtismFunction = ?*anyopaque;
 pub const ExtismCurrentPlugin = ?*anyopaque;
 pub const ExtismSize = u64;
 
-/// Defines a type for representing existence values with ownership and invariants; managed via a single lifecycle.
+/// Extism value types for host function I/O.
 pub const ExtismValType = enum(u8) {
     void = 0,
     i32 = 1,
@@ -201,7 +201,7 @@ pub const extism = if (builtin.is_test or !have_extism) struct {
     pub extern "extism" fn extism_function_free(func: ExtismFunction) void;
 };
 
-/// Defines metadata for Wasm modules, managing structure and version; owned by the module; ensures consistent deployment.
+/// WASM module manifest with memory, timeout, and permission settings.
 pub const WasmManifest = struct {
     wasm_bytes: []const u8,
     memory_max: u32 = 16 * 1024 * 1024, // 16 MB default
@@ -695,7 +695,7 @@ pub fn executeWasmQueryWithHosts(
 // §4.4 Dynamic Tool Lifecycle (LLM-to-WASM Pipeline)
 // ---------------------------------------------------------------------------
 
-/// Defines compiler configuration settings for Zig tooling; manages ownership and invariants of tool parameters.
+/// Compiler configuration for WASM tool compilation.
 pub const ToolCompilerConfig = struct {
     zig_compiler: []const u8 = "zig",
     assemblyscript_compiler: []const u8 = "asc",
@@ -860,7 +860,7 @@ pub const WasmToolCacheEntry = struct {
     access_count: usize,
 };
 
-/// Manages Wasm cache structures, owns buffers, supports initialization/deinit; ensures consistent state across operations.
+/// LRU cache for compiled WASM tools.
 pub const WasmToolCache = struct {
     const Self = @This();
     const DEFAULT_TTL_SECONDS: u64 = 3600; // 1 hour

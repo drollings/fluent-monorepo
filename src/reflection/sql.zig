@@ -43,7 +43,6 @@ pub const SQLITE_TRANSIENT: c.sqlite3_destructor_type = @ptrCast(@as(?*anyopaque
 // §1 SqlBinder — incremental parameter binding
 // ============================================================
 
-/// Manages SQL binding structures, owns runtime context, ensures consistent state across invocations.
 pub const SqlBinder = struct {
     stmt: *c.sqlite3_stmt,
     next_param: c_int = 1,
@@ -150,7 +149,6 @@ pub const SqlBinder = struct {
 // §2 SqlHydrator — column extraction wrapper
 // ============================================================
 
-/// Manages SQL query execution context, owns runtime bindings; ensures consistent state across calls.
 pub const SqlHydrator = struct {
     allocator: std.mem.Allocator,
     arena: std.heap.ArenaAllocator,

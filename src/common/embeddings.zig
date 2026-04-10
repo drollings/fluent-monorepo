@@ -27,7 +27,6 @@ const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
-/// Manages dynamic embedding generation; owns model instances; ensures consistent key-value mapping.
 pub const EmbeddingProvider = struct {
     ptr: *anyopaque,
     vtable: *const VTable,

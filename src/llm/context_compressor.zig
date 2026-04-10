@@ -14,7 +14,6 @@ const token_budget = @import("token_budget.zig");
 // Public types
 // ---------------------------------------------------------------------------
 
-/// Defines message kinds for compression context, manages ownership and invariants.
 pub const MessageKind = enum {
     user,
     assistant,
@@ -22,7 +21,6 @@ pub const MessageKind = enum {
     tool_result,
 };
 
-/// Manages message structures with fixed-size buffers; owned by the context; ensures consistent state across operations.
 pub const Message = struct {
     role: []const u8,
     content: []const u8,
@@ -42,7 +40,6 @@ pub fn estimateTokens(content: []const u8) usize {
 // ContextCompressor
 // ---------------------------------------------------------------------------
 
-/// Manages context compression structures, owns buffers, and ensures consistent state across operations.
 pub const ContextCompressor = struct {
     /// Maximum total tokens allowed across all messages.
     max_context_tokens: usize,

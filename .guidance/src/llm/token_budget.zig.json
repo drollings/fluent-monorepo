@@ -4,7 +4,8 @@
     "source": "src/llm/token_budget.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/main.zig", "src/llm/root.zig"],
+  "capabilities": ["llm-client"],
+  "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -36,7 +37,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 44
+          "line": 43
         }
     ,    {
           "type": "fn_decl",
@@ -49,7 +50,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 49
+          "line": 48
         }
     ,    {
           "type": "fn_decl",
@@ -63,10 +64,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 56
+          "line": 55
         }
       ],
-      "line": 37
+      "line": 36
     },
     {
       "type": "struct",
@@ -85,7 +86,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 80
+          "line": 79
         }
     ,    {
           "type": "fn_decl",
@@ -97,7 +98,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 85
+          "line": 84
         }
     ,    {
           "type": "fn_decl",
@@ -109,7 +110,7 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 89
+          "line": 88
         }
     ,    {
           "type": "fn_decl",
@@ -121,76 +122,76 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 93
+          "line": 92
         }
       ],
-      "line": 68
+      "line": 67
     },
     {
       "type": "test_decl",
       "name": "estimate: empty string → 0 tokens",
       "is_pub": false,
-      "line": 104
+      "line": 103
     },
     {
       "type": "test_decl",
       "name": "estimate: single char → 1 token",
       "is_pub": false,
-      "line": 108
+      "line": 107
     },
     {
       "type": "test_decl",
       "name": "estimate: 4-char string → 1 token",
       "is_pub": false,
-      "line": 112
+      "line": 111
     },
     {
       "type": "test_decl",
       "name": "estimate: 5-char string → 2 tokens",
       "is_pub": false,
-      "line": 116
+      "line": 115
     },
     {
       "type": "test_decl",
       "name": "estimate: 100-char string → 25 tokens",
       "is_pub": false,
-      "line": 120
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: fits within budget",
       "is_pub": false,
-      "line": 125
+      "line": 124
     },
     {
       "type": "test_decl",
       "name": "TokenEstimator: estimateSliceTokens sums correctly",
       "is_pub": false,
-      "line": 131
+      "line": 130
     },
     {
       "type": "test_decl",
       "name": "ProportionalBudget: validate passes on correct fractions",
       "is_pub": false,
-      "line": 137
+      "line": 136
     },
     {
       "type": "test_decl",
       "name": "ProportionalBudget: validate fails when fractions don't sum to 1.0",
       "is_pub": false,
-      "line": 142
+      "line": 141
     },
     {
       "type": "test_decl",
       "name": "ProportionalBudget: token allocation sums approximately to total",
       "is_pub": false,
-      "line": 152
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "ProportionalBudget: community 15%, text 50%, entity 35% of 8000",
       "is_pub": false,
-      "line": 160
+      "line": 159
     }
   ]
 }

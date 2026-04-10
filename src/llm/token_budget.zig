@@ -33,7 +33,6 @@ pub fn estimate(text: []const u8) usize {
 // TokenEstimator
 // ---------------------------------------------------------------------------
 
-/// Manages token estimation logic, owns estimation model; ensures consistent state across runs.
 pub const TokenEstimator = struct {
     const Self = @This();
 

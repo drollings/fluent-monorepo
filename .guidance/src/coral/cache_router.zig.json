@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "module": "src.coral.cache_router",
+    "source": "src/coral/cache_router.zig",
+    "language": "zig"
+  },
+  "comment": " cache_router.zig — ParallelRouter for batched concurrent query routing.",
+  "used_by": ["src/coral/cache.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ParallelRouter",
+      "match_hash": "c410a0893f626316ecac288ce474c518b060b506bf452fa895dae5c19aea7ab4",
+      "signature": "keyword_struct ParallelRouter { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "0997a7fcbc5d9a65fb647cf2c54c73e49839f3270a9f92fc6e692264312cae15",
+          "signature": "fn init(reactor: *QueueReactor) -> Self",
+          "params": [
+            { "name": "reactor", "type": "*QueueReactor" }
+          ],
+          "returns": "Self",
+          "is_pub": true,
+          "line": 13
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "routeBatch",
+          "match_hash": "d4b4eecd6fa26696b7fc350674ebb49209ba305dcf378989e5a4c4b6b0f21d80",
+          "signature": "fn routeBatch(self: *Self, allocator: std.mem.Allocator, queries: []const []const u8) -> []RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "queries", "type": "[]const []const u8" }
+          ],
+          "returns": "[]RoutingResult",
+          "is_pub": true,
+          "line": 17
+        }
+      ],
+      "line": 8
+    }
+  ]
+}

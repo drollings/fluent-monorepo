@@ -4,6 +4,7 @@
     "source": "src/common/format.zig",
     "language": "zig"
   },
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -11,6 +12,20 @@
       "match_hash": "6a25e5598da7f1f1b61d2faffc105a3e696b1ff2f044768f644f746bede2e59d",
       "signature": "keyword_struct Column { ... }",
       "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "effectiveWidth",
+          "match_hash": "66011068cbdcefa5f20062552adcd2bab7d77721ebe14f0cdb9cde90d2ea4738",
+          "signature": "fn effectiveWidth(self: *const Column) -> usize",
+          "params": [
+            { "name": "self", "type": "*const Column" }
+          ],
+          "returns": "usize",
+          "is_pub": true,
+          "line": 10
+        }
+      ],
       "line": 4
     },
     {
@@ -32,7 +47,7 @@
           ],
           "returns": "Table",
           "is_pub": true,
-          "line": 18
+          "line": 22
         }
     ,    {
           "type": "fn_decl",
@@ -45,7 +60,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 27
+          "line": 31
         }
     ,    {
           "type": "fn_decl",
@@ -58,10 +73,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 31
+          "line": 35
         }
       ],
-      "line": 12
+      "line": 16
     },
     {
       "type": "fn_private",
@@ -74,7 +89,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 82
+      "line": 86
     },
     {
       "type": "fn_decl",
@@ -88,7 +103,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 125
+      "line": 129
     },
     {
       "type": "fn_private",
@@ -103,7 +118,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 133
+      "line": 137
     },
     {
       "type": "fn_decl",
@@ -117,7 +132,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 170
+      "line": 174
     },
     {
       "type": "fn_private",
@@ -130,7 +145,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 216
+      "line": 220
     },
     {
       "type": "fn_decl",
@@ -143,7 +158,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 231
+      "line": 235
     },
     {
       "type": "fn_decl",
@@ -155,43 +170,43 @@
       ],
       "returns": "?usize",
       "is_pub": true,
-      "line": 249
+      "line": 253
     },
     {
       "type": "test_decl",
       "name": "formatSize: bytes",
       "is_pub": false,
-      "line": 283
+      "line": 287
     },
     {
       "type": "test_decl",
       "name": "formatSize: kilobytes",
       "is_pub": false,
-      "line": 289
+      "line": 293
     },
     {
       "type": "test_decl",
       "name": "parseSize: plain number",
       "is_pub": false,
-      "line": 295
+      "line": 299
     },
     {
       "type": "test_decl",
       "name": "parseSize: with KB suffix",
       "is_pub": false,
-      "line": 299
+      "line": 303
     },
     {
       "type": "test_decl",
       "name": "parseSize: with MB suffix",
       "is_pub": false,
-      "line": 303
+      "line": 307
     },
     {
       "type": "test_decl",
       "name": "formatJson: simple struct",
       "is_pub": false,
-      "line": 307
+      "line": 311
     }
   ]
 }

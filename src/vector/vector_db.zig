@@ -251,7 +251,6 @@ pub fn syncDatabase(
 //       .cacheLimit(500)              // optional (default: 0 = unlimited)
 //       .sync();
 
-/// Manages database sync operations with a fixed-size buffer pool; owned by the module; ensures consistent state across invocations.
 pub const DbSyncBuilder = struct {
     allocator: std.mem.Allocator,
     guidance_dir: []const u8,
@@ -315,7 +314,6 @@ pub const DbSyncBuilder = struct {
 // GuidanceDb — the database handle
 // ---------------------------------------------------------------------------
 
-/// Manages a fixed-size buffer pool for efficient data access; owned by the system; ensures consistent memory usage.
 pub const GuidanceDb = struct {
     db: ?*c.sqlite3,
     allocator: std.mem.Allocator,
@@ -4111,7 +4109,6 @@ pub const GuidanceDb = struct {
 // JSON parsing — internal structure
 // ---------------------------------------------------------------------------
 
-/// Manages parsed member data structures; owns a fixed-size buffer pool; not thread-safe.
 const ParsedMember = struct {
     node_type: []const u8,
     name: []const u8,

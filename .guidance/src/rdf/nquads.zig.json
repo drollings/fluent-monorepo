@@ -48,7 +48,7 @@
           ],
           "returns": "NQuadsParser",
           "is_pub": true,
-          "line": 43
+          "line": 42
         }
     ,    {
           "type": "fn_decl",
@@ -60,7 +60,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 50
+          "line": 49
         }
     ,    {
           "type": "fn_decl",
@@ -72,7 +72,7 @@
           ],
           "returns": "NQuadsError!?Quad",
           "is_pub": true,
-          "line": 55
+          "line": 54
         }
     ,    {
           "type": "fn_private",
@@ -85,7 +85,7 @@
           ],
           "returns": "NQuadsError!Quad",
           "is_pub": false,
-          "line": 65
+          "line": 64
         }
     ,    {
           "type": "fn_private",
@@ -98,7 +98,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 93
+          "line": 92
         }
     ,    {
           "type": "fn_private",
@@ -112,7 +112,7 @@
           ],
           "returns": "NQuadsError!Term",
           "is_pub": false,
-          "line": 99
+          "line": 98
         }
     ,    {
           "type": "fn_private",
@@ -126,7 +126,7 @@
           ],
           "returns": "NQuadsError!Term",
           "is_pub": false,
-          "line": 110
+          "line": 109
         }
     ,    {
           "type": "fn_private",
@@ -140,7 +140,7 @@
           ],
           "returns": "NQuadsError!Term",
           "is_pub": false,
-          "line": 120
+          "line": 119
         }
     ,    {
           "type": "fn_private",
@@ -154,46 +154,46 @@
           ],
           "returns": "NQuadsError!Term",
           "is_pub": false,
-          "line": 131
+          "line": 130
         }
       ],
-      "line": 39
+      "line": 38
     },
     {
       "type": "test_decl",
       "name": "nquads quad with graph",
       "is_pub": false,
-      "line": 175
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "nquads triple without graph",
       "is_pub": false,
-      "line": 185
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "nquads literal object",
       "is_pub": false,
-      "line": 194
+      "line": 193
     },
     {
       "type": "test_decl",
       "name": "nquads comment and blank line skipped",
       "is_pub": false,
-      "line": 203
+      "line": 202
     },
     {
       "type": "test_decl",
       "name": "nquads malformed line error",
       "is_pub": false,
-      "line": 212
+      "line": 211
     },
     {
       "type": "test_decl",
       "name": "nquads blank node subject",
       "is_pub": false,
-      "line": 220
+      "line": 219
     }
   ]
 }

@@ -15,7 +15,6 @@ const markdown_plugin = @import("plugins/markdown_plugin.zig");
 
 const LanguagePlugin = plugin_mod.LanguagePlugin;
 
-/// Manages plugin registration and lookup; owns the registry; ensures consistent access patterns.
 pub const PluginRegistry = struct {
     allocator: std.mem.Allocator,
     /// Maps file extension (e.g. ".zig") → plugin descriptor.

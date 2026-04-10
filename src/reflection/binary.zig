@@ -1,7 +1,6 @@
 /// binary.zig — BinaryFieldCodec for wire-format encoding/decoding of struct fields.
 const std = @import("std");
 
-/// Encodes binary data structures; manages ownership and invariants; not thread-safe.
 pub const BinaryFieldCodec = struct {
     pub fn encodeField(comptime T: type, value: T, writer: anytype) !void {
         switch (@typeInfo(T)) {

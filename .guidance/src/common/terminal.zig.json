@@ -4,6 +4,7 @@
     "source": "src/common/terminal.zig",
     "language": "zig"
   },
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "fn_private",

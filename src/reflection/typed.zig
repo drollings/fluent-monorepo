@@ -57,7 +57,6 @@ pub fn typeIdFromType(comptime T: type) TypeId {
     };
 }
 
-/// Defines a typed accessor structure for controlled type-safe interactions; manages ownership and invariants.
 pub const TypedAccessor = struct {
     name: []const u8,
     offset: usize,

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
-  "used_by": ["src/coral/cache.zig"],
+  "used_by": ["src/coral/cache.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -56,7 +56,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 77
+      "line": 79
     },
     {
       "type": "fn_decl",
@@ -68,37 +68,37 @@
       ],
       "returns": "ValidationResult",
       "is_pub": true,
-      "line": 100
+      "line": 102
     },
     {
       "type": "test_decl",
       "name": "validateSolution: empty returns invalid",
       "is_pub": false,
-      "line": 128
+      "line": 130
     },
     {
       "type": "test_decl",
       "name": "validateSolution: refusal returns invalid",
       "is_pub": false,
-      "line": 133
+      "line": 135
     },
     {
       "type": "test_decl",
       "name": "validateSolution: think block returns invalid",
       "is_pub": false,
-      "line": 138
+      "line": 140
     },
     {
       "type": "test_decl",
       "name": "validateSolution: valid prose returns valid",
       "is_pub": false,
-      "line": 143
+      "line": 145
     },
     {
       "type": "test_decl",
       "name": "buildPrompt: contains query and context",
       "is_pub": false,
-      "line": 148
+      "line": 150
     },
     {
       "type": "fn_decl",
@@ -113,19 +113,19 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 182
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "indexSolution: smoke test with in-memory library",
       "is_pub": false,
-      "line": 232
+      "line": 234
     },
     {
       "type": "test_decl",
       "name": "indexSolution: idempotent on repeated call",
       "is_pub": false,
-      "line": 242
+      "line": 244
     },
     {
       "type": "fn_decl",
@@ -141,19 +141,19 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 268
+      "line": 270
     },
     {
       "type": "test_decl",
       "name": "indexSolutionWithTool: null generator falls back to ContextNode indexing",
       "is_pub": false,
-      "line": 330
+      "line": 332
     },
     {
       "type": "test_decl",
       "name": "indexSolutionWithTool: no code block still indexes node",
       "is_pub": false,
-      "line": 347
+      "line": 349
     }
   ]
 }

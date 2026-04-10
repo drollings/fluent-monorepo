@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -24,10 +25,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 29
+          "line": 28
         }
       ],
-      "line": 19
+      "line": 18
     },
     {
       "type": "struct",
@@ -50,10 +51,10 @@
           ],
           "returns": "BenchmarkResult",
           "is_pub": true,
-          "line": 50
+          "line": 49
         }
       ],
-      "line": 43
+      "line": 42
     },
     {
       "type": "struct",
@@ -72,7 +73,7 @@
           ],
           "returns": "CoralBenchmarks",
           "is_pub": true,
-          "line": 98
+          "line": 96
         }
     ,    {
           "type": "fn_decl",
@@ -84,7 +85,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 105
+          "line": 103
         }
     ,    {
           "type": "fn_decl",
@@ -96,7 +97,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 110
+          "line": 108
         }
     ,    {
           "type": "fn_private",
@@ -108,7 +109,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 119
+          "line": 117
         }
     ,    {
           "type": "fn_private",
@@ -120,7 +121,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 165
+          "line": 163
         }
     ,    {
           "type": "fn_private",
@@ -132,7 +133,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 221
+          "line": 219
         }
     ,    {
           "type": "fn_private",
@@ -144,7 +145,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 279
+          "line": 277
         }
     ,    {
           "type": "fn_private",
@@ -156,10 +157,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 327
+          "line": 325
         }
       ],
-      "line": 94
+      "line": 92
     },
     {
       "type": "fn_decl",
@@ -172,7 +173,7 @@
       ],
       "returns": "u64",
       "is_pub": true,
-      "line": 371
+      "line": 369
     },
     {
       "type": "fn_decl",
@@ -181,25 +182,25 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 397
+      "line": 395
     },
     {
       "type": "test_decl",
       "name": "BenchmarkResult format",
       "is_pub": false,
-      "line": 414
+      "line": 412
     },
     {
       "type": "test_decl",
       "name": "Benchmark harness runs specified iterations",
       "is_pub": false,
-      "line": 435
+      "line": 433
     },
     {
       "type": "test_decl",
       "name": "Arena allocation overhead is reasonable",
       "is_pub": false,
-      "line": 452
+      "line": 450
     }
   ]
 }

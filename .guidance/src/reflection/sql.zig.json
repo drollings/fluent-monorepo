@@ -24,7 +24,7 @@
           ],
           "returns": "SqlBinder",
           "is_pub": true,
-          "line": 52
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
@@ -37,7 +37,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 56
+          "line": 55
         }
     ,    {
           "type": "fn_decl",
@@ -50,7 +50,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 63
+          "line": 62
         }
     ,    {
           "type": "fn_decl",
@@ -63,7 +63,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 70
+          "line": 69
         }
     ,    {
           "type": "fn_decl",
@@ -76,7 +76,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 77
+          "line": 76
         }
     ,    {
           "type": "fn_decl",
@@ -89,7 +89,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 84
+          "line": 83
         }
     ,    {
           "type": "fn_decl",
@@ -102,7 +102,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 91
+          "line": 90
         }
     ,    {
           "type": "fn_decl",
@@ -114,7 +114,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 98
+          "line": 97
         }
     ,    {
           "type": "fn_decl",
@@ -127,7 +127,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 105
+          "line": 104
         }
     ,    {
           "type": "fn_decl",
@@ -139,7 +139,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 109
+          "line": 108
         }
     ,    {
           "type": "fn_decl",
@@ -151,7 +151,7 @@
           ],
           "returns": "anyerror!bool",
           "is_pub": true,
-          "line": 115
+          "line": 114
         }
     ,    {
           "type": "fn_decl",
@@ -163,7 +163,7 @@
           ],
           "returns": "anyerror!void",
           "is_pub": true,
-          "line": 129
+          "line": 128
         }
     ,    {
           "type": "fn_decl",
@@ -175,10 +175,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 144
+          "line": 143
         }
       ],
-      "line": 47
+      "line": 46
     },
     {
       "type": "struct",
@@ -198,7 +198,7 @@
           ],
           "returns": "SqlHydrator",
           "is_pub": true,
-          "line": 161
+          "line": 159
         }
     ,    {
           "type": "fn_decl",
@@ -210,7 +210,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 169
+          "line": 167
         }
     ,    {
           "type": "fn_decl",
@@ -222,7 +222,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 173
+          "line": 171
         }
     ,    {
           "type": "fn_decl",
@@ -234,7 +234,7 @@
           ],
           "returns": "i64",
           "is_pub": true,
-          "line": 179
+          "line": 177
         }
     ,    {
           "type": "fn_decl",
@@ -246,7 +246,7 @@
           ],
           "returns": "f64",
           "is_pub": true,
-          "line": 186
+          "line": 184
         }
     ,    {
           "type": "fn_decl",
@@ -258,7 +258,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 193
+          "line": 191
         }
     ,    {
           "type": "fn_decl",
@@ -270,7 +270,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 210
+          "line": 208
         }
     ,    {
           "type": "fn_decl",
@@ -282,7 +282,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 227
+          "line": 225
         }
     ,    {
           "type": "fn_decl",
@@ -294,7 +294,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 240
+          "line": 238
         }
     ,    {
           "type": "fn_decl",
@@ -306,7 +306,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 256
+          "line": 254
         }
     ,    {
           "type": "fn_decl",
@@ -318,7 +318,7 @@
           ],
           "returns": "c_int",
           "is_pub": true,
-          "line": 260
+          "line": 258
         }
     ,    {
           "type": "fn_decl",
@@ -330,7 +330,7 @@
           ],
           "returns": "c_int",
           "is_pub": true,
-          "line": 266
+          "line": 264
         }
     ,    {
           "type": "fn_decl",
@@ -342,10 +342,10 @@
           ],
           "returns": "c_int",
           "is_pub": true,
-          "line": 270
+          "line": 268
         }
       ],
-      "line": 154
+      "line": 152
     },
     {
       "type": "struct",
@@ -353,7 +353,7 @@
       "match_hash": "c37c972ab4c026a699c658a52932894e7484e3cf72e9d0a0b39b3def2ef66dcd",
       "signature": "keyword_struct SqlColumn { ... }",
       "is_pub": true,
-      "line": 280
+      "line": 278
     },
     {
       "type": "fn_decl",
@@ -369,7 +369,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 327
+      "line": 325
     },
     {
       "type": "fn_decl",
@@ -385,7 +385,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 373
+      "line": 371
     },
     {
       "type": "fn_decl",
@@ -400,7 +400,7 @@
       ],
       "returns": "anyerror!void",
       "is_pub": true,
-      "line": 404
+      "line": 402
     },
     {
       "type": "fn_decl",
@@ -415,7 +415,7 @@
       ],
       "returns": "anyerror!?[]const u8",
       "is_pub": true,
-      "line": 471
+      "line": 469
     },
     {
       "type": "struct",
@@ -436,7 +436,7 @@
           ],
           "returns": "TableSchema",
           "is_pub": true,
-          "line": 523
+          "line": 521
         }
     ,    {
           "type": "fn_decl",
@@ -448,7 +448,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 534
+          "line": 532
         }
     ,    {
           "type": "fn_decl",
@@ -461,7 +461,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 538
+          "line": 536
         }
     ,    {
           "type": "fn_decl",
@@ -475,7 +475,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 556
+          "line": 554
         }
     ,    {
           "type": "fn_decl",
@@ -489,7 +489,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 572
+          "line": 570
         }
     ,    {
           "type": "fn_decl",
@@ -503,7 +503,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 585
+          "line": 583
         }
     ,    {
           "type": "fn_decl",
@@ -518,16 +518,16 @@
           ],
           "returns": "TableSchema",
           "is_pub": true,
-          "line": 603
+          "line": 601
         }
       ],
-      "line": 517
+      "line": 515
     },
     {
       "type": "test_decl",
       "name": "TableSchema SQL generation",
       "is_pub": false,
-      "line": 636
+      "line": 634
     }
   ]
 }

@@ -32,7 +32,6 @@ pub const CallRecord = struct {
 
 // ── MockEmbeddingProvider ─────────────────────────────────────────────────────
 
-/// Tracks mock embeddings with a fixed-size buffer; managed by owner; ensures consistent state across tests.
 pub const MockEmbeddingProvider = struct {
     allocator: std.mem.Allocator,
     /// All recorded calls in order.
@@ -196,7 +195,6 @@ pub const EmbeddingVTable = struct {
     deinit: *const fn (ptr: *anyopaque) void,
 };
 
-/// Manages embedding handles with fixed-size buffers; encapsulates ownership and lifecycle; not thread-safe.
 pub const EmbeddingHandle = struct {
     ptr: *anyopaque,
     vtable: *const EmbeddingVTable,

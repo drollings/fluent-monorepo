@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -12,7 +13,7 @@
       "match_hash": "5c058c61fff7b03c5bbb4edb910afd06a0213c9776ae1551f6a9ba2d124b2d08",
       "signature": "keyword_struct Tool { ... }",
       "is_pub": true,
-      "line": 24
+      "line": 23
     },
     {
       "type": "struct",
@@ -20,7 +21,7 @@
       "match_hash": "7ab3384ef8de433e7b6f5a27ff8720e5151baa69967ecfe07138a1b6732acb7f",
       "signature": "keyword_struct ToolDefinition { ... }",
       "is_pub": true,
-      "line": 38
+      "line": 36
     },
     {
       "type": "struct",
@@ -40,7 +41,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 54
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
@@ -54,7 +55,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 60
+          "line": 57
         }
     ,    {
           "type": "fn_decl",
@@ -69,7 +70,7 @@
           ],
           "returns": "[]ToolDefinition",
           "is_pub": true,
-          "line": 71
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -81,10 +82,10 @@
           ],
           "returns": "usize",
           "is_pub": true,
-          "line": 106
+          "line": 103
         }
       ],
-      "line": 49
+      "line": 46
     },
     {
       "type": "fn_private",
@@ -93,7 +94,7 @@
       "signature": "fn alwaysAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 118
+      "line": 115
     },
     {
       "type": "fn_private",
@@ -102,37 +103,37 @@
       "signature": "fn neverAvailable() -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 122
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: register and count",
       "is_pub": false,
-      "line": 126
+      "line": 123
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: getDefinitions returns all when no filter",
       "is_pub": false,
-      "line": 137
+      "line": 134
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: toolset filter includes only matching tools",
       "is_pub": false,
-      "line": 150
+      "line": 147
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: availability check skips unavailable tools",
       "is_pub": false,
-      "line": 166
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "ToolRegistry: availability=false skips check",
       "is_pub": false,
-      "line": 180
+      "line": 177
     }
   ]
 }

@@ -1,29 +1,27 @@
-/// Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
-///
-/// Run with: zig build test-guidance
+//! Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
+//!
+//! Run with: zig build test-guidance
 const std = @import("std");
 const types = @import("types.zig");
-const json_store = @import("json_store.zig");
+const json_store = @import("sync/json_store.zig");
 const main = @import("main.zig");
 const sync_mod = @import("sync.zig");
 const config_mod = @import("config.zig");
 
 // Pull in inline tests from new source-code-first comment management modules.
 comptime {
-    _ = @import("line_verify.zig");
-    _ = @import("comment_parser.zig");
-    _ = @import("comment_inserter.zig");
-    _ = @import("comment_checker.zig");
-    _ = @import("header_generator.zig");
-    _ = @import("comment_sync.zig");
-    _ = @import("comment_cache.zig");
+    _ = @import("sync/line_verify.zig");
+    _ = @import("comments/core.zig");
+    _ = @import("comments/inserter.zig");
+    _ = @import("comments/header.zig");
+    _ = @import("comments/sync.zig");
     // M9: Pull in doc_parser tests (parseDocContent, anchors, frontmatter)
     _ = @import("doc_parser.zig");
     // M9: Pull in staged tests (formatStaged, capability_doc, See Also cap)
     _ = @import("staged.zig");
     // Phase 1/2a/2b: codehealth and call_extractor tests
-    _ = @import("codehealth.zig");
-    _ = @import("call_extractor.zig");
+    _ = @import("codehealth/main.zig");
+    _ = @import("codehealth/extractor.zig");
 }
 
 // ---------------------------------------------------------------------------

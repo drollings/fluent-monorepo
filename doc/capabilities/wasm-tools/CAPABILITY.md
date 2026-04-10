@@ -84,12 +84,13 @@ An arena-backed fluent builder for assembling the binary payload will be added i
 - `src/coral/cache.zig` — L2 `route()` stub, `findWasmTool()`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (4 files, auto-discovered)
+## Sources (5 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/coral/context_node_schema.zig` | 1.0 | defines_anchor |
 | `src/coral/db.zig` | 1.0 | defines_anchor |
+| `src/coral/root.zig` | 0.9 | used_by |
 | `src/wasm/execution_request.zig` | 0.4 | path_heuristic |
 | `src/wasm/wasm.zig` | 0.4 | path_heuristic |
 

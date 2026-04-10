@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "module": "src.guidance.query.llm_filter",
+    "source": "src/guidance/query/llm_filter.zig",
+    "language": "zig"
+  },
+  "comment": " llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.\n\n For each prose, insight, or skill_doc Stage, asks a local LLM:\n   \"Is this content relevant to the query? Answer YES or NO.\"\n\n Code and metadata stages are always kept verbatim.\n On LLM error or unavailability, returns all input unchanged.",
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "filterStages",
+      "match_hash": "533fd46241f267d7dafb1feddcfb7d40d217f046b7d6de49e28278562f6fb6df",
+      "signature": "fn filterStages(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> []types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "stages", "type": "[]const types.Stage" }
+      ],
+      "returns": "[]types.Stage",
+      "is_pub": true,
+      "line": 14
+    },
+    {
+      "type": "fn_decl",
+      "name": "filterSeeAlso",
+      "match_hash": "a184c8f19fd4e1919c658789e41983b0a6eeabccf79a805fdce11ba0d9092078",
+      "signature": "fn filterSeeAlso(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, entries: []const SeeAlsoEntry, max_keep: usize) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "entries", "type": "[]const SeeAlsoEntry" },
+        { "name": "max_keep", "type": "usize" }
+      ],
+      "returns": "[][]const u8",
+      "is_pub": true,
+      "line": 50
+    },
+    {
+      "type": "fn_private",
+      "name": "keepAll",
+      "match_hash": "d46c911743710272b341da3159267df1a399a54ba14624cb32861896b08676f6",
+      "signature": "fn keepAll(allocator: std.mem.Allocator, entries: []const SeeAlsoEntry) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "entries", "type": "[]const SeeAlsoEntry" }
+      ],
+      "returns": "[][]const u8",
+      "is_pub": false,
+      "line": 149
+    },
+    {
+      "type": "fn_private",
+      "name": "askRelevant",
+      "match_hash": "dcb5879482652cac3997acb8642402c9af4d03390b64a4ec2a2c95682c4ae85b",
+      "signature": "fn askRelevant(allocator: std.mem.Allocator, client: *llm.LlmClient, query: []const u8, content: []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "client", "type": "*llm.LlmClient" },
+        { "name": "query", "type": "[]const u8" },
+        { "name": "content", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 158
+    },
+    {
+      "type": "fn_private",
+      "name": "dupeStage",
+      "match_hash": "633f384329ca14d2a0d1dba340e4735cb603dff3f30f5272ddbba5ff146091bb",
+      "signature": "fn dupeStage(allocator: std.mem.Allocator, s: types.Stage) -> types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "types.Stage" }
+      ],
+      "returns": "types.Stage",
+      "is_pub": false,
+      "line": 186
+    }
+  ]
+}

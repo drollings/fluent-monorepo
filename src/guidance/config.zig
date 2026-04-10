@@ -1,8 +1,8 @@
-/// guidance project configuration loader.
-///
-/// Resolves paths for the guidance system using a two-level fallback chain:
-///   1. {cwd}/{guidance_dir}/{config_filename}  (project-local)
-///   2. ~/.config/guidance/{config_filename}  (user global)
+//! guidance project configuration loader.
+//!
+//! Resolves paths for the guidance system using a two-level fallback chain:
+//!   1. {cwd}/{guidance_dir}/{config_filename}  (project-local)
+//!   2. ~/.config/guidance/{config_filename}  (user global)
 ///   3. Built-in defaults
 ///
 /// All path fields in ProjectConfig are pre-computed absolute paths so callers
@@ -34,7 +34,6 @@ pub const DEFAULT_API_URL = DEFAULT_BASE_URL ++ DEFAULT_CHAT_ENDPOINT;
 pub const DEFAULT_EMBEDDING_CACHE_LIMIT: u32 = 400;
 pub const CONFIG_FILENAME = "guidance-config.json";
 
-/// Manages configuration structures for Zig projects, owns shared settings, ensures consistent initialization and cleanup.
 pub const Provider = struct {
     name: []const u8,
     base_url: []const u8,
@@ -47,7 +46,6 @@ pub const Provider = struct {
     }
 };
 
-/// Manages linting rules as a structured command; owns configuration state; ensures invariant integrity.
 pub const LintCommand = struct {
     extension: []const u8,
     argv: []const []const u8,
@@ -63,7 +61,6 @@ pub const LintCommand = struct {
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Manages project configuration settings with a structured approach; owns invariants and lifecycle; not thread-safe.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
@@ -381,111 +378,6 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
     std.debug.print("Config already exists at {s}\n", .{config_path});
     return false;
 }
-
-/// Generates MD content strings from allocation and guidance data.
-pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]const u8 {
-    var buf: std.ArrayList(u8) = .{};
-    errdefer buf.deinit(allocator);
-    const w = buf.writer(allocator);
-
-    try w.writeAll(
-        \\# guidance Integration
-        \\
-        \\This project uses guidance for AST-guided code navigation and documentation.
-        \\
-        \\## Quick Start
-        \\
-        \\```
-        \\# Initialize guidance configuration
-        \\guidance init
-        \\
-        \\# Run the full RALPH loop (build → test → lint → fmt → guidance)
-        \\guidance check
-        \\
-        \\# Query the codebase
-        \\guidance explain "how does X work?"
-        \\```
-        \\
-        \\## Key Files
-        \\
-        \\# Agent Bootloader — guidance
-        \\
-        \\**Context**: guidance is a Zig-native, deterministic-first AST-guided vector search
-        \\database generator with local AI enhancement.  When used to search the
-        \\codebase's capabilities and code, it can save over 90% of the tokens and tool
-        \\calls compared to the orchestrating AI coder using other tools.
-        \\
-        \\## Prime Directive
-        \\
-        \\1. **Never guess**: use `guidance explain "<query text>" for guidance, and
-        \\follow instructions for any queries of interest
-        \\
-        \\---
-        \\
-        \\## Quick Start: RALPH Loop (Discovery → Implementation)
-        \\
-        \\```
-        \\1. DISCOVER (guidance):  guidance explain "<keywords or a short question>"
-        \\                         Prefer keywords: "cmdExplain"
-        \\                         Or, prefer a short question: "How do we sync guidance?"
-        \\                         Scan: module purpose, pattern type, skill list
-        \\
-        \\2. UNDERSTAND (MCP):     Read the primary source file(s) from step 1
-        \\                         Grep callers: who @import's this file?
-        \\                         Ask: do the listed skills actually apply?
-        \\
-        \\3. DECIDE:               If skills match → read them
-        \\                         If not → proceed to implementation
-        \\
-        \\4. IMPLEMENT:            Write to src/guidance/ or bin/ (for Python or
-        \\                         other languages apart from Zig, i.e.  guidance-py)
-        \\                         Follow source patterns and applicable skills only
-        \\
-        \\5. VERIFY (make):        make pre-commit
-        \\                         build → test → lint → guidance gen → STRUCTURE.md
-        \\```
-        \\---
-        \\
-        \\## Source Layout
-        \\
-        \\```
-        \\
-    );
-    try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
-    try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
-    try w.writeAll(
-        \\- `.guidance.db` — SQLite vector search database
-        \\- `STRUCTURE.md` — Project structure documentation (auto-generated)
-        \\
-        \\---
-        \\
-        \\**DO:**
-        \\- Run `guidance explain "<query>"` and read the results
-        \\- Ask: "What capabilitity is used here?" before consulting skills
-        \\
-        \\**DON'T:**
-        \\- Assume skills apply without validating against source code
-        \\- Write any code in Zig without reading `doc/skills/zig-current/SKILL.md` first
-    );
-
-    return try buf.toOwnedSlice(allocator);
-}
-
-/// AGENTS.md insertion template for existing projects.
-pub const AGENTS_INSERTION: []const u8 =
-    \\---
-    \\
-    \\## guidance Integration
-    \\
-    \\This project uses guidance for AST-guided code navigation.
-    \\
-    \\```
-    \\# Initialize and run
-    \\guidance init
-    \\guidance check
-    \\```
-    \\
-;
 
 // ---------------------------------------------------------------------------
 // Internal helpers

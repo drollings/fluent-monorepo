@@ -24,7 +24,6 @@ const sync_engine_mod = @import("sync_engine.zig");
 /// Maximum size of a single JSON-RPC message (4 MB).
 const MAX_MSG_SIZE = 4 * 1024 * 1024;
 
-/// Represents a request structure for communication; managed by owner; ensures consistent state across invocations.
 const Request = struct {
     id: ?std.json.Value = null,
     method: []const u8,

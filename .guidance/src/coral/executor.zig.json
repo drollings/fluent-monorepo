@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "fn_private",
@@ -37,7 +38,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 53
+          "line": 52
         }
     ,    {
           "type": "fn_decl",
@@ -51,7 +52,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 65
+          "line": 64
         }
     ,    {
           "type": "fn_private",
@@ -65,7 +66,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 104
+          "line": 103
         }
     ,    {
           "type": "fn_decl",
@@ -80,28 +81,28 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 118
+          "line": 117
         }
       ],
-      "line": 47
+      "line": 46
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: init and run with no handlers (all skip)",
       "is_pub": false,
-      "line": 230
+      "line": 229
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: collectDeps includes transitive deps",
       "is_pub": false,
-      "line": 246
+      "line": 245
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: essential handler failure propagates",
       "is_pub": false,
-      "line": 267
+      "line": 266
     }
   ]
 }

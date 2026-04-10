@@ -206,7 +206,6 @@ pub fn format(
 //   const s = try view.get("provides", .coder);
 //   defer allocator.free(s);
 
-/// Defines a schema for target configuration with fixed-size buffers; managed via ownership model; ensures consistent initialization and deinitialization.
 pub const TargetSchema = struct {
     const Self = @This();
     const ACCESSOR_COUNT = 5;

@@ -8,7 +8,6 @@
 
 const std = @import("std");
 
-/// Represents a structured document excerpt with ownership and invariants; managed via a single lifecycle.
 pub const DocExcerpt = struct {
     /// From frontmatter "name:" field (optional for SKILL.md)
     name: ?[]const u8 = null,

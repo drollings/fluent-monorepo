@@ -11,7 +11,7 @@ const std = @import("std");
 const vector_db_mod = @import("vector");
 const types = @import("types.zig");
 const common = @import("common");
-const line_verify = @import("line_verify.zig");
+const line_verify = @import("sync/line_verify.zig");
 const doc_parser = @import("doc_parser.zig");
 
 const GuidanceDb = vector_db_mod.GuidanceDb;

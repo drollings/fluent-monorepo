@@ -4,6 +4,7 @@
     "source": "src/guidance/triage.zig",
     "language": "zig"
   },
+  "comment": " Triage subcommand: generate TRIAGE.md from a TODO.md work item.\n\n Mirrors Python's cmd_triage() in guidance.py.\n Given .guidance/.todo/<item>/TODO.md, produces a TRIAGE.md with:\n   - Affected files (detected by regex + backtick paths)",
   "members": [
     {
       "type": "fn_decl",

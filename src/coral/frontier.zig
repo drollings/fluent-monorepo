@@ -61,10 +61,12 @@ pub fn minimizeContext(
     const anon_query = try anonymize_mod.anonymizeContext(allocator, query, all_patterns);
     errdefer allocator.free(anon_query);
 
+    const tb = @import("llm").token_budget;
+
     return MinimizedContext{
         .query = anon_query,
         .packed_text = packed_text,
-        .token_count = packed_text.len / 4,
+        .token_count = tb.estimate(packed_text),
         .allocator = allocator,
     };
 }

@@ -15,7 +15,6 @@ const std = @import("std");
 const time = std.time;
 const Allocator = std.mem.Allocator;
 
-/// Tracks benchmark outcomes with a fixed-size buffer pool; managed by owner; not thread-safe.
 pub const BenchmarkResult = struct {
     name: []const u8,
     iterations: usize,
@@ -90,7 +89,6 @@ pub const Benchmark = struct {
     }
 };
 
-/// Tracks Coral benchmarks with a fixed-size structure; managed by owner; not thread-safe.
 pub const CoralBenchmarks = struct {
     allocator: Allocator,
     results: std.ArrayList(BenchmarkResult),

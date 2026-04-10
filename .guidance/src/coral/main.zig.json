@@ -4,6 +4,7 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "members": [
     {
       "type": "fn_decl",

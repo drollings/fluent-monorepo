@@ -116,7 +116,7 @@ pub fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64)
     return error.InvalidInteger;
 }
 
-/// Manages progress tracking UI; owned by the application; ensures consistent state across sessions.
+/// Terminal progress bar UI.
 pub const ProgressBar = struct {
     description: []const u8,
     current: usize,
@@ -169,7 +169,7 @@ pub const ProgressBar = struct {
     }
 };
 
-/// Defines a color enum for terminal UI; managed centrally with ownership model; immutable values ensure consistency.
+/// Terminal color enum (ANSI escape codes).
 pub const Color = enum {
     reset,
     black,

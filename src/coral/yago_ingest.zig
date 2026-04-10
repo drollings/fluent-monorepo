@@ -80,7 +80,6 @@ pub const YagoConfig = struct {
 // YagoIngestor
 // ---------------------------------------------------------------------------
 
-/// Manages YagoIngestor's keyword structure with fixed buffers; owns state, not thread-safe.
 pub const YagoIngestor = struct {
     const Self = @This();
 

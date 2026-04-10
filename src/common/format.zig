@@ -1,14 +1,18 @@
 const std = @import("std");
 
-/// Defines a column structure for data storage, manages ownership, and ensures consistent access patterns.
+/// Table column with header, key, and display width.
 pub const Column = struct {
     header: []const u8,
     key: []const u8,
     width: usize = 0,
     align_left: bool = true,
+
+    pub fn effectiveWidth(self: *const Column) usize {
+        return if (self.width > 0) self.width else self.header.len + 2;
+    }
 };
 
-/// Defines a table structure for structured data; owned by the module; maintains invariant data integrity.
+/// Table structure for formatted output with columns and rows.
 pub const Table = struct {
     columns: []const Column,
     rows: []const std.json.Value,
@@ -39,7 +43,7 @@ pub const Table = struct {
         }
 
         for (self.columns) |col| {
-            const w = if (col.width > 0) col.width else col.header.len + 2;
+            const w = col.effectiveWidth();
             if (col.align_left) {
                 try writer.print(" {s:<{}} ", .{ col.header, w });
             } else {
@@ -49,7 +53,7 @@ pub const Table = struct {
         try writer.writeAll("\n");
 
         for (self.columns) |col| {
-            const w = if (col.width > 0) col.width else col.header.len + 2;
+            const w = col.effectiveWidth();
             try writer.writeAll(" ");
             var i: usize = 0;
             while (i < w) : (i += 1) {
@@ -66,7 +70,7 @@ pub const Table = struct {
                 const str = valueToString(self.allocator, val) catch "";
                 defer if (str.len > 0) self.allocator.free(@constCast(str.ptr[0..str.len]));
 
-                const w = if (col.width > 0) col.width else col.header.len + 2;
+                const w = col.effectiveWidth();
                 if (col.align_left) {
                     try writer.print(" {s:<{}} ", .{ str, w });
                 } else {

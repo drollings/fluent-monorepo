@@ -37,7 +37,6 @@ pub fn contentHashWithModel(content: []const u8, model: []const u8) [16]u8 {
 // Multi-algorithm hashing — from coral/src/common/hash.zig
 // =============================================================================
 
-/// Defines a hash algorithm with fixed-size outputs; managed via ownership and not thread-safe.
 pub const HashAlgorithm = enum {
     sha256,
     sha512,
@@ -63,47 +62,32 @@ pub fn hashFile(
 
     var buf: [65536]u8 = undefined;
 
-    switch (algorithm) {
-        .sha256 => {
-            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-            while (true) {
-                const n = file.read(&buf) catch break;
-                if (n == 0) break;
-                hasher.update(buf[0..n]);
-            }
-            var out: [32]u8 = undefined;
-            hasher.final(&out);
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-        .sha512 => {
-            var hasher = std.crypto.hash.sha2.Sha512.init(.{});
-            while (true) {
-                const n = file.read(&buf) catch break;
-                if (n == 0) break;
-                hasher.update(buf[0..n]);
-            }
-            var out: [64]u8 = undefined;
-            hasher.final(&out);
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-        .blake3 => {
-            var hasher = std.crypto.hash.Blake3.init(.{});
-            while (true) {
-                const n = file.read(&buf) catch break;
-                if (n == 0) break;
-                hasher.update(buf[0..n]);
-            }
-            var out: [32]u8 = undefined;
-            hasher.final(&out);
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-    }
+    return switch (algorithm) {
+        .sha256 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.sha2.Sha256.init(.{})),
+        .sha512 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.sha2.Sha512.init(.{})),
+        .blake3 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.Blake3.init(.{})),
+    };
 }
 
-/// Manages batch hash results with fixed-size buffers; owned by the caller; ensures consistent state across operations.
+fn hashFileGeneric(
+    allocator: std.mem.Allocator,
+    buf: *[65536]u8,
+    file: std.fs.File,
+    hasher: anytype,
+) ![]const u8 {
+    const H = @TypeOf(hasher);
+    var h = hasher;
+    while (true) {
+        const n = file.read(buf) catch break;
+        if (n == 0) break;
+        h.update(buf[0..n]);
+    }
+    var out: [H.digest_length]u8 = undefined;
+    h.final(&out);
+    const hex = std.fmt.bytesToHex(out, .lower);
+    return allocator.dupe(u8, &hex);
+}
+
 pub const BatchHashResult = struct {
     path: []const u8,
     hash: ?[]const u8,
@@ -154,26 +138,18 @@ pub fn hashString(
     data: []const u8,
     algorithm: HashAlgorithm,
 ) ![]const u8 {
-    switch (algorithm) {
-        .sha256 => {
-            var out: [32]u8 = undefined;
-            std.crypto.hash.sha2.Sha256.hash(data, &out, .{});
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-        .sha512 => {
-            var out: [64]u8 = undefined;
-            std.crypto.hash.sha2.Sha512.hash(data, &out, .{});
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-        .blake3 => {
-            var out: [32]u8 = undefined;
-            std.crypto.hash.Blake3.hash(data, &out, .{});
-            const hex = std.fmt.bytesToHex(out, .lower);
-            return allocator.dupe(u8, &hex);
-        },
-    }
+    return switch (algorithm) {
+        .sha256 => computeHashHex(allocator, data, std.crypto.hash.sha2.Sha256),
+        .sha512 => computeHashHex(allocator, data, std.crypto.hash.sha2.Sha512),
+        .blake3 => computeHashHex(allocator, data, std.crypto.hash.Blake3),
+    };
+}
+
+fn computeHashHex(allocator: std.mem.Allocator, data: []const u8, HashType: type) ![]const u8 {
+    var out: [HashType.digest_length]u8 = undefined;
+    HashType.hash(data, &out, .{});
+    const hex = std.fmt.bytesToHex(out, .lower);
+    return allocator.dupe(u8, &hex);
 }
 
 /// Computes a 32-byte Blake3 hash from the provided data slice.
@@ -190,7 +166,6 @@ pub fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     return allocator.dupe(u8, &hex);
 }
 
-/// Manages hash state with fixed-size buffers; owned by the caller; ensures consistent key-value mapping.
 pub const HashState = struct {
     algorithm: HashAlgorithm,
     sha256: ?std.crypto.hash.sha2.Sha256 = null,
@@ -215,28 +190,21 @@ pub const HashState = struct {
 
     /// Finalise the hash and return an allocator-owned hex string; caller must free.
     pub fn final(self: *HashState, allocator: std.mem.Allocator) ![]const u8 {
-        switch (self.algorithm) {
-            .sha256 => {
-                var out: [32]u8 = undefined;
-                self.sha256.?.final(&out);
-                const hex = std.fmt.bytesToHex(out, .lower);
-                return allocator.dupe(u8, &hex);
-            },
-            .sha512 => {
-                var out: [64]u8 = undefined;
-                self.sha512.?.final(&out);
-                const hex = std.fmt.bytesToHex(out, .lower);
-                return allocator.dupe(u8, &hex);
-            },
-            .blake3 => {
-                var out: [32]u8 = undefined;
-                self.blake3_h.?.final(&out);
-                const hex = std.fmt.bytesToHex(out, .lower);
-                return allocator.dupe(u8, &hex);
-            },
-        }
+        return switch (self.algorithm) {
+            .sha256 => finalizeHashHex(allocator, &self.sha256.?),
+            .sha512 => finalizeHashHex(allocator, &self.sha512.?),
+            .blake3 => finalizeHashHex(allocator, &self.blake3_h.?),
+        };
     }
 };
+
+fn finalizeHashHex(allocator: std.mem.Allocator, hasher: anytype) ![]const u8 {
+    const H = @TypeOf(hasher.*);
+    var out: [H.digest_length]u8 = undefined;
+    hasher.final(&out);
+    const hex = std.fmt.bytesToHex(out, .lower);
+    return allocator.dupe(u8, &hex);
+}
 
 // =============================================================================
 // Tests

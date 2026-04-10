@@ -89,7 +89,7 @@
           ],
           "returns": "TripleMapper",
           "is_pub": true,
-          "line": 131
+          "line": 130
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +101,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 142
+          "line": 141
         }
     ,    {
           "type": "fn_decl",
@@ -114,7 +114,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 161
+          "line": 160
         }
     ,    {
           "type": "fn_decl",
@@ -127,7 +127,7 @@
           ],
           "returns": "FlushResult",
           "is_pub": true,
-          "line": 222
+          "line": 221
         }
     ,    {
           "type": "fn_private",
@@ -144,7 +144,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 277
+          "line": 276
         }
     ,    {
           "type": "fn_private",
@@ -157,7 +157,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 308
+          "line": 307
         }
     ,    {
           "type": "fn_private",
@@ -170,7 +170,7 @@
           ],
           "returns": "i64",
           "is_pub": false,
-          "line": 320
+          "line": 319
         }
     ,    {
           "type": "fn_private",
@@ -183,7 +183,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 328
+          "line": 327
         }
     ,    {
           "type": "fn_private",
@@ -197,10 +197,10 @@
           ],
           "returns": "*PendingNode",
           "is_pub": false,
-          "line": 337
+          "line": 336
         }
       ],
-      "line": 120
+      "line": 119
     },
     {
       "type": "struct",
@@ -208,7 +208,7 @@
       "match_hash": "5ec33d68750e520d276d306e3e5f0f591082a5181c7697a7b2fed7d949f4b0a4",
       "signature": "keyword_struct FlushResult { ... }",
       "is_pub": true,
-      "line": 353
+      "line": 352
     },
     {
       "type": "fn_private",
@@ -221,55 +221,55 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 360
+      "line": 359
     },
     {
       "type": "test_decl",
       "name": "mapper: entity from rdf:type triple",
       "is_pub": false,
-      "line": 372
+      "line": 371
     },
     {
       "type": "test_decl",
       "name": "mapper: label routes to lod[4]",
       "is_pub": false,
-      "line": 386
+      "line": 385
     },
     {
       "type": "test_decl",
       "name": "mapper: comment routes to lod[0]",
       "is_pub": false,
-      "line": 403
+      "line": 402
     },
     {
       "type": "test_decl",
       "name": "mapper: object property creates edge",
       "is_pub": false,
-      "line": 420
+      "line": 419
     },
     {
       "type": "test_decl",
       "name": "mapper: multiple triples for same entity",
       "is_pub": false,
-      "line": 440
+      "line": 439
     },
     {
       "type": "test_decl",
       "name": "mapper: contradiction detection for duplicate label",
       "is_pub": false,
-      "line": 460
+      "line": 459
     },
     {
       "type": "test_decl",
       "name": "mapper: no contradiction for identical label",
       "is_pub": false,
-      "line": 485
+      "line": 484
     },
     {
       "type": "test_decl",
       "name": "mapper: pending node to ContextNode",
       "is_pub": false,
-      "line": 502
+      "line": 501
     }
   ]
 }

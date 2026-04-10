@@ -34,7 +34,6 @@ pub const ProgressCallback = *const fn (triples_processed: usize, nodes_created:
 // Ingestion statistics
 // ---------------------------------------------------------------------------
 
-/// Tracks ingestion statistics with a fixed-size buffer pool; managed centrally; not thread-safe.
 pub const IngestStats = struct {
     triples_processed: usize = 0,
     nodes_created: usize = 0,
@@ -49,12 +48,8 @@ pub const IngestStats = struct {
 // BatchIngestor config
 // ---------------------------------------------------------------------------
 
-/// Manages batch configuration settings with fixed-size buffers; owned by the batch engine; ensures consistent state across runs.
-/// Optional triple filter: called for each parsed triple before `processTriple`.
-/// Return false to skip the triple (counted in `IngestStats.triples_filtered`).
 pub const FilterFn = *const fn (triple: parser_mod.Triple) bool;
 
-/// Manages batch configuration settings with fixed-size buffers; owned by the batch engine; ensures consistent state across runs.
 pub const BatchConfig = struct {
     batch_size: usize = 10_000,
     on_progress: ?ProgressCallback = null,
@@ -71,7 +66,6 @@ pub const BatchConfig = struct {
 // BatchIngestor
 // ---------------------------------------------------------------------------
 
-/// Manages batch data ingestion with fixed buffers; owned by the engine; ensures consistent state across runs.
 pub const BatchIngestor = struct {
     allocator: std.mem.Allocator,
     config: BatchConfig,
@@ -199,7 +193,6 @@ pub const BatchIngestor = struct {
 // accumulation is needed here because every setter assigns a primitive
 // field — errors only arise at the terminal ingestSource / ingestFile call.
 
-/// Manages ingestion pipelines with fixed-size buffers; owned by the caller; ensures consistent state across operations.
 pub const IngestBuilder = struct {
     allocator: std.mem.Allocator,
     library: *Library,

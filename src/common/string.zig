@@ -16,18 +16,35 @@ pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     return false;
 }
 
-/// Checks if a needle substring exists within the haystack array of bytes.
-pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
+fn isAlphanumericBoundary(c: u8) bool {
+    return !std.ascii.isAlphanumeric(c);
+}
+
+fn isIdentBoundary(c: u8) bool {
+    return !std.ascii.isAlphanumeric(c) and c != '_';
+}
+
+fn containsWordWithBoundary(haystack: []const u8, needle: []const u8, boundary_fn: *const fn (u8) bool) bool {
     if (needle.len > haystack.len) return false;
     var i: usize = 0;
     while (i + needle.len <= haystack.len) : (i += 1) {
         if (!std.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) continue;
-        const left_ok = i == 0 or !std.ascii.isAlphanumeric(haystack[i - 1]);
+        const left_ok = i == 0 or boundary_fn(haystack[i - 1]);
         const right_end = i + needle.len;
-        const right_ok = right_end >= haystack.len or !std.ascii.isAlphanumeric(haystack[right_end]);
+        const right_ok = right_end >= haystack.len or boundary_fn(haystack[right_end]);
         if (left_ok and right_ok) return true;
     }
     return false;
+}
+
+/// Checks if a needle substring exists within the haystack array of bytes.
+pub fn containsWord(haystack: []const u8, needle: []const u8) bool {
+    return containsWordWithBoundary(haystack, needle, isAlphanumericBoundary);
+}
+
+/// Checks if a needle substring exists within the haystack as an identifier (underscore-aware).
+pub fn containsIdentWord(haystack: []const u8, needle: []const u8) bool {
+    return containsWordWithBoundary(haystack, needle, isIdentBoundary);
 }
 
 /// Checks if any keywords exist within the source string slice.

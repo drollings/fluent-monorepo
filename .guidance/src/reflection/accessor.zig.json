@@ -213,10 +213,10 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 238
+          "line": 237
         }
       ],
-      "line": 187
+      "line": 186
     },
     {
       "type": "fn_decl",
@@ -228,7 +228,7 @@
       ],
       "returns": "type",
       "is_pub": true,
-      "line": 260
+      "line": 259
     },
     {
       "type": "fn_decl",
@@ -242,7 +242,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 547
+      "line": 546
     },
     {
       "type": "fn_private",
@@ -256,7 +256,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 611
+      "line": 610
     },
     {
       "type": "fn_private",
@@ -268,7 +268,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 792
+      "line": 791
     },
     {
       "type": "fn_private",
@@ -282,7 +282,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 811
+      "line": 810
     },
     {
       "type": "fn_private",
@@ -295,7 +295,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 831
+      "line": 830
     },
     {
       "type": "struct",
@@ -316,7 +316,7 @@
           ],
           "returns": "DynamicEditable",
           "is_pub": true,
-          "line": 857
+          "line": 856
         }
     ,    {
           "type": "fn_decl",
@@ -328,7 +328,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 875
+          "line": 874
         }
     ,    {
           "type": "fn_decl",
@@ -340,7 +340,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 880
+          "line": 879
         }
     ,    {
           "type": "fn_decl",
@@ -355,7 +355,7 @@
           ],
           "returns": "anyerror!void",
           "is_pub": true,
-          "line": 890
+          "line": 889
         }
     ,    {
           "type": "fn_decl",
@@ -369,7 +369,7 @@
           ],
           "returns": "anyerror![]const u8",
           "is_pub": true,
-          "line": 902
+          "line": 901
         }
     ,    {
           "type": "fn_decl",
@@ -383,7 +383,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 914
+          "line": 913
         }
     ,    {
           "type": "fn_decl",
@@ -396,7 +396,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 919
+          "line": 918
         }
     ,    {
           "type": "fn_decl",
@@ -409,10 +409,10 @@
           ],
           "returns": "?FieldMeta",
           "is_pub": true,
-          "line": 928
+          "line": 927
         }
       ],
-      "line": 849
+      "line": 848
     }
   ]
 }

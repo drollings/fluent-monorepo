@@ -4,6 +4,7 @@
     "source": "src/common/cli.zig",
     "language": "zig"
   },
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -11,7 +12,7 @@
       "match_hash": "776647c3f6074d99e3e546d1338dfc717ac16ae4f5bc87d225568f08eebbdfa5",
       "signature": "keyword_struct Command { ... }",
       "is_pub": true,
-      "line": 15
+      "line": 14
     },
     {
       "type": "struct",
@@ -30,7 +31,7 @@
           ],
           "returns": "CommandRegistry",
           "is_pub": true,
-          "line": 28
+          "line": 26
         }
     ,    {
           "type": "fn_decl",
@@ -42,7 +43,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 35
+          "line": 33
         }
     ,    {
           "type": "fn_decl",
@@ -55,7 +56,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 39
+          "line": 37
         }
     ,    {
           "type": "fn_decl",
@@ -68,7 +69,7 @@
           ],
           "returns": "?Command",
           "is_pub": true,
-          "line": 43
+          "line": 41
         }
     ,    {
           "type": "fn_decl",
@@ -81,10 +82,10 @@
           ],
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 47
+          "line": 45
         }
       ],
-      "line": 24
+      "line": 22
     },
     {
       "type": "struct",
@@ -106,7 +107,7 @@
           ],
           "returns": "App",
           "is_pub": true,
-          "line": 71
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -118,7 +119,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 86
+          "line": 83
         }
     ,    {
           "type": "fn_decl",
@@ -131,48 +132,50 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 90
+          "line": 87
         }
     ,    {
           "type": "fn_decl",
           "name": "printHelp",
-          "match_hash": "f7359ddf58051574ee67783bcbe4616886d61c7eb4234f82504ce8b006f7e5f3",
-          "signature": "fn printHelp(self: *const App, writer: *std.Io.Writer) -> void",
+          "match_hash": "d50993b507f768af3757f4e5fc81264daa9d56d4ab7668f2a72d1bdba52152ff",
+          "signature": "fn printHelp(self: *const App, allocator: std.mem.Allocator, writer: *std.Io.Writer) -> void",
           "params": [
             { "name": "self", "type": "*const App" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "writer", "type": "*std.Io.Writer" }
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 94
+          "line": 91
         }
     ,    {
           "type": "fn_decl",
           "name": "run",
-          "match_hash": "dc84fa4867a5ee3e3f86ecd5820dc30236e889e37f79858d68d02051d10bacf1",
-          "signature": "fn run(self: *App, argv: []const []const u8) -> i32",
+          "match_hash": "c05f043b3719c1ebf7ecafb325fe45e95a178291e5451226205297b66d1f1213",
+          "signature": "fn run(self: *App, allocator: std.mem.Allocator, argv: []const []const u8) -> i32",
           "params": [
             { "name": "self", "type": "*App" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "argv", "type": "[]const []const u8" }
           ],
           "returns": "i32",
           "is_pub": true,
-          "line": 116
+          "line": 113
         }
       ],
-      "line": 64
+      "line": 61
     },
     {
       "type": "test_decl",
       "name": "CommandRegistry: register and get",
       "is_pub": false,
-      "line": 181
+      "line": 178
     },
     {
       "type": "test_decl",
       "name": "CommandRegistry: names returns sorted list",
       "is_pub": false,
-      "line": 197
+      "line": 194
     }
   ]
 }

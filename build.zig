@@ -27,13 +27,6 @@ pub fn build(b: *std.Build) void {
     // Core named modules
     // -------------------------------------------------------------------------
 
-    // LLM inference client (pure HTTP, no common deps).
-    const llm_module = b.createModule(.{
-        .root_source_file = b.path("src/llm/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     // `reflection` — standalone peer module (promoted from src/common/reflection.zig in P2.4).
     const reflection_module = b.createModule(.{
         .root_source_file = b.path("src/reflection/root.zig"),
@@ -56,6 +49,16 @@ pub fn build(b: *std.Build) void {
             .{ .name = "reflection", .module = reflection_module },
             .{ .name = "zigsharedstring", .module = zigsharedstring.module("zigsharedstring") },
             .{ .name = "zigrc", .module = zigrc.module("zigrc") },
+        },
+    });
+
+    // LLM inference client.
+    const llm_module = b.createModule(.{
+        .root_source_file = b.path("src/llm/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "common", .module = common_module },
         },
     });
 
@@ -148,6 +151,14 @@ pub fn build(b: *std.Build) void {
     const have_extism = b.option(bool, "extism", "Enable Extism WASM runtime (requires libextism)") orelse false;
     const wasm_options = b.addOptions();
     wasm_options.addOption(bool, "have_extism", have_extism);
+    const concurrency_module = b.createModule(.{
+        .root_source_file = b.path("src/concurrency/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+    _ = concurrency_module;
+
     const wasm_module = b.createModule(.{
         .root_source_file = b.path("src/wasm/wasm.zig"),
         .target = target,
@@ -156,6 +167,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "common", .module = common_module },
             .{ .name = "coral_db", .module = coral_db_module },
             .{ .name = "coral_schema", .module = coral_schema_module },
+            .{ .name = "dag", .module = dag_module },
             .{ .name = "options", .module = wasm_options.createModule() },
         },
     });
@@ -439,6 +451,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
+                .{ .name = "dag", .module = dag_module },
             },
         }),
     });
@@ -693,7 +706,7 @@ pub fn build(b: *std.Build) void {
     // -- Coral BitSet DRIFT tests (P0.2) --
     const coral_drift_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/drift.zig"),
+            .root_source_file = b.path("src/common/drift.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
@@ -705,25 +718,13 @@ pub fn build(b: *std.Build) void {
     // -- Guidance identifier match tests (P0.4) --
     const guidance_identifier_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/guidance/identifier_match.zig"),
+            .root_source_file = b.path("src/guidance/query/identifier.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    // -- Guidance batch LLM filter tests (P0.5) --
-    const guidance_llm_filter_batch_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/guidance/llm_filter_batch.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "common", .module = common_module },
-                .{ .name = "llm", .module = llm_module },
-            },
-        }),
-    });
-
+    // -- Guidance batch LLM filter tests (P0.5) -- (run via guidance_tests_module)
     // -- Coral CSR graph tests (P1.1) --
     const coral_csr_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -901,7 +902,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(concurrency_error_group_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_drift_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_identifier_tests).step);
-    test_step.dependOn(&b.addRunArtifact(guidance_llm_filter_batch_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_csr_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_union_find_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_degree_tests).step);

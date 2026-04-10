@@ -83,7 +83,7 @@
       "match_hash": "88e6cf9624b20eb994643674e088176e0af2f0a7c4f789394f45444e4ff92dd7",
       "signature": "keyword_struct EntryPoint { ... }",
       "is_pub": true,
-      "line": 42
+      "line": 41
     },
     {
       "type": "struct",
@@ -91,7 +91,7 @@
       "match_hash": "98ef9beb5f3c304c8342a041f28559ba2c853f4ee8605c4b785b70ee39b3a959",
       "signature": "keyword_struct DirectoryEntry { ... }",
       "is_pub": true,
-      "line": 54
+      "line": 52
     },
     {
       "type": "struct",
@@ -110,10 +110,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 93
+          "line": 91
         }
       ],
-      "line": 69
+      "line": 67
     },
     {
       "type": "fn_decl",
@@ -126,7 +126,7 @@
       ],
       "returns": "CodebaseMap",
       "is_pub": true,
-      "line": 126
+      "line": 124
     },
     {
       "type": "fn_private",
@@ -138,7 +138,7 @@
       ],
       "returns": "BuildSystem",
       "is_pub": false,
-      "line": 189
+      "line": 187
     },
     {
       "type": "fn_private",
@@ -150,7 +150,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 216
+      "line": 214
     },
     {
       "type": "fn_private",
@@ -164,7 +164,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 228
+      "line": 226
     },
     {
       "type": "fn_private",
@@ -180,7 +180,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 239
+      "line": 237
     },
     {
       "type": "fn_private",
@@ -193,7 +193,7 @@
       ],
       "returns": "[]LanguageCount",
       "is_pub": false,
-      "line": 293
+      "line": 291
     },
     {
       "type": "fn_private",
@@ -205,7 +205,7 @@
       ],
       "returns": "@TypeOf(@as(EntryPoint, undefined).kind)",
       "is_pub": false,
-      "line": 348
+      "line": 346
     },
     {
       "type": "fn_private",
@@ -217,7 +217,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 359
+      "line": 357
     },
     {
       "type": "fn_private",
@@ -231,7 +231,7 @@
       ],
       "returns": "[]EntryPoint",
       "is_pub": false,
-      "line": 373
+      "line": 371
     },
     {
       "type": "fn_private",
@@ -245,7 +245,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 449
+      "line": 447
     },
     {
       "type": "fn_private",
@@ -259,7 +259,7 @@
       ],
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 490
+      "line": 488
     },
     {
       "type": "fn_private",
@@ -272,19 +272,19 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 517
+      "line": 515
     },
     {
       "type": "test_decl",
       "name": "detectBuildSystem: returns zig_build for this repo",
       "is_pub": false,
-      "line": 566
+      "line": 564
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier via ENTRY_EXACT: main is an entry point",
       "is_pub": false,
-      "line": 574
+      "line": 572
     }
   ]
 }

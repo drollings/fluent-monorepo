@@ -1,8 +1,8 @@
-/// AI Docstring Enhancer for Zig guidance generation.
-///
-/// Mirrors Python's AIDocstringEnhancer class in guidance.py.
-/// Generates descriptions (≤240 chars) for functions, structs, and files
-/// by calling the configured LLM endpoint.  The enhancer is opt-in: sync
+//! AI Docstring Enhancer for Zig guidance generation.
+//!
+//! Mirrors Python's AIDocstringEnhancer class in guidance.py.
+//! Generates descriptions (≤240 chars) for functions, structs, and files
+//! by calling the configured LLM endpoint.  The enhancer is opt-in: sync
 /// runs without it by default; pass --upgrade-comments or --regen_comments to
 /// activate.
 ///
@@ -399,7 +399,7 @@ pub const Enhancer = struct {
             \\- No boilerplate openers ("This struct", "A type that")
             \\
             \\Wrap your answer in <comment> tags. Example:
-            \\<comment>Owns a pool of fixed-size buffers; init/deinit pair; not thread-safe.</comment>
+            \\<comment>LRU cache for member comments, keyed by file_path + member_name. Grows to max_entries, then evicts least-recently-used on insert.</comment>
             \\
         );
         try w.print("Type: {s}\n", .{name});

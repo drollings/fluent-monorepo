@@ -44,7 +44,6 @@ pub fn hashBlankNode(scope: []const u8, id: []const u8) i64 {
 // XSD datatype values
 // ---------------------------------------------------------------------------
 
-/// Defines a schema for RDF keywords with XSD validation; manages ownership and invariants.
 pub const XsdType = enum {
     string,
     lang_string,
@@ -56,7 +55,6 @@ pub const XsdType = enum {
     other,
 };
 
-/// Represents a typed union of RDF keywords; managed by owner; ensures consistent key invariants.
 pub const TypedValue = union(XsdType) {
     string: void, // value already held by caller
     lang_string: void,

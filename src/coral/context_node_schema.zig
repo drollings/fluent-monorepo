@@ -19,7 +19,6 @@ pub const PayloadType = enum(u32) {
     host_function_result = 6,
 };
 
-/// Manages binary header structures with fixed-size buffers; owned by the module; ensures consistent data layout.
 pub const BinaryHeader = extern struct {
     magic: [4]u8 align(1),
     version: u32 align(1),
@@ -131,7 +130,6 @@ pub const BinaryContextNode = extern struct {
 // execution_request.zig can import these types via coral_schema without
 // creating a circular dependency.
 
-/// Represents a binary execution request with ownership and invariants; managed by the system; not thread-safe.
 pub const BinaryExecutionRequest = extern struct {
     header: BinaryHeader align(1),
     target_id: i64 align(1),
@@ -146,7 +144,6 @@ pub const BinaryExecutionRequest = extern struct {
     };
 };
 
-/// Represents execution outcome data, managed by owner; key invariant is correct result struct; not thread-safe.
 pub const BinaryExecutionResult = extern struct {
     header: BinaryHeader align(1),
     success: u32 align(1), // 0 = failure, 1 = success

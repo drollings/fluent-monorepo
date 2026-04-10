@@ -55,12 +55,13 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 - `src/coral/main.zig` — `coral mcp` subcommand entry point
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (37 files, auto-discovered)
+## Sources (41 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/coral/mcp.zig` | 1.0 | defines_anchor |
 | `src/coral/main.zig` | 0.9 | used_by |
+| `src/coral/root.zig` | 0.9 | used_by |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
 | `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
@@ -73,16 +74,19 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 | `src/coral/config.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_router.zig` | 0.4 | path_heuristic |
 | `src/coral/frontier.zig` | 0.4 | path_heuristic |
 | `src/coral/global_search.zig` | 0.4 | path_heuristic |
 | `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
 | `src/coral/batch.zig` | 0.4 | path_heuristic |
 | `src/coral/executor.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
 | `src/coral/cache.zig` | 0.4 | path_heuristic |
-| `src/coral/fixtures.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
 | `src/coral/cache_test.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_reactor.zig` | 0.4 | path_heuristic |
 | `src/coral/schema.zig` | 0.4 | path_heuristic |
+| `src/coral/cache_l1.zig` | 0.4 | path_heuristic |
 | `src/coral/benchmark.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
 | `src/coral/type_inference.zig` | 0.4 | path_heuristic |

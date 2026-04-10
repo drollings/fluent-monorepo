@@ -46,7 +46,6 @@ pub const YAGO_TYPE_WHITELIST: []const []const u8 = blk: {
 // ProjectConfig
 // ---------------------------------------------------------------------------
 
-/// Manages project configuration settings with a fixed-size structure; owned by the project; ensures consistent initialization and deinitialization.
 pub const ProjectConfig = struct {
     allocator: std.mem.Allocator,
 
@@ -182,9 +181,11 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
                 const base = if (ollama.object.get("base_url")) |u| if (u == .string) u.string else "" else "";
                 const ep = if (ollama.object.get("chat_endpoint")) |e| if (e == .string) e.string else DEFAULT_API_URL else DEFAULT_API_URL;
                 if (base.len > 0 and ep.len > 0) {
-                    // Avoid double slash between base and endpoint.
-                    const ep_clean = if (ep.len > 0 and ep[0] == '/') ep else ep;
-                    break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep_clean });
+                    // Avoid double slash: strip leading slash from ep if base ends with slash.
+                    if (base.len > 0 and base[base.len - 1] == '/' and ep.len > 0 and ep[0] == '/') {
+                        break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep[1..] });
+                    }
+                    break :blk try std.fmt.allocPrint(allocator, "{s}{s}", .{ base, ep });
                 }
             }
         }
