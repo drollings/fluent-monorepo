@@ -1196,11 +1196,13 @@ fn cmdExplainStaged(
     fast_model_ref: []const u8,
     ea: ExplainArgs,
 ) !void {
-    // Debug output at function entry - always print to stderr
-    std.debug.print("[DEBUG] cmdExplainStaged called\n", .{});
-    std.debug.print("[DEBUG]   ea.debug = {}\n", .{ea.debug});
-    std.debug.print("[DEBUG]   ea.no_llm = {}\n", .{ea.no_llm});
-    std.debug.print("[DEBUG]   query_text = \"{s}\"\n", .{query_text});
+    if (ea.debug) {
+        // Debug output at function entry - always print to stderr
+        std.debug.print("[DEBUG] cmdExplainStaged called\n", .{});
+        std.debug.print("[DEBUG]   ea.debug = {}\n", .{ea.debug});
+        std.debug.print("[DEBUG]   ea.no_llm = {}\n", .{ea.no_llm});
+        std.debug.print("[DEBUG]   query_text = \"{s}\"\n", .{query_text});
+    }
 
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
     defer allocator.free(skills_dir);
