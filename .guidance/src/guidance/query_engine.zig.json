@@ -209,7 +209,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 783
+      "line": 791
     },
     {
       "type": "fn_private",
@@ -222,7 +222,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 803
+      "line": 811
     },
     {
       "type": "fn_private",
@@ -235,7 +235,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 815
+      "line": 823
     },
     {
       "type": "fn_private",
@@ -248,7 +248,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 850
+      "line": 858
     },
     {
       "type": "fn_private",
@@ -263,7 +263,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 885
+      "line": 893
     },
     {
       "type": "fn_private",
@@ -278,7 +278,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 909
+      "line": 917
     },
     {
       "type": "fn_private",
@@ -293,7 +293,7 @@
       ],
       "returns": "[]usize",
       "is_pub": false,
-      "line": 920
+      "line": 928
     },
     {
       "type": "fn_private",
@@ -310,7 +310,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 953
+      "line": 961
     },
     {
       "type": "fn_private",
@@ -323,7 +323,7 @@
       ],
       "returns": "?vector_db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 1049
+      "line": 1057
     },
     {
       "type": "fn_private",
@@ -337,7 +337,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 1056
+      "line": 1064
     },
     {
       "type": "fn_private",
@@ -351,7 +351,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1103
+      "line": 1111
     },
     {
       "type": "fn_private",
@@ -365,7 +365,7 @@
       ],
       "returns": "[]const []const u8",
       "is_pub": false,
-      "line": 1128
+      "line": 1136
     },
     {
       "type": "fn_private",
@@ -384,7 +384,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1181
+      "line": 1189
     },
     {
       "type": "fn_private",
@@ -400,7 +400,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1548
+      "line": 1556
     },
     {
       "type": "fn_decl",
@@ -413,7 +413,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 1564
+      "line": 1572
     },
     {
       "type": "fn_decl",
@@ -426,7 +426,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1569
+      "line": 1577
     },
     {
       "type": "fn_decl",
@@ -439,7 +439,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 1574
+      "line": 1582
     },
     {
       "type": "fn_decl",
@@ -452,7 +452,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": true,
-      "line": 1579
+      "line": 1587
     },
     {
       "type": "fn_decl",
@@ -467,7 +467,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1584
+      "line": 1592
     },
     {
       "type": "fn_decl",
@@ -482,7 +482,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 1589
+      "line": 1597
     },
     {
       "type": "fn_decl",
@@ -497,7 +497,7 @@
       ],
       "returns": "[]usize",
       "is_pub": true,
-      "line": 1594
+      "line": 1602
     },
     {
       "type": "fn_decl",
@@ -509,7 +509,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 1599
+      "line": 1607
     },
     {
       "type": "fn_private",
@@ -522,7 +522,7 @@
       ],
       "returns": "?IndexCapability",
       "is_pub": false,
-      "line": 1613
+      "line": 1621
     },
     {
       "type": "fn_private",
@@ -537,7 +537,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 1647
+      "line": 1655
     },
     {
       "type": "fn_private",
@@ -553,7 +553,7 @@
       ],
       "returns": "anyerror!?[]const u8",
       "is_pub": false,
-      "line": 1678
+      "line": 1686
     },
     {
       "type": "fn_private",
@@ -568,7 +568,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1712
+      "line": 1720
     },
     {
       "type": "fn_private",
@@ -584,7 +584,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1831
+      "line": 1839
     },
     {
       "type": "fn_private",
@@ -601,7 +601,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1861
+      "line": 1869
     },
     {
       "type": "fn_private",
@@ -617,7 +617,21 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1948
+      "line": 1956
+    },
+    {
+      "type": "fn_private",
+      "name": "handleDisambiguationQuery",
+      "match_hash": "6ea88d19bfc4fd6cfc928d5d66924298f80f504f8a1223b1e976b65ef3ec1010",
+      "signature": "fn handleDisambiguationQuery(allocator: std.mem.Allocator, paths: []const []const u8, query_text: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "paths", "type": "[]const []const u8" },
+        { "name": "query_text", "type": "[]const u8" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 1993
     },
     {
       "type": "fn_private",
@@ -632,7 +646,42 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1973
+      "line": 2014
+    },
+    {
+      "type": "fn_private",
+      "name": "findStructEndLine",
+      "match_hash": "c3861e3e17cab01043316c8015e40e5a639604c839b646bc050f8ad8ea20fdaa",
+      "signature": "fn findStructEndLine(src: []const u8, start_line: u32) -> u32",
+      "params": [
+        { "name": "src", "type": "[]const u8" },
+        { "name": "start_line", "type": "u32" }
+      ],
+      "returns": "u32",
+      "is_pub": false,
+      "line": 2094
+    },
+    {
+      "type": "struct",
+      "name": "StructInfo",
+      "match_hash": "663e28f78b928ac316219cd29e7ed7efefd03917e9e1d304fc181c1374cf89cd",
+      "signature": "keyword_struct StructInfo { ... }",
+      "is_pub": false,
+      "line": 2123
+    },
+    {
+      "type": "fn_private",
+      "name": "findStructInfo",
+      "match_hash": "69ba88e9a1d78fad7d116a2ade16bc1fb308d7e369986d9b43c50165732d2b5d",
+      "signature": "fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) -> ?StructInfo",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "struct_name", "type": "[]const u8" },
+        { "name": "guidance_dir", "type": "[]const u8" }
+      ],
+      "returns": "?StructInfo",
+      "is_pub": false,
+      "line": 2129
     },
     {
       "type": "fn_decl",
@@ -645,7 +694,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2001
+      "line": 2200
     },
     {
       "type": "struct",
@@ -653,7 +702,7 @@
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 2113
+      "line": 2312
     },
     {
       "type": "struct",
@@ -661,7 +710,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 2121
+      "line": 2320
     },
     {
       "type": "fn_decl",
@@ -674,7 +723,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2130
+      "line": 2329
     },
     {
       "type": "fn_private",
@@ -686,7 +735,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 2538
+      "line": 2737
     },
     {
       "type": "fn_private",
@@ -699,7 +748,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2552
+      "line": 2751
     },
     {
       "type": "fn_private",
@@ -712,7 +761,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2580
+      "line": 2779
     },
     {
       "type": "fn_decl",
@@ -725,7 +774,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2659
+      "line": 2858
     },
     {
       "type": "fn_decl",
@@ -738,7 +787,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2721
+      "line": 2920
     },
     {
       "type": "fn_decl",
@@ -751,7 +800,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2752
+      "line": 2951
     },
     {
       "type": "fn_decl",
@@ -764,55 +813,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2762
+      "line": 2961
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2834
+      "line": 3033
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2839
+      "line": 3038
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2844
+      "line": 3043
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2849
+      "line": 3048
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2854
+      "line": 3053
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2859
+      "line": 3058
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2869
+      "line": 3068
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2875
+      "line": 3074
     }
   ]
 }
