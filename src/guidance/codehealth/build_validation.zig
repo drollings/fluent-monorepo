@@ -181,6 +181,177 @@ pub fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const BuildAnomaly) !vo
 }
 
 // ---------------------------------------------------------------------------
+// Fix: add uncovered *_tests.zig files to build.zig
+// ---------------------------------------------------------------------------
+
+/// Stats returned by fixUncoveredTestFiles.
+pub const FixBuildStats = struct {
+    checked: usize = 0,
+    added: usize = 0,
+    skipped: usize = 0,
+};
+
+/// For each `*_tests.zig` path in `uncovered`, check whether its companion
+/// `*.zig` is referenced in build.zig and, if so, insert a minimal addTest
+/// block + test_step.dependOn line.
+///
+/// "Valid" means:
+///   1. `stem.zig` exists on disk.
+///   2. `stem.zig` is already referenced in build.zig (so its modules are set up).
+///
+/// Insertion anchors used:
+///   - addTest block: inserted immediately before the `// ---...` separator
+///     that precedes section "4. Benchmark step".
+///   - dependOn line: appended after the last `test_step.dependOn(` line.
+///
+/// If no benchmark separator exists the insertion falls back to appending before
+/// the first blank line after the last `test_step.dependOn` call.
+pub fn fixUncoveredTestFiles(
+    allocator: std.mem.Allocator,
+    workspace: []const u8,
+    uncovered: []const []const u8,
+    dry_run: bool,
+) !FixBuildStats {
+    var stats = FixBuildStats{};
+    if (uncovered.len == 0) return stats;
+
+    const build_zig_path = try std.fmt.allocPrint(allocator, "{s}/build.zig", .{workspace});
+    defer allocator.free(build_zig_path);
+
+    // Read build.zig once; we'll re-read after each write so the offsets stay valid.
+    for (uncovered) |rel_path| {
+        stats.checked += 1;
+        const added = addOneTestTarget(allocator, build_zig_path, workspace, rel_path, dry_run) catch |err| {
+            std.debug.print("[fix-build] {s}: {s}\n", .{ rel_path, @errorName(err) });
+            stats.skipped += 1;
+            continue;
+        };
+        if (added) stats.added += 1 else stats.skipped += 1;
+    }
+    return stats;
+}
+
+/// Add one test target for `tests_zig_rel` (e.g. `src/testing/mock_vtable_tests.zig`).
+/// Returns true if build.zig was modified (or would be in dry_run).
+fn addOneTestTarget(
+    allocator: std.mem.Allocator,
+    build_zig_path: []const u8,
+    workspace: []const u8,
+    tests_zig_rel: []const u8,
+    dry_run: bool,
+) !bool {
+    const basename = std.fs.path.basename(tests_zig_rel);
+    if (!std.mem.endsWith(u8, basename, "_tests.zig")) return false;
+
+    // Companion: strip _tests suffix → stem.zig
+    const stem = basename[0 .. basename.len - "_tests.zig".len];
+    const dir = std.fs.path.dirname(tests_zig_rel) orelse "";
+    const companion_rel = if (dir.len > 0)
+        try std.fmt.allocPrint(allocator, "{s}/{s}.zig", .{ dir, stem })
+    else
+        try std.fmt.allocPrint(allocator, "{s}.zig", .{stem});
+    defer allocator.free(companion_rel);
+
+    const src = try std.fs.cwd().readFileAlloc(allocator, build_zig_path, 5 * 1024 * 1024);
+    defer allocator.free(src);
+
+    // Must not already be referenced.
+    if (std.mem.indexOf(u8, src, tests_zig_rel) != null) return false;
+
+    // Companion must be referenced in build.zig (validates it's a "built" file).
+    if (std.mem.indexOf(u8, src, companion_rel) == null) return false;
+
+    // Companion must exist on disk.
+    const companion_abs = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ workspace, companion_rel });
+    defer allocator.free(companion_abs);
+    std.fs.cwd().access(companion_abs, .{}) catch return false;
+
+    // Derive a Zig identifier for the variable name from the file stem.
+    // e.g. "mock_vtable_tests.zig" → "mock_vtable_tests"
+    const var_name = basename[0 .. basename.len - ".zig".len];
+
+    if (dry_run) {
+        std.debug.print("[fix-build] would add test target '{s}' for {s}\n", .{ var_name, tests_zig_rel });
+        return true;
+    }
+
+    // Build the addTest block.
+    const add_block = try std.fmt.allocPrint(allocator,
+        \\
+        \\    const {s} = b.addTest(.{{
+        \\        .root_module = b.createModule(.{{
+        \\            .root_source_file = b.path("{s}"),
+        \\            .target = target,
+        \\            .optimize = optimize,
+        \\        }}),
+        \\    }});
+        \\
+    , .{ var_name, tests_zig_rel });
+    defer allocator.free(add_block);
+
+    // Build the dependOn line.
+    const depend_line = try std.fmt.allocPrint(
+        allocator,
+        "    test_step.dependOn(&b.addRunArtifact({s}).step);\n",
+        .{var_name},
+    );
+    defer allocator.free(depend_line);
+
+    // ── Locate insertion point for addTest block ──────────────────────────────
+    // Prefer: immediately before the "// ---..." separator of section 4 (Benchmark).
+    // Fallback: before the first blank line after the last test_step.dependOn call.
+    const benchmark_sep = "// 4. Benchmark";
+    const block_insert: usize = blk: {
+        if (std.mem.indexOf(u8, src, benchmark_sep)) |bpos| {
+            // Walk back to find the start of the separator comment block (the dashes line).
+            const dashes = "// ---";
+            if (std.mem.lastIndexOf(u8, src[0..bpos], dashes)) |dpos| {
+                // Find the newline before the dashes line.
+                if (std.mem.lastIndexOf(u8, src[0..dpos], "\n")) |nl| {
+                    break :blk nl + 1;
+                }
+                break :blk dpos;
+            }
+            break :blk bpos;
+        }
+        // Fallback: after last `test_step.dependOn` line.
+        const needle = "test_step.dependOn(";
+        var last_end: usize = 0;
+        var pos: usize = 0;
+        while (std.mem.indexOfPos(u8, src, pos, needle)) |p| {
+            last_end = (std.mem.indexOfScalarPos(u8, src, p, '\n') orelse src.len - 1) + 1;
+            pos = last_end;
+        }
+        break :blk last_end;
+    };
+
+    // ── Locate insertion point for dependOn line ──────────────────────────────
+    // After the last `test_step.dependOn(` line.
+    const needle = "test_step.dependOn(";
+    var depend_insert: usize = 0;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, src, pos, needle)) |p| {
+        depend_insert = (std.mem.indexOfScalarPos(u8, src, p, '\n') orelse src.len - 1) + 1;
+        pos = depend_insert;
+    }
+    if (depend_insert == 0) return error.NoDependOnFound;
+
+    // Build new source (block_insert < depend_insert always, since addTest
+    // declarations come before the test_step.dependOn calls in build.zig).
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(allocator);
+    try out.appendSlice(allocator, src[0..block_insert]);
+    try out.appendSlice(allocator, add_block);
+    try out.appendSlice(allocator, src[block_insert..depend_insert]);
+    try out.appendSlice(allocator, depend_line);
+    try out.appendSlice(allocator, src[depend_insert..]);
+
+    try std.fs.cwd().writeFile(.{ .sub_path = build_zig_path, .data = out.items });
+    std.debug.print("[fix-build] added test target '{s}' for {s}\n", .{ var_name, tests_zig_rel });
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -209,4 +380,79 @@ test "build_validation: extractPathRefs finds .zig paths with line numbers" {
     // Lines: line 3 for foo.zig, line 8 for bar.zig (zero-based newline counting).
     try std.testing.expectEqual(@as(u32, 3), refs[0].line);
     try std.testing.expectEqual(@as(u32, 8), refs[1].line);
+}
+
+test "build_validation: fixUncoveredTestFiles adds test target" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(workspace);
+
+    // Create the companion source file.
+    try tmp.dir.makePath("src/testing");
+    try tmp.dir.writeFile(.{ .sub_path = "src/testing/mock_vtable.zig", .data = "pub fn foo() void {}\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "src/testing/mock_vtable_tests.zig", .data = "test \"x\" {}\n" });
+
+    // Write a minimal build.zig that references mock_vtable.zig but not mock_vtable_tests.zig.
+    try tmp.dir.writeFile(.{
+        .sub_path = "build.zig",
+        .data =
+        \\    const mock_vtable_tests = b.addTest(.{
+        \\        .root_module = b.createModule(.{
+        \\            .root_source_file = b.path("src/testing/mock_vtable.zig"),
+        \\            .target = target,
+        \\            .optimize = optimize,
+        \\        }),
+        \\    });
+        \\
+        \\    // -------------------------------------------------------------------------
+        \\    // 4. Benchmark step (G5)
+        \\    // -------------------------------------------------------------------------
+        \\
+        \\    test_step.dependOn(&b.addRunArtifact(mock_vtable_tests).step);
+        ,
+    });
+
+    const uncovered = [_][]const u8{"src/testing/mock_vtable_tests.zig"};
+    const stats = try fixUncoveredTestFiles(allocator, workspace, &uncovered, false);
+
+    try std.testing.expectEqual(@as(usize, 1), stats.added);
+    try std.testing.expectEqual(@as(usize, 0), stats.skipped);
+
+    const build_zig_path = try std.fmt.allocPrint(allocator, "{s}/build.zig", .{workspace});
+    defer allocator.free(build_zig_path);
+    const result = try std.fs.cwd().readFileAlloc(allocator, build_zig_path, 1024 * 1024);
+    defer allocator.free(result);
+
+    try std.testing.expect(std.mem.indexOf(u8, result, "src/testing/mock_vtable_tests.zig") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result, "mock_vtable_tests_tests") == null);
+}
+
+test "build_validation: fixUncoveredTestFiles skips if companion not in build.zig" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(workspace);
+
+    try tmp.dir.makePath("src");
+    try tmp.dir.writeFile(.{ .sub_path = "src/unrelated.zig", .data = "pub fn x() void {}\n" });
+    try tmp.dir.writeFile(.{ .sub_path = "src/orphan_tests.zig", .data = "test \"t\" {}\n" });
+
+    // build.zig does NOT reference src/orphan.zig.
+    try tmp.dir.writeFile(.{
+        .sub_path = "build.zig",
+        .data =
+        \\    test_step.dependOn(&b.addRunArtifact(unrelated_tests).step);
+        ,
+    });
+
+    const uncovered = [_][]const u8{"src/orphan_tests.zig"};
+    const stats = try fixUncoveredTestFiles(allocator, workspace, &uncovered, false);
+
+    try std.testing.expectEqual(@as(usize, 0), stats.added);
+    try std.testing.expectEqual(@as(usize, 1), stats.skipped);
 }

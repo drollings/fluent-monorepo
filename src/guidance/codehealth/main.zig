@@ -569,6 +569,30 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
             "[codehealth --fix] {s} {d} test(s) from {d} file(s); skipped {d}; created {d} _tests.zig file(s)\n",
             .{ action, fix_stats.tests_moved, fix_stats.files_with_tests, fix_stats.tests_skipped, fix_stats.files_created },
         );
+
+        // --fix: add uncovered *_tests.zig files to build.zig.
+        var uncovered_paths: std.ArrayList([]const u8) = .empty;
+        defer uncovered_paths.deinit(allocator);
+        for (test_anomalies) |a| {
+            if (a.kind == .uncovered_test_file)
+                try uncovered_paths.append(allocator, a.source);
+        }
+        if (uncovered_paths.items.len > 0) {
+            const bld_stats = build_val_mod.fixUncoveredTestFiles(
+                allocator,
+                ch_args.workspace,
+                uncovered_paths.items,
+                ch_args.dry_run,
+            ) catch |err| blk: {
+                std.debug.print("warning: fix build.zig failed: {s}\n", .{@errorName(err)});
+                break :blk build_val_mod.FixBuildStats{};
+            };
+            const bld_action = if (ch_args.dry_run) "would add" else "added";
+            std.debug.print(
+                "[codehealth --fix] {s} {d} test target(s) to build.zig; skipped {d}\n",
+                .{ bld_action, bld_stats.added, bld_stats.skipped },
+            );
+        }
     }
 
     // Adapt to UnusedModule local type for output functions.
