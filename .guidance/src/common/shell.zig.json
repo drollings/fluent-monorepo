@@ -4,7 +4,7 @@
     "source": "src/common/shell.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/root.zig", "src/common/shell_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -33,24 +33,6 @@
       "returns": "bool",
       "is_pub": true,
       "line": 20
-    },
-    {
-      "type": "test_decl",
-      "name": "runCommand returns true for successful command",
-      "is_pub": false,
-      "line": 38
-    },
-    {
-      "type": "test_decl",
-      "name": "runCommand returns false for failing command",
-      "is_pub": false,
-      "line": 43
-    },
-    {
-      "type": "test_decl",
-      "name": "addUniquePath deduplicates paths",
-      "is_pub": false,
-      "line": 48
     }
   ]
 }

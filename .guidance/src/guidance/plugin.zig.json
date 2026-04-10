@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " LanguagePlugin — interface for language-specific AST providers.\n\n Each plugin handles a set of file extensions and knows how to:\n   - parse source into structured members\n   - extract imports/dependencies\n   - extract module-level documentation\n\n The Zig native parser is implemented as a plugin wrapping ast_parser.zig.\n External language providers (Python, Rust, …) can be wired in via the\n ExternalPlugin wrapper which forks a subprocess.",
-  "capabilities": ["plugin-system", "coral-database", "ast-indexing"],
-  "used_by": ["src/guidance/plugin_registry.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/plugin_registry.zig", "src/guidance/plugin_registry_tests.zig", "src/guidance/plugin_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -54,12 +53,6 @@
         }
       ],
       "line": 29
-    },
-    {
-      "type": "test_decl",
-      "name": "LanguagePlugin interface is callable",
-      "is_pub": false,
-      "line": 74
     }
   ]
 }

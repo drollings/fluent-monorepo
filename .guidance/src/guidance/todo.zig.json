@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " todo.zig — Work item lifecycle tracking for guidance.\n\n Directory layout:\n   .guidance/todo/\n   ├── YYYYMMDD_HHMMSS_<slug>/\n   │   ├── TODO.md        — human-written goal + acceptance criteria\n   │   ├── TRIAGE.md      — LLM-generated risk + steps + dependencies\n   │   ├── CHECKLIST.md   — LLM-generated checkboxes from TODO.md\n   │   ├── DIARY.md       — timestamped manual entries\n   │   └── COMMITTED.md   — auto-generated on successful commit\n   └── archive/           — abandoned work items",
-  "used_by": ["src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/sync_engine.zig", "src/guidance/todo_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -215,12 +215,6 @@
       "name": "slugify: empty becomes work-item",
       "is_pub": false,
       "line": 683
-    },
-    {
-      "type": "test_decl",
-      "name": "queryChecklistStatus: nonexistent dir returns zeros",
-      "is_pub": false,
-      "line": 692
     }
   ]
 }

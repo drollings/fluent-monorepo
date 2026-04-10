@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.\n\n Handles .zig and .zon files.  Parses with Zig's stdlib AST, extracting\n top-level declarations and imports.",
-  "capabilities": ["plugin-system"],
+  "used_by": ["src/guidance/plugins/zig_plugin_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -58,27 +58,9 @@
     },
     {
       "type": "test_decl",
-      "name": "ZigPlugin handles .zig extension",
-      "is_pub": false,
-      "line": 96
-    },
-    {
-      "type": "test_decl",
-      "name": "ZigPlugin.parse extracts members from simple source",
-      "is_pub": false,
-      "line": 106
-    },
-    {
-      "type": "test_decl",
-      "name": "ZigPlugin.extractImports returns import paths",
-      "is_pub": false,
-      "line": 131
-    },
-    {
-      "type": "test_decl",
       "name": "deriveModule strips extension and converts slashes",
       "is_pub": false,
-      "line": 150
+      "line": 96
     }
   ]
 }

@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " line_verify.zig — Declaration-level line number verification for guidance.\n\n Detects stale line numbers stored in JSON by checking whether a member's\n declaration actually appears at its recorded position, and searching the\n file for the current location when it does not.",
-  "capabilities": ["sync-pipeline"],
-  "used_by": ["src/guidance/sync/json_store.zig"],
+  "used_by": ["src/guidance/sync/json_store.zig", "src/guidance/sync/line_verify_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -88,36 +87,6 @@
       "returns": "?VerificationResult",
       "is_pub": false,
       "line": 100
-    },
-    {
-      "type": "test_decl",
-      "name": "verifyMemberLine - correct line",
-      "is_pub": false,
-      "line": 127
-    },
-    {
-      "type": "test_decl",
-      "name": "verifyMemberLine - stale line number",
-      "is_pub": false,
-      "line": 146
-    },
-    {
-      "type": "test_decl",
-      "name": "verifyMemberLine - member not found",
-      "is_pub": false,
-      "line": 168
-    },
-    {
-      "type": "test_decl",
-      "name": "verifyMemberLine - struct detection",
-      "is_pub": false,
-      "line": 184
-    },
-    {
-      "type": "test_decl",
-      "name": "verifyMemberLine - no line recorded",
-      "is_pub": false,
-      "line": 203
     }
   ]
 }

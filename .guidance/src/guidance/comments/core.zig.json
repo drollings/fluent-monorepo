@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " comments/core.zig — Merged doc comment processing for guidance.\n\n Consolidates parser, checker, and cache into a single module for\n clarity and to enforce the max_comment_len constant in one place.",
-  "used_by": ["src/guidance/comments/sync.zig"],
+  "used_by": ["src/guidance/comments/core_tests.zig", "src/guidance/comments/sync.zig"],
   "members": [
     {
       "type": "struct",
@@ -183,120 +183,6 @@
         }
       ],
       "line": 121
-    },
-    {
-      "type": "test_decl",
-      "name": "parseDocComment - simple single line",
-      "is_pub": false,
-      "line": 219
-    },
-    {
-      "type": "test_decl",
-      "name": "parseDocComment - multi-line",
-      "is_pub": false,
-      "line": 230
-    },
-    {
-      "type": "test_decl",
-      "name": "isWellFormedComment - empty",
-      "is_pub": false,
-      "line": 240
-    },
-    {
-      "type": "test_decl",
-      "name": "isWellFormedComment - too long",
-      "is_pub": false,
-      "line": 244
-    },
-    {
-      "type": "test_decl",
-      "name": "isWellFormedComment - leaked prompt",
-      "is_pub": false,
-      "line": 250
-    },
-    {
-      "type": "test_decl",
-      "name": "isWellFormedComment - TODO marker",
-      "is_pub": false,
-      "line": 255
-    },
-    {
-      "type": "test_decl",
-      "name": "isWellFormedComment - valid",
-      "is_pub": false,
-      "line": 259
-    },
-    {
-      "type": "test_decl",
-      "name": "checkCommentStaleness - valid comment",
-      "is_pub": false,
-      "line": 263
-    },
-    {
-      "type": "test_decl",
-      "name": "checkCommentStaleness - empty comment",
-      "is_pub": false,
-      "line": 269
-    },
-    {
-      "type": "test_decl",
-      "name": "checkCommentStaleness - leaked prompt",
-      "is_pub": false,
-      "line": 275
-    },
-    {
-      "type": "test_decl",
-      "name": "checkCommentStaleness - too long",
-      "is_pub": false,
-      "line": 281
-    },
-    {
-      "type": "test_decl",
-      "name": "isHashStale - different hashes",
-      "is_pub": false,
-      "line": 289
-    },
-    {
-      "type": "test_decl",
-      "name": "isHashStale - same hash",
-      "is_pub": false,
-      "line": 293
-    },
-    {
-      "type": "test_decl",
-      "name": "isHashStale - null hash",
-      "is_pub": false,
-      "line": 297
-    },
-    {
-      "type": "test_decl",
-      "name": "isHashStale triggers regeneration path",
-      "is_pub": false,
-      "line": 302
-    },
-    {
-      "type": "test_decl",
-      "name": "CommentCache - put and get",
-      "is_pub": false,
-      "line": 309
-    },
-    {
-      "type": "test_decl",
-      "name": "CommentCache - stale hash returns null",
-      "is_pub": false,
-      "line": 320
-    },
-    {
-      "type": "test_decl",
-      "name": "CommentCache - missing key returns null",
-      "is_pub": false,
-      "line": 330
-    },
-    {
-      "type": "test_decl",
-      "name": "CommentCache - isValid",
-      "is_pub": false,
-      "line": 339
     }
   ]
 }

@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " schema_version.zig — Versioning primitives for the reflection schema.\n\n ## Purpose\n\n `SchemaVersion` labels each schema with a (major, minor) pair so that\n stored configurations, database rows, and WASM IPC payloads can be\n compared against the version that generated them.\n\n Compatibility semantics:\n   - **Same major** → compatible.  Fields added/removed with defaults are\n     backward-compatible within the same major version.\n   - **Different major** → breaking change.  Callers must run migration code\n     before reading or writing schema data.\n\n ## Usage in Accessor\n\n Each `Accessor` carries a `version_added` field (defaults to v1.0):\n\n   const my_accessor = Accessor{\n       .name = \"port\",\n       .version_added = SchemaVersion{ .major = 2 },\n       // ...\n   };\n\n Before reading a field, callers check `SchemaVersion.compatible`:\n\n   if (!accessor.version_added.compatible(stored_version)) return error.SchemaMismatch;\n\n Fields with a non-null `version_removed` should be treated as absent for\n schema versions >= `version_removed`.\n\n ## Usage in ConstraintVTable\n\n `ConstraintVTable.version` identifies the schema version the constraint was\n compiled for.  `ConstraintVTable.migrateFn`, if non-null, transforms data\n from an older schema to the current one:\n\n   if (vtable.migrateFn) |migrate| {\n       try migrate(from_version, to_version, allocator, field_ptr);\n   }",
-  "capabilities": ["reflection"],
-  "used_by": ["src/reflection/accessor.zig", "src/reflection/constraint.zig", "src/reflection/root.zig"],
+  "used_by": ["src/reflection/accessor.zig", "src/reflection/constraint.zig", "src/reflection/root.zig", "src/reflection/schema_version_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -127,21 +126,15 @@
     },
     {
       "type": "test_decl",
-      "name": "checkCompatible: matching major succeeds",
+      "name": "checkCompatible: different major returns SchemaMismatch",
       "is_pub": false,
       "line": 140
     },
     {
       "type": "test_decl",
-      "name": "checkCompatible: different major returns SchemaMismatch",
-      "is_pub": false,
-      "line": 144
-    },
-    {
-      "type": "test_decl",
       "name": "SchemaVersion: SCHEMA_CURRENT compatible with itself",
       "is_pub": false,
-      "line": 149
+      "line": 145
     }
   ]
 }

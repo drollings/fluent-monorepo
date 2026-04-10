@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.\n\n Extracts call sites from Zig source files and populates the `called_by` table.\n Only run when `guidance codehealth --extract-calls` is invoked; not part of\n the normal RALPH loop.\n\n Confidence levels:\n   high   — same-file direct call or qualified import call (mod.fn())\n   medium — method call on self (self.method())\n   low    — unresolved / dynamic dispatch / chained call",
-  "used_by": ["src/guidance/codehealth/main.zig"],
+  "used_by": ["src/guidance/codehealth/extractor_tests.zig", "src/guidance/codehealth/main.zig"],
   "members": [
     {
       "type": "struct",
@@ -118,24 +118,6 @@
       "returns": "void",
       "is_pub": true,
       "line": 245
-    },
-    {
-      "type": "test_decl",
-      "name": "CallExtractor: empty file produces no calls",
-      "is_pub": false,
-      "line": 314
-    },
-    {
-      "type": "test_decl",
-      "name": "CallExtractor: buildImportMap finds @import aliases",
-      "is_pub": false,
-      "line": 331
-    },
-    {
-      "type": "test_decl",
-      "name": "CallExtractor: direct function calls extracted with high confidence",
-      "is_pub": false,
-      "line": 345
     }
   ]
 }

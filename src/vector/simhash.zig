@@ -184,11 +184,6 @@ test "embeddingHash: orthogonal embeddings differ in ~32 bits" {
     try testing.expectEqual(@as(u64, 64), hammingDistance(h1, h2));
 }
 
-test "embeddingHash: short embedding (shorter than DIMS) doesn't panic" {
-    const short: [10]f32 = [_]f32{0.5} ** 10;
-    _ = embeddingHash(&short);
-}
-
 // --- Token SimHash tests ---
 
 test "TokenSimHash: empty tokens returns 0" {

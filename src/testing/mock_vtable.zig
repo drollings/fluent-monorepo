@@ -310,21 +310,3 @@ test "MockEmbeddingProvider: name and dimensions" {
     try testing.expectEqualStrings("mock", p.getName());
     try testing.expectEqual(@as(u32, 3), p.getDimensions());
 }
-
-test "MockEmbeddingProvider: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) @panic("memory leak");
-
-    var mock = MockEmbeddingProvider.init(gpa.allocator());
-    defer mock.deinit();
-
-    mock.setEmbedResult(&[_]f32{ 1.0, 2.0 });
-
-    var p = mock.provider();
-    const v1 = try p.embed(gpa.allocator(), "test1");
-    defer gpa.allocator().free(v1);
-    const v2 = try p.embed(gpa.allocator(), "test2");
-    defer gpa.allocator().free(v2);
-
-    mock.assertCallCount("embed", 2);
-}

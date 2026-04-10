@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " Gitignore-aware file filtering for guidance scanner.",
-  "used_by": ["src/guidance/structure.zig"],
+  "used_by": ["src/guidance/git_tests.zig", "src/guidance/structure.zig"],
   "members": [
     {
       "type": "struct",
@@ -124,12 +124,6 @@
       "name": "globMatch basic patterns",
       "is_pub": false,
       "line": 213
-    },
-    {
-      "type": "test_decl",
-      "name": "GitignoreFilter always excludes .git",
-      "is_pub": false,
-      "line": 221
     }
   ]
 }

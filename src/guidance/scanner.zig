@@ -280,29 +280,3 @@ fn emitDiagnosis(allocator: std.mem.Allocator, scanner: *const CodebaseScanner) 
 // =============================================================================
 // Tests
 // =============================================================================
-
-test "CodebaseScanner: init and deinit" {
-    const allocator = std.testing.allocator;
-    var scanner = try CodebaseScanner.init(allocator, "/tmp");
-    defer scanner.deinit();
-
-    try std.testing.expectEqual(ConfidenceTier.low, scanner.confidence);
-    try std.testing.expectEqualStrings("/tmp", scanner.workspace);
-}
-
-test "CodebaseScanner: scan on empty workspace returns low confidence" {
-    const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(workspace);
-
-    var scanner = try CodebaseScanner.init(allocator, workspace);
-    defer scanner.deinit();
-
-    try scanner.scan();
-    // No CAPABILITY.md → medium or low, map may be null on empty dir.
-    // Just verify no crash and confidence is set.
-    try std.testing.expect(scanner.confidence == .low or scanner.confidence == .medium);
-}

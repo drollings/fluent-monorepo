@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " Hash utilities for guidance — computes stable hashes for API signatures and struct members.",
-  "capabilities": ["coral-database", "ast-indexing"],
-  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/hash_tests.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/hash_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -54,30 +53,6 @@
       "name": "sha256Hex produces correct length",
       "is_pub": false,
       "line": 52
-    },
-    {
-      "type": "test_decl",
-      "name": "apiHash is deterministic",
-      "is_pub": false,
-      "line": 58
-    },
-    {
-      "type": "test_decl",
-      "name": "apiHash differs for different names",
-      "is_pub": false,
-      "line": 72
-    },
-    {
-      "type": "test_decl",
-      "name": "structHash differs when field names change",
-      "is_pub": false,
-      "line": 83
-    },
-    {
-      "type": "test_decl",
-      "name": "structHash same fields produce same hash",
-      "is_pub": false,
-      "line": 103
     }
   ]
 }

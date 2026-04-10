@@ -138,24 +138,3 @@ pub fn detectTemplateMethod(tree: *const std.zig.Ast, node: std.zig.Ast.Node.Ind
     };
     return has_unreachable and calls_hooks;
 }
-
-test "detectRingBuffer" {
-    try std.testing.expect(detectRingBuffer("pub const RingBuffer = struct { ... }"));
-    try std.testing.expect(detectRingBuffer("// circular queue implementation"));
-    try std.testing.expect(!detectRingBuffer("pub fn add(a: i32, b: i32) i32 { return a + b; }"));
-}
-
-test "detectFactory" {
-    try std.testing.expect(detectFactory(undefined, undefined, "pub fn create(alloc: Allocator) !*Foo { ... }"));
-    try std.testing.expect(detectFactory(undefined, undefined, "pub const FooFactory = struct {}"));
-    try std.testing.expect(!detectFactory(undefined, undefined, "pub fn parse(input: []u8) !Foo {}"));
-}
-
-test "detectObserver" {
-    try std.testing.expect(detectObserver(
-        undefined,
-        undefined,
-        "fn subscribe(self: *Self, cb: Callback) void {} fn notify(self: *Self) void {}",
-    ));
-    try std.testing.expect(!detectObserver(undefined, undefined, "fn compute(x: f64) f64 { return x; }"));
-}

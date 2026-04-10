@@ -351,23 +351,3 @@ fn looksLikeNaturalLanguageQuestion(query: []const u8) bool {
 // =============================================================================
 // Tests
 // =============================================================================
-
-test "looksLikeIdentifier: single camelCase identifier" {
-    try std.testing.expect(looksLikeIdentifier("cmdExplain"));
-    try std.testing.expect(looksLikeIdentifier("GuidanceDb"));
-    try std.testing.expect(looksLikeIdentifier("executeStaged"));
-    try std.testing.expect(looksLikeIdentifier("_private"));
-}
-
-test "looksLikeIdentifier: rejects multi-word queries" {
-    try std.testing.expect(!looksLikeIdentifier("sync guidance"));
-    try std.testing.expect(!looksLikeIdentifier("AST parser"));
-    try std.testing.expect(!looksLikeIdentifier("How does this work?"));
-}
-
-test "looksLikeIdentifier: rejects empty and too-long" {
-    try std.testing.expect(!looksLikeIdentifier(""));
-    try std.testing.expect(!looksLikeIdentifier("a"));
-    // 65 chars — too long
-    try std.testing.expect(!looksLikeIdentifier("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
-}

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " comment_inserter.zig — Insert and replace doc comments in Zig source files.\n\n Provides utilities to:\n   - Insert a `///` doc comment block above a declaration at a given line\n   - Replace an existing doc comment block above a declaration",
-  "used_by": ["src/guidance/comments/sync.zig"],
+  "used_by": ["src/guidance/comments/inserter_tests.zig", "src/guidance/comments/sync.zig"],
   "members": [
     {
       "type": "struct",
@@ -110,42 +110,6 @@
       "returns": "InsertResult",
       "is_pub": false,
       "line": 233
-    },
-    {
-      "type": "test_decl",
-      "name": "insertComment - basic",
-      "is_pub": false,
-      "line": 245
-    },
-    {
-      "type": "test_decl",
-      "name": "insertComment - line beyond source",
-      "is_pub": false,
-      "line": 261
-    },
-    {
-      "type": "test_decl",
-      "name": "replaceComment - existing comment replaced",
-      "is_pub": false,
-      "line": 268
-    },
-    {
-      "type": "test_decl",
-      "name": "extractCommentAtLine - finds comment",
-      "is_pub": false,
-      "line": 283
-    },
-    {
-      "type": "test_decl",
-      "name": "extractCommentAtLine - no comment",
-      "is_pub": false,
-      "line": 297
-    },
-    {
-      "type": "test_decl",
-      "name": "formatDocComment - multi-line",
-      "is_pub": false,
-      "line": 305
     }
   ]
 }

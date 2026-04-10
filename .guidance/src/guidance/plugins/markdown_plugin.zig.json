@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " MarkdownPlugin — extracts sections and metadata from Markdown files.\n\n Each heading (# / ## / ###) becomes a \"member\" whose name is the heading\n text and whose line number is the heading's line.  The first paragraph of\n the document becomes the module-level comment.\n\n node_type values:\n   \"h1\"  — top-level heading\n   \"h2\"  — second-level heading\n   \"h3\"  — third-level heading\n   \"section\" — deeper / unrecognised headings",
-  "capabilities": ["plugin-system"],
+  "used_by": ["src/guidance/plugins/markdown_plugin_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -55,36 +55,6 @@
       "returns": "[]const u8",
       "is_pub": false,
       "line": 166
-    },
-    {
-      "type": "test_decl",
-      "name": "MarkdownPlugin handles .md extension",
-      "is_pub": false,
-      "line": 181
-    },
-    {
-      "type": "test_decl",
-      "name": "MarkdownPlugin.parse extracts headings as members",
-      "is_pub": false,
-      "line": 191
-    },
-    {
-      "type": "test_decl",
-      "name": "MarkdownPlugin.parse code blocks are skipped",
-      "is_pub": false,
-      "line": 215
-    },
-    {
-      "type": "test_decl",
-      "name": "MarkdownPlugin.extractImports finds local links",
-      "is_pub": false,
-      "line": 235
-    },
-    {
-      "type": "test_decl",
-      "name": "FileType.fromExtension",
-      "is_pub": false,
-      "line": 251
     }
   ]
 }

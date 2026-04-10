@@ -54,11 +54,11 @@ pub const Format = enum { ai, human, json };
 /// Phase selector for the codehealth command.
 /// Use `parsePhases` to populate from `--phases=0,1,1.5,2`.
 pub const PhaseSet = struct {
-    phase0: bool = true,   // orphaned files
-    phase1: bool = true,   // unused modules (DB)
-    phase15: bool = true,  // build.zig validation
-    phase2a: bool = true,  // SimHash redundancy
-    phase2: bool = true,   // test organisation
+    phase0: bool = true, // orphaned files
+    phase1: bool = true, // unused modules (DB)
+    phase15: bool = true, // build.zig validation
+    phase2a: bool = true, // SimHash redundancy
+    phase2: bool = true, // test organisation
 };
 
 /// Arguments parsed from CLI flags for the codehealth command.
@@ -252,22 +252,24 @@ fn writeAiOutput(
     var has_content = false;
 
     // ── Phase 0: Orphaned files ───────────────────────────────────
-    if (orphans.len > 0) {
-        try w.writeAll(
-            \\## ⚠️ ORPHANED FILES (High Confidence)
-            \\
-            \\> These files exist but are not imported by any other file.
-            \\
-            \\
-        );
-        has_content = true;
-        for (orphans) |o| {
-            const age = daysSince(o.last_modified);
-            if (age < min_age_days) continue;
-            try w.print("### {s} ({d} days)\n\n", .{ o.source, age });
-            try w.writeAll("**Imports:** None\n");
-            try w.writeAll("**Action:** Delete file and remove from build.zig if present\n\n---\n\n");
+    var printed_orphan_header = false;
+    for (orphans) |o| {
+        const age = daysSince(o.last_modified);
+        if (age < min_age_days) continue;
+        if (!printed_orphan_header) {
+            try w.writeAll(
+                \\## ⚠️ ORPHANED FILES (High Confidence)
+                \\
+                \\> These files exist but are not imported by any other file.
+                \\
+                \\
+            );
+            printed_orphan_header = true;
+            has_content = true;
         }
+        try w.print("### {s} ({d} days)\n\n", .{ o.source, age });
+        try w.writeAll("**Imports:** None\n");
+        try w.writeAll("**Action:** Delete file and remove from build.zig if present\n\n---\n\n");
     }
 
     // ── Phase 1.5: build.zig anomalies ───────────────────────────
@@ -329,9 +331,15 @@ fn writeAiOutput(
     }
 
     // ── Summary ───────────────────────────────────────────────────
+    // Count orphans that pass the age filter (matches what was displayed).
+    var orphans_displayed: usize = 0;
+    for (orphans) |o| {
+        if (daysSince(o.last_modified) >= min_age_days) orphans_displayed += 1;
+    }
+
     try w.writeAll("## 📋 SUMMARY\n\n");
     try w.writeAll("| Category | Count | Action |\n|----------|-------|--------|\n");
-    try w.print("| Orphaned files | {d} | Review for deletion |\n", .{orphans.len});
+    try w.print("| Orphaned files | {d} | Review for deletion |\n", .{orphans_displayed});
     try w.print("| build.zig anomalies | {d} | Fix references |\n", .{build_anomalies.len});
     try w.print("| Not imported (DB) | {d} | Review for deletion |\n", .{unused.len});
     try w.print("| Redundant pairs | {d} | Consider consolidation |\n", .{pairs.len});
@@ -603,86 +611,6 @@ fn runCallExtraction(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-test "codehealth: parseCodehealthDirective re-export — ignore" {
-    const dir = parseCodehealthDirective("/// CODEHEALTH: ignore vtable-impl\n/// Invoked by reactor loop.").?;
-    try std.testing.expectEqualStrings("vtable-impl", dir.ignore_reason);
-}
-
-test "codehealth: parseCodehealthDirective re-export — milestone" {
-    const dir = parseCodehealthDirective("/// CODEHEALTH: milestone v2.0\n/// Planned for distributed caching.").?;
-    try std.testing.expectEqualStrings("v2.0", dir.milestone);
-}
-
-test "codehealth: parseCodehealthDirective re-export — deprecated" {
-    const dir = parseCodehealthDirective("/// CODEHEALTH: deprecated use searchOptimized instead").?;
-    try std.testing.expectEqualStrings("use searchOptimized instead", dir.deprecated_by);
-}
-
-test "codehealth: parseCodehealthDirective no directive returns null" {
-    try std.testing.expect(parseCodehealthDirective("/// Regular doc comment") == null);
-    try std.testing.expect(parseCodehealthDirective("") == null);
-}
-
-test "codehealth: SimHash Hamming distance" {
-    // Two identical hashes → distance 0.
-    const h: u64 = 0xDEADBEEF_CAFEBABE;
-    const dist0: u6 = @truncate(@popCount(@as(u64, @bitCast(h ^ h))));
-    try std.testing.expectEqual(@as(u6, 0), dist0);
-
-    // Flip one bit → distance 1.
-    const h2 = h ^ 1;
-    const dist1: u6 = @truncate(@popCount(@as(u64, @bitCast(h ^ h2))));
-    try std.testing.expectEqual(@as(u6, 1), dist1);
-
-    // Flip 3 bits → distance 3.
-    const h3 = h ^ 0b111;
-    const dist3: u6 = @truncate(@popCount(@as(u64, @bitCast(h ^ h3))));
-    try std.testing.expectEqual(@as(u6, 3), dist3);
-}
-
-test "codehealth: findRedundantPairs empty DB returns empty slice" {
-    const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch.db", .{tmp_path});
-    defer allocator.free(db_path);
-
-    var noop: common.NoopEmbedding = .{};
-    var db = try vector.GuidanceDb.init(allocator, db_path, noop.provider());
-    defer db.deinit();
-
-    const pairs = try findRedundantPairs(allocator, &db, 3);
-    defer allocator.free(pairs);
-    try std.testing.expectEqual(@as(usize, 0), pairs.len);
-}
-
-test "codehealth: findUnusedModules empty DB returns empty slice" {
-    const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(tmp_path);
-
-    const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch2.db", .{tmp_path});
-    defer allocator.free(db_path);
-
-    var noop: common.NoopEmbedding = .{};
-    var db = try vector.GuidanceDb.init(allocator, db_path, noop.provider());
-    defer db.deinit();
-
-    const unused = try db.findUnusedModules(allocator);
-    defer {
-        for (unused) |m| allocator.free(m.source);
-        allocator.free(unused);
-    }
-    try std.testing.expectEqual(@as(usize, 0), unused.len);
-}
 
 test "codehealth: isGenericName recognises common names" {
     try std.testing.expect(isGenericName("init"));

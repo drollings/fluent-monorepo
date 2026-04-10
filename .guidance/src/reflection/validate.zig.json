@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).\n\n ## Purpose\n\n `FieldMeta` carries validation rules (`min`, `max`, `enum_values`, `pattern`,\n `custom_validate`).  This module enforces those rules at runtime when a field\n is set via `Editable.set()`.\n\n The pipeline runs in this order for each set() call:\n\n   1. `enum_values` check — if set, value must match one of the allowed strings.\n   2. `custom_validate` check — if set, the function must return true.\n   3. `pattern` check — if set, value must match the simplified glob pattern.\n\n Range (min/max) validation is already handled by `Constraint(T).setFn` at the\n type level (integer/float parsing enforces numeric bounds via the constraint\n pipeline).  Only the string-level checks above need a separate pass.\n\n ## Pattern Syntax (simplified)\n\n A subset of common patterns:\n   - `^prefix`   — value must start with \"prefix\"\n   - `suffix$`   — value must end with \"suffix\"\n   - `^prefix$`  — value must equal \"prefix\"\n   - `*word*`    — value must contain \"word\" (literal `*` as wildcard)\n   - No regex character classes or quantifiers.\n\n Patterns are case-sensitive.  For full regex support, use `custom_validate`.\n\n ## Usage\n\n Editable.set() calls validateValue before dispatching to the constraint vtable:\n\n   try validateValue(accessor.meta, raw_value);\n   try accessor.constraint.setFn(allocator, field_ptr, raw_value);",
-  "capabilities": ["reflection"],
-  "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig"],
+  "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/validate_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -74,75 +73,63 @@
     },
     {
       "type": "test_decl",
-      "name": "validateEnumValues: null passes unconditionally",
+      "name": "validateCustom: function returning true passes",
       "is_pub": false,
       "line": 153
     },
     {
       "type": "test_decl",
-      "name": "validateCustom: function returning true passes",
-      "is_pub": false,
-      "line": 157
-    },
-    {
-      "type": "test_decl",
       "name": "validateCustom: function returning false fails",
       "is_pub": false,
-      "line": 167
+      "line": 163
     },
     {
       "type": "test_decl",
       "name": "validateCustom: length check",
       "is_pub": false,
-      "line": 177
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "validatePattern: start anchor",
       "is_pub": false,
-      "line": 188
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "validatePattern: end anchor",
       "is_pub": false,
-      "line": 194
+      "line": 190
     },
     {
       "type": "test_decl",
       "name": "validatePattern: exact match (start+end)",
       "is_pub": false,
-      "line": 200
+      "line": 196
     },
     {
       "type": "test_decl",
       "name": "validatePattern: wildcard",
       "is_pub": false,
-      "line": 206
+      "line": 202
     },
     {
       "type": "test_decl",
       "name": "validatePattern: no anchor (substring match)",
       "is_pub": false,
-      "line": 212
-    },
-    {
-      "type": "test_decl",
-      "name": "validatePattern: null passes",
-      "is_pub": false,
-      "line": 219
+      "line": 208
     },
     {
       "type": "test_decl",
       "name": "validateValue: runs all checks in order",
       "is_pub": false,
-      "line": 223
+      "line": 215
     },
     {
       "type": "test_decl",
       "name": "validateValue: enum passes then custom fails",
       "is_pub": false,
-      "line": 237
+      "line": 229
     }
   ]
 }

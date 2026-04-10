@@ -197,20 +197,6 @@ test "LogContext: format with no fields" {
     try testing.expectEqualStrings("[]", s);
 }
 
-test "Scope: begin and end with no context does not panic" {
-    LogContext.clear();
-    const scope = Scope.begin("test_op");
-    scope.end();
-}
-
-test "Scope: begin and end with context" {
-    LogContext.set(.{ .request_id = "req-scope" });
-    defer LogContext.clear();
-
-    const scope = Scope.begin("test_op");
-    scope.end();
-}
-
 test "callLogged: wraps plain function" {
     const add = struct {
         fn f(a: i32, b: i32) i32 {

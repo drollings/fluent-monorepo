@@ -239,12 +239,3 @@ test "joinStringSlice: multiple names comma-separated" {
     const result = try joinStringSlice(arena.allocator(), &[_][]const u8{ "compile", "link", "test" });
     try testing.expectEqualStrings("compile,link,test", result);
 }
-
-test "BuilderError: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) @panic("memory leak");
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
-    defer arena.deinit();
-
-    _ = try BuilderError.init(arena.allocator(), .validation, "port", "99999", "max=65535", error.Overflow);
-}

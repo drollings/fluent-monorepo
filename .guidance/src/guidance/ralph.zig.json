@@ -8,8 +8,7 @@
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
-  "capabilities": ["coral-database", "ast-indexing"],
-  "used_by": ["src/guidance/query_engine.zig"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/ralph_tests.zig"],
   "members": [
     {
       "type": "enum",
@@ -264,18 +263,6 @@
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 339
-    },
-    {
-      "type": "test_decl",
-      "name": "RalphState: transitions in order",
-      "is_pub": false,
-      "line": 402
-    },
-    {
-      "type": "test_decl",
-      "name": "QueryRecord: can be appended to ArrayList",
-      "is_pub": false,
-      "line": 408
     }
   ]
 }

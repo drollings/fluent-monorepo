@@ -34,27 +34,3 @@ pub fn addUniquePath(
     try list.append(allocator, try allocator.dupe(u8, path));
     return true;
 }
-
-test "runCommand returns true for successful command" {
-    const result = try runCommand(std.testing.allocator, &[_][]const u8{"true"});
-    try std.testing.expect(result);
-}
-
-test "runCommand returns false for failing command" {
-    const result = try runCommand(std.testing.allocator, &[_][]const u8{"false"});
-    try std.testing.expect(!result);
-}
-
-test "addUniquePath deduplicates paths" {
-    var list: std.ArrayList([]const u8) = .{};
-    defer {
-        for (list.items) |item| std.testing.allocator.free(item);
-        list.deinit(std.testing.allocator);
-    }
-
-    const added1 = try addUniquePath(std.testing.allocator, &list, "test/path", "");
-    try std.testing.expect(added1);
-
-    const added2 = try addUniquePath(std.testing.allocator, &list, "test/path", "");
-    try std.testing.expect(!added2);
-}

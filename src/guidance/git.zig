@@ -217,11 +217,3 @@ test "globMatch basic patterns" {
     try std.testing.expect(globMatch("test_foo.zig", "test_*.zig"));
     try std.testing.expect(globMatch("foo", "foo"));
 }
-
-test "GitignoreFilter always excludes .git" {
-    var filter = GitignoreFilter.init(std.testing.allocator, "/project");
-    defer filter.deinit();
-
-    try std.testing.expect(filter.shouldIgnore("/project/.git/config"));
-    try std.testing.expect(filter.shouldIgnore("/project/.zig-cache/foo"));
-}

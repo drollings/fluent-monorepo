@@ -133,11 +133,6 @@ test "TokenEstimator: estimateSliceTokens sums correctly" {
     try testing.expectEqual(@as(usize, 3), est.estimateSliceTokens(&texts));
 }
 
-test "ProportionalBudget: validate passes on correct fractions" {
-    const b = ProportionalBudget{ .total = 1000 };
-    try b.validate();
-}
-
 test "ProportionalBudget: validate fails when fractions don't sum to 1.0" {
     const b = ProportionalBudget{
         .total = 1000,

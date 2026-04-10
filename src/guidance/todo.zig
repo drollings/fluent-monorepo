@@ -688,11 +688,3 @@ test "slugify: empty becomes work-item" {
     defer allocator.free(s);
     try t.expectEqualStrings("work-item", s);
 }
-
-test "queryChecklistStatus: nonexistent dir returns zeros" {
-    const t = std.testing;
-    const result = try queryChecklistStatus(t.allocator, "/nonexistent/todo");
-    defer if (result.item_dir) |d| t.allocator.free(d);
-    try t.expectEqual(@as(usize, 0), result.total);
-    try t.expectEqual(@as(usize, 0), result.incomplete);
-}

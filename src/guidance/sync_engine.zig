@@ -2838,6 +2838,7 @@ fn collectFilesWithExts(
 
     while (try walker.next()) |entry| {
         if (entry.kind != .file) continue;
+        if (std.mem.endsWith(u8, entry.basename, "_tests.zig")) continue;
         const ext = std.fs.path.extension(entry.basename);
         const matched = for (exts) |e| {
             if (std.mem.eql(u8, ext, e)) break true;

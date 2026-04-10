@@ -34,7 +34,7 @@ Each member has a `match_hash` (SHA-256 of signature). On re-sync, only members 
 When searching for "how does X work", the `comment` field of the corresponding `fn_decl` or `struct` is the primary semantic signal. Members without comments still surface via name/signature matching.
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (18 files, auto-discovered)
+## Sources (23 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -46,7 +46,9 @@ When searching for "how does X work", the `comment` field of the corresponding `
 | `src/common/content_node.zig` | 0.9 | used_by |
 | `src/common/root.zig` | 0.9 | used_by |
 | `src/guidance/document_indexer.zig` | 0.9 | used_by |
+| `src/guidance/document_indexer_tests.zig` | 0.9 | used_by |
 | `src/guidance/hash.zig` | 0.9 | used_by |
+| `src/guidance/hash_tests.zig` | 0.9 | used_by |
 | `src/guidance/main.zig` | 0.9 | used_by |
 | `src/guidance/pattern.zig` | 0.9 | used_by |
 | `src/guidance/plugin.zig` | 0.9 | used_by |
@@ -55,5 +57,8 @@ When searching for "how does X work", the `comment` field of the corresponding `
 | `src/guidance/schema_validator.zig` | 0.9 | used_by |
 | `src/guidance/skeleton.zig` | 0.9 | used_by |
 | `src/guidance/stage_builder.zig` | 0.9 | used_by |
+| `src/guidance/stage_builder_tests.zig` | 0.9 | used_by |
 | `src/guidance/staged.zig` | 0.9 | used_by |
+| `src/guidance/staged_tests.zig` | 0.9 | used_by |
+| `src/guidance/types_tests.zig` | 0.9 | used_by |
 

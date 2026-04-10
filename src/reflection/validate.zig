@@ -150,10 +150,6 @@ test "validateEnumValues: invalid value fails" {
     try testing.expectError(error.InvalidEnumValue, validateEnumValues(meta, "critical"));
 }
 
-test "validateEnumValues: null passes unconditionally" {
-    try validateEnumValues(.{}, "anything");
-}
-
 test "validateCustom: function returning true passes" {
     const alwaysTrue = struct {
         fn f(_: []const u8) bool {
@@ -214,10 +210,6 @@ test "validatePattern: no anchor (substring match)" {
     try validatePattern(meta, "foobar");
     try validatePattern(meta, "my_foo_thing");
     try testing.expectError(error.PatternMismatch, validatePattern(meta, "bar"));
-}
-
-test "validatePattern: null passes" {
-    try validatePattern(.{}, "anything");
 }
 
 test "validateValue: runs all checks in order" {

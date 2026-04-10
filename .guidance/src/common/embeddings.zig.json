@@ -8,8 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["embedding-providers"],
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/embeddings_tests.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -434,63 +433,9 @@
     },
     {
       "type": "test_decl",
-      "name": "NoopEmbedding returns empty vector",
-      "is_pub": false,
-      "line": 515
-    },
-    {
-      "type": "test_decl",
-      "name": "OllamaEmbedding init and deinit",
-      "is_pub": false,
-      "line": 526
-    },
-    {
-      "type": "test_decl",
-      "name": "OllamaEmbedding rejects insecure remote http",
-      "is_pub": false,
-      "line": 534
-    },
-    {
-      "type": "test_decl",
-      "name": "parseOllamaResponse valid",
-      "is_pub": false,
-      "line": 539
-    },
-    {
-      "type": "test_decl",
-      "name": "parseOpenAiResponse valid",
-      "is_pub": false,
-      "line": 547
-    },
-    {
-      "type": "test_decl",
-      "name": "createEmbeddingProvider noop",
-      "is_pub": false,
-      "line": 554
-    },
-    {
-      "type": "test_decl",
-      "name": "contentHashWithModel is deterministic and model-sensitive",
-      "is_pub": false,
-      "line": 560
-    },
-    {
-      "type": "test_decl",
       "name": "EmbeddingProvider: thread_id set on creation thread",
       "is_pub": false,
-      "line": 570
-    },
-    {
-      "type": "test_decl",
-      "name": "EmbeddingProvider: same-thread embed succeeds (thread_id assertion not triggered)",
-      "is_pub": false,
-      "line": 578
-    },
-    {
-      "type": "test_decl",
-      "name": "EmbeddingProvider: thread_safe=true disables thread assertion",
-      "is_pub": false,
-      "line": 587
+      "line": 517
     }
   ]
 }

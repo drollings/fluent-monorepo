@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " AI Docstring Enhancer for Zig guidance generation.\n\n Mirrors Python's AIDocstringEnhancer class in guidance.py.\n Generates descriptions (≤240 chars) for functions, structs, and files\n by calling the configured LLM endpoint.  The enhancer is opt-in: sync",
-  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/enhancer_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -400,93 +400,33 @@
     },
     {
       "type": "test_decl",
-      "name": "scoreDocstring empty",
+      "name": "lastIndexOf basic",
       "is_pub": false,
       "line": 856
     },
     {
       "type": "test_decl",
-      "name": "scoreDocstring quality",
-      "is_pub": false,
-      "line": 860
-    },
-    {
-      "type": "test_decl",
-      "name": "extractTags parses hashtags",
-      "is_pub": false,
-      "line": 866
-    },
-    {
-      "type": "test_decl",
-      "name": "extractTags returns empty when no Tags line",
-      "is_pub": false,
-      "line": 888
-    },
-    {
-      "type": "test_decl",
-      "name": "stripTagsLine removes Tags line",
-      "is_pub": false,
-      "line": 906
-    },
-    {
-      "type": "test_decl",
-      "name": "lastIndexOf basic",
-      "is_pub": false,
-      "line": 922
-    },
-    {
-      "type": "test_decl",
       "name": "extractPhrasesTag extracts content",
       "is_pub": false,
-      "line": 927
+      "line": 861
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag returns null for missing tag",
       "is_pub": false,
-      "line": 934
+      "line": 868
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag handles whitespace",
       "is_pub": false,
-      "line": 940
-    },
-    {
-      "type": "test_decl",
-      "name": "fallbackPhrases extracts identifiers",
-      "is_pub": false,
-      "line": 947
+      "line": 874
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases skips generic words",
       "is_pub": false,
-      "line": 968
-    },
-    {
-      "type": "test_decl",
-      "name": "parsePhrasesResponse handles comma-separated",
-      "is_pub": false,
-      "line": 990
-    },
-    {
-      "type": "test_decl",
-      "name": "parsePhrasesResponse handles newline-separated",
-      "is_pub": false,
-      "line": 1009
-    },
-    {
-      "type": "test_decl",
-      "name": "parsePhrasesResponse limits to 5 phrases",
-      "is_pub": false,
-      "line": 1025
-    },
-    {
-      "type": "test_decl",
-      "name": "parsePhrasesResponse skips generic words",
-      "is_pub": false,
-      "line": 1041
+      "line": 881
     }
   ]
 }

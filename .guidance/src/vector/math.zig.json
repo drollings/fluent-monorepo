@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " Vector operations — cosine similarity, normalization, hybrid merge.\n\n Used by guidance's SQLite vector search backend.",
-  "capabilities": ["vector-search"],
-  "used_by": ["src/vector/root.zig"],
+  "used_by": ["src/vector/math_tests.zig", "src/vector/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -90,48 +89,6 @@
       "returns": "[]ScoredResult",
       "is_pub": true,
       "line": 168
-    },
-    {
-      "type": "test_decl",
-      "name": "cosine identical vectors",
-      "is_pub": false,
-      "line": 270
-    },
-    {
-      "type": "test_decl",
-      "name": "cosine orthogonal vectors",
-      "is_pub": false,
-      "line": 276
-    },
-    {
-      "type": "test_decl",
-      "name": "cosine empty returns zero",
-      "is_pub": false,
-      "line": 283
-    },
-    {
-      "type": "test_decl",
-      "name": "vec bytes roundtrip",
-      "is_pub": false,
-      "line": 288
-    },
-    {
-      "type": "test_decl",
-      "name": "hybrid merge deduplicates",
-      "is_pub": false,
-      "line": 302
-    },
-    {
-      "type": "test_decl",
-      "name": "hybrid merge respects limit",
-      "is_pub": false,
-      "line": 314
-    },
-    {
-      "type": "test_decl",
-      "name": "hybrid merge three-way combines all scores",
-      "is_pub": false,
-      "line": 324
     }
   ]
 }

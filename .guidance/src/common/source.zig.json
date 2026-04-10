@@ -4,7 +4,7 @@
     "source": "src/common/source.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/root.zig", "src/common/source_tests.zig"],
   "members": [
     {
       "type": "enum",
@@ -142,36 +142,6 @@
       "returns": "[]const u8",
       "is_pub": true,
       "line": 160
-    },
-    {
-      "type": "test_decl",
-      "name": "extractExcerpt extracts function body",
-      "is_pub": false,
-      "line": 217
-    },
-    {
-      "type": "test_decl",
-      "name": "extractExcerpt extracts container declaration",
-      "is_pub": false,
-      "line": 236
-    },
-    {
-      "type": "test_decl",
-      "name": "extractSimpleExcerpt respects line limit",
-      "is_pub": false,
-      "line": 256
-    },
-    {
-      "type": "test_decl",
-      "name": "NodeType.fromString",
-      "is_pub": false,
-      "line": 264
-    },
-    {
-      "type": "test_decl",
-      "name": "NodeType.isFunction and isContainer",
-      "is_pub": false,
-      "line": 270
     }
   ]
 }

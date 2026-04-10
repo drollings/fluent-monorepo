@@ -4,7 +4,7 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
+  "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -26,12 +26,6 @@
       "returns": "void",
       "is_pub": false,
       "line": 478
-    },
-    {
-      "type": "test_decl",
-      "name": "coral: core module imports compile",
-      "is_pub": false,
-      "line": 524
     }
   ]
 }

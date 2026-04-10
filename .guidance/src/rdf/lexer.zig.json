@@ -4,8 +4,7 @@
     "source": "src/rdf/lexer.zig",
     "language": "zig"
   },
-  "capabilities": ["rdf-parsing"],
-  "used_by": ["src/rdf/parser.zig", "src/rdf/root.zig"],
+  "used_by": ["src/rdf/lexer_tests.zig", "src/rdf/parser.zig", "src/rdf/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -328,90 +327,6 @@
         }
       ],
       "line": 56
-    },
-    {
-      "type": "test_decl",
-      "name": "lex IRI basic",
-      "is_pub": false,
-      "line": 422
-    },
-    {
-      "type": "test_decl",
-      "name": "lex prefixed name",
-      "is_pub": false,
-      "line": 432
-    },
-    {
-      "type": "test_decl",
-      "name": "lex literal basic",
-      "is_pub": false,
-      "line": 440
-    },
-    {
-      "type": "test_decl",
-      "name": "lex literal with language tag",
-      "is_pub": false,
-      "line": 448
-    },
-    {
-      "type": "test_decl",
-      "name": "lex literal with datatype",
-      "is_pub": false,
-      "line": 458
-    },
-    {
-      "type": "test_decl",
-      "name": "lex blank node",
-      "is_pub": false,
-      "line": 470
-    },
-    {
-      "type": "test_decl",
-      "name": "lex comment skipping",
-      "is_pub": false,
-      "line": 478
-    },
-    {
-      "type": "test_decl",
-      "name": "lex at-prefix keyword",
-      "is_pub": false,
-      "line": 485
-    },
-    {
-      "type": "test_decl",
-      "name": "lex keyword a",
-      "is_pub": false,
-      "line": 493
-    },
-    {
-      "type": "test_decl",
-      "name": "lex punctuation",
-      "is_pub": false,
-      "line": 502
-    },
-    {
-      "type": "test_decl",
-      "name": "lex error unterminated IRI",
-      "is_pub": false,
-      "line": 513
-    },
-    {
-      "type": "test_decl",
-      "name": "lex error unterminated literal",
-      "is_pub": false,
-      "line": 520
-    },
-    {
-      "type": "test_decl",
-      "name": "lex literal with escape sequence",
-      "is_pub": false,
-      "line": 527
-    },
-    {
-      "type": "test_decl",
-      "name": "lex blank node brackets",
-      "is_pub": false,
-      "line": 534
     }
   ]
 }

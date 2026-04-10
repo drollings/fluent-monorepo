@@ -137,10 +137,6 @@ test "SCHEMA_CURRENT: is v1.0" {
     try testing.expectEqual(@as(u16, 0), SCHEMA_CURRENT.minor);
 }
 
-test "checkCompatible: matching major succeeds" {
-    try checkCompatible(.{ .major = 1, .minor = 5 }, SCHEMA_CURRENT);
-}
-
 test "checkCompatible: different major returns SchemaMismatch" {
     const result = checkCompatible(.{ .major = 2 }, SCHEMA_CURRENT);
     try testing.expectError(error.SchemaMismatch, result);

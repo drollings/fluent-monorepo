@@ -7,7 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig"],
+  "used_by": ["src/common/pattern_tests.zig", "src/common/root.zig", "src/guidance/ast_parser.zig"],
   "members": [
     {
       "type": "struct",
@@ -165,24 +165,6 @@
       "returns": "bool",
       "is_pub": true,
       "line": 124
-    },
-    {
-      "type": "test_decl",
-      "name": "detectRingBuffer",
-      "is_pub": false,
-      "line": 142
-    },
-    {
-      "type": "test_decl",
-      "name": "detectFactory",
-      "is_pub": false,
-      "line": 148
-    },
-    {
-      "type": "test_decl",
-      "name": "detectObserver",
-      "is_pub": false,
-      "line": 154
     }
   ]
 }

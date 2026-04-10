@@ -1,0 +1,90 @@
+{
+  "meta": {
+    "module": "src.guidance.codehealth.build_validation",
+    "source": "src/guidance/codehealth/build_validation.zig",
+    "language": "zig"
+  },
+  "comment": " build_validation.zig — Phase 1.5: build.zig consistency validation.\n\n Parses build.zig for `b.addTest` / `b.addExecutable` targets and checks:\n   1. Orphaned test targets: root_source_file references a file that does not exist.\n   2. Stale references: file was deleted but the build target was not removed.\n\n This is a text-based scanner (not full AST) to remain simple and fast.\n It looks for the pattern:\n   .root_source_file = b.path(\"src/foo.zig\"),\n and verifies that `src/foo.zig` exists relative to `workspace`.",
+  "used_by": ["src/guidance/codehealth/build_validation_tests.zig", "src/guidance/codehealth/main.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "BuildAnomaly",
+      "match_hash": "7c48bfb7929c9e39f9894f9727ce81052a8862edab7586e5730dfd76455cad5a",
+      "signature": "keyword_struct BuildAnomaly { ... }",
+      "is_pub": true,
+      "line": 24
+    },
+    {
+      "type": "fn_private",
+      "name": "extractPathRefs",
+      "match_hash": "591e3800d09cb85003331348da4b592459e63b3c85418ae0661a88feb6dcaa7c",
+      "signature": "fn extractPathRefs(allocator: std.mem.Allocator, src: []const u8) -> []PathRef",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "src", "type": "[]const u8" }
+      ],
+      "returns": "[]PathRef",
+      "is_pub": false,
+      "line": 43
+    },
+    {
+      "type": "fn_decl",
+      "name": "validateBuildZig",
+      "match_hash": "54959a4c2c154ebbcc5325d46a149f302a35cde0e1cda66a411309c311d6e340",
+      "signature": "fn validateBuildZig(allocator: std.mem.Allocator, workspace: []const u8) -> []BuildAnomaly",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" }
+      ],
+      "returns": "[]BuildAnomaly",
+      "is_pub": true,
+      "line": 91
+    },
+    {
+      "type": "fn_decl",
+      "name": "writeAiOutput",
+      "match_hash": "af53f17afca799d70692bf43645760e9db3d07106bdbb83c69fbba1f3d683383",
+      "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 139
+    },
+    {
+      "type": "fn_decl",
+      "name": "writeHumanOutput",
+      "match_hash": "590642ac0e2b87e91c00df57d8f80f2df350fbcbed1c6f8022a84e4507eabd15",
+      "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 161
+    },
+    {
+      "type": "fn_decl",
+      "name": "writeJsonFragment",
+      "match_hash": "c00faddbbfe0990c99b48dd271ac42b0996826a8f17b1089752911f577c66639",
+      "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 171
+    },
+    {
+      "type": "test_decl",
+      "name": "build_validation: extractPathRefs finds .zig paths with line numbers",
+      "is_pub": false,
+      "line": 187
+    }
+  ]
+}

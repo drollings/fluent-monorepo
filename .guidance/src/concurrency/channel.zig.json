@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " channel.zig — Bounded, mutex-backed MPMC channel (M13).\n\n ## Design choice: mutex-backed, not lock-free\n\n Lock-free queues are subtle (ABA problems, ordering requirements) and only\n outperform mutex queues under sustained high-frequency contention with many\n producers.  Channel operations here happen at work-unit granularity\n (milliseconds per item).  A mutex-protected ring buffer with `Condition`\n signals is correct by inspection, blocks properly (no spin), and is fast\n enough by a large margin.\n\n ## Ownership\n\n `Channel(T).init()` heap-allocates the channel and its buffer.  Call\n `deinit()` when done.  If `T` contains heap-allocated data, the caller is\n responsible for freeing items — same contract as `ArrayList`.\n\n ## Close semantics (matching Go)\n\n - After `close()`: `send` returns `error.ChannelClosed`.\n - After `close()`: `recv` returns remaining buffered items, then null.\n - Closing an already-closed channel is safe (idempotent).",
-  "used_by": ["src/concurrency/root.zig"],
+  "used_by": ["src/concurrency/channel_tests.zig", "src/concurrency/root.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -96,12 +96,6 @@
       "name": "Channel: blocking send unblocks when receiver consumes",
       "is_pub": false,
       "line": 328
-    },
-    {
-      "type": "test_decl",
-      "name": "Channel: GPA no leaks",
-      "is_pub": false,
-      "line": 346
     }
   ]
 }

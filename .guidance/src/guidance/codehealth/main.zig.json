@@ -4,7 +4,8 @@
     "source": "src/guidance/codehealth/main.zig",
     "language": "zig"
   },
-  "comment": " codehealth — detect unused modules, redundant code, and dead code candidates.\n\n Usage:\n   guidance codehealth [options]\n\n Phase 1: Module-level detection (zero-importer files).\n Phase 2a: Redundancy detection via SimHash Hamming distance.\n Phase 2b: Symbol-level call graph analysis (--extract-calls).\n\n This command is expensive and meant for periodic audits, not the RALPH loop.",
+  "comment": " codehealth — detect unused modules, redundant code, and dead code candidates.\n\n Usage:\n   guidance codehealth [options]\n\n Phase 0:  Orphaned file detection (files not imported anywhere).\n Phase 1:  Module-level detection (zero-importer files from DB).\n Phase 1.5: build.zig validation (references to missing files).\n Phase 2a: Redundancy detection via SimHash Hamming distance.\n Phase 2b: Symbol-level call graph analysis (--extract-calls).\n Phase 2:  Test organisation enforcement.\n\n This command is expensive and meant for periodic audits, not the RALPH loop.",
+  "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -12,7 +13,7 @@
       "match_hash": "daa03c575917fc654b2b0258afa88fa80a092cf23a1a4b9567dd56e478d3acb7",
       "signature": "keyword_struct RedundantPair { ... }",
       "is_pub": true,
-      "line": 32
+      "line": 39
     },
     {
       "type": "enum",
@@ -25,30 +26,50 @@
           "type": "enum_field",
           "name": "ai",
           "is_pub": false,
-          "line": 45
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "human",
           "is_pub": false,
-          "line": 45
+          "line": 52
         }
     ,    {
           "type": "enum_field",
           "name": "json",
           "is_pub": false,
-          "line": 45
+          "line": 52
         }
       ],
-      "line": 45
+      "line": 52
+    },
+    {
+      "type": "struct",
+      "name": "PhaseSet",
+      "match_hash": "14eecaa527b0272dfdbb161c0bfcbbbe7a7197b34d3c5f48e5cfac5307877a80",
+      "signature": "keyword_struct PhaseSet { ... }",
+      "is_pub": true,
+      "line": 56
     },
     {
       "type": "struct",
       "name": "CodehealthArgs",
-      "match_hash": "9f542d172e81a5d8bf696044f05031819ce8e955ef9e2b7c5f2ac0206223aa67",
+      "match_hash": "22b6da1d7732373313cea2d1ffa6ec71cb42855d28da5a8013cfe0af1e9f9792",
       "signature": "keyword_struct CodehealthArgs { ... }",
       "is_pub": true,
-      "line": 48
+      "line": 65
+    },
+    {
+      "type": "fn_private",
+      "name": "parsePhases",
+      "match_hash": "83a170495b8449f5476e2e23d852a8987303d7ef2c39b26e823800f1afd97184",
+      "signature": "fn parsePhases(spec: []const u8) -> PhaseSet",
+      "params": [
+        { "name": "spec", "type": "[]const u8" }
+      ],
+      "returns": "PhaseSet",
+      "is_pub": false,
+      "line": 83
     },
     {
       "type": "fn_private",
@@ -60,7 +81,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 69
+      "line": 115
     },
     {
       "type": "fn_decl",
@@ -74,7 +95,7 @@
       ],
       "returns": "[]RedundantPair",
       "is_pub": true,
-      "line": 79
+      "line": 125
     },
     {
       "type": "fn_private",
@@ -87,7 +108,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 140
+      "line": 186
     },
     {
       "type": "struct",
@@ -95,7 +116,7 @@
       "match_hash": "1e39a2cb58d0461dc20026b633840a077875ec0d71bf1647e450549b1b28d2b2",
       "signature": "keyword_struct UnusedSymbol { ... }",
       "is_pub": true,
-      "line": 154
+      "line": 200
     },
     {
       "type": "struct",
@@ -103,7 +124,7 @@
       "match_hash": "b8ed45d3b4644cdb6dc544653c20f8149d89e107370c2c6dd808dcca876630ae",
       "signature": "keyword_struct TestOnlySymbol { ... }",
       "is_pub": true,
-      "line": 163
+      "line": 209
     },
     {
       "type": "fn_decl",
@@ -116,7 +137,7 @@
       ],
       "returns": "[]UnusedSymbol",
       "is_pub": true,
-      "line": 174
+      "line": 220
     },
     {
       "type": "fn_private",
@@ -128,51 +149,60 @@
       ],
       "returns": "u32",
       "is_pub": false,
-      "line": 189
+      "line": 235
     },
     {
       "type": "fn_private",
       "name": "writeAiOutput",
-      "match_hash": "33d92d732fa757e3de91b7c1190e1d309c28e9418b585362b33477f9d1f47d41",
-      "signature": "fn writeAiOutput(w: *std.Io.Writer, unused: []const UnusedModule, pairs: []const RedundantPair, min_age_days: u32) -> void",
+      "match_hash": "c0a88189c3c99479ea6e9534b8910fb3639389cf21d8ceae4acc1514fa650a65",
+      "signature": "fn writeAiOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly, min_age_days: u32) -> void",
       "params": [
         { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
         { "name": "unused", "type": "[]const UnusedModule" },
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
         { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" },
         { "name": "min_age_days", "type": "u32" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 197
+      "line": 243
     },
     {
       "type": "fn_private",
       "name": "writeHumanOutput",
-      "match_hash": "8404916880191e8ffca2bf2022346a7a072d50a09611e0a1e0bdbaeaac6aab57",
-      "signature": "fn writeHumanOutput(w: *std.Io.Writer, unused: []const UnusedModule, pairs: []const RedundantPair, min_age_days: u32) -> void",
+      "match_hash": "b349e68280a34bae2ef99136e94d1afa28748808ccc81b88bda57b5ed5d3ff34",
+      "signature": "fn writeHumanOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly, min_age_days: u32) -> void",
       "params": [
         { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
         { "name": "unused", "type": "[]const UnusedModule" },
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
         { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" },
         { "name": "min_age_days", "type": "u32" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 263
+      "line": 350
     },
     {
       "type": "fn_private",
       "name": "writeJsonOutput",
-      "match_hash": "9219a081bb410fb5aa852e9c0bd0960358bd678ccd17108d98e487cec720356d",
-      "signature": "fn writeJsonOutput(w: *std.Io.Writer, unused: []const UnusedModule, pairs: []const RedundantPair) -> void",
+      "match_hash": "ede23d57ba5b9dee84d0b31c3653daedf9533ee2fb6cead6e031b12f8794eeef",
+      "signature": "fn writeJsonOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly) -> void",
       "params": [
         { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
         { "name": "unused", "type": "[]const UnusedModule" },
-        { "name": "pairs", "type": "[]const RedundantPair" }
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
+        { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" }
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 288
+      "line": 389
     },
     {
       "type": "fn_decl",
@@ -185,7 +215,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 315
+      "line": 430
     },
     {
       "type": "fn_private",
@@ -199,55 +229,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 404
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: parseCodehealthDirective re-export — ignore",
-      "is_pub": false,
-      "line": 420
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: parseCodehealthDirective re-export — milestone",
-      "is_pub": false,
-      "line": 425
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: parseCodehealthDirective re-export — deprecated",
-      "is_pub": false,
-      "line": 430
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: parseCodehealthDirective no directive returns null",
-      "is_pub": false,
-      "line": 435
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: SimHash Hamming distance",
-      "is_pub": false,
-      "line": 440
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: findRedundantPairs empty DB returns empty slice",
-      "is_pub": false,
-      "line": 457
-    },
-    {
-      "type": "test_decl",
-      "name": "codehealth: findUnusedModules empty DB returns empty slice",
-      "is_pub": false,
-      "line": 477
+      "line": 599
     },
     {
       "type": "test_decl",
       "name": "codehealth: isGenericName recognises common names",
       "is_pub": false,
-      "line": 500
+      "line": 615
     }
   ]
 }

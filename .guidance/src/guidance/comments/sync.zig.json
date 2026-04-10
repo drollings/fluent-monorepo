@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " comment_sync.zig — Source-code-first comment sync workflow for guidance.\n\n Implements the `guidance sync-comments` subcommand and the\n `--sync-comments` flag for `guidance gen`.",
-  "capabilities": ["sync-pipeline"],
-  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/comments/sync_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -252,36 +251,6 @@
       "returns": "void",
       "is_pub": true,
       "line": 643
-    },
-    {
-      "type": "test_decl",
-      "name": "sortMembersByLineDesc - ordering",
-      "is_pub": false,
-      "line": 723
-    },
-    {
-      "type": "test_decl",
-      "name": "processFile_insertsCommentForMissingFn - plumbing with no enhancer",
-      "is_pub": false,
-      "line": 738
-    },
-    {
-      "type": "test_decl",
-      "name": "processFile_skipsUpToDate - incremental mode",
-      "is_pub": false,
-      "line": 775
-    },
-    {
-      "type": "test_decl",
-      "name": "processFile_bottomUpOrder - higher line processed first",
-      "is_pub": false,
-      "line": 813
-    },
-    {
-      "type": "test_decl",
-      "name": "processFile_skipsPrivateFns - no comment for private fn",
-      "is_pub": false,
-      "line": 845
     }
   ]
 }

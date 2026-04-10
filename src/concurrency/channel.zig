@@ -342,13 +342,3 @@ test "Channel: blocking send unblocks when receiver consumes" {
     try ch.send(2); // blocks until receiver drains slot 1
     thread.join();
 }
-
-test "Channel: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer if (gpa.deinit() == .leak) @panic("memory leak");
-
-    const ch = try Channel(i32).init(gpa.allocator(), 4);
-    try ch.send(1);
-    _ = ch.recv();
-    ch.deinit();
-}

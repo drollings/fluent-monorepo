@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " Triage subcommand: generate TRIAGE.md from a TODO.md work item.\n\n Mirrors Python's cmd_triage() in guidance.py.\n Given .guidance/.todo/<item>/TODO.md, produces a TRIAGE.md with:\n   - Affected files (detected by regex + backtick paths)",
+  "used_by": ["src/guidance/triage_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -57,36 +58,6 @@
       "returns": "bool",
       "is_pub": false,
       "line": 134
-    },
-    {
-      "type": "test_decl",
-      "name": "assessRisk high for delete",
-      "is_pub": false,
-      "line": 146
-    },
-    {
-      "type": "test_decl",
-      "name": "assessRisk medium for refactor",
-      "is_pub": false,
-      "line": 151
-    },
-    {
-      "type": "test_decl",
-      "name": "assessRisk medium for wide scope",
-      "is_pub": false,
-      "line": 156
-    },
-    {
-      "type": "test_decl",
-      "name": "assessRisk low for simple change",
-      "is_pub": false,
-      "line": 161
-    },
-    {
-      "type": "test_decl",
-      "name": "findAffectedFiles detects backtick paths",
-      "is_pub": false,
-      "line": 166
     }
   ]
 }

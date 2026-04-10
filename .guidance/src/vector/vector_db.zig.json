@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " guidance SQLite vector search database (cosine similarity via BLOB storage).\n\n Produces `.guidance.db` — a SQLite database with vector embeddings for\n semantic (cosine similarity) search, powering the `explain` subcommand.\n\n Public API:\n   pub fn syncDatabase(allocator, guidance_dir, db_path, embedder) !void\n   pub fn openDb(allocator, db_path, embedder) !GuidanceDb\n   pub fn loadSemanticAliases(allocator, path) !?SemanticAliases\n\n Schema (version 1):\n   schema_version   — single-row version table\n   ast_nodes        — relational table with metadata + embedding BLOB\n   embedding_cache  — content-hash → embedding blob (avoids redundant API calls)\n\n Search modes:\n   vectorSearch    — cosine similarity over stored embeddings (semantic)\n   keywordSearch   — SQL LIKE on name / comment / module / signature\n   search          — hybrid: vector + keyword, fused by weighted score",
-  "capabilities": ["vector-search", "sync-pipeline", "explain-query"],
-  "used_by": ["src/vector/root.zig"],
+  "used_by": ["src/vector/root.zig", "src/vector/vector_db_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -1497,72 +1496,6 @@
       "line": 4398
     },
     {
-      "type": "test_decl",
-      "name": "GuidanceDb init and schema",
-      "is_pub": false,
-      "line": 4414
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceDb index and keyword search round-trip",
-      "is_pub": false,
-      "line": 4438
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceDb search falls back to keyword when noop embedder",
-      "is_pub": false,
-      "line": 4488
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceDb skips unchanged files",
-      "is_pub": false,
-      "line": 4529
-    },
-    {
-      "type": "test_decl",
-      "name": "buildEmbeddingText descriptor-bag format",
-      "is_pub": false,
-      "line": 4577
-    },
-    {
-      "type": "test_decl",
-      "name": "buildEmbeddingText module row",
-      "is_pub": false,
-      "line": 4604
-    },
-    {
-      "type": "test_decl",
-      "name": "moduleToProse strips src prefix and limits depth",
-      "is_pub": false,
-      "line": 4620
-    },
-    {
-      "type": "test_decl",
-      "name": "extractParamNames strips types",
-      "is_pub": false,
-      "line": 4628
-    },
-    {
-      "type": "test_decl",
-      "name": "DbSyncBuilder defaults: cache_limit=0, no capabilities, no aliases",
-      "is_pub": false,
-      "line": 4643
-    },
-    {
-      "type": "test_decl",
-      "name": "DbSyncBuilder fluent setters return updated values",
-      "is_pub": false,
-      "line": 4661
-    },
-    {
-      "type": "test_decl",
-      "name": "DbSyncBuilder: each setter produces an independent copy (immutable chain)",
-      "is_pub": false,
-      "line": 4681
-    },
-    {
       "type": "fn_decl",
       "name": "parseCodehealthDirective",
       "match_hash": "6dfa9dffbe21c32bda7177e2324e1f76a099c50512237cd15683dc1f5d52ad5b",
@@ -1572,37 +1505,7 @@
       ],
       "returns": "?CodehealthDirective",
       "is_pub": true,
-      "line": 4715
-    },
-    {
-      "type": "test_decl",
-      "name": "parseCodehealthDirective: ignore",
-      "is_pub": false,
-      "line": 4737
-    },
-    {
-      "type": "test_decl",
-      "name": "parseCodehealthDirective: milestone",
-      "is_pub": false,
-      "line": 4742
-    },
-    {
-      "type": "test_decl",
-      "name": "parseCodehealthDirective: deprecated",
-      "is_pub": false,
-      "line": 4747
-    },
-    {
-      "type": "test_decl",
-      "name": "parseCodehealthDirective: no directive returns null",
-      "is_pub": false,
-      "line": 4752
-    },
-    {
-      "type": "test_decl",
-      "name": "parseCodehealthDirective: multiline comment extracts first line only",
-      "is_pub": false,
-      "line": 4757
+      "line": 4435
     }
   ]
 }

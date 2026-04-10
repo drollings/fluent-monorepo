@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " wrapper.zig — Conditional and composable comptime wrappers (M9).\n\n ## Design\n\n Zig's type system does not allow creating a wrapper function that perfectly\n preserves an arbitrary function's parameter types (generic functions cannot be\n cast to concrete function types).  This module therefore provides two styles:\n\n ### 1. Call helpers (recommended for most cases)\n\n Instead of wrapping a function once and getting a new function of the same type,\n call helpers wrap a *call site*:\n\n   // Instead of:        const result = try func(arg1, arg2);\n   // Write:             const result = try retryCall(3, func, .{arg1, arg2});\n\n Call helpers compose naturally:\n\n   const result = try loggedCall(\"op\", func, .{arg1, arg2});\n   // (loggedCall is in src/common/logging.zig)\n\n ### 2. Conditional identity wrappers (wrapIf)\n\n `wrapIf` selects between two comptime-known functions of the *same* type.\n Useful for eliding debug-only functions from release builds:\n\n   const handler = wrapIf(std.debug.runtime_safety, debugVersion, releaseVersion);\n\n ### Wrapper composition order\n\n When multiple call helpers are composed, apply in this order so each layer\n sees the full effect of those below it:\n\n   1. Rate limiting  — reject early if overloaded\n   2. Auth           — reject early if unauthorized\n   3. Tracing        — start span / context\n   4. Timing         — measure full duration  (see callLogged in logging.zig)\n   5. Retry          — retry on transient failure  (see retryCall below)\n   6. Validation     — validate input before processing\n   7. Core handler\n\n Correct:   rateLimit → auth → trace → time → retry → validate → handler\n Incorrect: time → auth → rateLimit  (timing measures auth+rate-limit overhead)",
-  "used_by": ["src/common/root.zig"],
+  "used_by": ["src/common/root.zig", "src/common/wrapper_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -76,12 +76,6 @@
       "name": "Pipeline: .retry wraps with retry logic",
       "is_pub": false,
       "line": 215
-    },
-    {
-      "type": "test_decl",
-      "name": "wrapIf: build-mode selection compiles correctly",
-      "is_pub": false,
-      "line": 230
     }
   ]
 }

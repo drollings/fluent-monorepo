@@ -8,6 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "used_by": ["src/testing/mock_vtable_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -290,12 +291,6 @@
       "name": "MockEmbeddingProvider: name and dimensions",
       "is_pub": false,
       "line": 305
-    },
-    {
-      "type": "test_decl",
-      "name": "MockEmbeddingProvider: GPA no leaks",
-      "is_pub": false,
-      "line": 314
     }
   ]
 }

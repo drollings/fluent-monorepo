@@ -34,7 +34,3 @@ pub const stripPreamble = llm_mod.stripPreamble;
 pub const isBlankOrPlausible = llm_mod.isBlankOrPlausible;
 
 // ── Tests ────────────────────────────────────────────────────────────────────
-
-test {
-    _ = @import("llm.zig");
-}

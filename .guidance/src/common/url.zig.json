@@ -4,7 +4,7 @@
     "source": "src/common/url.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/embeddings.zig", "src/common/root.zig"],
+  "used_by": ["src/common/embeddings.zig", "src/common/root.zig", "src/common/url_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -53,90 +53,6 @@
       "returns": "void",
       "is_pub": true,
       "line": 69
-    },
-    {
-      "type": "test_decl",
-      "name": "isLocalHost recognises loopback aliases",
-      "is_pub": false,
-      "line": 90
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp accepts https",
-      "is_pub": false,
-      "line": 99
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp accepts local http",
-      "is_pub": false,
-      "line": 103
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp rejects empty",
-      "is_pub": false,
-      "line": 108
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp rejects bare hostname",
-      "is_pub": false,
-      "line": 112
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp rejects remote http",
-      "is_pub": false,
-      "line": 116
-    },
-    {
-      "type": "test_decl",
-      "name": "isPrivateIp detects private ranges",
-      "is_pub": false,
-      "line": 120
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via http",
-      "is_pub": false,
-      "line": 135
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp blocks AWS metadata endpoint via https",
-      "is_pub": false,
-      "line": 144
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp blocks private class A via http",
-      "is_pub": false,
-      "line": 151
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp blocks private class A via https",
-      "is_pub": false,
-      "line": 159
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp blocks private class C via https",
-      "is_pub": false,
-      "line": 166
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp allows localhost http",
-      "is_pub": false,
-      "line": 173
-    },
-    {
-      "type": "test_decl",
-      "name": "validateHttpsOrLocalHttp allows public https",
-      "is_pub": false,
-      "line": 178
     }
   ]
 }

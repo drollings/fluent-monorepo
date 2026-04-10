@@ -121,34 +121,48 @@ Then you you must read
 │   ├── common
 │   │   ├── args.zig
 │   │   ├── builder_error.zig                     # builder_error.zig — Structured error type for fluent builder chains.
+│   │   ├── builder_error_tests.zig               # Tests for builder_error.zig.
 │   │   ├── cli.zig
 │   │   ├── constants.zig                         # constants.zig — Shared resource-limit constants
 │   │   ├── content_node.zig                      # content_node.zig — ContentNode: LOD text pyramid backed by SharedString
 │   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                        # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
+│   │   ├── embeddings_tests.zig                  # Tests for embeddings.zig.
 │   │   ├── error_context.zig                     # error_context.zig — Structured error context for non-builder code paths.
 │   │   ├── format.zig
 │   │   ├── hash.zig                              # hash.zig — Generic cryptographic hashing utilities
+│   │   ├── hash_tests.zig                        # Tests for hash.zig.
 │   │   ├── interner.zig                          # interner.zig — String interning with optional bitset support.
 │   │   ├── io.zig                                # io.zig — Shared buffered I/O helpers
+│   │   ├── io_tests.zig                          # Tests for io.zig.
 │   │   ├── json.zig                              # json.zig — Generic JSON serialization helpers
+│   │   ├── json_tests.zig                        # Tests for json.zig.
 │   │   ├── log.zig                               # Global logger with console + file output.
 │   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
+│   │   ├── logging_tests.zig                     # Tests for logging.zig.
 │   │   ├── metrics.zig                           # metrics.zig — Generic latency histogram primitive (M8.1)
 │   │   ├── pattern.zig                           # pattern.zig — Design pattern detection heuristics for Zig source code
+│   │   ├── pattern_tests.zig                     # Tests for pattern.zig.
 │   │   ├── refcount.zig                          # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── root.zig                              # common — Module umbrella root.
 │   │   ├── shell.zig                             # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                      # shell_parser.zig — Safe command-string tokenizer
+│   │   ├── shell_parser_tests.zig                # Tests for shell_parser.zig.
+│   │   ├── shell_tests.zig                       # Tests for shell.zig.
 │   │   ├── source.zig                            # source.zig — Source code excerpt extraction helpers
+│   │   ├── source_tests.zig                      # Tests for source.zig.
 │   │   ├── string.zig                            # string.zig — Generic string classification and inspection helpers
+│   │   ├── string_tests.zig                      # Tests for string.zig.
 │   │   ├── terminal.zig
 │   │   ├── types.zig                             # Number of LOD (Level of Detail) text slots per content node.
 │   │   ├── url.zig                               # url.zig — Generic URL validation helpers
-│   │   └── wrapper.zig                           # wrapper.zig — Conditional and composable comptime wrappers (M9).
+│   │   ├── url_tests.zig                         # Tests for url.zig.
+│   │   ├── wrapper.zig                           # wrapper.zig — Conditional and composable comptime wrappers (M9).
+│   │   └── wrapper_tests.zig                     # Tests for wrapper.zig.
 │   ├── concurrency
 │   │   ├── any_work_unit.zig                     # any_work_unit.zig — Type-erased work unit and typed wrapper (M11).
 │   │   ├── channel.zig                           # channel.zig — Bounded, mutex-backed MPMC channel (M13).
+│   │   ├── channel_tests.zig                     # Tests for channel.zig.
 │   │   ├── context.zig                           # [domain-patterns]  context.zig — Cancellation and deadline propagation (M11).
 │   │   ├── error_group.zig                       # error_group.zig — Structured parallel dispatch with error capture (M14).
 │   │   ├── root.zig                              # concurrency/root.zig — Public API re-exports for the concurrency layer.
@@ -184,6 +198,7 @@ Then you you must read
 │   │   ├── http_transport.zig                    # http_transport.zig — M4.1/M4.2 HTTP Transport Layer with SSE
 │   │   ├── http_transport_test.zig               # http_transport_test.zig — Unit tests for HTTP transport layer
 │   │   ├── main.zig
+│   │   ├── main_tests.zig                        # Tests for main.zig.
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
 │   │   ├── root.zig                              # coral/root.zig — Public API re-exports for the coral module.
@@ -206,58 +221,91 @@ Then you you must read
 │   │   └── target.zig
 │   ├── guidance
 │   │   ├── codehealth
+│   │   │   ├── build_validation.zig            # build_validation.zig — Phase 1.5: build.zig consistency validation.
+│   │   │   ├── build_validation_tests.zig      # Tests for build_validation.zig.
 │   │   │   ├── extractor.zig                   # call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.
-│   │   │   └── main.zig                        # codehealth — detect unused modules, redundant code, and dead code candidates.
+│   │   │   ├── extractor_tests.zig             # Tests for extractor.zig.
+│   │   │   ├── main.zig                        # codehealth — detect unused modules, redundant code, and dead code candidates.
+│   │   │   ├── main_tests.zig                  # Tests for main.zig.
+│   │   │   ├── orphan.zig                      # orphan.zig — Phase 0: Orphaned source file detection for `guidance codehealth`.
+│   │   │   ├── orphan_tests.zig                # Tests for orphan.zig.
+│   │   │   ├── test_audit.zig                  # test_audit.zig — Phase 2: Test file convention enforcement.
+│   │   │   ├── test_audit_tests.zig            # Tests for test_audit.zig.
+│   │   │   ├── test_mover.zig                  # test_mover.zig — Move inline tests from source .zig files to <name>_tests.zig.
+│   │   │   └── test_mover_tests.zig            # Tests for test_mover.zig.
 │   │   ├── comments
 │   │   │   ├── core.zig                        # comments/core.zig — Merged doc comment processing for guidance.
+│   │   │   ├── core_tests.zig                  # Tests for core.zig.
 │   │   │   ├── header.zig                      # header_generator.zig — File header comment generation for guidance.
+│   │   │   ├── header_tests.zig                # Tests for header.zig.
 │   │   │   ├── inserter.zig                    # comment_inserter.zig — Insert and replace doc comments in Zig source files.
-│   │   │   └── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
+│   │   │   ├── inserter_tests.zig              # Tests for inserter.zig.
+│   │   │   ├── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
+│   │   │   └── sync_tests.zig                  # Tests for sync.zig.
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
-│   │   │   └── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
+│   │   │   ├── markdown_plugin_tests.zig       # Tests for markdown_plugin.zig.
+│   │   │   ├── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
+│   │   │   └── zig_plugin_tests.zig            # Tests for zig_plugin.zig.
 │   │   ├── query
 │   │   │   ├── identifier.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
 │   │   │   ├── llm_filter.zig                  # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │   │   │   ├── llm_filter_batch.zig            # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
 │   │   │   ├── strategy.zig                    # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
+│   │   │   ├── strategy_tests.zig              # Tests for strategy.zig.
 │   │   │   └── synthesize.zig                  # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │   │   ├── sync
 │   │   │   ├── json_store.zig                  # JSON store for guidance sync — reads/writes .guidance/src/**/*.json files.
 │   │   │   ├── json_writer.zig                 # sync/json_writer.zig — JSON serialization for guidance documents.
 │   │   │   ├── line_verify.zig                 # line_verify.zig — Declaration-level line number verification for guidance.
-│   │   │   └── marker.zig                      # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   │   ├── line_verify_tests.zig           # Tests for line_verify.zig.
+│   │   │   ├── marker.zig                      # Mtime-based change detection for guidance's incremental RALPH loop.
+│   │   │   └── marker_tests.zig                # Tests for marker.zig.
 │   │   ├── agents_md.zig                         # AGENTS.md content generator for guidance init.
 │   │   ├── ast_parser.zig                        # AST parser for Zig source files — extracts declarations and comments.
 │   │   ├── codebase_map.zig                      # codebase_map.zig — Structural discovery layer for `guidance explain`.
 │   │   ├── config.zig                            # [gof-patterns]  guidance project configuration loader.
 │   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
+│   │   ├── doc_parser_tests.zig                  # Tests for doc_parser.zig.
 │   │   ├── document_indexer.zig                  # [gof-patterns]  document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
+│   │   ├── document_indexer_tests.zig            # Tests for document_indexer.zig.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
+│   │   ├── enhancer_tests.zig                    # Tests for enhancer.zig.
 │   │   ├── git.zig                               # Gitignore-aware file filtering for guidance scanner.
+│   │   ├── git_tests.zig                         # Tests for git.zig.
 │   │   ├── hash.zig                              # Hash utilities for guidance — computes stable hashes for API signatures and struct members.
+│   │   ├── hash_tests.zig                        # Tests for hash.zig.
 │   │   ├── infer_capabilities.zig                # infer_capabilities.zig — M4: InferCapabilities — Capability Discovery Without CAPABILITY.md
 │   │   ├── main.zig                              # guidance — AST-guided SQLite vector search database generator.
 │   │   ├── mcp.zig                               # mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).
 │   │   ├── pattern.zig                           # Pattern detection for Zig AST nodes — detects GoF and domain patterns.
 │   │   ├── plugin.zig                            # LanguagePlugin — interface for language-specific AST providers.
 │   │   ├── plugin_registry.zig                   # PluginRegistry — maps file extensions to LanguagePlugin descriptors.
+│   │   ├── plugin_registry_tests.zig             # Tests for plugin_registry.zig.
+│   │   ├── plugin_tests.zig                      # Tests for plugin.zig.
 │   │   ├── provider_discovery.zig                # External language provider discovery for guidance.
+│   │   ├── provider_discovery_tests.zig          # Tests for provider_discovery.zig.
 │   │   ├── query_engine.zig                      # [gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.
 │   │   ├── ralph.zig                             # [domain-patterns]  ralph.zig — RALPH Loop: Read → Ask → Learn → Plan → Help
+│   │   ├── ralph_tests.zig                       # Tests for ralph.zig.
 │   │   ├── scanner.zig                           # scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis
+│   │   ├── scanner_tests.zig                     # Tests for scanner.zig.
 │   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
 │   │   ├── skeleton.zig                          # skeleton.zig — File and struct skeleton extraction for token-efficient discovery.
 │   │   ├── stage_builder.zig                     # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
+│   │   ├── stage_builder_tests.zig               # Tests for stage_builder.zig.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
+│   │   ├── staged_tests.zig                      # Tests for staged.zig.
 │   │   ├── structure.zig                         # STRUCTURE.md generator.
 │   │   ├── sync.zig                              # Sync engine for guidance — processes source files and generates JSON metadata.
 │   │   ├── sync_engine.zig                       # sync_engine.zig — init, commit, gen, status, clean, pipeline, and utility commands.
 │   │   ├── tests.zig                             # [gof-patterns]  Unit tests for src/guidance — json_store merge logic, sync, config, and commit helpers.
 │   │   ├── todo.zig                              # todo.zig — Work item lifecycle tracking for guidance.
+│   │   ├── todo_tests.zig                        # Tests for todo.zig.
 │   │   ├── triage.zig                            # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
+│   │   ├── triage_tests.zig                      # Tests for triage.zig.
 │   │   ├── types.zig                             # Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
-│   │   └── vector_db.zig                         # vector_db.zig — Hybrid keyword + vector search for guidance generation.
+│   │   └── types_tests.zig                       # Tests for types.zig.
 │   ├── guidance-cpp
 │   │   └── main.cpp                              # guidance-cpp: C++ AST provider for the guidance system
 │   ├── guidance-rs
@@ -269,7 +317,9 @@ Then you you must read
 │   │   ├── context_packer.zig                    # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
 │   │   ├── llm.zig                               # llm.zig — LLM client, response post-processing, and task decomposition.
 │   │   ├── root.zig                              # llm — General-purpose LLM inference client.
-│   │   └── token_budget.zig                      # token_budget.zig — Token Estimation (shared between guidance and coral).
+│   │   ├── root_tests.zig                        # Tests for root.zig.
+│   │   ├── token_budget.zig                      # token_budget.zig — Token Estimation (shared between guidance and coral).
+│   │   └── token_budget_tests.zig                # Tests for token_budget.zig.
 │   ├── ontology
 │   │   ├── inference.zig                         # inference.zig — Ontology Inference Engine (R5)
 │   │   ├── mapper.zig                            # mapper.zig — Triple → ContextNode Mapper
@@ -278,6 +328,7 @@ Then you you must read
 │   │   └── yago.zig                              # yago.zig — YAGO 4.5 Ontology Schema Definition
 │   ├── rdf
 │   │   ├── lexer.zig                             # lexer.zig — Streaming Turtle (Terse RDF Triple Language) Lexer
+│   │   ├── lexer_tests.zig                       # Tests for lexer.zig.
 │   │   ├── normalize.zig                         # normalize.zig — RDF Term Normalization
 │   │   ├── nquads.zig                            # nquads.zig — N-Quads / N-Triples Parser (line-based, no prefix expansion)
 │   │   ├── parser.zig                            # parser.zig — Streaming Recursive-Descent Turtle Parser
@@ -290,19 +341,26 @@ Then you you must read
 │   │   ├── permissions.zig                       # permissions.zig — Role-based permission system for Coral Context reflection.
 │   │   ├── root.zig                              # reflection — Coral Context field-level reflection, validation, and permission layer.
 │   │   ├── schema_version.zig                    # schema_version.zig — Versioning primitives for the reflection schema.
+│   │   ├── schema_version_tests.zig              # Tests for schema_version.zig.
 │   │   ├── sql.zig                               # sql.zig — Schema-driven SQLite binding and hydration.
+│   │   ├── sql_tests.zig                         # Tests for sql.zig.
 │   │   ├── typed.zig                             # typed.zig — TypedAccessorTable(T) and TypedEditable.
-│   │   └── validate.zig                          # validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).
+│   │   ├── validate.zig                          # validate.zig — Runtime validation pipeline for FieldMeta constraints (M6).
+│   │   └── validate_tests.zig                    # Tests for validate.zig.
 │   ├── testing
-│   │   └── mock_vtable.zig                       # [gof-patterns]  mock_vtable.zig — Mock implementations of VTable interfaces for testing.
+│   │   ├── mock_vtable.zig                       # [gof-patterns]  mock_vtable.zig — Mock implementations of VTable interfaces for testing.
+│   │   └── mock_vtable_tests.zig                 # Tests for mock_vtable.zig.
 │   ├── vector
 │   │   ├── hnsw.zig                              # hnsw.zig — M5.1 HNSW (Hierarchical Navigable Small World) Index
 │   │   ├── math.zig                              # Vector operations — cosine similarity, normalization, hybrid merge.
+│   │   ├── math_tests.zig                        # Tests for math.zig.
 │   │   ├── quantized_embedding.zig               # quantized_embedding.zig — int8 Quantized Embeddings for Memory Efficiency
 │   │   ├── root.zig                              # guidance vector module — cosine search, embeddings, hybrid merge.
 │   │   ├── simhash.zig                           # simhash.zig — Locality-sensitive hashing for embeddings and tokens.
 │   │   ├── simhash_projections.zig               # simhash_projections.zig — auto-generated by bin/gen_simhash_projections.py
-│   │   └── vector_db.zig                         # guidance SQLite vector search database (cosine similarity via BLOB storage).
+│   │   ├── simhash_tests.zig                     # Tests for simhash.zig.
+│   │   ├── vector_db.zig                         # guidance SQLite vector search database (cosine similarity via BLOB storage).
+│   │   └── vector_db_tests.zig                   # Tests for vector_db.zig.
 │   └── wasm
 │       ├── execution_request.zig                   # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
 │       ├── root.zig                                # wasm — WebAssembly Sandboxing (Extism)

@@ -4,8 +4,7 @@
     "source": "src/llm/token_budget.zig",
     "language": "zig"
   },
-  "capabilities": ["llm-client"],
-  "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig"],
+  "used_by": ["src/coral/main_tests.zig", "src/coral/root.zig", "src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig", "src/llm/token_budget_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -171,27 +170,21 @@
     },
     {
       "type": "test_decl",
-      "name": "ProportionalBudget: validate passes on correct fractions",
+      "name": "ProportionalBudget: validate fails when fractions don't sum to 1.0",
       "is_pub": false,
       "line": 136
     },
     {
       "type": "test_decl",
-      "name": "ProportionalBudget: validate fails when fractions don't sum to 1.0",
-      "is_pub": false,
-      "line": 141
-    },
-    {
-      "type": "test_decl",
       "name": "ProportionalBudget: token allocation sums approximately to total",
       "is_pub": false,
-      "line": 151
+      "line": 146
     },
     {
       "type": "test_decl",
       "name": "ProportionalBudget: community 15%, text 50%, entity 35% of 8000",
       "is_pub": false,
-      "line": 159
+      "line": 154
     }
   ]
 }

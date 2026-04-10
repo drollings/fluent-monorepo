@@ -66,7 +66,7 @@ The hybrid search combines:
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (7 files, auto-discovered)
+## Sources (8 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -76,5 +76,6 @@ The hybrid search combines:
 | `src/guidance/mcp.zig` | 0.9 | used_by |
 | `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/guidance/scanner.zig` | 0.9 | used_by |
+| `src/guidance/staged_tests.zig` | 0.9 | used_by |
 | `src/vector/vector_db.zig` | 0.7 | keyword_overlap |
 

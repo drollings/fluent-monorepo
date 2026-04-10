@@ -8,7 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["coral-database", "ast-indexing"],
+  "used_by": ["src/guidance/stage_builder_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -173,24 +173,6 @@
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 218
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail",
-      "is_pub": false,
-      "line": 254
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceJsonStageBuilder: buildStages produces prose stage from detail",
-      "is_pub": false,
-      "line": 273
-    },
-    {
-      "type": "test_decl",
-      "name": "GuidanceJsonStageBuilder: isRelevant matches source path token",
-      "is_pub": false,
-      "line": 298
     }
   ]
 }

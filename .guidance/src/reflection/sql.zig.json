@@ -4,8 +4,7 @@
     "source": "src/reflection/sql.zig",
     "language": "zig"
   },
-  "capabilities": ["reflection"],
-  "used_by": ["src/reflection/root.zig"],
+  "used_by": ["src/reflection/root.zig", "src/reflection/sql_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -522,12 +521,6 @@
         }
       ],
       "line": 515
-    },
-    {
-      "type": "test_decl",
-      "name": "TableSchema SQL generation",
-      "is_pub": false,
-      "line": 634
     }
   ]
 }

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " header_generator.zig — File header comment generation for guidance.\n\n Generates `//!`-style module doc comments for Zig source files.\n These replace the `detail` field in JSON files as the authoritative\n source of module-level documentation.",
-  "used_by": ["src/guidance/comments/sync.zig"],
+  "used_by": ["src/guidance/comments/header_tests.zig", "src/guidance/comments/sync.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -47,36 +47,6 @@
       "returns": "bool",
       "is_pub": true,
       "line": 87
-    },
-    {
-      "type": "test_decl",
-      "name": "sourceHasModuleDoc - with header",
-      "is_pub": false,
-      "line": 101
-    },
-    {
-      "type": "test_decl",
-      "name": "sourceHasModuleDoc - without header",
-      "is_pub": false,
-      "line": 106
-    },
-    {
-      "type": "test_decl",
-      "name": "generateFileHeader - returns null when header exists",
-      "is_pub": false,
-      "line": 111
-    },
-    {
-      "type": "test_decl",
-      "name": "generateFileHeader - generates header for new file",
-      "is_pub": false,
-      "line": 118
-    },
-    {
-      "type": "test_decl",
-      "name": "insertFileHeader - prepends header",
-      "is_pub": false,
-      "line": 133
     }
   ]
 }
