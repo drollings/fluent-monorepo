@@ -607,6 +607,10 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
             .capability => |cap| allocator.free(cap),
             .file_path => |fp| allocator.free(fp),
             .struct_name => |sn| allocator.free(sn),
+            .disambiguate => |paths| {
+                for (paths) |p| allocator.free(p);
+                allocator.free(paths);
+            },
             .none => {},
         }
     }
@@ -634,6 +638,10 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         },
         .struct_name => |struct_name| {
             try handleStructSkeletonQuery(allocator, struct_name, guidance_dir, query_text);
+            return;
+        },
+        .disambiguate => |paths| {
+            try handleDisambiguationQuery(allocator, paths, query_text);
             return;
         },
         .none => {},
@@ -1961,11 +1969,44 @@ fn handleFileSkeletonQuery(
 
     if (skeleton) |skel| {
         defer allocator.free(skel);
-        try stdout.print("# File: `{s}`\n\n{s}\n", .{ file_path, skel });
-        try stdout.print("\n---\n\nRun `guidance explain \"<function-name>\"` to see specific function documentation.\n", .{});
+
+        const title = try std.fmt.allocPrint(allocator, "File: `{s}`", .{file_path});
+        defer allocator.free(title);
+
+        const output = skeleton_mod.formatSkeletonOutput(allocator, skel, .{
+            .title = title,
+            .source_path = file_path,
+        }) catch |err| {
+            try stdout.print("Error formatting skeleton: {}\n", .{err});
+            return;
+        };
+        defer allocator.free(output);
+
+        try stdout.print("{s}", .{output});
     } else {
         try stdout.print("# File: `{s}`\n\nUnable to generate skeleton. File may not be indexed.\n\nRun `guidance gen` to index this file.\n", .{file_path});
     }
+    try stdout.flush();
+}
+
+/// Handles disambiguation when basename matches multiple files.
+fn handleDisambiguationQuery(
+    allocator: std.mem.Allocator,
+    paths: []const []const u8,
+    query_text: []const u8,
+) !void {
+    _ = allocator;
+    var ws: common.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+
+    try stdout.print("# Multiple files match: `{s}`\n\n", .{query_text});
+    try stdout.print("Found {d} files. Use the full path:\n\n", .{paths.len});
+
+    for (paths) |path| {
+        try stdout.print("  guidance explain \"{s}\"\n", .{path});
+    }
+
     try stdout.flush();
 }
 
@@ -1988,7 +2029,6 @@ fn handleStructSkeletonQuery(
             allocator.free(struct_info.comment);
         }
 
-        // Get actual end line by counting braces in source
         const end_line = blk: {
             const workspace = std.process.getCwdAlloc(allocator) catch break :blk struct_info.line orelse 1;
             defer allocator.free(workspace);
@@ -2002,15 +2042,26 @@ fn handleStructSkeletonQuery(
             break :blk findStructEndLine(src, start);
         };
 
-        // Generate skeleton for signature view (with comments)
         const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
 
         if (skeleton) |skel| {
             defer allocator.free(skel);
-            const start_line = struct_info.line orelse 1;
-            try stdout.print("# Explain: {s}\n\n", .{struct_name});
-            try stdout.print("## Source location: `{s}:{d}-{d}`\n\n", .{ struct_info.source_path, start_line, end_line });
-            try stdout.print("{s}", .{skel});
+
+            const title = try std.fmt.allocPrint(allocator, "Explain: {s}", .{struct_name});
+            defer allocator.free(title);
+
+            const output = skeleton_mod.formatSkeletonOutput(allocator, skel, .{
+                .title = title,
+                .source_path = struct_info.source_path,
+                .start_line = struct_info.line,
+                .end_line = end_line,
+            }) catch |err| {
+                try stdout.print("Error formatting skeleton: {}\n", .{err});
+                return;
+            };
+            defer allocator.free(output);
+
+            try stdout.print("{s}", .{output});
         } else {
             try stdout.print("# Struct: `{s}`\n\nStruct found but skeleton could not be generated.\n", .{struct_name});
         }
@@ -2018,8 +2069,20 @@ fn handleStructSkeletonQuery(
         const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
         if (skeleton) |skel| {
             defer allocator.free(skel);
-            try stdout.print("# Struct: `{s}`\n\n{s}\n", .{ struct_name, skel });
-            try stdout.print("\n---\n\nRun `guidance explain \"<method-name>\"` to see specific method documentation.\n", .{});
+
+            const title = try std.fmt.allocPrint(allocator, "Struct: `{s}`", .{struct_name});
+            defer allocator.free(title);
+
+            const output = skeleton_mod.formatSkeletonOutput(allocator, skel, .{
+                .title = title,
+                .source_path = "unknown",
+            }) catch |err| {
+                try stdout.print("Error formatting skeleton: {}\n", .{err});
+                return;
+            };
+            defer allocator.free(output);
+
+            try stdout.print("{s}", .{output});
         } else {
             try stdout.print("# Struct: `{s}`\n\nStruct not found in indexed files.\n\nRun `guidance gen` to index your source files.\n", .{struct_name});
         }

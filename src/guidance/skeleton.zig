@@ -24,13 +24,29 @@ pub const TierMatch = union(enum) {
     file_path: []const u8,
     /// Query matches a struct/enum name (e.g., "GuidanceDb")
     struct_name: []const u8,
+    /// Query matches multiple files by basename, needs disambiguation
+    disambiguate: []const []const u8,
     /// No tier match, proceed to regular search
     none: void,
 };
 
-/// Checks if a query matches a capability name, file path, or struct name.
+/// Frees the TierMatch union value (caller must free variants with owned data).
+pub fn freeTierMatch(allocator: std.mem.Allocator, tier_match: TierMatch) void {
+    switch (tier_match) {
+        .capability => |cap| allocator.free(cap),
+        .file_path => |fp| allocator.free(fp),
+        .struct_name => |sn| allocator.free(sn),
+        .disambiguate => |paths| {
+            for (paths) |p| allocator.free(p);
+            allocator.free(paths);
+        },
+        .none => {},
+    }
+}
+
+/// Checks if a query matches a capability name, file path, struct name, or needs disambiguation.
 /// Returns the match type and matched string (owned by caller, must free).
-/// Priority: capability > file path > struct name.
+/// Priority: capability > file path/disambiguate > struct name.
 pub fn classifyQuery(
     allocator: std.mem.Allocator,
     query: []const u8,
@@ -46,9 +62,9 @@ pub fn classifyQuery(
         return .{ .capability = cap_name };
     }
 
-    // TIER 2: Check for file path match (src/foo.zig or foo.zig)
-    if (try isFilePathMatch(allocator, trimmed, workspace, guidance_dir)) |file_path| {
-        return .{ .file_path = file_path };
+    // TIER 2: Check for file path match (src/foo.zig) or basename disambiguation
+    if (try resolveFilePath(allocator, trimmed, workspace, guidance_dir)) |result| {
+        return result;
     }
 
     // TIER 3: Check for struct name match (via AST node lookup)
@@ -101,15 +117,16 @@ fn normalizeCapabilityName(allocator: std.mem.Allocator, input: []const u8) erro
     return try buf.toOwnedSlice(allocator);
 }
 
-/// Checks if query matches a file path.
-/// Supports both "src/foo.zig" and "foo.zig" forms.
-fn isFilePathMatch(
+/// Resolves a file path query to either a unique match or disambiguation.
+/// For full paths (e.g., "src/foo.zig"): returns file_path if exists.
+/// For basenames (e.g., "foo.zig"): searches guidance JSON files for matches.
+/// Returns null if query doesn't look like a file path (no extension).
+fn resolveFilePath(
     allocator: std.mem.Allocator,
     query: []const u8,
     workspace: []const u8,
     guidance_dir: []const u8,
-) error{OutOfMemory}!?[]const u8 {
-    // Must look like a file path (contains / or ends with known extension)
+) error{OutOfMemory}!?TierMatch {
     const source_extensions = [_][]const u8{ ".zig", ".py", ".rs", ".go", ".ts", ".js", ".md" };
     const has_path_sep = std.mem.indexOfAny(u8, query, "/\\") != null;
     const has_ext = blk: {
@@ -120,43 +137,76 @@ fn isFilePathMatch(
     };
     if (!has_path_sep and !has_ext) return null;
 
-    // Try as-is first (src/foo.zig)
-    if (try checkFileExists(allocator, query, workspace, guidance_dir)) |path| {
-        return path;
+    // Full path: try to find exact match
+    if (has_path_sep) {
+        if (try checkFileExists(allocator, query, workspace, guidance_dir)) |path| {
+            return .{ .file_path = path };
+        }
+        return null;
     }
 
-    // Try with src/ prefix (foo.zig → src/foo.zig)
-    const with_src = try std.fmt.allocPrint(allocator, "src/{s}", .{query});
-    defer allocator.free(with_src);
-    if (try checkFileExists(allocator, with_src, workspace, guidance_dir)) |path| {
-        return path;
+    // Basename (no path separator): search for matches
+    const matches = try findFilesByBasename(allocator, query, guidance_dir) orelse return null;
+
+    if (matches.len == 1) {
+        // Unique match: return as file_path
+        const path = matches[0];
+        allocator.free(matches);
+        return .{ .file_path = path };
     }
 
-    // Try with just the filename (src/deep/path/file.zig → find .guidance/src/.../file.zig)
-    const basename = std.fs.path.basename(query);
-    const json_path = try std.fs.path.join(allocator, &.{ guidance_dir, "src" });
-    defer allocator.free(json_path);
+    // Multiple matches: return for disambiguation
+    return .{ .disambiguate = matches };
+}
 
-    var dir = std.fs.cwd().openDir(json_path, .{ .iterate = true }) catch return null;
+/// Finds all files matching a basename in the guidance JSON directory.
+/// Returns owned array of owned paths relative to repo root (e.g., "src/foo/bar.zig").
+fn findFilesByBasename(
+    allocator: std.mem.Allocator,
+    basename: []const u8,
+    guidance_dir: []const u8,
+) error{OutOfMemory}!?[]const []const u8 {
+    const json_dir = std.fs.path.join(allocator, &.{ guidance_dir, "src" }) catch return null;
+    defer allocator.free(json_dir);
+
+    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
     defer dir.close();
 
-    var walker = try dir.walk(allocator);
+    var walker = dir.walk(allocator) catch return null;
     defer walker.deinit();
+
+    var matches: std.ArrayList([]const u8) = .{};
+    defer {
+        for (matches.items) |m| allocator.free(m);
+        matches.deinit(allocator);
+    }
 
     while (walker.next() catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
+
+        // Strip .json extension to get source filename
         const base_no_ext = entry.basename[0 .. entry.basename.len - ".json".len];
-        if (std.mem.eql(u8, base_no_ext, basename) or
-            std.mem.endsWith(u8, entry.path, basename))
-        {
-            // Found matching JSON file
-            const src_path = jsonPathToSrcPath(allocator, entry.path);
-            return src_path;
+        if (!std.mem.eql(u8, base_no_ext, basename)) continue;
+
+        // Convert relative path from walker to source path
+        // entry.path = "llm/root.zig.json" (relative to .guidance/src/)
+        // Convert to: "src/llm/root.zig"
+        const src_path = blk: {
+            // Remove .json suffix
+            const without_json = entry.path[0 .. entry.path.len - ".json".len];
+            break :blk std.fmt.allocPrint(allocator, "src/{s}", .{without_json}) catch null;
+        };
+
+        if (src_path) |sp| {
+            try matches.append(allocator, sp);
         }
     }
 
-    return null;
+    if (matches.items.len == 0) return null;
+
+    // Transfer ownership to caller
+    return try matches.toOwnedSlice(allocator);
 }
 
 /// Checks if a file exists using the provided allocator, workspace, and guidance direction.
@@ -758,4 +808,45 @@ fn parseCapabilityDescription(allocator: std.mem.Allocator, content: []const u8)
         }
     }
     return null;
+}
+
+/// Output configuration for skeleton formatting.
+pub const SkeletonOutputConfig = struct {
+    title: []const u8,
+    source_path: []const u8,
+    start_line: ?u32 = null,
+    end_line: ?u32 = null,
+};
+
+/// Formats skeleton output with consistent structure for file and struct skeletons.
+/// Returns owned slice that caller must free.
+pub fn formatSkeletonOutput(
+    allocator: std.mem.Allocator,
+    skeleton: []const u8,
+    config: SkeletonOutputConfig,
+) error{OutOfMemory}![]const u8 {
+    var output: std.ArrayList(u8) = .{};
+    errdefer output.deinit(allocator);
+    const w = output.writer(allocator);
+
+    const trimmed = std.mem.trim(u8, skeleton, " \t\n\r");
+    const trimmed_title = std.mem.trim(u8, config.title, " \t\n\r");
+
+    try w.print("# {s}\n\n", .{trimmed_title});
+
+    if (config.start_line) |start| {
+        const end = config.end_line orelse start;
+        try w.print("## Source location: `{s}:{d}-{d}`\n\n", .{ config.source_path, start, end });
+    }
+
+    if (trimmed.len > 0) {
+        try w.print("{s}", .{trimmed});
+        if (!std.mem.endsWith(u8, trimmed, "\n")) {
+            try w.writeByte('\n');
+        }
+    }
+
+    try w.writeAll("\n---\n\nRun `guidance explain \"<function-name>\"` to see specific function documentation.\n");
+
+    return output.toOwnedSlice(allocator);
 }
