@@ -34,17 +34,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // `local_model` — LocalDecomposer for L4.5 task decomposition (P6.1).
-    // Standalone module so cache.zig can import it without pulling it into common module.
-    const local_model_module = b.createModule(.{
-        .root_source_file = b.path("src/common/local_model.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "llm", .module = llm_module },
-        },
-    });
-
     // `reflection` — standalone peer module (promoted from src/common/reflection.zig in P2.4).
     const reflection_module = b.createModule(.{
         .root_source_file = b.path("src/reflection/root.zig"),
@@ -64,7 +53,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "llm", .module = llm_module },
             .{ .name = "reflection", .module = reflection_module },
             .{ .name = "zigsharedstring", .module = zigsharedstring.module("zigsharedstring") },
             .{ .name = "zigrc", .module = zigrc.module("zigrc") },
@@ -183,6 +171,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
             },
         }),
@@ -222,7 +211,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "rdf", .module = rdf_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
-                .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "csr_graph", .module = coral_csr_module },
             },
@@ -252,6 +240,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
             },
         }),
@@ -266,6 +255,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
             },
         }),
@@ -279,18 +269,6 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/common/embeddings.zig"),
             .target = target,
             .optimize = optimize,
-        }),
-    });
-
-    // -- Local model decomposer tests (P6.1) --
-    const local_model_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/local_model.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "llm", .module = llm_module },
-            },
         }),
     });
 
@@ -424,7 +402,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "coral_db", .module = coral_db_module },
                 .{ .name = "dag", .module = dag_module },
                 .{ .name = "wasm", .module = wasm_module },
-                .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
             },
         }),
@@ -433,7 +410,7 @@ pub fn build(b: *std.Build) void {
     coral_cache_tests.linkSystemLibrary("sqlite3");
 
     // -- Coral MCP server tests --
-    // mcp.zig imports cache.zig (relative) which requires common, coral_db, dag, wasm, local_model.
+    // mcp.zig imports cache.zig (relative) which requires common, coral_db, dag, wasm, llm.
     const coral_mcp_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/coral/mcp.zig"),
@@ -445,7 +422,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "dag", .module = dag_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
-                .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
             },
         }),
@@ -486,7 +462,7 @@ pub fn build(b: *std.Build) void {
     coral_batch_tests.linkLibC();
     coral_batch_tests.linkSystemLibrary("sqlite3");
 
-    // Note: main.zig imports coral_db, coral_batch, wasm, coral_schema, local_model as named modules.
+    // Note: main.zig imports coral_db, coral_batch, wasm, coral_schema, llm as named modules.
     // ontology + rdf added for yago_ingest.zig which imports both.
     const coral_main_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -501,7 +477,6 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "rdf", .module = rdf_module },
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
-                .{ .name = "local_model", .module = local_model_module },
                 .{ .name = "llm", .module = llm_module },
             },
         }),
@@ -744,6 +719,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
             },
         }),
     });
@@ -886,7 +862,6 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
-    test_step.dependOn(&b.addRunArtifact(local_model_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
     test_step.dependOn(&b.addRunArtifact(vector_math_tests).step);
     test_step.dependOn(&b.addRunArtifact(hnsw_tests).step);

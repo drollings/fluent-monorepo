@@ -40,8 +40,6 @@ Then you you must read
 │   ├── guidance-php
 │   ├── guidance-py
 │   └── guidance-ts
-├── data
-│   └── yago-4.5.0.2-tiny
 ├── doc
 │   ├── capabilities
 │   │   ├── ast-indexing
@@ -136,7 +134,6 @@ Then you you must read
 │   │   ├── io.zig                                # io.zig — Shared buffered I/O helpers
 │   │   ├── json.zig                              # json.zig — Generic JSON serialization helpers
 │   │   ├── json_parser.zig
-│   │   ├── local_model.zig                       # local_model.zig — Local LLM Task Decomposition (P6.1)
 │   │   ├── log.zig
 │   │   ├── logging.zig                           # logging.zig — Structured logging context and timing scope for Fluent WEAVER.
 │   │   ├── metrics.zig                           # metrics.zig — Generic latency histogram primitive (M8.1)
@@ -266,7 +263,7 @@ Then you you must read
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── context_compressor.zig                # context_compressor.zig — Context Compression for Token Budget Management
 │   │   ├── context_packer.zig                    # context_packer.zig — Context Packing with Head/Tail Protection (P3.3)
-│   │   ├── llm.zig                               # llm.zig — LLM response post-processing for guidance and coral.
+│   │   ├── llm.zig                               # llm.zig — LLM client, response post-processing, and task decomposition.
 │   │   ├── root.zig                              # llm — General-purpose LLM inference client.
 │   │   └── token_budget.zig                      # token_budget.zig — Token Estimation (shared between guidance and coral).
 │   ├── ontology

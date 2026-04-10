@@ -4,7 +4,8 @@
 //! Uses fast model with cached detail context.
 
 const std = @import("std");
-const llm = @import("common");
+const llm = @import("llm");
+const common = @import("common");
 const types = @import("types.zig");
 
 /// Result of synthesis: summary text and suggested follow-up keywords.
@@ -363,7 +364,7 @@ pub fn extractProseSources(
 
 /// Removes empty or absent sentence segments from the input text using an allocator.
 pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]u8 {
-    // All comparisons are case-insensitive via llm.containsAny.
+    // All comparisons are case-insensitive via common.containsAny.
     const absence_kws = [_][]const u8{
         "no other",       "not present",  "only has", "does not contain",
         "does not exist", "nothing else", "none are", "none were",
@@ -374,7 +375,7 @@ pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]
 
     var line_it = std.mem.splitScalar(u8, text, '\n');
     while (line_it.next()) |line| {
-        if (!llm.containsAny(line, &absence_kws)) {
+        if (!common.containsAny(line, &absence_kws)) {
             try buf.appendSlice(allocator, line);
             try buf.append(allocator, '\n');
         }

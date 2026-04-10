@@ -7,6 +7,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "used_by": ["src/llm/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -43,10 +44,10 @@
           ],
           "returns": "[]Stage",
           "is_pub": true,
-          "line": 65
+          "line": 67
         }
       ],
-      "line": 55
+      "line": 57
     },
     {
       "type": "fn_private",
@@ -58,7 +59,7 @@
       ],
       "returns": "usize",
       "is_pub": false,
-      "line": 127
+      "line": 129
     },
     {
       "type": "fn_private",
@@ -75,43 +76,43 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 138
+      "line": 140
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: empty input",
       "is_pub": false,
-      "line": 142
+      "line": 144
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: head stages always included",
       "is_pub": false,
-      "line": 149
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: code stages always included in body",
       "is_pub": false,
-      "line": 173
+      "line": 175
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: token budget enforced on body",
       "is_pub": false,
-      "line": 191
+      "line": 193
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: tail always included even over budget",
       "is_pub": false,
-      "line": 216
+      "line": 218
     },
     {
       "type": "test_decl",
       "name": "ContextPacker: max_stages enforced",
       "is_pub": false,
-      "line": 236
+      "line": 238
     }
   ]
 }

@@ -12,7 +12,7 @@
 const std = @import("std");
 const vector = @import("vector");
 const config_mod = @import("config.zig");
-const llm = @import("common");
+const common = @import("common");
 
 // Re-export for tests.zig to pull in inline tests.
 pub const parseCodehealthDirective = vector.parseCodehealthDirective;
@@ -342,7 +342,7 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
         }
     }
 
-    var noop: llm.NoopEmbedding = .{};
+    var noop: common.NoopEmbedding = .{};
     var db = vector.GuidanceDb.init(allocator, ch_args.db_path, noop.provider()) catch |err| {
         std.debug.print("error: cannot open database '{s}': {s}\n", .{ ch_args.db_path, @errorName(err) });
         return;
@@ -465,7 +465,7 @@ test "codehealth: findRedundantPairs empty DB returns empty slice" {
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch.db", .{tmp_path});
     defer allocator.free(db_path);
 
-    var noop: llm.NoopEmbedding = .{};
+    var noop: common.NoopEmbedding = .{};
     var db = try vector.GuidanceDb.init(allocator, db_path, noop.provider());
     defer db.deinit();
 
@@ -485,7 +485,7 @@ test "codehealth: findUnusedModules empty DB returns empty slice" {
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch2.db", .{tmp_path});
     defer allocator.free(db_path);
 
-    var noop: llm.NoopEmbedding = .{};
+    var noop: common.NoopEmbedding = .{};
     var db = try vector.GuidanceDb.init(allocator, db_path, noop.provider());
     defer db.deinit();
 

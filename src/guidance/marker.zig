@@ -41,7 +41,7 @@
 //! own implementation.
 
 const std = @import("std");
-const llm = @import("common");
+const common = @import("common");
 
 // ---------------------------------------------------------------------------
 // Per-file change detection
@@ -100,7 +100,7 @@ pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8)
 /// Validates a marker path slice and returns void, ensuring proper marker data integrity.
 pub fn touchTestMarker(marker_path: []const u8) !void {
     const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
-    try llm.makePathAbsolute(parent);
+    try common.makePathAbsolute(parent);
     const f = try std.fs.createFileAbsolute(marker_path, .{});
     f.close();
 }

@@ -11,7 +11,7 @@
 //!   └── archive/           — abandoned work items
 
 const std = @import("std");
-const llm = @import("common").llm;
+const llm = @import("llm");
 
 // ---------------------------------------------------------------------------
 // Directory helpers

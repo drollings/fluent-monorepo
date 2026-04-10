@@ -1,5 +1,5 @@
 const std = @import("std");
-const llm = @import("common");
+const common = @import("common");
 
 /// Manages Gitignore rules for repository; owns a structured filtering system; ensures consistent ownership model.
 pub const GitignoreFilter = struct {
@@ -34,7 +34,7 @@ pub const GitignoreFilter = struct {
     }
 
     pub fn loadFromFile(self: *GitignoreFilter, path: []const u8) !void {
-        const content = llm.readFileAlloc(self.allocator, path, 512 * 1024) orelse return;
+        const content = common.readFileAlloc(self.allocator, path, 512 * 1024) orelse return;
         defer self.allocator.free(content);
 
         var patterns_list: std.ArrayList([]const u8) = .{};
@@ -114,14 +114,14 @@ pub const GitignoreFilter = struct {
     /// Returns true if the file is tracked in git (i.e., committed to the repo).
     /// Must call loadTrackedFiles() first.
     pub fn isTracked(self: *const GitignoreFilter, abs_path: []const u8) bool {
-        const rel_path = llm.stripPathPrefix(abs_path, self.project_root);
+        const rel_path = common.stripPathPrefix(abs_path, self.project_root);
         // Handle leading slash in rel_path
         const path = if (rel_path.len > 0 and rel_path[0] == '/') rel_path[1..] else rel_path;
         return self.tracked_files.contains(path);
     }
 
     pub fn shouldIgnore(self: *const GitignoreFilter, filepath: []const u8) bool {
-        const rel_path = llm.stripPathPrefix(filepath, self.project_root);
+        const rel_path = common.stripPathPrefix(filepath, self.project_root);
 
         for (self.always_exclude) |exclude| {
             if (std.mem.indexOf(u8, rel_path, exclude) != null) {
@@ -225,4 +225,3 @@ test "GitignoreFilter always excludes .git" {
     try std.testing.expect(filter.shouldIgnore("/project/.git/config"));
     try std.testing.expect(filter.shouldIgnore("/project/.zig-cache/foo"));
 }
-

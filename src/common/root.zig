@@ -3,18 +3,15 @@
 //! This is the root of the `common` build module.  It re-exports all public
 //! symbols from internal files for convenient access.
 //!
-//! Additional structured sub-module namespaces (P2.1):
-//!   common.llm        — LLM client and response post-processing
-//!   common.embeddings — EmbeddingProvider and backends
+//! LLM types (LlmClient, LlmConfig, LlmError, etc.) have been moved to
+//! the `llm` module.  Import via `@import("llm")` instead.
 //!
-//! Note (after file moves): DAG types (Target, TargetRegistry, etc.) have been
-//! moved to the `dag` module. Import via `@import("dag")` instead.
-//! Similarly, token_budget and context_packer are in the `llm` module.
+//! Additional structured sub-module namespaces:
+//!   common.embeddings — EmbeddingProvider and backends
 
 const std = @import("std");
 
 // ── Named module imports (from build.zig) ───────────────────────────────────────
-const llm_mod = @import("llm");
 const embed_mod = @import("embeddings.zig");
 const args_mod = @import("args.zig");
 const io_mod = @import("io.zig");
@@ -26,8 +23,6 @@ const url_mod = @import("url.zig");
 const builder_error_mod = @import("builder_error.zig");
 
 // ── Named sub-module namespaces ───────────────────────────────────────────────
-/// LLM inference client and response post-processing.
-pub const llm = llm_mod;
 /// I/O helpers: WriterState, ReaderState, readFileAlloc, etc.
 pub const io = io_mod;
 /// Embedding providers (Noop, Ollama, OpenAI) and factory.
@@ -40,20 +35,6 @@ pub const interner = @import("interner.zig");
 pub const hash = hash_mod;
 /// Builder error types for fluent builder chains (Phase, BuilderError, etc.).
 pub const builder_error = builder_error_mod;
-
-// ── LLM types (flat re-exports for backward compatibility) ────────────────────
-pub const LlmError = llm_mod.LlmError;
-pub const LlmConfig = llm_mod.LlmConfig;
-pub const LlmClient = llm_mod.LlmClient;
-
-// ── LLM response post-processing (moved to src/llm/llm.zig) ────────────────────
-// Note: These functions are now in the llm module. Access via @import("llm").
-// The LlmClient types are from src/llm/root.zig.
-pub const stripThinkBlock = llm_mod.stripThinkBlock;
-pub const isMalformedResponse = llm_mod.isMalformedResponse;
-pub const extractCommentTag = llm_mod.extractCommentTag;
-pub const stripPreamble = llm_mod.stripPreamble;
-pub const isBlankOrPlausible = llm_mod.isBlankOrPlausible;
 
 // ── Embedding providers (backward compat flat re-exports) ─────────────────────
 pub const EmbeddingProvider = embed_mod.EmbeddingProvider;
@@ -180,10 +161,7 @@ pub const isPrivateIp = url_mod.isPrivateIp;
 pub const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── Token budget estimation ───────────────────────────────────────────────────
-/// Lightweight token estimator (1 tok ≈ 4 bytes) shared by guidance and coral.
-/// Note: token_budget has been moved to llm module. Access via @import("llm").token_budget
-/// or via @import("common").token_budget (this re-export).
-pub const token_budget = llm_mod.token_budget;
+/// Moved to the llm module. Access via @import("llm").token_budget.
 
 // ── BitSet DRIFT ──────────────────────────────────────────────────────────────
 /// Deterministic follow-up query generation (shared by guidance and coral).

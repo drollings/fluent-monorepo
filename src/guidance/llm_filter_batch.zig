@@ -17,7 +17,7 @@
 //! - Code and metadata stages are always kept, regardless of budget or LLM.
 
 const std = @import("std");
-const llm = @import("common");
+const llm = @import("llm");
 const types = @import("types.zig");
 
 const Allocator = std.mem.Allocator;

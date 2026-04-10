@@ -11,15 +11,14 @@ const std = @import("std");
 const coral_db = @import("coral_db");
 const wasm_mod = @import("wasm");
 const hashutil = @import("common");
-const local_model = @import("local_model");
 const common_registry = @import("dag").registry;
 const BuilderError = common_registry.BuilderError;
 const BuilderPhase = common_registry.BuilderPhase;
 const logIfError = common_registry.logIfError;
 const llm_mod = @import("llm");
 const frontier = @import("frontier.zig");
-const LocalDecomposer = local_model.LocalDecomposer;
-const DecomposerConfig = local_model.DecomposerConfig;
+const LocalDecomposer = llm_mod.LocalDecomposer;
+const DecomposerConfig = llm_mod.DecomposerConfig;
 const LlmConfig = llm_mod.LlmConfig;
 const LlmClient = llm_mod.LlmClient;
 

@@ -11,7 +11,7 @@
 const std = @import("std");
 const git_mod = @import("git.zig");
 const json_store = @import("json_store.zig");
-const llm = @import("common");
+const common = @import("common");
 
 /// A single entry in the directory tree.
 const TreeEntry = union(enum) {
@@ -184,7 +184,7 @@ pub const StructureGenerator = struct {
     }
 
     fn relPath(self: *StructureGenerator, abs: []const u8) ![]const u8 {
-        return self.allocator.dupe(u8, llm.stripPathPrefix(abs, self.project_root));
+        return self.allocator.dupe(u8, common.stripPathPrefix(abs, self.project_root));
     }
 
     // -------------------------------------------------------------------------

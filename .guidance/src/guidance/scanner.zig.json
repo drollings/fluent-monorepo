@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " scanner.zig — M9: CodebaseScanner — Generic Codebase Analysis\n\n Implements M9 of ROADMAP_20260403_FLUENT_GUIDANCE.md:\n Ties together CodebaseMap (M3), DocumentIndexer (M1), QueryStrategy (M2),\n and InferCapabilities (M4) into a unified tool that works on any repository.\n\n Six-layer discovery:\n   Layer 1: Structural discovery (CodebaseMap)\n   Layer 2: Plugin discovery (language plugins from config)\n   Layer 3: Capability discovery (CAPABILITY.md or inferred via M4)\n   Layer 4: Skill discovery (SKILL.md documents)\n   Layer 5: Index building (DocumentIndexer for all documents)\n   Layer 6: Strategy binding (QueryStrategy VTable for routing)\n\n Confidence tiers:\n   high:   AST analysis + CAPABILITY.md + STRUCTURE.md present\n   medium: AST analysis + inferred capabilities\n   low:    Filesystem walk only, no AST plugins available",
-  "capabilities": ["explain-query", "coral-database", "config-system", "ast-indexing"],
   "used_by": ["src/guidance/main.zig"],
   "members": [
     {

@@ -13,7 +13,8 @@
 ///   - Tags (e.g. #ring-buffer) are extracted from the last line "Tags: #a #b".
 ///   - Hallucination guard: responses containing terms absent from source are rejected.
 const std = @import("std");
-const llm = @import("common");
+const llm = @import("llm");
+const common = @import("common");
 
 /// Default max_tokens for non-thinking models.
 const DEFAULT_MAX_TOKENS: usize = 1000;
@@ -657,7 +658,7 @@ pub const Enhancer = struct {
         comment: []const u8,
         module_context: []const u8,
     ) !SemanticPhrasesResult {
-        const stripped = llm.stripBoilerplate(comment);
+        const stripped = common.stripBoilerplate(comment);
 
         // Skip trivial comments (< 15 chars after stripping)
         if (stripped.len < 15) {

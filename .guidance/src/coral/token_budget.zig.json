@@ -4,8 +4,7 @@
     "source": "src/coral/token_budget.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
-  "used_by": ["src/coral/main.zig", "src/llm/root.zig"],
+  "used_by": ["src/coral/main.zig", "src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig"],
   "members": [
     {
       "type": "fn_decl",

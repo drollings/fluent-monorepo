@@ -222,7 +222,7 @@ pub const CodebaseScanner = struct {
 /// Reads a C string and converts it into a Zig-safe slice, handling allocation and error cases.
 pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const config_mod = @import("config.zig");
-    const llm = @import("common");
+    const common = @import("common");
 
     var workspace_arg: ?[]const u8 = null;
     var i: usize = 0;
@@ -245,7 +245,7 @@ pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cfg = config_mod.loadConfig(allocator, cwd) catch null;
     if (cfg) |c| {
         defer @constCast(&c).deinit();
-        const db_path = llm.resolvePath(allocator, workspace, c.db_path) catch null;
+        const db_path = common.resolvePath(allocator, workspace, c.db_path) catch null;
         defer if (db_path) |p| allocator.free(p);
 
         var noop: vector_db_mod.NoopEmbedding = .{};
@@ -268,11 +268,11 @@ pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 /// Emits a diagnostic message using the provided allocator and scanner instance.
 fn emitDiagnosis(allocator: std.mem.Allocator, scanner: *const CodebaseScanner) !void {
-    const llm = @import("common");
+    const common = @import("common");
     const report = try scanner.diagnose(allocator);
     defer allocator.free(report);
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
     try stdout.writeAll(report);

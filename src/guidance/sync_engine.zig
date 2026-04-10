@@ -26,7 +26,7 @@ const structure_mod = @import("structure.zig");
 const query_engine_mod = @import("query_engine.zig");
 const schema_validator_mod = @import("schema_validator.zig");
 const doc_parser_mod = @import("doc_parser.zig");
-const llm = @import("common");
+const llm = @import("llm");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const stepPrint = types.stepPrint;
@@ -310,7 +310,7 @@ fn loadChangedMembers(
     const json_path = try std.fmt.allocPrint(allocator, "{s}/src/{s}.json", .{ guidance_root, rel_path });
     defer allocator.free(json_path);
 
-    var parsed = llm.parseJsonFile(allocator, json_path, 256 * 1024) orelse return &.{};
+    var parsed = common.parseJsonFile(allocator, json_path, 256 * 1024) orelse return &.{};
     defer parsed.deinit();
 
     const members_val = parsed.value.object.get("members") orelse return &.{};
@@ -773,7 +773,7 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
     const path = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, config_mod.CONFIG_FILENAME });
     defer allocator.free(path);
 
-    var parsed = llm.parseJsonFile(allocator, path, 64 * 1024) orelse return error.ParseError;
+    var parsed = common.parseJsonFile(allocator, path, 64 * 1024) orelse return error.ParseError;
     defer parsed.deinit();
 
     if (parsed.value.object.get("models")) |models| {
@@ -944,13 +944,13 @@ const ResolvedGenPaths = struct {
 
 /// Resolves generation paths using an allocator, GenArgs, and current directory, returning an owned path list.
 fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) !ResolvedGenPaths {
-    const workspace = try llm.resolvePath(allocator, cwd, ga.workspace orelse cwd);
+    const workspace = try common.resolvePath(allocator, cwd, ga.workspace orelse cwd);
     errdefer allocator.free(workspace);
 
-    const json_dir = try llm.resolvePath(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try common.resolvePath(allocator, workspace, ga.json_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
     errdefer allocator.free(json_dir);
 
-    const db_path = try llm.resolvePath(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try common.resolvePath(allocator, workspace, ga.db_path orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     return .{ .workspace = workspace, .json_dir = json_dir, .db_path = db_path };
 }
 
@@ -1122,7 +1122,7 @@ fn processFiles(
     paths: ResolvedGenPaths,
 ) !usize {
     if (ga.file) |file_arg| {
-        const full_path = try llm.resolvePath(allocator, paths.workspace, file_arg);
+        const full_path = try common.resolvePath(allocator, paths.workspace, file_arg);
         defer allocator.free(full_path);
         _ = try processor.processFile(full_path, ga.timeout_seconds);
         if (ga.verbose) std.debug.print("gen: processed {s}\n", .{full_path});
@@ -1130,7 +1130,7 @@ fn processFiles(
     }
 
     if (ga.scan) |scan_arg| {
-        const scan_abs = try llm.resolvePath(allocator, paths.workspace, scan_arg);
+        const scan_abs = try common.resolvePath(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
         const count = try processor.processDirectory(scan_abs, ga.timeout_seconds);
         std.debug.print("gen: {d} source files processed from {s}\n", .{ count, scan_abs });
@@ -1143,7 +1143,7 @@ fn processFiles(
 
     var total: usize = 0;
     for (cfg.src_dirs) |src_rel| {
-        const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
+        const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
         defer allocator.free(src_abs);
         total += try processor.processDirectory(src_abs, ga.timeout_seconds);
     }
@@ -1430,7 +1430,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         defer teardownCspEnhancer(allocator, &csp);
 
         if (ga.file) |file_arg| {
-            const src_abs = try llm.resolvePath(allocator, paths.workspace, file_arg);
+            const src_abs = try common.resolvePath(allocator, paths.workspace, file_arg);
             defer allocator.free(src_abs);
             _ = csp.processFile(src_abs) catch |err| {
                 if (ga.verbose) std.debug.print("[sync-comments] {s}: {s}\n", .{ src_abs, @errorName(err) });
@@ -1473,7 +1473,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {
-        const src_abs = try llm.resolvePath(allocator, paths.workspace, file_arg);
+        const src_abs = try common.resolvePath(allocator, paths.workspace, file_arg);
         defer allocator.free(src_abs);
 
         const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
@@ -1523,7 +1523,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
     // ── Explicit scan-dir mode  (--scan) ─────────────────────────────────────
     if (ga.scan) |scan_arg| {
-        const scan_abs = try llm.resolvePath(allocator, paths.workspace, scan_arg);
+        const scan_abs = try common.resolvePath(allocator, paths.workspace, scan_arg);
         defer allocator.free(scan_abs);
 
         // Only collect .zig files for the built-in Zig AST pipeline.
@@ -1581,7 +1581,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
             all_builtin.deinit(allocator);
         }
         for (cfg.src_dirs) |src_rel| {
-            const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
+            const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
             defer allocator.free(src_abs);
             const files = try collectFilesWithExts(allocator, src_abs, &builtin_exts);
             defer allocator.free(files);
@@ -1645,7 +1645,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
         defer foreign_exts.deinit(allocator);
 
         for (cfg.src_dirs) |src_rel| {
-            const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
+            const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
             defer allocator.free(src_abs);
 
             var dir = std.fs.openDirAbsolute(src_abs, .{ .iterate = true }) catch continue;
@@ -1696,7 +1696,7 @@ fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs) !void {
 
             // Invoke provider once per src_dir that contains stale files of this extension.
             for (cfg.src_dirs) |src_rel| {
-                const src_abs = try llm.resolvePath(allocator, paths.workspace, src_rel);
+                const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
                 defer allocator.free(src_abs);
                 if (ga.verbose) std.debug.print("gen: invoking {s} provider for {s} in {s}\n", .{
                     prov.name, ext, src_abs,
@@ -2017,10 +2017,10 @@ pub fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try common.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try common.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Count JSON files in json_dir/src/.
@@ -2096,10 +2096,10 @@ pub fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try common.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
-    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try common.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
     // Remove the database.
@@ -2167,7 +2167,7 @@ pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8
     defer allocator.free(cwd);
 
     const ws = workspace orelse cwd;
-    const guidance_abs = try llm.resolvePath(allocator, ws, guidance_dir_arg);
+    const guidance_abs = try common.resolvePath(allocator, ws, guidance_dir_arg);
     defer allocator.free(guidance_abs);
 
     const cap_dir = try std.fs.path.join(allocator, &.{ guidance_abs, "capabilities" });
@@ -2326,7 +2326,7 @@ pub fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8
     try mapping_obj_out.put("mapping", .{ .object = file_to_caps_obj });
     try mapping_obj_out.put("capability_keywords", .{ .object = cap_kw_obj });
 
-    const json_out = try llm.jsonStringifyAlloc(fa, std.json.Value{ .object = mapping_obj_out });
+    const json_out = try common.jsonStringifyAlloc(fa, std.json.Value{ .object = mapping_obj_out });
 
     if (dry_run) {
         std.debug.print("map-capabilities (dry-run): would write {d} bytes to {s}\n", .{ json_out.len, mapping_path });
@@ -2425,7 +2425,7 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
     defer allocator.free(cwd);
 
     const ws = workspace orelse cwd;
-    const guidance_abs = try llm.resolvePath(allocator, ws, guidance_dir_arg);
+    const guidance_abs = try common.resolvePath(allocator, ws, guidance_dir_arg);
     defer allocator.free(guidance_abs);
 
     const cap_dir = try std.fs.path.join(allocator, &.{ guidance_abs, "capabilities" });
@@ -2590,7 +2590,7 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
     }
     try index_obj.put("capabilities", .{ .array = capabilities_arr });
 
-    const json_out = try llm.jsonStringifyAlloc(fa, std.json.Value{ .object = index_obj });
+    const json_out = try common.jsonStringifyAlloc(fa, std.json.Value{ .object = index_obj });
 
     if (dry_run) {
         std.debug.print("[sync-capabilities] (dry-run) would write {d} bytes to {s}\n", .{ json_out.len, index_path });
@@ -3052,10 +3052,10 @@ pub fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const 
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const guidance_abs = try llm.resolvePath(allocator, cwd, guidance_dir_arg);
+    const guidance_abs = try common.resolvePath(allocator, cwd, guidance_dir_arg);
     defer allocator.free(guidance_abs);
 
-    const db_abs = try llm.resolvePath(allocator, cwd, db_path);
+    const db_abs = try common.resolvePath(allocator, cwd, db_path);
     defer allocator.free(db_abs);
 
     const cap_index_path = try std.fs.path.join(allocator, &.{ guidance_abs, "capability-index.json" });
@@ -3653,10 +3653,10 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const ws = try llm.resolvePath(allocator, cwd, workspace orelse cwd);
+    const ws = try common.resolvePath(allocator, cwd, workspace orelse cwd);
     defer allocator.free(ws);
 
-    const gdir = try llm.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const gdir = try common.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(gdir);
 
     const src_json_dir = try std.fs.path.join(allocator, &.{ gdir, "src" });
@@ -3687,7 +3687,7 @@ pub fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) !
     var total_files: usize = 0;
 
     if (single_file) |fp| {
-        const abs_fp = try llm.resolvePath(allocator, cwd, fp);
+        const abs_fp = try common.resolvePath(allocator, cwd, fp);
         defer allocator.free(abs_fp);
 
         const r = processor.processFile(abs_fp) catch |err| {
@@ -3787,10 +3787,10 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const ws = try llm.resolvePath(allocator, cwd, workspace orelse cwd);
+    const ws = try common.resolvePath(allocator, cwd, workspace orelse cwd);
     defer allocator.free(ws);
 
-    const gdir = try llm.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const gdir = try common.resolvePath(allocator, ws, guidance_dir orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(gdir);
 
     const src_json_dir = try std.fs.path.join(allocator, &.{ gdir, "src" });
@@ -3839,7 +3839,7 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
             dry_run,
         );
 
-        const source = llm.readFileAlloc(allocator, abs_source, 10 * 1024 * 1024) orelse continue;
+        const source = common.readFileAlloc(allocator, abs_source, 10 * 1024 * 1024) orelse continue;
         defer allocator.free(source);
 
         var source_changed = false;

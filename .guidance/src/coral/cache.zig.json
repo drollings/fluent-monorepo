@@ -7,7 +7,6 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["coral-cache", "coral-ingestion", "coral-database", "coral-mcp"],
   "used_by": ["src/coral/main.zig", "src/coral/mcp.zig"],
   "members": [
     {
@@ -21,40 +20,40 @@
           "type": "enum_field",
           "name": "l1_memory",
           "is_pub": false,
-          "line": 35
+          "line": 34
         }
     ,    {
           "type": "enum_field",
           "name": "l2_workflow",
           "is_pub": false,
-          "line": 36
+          "line": 35
         }
     ,    {
           "type": "enum_field",
           "name": "l3_graph",
           "is_pub": false,
-          "line": 37
+          "line": 36
         }
     ,    {
           "type": "enum_field",
           "name": "l4_semantic",
           "is_pub": false,
-          "line": 38
+          "line": 37
         }
     ,    {
           "type": "enum_field",
           "name": "l4_5_decompose",
           "is_pub": false,
-          "line": 40
+          "line": 39
         }
     ,    {
           "type": "enum_field",
           "name": "l5_llm",
           "is_pub": false,
-          "line": 41
+          "line": 40
         }
       ],
-      "line": 34
+      "line": 33
     },
     {
       "type": "struct",
@@ -62,7 +61,7 @@
       "match_hash": "9b535d00a3c6018e6fc792300c3d96697b113c6eeafac16989ab740a843a940a",
       "signature": "keyword_struct RoutingResult { ... }",
       "is_pub": true,
-      "line": 45
+      "line": 44
     },
     {
       "type": "struct",
@@ -81,7 +80,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 79
+          "line": 78
         }
     ,    {
           "type": "fn_decl",
@@ -94,7 +93,7 @@
           ],
           "returns": "L1Cache",
           "is_pub": true,
-          "line": 83
+          "line": 82
         }
     ,    {
           "type": "fn_decl",
@@ -106,7 +105,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 91
+          "line": 90
         }
     ,    {
           "type": "fn_decl",
@@ -119,7 +118,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": true,
-          "line": 105
+          "line": 104
         }
     ,    {
           "type": "fn_decl",
@@ -133,7 +132,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 117
+          "line": 116
         }
     ,    {
           "type": "fn_private",
@@ -146,7 +145,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 162
+          "line": 161
         }
     ,    {
           "type": "fn_private",
@@ -159,10 +158,10 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 175
+          "line": 174
         }
       ],
-      "line": 71
+      "line": 70
     },
     {
       "type": "struct",
@@ -182,7 +181,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 228
+          "line": 227
         }
     ,    {
           "type": "fn_decl",
@@ -194,7 +193,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 236
+          "line": 235
         }
     ,    {
           "type": "fn_decl",
@@ -207,7 +206,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": true,
-          "line": 248
+          "line": 247
         }
     ,    {
           "type": "fn_decl",
@@ -220,7 +219,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": true,
-          "line": 257
+          "line": 256
         }
     ,    {
           "type": "fn_decl",
@@ -234,7 +233,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 267
+          "line": 266
         }
     ,    {
           "type": "fn_decl",
@@ -246,10 +245,10 @@
           ],
           "returns": "u64",
           "is_pub": true,
-          "line": 304
+          "line": 303
         }
       ],
-      "line": 219
+      "line": 218
     },
     {
       "type": "struct",
@@ -271,7 +270,7 @@
           ],
           "returns": "QueueReactorBuilder",
           "is_pub": true,
-          "line": 329
+          "line": 328
         }
     ,    {
           "type": "fn_private",
@@ -287,7 +286,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 336
+          "line": 335
         }
     ,    {
           "type": "fn_decl",
@@ -300,7 +299,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 341
+          "line": 340
         }
     ,    {
           "type": "fn_decl",
@@ -313,7 +312,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 346
+          "line": 345
         }
     ,    {
           "type": "fn_decl",
@@ -326,7 +325,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 351
+          "line": 350
         }
     ,    {
           "type": "fn_decl",
@@ -339,7 +338,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 356
+          "line": 355
         }
     ,    {
           "type": "fn_decl",
@@ -352,7 +351,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 361
+          "line": 360
         }
     ,    {
           "type": "fn_decl",
@@ -365,7 +364,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 367
+          "line": 366
         }
     ,    {
           "type": "fn_decl",
@@ -378,7 +377,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 374
+          "line": 373
         }
     ,    {
           "type": "fn_decl",
@@ -391,7 +390,7 @@
           ],
           "returns": "*@This()",
           "is_pub": true,
-          "line": 380
+          "line": 379
         }
     ,    {
           "type": "fn_decl",
@@ -403,10 +402,10 @@
           ],
           "returns": "QueueReactor",
           "is_pub": true,
-          "line": 387
+          "line": 386
         }
       ],
-      "line": 314
+      "line": 313
     },
     {
       "type": "struct",
@@ -427,7 +426,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 445
+          "line": 444
         }
     ,    {
           "type": "fn_decl",
@@ -439,7 +438,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 454
+          "line": 453
         }
     ,    {
           "type": "fn_decl",
@@ -452,7 +451,7 @@
           ],
           "returns": "*Task",
           "is_pub": true,
-          "line": 485
+          "line": 484
         }
     ,    {
           "type": "fn_private",
@@ -465,7 +464,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 513
+          "line": 512
         }
     ,    {
           "type": "fn_decl",
@@ -478,7 +477,7 @@
           ],
           "returns": "anyerror!RoutingResult",
           "is_pub": true,
-          "line": 528
+          "line": 527
         }
     ,    {
           "type": "fn_private",
@@ -491,7 +490,7 @@
           ],
           "returns": "?WasmTool",
           "is_pub": false,
-          "line": 623
+          "line": 622
         }
     ,    {
           "type": "fn_private",
@@ -504,7 +503,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 634
+          "line": 633
         }
     ,    {
           "type": "fn_private",
@@ -517,7 +516,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 666
+          "line": 665
         }
     ,    {
           "type": "fn_private",
@@ -530,7 +529,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 691
+          "line": 690
         }
     ,    {
           "type": "fn_private",
@@ -543,7 +542,7 @@
           ],
           "returns": "RoutingResult",
           "is_pub": false,
-          "line": 724
+          "line": 723
         }
     ,    {
           "type": "fn_private",
@@ -556,7 +555,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": false,
-          "line": 743
+          "line": 742
         }
     ,    {
           "type": "fn_private",
@@ -570,7 +569,7 @@
           ],
           "returns": "?RoutingResult",
           "is_pub": false,
-          "line": 778
+          "line": 777
         }
     ,    {
           "type": "fn_private",
@@ -584,7 +583,7 @@
           ],
           "returns": "?[]ContextNode",
           "is_pub": false,
-          "line": 806
+          "line": 805
         }
     ,    {
           "type": "fn_decl",
@@ -598,7 +597,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 849
+          "line": 848
         }
     ,    {
           "type": "fn_private",
@@ -611,7 +610,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 855
+          "line": 854
         }
     ,    {
           "type": "fn_private",
@@ -625,10 +624,10 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 868
+          "line": 867
         }
       ],
-      "line": 422
+      "line": 421
     },
     {
       "type": "struct",
@@ -647,7 +646,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 922
+          "line": 921
         }
     ,    {
           "type": "fn_decl",
@@ -661,100 +660,100 @@
           ],
           "returns": "[]RoutingResult",
           "is_pub": true,
-          "line": 929
+          "line": 928
         }
       ],
-      "line": 917
+      "line": 916
     },
     {
       "type": "test_decl",
       "name": "L1Cache: put and get",
       "is_pub": false,
-      "line": 993
+      "line": 992
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L1 cache hit",
       "is_pub": false,
-      "line": 1012
+      "line": 1011
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L5 fallback",
       "is_pub": false,
-      "line": 1041
+      "line": 1040
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: builds with library",
       "is_pub": false,
-      "line": 1059
+      "line": 1058
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: error when library missing",
       "is_pub": false,
-      "line": 1077
+      "line": 1076
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: work queue fields exist",
       "is_pub": false,
-      "line": 1087
+      "line": 1086
     },
     {
       "type": "test_decl",
       "name": "Library.findNodeByName: finds by lod4",
       "is_pub": false,
-      "line": 1106
+      "line": 1105
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L2 skipped when no wasm_tools",
       "is_pub": false,
-      "line": 1127
+      "line": 1126
     },
     {
       "type": "test_decl",
       "name": "findWasmTool: returns null when all tools fail test_passed check",
       "is_pub": false,
-      "line": 1144
+      "line": 1143
     },
     {
       "type": "test_decl",
       "name": "Library.traverseFrom: returns root node",
       "is_pub": false,
-      "line": 1164
+      "line": 1163
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: submitAsync falls back to synchronous without thread pool",
       "is_pub": false,
-      "line": 1186
+      "line": 1185
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: threadCount initialises thread pool",
       "is_pub": false,
-      "line": 1208
+      "line": 1207
     },
     {
       "type": "test_decl",
       "name": "L1Cache: concurrent reads are safe",
       "is_pub": false,
-      "line": 1224
+      "line": 1223
     },
     {
       "type": "test_decl",
       "name": "M5: concurrent writes via thread pool do not deadlock",
       "is_pub": false,
-      "line": 1249
+      "line": 1248
     },
     {
       "type": "test_decl",
       "name": "ParallelRouter: routeBatch with empty input",
       "is_pub": false,
-      "line": 1297
+      "line": 1296
     }
   ]
 }

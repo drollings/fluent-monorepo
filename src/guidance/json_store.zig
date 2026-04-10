@@ -1,7 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const hash = @import("hash.zig");
-const llm = @import("common");
+const common = @import("common");
 const line_verify = @import("line_verify.zig");
 const comment_inserter = @import("comment_inserter.zig");
 
@@ -21,7 +21,7 @@ pub const JsonStore = struct {
 
     pub fn loadGuidance(self: *JsonStore, path: []const u8) !?types.GuidanceDoc {
         self.leaked_prompts_found = false;
-        const content = llm.readFileAlloc(self.allocator, path, 10 * 1024 * 1024) orelse return null;
+        const content = common.readFileAlloc(self.allocator, path, 10 * 1024 * 1024) orelse return null;
         defer self.allocator.free(content);
         return self.parseGuidance(content);
     }
@@ -319,7 +319,7 @@ pub const JsonStore = struct {
         defer self.allocator.free(json_str);
 
         const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
-        try llm.makePathAbsolute(dir_path);
+        try common.makePathAbsolute(dir_path);
 
         const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
         defer file.close();
@@ -379,7 +379,7 @@ pub const JsonStore = struct {
     /// Deep-copy a string slice.  Delegates to the generic helper in
     /// src/common/str.zig so callers continue to work without change.
     pub fn dupeStrings(self: *JsonStore, strs: []const []const u8) ![][]const u8 {
-        return llm.dupeStrings(self.allocator, strs);
+        return common.dupeStrings(self.allocator, strs);
     }
 
     fn dupePatterns(self: *JsonStore, patterns: []const types.Pattern) ![]types.Pattern {

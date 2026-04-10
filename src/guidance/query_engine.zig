@@ -21,13 +21,13 @@ const marker_mod = @import("marker.zig");
 const provider_mod = @import("provider_discovery.zig");
 const json_store_mod = @import("json_store.zig");
 const sync_mod = @import("sync.zig");
-const llm = @import("common");
+const llm = @import("llm");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
 const freeSearchResult = GuidanceDb.freeSearchResult;
 const stepPrint = types.stepPrint;
-const StringInterner = llm.interner.StringInterner;
-const BitSetDrift = llm.drift.BitSetDrift;
+const StringInterner = common.interner.StringInterner;
+const BitSetDrift = common.drift.BitSetDrift;
 const hash_mod = @import("hash.zig");
 const skeleton_mod = @import("skeleton.zig");
 
@@ -319,7 +319,7 @@ fn collectSourceExcerpts(
             allocator.free(code);
             continue;
         }
-        const lang = llm.langFromPath(r.source);
+        const lang = common.langFromPath(r.source);
         const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
         try out.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
         try seen_files.put(allocator, r.source, {});
@@ -378,7 +378,7 @@ fn renderExplainOutput(
     excerpts: []const ExcerptEntry,
     file_matches: []const FileMatchItem,
 ) !void {
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -565,7 +565,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     defer allocator.free(cwd);
 
     const workspace = if (ea.workspace) |w|
-        try llm.resolvePath(allocator, cwd, w)
+        try common.resolvePath(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
     defer allocator.free(workspace);
@@ -576,14 +576,14 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
     defer @constCast(&cfg).deinit();
     ea.capabilities_dir = cfg.capabilities_dir;
 
-    const db_path = try llm.resolvePath(
+    const db_path = try common.resolvePath(
         allocator,
         workspace,
         ea.db_path orelse cfg.db_path,
     );
     defer allocator.free(db_path);
 
-    const guidance_dir = try llm.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
+    const guidance_dir = try common.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
     defer allocator.free(guidance_dir);
 
     // ── TIER 0: Empty query → INDEX.md introduction ─────────────────────────────
@@ -781,7 +781,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
 
 /// Loads used data from a JSON path into a Zig array of slices.
 fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const ub_val = parsed.value.object.get("used_by") orelse return null;
@@ -813,7 +813,7 @@ fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
 
 /// Loads skill data from a JSON string into a Zig array of byte slices.
 fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const skills_val = parsed.value.object.get("skills") orelse return null;
@@ -834,7 +834,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
         if (ref.len == 0) continue;
         // Derive skill name: last path component before SKILL.md.
         // e.g. "skills/gof-patterns/SKILL.md" → "gof-patterns"
-        const skill_name = llm.skillNameFromRef(ref);
+        const skill_name = common.skillNameFromRef(ref);
         if (skill_name.len == 0) continue;
         out.appendSlice(allocator, skill_name) catch continue;
         out.append(allocator, '\n') catch continue;
@@ -848,7 +848,7 @@ fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]co
 
 /// Loads public member names from a JSON path into a Zig array of slices.
 fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
 
     const members_val = parsed.value.object.get("members") orelse return null;
@@ -912,8 +912,8 @@ fn explainExtractExcerpt(
     start_line: u32,
     node_type: []const u8,
 ) ![]const u8 {
-    const node_type_enum = llm.NodeType.fromString(node_type);
-    return llm.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
+    const node_type_enum = common.NodeType.fromString(node_type);
+    return common.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
 }
 
 /// Explains grep-like behavior for a file, returning matching result indices.
@@ -1554,7 +1554,7 @@ fn emitStagedOutput(
 ) !void {
     const output = try staged_mod.formatStaged(allocator, query_text, stages, summary, workspace);
     defer allocator.free(output);
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
     try stdout.writeAll(output);
@@ -1845,7 +1845,7 @@ fn showIndexIntro(
     };
     defer allocator.free(content);
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const w = ws.writer();
     try w.writeAll(content);
@@ -1865,7 +1865,7 @@ fn handleCapabilityQuery(
     natural_lang: bool,
     cfg: *const config_mod.ProjectConfig,
 ) !void {
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -1952,7 +1952,7 @@ fn handleFileSkeletonQuery(
     query_text: []const u8,
 ) !void {
     _ = query_text;
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -1976,7 +1976,7 @@ fn handleStructSkeletonQuery(
     query_text: []const u8,
 ) !void {
     _ = query_text;
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -2019,10 +2019,10 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const db_path = try llm.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
+    const db_path = try common.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
     defer allocator.free(db_path);
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -2203,7 +2203,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer allocator.free(cwd);
 
     const ws = if (workspace) |w|
-        try llm.resolvePath(allocator, cwd, w)
+        try common.resolvePath(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
     defer allocator.free(ws);
@@ -2213,11 +2213,11 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer @constCast(&cfg).deinit();
 
     const db = db_path orelse cfg.db_path;
-    const db_abs = try llm.resolvePath(allocator, ws, db);
+    const db_abs = try common.resolvePath(allocator, ws, db);
     defer allocator.free(db_abs);
 
     const gdir = guidance_dir orelse cfg.guidance_dir;
-    const gdir_abs = try llm.resolvePath(allocator, ws, gdir);
+    const gdir_abs = try common.resolvePath(allocator, ws, gdir);
     defer allocator.free(gdir_abs);
 
     // Initialize LLM client for evaluation (when not --no-llm)
@@ -2675,7 +2675,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
         try config_mod.loadConfig(allocator, cwd);
     defer @constCast(&cfg).deinit();
 
-    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
     defer allocator.free(db_path);
 
     std.fs.accessAbsolute(db_path, .{}) catch {
@@ -2697,7 +2697,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
         allocator.free(entries);
     }
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const w = ws.writer();
     try w.print("# Top Queries\n\n", .{});
@@ -2728,7 +2728,7 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
         try config_mod.loadConfig(allocator, cwd);
     defer @constCast(&cfg).deinit();
 
-    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
     defer allocator.free(db_path);
 
     std.fs.accessAbsolute(db_path, .{}) catch {
@@ -2786,10 +2786,10 @@ pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     };
     defer @constCast(&cfg).deinit();
 
-    const db_path = try llm.resolvePath(allocator, cwd, cfg.db_path);
+    const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
     defer allocator.free(db_path);
 
-    const guidance_dir = try llm.resolvePath(allocator, cwd, cfg.guidance_dir);
+    const guidance_dir = try common.resolvePath(allocator, cwd, cfg.guidance_dir);
     defer allocator.free(guidance_dir);
 
     var noop_embed: vector_mod.NoopEmbedding = .{};
@@ -2815,7 +2815,7 @@ pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
         allocator.free(stages);
     }
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
     try stdout.print("# RALPH: {s}\n\n", .{query});

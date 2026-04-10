@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.\n\n Replaces the per-stage LLM call pattern in `llm_filter.zig` with a single\n batch call that asks the LLM to identify relevant stages in one request.\n\n §Performance improvement:\n - Old: N LLM calls (one per prose/insight/skill_doc stage)\n - New: 1 LLM call (all stages sent in a single prompt)\n\n §Fallback behaviour:\n - On LLM error or unavailability: return all stages unchanged (fail-open).\n - On parse error: return all stages unchanged (fail-open).\n\n §Token budget:\n - `preFilterByBudget()` deterministically drops stages that would exceed\n   the budget before the LLM call, ensuring the prompt fits in context.\n - Code and metadata stages are always kept, regardless of budget or LLM.",
-  "capabilities": ["coral-database", "ast-indexing", "llm-client"],
   "members": [
     {
       "type": "fn_decl",

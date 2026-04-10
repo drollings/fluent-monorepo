@@ -53,9 +53,10 @@ The node ID is derived from a SHA-256 hash of the query, making re-inserts idemp
 - `src/llm/root.zig` — `LlmClient`, `LlmConfig`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (1 file, auto-discovered)
+## Sources (2 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
-| `src/common/local_model.zig` | 1.0 | defines_anchor |
+| `src/llm/llm.zig` | 1.0 | defines_anchor |
+| `src/llm/root.zig` | 0.9 | used_by |
 

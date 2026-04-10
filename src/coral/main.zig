@@ -9,8 +9,8 @@ const StringInterner = common.interner.StringInterner;
 const TargetRegistry = dag.TargetRegistry;
 const BuildContext = dag.BuildContext;
 const Repl = common.repl.Repl;
-const json_parser = common.json_parser;
-const llm = common;
+const json_parser = dag.json_parser;
+const llm = @import("llm");
 const Library = coral_db.Library;
 const QueueReactor = @import("cache.zig").QueueReactor;
 const BatchIngestor = batch_mod.BatchIngestor;
@@ -35,7 +35,7 @@ pub fn main() !void {
     var positional: std.ArrayListUnmanaged([]const u8) = .{};
     defer positional.deinit(allocator);
 
-    const args = llm.parseCommonArgs(raw_args[1..], &positional, allocator) catch |err| {
+    const args = common.parseCommonArgs(raw_args[1..], &positional, allocator) catch |err| {
         switch (err) {
             error.MissingValue => {
                 std.log.err("Flag requires a value argument", .{});
@@ -45,7 +45,7 @@ pub fn main() !void {
         }
     };
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -93,9 +93,9 @@ pub fn main() !void {
             .reactor = &reactor,
         };
 
-        var mcp_rs: llm.ReaderState = .{};
+        var mcp_rs: common.ReaderState = .{};
         mcp_rs.initStdin();
-        var mcp_ws: llm.WriterState = .{};
+        var mcp_ws: common.WriterState = .{};
         mcp_ws.initStdout();
         try server.serve(mcp_rs.reader(), mcp_ws.writer());
         return;

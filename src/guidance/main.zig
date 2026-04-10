@@ -17,7 +17,7 @@ const config_mod = @import("config.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 const query_engine_mod = @import("query_engine.zig");
 const codehealth_mod = @import("codehealth.zig");
-const llm = @import("common");
+const common = @import("common");
 
 pub const version = "0.1.0";
 
@@ -133,7 +133,7 @@ fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 /// Displays usage instructions for the Zig library's help system.
 fn printHelp() !void {
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
@@ -271,7 +271,7 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
-    const json_dir = try llm.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
+    const json_dir = try common.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
     defer allocator.free(json_dir);
 
     var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
@@ -298,5 +298,3 @@ pub const loadSkillParaPub = query_engine_mod.loadSkillParaPub;
 pub const explainExtractExcerptPub = query_engine_mod.explainExtractExcerptPub;
 pub const explainGrepFilePub = query_engine_mod.explainGrepFilePub;
 pub const isShortQueryPub = query_engine_mod.isShortQueryPub;
-
-

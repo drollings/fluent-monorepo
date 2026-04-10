@@ -13,7 +13,7 @@
 //!   status  — report generation status
 
 const std = @import("std");
-const llm = @import("common");
+const common = @import("common");
 const query_engine_mod = @import("query_engine.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 
@@ -196,11 +196,11 @@ fn handleToolCall(
 pub fn serve(allocator: std.mem.Allocator, args: []const []const u8) !void {
     _ = args;
 
-    var rs: llm.ReaderState = .{};
+    var rs: common.ReaderState = .{};
     rs.initStdin();
     const reader = rs.reader();
 
-    var ws: llm.WriterState = .{};
+    var ws: common.WriterState = .{};
     ws.initStdout();
     const writer = ws.writer();
 

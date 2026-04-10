@@ -10,7 +10,7 @@
 const std = @import("std");
 const vector_db_mod = @import("vector");
 const types = @import("types.zig");
-const llm = @import("common");
+const common = @import("common");
 const line_verify = @import("line_verify.zig");
 const doc_parser = @import("doc_parser.zig");
 
@@ -772,7 +772,7 @@ pub fn formatStaged(
         }
         try seen_code.put(allocator, dedup_key, {}); // map owns key
 
-        const lang = llm.langFromPath(s.source);
+        const lang = common.langFromPath(s.source);
         if (s.line) |ln| {
             const trimmed_content = std.mem.trimRight(u8, s.content, " \t\n\r");
             const end_ln = ln + std.mem.count(u8, trimmed_content, "\n");
@@ -959,7 +959,7 @@ pub fn extractSourceExcerptVerified(
     const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
     defer allocator.free(abs_path);
 
-    const src = llm.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
+    const src = common.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
         return allocator.dupe(u8, "");
     defer allocator.free(src);
 
@@ -1010,7 +1010,7 @@ pub fn extractSourceExcerpt(
     const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
     defer allocator.free(abs_path);
 
-    const src = llm.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
+    const src = common.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
         return allocator.dupe(u8, "");
     defer allocator.free(src);
 
@@ -1024,8 +1024,8 @@ pub fn extractExcerptFromSource(
     start_line: u32,
     node_type: []const u8,
 ) ![]u8 {
-    const node_type_enum = llm.NodeType.fromString(node_type);
-    const result = try llm.extractExcerpt(allocator, src, start_line, node_type_enum, llm.DEFAULT_MAX_LINES);
+    const node_type_enum = common.NodeType.fromString(node_type);
+    const result = try common.extractExcerpt(allocator, src, start_line, node_type_enum, common.DEFAULT_MAX_LINES);
     return @constCast(result);
 }
 
@@ -1039,7 +1039,7 @@ pub fn buildMetadataStage(
     json_path: []const u8,
     source: []const u8,
 ) !?types.Stage {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
     const root = parsed.value.object;
 
@@ -1083,7 +1083,7 @@ pub fn buildMetadataStage(
             var count: usize = 0;
             for (ubv.array.items) |item| {
                 if (item != .string) continue;
-                if (llm.isTestPath(item.string)) continue;
+                if (common.isTestPath(item.string)) continue;
                 if (count == 0) {
                     try mw.writeAll("used_by: ");
                 } else {
@@ -1113,7 +1113,7 @@ pub fn buildMetadataStage(
                 };
                 if (ref.len == 0) continue;
                 // Extract skill name from path: "skills/foo/SKILL.md" → "foo".
-                const skill_name = llm.skillNameFromRef(ref);
+                const skill_name = common.skillNameFromRef(ref);
                 if (skill_name.len == 0) continue;
                 if (i > 0) try mw.writeAll(", ");
                 try mw.writeAll(skill_name);
@@ -1150,7 +1150,7 @@ pub fn buildMetadataStage(
 
 /// Loads a JSON module comment from a file path into a Zig array of bytes.
 fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
     defer parsed.deinit();
     const cv = parsed.value.object.get("comment") orelse return null;
     if (cv != .string) return null;
@@ -1163,7 +1163,7 @@ pub fn loadSkillNamesFromJson(
     allocator: std.mem.Allocator,
     json_path: []const u8,
 ) ![][]const u8 {
-    var parsed = llm.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return &.{};
+    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return &.{};
     defer parsed.deinit();
 
     const sv = parsed.value.object.get("skills") orelse return &.{};
@@ -1186,7 +1186,7 @@ pub fn loadSkillNamesFromJson(
             else => "",
         };
         if (ref.len == 0) continue;
-        const skill_name = llm.skillNameFromRef(ref);
+        const skill_name = common.skillNameFromRef(ref);
         if (skill_name.len == 0) continue;
         try out.append(allocator, try allocator.dupe(u8, skill_name));
     }

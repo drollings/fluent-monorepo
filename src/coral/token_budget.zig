@@ -1,13 +1,13 @@
 /// token_budget.zig — Token Estimation for Context Packing (M7.1)
 ///
-/// Re-exports the coral_db-independent parts from `src/common/token_budget.zig`
+/// Re-exports the coral_db-independent parts from `src/llm/token_budget.zig`
 /// and adds `estimateEmbeddingTokens()` which requires `coral_db.ContextNode`.
 ///
 /// Callers that only need basic text estimation should prefer
-/// `@import("common").token_budget` to avoid pulling in coral_db.
+/// `@import("llm").token_budget` to avoid pulling in coral_db.
 const std = @import("std");
 const coral_db = @import("coral_db");
-const common_budget = @import("common").token_budget;
+const llm_budget = @import("llm").token_budget;
 
 const ContextNode = coral_db.ContextNode;
 
@@ -15,11 +15,11 @@ const ContextNode = coral_db.ContextNode;
 // Re-exports from common
 // ---------------------------------------------------------------------------
 
-pub const BYTES_PER_TOKEN = common_budget.BYTES_PER_TOKEN;
-pub const NODE_SCHEMA_OVERHEAD_TOKENS = common_budget.NODE_SCHEMA_OVERHEAD_TOKENS;
-pub const estimate = common_budget.estimate;
-pub const TokenEstimator = common_budget.TokenEstimator;
-pub const ProportionalBudget = common_budget.ProportionalBudget;
+pub const BYTES_PER_TOKEN = llm_budget.BYTES_PER_TOKEN;
+pub const NODE_SCHEMA_OVERHEAD_TOKENS = llm_budget.NODE_SCHEMA_OVERHEAD_TOKENS;
+pub const estimate = llm_budget.estimate;
+pub const TokenEstimator = llm_budget.TokenEstimator;
+pub const ProportionalBudget = llm_budget.ProportionalBudget;
 
 // ---------------------------------------------------------------------------
 // Coral-specific extension: ContextNode token estimation

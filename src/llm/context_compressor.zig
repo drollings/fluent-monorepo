@@ -8,6 +8,7 @@
 ///   Phase 2: Enforce token budget by dropping messages from the beginning.
 ///   Phase 3: Remove orphan tool_calls whose results were pruned.
 const std = @import("std");
+const token_budget = @import("token_budget.zig");
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -34,7 +35,7 @@ pub const Message = struct {
 
 /// Calculates the estimated number of tokens in a Zig source file for compression analysis.
 pub fn estimateTokens(content: []const u8) usize {
-    return (content.len + 3) / 4;
+    return token_budget.estimate(content);
 }
 
 // ---------------------------------------------------------------------------

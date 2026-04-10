@@ -7,7 +7,7 @@
 //! On LLM error or unavailability, returns all input unchanged.
 
 const std = @import("std");
-const llm = @import("common");
+const llm = @import("llm");
 const types = @import("types.zig");
 
 /// Processes a query by filtering stages using an allocator and returns a cleaned stage list.

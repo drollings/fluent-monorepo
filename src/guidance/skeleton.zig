@@ -8,7 +8,7 @@
 
 const std = @import("std");
 const types = @import("types.zig");
-const llm = @import("common");
+const llm = @import("llm");
 const json_store_mod = @import("json_store.zig");
 const comment_inserter = @import("comment_inserter.zig");
 

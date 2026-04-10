@@ -51,6 +51,8 @@ pub const ContextPackConfig = struct {
 // ContextPacker
 // ---------------------------------------------------------------------------
 
+const token_budget = @import("token_budget.zig");
+
 /// Manages context packing structures, owns buffer allocations, ensures consistent state across lifecycle.
 pub const ContextPacker = struct {
     config: ContextPackConfig,
@@ -125,7 +127,7 @@ pub const ContextPacker = struct {
 
 /// Calculates token estimates from Zig content, returning a usize value.
 fn estimateTokens(content: []const u8) usize {
-    return (content.len + 3) / 4;
+    return token_budget.estimate(content);
 }
 
 // ---------------------------------------------------------------------------

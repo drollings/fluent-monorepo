@@ -4,7 +4,6 @@
     "source": "src/common/json_parser.zig",
     "language": "zig"
   },
-  "capabilities": ["ast-indexing", "target-registry"],
   "used_by": ["src/common/repl.zig"],
   "members": [
     {

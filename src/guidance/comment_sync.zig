@@ -22,7 +22,7 @@ const comment_inserter = @import("comment_inserter.zig");
 const comment_checker = @import("comment_checker.zig");
 const header_generator = @import("header_generator.zig");
 const marker = @import("marker.zig");
-const llm = @import("common");
+const common = @import("common");
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -117,7 +117,7 @@ pub const CommentSyncProcessor = struct {
         }
 
         // Read source.
-        const source = llm.readFileAlloc(self.allocator, filepath, 10 * 1024 * 1024) orelse
+        const source = common.readFileAlloc(self.allocator, filepath, 10 * 1024 * 1024) orelse
             return error.FileNotFound;
         defer self.allocator.free(source);
 

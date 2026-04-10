@@ -4,7 +4,7 @@ const ast_parser = @import("ast_parser.zig");
 const json_store = @import("json_store.zig");
 const hash = @import("hash.zig");
 const enhancer_mod = @import("enhancer.zig");
-const llm = @import("common");
+const common = @import("common");
 const comment_parser = @import("comment_parser.zig");
 
 /// Maps source file path (relative to project) to capability names.
@@ -74,7 +74,7 @@ pub const SyncProcessor = struct {
             return;
         };
 
-        var noop_embedder = llm.NoopEmbedding{};
+        var noop_embedder = common.NoopEmbedding{};
         const provider = noop_embedder.provider();
         var db = GuidanceDb.init(self.allocator, db_path, provider) catch |err| {
             if (self.debug) std.debug.print("[sync] warning: cannot open db for capabilities: {s}\n", .{@errorName(err)});
@@ -639,7 +639,7 @@ pub const SyncProcessor = struct {
     }
 
     fn relPath(abs: []const u8, root: []const u8) []const u8 {
-        return llm.stripPathPrefix(abs, root);
+        return common.stripPathPrefix(abs, root);
     }
 
     fn pathToModule(self: *SyncProcessor, rel_path: []const u8) ![]const u8 {
@@ -831,7 +831,7 @@ pub const SyncProcessor = struct {
         try w.writeByte('[');
         for (skills, 0..) |skill, i| {
             if (i > 0) try w.writeAll(", ");
-            try w.writeAll(llm.skillNameFromRef(skill.ref));
+            try w.writeAll(common.skillNameFromRef(skill.ref));
         }
         try w.writeByte(']');
         try w.writeByte(' ');
@@ -1079,7 +1079,7 @@ pub const SyncProcessor = struct {
             if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
 
             // Skip test files - we don't want them in used_by.
-            if (llm.isTestPath(entry.path)) continue;
+            if (common.isTestPath(entry.path)) continue;
 
             const full_path = try std.fs.path.join(self.allocator, &.{ src_dir_path, entry.path });
             defer self.allocator.free(full_path);
