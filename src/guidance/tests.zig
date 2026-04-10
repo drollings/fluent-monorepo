@@ -25,6 +25,7 @@ comptime {
     _ = @import("codehealth/orphan.zig");
     _ = @import("codehealth/build_validation.zig");
     _ = @import("codehealth/test_audit.zig");
+    _ = @import("codehealth/test_mover.zig");
 }
 
 // ---------------------------------------------------------------------------

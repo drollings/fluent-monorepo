@@ -19,6 +19,7 @@ const common = @import("common");
 const orphan_mod = @import("orphan.zig");
 const build_val_mod = @import("build_validation.zig");
 const test_audit_mod = @import("test_audit.zig");
+const test_mover_mod = @import("test_mover.zig");
 
 // Re-export for tests.zig to pull in inline tests.
 pub const parseCodehealthDirective = vector.parseCodehealthDirective;
@@ -69,6 +70,12 @@ pub const CodehealthArgs = struct {
     simhash_threshold: u6 = 3,
     workspace: []const u8 = ".",
     phases: PhaseSet = .{},
+    /// Move inline tests to _tests.zig files.
+    fix: bool = false,
+    /// Print what --fix would do without writing files.
+    dry_run: bool = false,
+    /// Workspace-relative path to the tests.zig aggregator to update on --fix.
+    tests_zig: ?[]const u8 = null,
 };
 
 /// Parse a comma-separated phase list such as "0,1,1.5,2" into a PhaseSet.
@@ -441,6 +448,12 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
             }
         } else if (std.mem.startsWith(u8, arg, "--phases=")) {
             ch_args.phases = parsePhases(arg["--phases=".len..]);
+        } else if (std.mem.eql(u8, arg, "--fix")) {
+            ch_args.fix = true;
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            ch_args.dry_run = true;
+        } else if (std.mem.startsWith(u8, arg, "--tests-zig=")) {
+            ch_args.tests_zig = arg["--tests-zig=".len..];
         }
     }
 
@@ -524,6 +537,30 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
             if (a.decl_name) |n| allocator.free(n);
         }
         allocator.free(test_anomalies);
+    }
+
+    // --fix: move inline tests to _tests.zig files.
+    if (ch_args.fix or ch_args.dry_run) {
+        const fix_stats = test_mover_mod.fixAll(
+            allocator,
+            ch_args.workspace,
+            ch_args.dry_run,
+            ch_args.tests_zig,
+        ) catch |err| blk: {
+            std.debug.print("warning: --fix failed: {s}\n", .{@errorName(err)});
+            break :blk test_mover_mod.FixStats{
+                .files_with_tests = 0,
+                .tests_moved = 0,
+                .tests_skipped = 0,
+                .files_created = 0,
+                .files_updated = 0,
+            };
+        };
+        const action = if (ch_args.dry_run) "would move" else "moved";
+        std.debug.print(
+            "[codehealth --fix] {s} {d} test(s) from {d} file(s); skipped {d}; created {d} _tests.zig file(s)\n",
+            .{ action, fix_stats.tests_moved, fix_stats.files_with_tests, fix_stats.tests_skipped, fix_stats.files_created },
+        );
     }
 
     // Adapt to UnusedModule local type for output functions.
