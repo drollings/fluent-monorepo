@@ -175,7 +175,6 @@ Then you you must read
 │   │   ├── context_node_schema.zig
 │   │   ├── csr_graph.zig                         # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
-│   │   ├── drift.zig                             # drift.zig — Re-exports BitSet DRIFT from src/common/drift.zig.
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── fixtures.zig                          # fixtures.zig — Test factory functions for coral integration tests
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
@@ -187,13 +186,11 @@ Then you you must read
 │   │   ├── main.zig
 │   │   ├── mcp.zig                               # mcp.zig — Coral MCP (Model Context Protocol) server.
 │   │   ├── metrics.zig                           # metrics.zig — Coral Latency Histograms and Resolution Counters (M8.1)
-│   │   ├── pattern.zig
 │   │   ├── schema.zig                            # schema.zig — Coral Context SQLite Schema (DDL + Queries)
 │   │   ├── session.zig                           # session.zig — Coral Session Persistence (SQLite + FTS5)
 │   │   ├── targets.zig                           # targets.zig — Ingestion DAG Target Definitions
 │   │   ├── token_budget.zig                      # token_budget.zig — Token Estimation for Context Packing (M7.1)
 │   │   ├── tool_registry.zig                     # tool_registry.zig — Tool Registry Pattern (P4.1)
-│   │   ├── triage.zig                            # Triage subcommand: generate TRIAGE.md from a TODO.md work item.
 │   │   ├── type_inference.zig                    # type_inference.zig — Type Inference Cache (P3.7)
 │   │   ├── verify.zig                            # verify.zig — Ingestion Verification and Integrity Checking
 │   │   └── yago_ingest.zig                       # yago_ingest.zig — YAGO 4.5 Baseline Ingestion (M3.2)
