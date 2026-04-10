@@ -512,6 +512,26 @@ fn findAndGenerateStructSkeleton(
     const members = root.get("members") orelse return null;
     if (members != .array) return null;
 
+    // Get source path for comment extraction
+    const meta = root.get("meta");
+    const source_path: ?[]const u8 = if (meta) |m| blk: {
+        if (m != .object) break :blk null;
+        const src = m.object.get("source") orelse break :blk null;
+        if (src != .string) break :blk null;
+        break :blk src.string;
+    } else null;
+
+    // Load source file for comment extraction
+    var source_content: ?[]const u8 = null;
+    defer if (source_content) |sc| allocator.free(sc);
+    if (source_path) |sp| blk: {
+        const cwd = std.process.getCwdAlloc(allocator) catch break :blk;
+        defer allocator.free(cwd);
+        const abs_src = std.fs.path.join(allocator, &.{ cwd, sp }) catch break :blk;
+        defer allocator.free(abs_src);
+        source_content = std.fs.cwd().readFileAlloc(allocator, abs_src, 10 * 1024 * 1024) catch break :blk;
+    }
+
     for (members.array.items) |m| {
         if (m != .object) continue;
 
@@ -523,7 +543,7 @@ fn findAndGenerateStructSkeleton(
         if (name_val != .string) continue;
 
         if (std.ascii.eqlIgnoreCase(name_val.string, struct_name)) {
-            return generateStructSkeletonFromJson(allocator, m.object, name_val.string);
+            return generateStructSkeletonFromJson(allocator, m.object, name_val.string, source_content);
         }
     }
 
@@ -535,25 +555,30 @@ fn generateStructSkeletonFromJson(
     allocator: std.mem.Allocator,
     obj: std.json.ObjectMap,
     struct_name: []const u8,
+    source_content: ?[]const u8,
 ) ?[]const u8 {
     var output: std.ArrayList(u8) = .{};
     errdefer output.deinit(allocator);
     const w = output.writer(allocator);
 
-    // Include struct comment if present
-    if (obj.get("comment")) |comment_val| {
-        if (comment_val == .string and comment_val.string.len > 0) {
-            const first_line = firstCommentLine(comment_val.string);
-            if (first_line.len > 0) {
-                w.print("/// {s}\n", .{first_line}) catch return null;
-            }
-        }
-    }
-    w.print("pub const {s} = struct {{\n", .{struct_name}) catch return null;
-
-    // Public members only
+    // Collect members with comments
     const members = obj.get("members") orelse return null;
     if (members != .array) return null;
+
+    const FnMember = struct {
+        name: []const u8,
+        signature: []const u8,
+        comment: ?[]const u8,
+    };
+    var fn_members: std.ArrayList(FnMember) = .{};
+    defer {
+        for (fn_members.items) |item| {
+            allocator.free(item.name);
+            allocator.free(item.signature);
+            if (item.comment) |c| allocator.free(c);
+        }
+        fn_members.deinit(allocator);
+    }
 
     for (members.array.items) |nm| {
         if (nm != .object) continue;
@@ -576,35 +601,82 @@ fn generateStructSkeletonFromJson(
             break :blk tv.string;
         };
 
-        // Include member comment if present
-        if (nm.object.get("comment")) |nc| {
-            if (nc == .string and nc.string.len > 0) {
-                const n_first = firstCommentLine(nc.string);
-                if (n_first.len > 0) {
-                    w.print("    /// {s}\n", .{n_first}) catch return null;
+        const n_line = blk: {
+            const lv = nm.object.get("line") orelse break :blk null;
+            if (lv != .integer) break :blk null;
+            break :blk @as(?u32, @intCast(lv.integer));
+        };
+
+        // Only include functions
+        if (!std.mem.eql(u8, n_type, "fn_decl") and !std.mem.eql(u8, n_type, "method") and !std.mem.eql(u8, n_type, "fn_private")) continue;
+
+        const n_sig = nm.object.get("signature") orelse continue;
+        if (n_sig != .string) continue;
+
+        // Extract comment from source file
+        var comment: ?[]const u8 = null;
+        if (source_content) |src| {
+            if (n_line) |line| {
+                const comment_result = comment_inserter.extractCommentAtLine(allocator, src, line) catch null;
+                if (comment_result) |c| {
+                    comment = c;
                 }
             }
         }
 
-        // Skip nested structs for skeleton (too verbose)
-        if (std.mem.eql(u8, n_type, "struct") or std.mem.eql(u8, n_type, "enum")) {
-            w.print("    {s}: {s} = ..., // (nested)\n", .{ n_name, n_type }) catch return null;
-        } else if (std.mem.eql(u8, n_type, "fn_decl") or std.mem.eql(u8, n_type, "method")) {
-            if (nm.object.get("signature")) |sig| {
-                if (sig == .string) {
-                    w.print("    pub {s}\n", .{sig.string}) catch return null;
-                } else {
-                    w.print("    pub fn {s}(...) {{ ... }}\n", .{n_name}) catch return null;
-                }
-            } else {
-                w.print("    pub fn {s}(...) {{ ... }}\n", .{n_name}) catch return null;
-            }
-        } else {
-            w.print("    {s}: {s} = ...,\n", .{ n_name, n_type }) catch return null;
+        fn_members.append(allocator, .{
+            .name = allocator.dupe(u8, n_name) catch return null,
+            .signature = allocator.dupe(u8, n_sig.string) catch return null,
+            .comment = comment,
+        }) catch return null;
+    }
+
+    // Output: Description section with struct comment from JSON
+    if (obj.get("comment")) |comment_val| {
+        if (comment_val == .string and comment_val.string.len > 0) {
+            w.print("### Description\n\n{s}\n\n", .{comment_val.string}) catch return null;
         }
     }
 
-    w.print("}};\n", .{}) catch return null;
+    // Check if any functions have comments
+    var has_comments = false;
+    for (fn_members.items) |item| {
+        if (item.comment != null) {
+            has_comments = true;
+            break;
+        }
+    }
+
+    // Output: Documentation section with function comments (above Interface)
+    if (has_comments) {
+        w.print("### Documentation\n\n", .{}) catch return null;
+        for (fn_members.items) |item| {
+            if (item.comment) |c| {
+                w.print("**{s}**: {s}\n\n", .{ item.name, c }) catch return null;
+            }
+        }
+    }
+
+    // Output: Interface section - just the function signatures
+    w.print("### Interface\n\n", .{}) catch return null;
+    w.print("`{s}` has {d} public functions:\n\n", .{ struct_name, fn_members.items.len }) catch return null;
+
+    // List functions with signatures only
+    for (fn_members.items) |item| {
+        w.print("- **{s}** — `{s}`\n", .{ item.name, item.signature }) catch return null;
+    }
+
+    // Output: Explore section with suggested queries
+    if (fn_members.items.len > 0) {
+        w.print("\n### Explore\n\n", .{}) catch return null;
+        var count: usize = 0;
+        for (fn_members.items) |item| {
+            if (count >= 3) break;
+            w.print("- `guidance explain \"{s}.{s}\"`\n", .{ struct_name, item.name }) catch return null;
+            count += 1;
+        }
+    }
+
     return output.toOwnedSlice(allocator) catch null;
 }
 

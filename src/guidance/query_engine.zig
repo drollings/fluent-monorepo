@@ -1770,7 +1770,7 @@ fn generateIndexMd(
             cfg.model_thinking,
             null,
         ) catch break :blk null;
-        llm_api_url_to_free = resolved.api_url;
+        llm_api_url_to_free = resolved.resolved_url;
         const llm_config = llm.LlmConfig{
             .api_url = resolved.api_url,
             .model = resolved.model,
@@ -1897,9 +1897,9 @@ fn handleCapabilityQuery(
 
     // If natural language query, use LLM to summarize relevant parts
     if (natural_lang) {
+        var resolved_url_to_free: ?[]const u8 = null;
+        defer if (resolved_url_to_free) |url| allocator.free(url);
         var llm_client_opt: ?llm.LlmClient = blk: {
-            var resolved_url_to_free: ?[]const u8 = null;
-            defer if (resolved_url_to_free) |url| allocator.free(url);
             const resolved = resolveLlmConfigForThinking(allocator, cfg, cfg.model_thinking, null) catch break :blk null;
             resolved_url_to_free = resolved.resolved_url;
             const llm_config: llm.LlmConfig = .{
@@ -1981,16 +1981,152 @@ fn handleStructSkeletonQuery(
     ws.initStdout();
     const stdout = ws.writer();
 
-    const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
+    const info = findStructInfo(allocator, struct_name, guidance_dir) catch null;
+    if (info) |struct_info| {
+        defer {
+            allocator.free(struct_info.source_path);
+            allocator.free(struct_info.comment);
+        }
 
-    if (skeleton) |skel| {
-        defer allocator.free(skel);
-        try stdout.print("# Struct: `{s}`\n\n{s}\n", .{ struct_name, skel });
-        try stdout.print("\n---\n\nRun `guidance explain \"<method-name>\"` to see specific method documentation.\n", .{});
+        // Get actual end line by counting braces in source
+        const end_line = blk: {
+            const workspace = std.process.getCwdAlloc(allocator) catch break :blk struct_info.line orelse 1;
+            defer allocator.free(workspace);
+            const abs_path = std.fs.path.join(allocator, &.{ workspace, struct_info.source_path }) catch break :blk struct_info.line orelse 1;
+            defer allocator.free(abs_path);
+
+            const src = common.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse break :blk struct_info.line orelse 1;
+            defer allocator.free(src);
+
+            const start = struct_info.line orelse break :blk 1;
+            break :blk findStructEndLine(src, start);
+        };
+
+        // Generate skeleton for signature view (with comments)
+        const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
+
+        if (skeleton) |skel| {
+            defer allocator.free(skel);
+            const start_line = struct_info.line orelse 1;
+            try stdout.print("# Explain: {s}\n\n", .{struct_name});
+            try stdout.print("## Source location: `{s}:{d}-{d}`\n\n", .{ struct_info.source_path, start_line, end_line });
+            try stdout.print("{s}", .{skel});
+        } else {
+            try stdout.print("# Struct: `{s}`\n\nStruct found but skeleton could not be generated.\n", .{struct_name});
+        }
     } else {
-        try stdout.print("# Struct: `{s}`\n\nStruct not found in indexed files.\n\nRun `guidance gen` to index your source files.\n", .{struct_name});
+        const skeleton = skeleton_mod.generateStructSkeleton(allocator, struct_name, guidance_dir);
+        if (skeleton) |skel| {
+            defer allocator.free(skel);
+            try stdout.print("# Struct: `{s}`\n\n{s}\n", .{ struct_name, skel });
+            try stdout.print("\n---\n\nRun `guidance explain \"<method-name>\"` to see specific method documentation.\n", .{});
+        } else {
+            try stdout.print("# Struct: `{s}`\n\nStruct not found in indexed files.\n\nRun `guidance gen` to index your source files.\n", .{struct_name});
+        }
     }
     try stdout.flush();
+}
+
+/// Finds the end line of a struct by counting braces starting from start_line.
+fn findStructEndLine(src: []const u8, start_line: u32) u32 {
+    var lines = std.mem.splitScalar(u8, src, '\n');
+    var line_no: u32 = 0;
+    var brace_depth: isize = 0;
+    var found_open: bool = false;
+    var open_line: u32 = 0;
+
+    while (lines.next()) |line| {
+        line_no += 1;
+        if (line_no < start_line) continue;
+
+        for (line) |ch| {
+            if (ch == '{') {
+                if (!found_open) {
+                    found_open = true;
+                    open_line = line_no;
+                }
+                brace_depth += 1;
+            } else if (ch == '}') {
+                brace_depth -= 1;
+                if (found_open and brace_depth == 0) {
+                    return line_no;
+                }
+            }
+        }
+    }
+    return open_line;
+}
+
+const StructInfo = struct {
+    source_path: []const u8,
+    line: ?u32,
+    comment: []const u8,
+};
+
+fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) !?StructInfo {
+    const json_dir = std.fs.path.join(allocator, &.{ guidance_dir, "src" }) catch return null;
+    defer allocator.free(json_dir);
+
+    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
+    defer dir.close();
+
+    var walker = dir.walk(allocator) catch return null;
+    defer walker.deinit();
+
+    while (walker.next() catch null) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
+
+        const full_path = std.fs.path.join(allocator, &.{ json_dir, entry.path }) catch continue;
+        defer allocator.free(full_path);
+
+        const content = std.fs.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch continue;
+        defer allocator.free(content);
+
+        var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch continue;
+        defer parsed.deinit();
+
+        if (parsed.value != .object) continue;
+        const root = parsed.value.object;
+        const members = root.get("members") orelse continue;
+        if (members != .array) continue;
+
+        const meta = root.get("meta") orelse continue;
+        if (meta != .object) continue;
+        const src_val = meta.object.get("source") orelse continue;
+        if (src_val != .string) continue;
+        const source_path = src_val.string;
+
+        for (members.array.items) |m| {
+            if (m != .object) continue;
+            const type_val = m.object.get("type") orelse continue;
+            if (type_val != .string) continue;
+            if (!std.mem.eql(u8, type_val.string, "struct")) continue;
+
+            const name_val = m.object.get("name") orelse continue;
+            if (name_val != .string) continue;
+
+            if (std.ascii.eqlIgnoreCase(name_val.string, struct_name)) {
+                const line = if (m.object.get("line")) |lv| blk: {
+                    if (lv != .integer) break :blk null;
+                    break :blk @as(u32, @intCast(lv.integer));
+                } else null;
+
+                const comment = if (m.object.get("comment")) |cv| blk: {
+                    if (cv != .string) break :blk "";
+                    break :blk cv.string;
+                } else "";
+
+                return .{
+                    .source_path = try allocator.dupe(u8, source_path),
+                    .line = line,
+                    .comment = if (comment.len > 0) try allocator.dupe(u8, comment) else try allocator.dupe(u8, ""),
+                };
+            }
+        }
+    }
+
+    return null;
 }
 
 // =============================================================================
