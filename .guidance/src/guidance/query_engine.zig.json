@@ -8,6 +8,7 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["explain-query", "plugin-system", "coral-database", "config-system", "coral-mcp", "sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/main.zig", "src/guidance/mcp.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
@@ -684,7 +685,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 2539
+      "line": 2538
     },
     {
       "type": "fn_private",
@@ -697,7 +698,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2553
+      "line": 2552
     },
     {
       "type": "fn_private",
@@ -710,7 +711,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2581
+      "line": 2580
     },
     {
       "type": "fn_decl",
@@ -723,7 +724,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2660
+      "line": 2659
     },
     {
       "type": "fn_decl",
@@ -736,7 +737,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2722
+      "line": 2721
     },
     {
       "type": "fn_decl",
@@ -749,7 +750,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2753
+      "line": 2752
     },
     {
       "type": "fn_decl",
@@ -762,55 +763,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2763
+      "line": 2762
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2835
+      "line": 2834
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2840
+      "line": 2839
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2845
+      "line": 2844
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2850
+      "line": 2849
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2855
+      "line": 2854
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2860
+      "line": 2859
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2870
+      "line": 2869
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2876
+      "line": 2875
     }
   ]
 }

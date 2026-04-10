@@ -2226,20 +2226,18 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (resolved_url_buf) |buf| allocator.free(buf);
 
     if (!no_llm) {
-        const model_ref = model orelse (if (cfg.model_thinking.len > 0) cfg.model_thinking else cfg.model_default);
+        const model_ref = model orelse (if (cfg.model_fast.len > 0) cfg.model_fast else cfg.model_default);
 
-        // Use centralized helper for thinking model support
         const resolved = resolveLlmConfigForThinking(
             allocator,
             &cfg,
             model_ref,
             api_url,
         ) catch {
-            // Fallback to defaults
             const fallback_config: llm.LlmConfig = .{
                 .api_url = api_url orelse config_mod.DEFAULT_API_URL,
                 .model = model_ref,
-                .think = null,
+                .think = false,
             };
             llm_client_opt = llm.LlmClient.init(allocator, fallback_config) catch null;
             return;
@@ -2248,7 +2246,8 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const llm_config: llm.LlmConfig = .{
             .api_url = resolved.api_url,
             .model = resolved.model,
-            .think = resolved.think,
+            .think = false,
+            .debug = debug,
         };
         llm_client_opt = llm.LlmClient.init(allocator, llm_config) catch null;
     }

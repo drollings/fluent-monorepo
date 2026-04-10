@@ -17,7 +17,7 @@
   },
   "models": {
     "default": "ollama:code:latest",
-    "fast": "ollama:fast:latest",
+    "fast": "ollama:code:latest",
     "thinking": "ollama:code:latest",
     "batch": "ollama:code:latest",
     "embed": "ollama:embed:latest"
