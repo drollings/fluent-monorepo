@@ -3,9 +3,12 @@
 //! Usage:
 //!   guidance codehealth [options]
 //!
-//! Phase 1: Module-level detection (zero-importer files).
+//! Phase 0:  Orphaned file detection (files not imported anywhere).
+//! Phase 1:  Module-level detection (zero-importer files from DB).
+//! Phase 1.5: build.zig validation (references to missing files).
 //! Phase 2a: Redundancy detection via SimHash Hamming distance.
 //! Phase 2b: Symbol-level call graph analysis (--extract-calls).
+//! Phase 2:  Test organisation enforcement.
 //!
 //! This command is expensive and meant for periodic audits, not the RALPH loop.
 
@@ -13,6 +16,9 @@ const std = @import("std");
 const vector = @import("vector");
 const config_mod = @import("../config.zig");
 const common = @import("common");
+const orphan_mod = @import("orphan.zig");
+const build_val_mod = @import("build_validation.zig");
+const test_audit_mod = @import("test_audit.zig");
 
 // Re-export for tests.zig to pull in inline tests.
 pub const parseCodehealthDirective = vector.parseCodehealthDirective;
@@ -44,6 +50,16 @@ pub const RedundantPair = struct {
 /// Output format for codehealth report.
 pub const Format = enum { ai, human, json };
 
+/// Phase selector for the codehealth command.
+/// Use `parsePhases` to populate from `--phases=0,1,1.5,2`.
+pub const PhaseSet = struct {
+    phase0: bool = true,   // orphaned files
+    phase1: bool = true,   // unused modules (DB)
+    phase15: bool = true,  // build.zig validation
+    phase2a: bool = true,  // SimHash redundancy
+    phase2: bool = true,   // test organisation
+};
+
 /// Arguments parsed from CLI flags for the codehealth command.
 pub const CodehealthArgs = struct {
     min_age_days: u32 = 30,
@@ -52,7 +68,30 @@ pub const CodehealthArgs = struct {
     extract_calls: bool = false,
     simhash_threshold: u6 = 3,
     workspace: []const u8 = ".",
+    phases: PhaseSet = .{},
 };
+
+/// Parse a comma-separated phase list such as "0,1,1.5,2" into a PhaseSet.
+/// Only the listed phases will be enabled.
+fn parsePhases(spec: []const u8) PhaseSet {
+    var ps = PhaseSet{
+        .phase0 = false,
+        .phase1 = false,
+        .phase15 = false,
+        .phase2a = false,
+        .phase2 = false,
+    };
+    var it = std.mem.splitScalar(u8, spec, ',');
+    while (it.next()) |tok| {
+        const t = std.mem.trim(u8, tok, " ");
+        if (std.mem.eql(u8, t, "0")) ps.phase0 = true;
+        if (std.mem.eql(u8, t, "1")) ps.phase1 = true;
+        if (std.mem.eql(u8, t, "1.5")) ps.phase15 = true;
+        if (std.mem.eql(u8, t, "2a")) ps.phase2a = true;
+        if (std.mem.eql(u8, t, "2")) ps.phase2 = true;
+    }
+    return ps;
+}
 
 // ---------------------------------------------------------------------------
 // SimHash redundancy detection (Phase 2a)
@@ -196,13 +235,39 @@ fn daysSince(last_modified: i64) u32 {
 /// Writes output to a writer, handling unused and redundant pairs with a minimum age constraint.
 fn writeAiOutput(
     w: *std.Io.Writer,
+    orphans: []const orphan_mod.OrphanedFile,
     unused: []const UnusedModule,
+    build_anomalies: []const build_val_mod.BuildAnomaly,
     pairs: []const RedundantPair,
+    test_anomalies: []const test_audit_mod.TestAnomaly,
     min_age_days: u32,
 ) !void {
     var has_content = false;
 
-    // ── Modules not imported ──────────────────────────────────────
+    // ── Phase 0: Orphaned files ───────────────────────────────────
+    if (orphans.len > 0) {
+        try w.writeAll(
+            \\## ⚠️ ORPHANED FILES (High Confidence)
+            \\
+            \\> These files exist but are not imported by any other file.
+            \\
+            \\
+        );
+        has_content = true;
+        for (orphans) |o| {
+            const age = daysSince(o.last_modified);
+            if (age < min_age_days) continue;
+            try w.print("### {s} ({d} days)\n\n", .{ o.source, age });
+            try w.writeAll("**Imports:** None\n");
+            try w.writeAll("**Action:** Delete file and remove from build.zig if present\n\n---\n\n");
+        }
+    }
+
+    // ── Phase 1.5: build.zig anomalies ───────────────────────────
+    try build_val_mod.writeAiOutput(w, build_anomalies);
+    if (build_anomalies.len > 0) has_content = true;
+
+    // ── Phase 1: Modules not imported (DB) ───────────────────────
     var printed_header = false;
     for (unused) |m| {
         const age = daysSince(m.last_modified);
@@ -248,6 +313,10 @@ fn writeAiOutput(
         }
     }
 
+    // ── Phase 2: Test organisation ────────────────────────────────
+    try test_audit_mod.writeAiOutput(w, test_anomalies);
+    if (test_anomalies.len > 0) has_content = true;
+
     if (!has_content) {
         try w.writeAll("## ✅ No issues found\n\nAll modules appear to be imported and no redundant code detected.\n");
     }
@@ -255,21 +324,36 @@ fn writeAiOutput(
     // ── Summary ───────────────────────────────────────────────────
     try w.writeAll("## 📋 SUMMARY\n\n");
     try w.writeAll("| Category | Count | Action |\n|----------|-------|--------|\n");
-    try w.print("| Not imported | {d} | Review for deletion |\n", .{unused.len});
+    try w.print("| Orphaned files | {d} | Review for deletion |\n", .{orphans.len});
+    try w.print("| build.zig anomalies | {d} | Fix references |\n", .{build_anomalies.len});
+    try w.print("| Not imported (DB) | {d} | Review for deletion |\n", .{unused.len});
     try w.print("| Redundant pairs | {d} | Consider consolidation |\n", .{pairs.len});
+    try w.print("| Test organisation | {d} | Review conventions |\n", .{test_anomalies.len});
 }
 
 /// Writes formatted output to a writer, handling unused and redundant data efficiently.
 fn writeHumanOutput(
     w: *std.Io.Writer,
+    orphans: []const orphan_mod.OrphanedFile,
     unused: []const UnusedModule,
+    build_anomalies: []const build_val_mod.BuildAnomaly,
     pairs: []const RedundantPair,
+    test_anomalies: []const test_audit_mod.TestAnomaly,
     min_age_days: u32,
 ) !void {
     try w.print("CODEHEALTH REPORT (min_age={d}d)\n", .{min_age_days});
     try w.writeAll("================================\n\n");
 
-    try w.print("Unused modules ({d}):\n", .{unused.len});
+    try w.print("Orphaned files ({d}):\n", .{orphans.len});
+    for (orphans) |o| {
+        const age = daysSince(o.last_modified);
+        if (age < min_age_days) continue;
+        try w.print("  [{d}d] {s}\n", .{ age, o.source });
+    }
+
+    try build_val_mod.writeHumanOutput(w, build_anomalies);
+
+    try w.print("\nUnused modules/{d}):\n", .{unused.len});
     for (unused) |m| {
         const age = daysSince(m.last_modified);
         if (age < min_age_days) continue;
@@ -282,15 +366,29 @@ fn writeHumanOutput(
             p.hamming_distance, p.a_name, p.a_source, p.b_name, p.b_source,
         });
     }
+
+    try test_audit_mod.writeHumanOutput(w, test_anomalies);
 }
 
 /// Writes JSON-formatted output to a writer, handling optional parameters and redundant pairs.
 fn writeJsonOutput(
     w: *std.Io.Writer,
+    orphans: []const orphan_mod.OrphanedFile,
     unused: []const UnusedModule,
+    build_anomalies: []const build_val_mod.BuildAnomaly,
     pairs: []const RedundantPair,
+    test_anomalies: []const test_audit_mod.TestAnomaly,
 ) !void {
-    try w.writeAll("{\"unused_modules\":[");
+    try w.writeAll("{\"orphaned_files\":[");
+    for (orphans, 0..) |o, i| {
+        if (i > 0) try w.writeAll(",");
+        try w.print("{{\"source\":\"{s}\",\"last_modified\":{d},\"age_days\":{d}}}", .{
+            o.source, o.last_modified, daysSince(o.last_modified),
+        });
+    }
+    try w.writeAll("],");
+    try build_val_mod.writeJsonFragment(w, build_anomalies);
+    try w.writeAll(",\"unused_modules\":[");
     for (unused, 0..) |m, i| {
         if (i > 0) try w.writeAll(",");
         try w.print("{{\"source\":\"{s}\",\"last_modified\":{d},\"age_days\":{d}}}", .{
@@ -304,7 +402,9 @@ fn writeJsonOutput(
             p.a_name, p.a_source, p.b_name, p.b_source, p.hamming_distance,
         });
     }
-    try w.writeAll("]}\n");
+    try w.writeAll("],");
+    try test_audit_mod.writeJsonFragment(w, test_anomalies);
+    try w.writeAll("}\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -339,7 +439,35 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
                 i += 1;
                 if (i < args_raw.len) ch_args.workspace = args_raw[i];
             }
+        } else if (std.mem.startsWith(u8, arg, "--phases=")) {
+            ch_args.phases = parsePhases(arg["--phases=".len..]);
         }
+    }
+
+    // Phase 0: orphaned files (filesystem walk, no DB needed).
+    const orphans: []orphan_mod.OrphanedFile = if (ch_args.phases.phase0)
+        orphan_mod.findOrphanedFiles(allocator, ch_args.workspace) catch |err| blk: {
+            std.debug.print("warning: findOrphanedFiles failed: {s}\n", .{@errorName(err)});
+            break :blk &[_]orphan_mod.OrphanedFile{};
+        }
+    else
+        &[_]orphan_mod.OrphanedFile{};
+    defer {
+        for (orphans) |o| allocator.free(o.source);
+        allocator.free(orphans);
+    }
+
+    // Phase 1.5: build.zig validation.
+    const build_anomalies: []build_val_mod.BuildAnomaly = if (ch_args.phases.phase15)
+        build_val_mod.validateBuildZig(allocator, ch_args.workspace) catch |err| blk: {
+            std.debug.print("warning: validateBuildZig failed: {s}\n", .{@errorName(err)});
+            break :blk &[_]build_val_mod.BuildAnomaly{};
+        }
+    else
+        &[_]build_val_mod.BuildAnomaly{};
+    defer {
+        for (build_anomalies) |a| allocator.free(a.referenced_path);
+        allocator.free(build_anomalies);
     }
 
     var noop: common.NoopEmbedding = .{};
@@ -350,20 +478,26 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
     defer db.deinit();
 
     // Phase 1: unused modules.
-    const unused = db.findUnusedModules(allocator) catch |err| blk: {
-        std.debug.print("warning: findUnusedModules failed: {s}\n", .{@errorName(err)});
-        break :blk &[_]vector.GuidanceDb.UnusedModule{};
-    };
+    const unused = if (ch_args.phases.phase1)
+        db.findUnusedModules(allocator) catch |err| blk: {
+            std.debug.print("warning: findUnusedModules failed: {s}\n", .{@errorName(err)});
+            break :blk &[_]vector.GuidanceDb.UnusedModule{};
+        }
+    else
+        &[_]vector.GuidanceDb.UnusedModule{};
     defer {
         for (unused) |m| allocator.free(m.source);
         allocator.free(unused);
     }
 
     // Phase 2a: redundant pairs via SimHash.
-    const pairs = findRedundantPairs(allocator, &db, ch_args.simhash_threshold) catch |err| blk: {
-        std.debug.print("warning: findRedundantPairs failed: {s}\n", .{@errorName(err)});
-        break :blk &[_]RedundantPair{};
-    };
+    const pairs = if (ch_args.phases.phase2a)
+        findRedundantPairs(allocator, &db, ch_args.simhash_threshold) catch |err| blk: {
+            std.debug.print("warning: findRedundantPairs failed: {s}\n", .{@errorName(err)});
+            break :blk &[_]RedundantPair{};
+        }
+    else
+        &[_]RedundantPair{};
     defer {
         for (pairs) |p| freeRedundantPair(allocator, p);
         allocator.free(pairs);
@@ -374,6 +508,22 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
         runCallExtraction(allocator, &db, ch_args.workspace) catch |err| {
             std.debug.print("warning: call extraction failed: {s}\n", .{@errorName(err)});
         };
+    }
+
+    // Phase 2: test organisation.
+    const test_anomalies: []test_audit_mod.TestAnomaly = if (ch_args.phases.phase2)
+        test_audit_mod.auditTestFiles(allocator, ch_args.workspace) catch |err| blk: {
+            std.debug.print("warning: auditTestFiles failed: {s}\n", .{@errorName(err)});
+            break :blk &[_]test_audit_mod.TestAnomaly{};
+        }
+    else
+        &[_]test_audit_mod.TestAnomaly{};
+    defer {
+        for (test_anomalies) |a| {
+            allocator.free(a.source);
+            if (a.decl_name) |n| allocator.free(n);
+        }
+        allocator.free(test_anomalies);
     }
 
     // Adapt to UnusedModule local type for output functions.
@@ -389,9 +539,9 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
     const stdout = &out_fw.interface;
 
     switch (ch_args.format) {
-        .ai => try writeAiOutput(stdout, unused_out, pairs, ch_args.min_age_days),
-        .human => try writeHumanOutput(stdout, unused_out, pairs, ch_args.min_age_days),
-        .json => try writeJsonOutput(stdout, unused_out, pairs),
+        .ai => try writeAiOutput(stdout, orphans, unused_out, build_anomalies, pairs, test_anomalies, ch_args.min_age_days),
+        .human => try writeHumanOutput(stdout, orphans, unused_out, build_anomalies, pairs, test_anomalies, ch_args.min_age_days),
+        .json => try writeJsonOutput(stdout, orphans, unused_out, build_anomalies, pairs, test_anomalies),
     }
     try stdout.flush();
 }
