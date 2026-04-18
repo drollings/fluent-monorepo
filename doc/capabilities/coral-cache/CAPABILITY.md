@@ -45,7 +45,7 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 - `src/common/local_model.zig` — `LocalDecomposer` (L4.5)
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (40 files, auto-discovered)
+## Sources (39 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -53,40 +53,39 @@ After L3/L4/L4.5 produce a non-empty result, `persistSolution()` stores the resu
 | `src/coral/cache_reactor.zig` | 1.0 | defines_anchor |
 | `src/coral/cache.zig` | 0.9 | used_by |
 | `src/coral/cache_router.zig` | 0.9 | used_by |
-| `src/coral/verify.zig` | 0.4 | path_heuristic |
-| `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
-| `src/coral/main_tests.zig` | 0.4 | path_heuristic |
-| `src/coral/targets.zig` | 0.4 | path_heuristic |
-| `src/coral/db.zig` | 0.4 | path_heuristic |
-| `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
-| `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
-| `src/coral/batch.zig` | 0.4 | path_heuristic |
-| `src/coral/delegation.zig` | 0.4 | path_heuristic |
-| `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
-| `src/coral/benchmark.zig` | 0.4 | path_heuristic |
-| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
-| `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
-| `src/coral/mcp.zig` | 0.4 | path_heuristic |
-| `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
-| `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
-| `src/coral/metrics.zig` | 0.4 | path_heuristic |
-| `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
 | `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/cli.zig` | 0.4 | path_heuristic |
 | `src/coral/http_transport.zig` | 0.4 | path_heuristic |
+| `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
+| `src/coral/targets.zig` | 0.4 | path_heuristic |
+| `src/coral/db.zig` | 0.4 | path_heuristic |
 | `src/coral/token_budget.zig` | 0.4 | path_heuristic |
 | `src/coral/config.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/pagerank.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/louvain.zig` | 0.4 | path_heuristic |
 | `src/coral/frontier.zig` | 0.4 | path_heuristic |
 | `src/coral/global_search.zig` | 0.4 | path_heuristic |
 | `src/coral/tool_registry.zig` | 0.4 | path_heuristic |
+| `src/coral/batch.zig` | 0.4 | path_heuristic |
 | `src/coral/executor.zig` | 0.4 | path_heuristic |
+| `src/coral/delegation.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/union_find.zig` | 0.4 | path_heuristic |
 | `src/coral/cache_test.zig` | 0.4 | path_heuristic |
 | `src/coral/schema.zig` | 0.4 | path_heuristic |
+| `src/coral/benchmark.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
+| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
+| `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
+| `src/coral/mcp.zig` | 0.4 | path_heuristic |
 | `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
 | `src/coral/main.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |
 | `src/coral/context_node_schema.zig` | 0.4 | path_heuristic |
+| `src/coral/algorithms/edge_weights.zig` | 0.4 | path_heuristic |
+| `src/coral/metrics.zig` | 0.4 | path_heuristic |
 | `src/coral/session.zig` | 0.4 | path_heuristic |
+| `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
+| `src/coral/verify.zig` | 0.4 | path_heuristic |
 

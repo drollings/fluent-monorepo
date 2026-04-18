@@ -81,10 +81,49 @@
       "line": 171
     },
     {
+      "type": "struct",
+      "name": "FixBuildStats",
+      "match_hash": "3ebb3eac1cf2330e18d2db6baca2e60d9d0dd2028a75bee24a187ed36b20e630",
+      "signature": "keyword_struct FixBuildStats { ... }",
+      "is_pub": true,
+      "line": 188
+    },
+    {
+      "type": "fn_decl",
+      "name": "fixUncoveredTestFiles",
+      "match_hash": "422f17162e9aee9fbf032a1b5ae1411aa90fd8b93fa4304b2e69b3ee79d43365",
+      "signature": "fn fixUncoveredTestFiles(allocator: std.mem.Allocator, workspace: []const u8, uncovered: []const []const u8, dry_run: bool) -> FixBuildStats",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "uncovered", "type": "[]const []const u8" },
+        { "name": "dry_run", "type": "bool" }
+      ],
+      "returns": "FixBuildStats",
+      "is_pub": true,
+      "line": 209
+    },
+    {
+      "type": "fn_private",
+      "name": "addOneTestTarget",
+      "match_hash": "e98bbdec08eea28e9b15bb740644891e277d02acd3b364bc22b43581e15fe1b7",
+      "signature": "fn addOneTestTarget(allocator: std.mem.Allocator, build_zig_path: []const u8, workspace: []const u8, tests_zig_rel: []const u8, dry_run: bool) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "build_zig_path", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "tests_zig_rel", "type": "[]const u8" },
+        { "name": "dry_run", "type": "bool" }
+      ],
+      "returns": "bool",
+      "is_pub": false,
+      "line": 236
+    },
+    {
       "type": "test_decl",
       "name": "build_validation: extractPathRefs finds .zig paths with line numbers",
       "is_pub": false,
-      "line": 187
+      "line": 354
     }
   ]
 }

@@ -48,7 +48,7 @@ pub const Triple = struct {
 - `src/rdf/root.zig` — umbrella re-exports `Parser`, `Triple`, `Term`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (6 files, auto-discovered)
+## Sources (5 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -56,6 +56,5 @@ pub const Triple = struct {
 | `src/rdf/nquads.zig` | 1.0 | defines_anchor |
 | `src/rdf/normalize.zig` | 0.9 | used_by |
 | `src/rdf/root.zig` | 0.9 | used_by |
-| `src/rdf/lexer_tests.zig` | 0.4 | path_heuristic |
 | `src/rdf/lexer.zig` | 0.4 | path_heuristic |
 

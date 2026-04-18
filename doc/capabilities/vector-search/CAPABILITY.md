@@ -85,7 +85,7 @@ Serialization format: `[dim: u32LE][scale: f32LE][data: dim × i8]`. Accessible 
 - Partial index `WHERE embedding IS NOT NULL` keeps the scan fast
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (9 files, auto-discovered)
+## Sources (8 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -97,5 +97,4 @@ Serialization format: `[dim: u32LE][scale: f32LE][data: dim × i8]`. Accessible 
 | `src/vector/vector_db_tests.zig` | 0.9 | used_by |
 | `src/vector/hnsw.zig` | 0.4 | path_heuristic |
 | `src/vector/simhash.zig` | 0.4 | path_heuristic |
-| `src/vector/simhash_tests.zig` | 0.4 | path_heuristic |
 

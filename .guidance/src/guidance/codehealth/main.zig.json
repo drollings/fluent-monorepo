@@ -229,13 +229,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 599
+      "line": 623
     },
     {
       "type": "test_decl",
       "name": "codehealth: isGenericName recognises common names",
       "is_pub": false,
-      "line": 615
+      "line": 639
     }
   ]
 }

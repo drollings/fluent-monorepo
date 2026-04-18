@@ -60,7 +60,7 @@ Rules are applied before `flush()` writes to the Library, so inferred triples ar
 |------|-----------|--------|
 | `src/ontology/mapper.zig` | 1.0 | defines_anchor |
 | `src/ontology/root.zig` | 0.9 | used_by |
+| `src/ontology/migration.zig` | 0.4 | path_heuristic |
 | `src/ontology/inference.zig` | 0.4 | path_heuristic |
 | `src/ontology/yago.zig` | 0.4 | path_heuristic |
-| `src/ontology/migration.zig` | 0.4 | path_heuristic |
 

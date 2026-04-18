@@ -89,16 +89,14 @@ pub const parseJsonFile = json_mod.parseJsonFile;
 pub const SharedString = @import("zigsharedstring").SharedString;
 
 // ── Reference counting (zigrc) ────────────────────────────────────────────────
-/// Single-threaded reference counting: Rc(T), SecureRc(T).
+/// Reference counting primitives: Rc(T), Arc(T), aligned and unmanaged variants.
 pub const rc = @import("zigrc");
 /// Convenience re-exports from zigrc for direct access.
 pub const Rc = rc.Rc;
-pub const SecureRc = rc.SecureRc;
 pub const RcAligned = rc.RcAligned;
 pub const RcUnmanaged = rc.RcUnmanaged;
 pub const RcAlignedUnmanaged = rc.RcAlignedUnmanaged;
 pub const Arc = rc.Arc;
-pub const SecureArc = rc.SecureArc;
 pub const ArcAligned = rc.ArcAligned;
 pub const ArcUnmanaged = rc.ArcUnmanaged;
 pub const ArcAlignedUnmanaged = rc.ArcAlignedUnmanaged;
