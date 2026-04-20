@@ -27,8 +27,7 @@ const staged_mod = @import("staged.zig");
 const vector_db_mod = @import("vector");
 
 const CodebaseMap = codebase_map_mod.CodebaseMap;
-const DocumentIndexer = document_indexer_mod.DocumentIndexer;
-const QueryStrategy = query_strategy_mod.QueryStrategy;
+const QueryMatch = query_strategy_mod.QueryMatch;
 const InferredCapability = infer_capabilities_mod.InferredCapability;
 const GuidanceDb = vector_db_mod.GuidanceDb;
 
@@ -55,29 +54,17 @@ pub const CodebaseScanner = struct {
     map: ?CodebaseMap,
     inferred_capabilities: ?[]InferredCapability,
     confidence: ConfidenceTier,
-    // Strategies (stateless pointers)
-    id_strategy: query_strategy_mod.IdentifierLookupStrategy,
-    cap_strategy: query_strategy_mod.CapabilityQueryStrategy,
-    concept_strategy: query_strategy_mod.ConceptQueryStrategy,
-    strategies: [3]QueryStrategy,
+    matches: [3]QueryMatch,
 
     pub fn init(allocator: std.mem.Allocator, workspace: []const u8) !CodebaseScanner {
-        var s = CodebaseScanner{
+        const s = CodebaseScanner{
             .allocator = allocator,
             .workspace = try allocator.dupe(u8, workspace),
             .map = null,
             .inferred_capabilities = null,
             .confidence = .low,
-            .id_strategy = .{},
-            .cap_strategy = .{},
-            .concept_strategy = .{},
-            .strategies = undefined,
+            .matches = query_strategy_mod.buildDefaultStrategies(),
         };
-        s.strategies = query_strategy_mod.buildDefaultStrategies(
-            &s.id_strategy,
-            &s.cap_strategy,
-            &s.concept_strategy,
-        );
         return s;
     }
 
@@ -131,14 +118,14 @@ pub const CodebaseScanner = struct {
         query: []const u8,
         aliases: ?vector_db_mod.SemanticAliases,
     ) ![]types.Stage {
-        return query_strategy_mod.executeWithStrategy(
+        return query_strategy_mod.executeQueryWithMatch(
             allocator,
             db,
             query,
             query,
             self.workspace,
             aliases,
-            &self.strategies,
+            &self.matches,
         );
     }
 

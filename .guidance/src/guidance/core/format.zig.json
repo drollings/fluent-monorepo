@@ -48,7 +48,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 72
+      "line": 69
     },
     {
       "type": "fn_private",
@@ -63,7 +63,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 94
+      "line": 91
     },
     {
       "type": "fn_decl",
@@ -79,7 +79,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 217
+      "line": 218
     },
     {
       "type": "fn_decl",
@@ -98,7 +98,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 253
+      "line": 254
     }
   ]
 }

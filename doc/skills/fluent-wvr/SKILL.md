@@ -1205,6 +1205,109 @@ var lib = Library.init(arena.allocator(), ...);  // Library freed when arena dei
 
 Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators.
 
+### ❌ Single-implementation vtable
+
+```zig
+// Wrong: exactly one implementation exists, but a vtable handle wraps it
+pub const DocumentIndexer = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+    // ...
+};
+
+pub fn build(...) !DocumentIndexer {
+    return .{ .ptr = impl, .vtable = &the_only_vtable };
+}
+```
+
+**Why it's wrong:** The vtable adds two pointers of indirection and a layer of type-erased dispatch for zero runtime benefit. There is no branching, no swapping of implementations, no polymorphism — only overhead. When there is exactly one implementation, the vtable should be removed entirely.
+
+**Right:** Put the methods directly on the implementation struct. Return `*Implementation` to callers:
+
+```zig
+pub const GuidanceJsonIndexerImpl = struct {
+    allocator: std.mem.Allocator,
+    doc: *const types.GuidanceDoc,
+
+    pub fn extractMetadata(self: *GuidanceJsonIndexerImpl, alloc: std.mem.Allocator) !DocumentMetadata { ... }
+    pub fn produceStages(self: *GuidanceJsonIndexerImpl, alloc: std.mem.Allocator, ...) ![]types.Stage { ... }
+    pub fn deinit(self: *GuidanceJsonIndexerImpl) void { self.allocator.destroy(self); }
+};
+
+pub fn createIndexer(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc) !*GuidanceJsonIndexerImpl {
+    const impl = try allocator.create(GuidanceJsonIndexerImpl);
+    impl.* = .{ .allocator = allocator, .doc = doc };
+    return impl;
+}
+```
+
+The caller holds `*Implementation` directly. No indirection, no vtable handle. If a second implementation is added later, introduce the vtable then — not before.
+
+**How to catch it:** Before adding a vtable, ask *"do I have two or more concrete implementations right now, or could I have them in the future?"* If the answer is "one today, maybe two later," use direct methods now and introduce the vtable when the second implementation arrives. Speculative vtable design before there are multiple implementations is a form of premature generalization.
+
+### ❌ Cosmopolitan Polymorphism (identical execute body)
+
+```zig
+// Wrong: three vtable entries that all call the same execute function
+fn identifierExecute(ptr: *anyopaque, ...) ![]types.Stage {
+    _ = ptr;
+    return staged_mod.executeStagedConfig(allocator, db, config);
+}
+fn capabilityExecute(ptr: *anyopaque, ...) ![]types.Stage {
+    _ = ptr;
+    return staged_mod.executeStagedConfig(allocator, db, config);
+}
+fn conceptExecute(ptr: *anyopaque, ...) ![]types.Stage {
+    _ = ptr;
+    return staged_mod.executeStagedConfig(allocator, db, config);
+}
+
+const strategy_vtable: QueryStrategy.VTable = .{
+    .execute = identifierExecute,  // identical to capabilityExecute and conceptExecute
+    // ...
+};
+```
+
+**Why it's wrong:** The vtable is routing to the same function through three identical entries. The only thing that differs is the `matches` predicate. The vtable is a vehicle for the `matches` function pointer — but the `execute` indirection is pure waste. This is Cosmopolitan Polymorphism: applying the vtable pattern for the routing mechanism while the polymorphism itself is an illusion.
+
+**Right:** Separate the predicate from the dispatch. A function-pointer array is sufficient:
+
+```zig
+pub const QueryMatch = struct {
+    matches: *const fn (query: []const u8, db: *GuidanceDb) bool,
+    intent: QueryIntent,
+    priority: u8,
+};
+
+pub fn executeQuery(allocator: std.mem.Allocator, db: *GuidanceDb, config: StagedConfig) ![]types.Stage {
+    return staged_mod.executeStagedConfig(allocator, db, config);  // the ONE body
+}
+
+pub fn executeQueryWithMatch(..., matches: []const QueryMatch) ![]types.Stage {
+    for (matches) |m| {
+        if (m.matches(query, db)) return executeQuery(allocator, db, config);
+    }
+    return staged_mod.executeStagedConfig(allocator, db, config);
+}
+```
+
+**How to catch it:** If you write three implementations and notice their `execute` bodies are word-for-word identical, stop. The vtable is not earning its indirection. Use a function-pointer array (like `QueryMatch`) instead. Keep `matches` as a function pointer; move `execute` to a single shared function.
+
+### ❌ Arena for long-lived data
+
+```zig
+// Wrong: Library should outlive all requests
+var arena = std.heap.ArenaAllocator.init(page_allocator);
+var lib = Library.init(arena.allocator(), ...);  // Library freed when arena deinits
+// Later: arena.deinit() destroys Library while requests still reference it
+```
+
+Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators. The arena deallocates everything when it goes out of scope — if the data inside needs to survive beyond the arena's scope boundary, it must escape to a caller-owned allocator before the arena deinits.
+
+**Why arenas destroy long-lived data:** An `ArenaAllocator` does not free individual allocations — it only resets the bump pointer on deinit. Everything allocated within the arena becomes invalid simultaneously. If a data structure is rooted in the arena and the arena deinits, the data structure's backing memory returns to the operating system. Any pointers to that memory become dangling pointers.
+
+**The rule:** Data structures that must outlive the function that created them need their own allocator, not an arena. Use arenas for the *temporary* allocations within a scope boundary (intermediate strings, scratch buffers, parsed tokens). Escape only what the caller explicitly takes ownership of.
+
 ### ❌ Mixing typed and untyped access in DynamicEditable
 
 ```zig
@@ -1232,9 +1335,23 @@ Does data arrive as a string from outside the process?
   NO, but field name known at runtime → Editable(T).setFast()
   NO, field name known at compile time → direct field access
 
-Do you need runtime polymorphism (multiple swappable implementations)?
-  YES → VTable
-  NO, one implementation → generics
+Do you have multiple concrete implementations today?
+  YES (2+) → VTable with {ptr, vtable} handle
+  NO  → Does a second implementation exist or is one genuinely planned?
+
+      ONE implementation today, no concrete second in progress
+        → Direct struct methods. Not a vtable handle.
+        → Return *Implementation to callers. No indirection.
+        → Add the vtable when the second implementation arrives.
+
+      ONE implementation today, second is actively being coded
+        → Still prefer direct methods for the first implementation.
+        → Design the interface as methods on the struct now.
+        → When second arrives, add the vtable handle wrapper.
+
+      Speculative ("maybe I'll add more later")
+        → This is premature generalization. Do not add a vtable speculatively.
+        → Start with direct methods. The interface is the implementation.
 
 Does a struct cross the WASM host/guest boundary?
   YES → extern struct with align(1) fields + BinaryFieldCodec
@@ -1244,9 +1361,13 @@ Does a batch operation allocate many short-lived intermediates?
   YES → ArenaAllocator scoped to the batch
   NO  → caller-managed allocator
 
-Is an integer ID passed across module boundaries?
+Is an integer ID passed across module boundaries and must not mix with other IDs?
   YES → enum(i64) { _ } typed opaque handle
   NO  → plain integer
+
+Do multiple implementations share the same execute body, differing only in a predicate?
+  YES → Function-pointer array (e.g., QueryMatch) — not a full vtable
+  NO  → Normal vtable if multiple implementations apply
 
 Does a vtable need runtime state (e.g., StringInterner context)?
   YES → parameterised vtable with context: ?*const anyopaque

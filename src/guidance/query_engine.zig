@@ -606,21 +606,17 @@ fn cmdExplainStaged(
         }
     }
 
-    // M2: Route through QueryStrategy VTable for intent-based dispatch.
-    var id_strategy: query_strategy_mod.IdentifierLookupStrategy = .{};
-    var cap_strategy: query_strategy_mod.CapabilityQueryStrategy = .{};
-    var concept_strategy: query_strategy_mod.ConceptQueryStrategy = .{};
-    const strategies = query_strategy_mod.buildDefaultStrategies(&id_strategy, &cap_strategy, &concept_strategy);
+    const matches = query_strategy_mod.buildDefaultStrategies();
 
     // Pass original query for deterministic matching, effective query for vector search
-    const stages_raw = try query_strategy_mod.executeWithStrategy(
+    const stages_raw = try query_strategy_mod.executeQueryWithMatch(
         allocator,
         db,
         effective_query,
         query_text,
         workspace,
         aliases_opt,
-        &strategies,
+        &matches,
     );
     defer {
         types.freeStages(allocator, stages_raw);
@@ -1766,19 +1762,16 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             var aliases_opt = loadAliases(allocator, gdir_abs);
             defer if (aliases_opt) |*a| a.deinit();
 
-            var id_strategy: query_strategy_mod.IdentifierLookupStrategy = .{};
-            var cap_strategy: query_strategy_mod.CapabilityQueryStrategy = .{};
-            var concept_strategy: query_strategy_mod.ConceptQueryStrategy = .{};
-            const strategies = query_strategy_mod.buildDefaultStrategies(&id_strategy, &cap_strategy, &concept_strategy);
+            const matches = query_strategy_mod.buildDefaultStrategies();
 
-            break :stages_blk try query_strategy_mod.executeWithStrategy(
+            break :stages_blk try query_strategy_mod.executeQueryWithMatch(
                 allocator,
                 &gdb,
                 query_text,
                 query_text,
                 ws,
                 aliases_opt,
-                &strategies,
+                &matches,
             );
         };
         defer {

@@ -38,23 +38,20 @@ pub const FileMatchItem = struct { path: []const u8, count: usize, lines: []usiz
 
 /// Writes deduplicated CODE stages as fenced code blocks. writer must be std.ArrayList writer.
 fn formatCodeStages(allocator: std.mem.Allocator, writer: anytype, stages: []const types_mod.Stage) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
     var seen_code: std.StringHashMapUnmanaged(void) = .empty;
-    defer {
-        var kit = seen_code.keyIterator();
-        while (kit.next()) |k| allocator.free(k.*);
-        seen_code.deinit(allocator);
-    }
+    defer seen_code.deinit(aa);
     for (stages) |s| {
         if (s.kind != .code) continue;
         const dedup_key = if (s.line) |ln|
-            try std.fmt.allocPrint(allocator, "{s}:{d}", .{ s.source, ln })
+            try std.fmt.allocPrint(aa, "{s}:{d}", .{ s.source, ln })
         else
-            try allocator.dupe(u8, s.source);
-        if (seen_code.contains(dedup_key)) {
-            allocator.free(dedup_key);
-            continue;
-        }
-        try seen_code.put(allocator, dedup_key, {});
+            try aa.dupe(u8, s.source);
+        if (seen_code.contains(dedup_key)) continue;
+        try seen_code.put(aa, dedup_key, {});
         const lang = common.langFromPath(s.source);
         if (s.line) |ln| {
             const trimmed_content = std.mem.trimRight(u8, s.content, " \t\n\r");
@@ -92,30 +89,34 @@ fn formatCapabilitySection(writer: anytype, stages: []const types_mod.Stage) !vo
 
 /// Writes the ## References section from metadata stages.
 fn formatMetadataSection(allocator: std.mem.Allocator, writer: anytype, query: []const u8, stages: []const types_mod.Stage) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
     var ref_header_written = false;
     var all_keywords: std.ArrayList(u8) = .empty;
-    defer all_keywords.deinit(allocator);
+    defer all_keywords.deinit(aa);
     var keyword_list: std.ArrayList([]const u8) = .empty;
-    defer keyword_list.deinit(allocator);
+    defer keyword_list.deinit(aa);
     var all_see_also: std.ArrayList(u8) = .empty;
-    defer all_see_also.deinit(allocator);
+    defer all_see_also.deinit(aa);
     var all_skills: std.ArrayList(u8) = .empty;
-    defer all_skills.deinit(allocator);
+    defer all_skills.deinit(aa);
     var all_capabilities: std.ArrayList(u8) = .empty;
-    defer all_capabilities.deinit(allocator);
+    defer all_capabilities.deinit(aa);
     var all_matched_caps: std.ArrayList(u8) = .empty;
-    defer all_matched_caps.deinit(allocator);
+    defer all_matched_caps.deinit(aa);
 
     var seen_kw: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen_kw.deinit(allocator);
+    defer seen_kw.deinit(aa);
     var seen_see_also: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen_see_also.deinit(allocator);
+    defer seen_see_also.deinit(aa);
     var seen_skills_ref: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen_skills_ref.deinit(allocator);
+    defer seen_skills_ref.deinit(aa);
     var seen_caps_ref: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen_caps_ref.deinit(allocator);
+    defer seen_caps_ref.deinit(aa);
     var seen_matched_caps: std.StringHashMapUnmanaged(void) = .empty;
-    defer seen_matched_caps.deinit(allocator);
+    defer seen_matched_caps.deinit(aa);
 
     for (stages) |s| {
         if (s.kind != .metadata) continue;
@@ -126,50 +127,50 @@ fn formatMetadataSection(allocator: std.mem.Allocator, writer: anytype, query: [
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_kw.contains(p) or std.ascii.eqlIgnoreCase(p, query) or seen_kw.count() >= 10) continue;
-                    try seen_kw.put(allocator, p, {});
-                    try keyword_list.append(allocator, p);
+                    try seen_kw.put(aa, p, {});
+                    try keyword_list.append(aa, p);
                 }
             } else if (std.mem.startsWith(u8, line, "used_by: ")) {
                 var parts = std.mem.splitSequence(u8, line["used_by: ".len..], ", ");
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_see_also.contains(p)) continue;
-                    try seen_see_also.put(allocator, p, {});
-                    if (all_see_also.items.len > 0) try all_see_also.appendSlice(allocator, ", ");
-                    try all_see_also.append(allocator, '`');
-                    try all_see_also.appendSlice(allocator, p);
-                    try all_see_also.append(allocator, '`');
+                    try seen_see_also.put(aa, p, {});
+                    if (all_see_also.items.len > 0) try all_see_also.appendSlice(aa, ", ");
+                    try all_see_also.append(aa, '`');
+                    try all_see_also.appendSlice(aa, p);
+                    try all_see_also.append(aa, '`');
                 }
             } else if (std.mem.startsWith(u8, line, "skills: ")) {
                 var parts = std.mem.splitSequence(u8, line["skills: ".len..], ", ");
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_skills_ref.contains(p)) continue;
-                    try seen_skills_ref.put(allocator, p, {});
-                    if (all_skills.items.len > 0) try all_skills.appendSlice(allocator, ", ");
-                    try all_skills.append(allocator, '`');
-                    try all_skills.appendSlice(allocator, p);
-                    try all_skills.append(allocator, '`');
+                    try seen_skills_ref.put(aa, p, {});
+                    if (all_skills.items.len > 0) try all_skills.appendSlice(aa, ", ");
+                    try all_skills.append(aa, '`');
+                    try all_skills.appendSlice(aa, p);
+                    try all_skills.append(aa, '`');
                 }
             } else if (std.mem.startsWith(u8, line, "capabilities: ")) {
                 var parts = std.mem.splitSequence(u8, line["capabilities: ".len..], ", ");
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_caps_ref.contains(p)) continue;
-                    try seen_caps_ref.put(allocator, p, {});
-                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, "\x00");
-                    try all_capabilities.appendSlice(allocator, p);
+                    try seen_caps_ref.put(aa, p, {});
+                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(aa, "\x00");
+                    try all_capabilities.appendSlice(aa, p);
                 }
             } else if (std.mem.startsWith(u8, line, "matched_capabilities: ")) {
                 var parts = std.mem.splitSequence(u8, line["matched_capabilities: ".len..], ", ");
                 while (parts.next()) |part| {
                     const p = std.mem.trim(u8, part, " \t");
                     if (p.len == 0 or seen_matched_caps.contains(p)) continue;
-                    try seen_matched_caps.put(allocator, p, {});
-                    if (all_matched_caps.items.len > 0) try all_matched_caps.appendSlice(allocator, ", ");
-                    try all_matched_caps.append(allocator, '`');
-                    try all_matched_caps.appendSlice(allocator, p);
-                    try all_matched_caps.append(allocator, '`');
+                    try seen_matched_caps.put(aa, p, {});
+                    if (all_matched_caps.items.len > 0) try all_matched_caps.appendSlice(aa, ", ");
+                    try all_matched_caps.append(aa, '`');
+                    try all_matched_caps.appendSlice(aa, p);
+                    try all_matched_caps.append(aa, '`');
                 }
             }
         }
@@ -177,10 +178,10 @@ fn formatMetadataSection(allocator: std.mem.Allocator, writer: anytype, query: [
 
     if (keyword_list.items.len > 0) {
         for (keyword_list.items[1..]) |kw| {
-            if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
-            try all_keywords.append(allocator, '`');
-            try all_keywords.appendSlice(allocator, kw);
-            try all_keywords.append(allocator, '`');
+            if (all_keywords.items.len > 0) try all_keywords.appendSlice(aa, ", ");
+            try all_keywords.append(aa, '`');
+            try all_keywords.appendSlice(aa, kw);
+            try all_keywords.append(aa, '`');
         }
         if (!ref_header_written) {
             try writer.writeAll("## References\n\n");

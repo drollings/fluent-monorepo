@@ -243,6 +243,13 @@ Then you you must read
 │   │   │   ├── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
 │   │   │   └── sync_tests.zig                  # Tests for sync.zig.
 │   │   ├── core
+│   │   │   ├── drift.zig                       # core/drift.zig — Drift follow-up suggestion logic.
+│   │   │   ├── excerpt.zig                     # core/excerpt.zig — Unified source excerpt extraction.
+│   │   │   ├── format.zig                      # core/format.zig — Unified markdown formatting for explain output.
+│   │   │   ├── intent.zig                      # core/intent.zig — Deterministic query intent classification.
+│   │   │   ├── metadata.zig                    # core/metadata.zig — Unified GuidanceDoc JSON metadata loading.
+│   │   │   ├── ranking.zig                     # core/ranking.zig — Unified result ranking and scoring.
+│   │   │   └── skill_loader.zig                # core/skill_loader.zig — Unified SKILL.md paragraph loading.
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   ├── markdown_plugin_tests.zig       # Tests for markdown_plugin.zig.
@@ -252,7 +259,7 @@ Then you you must read
 │   │   │   ├── identifier.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
 │   │   │   ├── llm_filter.zig                  # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │   │   │   ├── llm_filter_batch.zig            # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
-│   │   │   ├── strategy.zig                    # query_strategy.zig — QueryStrategy VTable for intent-based query routing.
+│   │   │   ├── strategy.zig                    # query_strategy.zig — Query routing by intent.
 │   │   │   ├── strategy_tests.zig              # Tests for strategy.zig.
 │   │   │   └── synthesize.zig                  # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │   │   ├── sync
@@ -268,7 +275,7 @@ Then you you must read
 │   │   ├── config.zig                            # [gof-patterns]  guidance project configuration loader.
 │   │   ├── doc_parser.zig                        # doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.
 │   │   ├── doc_parser_tests.zig                  # Tests for doc_parser.zig.
-│   │   ├── document_indexer.zig                  # [gof-patterns]  document_indexer.zig — DocumentIndexer VTable for unified document abstraction.
+│   │   ├── document_indexer.zig                  # [gof-patterns]  document_indexer.zig — Document indexer for Guidance JSON documents.
 │   │   ├── document_indexer_tests.zig            # Tests for document_indexer.zig.
 │   │   ├── enhancer.zig                          # AI Docstring Enhancer for Zig guidance generation.
 │   │   ├── enhancer_tests.zig                    # Tests for enhancer.zig.
@@ -293,7 +300,7 @@ Then you you must read
 │   │   ├── scanner_tests.zig                     # Tests for scanner.zig.
 │   │   ├── schema_validator.zig                  # schema_validator.zig — GuidanceDoc field validation.
 │   │   ├── skeleton.zig                          # skeleton.zig — File and struct skeleton extraction for token-efficient discovery.
-│   │   ├── stage_builder.zig                     # [gof-patterns]  stage_builder.zig — StageBuilder VTable for typed, pre-allocated stage production.
+│   │   ├── stage_builder.zig                     # [gof-patterns]  stage_builder.zig — Stage builder for typed, pre-allocated stage production.
 │   │   ├── stage_builder_tests.zig               # Tests for stage_builder.zig.
 │   │   ├── staged.zig                            # staged.zig — Staged explain pipeline for `guidance explain`.
 │   │   ├── staged_tests.zig                      # Tests for staged.zig.

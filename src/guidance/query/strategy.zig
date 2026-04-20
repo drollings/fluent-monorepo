@@ -1,15 +1,12 @@
-//! query_strategy.zig — QueryStrategy VTable for intent-based query routing.
-//!
-//! Implements M2 of ROADMAP_20260403_FLUENT_GUIDANCE.md:
-//! Classify query intent before retrieval and route to the optimal strategy.
-//!
-//! VTable pattern follows fluent-wvr (see doc/skills/fluent-wvr/SKILL.md):
-//!   {ptr: *anyopaque, vtable: *const VTable} — two pointers, no inheritance.
+//! query_strategy.zig — Query routing by intent.
 //!
 //! Strategy priority (lower = tried first):
-//!   0  IdentifierLookupStrategy  — single-token camelCase/PascalCase/snake_case
-//!   2  CapabilityQueryStrategy   — query matches a known capability/alias
-//!   4  ConceptQueryStrategy      — fallback: hybrid search + LLM synthesis
+//!   0  identifier lookup  — single-token camelCase/PascalCase/snake_case
+//!   2  capability query    — query matches a known capability/alias
+//!   4  concept query       — fallback: hybrid search + LLM synthesis
+//!
+//! Anti-pattern fixed: all three execute() implementations were identical.
+//! Replaced with QueryMatch (matches-only function pointer) + single executeQuery.
 
 const std = @import("std");
 const types = @import("../types.zig");
@@ -24,179 +21,54 @@ const SearchResult = GuidanceDb.SearchResult;
 // QueryIntent enum
 // =============================================================================
 
-/// Manages query intent keywords with a fixed ownership model; ensures key invariants are preserved across operations.
 pub const QueryIntent = enum {
-    /// Single identifier: "cmdExplain", "GuidanceDb", "embed"
     identifier_lookup,
-    /// Matches known capability name or alias: "database", "sync guidance"
     capability_query,
-    /// "How does X work?", "What design patterns are used?" — conceptual multi-word
     concept_query,
-    /// Fallback for everything else
     general_search,
 };
 
 // =============================================================================
-// QueryStrategy VTable
+// QueryMatch — lightweight match predicate for intent routing
 // =============================================================================
 
-/// Manages query keywords with ownership model; ensures key invariants are preserved.
-pub const QueryStrategy = struct {
-    ptr: *anyopaque,
-    vtable: *const VTable,
+pub const QueryMatch = struct {
+    matches: *const fn (query: []const u8, db: *GuidanceDb) bool,
+    intent: QueryIntent,
+    priority: u8,
+};
 
-    pub const VTable = struct {
-        /// Does this strategy apply to the given query?
-        /// Deterministic — no allocations allowed.
-        matches: *const fn (ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool,
-
-        /// Execute the strategy, return owned stage slice.
-        /// Caller must free with types.freeStages() + allocator.free().
-        execute: *const fn (
-            ptr: *anyopaque,
-            allocator: std.mem.Allocator,
-            db: *GuidanceDb,
-            config: staged_mod.StagedConfig,
-        ) anyerror![]types.Stage,
-
-        /// Intent this strategy handles (for diagnostics).
-        intent: QueryIntent,
-
-        /// Priority (lower = tried first). Strategies are sorted at build time.
-        priority: u8,
+fn queryMatch(
+    comptime matches_fn: *const fn (query: []const u8, db: *GuidanceDb) bool,
+    intent: QueryIntent,
+    priority: u8,
+) QueryMatch {
+    return .{
+        .matches = matches_fn,
+        .intent = intent,
+        .priority = priority,
     };
-
-    pub fn matches(self: QueryStrategy, query: []const u8, db: *GuidanceDb) bool {
-        return self.vtable.matches(self.ptr, query, db);
-    }
-
-    pub fn execute(
-        self: QueryStrategy,
-        allocator: std.mem.Allocator,
-        db: *GuidanceDb,
-        config: staged_mod.StagedConfig,
-    ) ![]types.Stage {
-        return self.vtable.execute(self.ptr, allocator, db, config);
-    }
-
-    pub fn intent(self: QueryStrategy) QueryIntent {
-        return self.vtable.intent;
-    }
-
-    pub fn priority(self: QueryStrategy) u8 {
-        return self.vtable.priority;
-    }
-};
+}
 
 // =============================================================================
-// Strategy 1: IdentifierLookupStrategy (priority 0)
+// Matches predicates (stateless — no ptr needed)
 // =============================================================================
-//
-// Matches single-token queries that look like identifiers: camelCase, PascalCase,
-// snake_case. Routes through the staged pipeline like all other queries,
-// ensuring keyword queries get the same LLM synthesis and capability integration
-// as natural language queries. The staged pipeline automatically prioritizes
-// exact name matches in its scoring.
 
-/// Implementation struct for identifier lookup.
-pub const IdentifierLookupStrategy = struct {
-    // Stateless — no fields needed.
-
-    pub fn strategy(self: *IdentifierLookupStrategy) QueryStrategy {
-        return .{ .ptr = self, .vtable = &identifier_vtable };
-    }
-};
-
-/// Checks if query strings match database entries, returning true or false.
-fn identifierMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
-    _ = ptr;
+fn identifierMatches(query: []const u8, db: *GuidanceDb) bool {
     _ = db;
     return looksLikeIdentifier(query);
 }
 
-/// Executes an identifier query in the GuidanceDb, returning results or errors.
-fn identifierExecute(
-    ptr: *anyopaque,
-    allocator: std.mem.Allocator,
-    db: *GuidanceDb,
-    config: staged_mod.StagedConfig,
-) anyerror![]types.Stage {
-    _ = ptr;
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-
-const identifier_vtable: QueryStrategy.VTable = .{
-    .matches = identifierMatches,
-    .execute = identifierExecute,
-    .intent = .identifier_lookup,
-    .priority = 0,
-};
-
-// =============================================================================
-// Strategy 2: CapabilityQueryStrategy (priority 2)
-// =============================================================================
-//
-// Matches queries whose tokens correspond to known capability names or semantic
-// aliases. Routes to staged pipeline (which already handles capability routing
-// well) — this strategy primarily improves intent logging.
-
-pub const CapabilityQueryStrategy = struct {
-    pub fn strategy(self: *CapabilityQueryStrategy) QueryStrategy {
-        return .{ .ptr = self, .vtable = &capability_vtable };
-    }
-};
-
-/// Checks if a query matches capability data in the GuidanceDb, returning true or false.
-fn capabilityMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
-    _ = ptr;
-    // Query is a capability match if findMatchedCapabilityNamesForQuery returns ≥ 1 result
-    // with score > 0.5. We use a stack allocator approximation: check if query is
-    // multi-word and contains known capability-related terms.
-    // Full capability matching is done in executeStagedWithAliasesOriginal.
+fn capabilityMatches(query: []const u8, db: *GuidanceDb) bool {
     _ = db;
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
-    // Only route through capability strategy for multi-word queries that look like
-    // capability names (not single identifiers, which go through identifier strategy).
     var tok_count: usize = 0;
     var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
     while (it.next()) |_| tok_count += 1;
     return tok_count >= 2 and tok_count <= 4 and !core_intent.isNaturalLanguageQuery(trimmed);
 }
 
-/// Executes a capability query, returning results or errors.
-fn capabilityExecute(
-    ptr: *anyopaque,
-    allocator: std.mem.Allocator,
-    db: *GuidanceDb,
-    config: staged_mod.StagedConfig,
-) anyerror![]types.Stage {
-    _ = ptr;
-    return staged_mod.executeStagedConfig(allocator, db, config);
-}
-
-const capability_vtable: QueryStrategy.VTable = .{
-    .matches = capabilityMatches,
-    .execute = capabilityExecute,
-    .intent = .capability_query,
-    .priority = 2,
-};
-
-// =============================================================================
-// Strategy 3: ConceptQueryStrategy (priority 4, fallback)
-// =============================================================================
-//
-// Matches multi-word natural language questions: "How does X work?",
-// "What design patterns are used?". Delegates to staged pipeline + LLM synthesis.
-
-pub const ConceptQueryStrategy = struct {
-    pub fn strategy(self: *ConceptQueryStrategy) QueryStrategy {
-        return .{ .ptr = self, .vtable = &concept_vtable };
-    }
-};
-
-/// Checks if a query matches a concept using a pointer, query slice, and database.
-fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
-    _ = ptr;
+fn conceptMatches(query: []const u8, db: *GuidanceDb) bool {
     _ = db;
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     var tok_count: usize = 0;
@@ -205,37 +77,26 @@ fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     return tok_count >= 2;
 }
 
-/// Executes a concept query, returning results or errors.
-fn conceptExecute(
-    ptr: *anyopaque,
+// =============================================================================
+// Query dispatcher
+// =============================================================================
+
+pub fn executeQuery(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
     config: staged_mod.StagedConfig,
-) anyerror![]types.Stage {
-    _ = ptr;
+) ![]types.Stage {
     return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
-const concept_vtable: QueryStrategy.VTable = .{
-    .matches = conceptMatches,
-    .execute = conceptExecute,
-    .intent = .concept_query,
-    .priority = 4,
-};
-
-// =============================================================================
-// Strategy dispatcher
-// =============================================================================
-
-/// Execute query through the first matching strategy, or fall back to staged pipeline.
-pub fn executeWithStrategy(
+pub fn executeQueryWithMatch(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
     query: []const u8,
     original_query: []const u8,
     workspace: []const u8,
     aliases: ?vector_db_mod.SemanticAliases,
-    strategies: []const QueryStrategy,
+    matches: []const QueryMatch,
 ) ![]types.Stage {
     const config: staged_mod.StagedConfig = .{
         .query = query,
@@ -243,24 +104,19 @@ pub fn executeWithStrategy(
         .workspace = workspace,
         .aliases = aliases,
     };
-    for (strategies) |s| {
-        if (s.matches(query, db)) {
-            return s.execute(allocator, db, config);
+    for (matches) |m| {
+        if (m.matches(query, db)) {
+            return executeQuery(allocator, db, config);
         }
     }
     return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
-/// Constructs default query strategies from provided identifiers, capabilities, and concepts.
-pub fn buildDefaultStrategies(
-    identifier: *IdentifierLookupStrategy,
-    capability: *CapabilityQueryStrategy,
-    concept: *ConceptQueryStrategy,
-) [3]QueryStrategy {
+pub fn buildDefaultStrategies() [3]QueryMatch {
     return .{
-        identifier.strategy(), // priority 0
-        capability.strategy(), // priority 2
-        concept.strategy(), // priority 4
+        queryMatch(identifierMatches, .identifier_lookup, 0),
+        queryMatch(capabilityMatches, .capability_query, 2),
+        queryMatch(conceptMatches, .concept_query, 4),
     };
 }
 
@@ -268,25 +124,34 @@ pub fn buildDefaultStrategies(
 // Helpers
 // =============================================================================
 
-/// Checks if a query string slice matches a predefined identifier pattern.
 pub fn looksLikeIdentifier(query: []const u8) bool {
     const trimmed = std.mem.trim(u8, query, " \t\n\r");
     if (trimmed.len < 2 or trimmed.len > 64) return false;
-
-    // Must be a single token (no spaces)
     if (std.mem.indexOfAny(u8, trimmed, " \t\n\r") != null) return false;
-
-    // Must start with letter or underscore
     if (!std.ascii.isAlphabetic(trimmed[0]) and trimmed[0] != '_') return false;
-
-    // Must contain only alphanumeric + underscore
     for (trimmed) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
     }
-
     return true;
 }
 
 // =============================================================================
 // Tests
 // =============================================================================
+
+const testing = std.testing;
+
+test "looksLikeIdentifier" {
+    try testing.expect(looksLikeIdentifier("GuidanceDb"));
+    try testing.expect(looksLikeIdentifier("cmdExplain"));
+    try testing.expect(looksLikeIdentifier("some_function"));
+    try testing.expect(!looksLikeIdentifier("how does x work"));
+    try testing.expect(!looksLikeIdentifier(""));
+    try testing.expect(!looksLikeIdentifier("a"));
+}
+
+test "QueryMatch priority ordering" {
+    const strategies = buildDefaultStrategies();
+    try testing.expect(strategies[0].priority < strategies[1].priority);
+    try testing.expect(strategies[1].priority < strategies[2].priority);
+}

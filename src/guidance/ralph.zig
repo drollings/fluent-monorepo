@@ -19,7 +19,7 @@ const query_strategy_mod = @import("query/strategy.zig");
 const vector_db_mod = @import("vector");
 
 const CodebaseMap = codebase_map_mod.CodebaseMap;
-const QueryStrategy = query_strategy_mod.QueryStrategy;
+const QueryMatch = query_strategy_mod.QueryMatch;
 const QueryIntent = query_strategy_mod.QueryIntent;
 const GuidanceDb = vector_db_mod.GuidanceDb;
 
@@ -57,11 +57,8 @@ pub const RalphContext = struct {
     query_history: std.ArrayList(QueryRecord),
     pending_relationships: std.ArrayList(Relationship),
 
-    // Strategies (stateless — owned here as stack vars via pointers stored in strategy list)
-    id_strategy: query_strategy_mod.IdentifierLookupStrategy,
-    cap_strategy: query_strategy_mod.CapabilityQueryStrategy,
-    concept_strategy: query_strategy_mod.ConceptQueryStrategy,
-    strategies: [3]QueryStrategy,
+    // Strategies
+    matches: [3]QueryMatch,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -78,14 +75,7 @@ pub const RalphContext = struct {
         ctx.map = null;
         ctx.query_history = .{};
         ctx.pending_relationships = .{};
-        ctx.id_strategy = .{};
-        ctx.cap_strategy = .{};
-        ctx.concept_strategy = .{};
-        ctx.strategies = query_strategy_mod.buildDefaultStrategies(
-            &ctx.id_strategy,
-            &ctx.cap_strategy,
-            &ctx.concept_strategy,
-        );
+        ctx.matches = query_strategy_mod.buildDefaultStrategies();
         return ctx;
     }
 
@@ -135,14 +125,14 @@ fn ralphAsk(
     allocator: std.mem.Allocator,
     query: []const u8,
 ) ![]types.Stage {
-    const stages = try query_strategy_mod.executeWithStrategy(
+    const stages = try query_strategy_mod.executeQueryWithMatch(
         allocator,
         ctx.db,
         query,
         query,
         ctx.workspace,
         ctx.aliases,
-        &ctx.strategies,
+        &ctx.matches,
     );
     ctx.state = .learn;
     return stages;
@@ -155,7 +145,7 @@ fn ralphLearn(
     query: []const u8,
 ) ![]types.Stage {
     // Record the query.
-    const intent = classifyIntent(query, &ctx.strategies, ctx.db);
+    const intent = classifyIntent(query, &ctx.matches, ctx.db);
     try ctx.query_history.append(allocator, .{
         .query = try allocator.dupe(u8, query),
         .intent = intent,
@@ -324,9 +314,9 @@ fn formatHelpStages(allocator: std.mem.Allocator) ![]types.Stage {
 // =============================================================================
 
 /// Determines the intent of a query string based on provided strategies and database context.
-fn classifyIntent(query: []const u8, strategies: []const QueryStrategy, db: *GuidanceDb) QueryIntent {
-    for (strategies) |s| {
-        if (s.matches(query, db)) return s.intent();
+fn classifyIntent(query: []const u8, matches: []const QueryMatch, db: *GuidanceDb) QueryIntent {
+    for (matches) |m| {
+        if (m.matches(query, db)) return m.intent;
     }
     return .general_search;
 }
