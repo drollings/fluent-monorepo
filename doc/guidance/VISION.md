@@ -75,6 +75,7 @@ LLM Synthesis: Markdown summary with file:line citations
 - `--no-llm`: Fast path for structural output only
 - `--filter=auto|force|skip`: Control LLM relevance filtering
 - `--staged=false`: Legacy output format (rollback safety)
+- `--output=json`: Structured JSON for local LLM output to control deterministic workflow
 
 ### Goal 4: Cross-Language Parity
 
@@ -92,11 +93,180 @@ Both `guidance gen` (Zig) and `bin/guidance-py` (Python) produce identical JSON 
 
 **Parity Enforcement:** JSON Schema validation at sync time (planned).
 
+### Goal 5: Subagent Structured Output
+
+guidance serves as a deterministic-first subagent providing structured output to frontier orchestrators:
+
+```
+guidance explain "query" --output=json
+  ↓
+{
+  "intent": "IDENTIFIER",
+  "confidence": 0.95,
+  "results": [...],
+  "summary": "...",
+  "citations": [...],
+  "gaps": [...]
+}
+
+guidance explain "nonexistent" --output=json
+  ↓
+{
+  "status": "ESCALATE",
+  "reason": "no_results",
+  "suggested_capability": "...",
+  "frontier_action": "..."
+}
+```
+
 ---
 
 ## Architecture
 
-### Component 1: Sync Pipeline (`SyncProcessor`)
+### Component 1: Query Processing FSM
+
+The query engine implements a **finite state machine** for deterministic routing. This replaces the cosmetic TIER classification with actual state transitions:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      QUERY PROCESSING FSM                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐       │
+│  │ INTAKE  │────▶│ CLASSIFY│────▶│  ROUTE  │────▶│VALIDATE │────▶SYNTH │
+│  └─────────┘     └─────────┘     └─────────┘     └─────────┘       │
+│       │            │            │            │            │                     │
+│       ▼            ▼            ▼            ▼            ▼                     │
+│  Tokenize     Intent      Search      Result       Prompt                  │
+│  detection   extraction   strategy    quality                     │
+│                                                                  │
+│  States:                                                         │
+│  INTAKE   → Parse query into tokens, detect file paths, identify patterns     │
+│  CLASSIFY → Classify intent: SINGLE_IDENTIFIER, CAPABILITY_KEYWORD,         │
+│           FILE_PATH, CONCEPTUAL, HOW_TO, MULTI_KEYWORD                     │
+│  ROUTE    → Select search primitive: WordIndex, AnchorLookup,           │
+│           FTS keyword, Hybrid fallback, RRF merge                       │
+│  VALIDATE → Verify results: match_hash, relevance threshold,            │
+│           anchor verification, SimHash structural match               │
+│  SYNTH   → LLM with grounded excerpts                                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Intent Classification Rules:**
+
+| Intent | Detection | Search Path |
+|--------|-----------|-----------|
+| `single_identifier` | 1 token, matches identifier pattern (CamelCase, snake_case) | WordIndex exact match |
+| `capability_keyword` | Token matches capability name in INDEX.md | AnchorLookup |
+| `file_path` | Contains `/` or .zig suffix | Direct JSON lookup |
+| `how_to` | Starts with question verb | Capability + skill + FTS |
+| `conceptual` | Multi-word, no identifier | RRF hybrid |
+| `multi_keyword` | Multiple tokens | Per-token matching |
+
+### Component 2: Search Primitives Hierarchy
+
+The query engine implements a **primitives hierarchy** ordered by determinism:
+
+| Rank | Primitive | Implementation | Latency | LLM Required |
+|------|-----------|--------------|---------|---------------|
+| 1 | **WordIndex** | Inverted index lookup | <1ms | No |
+| 2 | **AnchorLookup** | Capability anchors → WordIndex | <5ms | No |
+| 3 | **FTS Keyword** | SQLite LIKE + position rank | <10ms | No |
+| 4 | **SimHash Filter** | Hamming distance pre-filter | <20ms | No |
+| 5 | **RRF Merge** | Reciprocal rank fusion | <30ms | No |
+| 6 | **Hybrid Fallback** | Vector + keyword weighted | <100ms | Optional |
+| 7 | **Vector Only** | Cosine similarity only | <200ms | Required |
+
+**Fallback Chain:**
+- Single identifier → WordIndex → FTS fallback
+- Capability keyword → AnchorLookup → FTS anchor fallback → Hybrid
+- Conceptual/How-to → RRF merge → Hybrid fallback → Vector only
+- No results → ESCALATE with reason
+
+### Component 3: Grounding Enforcement
+
+**Critical Invariant:** No synthesis without source. The LLM must receive verbatim code excerpts, never file paths.
+
+**Grounding Protocol:**
+- Extract source excerpts for matched identifiers
+- Include full function/struct body, not summaries
+- Always include line numbers for citation
+- Prompt enforces: "Use ONLY the provided source excerpts"
+- Prompt fallback: "If information is not in excerpts, say not shown"
+
+**Excerpt Extraction:**
+- Find declaration start (beginning of function/struct)
+- Find declaration end (matching brace)
+- Extract signature from docstring
+- Return with file:line references
+
+### Component 4: Structured Output Schemas
+
+guidance supports multiple output modes:
+
+| Mode | Flag | Output Format | Use Case |
+|------|------|-------------|---------|
+| **Legacy** | (default) | Markdown | Human reading |
+| **JSON** | `--output=json` | Structured JSON | Local LLM orchestration |
+| **Compact** | `--output=compact` | JSON, abbreviated | Token savings |
+| **Debug** | `--output=debug` | JSON + metadata | Development |
+
+**Schema Definitions:**
+
+| Schema | Fields | Use |
+|--------|--------|------|
+| **IntentSchema** | intent, confidence, tokens, anchors_detected | Query classification |
+| **RetrievalSchema** | results[], count, exhausted | Code retrieval |
+| **ValidationSchema** | valid, checks[], reason | Result verification |
+| **SynthesisSchema** | summary, citations[], gaps | LLM synthesis output |
+| **EscalationSchema** | status, reason, suggested_capability, frontier_action | Failure signaling |
+
+### Component 5: Escalation Protocol
+
+When the deterministic workflow cannot resolve, it signals failure clearly:
+
+| Condition | Reason | Frontier Action |
+|-----------|--------|---------------|
+| No anchor hits | `no_anchor_hits` | Try capability keyword expansion |
+| Confidence < 0.3 | `low_confidence` | Use multiple classification |
+| Zero results | `no_results` | Fall back to hybrid search |
+| Context overflow | `context_overflow` | Reduce tokens, retry |
+| Unknown capability | `unknown_capability` | Let frontier determine |
+
+**Escalation Output:**
+```json
+{
+  "status": "ESCALATE",
+  "reason": "no_anchor_hits",
+  "query": "filterStages complexMerge",
+  "suggested_capability": "guidance-staged-query",
+  "frontier_action": "perform_hybrid_search"
+}
+```
+
+### Component 6: Token-Budgeted Assembly
+
+Replace greedy stage collection with budget-aware selection:
+
+```
+Stage Collection with Budget:
+  1. Estimate tokens per stage: (content_len + 3) / 4
+  2. Sort by relevance score
+  3. Binary search for largest subset fitting budget
+  4. Apply head/tail protection
+  5. Return optimal subset
+```
+
+**Context Hierarchy:**
+
+| Level | Content | Tokens |
+|--------|---------|--------|
+| **HEAD** | Capability intro + skill refs | 500 |
+| **BODY** | Source excerpts + metadata | Budget - head - tail |
+| **TAIL** | Citations + see-also | 300 |
+
+### Component 7: Sync Pipeline (`SyncProcessor`)
 
 ```
 Source File (.zig/.py/.md/.json)
@@ -111,83 +281,24 @@ Source File (.zig/.py/.md/.json)
         ↓
     [Pattern Detection] ──→ Auto-attach GoF/domain patterns
         ↓
+    [Capability Anchor Extraction] ──→ Store anchors for capability lookup
+        ↓
     [LLM Enhancement] ──→ Generate missing comments (comment_generated=true)
         ↓
     Guidance JSON ──→ .guidance/src/<path>.json
         ↓
-    [Post-Processing Phase] ──→ Write generated comments to source
-        │                         ↓
-        │                    [zig fmt]
-        │                         ↓
-        │                    [Line Number Correction]
-        │                         ↓
-        │                    [match_hash Recalculation]
-        │
-    [Database Sync] ──→ .guidance.db (SQLite vector search)
+    [Database Sync] ──→ .guidance.db (SQLite + inverted index)
 ```
 
 **Incremental Design:**
 - `fileNeedsProcessing()`: Compare source mtime vs JSON mtime
 - `match_hash`: SHA-256 of `signature ++ "|||COMMENT|||" ++ comment`; unchanged = preserve comments
 - Per-file processing: `guidance gen --file src/foo.zig`
-- `comment_generated` flag: Tracks LLM-generated comments needing source sync
-- **Post-processing**: After JSON generation, scan for `comment_generated=true` members, write to source, run fmt, correct line numbers
+- Ancor extraction: Populate capability anchors during sync
 
-### Component 2: Query Engine (`GuidanceDb` + `executeStaged`)
-
-The query engine implements a **multi-level inverted index** for O(1) routing:
+### Component 8: RALPH Loop (`cmdCheck`)
 
 ```
-Query String
-      ↓
-  [Phase 1a: Embedding-based Alias Expansion]
-      └── findSimilarAliasKeys(query_embedding, 0.75, 3)
-      └── Expands query tokens via semantic-aliases.json embeddings
-      ↓
-  [Phase 1b: Capability-Guided Keyword Expansion]
-      └── findCapabilityKeywordsForQuery(query_embedding, 0.45, 3)
-      └── Injects AST-level keywords from capability-mapping.json
-      ↓
-  [Phase 2: Token-based Alias Expansion]
-      └── semantic-aliases.json: token → [expanded tokens]
-      └── Exact token match (case-insensitive)
-      ↓
-  [Phase 3: Hybrid Search]
-      ├── Deterministic name match (case-sensitive AST lookup)
-      ├── Vector search (SimHash pre-filter → cosine similarity)
-      └── Keyword search (LIKE on name, comment, keywords)
-      ↓
-  [Capability Routing] ──→ findMatchedCapabilityNamesForQuery(0.45, 3)
-      ↓
-  [Stage Collection] ──→ Prose, Code, Metadata, Insight, Skill stages
-      ↓
-  [LLM Filter] ──→ (if >3 words) filterStages() relevance filtering
-      ↓
-  [LLM Synthesis] ──→ Markdown summary with citations
-```
-
-**Multi-Level Inverted Index:**
-
-| Level | Content | Location | Activation |
-|-------|---------|----------|------------|
-| **Token** | token → expanded tokens | semantic-aliases.json | Phase 2 (exact token match) |
-| **Embedding Alias** | query → similar alias keys | semantic-aliases.json | Phase 1a (0.75 cosine) |
-| **Capability Keyword** | capability → AST keywords | capability-mapping.json | Phase 1b (0.45 cosine) |
-| **File** | file → capabilities | capability-mapping.json | Post-search routing |
-| **Member** | member → skills, used_by | .guidance/src/*.json | Metadata stage |
-| **Code** | node_id → embedding | ast_nodes.embedding | Vector search |
-
-**Performance Tiers:**
-
-| Query Type | Path | Latency | Token Cost |
-|------------|------|---------|------------|
-| Single keyword (≤2 words) | Deterministic name match + keyword | <50ms | 0 |
-| Question pattern | Hybrid + LLM filter + synthesis | 200-800ms | Varies |
-| Semantic search | SimHash → cosine + LLM | 500-1500ms | Varies |
-
-### Component 3: RALPH Loop (`cmdCheck`)
-
-```zig
 pub fn cmdCheck(allocator, args) !void {
     // 1. Build (zig build)
     // 2. Test (zig build test)
@@ -204,21 +315,16 @@ pub fn cmdCheck(allocator, args) !void {
 - `error.LintFailed`: Exit 1, print lint violations
 - `error.ParseError`: Continue with warning (unguidable file)
 
-### Component 4: Registry Layer (shared with Coral)
+### Component 9: Registry Layer (shared with Coral)
 
 ```
 src/common/
 ├── registry.zig    ──→ TargetRegistry, TargetBuilder (Fluent Builder)
 ├── target.zig      ──→ Target, TargetSchema, DynamicEditable
 ├── interner.zig    ──→ StringInterner (RwLock-protected bitset index)
-├── embeddings.zig  ──→ EmbeddingProvider VTable
-└── llm.zig         ──→ LlmClient (Ollama/OpenAI HTTP client)
+├── embeddings.zig ──→ EmbeddingProvider VTable
+└── llm.zig       ──→ LlmClient (Ollama/OpenAI HTTP client)
 ```
-
-**Fluent WVR Integration:**
-- All `Target` instances use `TargetSchema` for DynamicEditable access
-- `StringInterner` provides thread-safe string→bitset conversion
-- `EmbeddingProvider` vtable enables provider swapping (Ollama, OpenAI, Noop)
 
 ---
 
@@ -234,7 +340,8 @@ pub const GuidanceDoc = struct {
     keywords: []const []const u8,  // Discovery keywords (fast model)
     skills: []const Skill,         // SKILL.md references
     capabilities: []const []const u8, // CAPABILITY.md references
-    hashtags: []const []const u8,   // Discovery hashtags
+    anchors: []const []const u8,    // Capability anchor identifiers
+    hashtags: []const []const u8,    // Discovery hashtags
     used_by: []const []const u8,    // Reverse @import dependencies
     members: []const Member,        // Extracted declarations
 };
@@ -253,7 +360,7 @@ pub const Member = struct {
     comment: ?[]const u8 = null,     // in-memory: extracted from source (not in JSON)
     line: ?u32 = null,              // 1-based line number
     comment_generated: bool = false, // True if LLM-generated (not from source)
-    // ... other fields
+    is_anchor: bool = false,    // True if this is a capability anchor
 };
 ```
 
@@ -263,6 +370,19 @@ pub const Member = struct {
 - **Rationale**: Keeps JSON minimal, reduces diff noise, aligns with Zig's design
 - **Backward compatibility**: Old JSON files with member comments still load correctly
 - **`match_hash`**: Still tracks comment changes for staleness detection
+
+### Capability Mapping
+
+```json
+{
+  "name": "coral-database",
+  "anchors": ["Db", "Library", "ContextNode", "knnSearch"],
+  "keywords": ["database", "db", "storage", "persist"],
+  "description": "SQLite-backed vector database with hybrid search",
+  "skills": ["fluent-wvr"],
+  "files": ["src/coral/db.zig", "src/coral/database.zig"]
+}
+```
 
 ### Stage (Staged Query Pipeline)
 
@@ -277,9 +397,10 @@ pub const StageKind = enum {
 
 pub const Stage = struct {
     kind: StageKind,
-    content: []const u8,  // Owned
-    source: []const u8,   // Owned: "src/foo.zig" or "src/foo.zig:functionName"
-    line: ?u32,           // Source line number
+    content: []const u8,      // Owned
+    source: []const u8,     // Owned: "src/foo.zig"
+    line: ?u32,          // Source line number
+    relevance: f64 = 1.0, // Relevance score for ranking
 };
 ```
 
@@ -289,27 +410,42 @@ pub const Stage = struct {
 CREATE TABLE ast_nodes (
     id INTEGER PRIMARY KEY,
     file_path TEXT NOT NULL,
-    source TEXT NOT NULL,        -- Relative path
-    name TEXT NOT NULL,          -- Member name
-    node_type TEXT NOT NULL,     -- "fn_decl", "struct", "enum", "module"
+    source TEXT NOT NULL,
+    name TEXT NOT NULL,
+    node_type TEXT NOT NULL,
     signature TEXT,
-    comment TEXT,                -- Extracted from source on sync
-    detail TEXT,                 -- Comprehensive documentation
-    keywords TEXT,               -- JSON array
+    comment TEXT,
+    detail TEXT,
+    keywords TEXT,
     line INTEGER,
-    embedding BLOB,              -- Float32 vector
-    match_hash TEXT,             -- SHA-256 of signature + comment
-    used_by TEXT,                -- JSON array of paths
-    skills TEXT,                 -- JSON array of skill refs
-    capabilities TEXT            -- JSON array of capability names
+    embedding BLOB,
+    match_hash TEXT,
+    used_by TEXT,
+    skills TEXT,
+    capabilities TEXT,
+    is_anchor INTEGER DEFAULT 0
+);
+
+CREATE TABLE fts_inverted_index (
+    token TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    member_name TEXT,
+    position INTEGER,
+    PRIMARY KEY (token, file_path, member_name, position)
+);
+
+CREATE INDEX fts_token_idx ON fts_inverted_index(token);
+
+CREATE TABLE query_telemetry (
+    id INTEGER PRIMARY KEY,
+    query TEXT NOT NULL,
+    intent TEXT NOT NULL,
+    results_found INTEGER,
+    escalation_reason TEXT,
+    latency_ms INTEGER,
+    timestamp INTEGER
 );
 ```
-
-**Comment Extraction During Sync:**
-- Module comments: Loaded from JSON's top-level `comment` field
-- Member comments: Extracted from source files using `extractCommentAtLine()`
-- Extracted during `guidance db sync` and stored in database for search
-- Always in sync with source because extraction happens on every sync
 
 ---
 
@@ -321,61 +457,50 @@ CREATE TABLE ast_nodes (
 2. **Incremental Sync**: `match_hash` comparison, mtime-based staleness detection
 3. **Hybrid Search**: SQLite keyword + cosine similarity vector fusion with SimHash pre-filter
 4. **Staged Pipeline**: `executeStaged()`, `expandFollowUps()`, `formatStaged()`
-5. **Multi-Level Inverted Index**:
-   - Semantic aliases: token expansion via embedding (0.75) and exact match
-   - Capability keywords: `findCapabilityKeywordsForQuery()` for AST-level routing
-   - File→capability mapping: `capability-mapping.json`
-   - Member enrichment: `skills[]`, `capabilities[]`, `used_by[]`, `hashtags[]`
-6. **LLM Filtering**: `filterStages()` for relevance pruning on queries >3 words
+5. **Multi-Level Inverted Index**: Semantic aliases, capability keywords, member enrichment
+6. **LLM Filtering**: `filterStages()` for relevance pruning
 7. **RALPH Loop**: `guidance check` orchestration
 8. **Fluent WVR**: Registry, target, interner from `src/common/`
 9. **Skills/Capabilities**: Auto-attachment during pattern detection
 10. **Capability Routing**: `findMatchedCapabilityNamesForQuery()` in `executeStaged()`
-11. **Comment In-filling**: Automatic LLM-generated comment sync to source files
-    - `match_hash` includes comment: `SHA-256(signature ++ "|||COMMENT|||" ++ comment)`
-    - `comment_generated` flag tracks LLM-generated comments
-    - Post-processing phase writes generated comments to source
-    - Single fmt pass after all comment insertions
-    - Line number correction after fmt
-12. **TIER 0/1/2/3 Query Classification**:
-    - TIER 0 (empty): Shows INDEX.md introduction with capability listing
-    - TIER 1 (single keyword ≤1 word): Deterministic exact name match, no LLM
-    - TIER 2 (multi-keyword, no question): Per-token exact matching + keyword search
-    - TIER 3 (question or >1 word): Hybrid + LLM filter + synthesis
-13. **Per-Token Exact Matching**: Multi-keyword queries (e.g. `"filterStages dupeStage"`) show a separate code excerpt for each matched identifier
-14. **`--debug` flag**: Logs query classification, pipeline settings, search results, and synthesis cache hits
-15. **INDEX.md Generation**: Empty query generates/displays `.guidance/INDEX.md` listing all capabilities
-16. **codehealth Command**: Periodic audit tool for dead code detection
-    - Phase 1: Module-level detection (zero-importer files)
-    - Phase 2a: SimHash redundancy detection across files
-    - Phase 2b: Symbol-level call graph via `call_extractor.zig`
+11. **Comment In-filling**: Automatic LLM-generated comment sync
+12. **TIER 0/1/2/3 Query Classification**: Query routing by complexity
+13. **Per-Token Exact Matching**: Multi-keyword queries with separate excerpts
+14. **`--debug` flag**: Pipeline logging and cache tracking
+15. **INDEX.md Generation**: Capability listing
+16. **codehealth Command**: Dead code detection
 
 ### In Progress 🔄
 
-1. **JSON Schema Validation**: Enforce parity between Zig and Python outputs
-2. **Capability Keyword Expansion**: Currently uses `findCapabilityKeywordsForQuery()` with 0.45 cosine threshold; potential for tighter integration with semantic aliases
+1. **Intent FSM Implementation**: Replace cosmetic TIER with deterministic state machine
+2. **WordIndex Primary**: O(1) inverted index for single-token lookup
+3. **Capability Anchors**: Population during sync
+4. **Structured JSON Output**: `--output=json` flag
 
 ### Planned 📋
 
-1. **LOD Context Packing**: Level-of-detail pyramid for token optimization (like Coral's context packing)
-2. **Cross-Language Equivalents**: Link Python `bin/guidance-py` to Zig `src/guidance/` via `equivalents[]` field
-3. **Performance Telemetry**: Query frequency tracking for LLM budget prioritization
+1. **Grounding Enforcement**: No synthesis without verbatim source
+2. **Escalation Protocol**: Clear failure signals
+3. **Token-Budgeted Assembly**: Hard limits on context
+4. **RRF Merge**: Replace weighted fusion
+5. **Query Telemetry**: Learning from query history
+6. **MCP Server**: IDE integration
 
 ---
 
 ## Comment Management
 
 **Single Source of Truth Principle:**
-Member comments (`///`) live in source files—the JSON is a derived artifact. Thiseliminates redundancy, reduces JSON file size by ~30%, and ensures comments are always in sync with code.
+Member comments (`///`) live in source files—the JSON is a derived artifact. This eliminates redundancy, reduces JSON file size by ~30%, and ensures comments are always in sync with code.
 
 ### Storage Strategy
 
 | Content | Location | Rationale |
 |---------|----------|-----------|
-| Module comments (`//!`) | JSON `comment` field | Module-level docs rarely accessed, useful in semantic search |
-| Member comments (`///`) | Source file only | Aligned with Zig's design, extracted on-demand |
-| `match_hash` | JSON | Tracks signature + comment for staleness detection |
-| `comment_generated` | In-memory only | Runtime flag, never persisted |
+| Module comments (`//!`) | JSON `comment` field | Module-level docs useful in search |
+| Member comments (`///`) | Source file only | Aligned with Zig's design |
+| `match_hash` | JSON | Tracks signature + comment |
+| `comment_generated` | In-memory only | Runtime flag |
 
 ### Workflow: LLM Comment Generation
 
@@ -386,85 +511,56 @@ guidance gen --all-languages
        │
        ├─► Member Merge → Preserve existing comments, flag new members
        │
-       ├─► LLM Enhancement → Generate comments for members missing them
-       │                      Sets comment_generated=true, calculates match_hash
+       ├─► Capability Anchor Extraction → Identify anchors
        │
-       ├─► JSON Write → Save JSON WITHOUT member comments (only match_hash)
+       ├─► LLM Enhancement → Generate comments (comment_generated=true)
+       │
+       ├─► JSON Write → Save WITHOUT member comments
        │
        └─► Post-Processing (if any comment_generated=true):
-            │
-            ├─► Scan JSON for comment_generated=true members
-            │
-            ├─► Write comments to source files (bottom-up line order)
-            │
-            ├─► Run zig fmt on modified files
-            │
-            ├─► Extract comments from source (extractMemberCommentsFromSource)
-            │
-            └─► Update line numbers and match_hash in memory
+            ├─► Scan for comment_generated=true members
+            ├─► Write comments to source
+            ├─► Run zig fmt
+            └─► Update line numbers and match_hash
 ```
 
 ### Key Invariants
 
 1. **Hash Includes Comment**: `match_hash = SHA-256(signature ++ "|||COMMENT|||" ++ comment)`
-   - Comment changes trigger regeneration check
-   - Stable comments produce stable hashes
-
 2. **JSON Mtime Strategy**: `json_mtime = source_mtime - 1 second`
-   - Prevents spurious reprocessing of unchanged files
-   - `fileNeedsProcessing()` skips when JSON mtime == source_mtime - 1
-
-3. **Member Comments Not in JSON**: Extracted from source when JSON is loaded
-   - Backward compatible: old JSON files with comments still load
-   - `extractMemberCommentsFromSource()` populates in-memory structure
-
-4. **Single Fmt Pass**: After all comment insertions, run `zig fmt` once
-
-5. **Automatic Workflow**: No explicit `--sync-comments` flag needed when LLM is available
-
-### Implementation
-
-| Component | Purpose |
-|-----------|---------|
-| `types.Member.comment_generated` | Flag tracking LLM-generated comments |
-| `hash.computeMemberHash()` | SHA-256 hash including comment with separator |
-| `sync.zig` | Sets `comment_generated=true` when LLM generates comment |
-| `sync_engine.postProcessCommentSync()` | Scans JSON, writes comments, runs fmt, extracts from source |
-| `json_store.extractMemberCommentsFromSource()` | Reads source file and extracts `///` comments by line number |
-| `comment_sync.correctLineNumbers()` | Re-parses source and updates JSON line numbers |
-| `marker.fileNeedsProcessing()` | Recognizes JSON mtime pattern to skip validated files |
+3. **Member Comments Not in JSON**: Extracted during load
+4. **Single Fmt Pass**: After all comment insertions
 
 ---
 
 ## Deterministic-First Strategy
 
-### Query Classification
+### Query Classification FSM
 
 ```
 Input Query
       ↓
-  [Word Count] ──→ ≤3 words: Fast path (keyword-only)
+[INTAKE] → Parse tokens, detect patterns
       ↓
-  [Question Pattern] ──→ Starts with "how/what/why/when/where/does": LLM synthesis
+[CLASSIFY] → Intent: SINGLE_IDENTIFIER | CAPABILITY | FILE_PATH | HOW_TO | CONCEPTUAL
       ↓
-  [Semantic Alias Match] ──→ Exact alias: Local lookup
+[ROUTE] → Select search primitive: WordIndex → AnchorLookup → FTS → RRF → Hybrid → Vector
       ↓
-  [Capability Inference] ──→ Known capability keyword: Load CAPABILITY.md excerpt
+[VALIDATE] → match_hash valid? relevance >= threshold? anchors present?
       ↓
-  [Skill Match] ──→ Pattern detected: Load SKILL.md excerpt
-      ↓
-  [LLM Synthesis] ──→ Novel query: Local inference + cache result
+[SYNTHESIZE] → LLM with grounded excerpts
 ```
 
 ### Cache Hierarchy
 
 | Cache Level | Content | Hit Rate | Latency |
-|-------------|---------|----------|---------|
-| L1: Deterministic Match | Exact identifier lookup | ~40% | <10ms |
-| L2: Semantic Alias | Token expansion | ~20% | <20ms |
-| L3: Capability Keyword | AST-level routing | ~15% | <30ms |
-| L4: LLM Synthesis | Cached summaries | ~10% | <50ms |
-| Miss | Local LLM inference | ~15% | 200-800ms |
+|-------------|---------|---------|--------|
+| L1: WordIndex | Exact identifier | ~40% | <1ms |
+| L2: AnchorLookup | Capability anchors | ~20% | <5ms |
+| L3: FTS Keyword | Full-text search | ~15% | <10ms |
+| L4: RRF Merge | Hybrid fusion | ~10% | <30ms |
+| L5: LLM Synthesis | Cached summaries | ~10% | <50ms |
+| Miss | Local LLM | ~15% | 200-800ms |
 
 ---
 
@@ -472,111 +568,82 @@ Input Query
 
 ### Build Phase
 ```
-zig build guidance  ──→ Produces zig-out/bin/guidance
+zig build guidance
 ```
-**Invariant:** `$(TARGET_BIN)` depends ONLY on source files — never on `STRUCTURE.md` or guidance JSON.
+**Invariant:** Binary depends ONLY on source files.
 
 ### Test Phase
 ```
 zig build test --summary all
 ```
-**Invariant:** All unit tests must pass. Exit 1 on failure.
+**Invariant:** All unit tests must pass.
 
 ### Lint Phase
 ```
 zig fmt --check src/
 ```
-**Invariant:** Zero formatting violations. Exit 1 on failure.
+**Invariant:** Zero formatting violations.
 
 ### Format Phase
 ```
 zig fmt src/
 ```
-**Invariant:** Forms all source files. Non-blocking (formatting fixes applied).
+**Invariant:** Forms all source files.
 
 ### Guidance Phase
 ```
 guidance gen --all-languages
 ```
-**Invariant:** All source files processed. JSON mtime updated only on success.
-**Post-Processing:** When LLM generates comments:
-1. Scan JSON for `comment_generated=true` members
-2. Write generated comments to source files
-3. Run `zig fmt` on modified files
-4. Correct line numbers in JSON
-5. Recalculate `match_hash` with new comments
+**Invariant:** JSON mtime updated only on success.
 
 ### Structure Phase
 ```
 guidance structure
 ```
-**Invariant:** `STRUCTURE.md` regenerated from guidance JSON. Idempotent.
+**Invariant:** `STRUCTURE.md` regenerated idempotently.
 
 ### Database Phase
 ```
-guidance gen (implicit)
+guidance gen
 ```
-**Invariant:** `.guidance.db` updated from `.guidance/src/**/*.json`. Ready for `explain` queries.
+**Invariant:** `.guidance.db` ready for queries.
 
 ---
 
 ## Integration with Coral Context
 
-guidance and Coral Context share a common architecture foundation. This section defines **what is shared** and **what is guidance-specific**.
+### Shared Modules
 
-### Shared Modules (`src/common/`)
+| Module | Guidance Use |
+|--------|------------|
+| `context_packer.zig` | Stage packing with token budget |
+| `token_budget.zig` | Token estimation |
+| `drift.zig` | Deterministic follow-up generation |
+| `embeddings.zig` | EmbeddingProvider vtable |
+| `llm.zig` | LlmClient HTTP wrapper |
+| `registry.zig` | TargetRegistry |
+| `interner.zig` | StringInterner |
 
-| Module | Origin | Status | Guidance Use |
-|--------|--------|--------|--------------|
-| `context_packer.zig` | Coral (P3.3) | **Extract** | Stage packing with token budget |
-| `token_budget.zig` | Coral (M7.1) | **Extract** | Token estimation (1 tok ≈ 4 bytes) |
-| `drift.zig` | Coral (BitSet DRIFT) | **Extract** | Deterministic follow-up generation |
-| `embeddings.zig` | Shared | Done | EmbeddingProvider vtable |
-| `llm.zig` | Shared | Done | LlmClient HTTP wrapper |
-| `registry.zig` | Shared | Done | TargetRegistry, TargetBuilder |
-| `interner.zig` | Shared | Done | StringInterner |
-
-### Guidance-Specific Modules (`src/guidance/`)
-
-| Module | Purpose | Notes |
-|--------|---------|-------|
-| `staged.zig` | Stage collection for explain | Uses ContextPacker for token budget |
-| `query_engine.zig` | TIER classification, routing | Uses BitSet DRIFT for follow-ups |
-| `vector_db.zig` | SQLite hybrid search | Guidance-specific |
-| `sync.zig` | AST sync pipeline | Guidance-specific |
-| `llm_filter.zig` | Batch LLM filtering | Replaces per-stage filtering |
-| `codehealth.zig` | Dead code and redundancy detection | Manual audit tool, not RALPH |
-| `call_extractor.zig` | AST-based call site extraction | Phase 2b, runs with --extract-calls |
-
-### Integration Points
+### Query Pipeline
 
 ```
 Query Classification:
-  ┌─────────────────────────────────────────────────────────────┐
-  │ TIER 0: Empty → INDEX.md with capability listing    <5ms   │
-  │ TIER 1: Single keyword → Exact name match            <10ms │
-  │ TIER 2: Multi-keyword → Per-token matching           <50ms │
-  │ TIER 3: Question (>1 word) → Hybrid + LLM           200ms+ │
-  └─────────────────────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────┐
+  │ INTAKE   → Tokenize, detect file paths       <5ms    │
+  │ CLASSIFY → Single ID / Capability / File / How  <10ms   │
+  │ ROUTE   → Primitive selection             <15ms   │
+  │ VALIDATE → Result verification         <20ms   │
+  │ SYNTH   → Grounded LLM               200ms+ │
+  └────────────────────────────────────────────────────────┘
 
-Context Packing (from Coral):
-  ┌─────────────────────────────────────────────────────────────┐
-  │ ContextPacker.pack(stages, config)                         │
-  │   ├── head_protect: N prose stages (module doc)            │
-  │   ├── body: code stages (always) + filtered prose          │
-  │   └── tail_protect: M stages (callers, used_by)            │
-  │                                                             │
-  │ Token Budget: (content.len + 3) / 4                        │
-  │ Prose Threshold: relevance >= 0.3                          │
-  └─────────────────────────────────────────────────────────────┘
-
-Follow-Up Generation (from Coral):
-  ┌─────────────────────────────────────────────────────────────┐
-  │ BitSetDrift.generateFollowUps(needed, available)           │
-  │   └── missing = needed & ~available                        │
-  │   └── for each bit: "Provide {interner.getString(bit)}"    │
-  │   └── No LLM call required                                  │
-  └─────────────────────────────────────────────────────────────┘
+Context Packing:
+  ┌──────────────────────────────────────────┐
+  │ ContextPacker.pack(stages, config)       │
+  │   ├── head: prose (500 tokens)        │
+  │   ├── body: code + filtered prose    │
+  │   └── tail: citations (300 tokens) │
+  │ Token Budget: (len + 3) / 4           │
+  └──────────────────────────────────────────┘
 ```
 
 ---
@@ -584,14 +651,15 @@ Follow-Up Generation (from Coral):
 ## Success Metrics
 
 | Metric | Current | Target |
-|--------|---------|--------|
-| Deterministic resolution rate | ~40% (keyword-only) | >50% |
+|--------|--------|--------|
+| Deterministic resolution | ~40% | >60% |
+| Query latency (WordIndex) | N/A | <5ms |
 | Query latency (cached) | <100ms | <50ms |
-| Query latency (LLM synthesis) | 500-1500ms | <800ms |
-| Token usage for context | Varies | <4000 tokens median |
-| RALPH loop duration | ~30s | <20s |
-| Staleness detection accuracy | 100% | 100% |
-| Cross-language schema parity | ~95% | 100% |
+| Query latency (LLM) | 500-1500ms | <800ms |
+| Token usage median | Varies | <4000 |
+| RALPH loop | ~30s | <20s |
+| Schema valid output | N/A | 100% |
+| Escalation clarity | N/A | 100% |
 
 ---
 
@@ -599,128 +667,47 @@ Follow-Up Generation (from Coral):
 
 ### Near-Term (1-2 Sprints)
 
-1. **Extract Shared Modules to `src/common/`**:
-   - `context_packer.zig` → `src/common/context_packer.zig`
-   - `token_budget.zig` → already in `src/coral/`, move to `src/common/`
-   - `drift.zig` → `src/common/drift.zig`
-   - Guidance imports: `const ContextPacker = @import("common").ContextPacker;`
-
-2. **Batch LLM Filtering**:
-   - Replace per-stage `askRelevant()` with single batch call
-   - Gather all prose/insight/skill stages into one prompt
-   - Use ContextPacker for token budget before LLM
-
-3. **codehealth Phase 2b Completion**:
-   - Finish `findUnusedSymbols()` and `findTestOnlySymbols()` queries
-   - Integrate `call_extractor.zig` with `--extract-calls` flag
+1. **Intent FSM**: Replace cosmetic TIER with deterministic state machine
+2. **--output=json**: Structured JSON for local LLM orchestration
+3. **Capability Anchors**: Populate during sync
+4. **Grounding Enforcement**: No synthesis without source
 
 ### Mid-Term (3-4 Sprints)
 
-1. **Hot Files Tracking**:
-   - Add `last_queried` timestamp to `ast_nodes` table
-   - Implement `listHotFiles(allocator, limit)` returning most recently modified files
-   - Extend INDEX.md to show recently queried capabilities
-
-2. **codehealth Enhancements**:
-   - Symbol-level call graph queries (Phase 2b complete)
-   - Test-only symbol detection
+1. **WordIndex Primary**: O(1) inverted index
+2. **Token-Budget Assembly**: Hard limits
+3. **RRF Merge**: Replace weighted fusion
+4. **Escalation Protocol**: Clear failure signals
+5. **Query Telemetry**: Learning from queries
 
 ### Long-Term (5+ Sprints)
 
-1. **BitSet DRIFT for Follow-Ups**:
-   - Use `drift.zig` for deterministic follow-up generation
-   - `needed & ~available` produces exact capability names
-   - No LLM call for follow-up expansion
-
-2. **Subagent Protocol**: MCP server for AI coder integration
-3. **Continuous Learning**: Cache LLM synthesis results, expire on signature change
+1. **Skill Auto-Linking**: Continuous learning
+2. **MCP Server**: IDE integration
+3. **Hot Files Tracking**: Query frequency
+4. **Memory Learning**: Cache optimization
 
 ---
 
 ## Conclusion
 
-guidance is evolving from a code navigation tool into a fully-capable deterministic-first subagent. By sharing architecture with Coral Context and enforcing the RALPH loop, it provides:
-- **Zero marginal cost** for cached queries
-- **Token-efficient context** for AI coders
-- **Human-in-the-loop orchestration** via `guidance check`
-- **Transparent caching** through `.guidance.db`
-- **Periodic code health audits** via `guidance codehealth`
+guidance evolves into a deterministic-first subagent that transforms local LLM execution from generative model into bounded computation unit:
+
+- **FSM routing** replaces cosmetic classification with actual state transitions
+- **WordIndex primary** provides O(1) lookup for common queries
+- **Grounding enforcement** eliminates hallucination
+- **Structured output** enables frontier orchestration
+- **Escalation protocol** defines failure boundaries
+- **Token-budget assembly** ensures predictable context
+
+The architecture achieves the vision through pattern convergence:
+- Primitives over models (local computation covers 80%+ of queries)
+- Cached results for zero marginal cost
+- Auditability through query telemetry
+- Continuous learning through skill auto-linking
 
 The result is an AI-assisted development tool that grows more capable with every use while remaining fast, deterministic, and auditable.
 
 ---
 
-*Vision Document v1.4 — April 2026*
-
----
-
-## Appendix: Comparative Analysis Summary
-
-### Comment Management Implementation Status
-
-See `doc/guidance/TODO_20260404_STREAMLINE_JSON.md` for full design details.
-
-**Streamlined JSON (v2.0):**
-- ✅ Member comments excluded from JSON (`jsonifyMember()` skips comment field)
-- ✅ Module-level comments still stored in JSON
-- ✅ `extractMemberCommentsFromSource()` extracts comments from source on load
-- ✅ `match_hash` still tracks comment changes for staleness detection
-- ✅ JSON mtime set to `source_mtime - 1` after successful sync
-- ✅ `fileNeedsProcessing()` skips files with validated mtime pattern
-- ✅ Backward compatibility: old JSON files with comments still load
-- ✅ Database sync extracts member comments from source files
-
-**Eliminates:**
-- Spurious LLM calls on unchanged files (detected by mtime pattern)
-- Redundant comment storage (30% JSON size reduction)
-- Diff noise from comment-only changes in JSON files
-
-### From GraphRAG vs Coral Context Report
-
-**Key synthesized patterns:**
-- BitSet distance as unifying primitive for capability routing
-- Token-budgeted context assembly before LLM synthesis
-- DRIFT-style iterative refinement with deterministic follow-ups
-
-**Applicable to guidance:**
-- `ContextPacker` already implements token budget with head/tail protection
-- `BitSetDrift` already implements deterministic follow-up generation
-- Both are directly reusable from `src/coral/`
-
-### From Hermes Comparison (GUIDANCE_HERMES_COMPARISON.md)
-
-**Identified gaps:**
-| Gap | Current | Fix |
-|-----|---------|-----|
-| No identifier detection | All queries go to LLM if >2 words | TIER 1 for `filterStages` pattern |
-| Per-stage LLM filtering | N LLM calls for N prose stages | Batch into single call |
-| No token budget | All stages emitted | ContextPacker from coral |
-| No empty query handling | Error | INDEX.md with capability listing |
-
-**Implemented fixes:**
-- TIER 0/1/2/3 classification ✅ (TIER 0 now shows INDEX.md with capabilities)
-- Batch LLM filtering (Near-Term #3) ✅
-- ContextPacker integration (Near-Term #1) ✅
-- Empty query handling ✅ (INDEX.md generation)
-
-### From codedb2 (Zig)
-
-**Applicable patterns:**
-- **WordIndex**: O(1) inverted index for identifiers — guidance already has semantic-aliases
-- **TrigramIndex**: Substring search acceleration — guidance uses SimHash + cosine
-- **Hot files**: Recently modified tracking — implement as separate capability
-- **Version store**: Append-only log — guidance uses `.guidance.db` SQLite
-
-**Not applicable:**
-- codedb2's MCP server is similar to Coral's MCP — guidance focuses on CLI/data generation
-
-### From bloop (Rust)
-
-**Applicable patterns:**
-- **HyDE fallback**: When semantic search returns <50% results, generate hypothetical docs and retry
-- **files_importing()**: Reverse dependency lookup — guidance has `used_by` field
-- **Scope graphs**: File-level symbol resolution — guidance has AST parsing
-
-**Not applicable:**
-- bloop's HyDE requires frontier LLM — guidance targets local inference
-- bloop's regex query planning — guidance uses keyword + vector hybrid
+*Vision Document v2.0 — April 2026*
