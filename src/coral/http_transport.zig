@@ -21,6 +21,20 @@ pub const McpHandler = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
 
+    /// Thread Safety: Single-threaded only
+    ///
+    /// McpHandler is designed for a single-threaded event loop (see module
+    /// thread model note above). The handleJsonRpc callback MUST NOT be
+    /// called concurrently from multiple threads.
+    ///
+    /// If thread_pool is added later:
+    ///   - Create one McpHandler per worker thread, OR
+    ///   - Wrap handleJsonRpc with a mutex in the implementation
+    ///   - Set a future thread_safe flag (pattern: see EmbeddingProvider in
+    ///     common/embeddings.zig)
+    ///
+    /// Destruction: call deinit() after the event loop has stopped and no
+    /// more requests are in flight.
     pub const VTable = struct {
         handleJsonRpc: *const fn (ptr: *anyopaque, json: []const u8, allocator: std.mem.Allocator) anyerror![]const u8,
         deinit: *const fn (ptr: *anyopaque) void,

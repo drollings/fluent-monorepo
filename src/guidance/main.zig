@@ -9,6 +9,13 @@
 //!   guidance status   [options]   Report generation status
 //!   guidance clean    [options]   Remove .guidance/ and .guidance.db
 //!   guidance structure [options]  Update STRUCTURE.md from guidance JSON
+//!
+//! ## Memory Ownership
+//!
+//!   - main() creates a DebugAllocator and passes the allocator to all subcommands.
+//!     All subcommand allocations are scoped to the command lifetime.
+//!   - No module-level state; all data flows through function parameters.
+//!   - stdout writes use buffered std.Io.Writer with explicit flush before return.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -66,8 +73,8 @@ const Command = enum {
 
 /// Starts the Zig program execution by defining the entry point.
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);

@@ -41,7 +41,7 @@
           ],
           "returns": "anyerror!DagResult",
           "is_pub": true,
-          "line": 50
+          "line": 64
         }
     ,    {
           "type": "fn_decl",
@@ -54,7 +54,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 54
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
@@ -67,10 +67,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 58
+          "line": 72
         }
       ],
-      "line": 37
+      "line": 50
     },
     {
       "type": "struct",
@@ -91,7 +91,7 @@
           ],
           "returns": "Self",
           "is_pub": true,
-          "line": 86
+          "line": 100
         }
     ,    {
           "type": "fn_decl",
@@ -103,7 +103,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 102
+          "line": 116
         }
     ,    {
           "type": "fn_decl",
@@ -116,7 +116,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 118
+          "line": 132
         }
     ,    {
           "type": "fn_decl",
@@ -128,7 +128,7 @@
           ],
           "returns": "[]DagResult",
           "is_pub": true,
-          "line": 126
+          "line": 140
         }
     ,    {
           "type": "fn_private",
@@ -142,7 +142,7 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 204
+          "line": 218
         }
     ,    {
           "type": "fn_private",
@@ -154,28 +154,28 @@
           ],
           "returns": "void",
           "is_pub": false,
-          "line": 214
+          "line": 228
         }
       ],
-      "line": 63
+      "line": 77
     },
     {
       "type": "test_decl",
       "name": "DagNode: init pending",
       "is_pub": false,
-      "line": 280
+      "line": 294
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: empty DAG",
       "is_pub": false,
-      "line": 291
+      "line": 305
     },
     {
       "type": "test_decl",
       "name": "DagExecutor: single node",
       "is_pub": false,
-      "line": 311
+      "line": 325
     }
   ]
 }

@@ -380,7 +380,7 @@ pub fn generateFileSkeleton(
     const members = root.get("members") orelse return null;
     if (members != .array) return null;
 
-    var seen: std.StringHashMapUnmanaged(void) = .{};
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
     defer seen.deinit(allocator);
 
     for (members.array.items) |m| {

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " STRUCTURE.md generator.\n\n Mirrors Python's StructureGenerator class in guidance.py.\n Walks the project directory tree (respecting .gitignore), annotates each\n file entry with a one-line comment sourced from:",
-  "used_by": ["src/guidance/main.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/main.zig"],
   "members": [
     {
       "type": "struct",

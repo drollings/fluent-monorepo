@@ -242,10 +242,10 @@ pub const SyncProcessor = struct {
         result.has_changes = merge_result.has_changes;
 
         if (self.debug and merge_result.members_stale > 0) {
-            std.debug.print("[sync] {s}: {} stale comment(s) cleared (hash changed)\n", .{ filepath, merge_result.members_stale });
+            std.debug.print("[sync] {s}: {d} stale comment(s) cleared (hash changed)\n", .{ filepath, merge_result.members_stale });
         }
         if (self.debug and merge_result.lines_corrected > 0) {
-            std.debug.print("[sync] {s}: {} line number(s) corrected from AST\n", .{ filepath, merge_result.lines_corrected });
+            std.debug.print("[sync] {s}: {d} line number(s) corrected from AST\n", .{ filepath, merge_result.lines_corrected });
         }
 
         // Validate source comments for well-formedness (debug mode only).
@@ -467,7 +467,7 @@ pub const SyncProcessor = struct {
                     skills_buf.items, // skills context (same refs)
                     module_comment,
                 ) catch |err| blk: {
-                    if (self.debug) std.debug.print("detail generation failed: {}\n", .{err});
+                    if (self.debug) std.debug.print("detail generation failed: {any}\n", .{err});
                     break :blk null;
                 };
 
@@ -485,7 +485,7 @@ pub const SyncProcessor = struct {
                     result.has_changes = true;
 
                     if (self.debug) {
-                        std.debug.print("Generated detail for {s} ({} chars, {} keywords)\n", .{
+                        std.debug.print("Generated detail for {s} ({d} chars, {d} keywords)\n", .{
                             rel_path,
                             module_detail.?.len,
                             module_keywords.len,
@@ -565,7 +565,7 @@ pub const SyncProcessor = struct {
         const json_absent = existing_doc == null;
         const needs_write = json_absent or merge_result.has_changes or comment_changed or detail_changed or leaked_on_disk;
         if (self.debug and needs_write) {
-            std.debug.print("[needs-write] has_changes={} comment_changed={} detail_changed={} added={} updated={} removed={}\n", .{
+            std.debug.print("[needs-write] has_changes={any} comment_changed={any} detail_changed={any} added={d} updated={d} removed={d}\n", .{
                 merge_result.has_changes,   comment_changed,              detail_changed,
                 merge_result.members_added, merge_result.members_updated, merge_result.members_removed,
             });
@@ -693,12 +693,12 @@ pub const SyncProcessor = struct {
 
         var first = true;
         if (structs > 0) {
-            try w.print("{} struct{s}", .{ structs, if (structs == 1) "" else "s" });
+            try w.print("{d} struct{s}", .{ structs, if (structs == 1) "" else "s" });
             first = false;
         }
         if (functions > 0) {
             if (!first) try w.writeAll(", ");
-            try w.print("{} function{s}", .{ functions, if (functions == 1) "" else "s" });
+            try w.print("{d} function{s}", .{ functions, if (functions == 1) "" else "s" });
             first = false;
         }
 
@@ -917,7 +917,7 @@ pub const SyncProcessor = struct {
                     self.allocator.free(ai_doc);
                 }
             } else |err| {
-                std.debug.print("warning: LLM file-comment failed for {s}: {}\n", .{ doc.meta.source, err });
+                std.debug.print("warning: LLM file-comment failed for {s}: {any}\n", .{ doc.meta.source, err });
             }
 
             // Prepend skills prefix deterministically after LLM update.
@@ -964,7 +964,7 @@ pub const SyncProcessor = struct {
                             }
                         }
                     } else |err| {
-                        std.debug.print("warning: LLM fn-comment failed for {s} in {s}: {}\n", .{ m.name, doc.meta.source, err });
+                        std.debug.print("warning: LLM fn-comment failed for {s} in {s}: {any}\n", .{ m.name, doc.meta.source, err });
                     }
                 },
                 .@"struct", .@"enum", .@"union" => {
@@ -982,7 +982,7 @@ pub const SyncProcessor = struct {
                             }
                         }
                     } else |err| {
-                        std.debug.print("warning: LLM type-comment failed for {s} in {s}: {}\n", .{ m.name, doc.meta.source, err });
+                        std.debug.print("warning: LLM type-comment failed for {s} in {s}: {any}\n", .{ m.name, doc.meta.source, err });
                     }
                 },
                 else => {},

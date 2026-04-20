@@ -34,16 +34,30 @@ pub const DagResult = struct {
 };
 
 /// Manages callback registration and invocation; owns DagCallbacks instance; ensures callbacks are properly tracked and invoked.
+///
+/// Thread Safety: Called from worker threads
+///
+/// The `execute` callback is invoked from worker threads by DagExecutor
+/// (see DagExecutor.mu / DagExecutor.cv). Implementation requirements:
+///
+///   - The implementation behind `ctx` MUST be thread-safe if `execute`
+///     is called concurrently. Each worker thread gets its own invocation.
+///   - `onNodeStart` and `onNodeComplete` are called from the executor
+///     thread under the DagExecutor mutex — they must be fast and must
+///     NOT call back into the executor.
+///   - Destruction: call deinit() only after all worker threads have been
+///     joined (after DagExecutor.deinit() completes).
 pub const DagCallbacks = struct {
     ctx: *anyopaque,
     vtable: *const VTable,
 
     pub const VTable = struct {
         /// Execute a single node. Called from worker thread.
+        /// Implementations must be thread-safe if concurrent execution is possible.
         execute: *const fn (ctx: *anyopaque, node_id: i64, allocator: std.mem.Allocator) anyerror!DagResult,
-        /// Called when node starts execution.
+        /// Called when node starts execution. Called under DagExecutor.mu.
         onNodeStart: ?*const fn (ctx: *anyopaque, node_id: i64) void = null,
-        /// Called when node completes (success or failure).
+        /// Called when node completes (success or failure). Called under DagExecutor.mu.
         onNodeComplete: ?*const fn (ctx: *anyopaque, result: DagResult) void = null,
     };
 

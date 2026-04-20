@@ -12,8 +12,8 @@ test "scoreDocstring quality" {
     try std.testing.expect(score >= 4);
 }
 test "extractTags parses hashtags" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -33,8 +33,8 @@ test "extractTags parses hashtags" {
     try std.testing.expectEqualStrings("zig", tags[2]);
 }
 test "extractTags returns empty when no Tags line" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -50,8 +50,8 @@ test "extractTags returns empty when no Tags line" {
     try std.testing.expectEqual(@as(usize, 0), tags.len);
 }
 test "stripTagsLine removes Tags line" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -65,8 +65,8 @@ test "stripTagsLine removes Tags line" {
     try std.testing.expectEqualStrings("Parses JSON from a byte slice.", stripped.?);
 }
 test "fallbackPhrases extracts identifiers" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -85,8 +85,8 @@ test "fallbackPhrases extracts identifiers" {
     try std.testing.expect(found_sqlite);
 }
 test "parsePhrasesResponse handles comma-separated" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -103,8 +103,8 @@ test "parsePhrasesResponse handles comma-separated" {
     try std.testing.expectEqualStrings("embedding", result.phrases[2]);
 }
 test "parsePhrasesResponse handles newline-separated" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -118,8 +118,8 @@ test "parsePhrasesResponse handles newline-separated" {
     try std.testing.expectEqual(@as(usize, 3), result.phrases.len);
 }
 test "parsePhrasesResponse limits to 5 phrases" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",
@@ -133,8 +133,8 @@ test "parsePhrasesResponse limits to 5 phrases" {
     try std.testing.expectEqual(@as(usize, 5), result.phrases.len);
 }
 test "parsePhrasesResponse skips generic words" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try enhancer_mod.Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",

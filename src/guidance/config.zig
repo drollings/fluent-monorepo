@@ -3,10 +3,19 @@
 //! Resolves paths for the guidance system using a two-level fallback chain:
 //!   1. {cwd}/{guidance_dir}/{config_filename}  (project-local)
 //!   2. ~/.config/guidance/{config_filename}  (user global)
-///   3. Built-in defaults
-///
-/// All path fields in ProjectConfig are pre-computed absolute paths so callers
-/// do not need to allocate to derive them.
+//!   3. Built-in defaults
+//!
+//! All path fields in ProjectConfig are pre-computed absolute paths so callers
+//! do not need to allocate to derive them.
+//!
+//! ## Memory Ownership
+//!
+//!   - ProjectConfig: Owns all absolute-path strings and provider configs;
+//!     caller must call projectConfig.deinit() to release.
+//!   - Provider: Owns name, base_url, chat_endpoint strings; call provider.deinit().
+//!   - LintCommand: Owns extension and argv strings; call lintCmd.deinit().
+//!   - loadConfig(): Returns an owned ProjectConfig; caller must deinit when done.
+//!   - resolveApiUrl(): Caller owns the returned URL string; free with allocator.free().
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -271,7 +280,7 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
             if (err != error.FileNotFound and !builtin.is_test) {
-                std.debug.print("warning: config file {s} is invalid ({}) — using defaults\n", .{ path, err });
+                std.debug.print("warning: config file {s} is invalid ({any}) — using defaults\n", .{ path, err });
             }
         }
     }
@@ -283,7 +292,7 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
             if (err != error.FileNotFound and !builtin.is_test) {
-                std.debug.print("warning: config file {s} is invalid ({}) — using defaults\n", .{ path, err });
+                std.debug.print("warning: config file {s} is invalid ({any}) — using defaults\n", .{ path, err });
             }
         }
     }

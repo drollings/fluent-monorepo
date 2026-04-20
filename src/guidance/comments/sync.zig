@@ -690,7 +690,7 @@ pub fn correctLineNumbers(
     defer merged_members.deinit(allocator);
 
     // Build a name → new_member map.
-    var new_by_name: std.StringHashMapUnmanaged(types.Member) = .{};
+    var new_by_name: std.StringHashMapUnmanaged(types.Member) = .empty;
     defer new_by_name.deinit(allocator);
     for (new_members) |nm| {
         try new_by_name.put(allocator, nm.name, nm);

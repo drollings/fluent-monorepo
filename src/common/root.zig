@@ -38,6 +38,7 @@ pub const builder_error = builder_error_mod;
 
 // ── Embedding providers (backward compat flat re-exports) ─────────────────────
 pub const EmbeddingProvider = embed_mod.EmbeddingProvider;
+pub const BatchEmbedding = embed_mod.BatchEmbedding;
 pub const NoopEmbedding = embed_mod.NoopEmbedding;
 pub const OllamaEmbedding = embed_mod.OllamaEmbedding;
 pub const OpenAiEmbedding = embed_mod.OpenAiEmbedding;

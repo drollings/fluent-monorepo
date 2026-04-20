@@ -77,13 +77,14 @@ Patterns are applied in sequence; result of one pass becomes input of the next. 
 - `src/guidance/staged.zig` — guidance synthesis consumer
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (8 files, auto-discovered)
+## Sources (9 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/llm/anonymize.zig` | 1.0 | defines_anchor |
 | `src/llm/llm.zig` | 1.0 | defines_anchor |
 | `src/llm/root.zig` | 0.9 | used_by |
+| `src/llm/root_tests.zig` | 0.9 | used_by |
 | `src/guidance/query/llm_filter.zig` | 0.4 | path_heuristic |
 | `src/llm/context_packer.zig` | 0.4 | path_heuristic |
 | `src/llm/token_budget.zig` | 0.4 | path_heuristic |

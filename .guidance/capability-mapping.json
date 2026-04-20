@@ -75,7 +75,7 @@
     "src/guidance/synthesize.zig": [
       "explain-query"
     ],
-    "src/guidance/vector_db.zig": [
+    "src/vector/vector_db.zig": [
       "vector-search",
       "explain-query"
     ]

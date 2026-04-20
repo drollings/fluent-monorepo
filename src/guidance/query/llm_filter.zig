@@ -100,11 +100,11 @@ pub fn filterSeeAlso(
         kept.deinit(allocator);
     }
 
-    var seen: std.StringHashMapUnmanaged(void) = .{};
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
     defer seen.deinit(allocator);
 
     // Parse response lines and match against entries
-    var entry_map: std.StringHashMapUnmanaged(usize) = .{};
+    var entry_map: std.StringHashMapUnmanaged(usize) = .empty;
     defer entry_map.deinit(allocator);
     for (entries, 0..) |e, i| {
         try entry_map.put(allocator, e.path, i);

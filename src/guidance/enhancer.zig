@@ -3,15 +3,23 @@
 //! Mirrors Python's AIDocstringEnhancer class in guidance.py.
 //! Generates descriptions (≤240 chars) for functions, structs, and files
 //! by calling the configured LLM endpoint.  The enhancer is opt-in: sync
-/// runs without it by default; pass --upgrade-comments or --regen_comments to
-/// activate.
-///
-/// Behaviour mirrors Python AIDocstringEnhancer:
-///   - infill_comments: enhance only new members or those whose API hash changed.
-///   - regen_comments: exhaustive mode — regenerate for all members, keep best score.
-///   - File-level documentation is generated from the module name + member list.
-///   - Tags (e.g. #ring-buffer) are extracted from the last line "Tags: #a #b".
-///   - Hallucination guard: responses containing terms absent from source are rejected.
+//! runs without it by default; pass --upgrade-comments or --regen_comments
+//! to activate.
+//!
+//! Behaviour mirrors Python AIDocstringEnhancer:
+//!   - infill_comments: enhance only new members or those whose API hash changed.
+//!   - regen_comments: exhaustive mode — regenerate for all members, keep best score.
+//!   - File-level documentation is generated from the module name + member list.
+//!   - Tags (e.g. #ring-buffer) are extracted from the last line "Tags: #a #b".
+//!   - Hallucination guard: responses containing terms absent from source are rejected.
+//!
+//! ## Memory Ownership
+//!
+//!   - Enhancer: Owns client (LlmClient) and owned_url; call deinit() to release.
+//!   - Enhancer.init(): Allocates LlmClient internally; caller must call enhancer.deinit().
+//!   - EnrichmentResult: Caller-owns comment and tags; free with result.deinit().
+//!   - SemanticPhrasesResult: Caller-owns phrases; free with result.deinit().
+//!   - All enhance* methods: Return owned strings (caller must free with allocator).
 const std = @import("std");
 const llm = @import("llm");
 const common = @import("common");
@@ -162,10 +170,10 @@ pub const Enhancer = struct {
         defer self.allocator.free(prompt);
 
         if (self.debug) std.debug.print("[enhancer] generating file doc for {s}\n", .{rel_path});
-        if (self.show_prompts) std.debug.print("[enhancer] prompt (len={}):\n{s}\n", .{ prompt.len, prompt });
+        if (self.show_prompts) std.debug.print("[enhancer] prompt (len={d}):\n{s}\n", .{ prompt.len, prompt });
 
         const raw = self.client.complete(prompt, self.maxTokens(600), 0.2, null) catch |err| {
-            if (self.debug) std.debug.print("[enhancer] LLM error for file doc: {}\n", .{err});
+            if (self.debug) std.debug.print("[enhancer] LLM error for file doc: {any}\n", .{err});
             return if (existing_doc) |d| try self.allocator.dupe(u8, d) else null;
         };
         const response = raw orelse {
@@ -380,7 +388,7 @@ pub const Enhancer = struct {
                 try w.print("  {s}\n", .{sig});
             }
             if (method_sigs.len > 6) {
-                try w.print("  ... and {} more\n", .{method_sigs.len - 6});
+                try w.print("  ... and {d} more\n", .{method_sigs.len - 6});
             }
         }
 
@@ -493,7 +501,7 @@ pub const Enhancer = struct {
         const response = raw orelse return self.fallbackModuleDetail(existing_comment);
         defer self.allocator.free(response);
 
-        if (self.debug) std.debug.print("[enhancer] raw response for {s} (len={})\n", .{ module_name, response.len });
+        if (self.debug) std.debug.print("[enhancer] raw response for {s} (len={d})\n", .{ module_name, response.len });
 
         // Parse response: <detail>...</detail> <keywords>...</keywords> <comment>...</comment>
         return self.parseModuleDetailResponse(response, existing_comment);
@@ -879,8 +887,8 @@ test "extractPhrasesTag handles whitespace" {
 }
 
 test "fallbackPhrases skips generic words" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     var e = try Enhancer.init(gpa.allocator(), .{
         .api_url = "http://localhost:11434/v1/chat/completions",
         .model = "test",

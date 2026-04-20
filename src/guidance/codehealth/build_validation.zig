@@ -23,7 +23,7 @@ pub const AnomalyKind = enum {
 /// An anomaly found in build.zig.
 pub const BuildAnomaly = struct {
     kind: AnomalyKind,
-    /// The path string as written in build.zig (e.g. "src/guidance/vector_db.zig").
+    /// The path string as written in build.zig (e.g. "src/vector/vector_db.zig").
     referenced_path: []const u8,
     /// Line number in build.zig where the reference was found (1-based).
     line: u32,

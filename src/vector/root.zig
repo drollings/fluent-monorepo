@@ -20,6 +20,7 @@ pub const sqlite = vector_db.c;
 pub const HnswIndex = hnsw.HnswIndex;
 
 pub const EmbeddingProvider = common.EmbeddingProvider;
+pub const BatchEmbedding = common.BatchEmbedding;
 pub const NoopEmbedding = common.NoopEmbedding;
 pub const OllamaEmbedding = common.OllamaEmbedding;
 pub const OpenAiEmbedding = common.OpenAiEmbedding;

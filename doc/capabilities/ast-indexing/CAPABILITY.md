@@ -42,7 +42,6 @@ When searching for "how does X work", the `comment` field of the corresponding `
 | `src/guidance/ast_parser.zig` | 1.0 | defines_anchor |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
 | `src/guidance/sync.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/common/content_node.zig` | 0.9 | used_by |
 | `src/common/root.zig` | 0.9 | used_by |
 | `src/guidance/document_indexer.zig` | 0.9 | used_by |
@@ -60,5 +59,6 @@ When searching for "how does X work", the `comment` field of the corresponding `
 | `src/guidance/stage_builder_tests.zig` | 0.9 | used_by |
 | `src/guidance/staged.zig` | 0.9 | used_by |
 | `src/guidance/staged_tests.zig` | 0.9 | used_by |
+| `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/guidance/types_tests.zig` | 0.9 | used_by |
 

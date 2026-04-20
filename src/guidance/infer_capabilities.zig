@@ -373,7 +373,7 @@ fn deduplicateCapabilities(
 ) ![]InferredCapability {
     if (caps.len == 0) return allocator.alloc(InferredCapability, 0);
 
-    var seen: std.StringHashMapUnmanaged(usize) = .{};
+    var seen: std.StringHashMapUnmanaged(usize) = .empty;
     defer seen.deinit(allocator);
 
     var out: std.ArrayList(InferredCapability) = .{};

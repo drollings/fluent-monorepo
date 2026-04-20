@@ -16,6 +16,12 @@
 //!   high:   AST analysis + CAPABILITY.md + STRUCTURE.md present
 //!   medium: AST analysis + inferred capabilities
 //!   low:    Filesystem walk only, no AST plugins available
+//!
+//! ## Memory Ownership
+//!
+//!   - CodebaseScanner: Owns workspace string (duped in init); call deinit() to release.
+//!   - cmdScan(): Returns void; all output to stdout.
+//!   - Internal discovery methods return owned stages; freed with types.freeStages().
 
 const std = @import("std");
 const types = @import("types.zig");

@@ -2,6 +2,16 @@
 //!
 //! Extracted from main.zig (M1.6) to keep individual file sizes navigable.
 //! All public functions are called from main.zig's command dispatch switch.
+//!
+//! ## Memory Ownership
+//!
+//!   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at
+//!     function exit. Returns void; all output goes to stdout.
+//!   - cmdShow() / cmdTelemetry() / cmdCacheStats(): Return void; all output to stdout.
+//!   - LlmClient instances created within command functions are ephemeral — init/deinit
+//!     within the function scope. The Enhancer (when used) owns the LlmClient.
+//!   - ExplainArgs: Borrowed CLI string slices — no deinit needed.
+//!   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -32,6 +42,15 @@ const hash_mod = @import("hash.zig");
 const skeleton_mod = @import("skeleton.zig");
 const core_intent = @import("core/intent.zig");
 const core_drift = @import("core/drift.zig");
+const query_args_mod = @import("query/args.zig");
+
+const FilterMode = query_args_mod.FilterMode;
+const ExplainArgs = query_args_mod.ExplainArgs;
+const QueryContext = query_args_mod.QueryContext;
+const parseExplainArgs = query_args_mod.parseExplainArgs;
+
+/// Delegates to core/intent.isShortQuery.
+const isShortQuery = core_intent.isShortQuery;
 
 // =============================================================================
 // explain — small path/config helpers
@@ -142,141 +161,6 @@ pub fn resolveLlmConfigForThinking(
         .think = null,
         .resolved_url = url,
     };
-}
-
-/// LLM filter mode for query results (auto, force, skip).
-const FilterMode = enum {
-    /// Auto-detect: apply LLM filter only for long queries (5+ words).
-    auto,
-    /// Always apply LLM filter (even for short queries).
-    force,
-    /// Never apply LLM filter (always fast path).
-    skip,
-};
-
-/// Command-line arguments for the explain command.
-const ExplainArgs = struct {
-    query_str: ?[]const u8 = null,
-    limit: usize = 10,
-    /// Path to .guidance.db. Defaults to config db_path or DEFAULT_GUIDANCE_DB_PATH.
-    db_path: ?[]const u8 = null,
-    workspace: ?[]const u8 = null,
-    guidance: ?[]const u8 = null,
-    api_url: []const u8 = config_mod.DEFAULT_API_URL,
-    model: []const u8 = config_mod.DEFAULT_MODEL,
-    /// Skip LLM synthesis; emit structural output only.
-    no_llm: bool = false,
-    verbose: bool = false,
-    debug: bool = false,
-    /// Use new staged pipeline (default: true).  --staged=false → legacy path.
-    staged: bool = true,
-    /// LLM relevance filtering mode.
-    filter: FilterMode = .auto,
-    /// Disable deterministic DRIFT follow-up generation.
-    no_drift: bool = false,
-    /// Absolute path to the capabilities tree; sourced from cfg.capabilities_dir.
-    capabilities_dir: []const u8 = "",
-};
-
-/// Delegates to core/intent.isShortQuery.
-const isShortQuery = core_intent.isShortQuery;
-
-// =============================================================================
-// explain — context + dispatch helpers (Phase 5.1)
-// =============================================================================
-
-/// Resolved context for a query: workspace paths and loaded config.
-const QueryContext = struct {
-    workspace: []const u8,
-    guidance_dir: []const u8,
-    db_path: []const u8,
-    cfg: config_mod.ProjectConfig,
-
-    fn deinit(self: *QueryContext, allocator: std.mem.Allocator) void {
-        allocator.free(self.workspace);
-        allocator.free(self.guidance_dir);
-        allocator.free(self.db_path);
-        self.cfg.deinit();
-    }
-};
-
-/// Parses explain command-line args. Returns error.MissingArg (after printing) on malformed input.
-fn parseExplainArgs(args: []const []const u8) error{MissingArg}!ExplainArgs {
-    var ea: ExplainArgs = .{};
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "-l") or std.mem.eql(u8, arg, "--limit")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --limit requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
-        } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --db requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.db_path = args[i];
-        } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --workspace requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.workspace = args[i];
-        } else if (std.mem.eql(u8, arg, "--api-url")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --api-url requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.api_url = args[i];
-        } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --model requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.model = args[i];
-        } else if (std.mem.eql(u8, arg, "--debug")) {
-            ea.debug = true;
-        } else if (std.mem.eql(u8, arg, "--no-llm")) {
-            ea.no_llm = true;
-        } else if (std.mem.eql(u8, arg, "--no-drift")) {
-            ea.no_drift = true;
-        } else if (std.mem.eql(u8, arg, "--guidance")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --guidance requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.guidance = args[i];
-        } else if (std.mem.startsWith(u8, arg, "--staged=")) {
-            ea.staged = !std.mem.eql(u8, arg["--staged=".len..], "false");
-        } else if (std.mem.eql(u8, arg, "--staged")) {
-            ea.staged = true;
-        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
-            ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
-        } else if (std.mem.eql(u8, arg, "--guidance-db")) {
-            i += 1;
-            if (i >= args.len) {
-                std.debug.print("Error: --guidance-db requires a value\n", .{});
-                return error.MissingArg;
-            }
-            ea.db_path = args[i];
-        } else if (std.mem.eql(u8, arg, "--db-type=lance") or
-            std.mem.eql(u8, arg, "--lance") or
-            std.mem.startsWith(u8, arg, "--db-type="))
-        {
-            // Accepted but ignored — SQLite is always used.
-        } else if (!std.mem.startsWith(u8, arg, "-")) {
-            ea.query_str = arg;
-        }
-    }
-    return ea;
 }
 
 /// Resolves workspace, config, db_path, and guidance_dir. Caller must call ctx.deinit().
@@ -492,8 +376,8 @@ fn cmdExplainStaged(
     if (ea.debug) {
         // Debug output at function entry - always print to stderr
         std.debug.print("[DEBUG] cmdExplainStaged called\n", .{});
-        std.debug.print("[DEBUG]   ea.debug = {}\n", .{ea.debug});
-        std.debug.print("[DEBUG]   ea.no_llm = {}\n", .{ea.no_llm});
+        std.debug.print("[DEBUG]   ea.debug = {any}\n", .{ea.debug});
+        std.debug.print("[DEBUG]   ea.no_llm = {any}\n", .{ea.no_llm});
         std.debug.print("[DEBUG]   query_text = \"{s}\"\n", .{query_text});
     }
 
@@ -523,17 +407,17 @@ fn cmdExplainStaged(
         std.debug.print("[DEBUG] Query classification:\n", .{});
         std.debug.print("[DEBUG]   query: \"{s}\"\n", .{query_text});
         std.debug.print("[DEBUG]   word_count: {d}\n", .{word_count});
-        std.debug.print("[DEBUG]   isShortQuery: {}\n", .{isShortQuery(query_text)});
+        std.debug.print("[DEBUG]   isShortQuery: {any}\n", .{isShortQuery(query_text)});
         std.debug.print("[DEBUG] Pipeline settings:\n", .{});
-        std.debug.print("[DEBUG]   use_llm: {}\n", .{use_llm});
-        std.debug.print("[DEBUG]   use_filter: {}\n", .{use_filter});
+        std.debug.print("[DEBUG]   use_llm: {any}\n", .{use_llm});
+        std.debug.print("[DEBUG]   use_filter: {any}\n", .{use_filter});
         std.debug.print("[DEBUG]   filter_mode: {s}\n", .{@tagName(ea.filter)});
-        std.debug.print("[DEBUG]   staged: {}\n", .{ea.staged});
+        std.debug.print("[DEBUG]   staged: {any}\n", .{ea.staged});
     }
 
     // Create the LLM client for filtering (default model)
     var client_opt: ?llm.LlmClient = if (use_llm) llm.LlmClient.init(allocator, llm_config) catch |err| blk: {
-        if (ea.verbose) std.debug.print("DEBUG: LLM client init failed: {}\n", .{err});
+        if (ea.verbose) std.debug.print("DEBUG: LLM client init failed: {any}\n", .{err});
         break :blk null;
     } else null;
     defer if (client_opt) |*c| c.deinit();
@@ -554,7 +438,7 @@ fn cmdExplainStaged(
 
     if (ea.verbose) {
         if (client_opt) |_| {
-            std.debug.print("DEBUG: LLM client initialized - api_url: {s}, model: {s}, think: {?}\n", .{ llm_config.api_url, llm_config.model, llm_config.think });
+            std.debug.print("DEBUG: LLM client initialized - api_url: {s}, model: {s}, think: {?any}\n", .{ llm_config.api_url, llm_config.model, llm_config.think });
         } else {
             std.debug.print("DEBUG: LLM client is null, synthesis will be skipped\n", .{});
         }
@@ -685,7 +569,7 @@ fn cmdExplainStaged(
     if (ea.debug) {
         std.debug.print("[DEBUG] Expansion search:\n", .{});
         std.debug.print("[DEBUG]   query: \"{s}\"\n", .{effective_query});
-        std.debug.print("[DEBUG]   aliases_loaded: {}\n", .{aliases_opt != null});
+        std.debug.print("[DEBUG]   aliases_loaded: {any}\n", .{aliases_opt != null});
     }
 
     const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
@@ -768,12 +652,12 @@ fn cmdExplainStaged(
     defer if (cached_summary) |cs| allocator.free(cs);
 
     if (ea.debug) {
-        std.debug.print("[DEBUG]   cache_hit: {}\n", .{cached_summary != null});
+        std.debug.print("[DEBUG]   cache_hit: {any}\n", .{cached_summary != null});
     }
 
     const synth_client = if (fast_client_opt) |*fc| fc else &client_opt.?;
     if (ea.debug) {
-        std.debug.print("[DEBUG]   using_fast_model: {}\n", .{fast_client_opt != null});
+        std.debug.print("[DEBUG]   using_fast_model: {any}\n", .{fast_client_opt != null});
     }
 
     const synth_result = if (cached_summary == null)
@@ -1229,7 +1113,8 @@ fn handleFileSkeletonQuery(
             .title = title,
             .source_path = file_path,
         }) catch |err| {
-            try stdout.print("Error formatting skeleton: {}\n", .{err});
+            try stdout.print("Error formatting skeleton: {any}\n", .{err});
+            try stdout.flush();
             return;
         };
         defer allocator.free(output);
@@ -1308,7 +1193,8 @@ fn handleStructSkeletonQuery(
                 .start_line = struct_info.line,
                 .end_line = end_line,
             }) catch |err| {
-                try stdout.print("Error formatting skeleton: {}\n", .{err});
+                try stdout.print("Error formatting skeleton: {any}\n", .{err});
+                try stdout.flush();
                 return;
             };
             defer allocator.free(output);
@@ -1329,7 +1215,8 @@ fn handleStructSkeletonQuery(
                 .title = title,
                 .source_path = "unknown",
             }) catch |err| {
-                try stdout.print("Error formatting skeleton: {}\n", .{err});
+                try stdout.print("Error formatting skeleton: {any}\n", .{err});
+                try stdout.flush();
                 return;
             };
             defer allocator.free(output);
@@ -1480,7 +1367,8 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     var noop: vector_mod.NoopEmbedding = .{};
     var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch |err| {
-        try stdout.print("Error: could not open db {s}: {}\n", .{ db_path, err });
+        try stdout.print("Error: could not open db {s}: {any}\n", .{ db_path, err });
+        try stdout.flush();
         return;
     };
     defer db.deinit();
@@ -1493,7 +1381,8 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (do_alias) {
         const aliases = db.getAllAliasEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading alias embeddings: {}\n", .{err});
+            try stdout.print("Error reading alias embeddings: {any}\n", .{err});
+            try stdout.flush();
             return;
         };
         defer {
@@ -1513,7 +1402,8 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (do_keywords) {
         const keywords = db.getAllKeywordEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading keyword embeddings: {}\n", .{err});
+            try stdout.print("Error reading keyword embeddings: {any}\n", .{err});
+            try stdout.flush();
             return;
         };
         defer {
@@ -1533,7 +1423,8 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     if (do_ast) {
         const ast = db.getAllAstNodeEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading AST node embeddings: {}\n", .{err});
+            try stdout.print("Error reading AST node embeddings: {any}\n", .{err});
+            try stdout.flush();
             return;
         };
         defer {
@@ -2159,6 +2050,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
             });
         }
     }
+    try w.flush();
 }
 
 // =============================================================================
@@ -2254,7 +2146,7 @@ pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (aliases_opt) |*a| a.deinit();
 
     const stages = ralph_mod.runQuery(allocator, &db, query, cwd, aliases_opt) catch |err| {
-        std.debug.print("RALPH error: {}\n", .{err});
+        std.debug.print("RALPH error: {any}\n", .{err});
         return;
     };
     defer {

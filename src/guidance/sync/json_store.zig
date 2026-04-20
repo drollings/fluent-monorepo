@@ -510,7 +510,7 @@ pub const JsonStore = struct {
         }
 
         // Map name → index into `existing`; no ownership transfer.
-        var existing_index: std.StringHashMapUnmanaged(usize) = .{};
+        var existing_index: std.StringHashMapUnmanaged(usize) = .empty;
         defer existing_index.deinit(self.allocator);
 
         for (existing, 0..) |member, idx| {

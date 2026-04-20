@@ -20,8 +20,8 @@ test "assessRisk low for simple change" {
     try std.testing.expect(std.mem.startsWith(u8, risk, "**Low**"));
 }
 test "findAffectedFiles detects backtick paths" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});

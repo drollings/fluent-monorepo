@@ -256,6 +256,7 @@ Then you you must read
 │   │   │   ├── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   │   └── zig_plugin_tests.zig            # Tests for zig_plugin.zig.
 │   │   ├── query
+│   │   │   ├── args.zig                        # query/args.zig — Argument parsing for explain and related query commands.
 │   │   │   ├── identifier.zig                  # identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.
 │   │   │   ├── llm_filter.zig                  # llm_filter.zig — LLM-based relevance filtering for the staged explain pipeline.
 │   │   │   ├── llm_filter_batch.zig            # llm_filter_batch.zig — Batch LLM relevance filtering for the staged explain pipeline.
@@ -263,12 +264,15 @@ Then you you must read
 │   │   │   ├── strategy_tests.zig              # Tests for strategy.zig.
 │   │   │   └── synthesize.zig                  # synthesize.zig — LLM-based synthesis for the staged explain pipeline.
 │   │   ├── sync
+│   │   │   ├── commit.zig                      # sync/commit.zig — Git commit message generation from staged diff + guidance JSON context.
+│   │   │   ├── gen_files.zig                   # sync/gen_files.zig — Gen command, file pipeline, and DB sync logic.
 │   │   │   ├── json_store.zig                  # JSON store for guidance sync — reads/writes .guidance/src/**/*.json files.
 │   │   │   ├── json_writer.zig                 # sync/json_writer.zig — JSON serialization for guidance documents.
 │   │   │   ├── line_verify.zig                 # line_verify.zig — Declaration-level line number verification for guidance.
 │   │   │   ├── line_verify_tests.zig           # Tests for line_verify.zig.
 │   │   │   ├── marker.zig                      # Mtime-based change detection for guidance's incremental RALPH loop.
-│   │   │   └── marker_tests.zig                # Tests for marker.zig.
+│   │   │   ├── marker_tests.zig                # Tests for marker.zig.
+│   │   │   └── ralph.zig                       # sync/ralph.zig — RALPH loop orchestration (check phase helpers).
 │   │   ├── agents_md.zig                         # AGENTS.md content generator for guidance init.
 │   │   ├── ast_parser.zig                        # AST parser for Zig source files — extracts declarations and comments.
 │   │   ├── codebase_map.zig                      # codebase_map.zig — Structural discovery layer for `guidance explain`.

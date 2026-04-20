@@ -288,7 +288,7 @@ pub const StructureGenerator = struct {
     /// Extract `filename → comment` from the existing STRUCTURE.md fenced block.
     /// Pattern: `[tree-chars] filename  # comment`
     fn parseOldComments(self: *StructureGenerator) !std.StringHashMapUnmanaged([]const u8) {
-        var comments: std.StringHashMapUnmanaged([]const u8) = .{};
+        var comments: std.StringHashMapUnmanaged([]const u8) = .empty;
 
         const structure_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "STRUCTURE.md" });
         defer self.allocator.free(structure_path);

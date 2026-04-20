@@ -87,7 +87,7 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) !?[]u8 
         try writer.writeAll("  ],\n");
     }
     const is_pub_has_more = member.members.len > 0 or member.line != null;
-    try writer.print("  \"is_pub\": {}{s}\n", .{ member.is_pub, if (is_pub_has_more) "," else "" });
+    try writer.print("  \"is_pub\": {any}{s}\n", .{ member.is_pub, if (is_pub_has_more) "," else "" });
 
     if (member.members.len > 0) {
         try writer.writeAll("  \"members\": [\n");
@@ -114,7 +114,7 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) !?[]u8 
         try writer.writeAll("\n");
     }
     if (member.line) |l| {
-        try writer.print("  \"line\": {}\n", .{l});
+        try writer.print("  \"line\": {d}\n", .{l});
     }
     try writer.writeAll("}");
     return @as(?[]u8, try list.toOwnedSlice(allocator));

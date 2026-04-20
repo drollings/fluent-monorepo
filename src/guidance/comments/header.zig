@@ -43,11 +43,11 @@ pub fn generateFileHeader(
     }
 
     if (pub_fns > 0 and pub_structs > 0) {
-        try w.print("{} public function(s), {} public type(s).", .{ pub_fns, pub_structs });
+        try w.print("{d} public function(s), {d} public type(s).", .{ pub_fns, pub_structs });
     } else if (pub_fns > 0) {
-        try w.print("{} public function(s).", .{pub_fns});
+        try w.print("{d} public function(s).", .{pub_fns});
     } else if (pub_structs > 0) {
-        try w.print("{} public type(s).", .{pub_structs});
+        try w.print("{d} public type(s).", .{pub_structs});
     } else {
         try w.writeAll("module.");
     }

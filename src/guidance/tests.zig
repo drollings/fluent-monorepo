@@ -41,8 +41,8 @@ comptime {
 // ---------------------------------------------------------------------------
 
 test "parseHunkRanges returns empty for non-hunk input" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const chunk = "diff --git a/foo.zig b/foo.zig\nindex abc..def 100644\n--- a/foo.zig\n+++ b/foo.zig\n";
@@ -52,8 +52,8 @@ test "parseHunkRanges returns empty for non-hunk input" {
 }
 
 test "parseHunkRanges parses single @@ header" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const chunk = "diff --git a/foo.zig b/foo.zig\n@@ -10,6 +15,8 @@ fn foo() {\n+added line\n";
@@ -66,8 +66,8 @@ test "parseHunkRanges parses single @@ header" {
 }
 
 test "parseHunkRanges parses multiple @@ headers" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const chunk =
@@ -90,8 +90,8 @@ test "parseHunkRanges parses multiple @@ headers" {
 }
 
 test "parseHunkRanges handles @@ without count (implicit 1)" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     // Some diffs omit the count when it is 1: @@ -5 +7 @@
@@ -109,8 +109,8 @@ test "parseHunkRanges handles @@ without count (implicit 1)" {
 // ---------------------------------------------------------------------------
 
 test "loadChangedMembers returns empty for missing JSON file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -127,8 +127,8 @@ test "loadChangedMembers returns empty for missing JSON file" {
 }
 
 test "loadChangedMembers returns all members when hunk_ranges is empty" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -175,8 +175,8 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
 }
 
 test "loadChangedMembers filters by hunk range with context window" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -223,8 +223,8 @@ test "loadChangedMembers filters by hunk range with context window" {
 // ---------------------------------------------------------------------------
 
 test "isExactNameMatch matches case-insensitively" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
 
     const terms = [_][]const u8{ "cmdexplain", "sync" };
     try std.testing.expect(main.isExactNameMatchPub("cmdExplain", &terms));
@@ -242,8 +242,8 @@ test "isExactNameMatch handles empty terms" {
 // ---------------------------------------------------------------------------
 
 test "loadSkillsFromJson returns null for missing file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const result = main.loadSkillsFromJsonPub(allocator, "/nonexistent/path/file.json");
@@ -251,8 +251,8 @@ test "loadSkillsFromJson returns null for missing file" {
 }
 
 test "loadSkillsFromJson extracts skill refs from array" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -279,8 +279,8 @@ test "loadSkillsFromJson extracts skill refs from array" {
 }
 
 test "loadSkillsFromJson handles object format with ref field" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -310,8 +310,8 @@ test "loadSkillsFromJson handles object format with ref field" {
 // ---------------------------------------------------------------------------
 
 test "loadUsedByFromJson returns null for missing file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const result = main.loadUsedByFromJsonPub(allocator, "/nonexistent/path/file.json");
@@ -319,8 +319,8 @@ test "loadUsedByFromJson returns null for missing file" {
 }
 
 test "loadUsedByFromJson extracts used_by array" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -355,8 +355,8 @@ test "loadUsedByFromJson extracts used_by array" {
 // ---------------------------------------------------------------------------
 
 test "loadPublicMemberNames returns null for missing file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const result = main.loadPublicMemberNamesPub(allocator, "/nonexistent/path/file.json");
@@ -364,8 +364,8 @@ test "loadPublicMemberNames returns null for missing file" {
 }
 
 test "loadPublicMemberNames filters public non-test members" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -403,8 +403,8 @@ test "loadPublicMemberNames filters public non-test members" {
 // ---------------------------------------------------------------------------
 
 test "explainExtractExcerpt extracts function body" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const src =
@@ -428,8 +428,8 @@ test "explainExtractExcerpt extracts function body" {
 }
 
 test "explainExtractExcerpt handles empty source" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const result = try main.explainExtractExcerptPub(allocator, "", 1, "fn_decl");
@@ -443,8 +443,8 @@ test "explainExtractExcerpt handles empty source" {
 // ---------------------------------------------------------------------------
 
 test "explainGrepFile returns empty for missing file" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const terms = [_][]const u8{"test"};
@@ -455,8 +455,8 @@ test "explainGrepFile returns empty for missing file" {
 }
 
 test "explainGrepFile finds matching lines" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -526,8 +526,8 @@ test "isShortQuery returns false for question queries" {
 // ---------------------------------------------------------------------------
 
 test "loadSkillPara returns null for missing skill" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -540,8 +540,8 @@ test "loadSkillPara returns null for missing skill" {
 }
 
 test "loadSkillPara extracts first paragraph from SKILL.md" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -586,8 +586,8 @@ fn makeMember(name: []const u8, hash: ?[]const u8, doc: ?[]const u8) types.Membe
 // ---------------------------------------------------------------------------
 
 test "dupeMember produces independent copies" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -620,8 +620,8 @@ test "dupeMember produces independent copies" {
 }
 
 test "dupeMember with params" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -650,8 +650,8 @@ test "dupeMember with params" {
 }
 
 test "dupeMember with nested members" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -680,8 +680,8 @@ test "dupeMember with nested members" {
 // ---------------------------------------------------------------------------
 
 test "mergeMembers with no existing produces all new members" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -706,8 +706,8 @@ test "mergeMembers with no existing produces all new members" {
 }
 
 test "mergeMembers preserves comment when hash unchanged" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -733,8 +733,8 @@ test "mergeMembers preserves comment when hash unchanged" {
 }
 
 test "mergeMembers counts update when hash changed" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -757,8 +757,8 @@ test "mergeMembers counts update when hash changed" {
 }
 
 test "mergeMembers counts removed members" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -785,8 +785,8 @@ test "mergeMembers counts removed members" {
 }
 
 test "mergeMembers no changes when source matches existing exactly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -811,8 +811,8 @@ test "mergeMembers no changes when source matches existing exactly" {
 }
 
 test "mergeMembers clears stale comment when hash changes" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -839,8 +839,8 @@ test "mergeMembers clears stale comment when hash changes" {
 }
 
 test "mergeMembers preserves tags when hash unchanged" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -868,8 +868,8 @@ test "mergeMembers preserves tags when hash unchanged" {
 // ---------------------------------------------------------------------------
 
 test "freeGuidanceDoc frees all fields without double-free" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -895,8 +895,8 @@ test "freeGuidanceDoc frees all fields without double-free" {
 // ---------------------------------------------------------------------------
 
 test "dupeSkills produces independent copies" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -928,8 +928,8 @@ test "dupeSkills produces independent copies" {
 // ---------------------------------------------------------------------------
 
 test "mergeMembers result is independent after source freed" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -964,8 +964,8 @@ test "mergeMembers result is independent after source freed" {
 }
 
 test "mergeMembers result is independent after existing freed" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -1062,7 +1062,8 @@ fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8
 }
 
 test "infillJsonFile returns false when no enhancer configured" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1081,11 +1082,11 @@ test "infillJsonFile returns false when no enhancer configured" {
         const changed = try processor.infillJsonFile(json_path);
         try std.testing.expect(!changed);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillJsonFile returns false when no enhancer" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1104,11 +1105,11 @@ test "infillJsonFile returns false when no enhancer" {
         const changed = try processor.infillJsonFile(json_path);
         try std.testing.expect(!changed);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillJsonFile returns false for nonexistent path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1126,11 +1127,11 @@ test "infillJsonFile returns false for nonexistent path" {
         const changed = try processor.infillJsonFile(json_path);
         try std.testing.expect(!changed);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillAllJson returns 0 when no enhancer configured" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1143,17 +1144,17 @@ test "infillAllJson returns 0 when no enhancer configured" {
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
 
-        var skip: std.StringHashMapUnmanaged(void) = .{};
+        var skip: std.StringHashMapUnmanaged(void) = .empty;
         defer skip.deinit(allocator);
 
         const count = try processor.infillAllJson(tmp_path, &skip);
         try std.testing.expectEqual(@as(usize, 0), count);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillAllJson skips files in skip_paths" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1168,7 +1169,7 @@ test "infillAllJson skips files in skip_paths" {
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
 
-        var skip: std.StringHashMapUnmanaged(void) = .{};
+        var skip: std.StringHashMapUnmanaged(void) = .empty;
         defer skip.deinit(allocator);
         try skip.put(allocator, skip_file, {});
 
@@ -1176,11 +1177,11 @@ test "infillAllJson skips files in skip_paths" {
         const count = try processor.infillAllJson(tmp_path, &skip);
         try std.testing.expectEqual(@as(usize, 0), count);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillAllJson ignores non-json files" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1196,18 +1197,18 @@ test "infillAllJson ignores non-json files" {
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
 
-        var skip: std.StringHashMapUnmanaged(void) = .{};
+        var skip: std.StringHashMapUnmanaged(void) = .empty;
         defer skip.deinit(allocator);
 
         const count = try processor.infillAllJson(tmp_path, &skip);
         try std.testing.expectEqual(@as(usize, 0), count);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "infillAllJson processes .py.json files alongside .zig.json files" {
     // Verifies that the walk covers both extension types without crashing.
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     {
         var tmp = std.testing.tmpDir(.{});
@@ -1222,13 +1223,12 @@ test "infillAllJson processes .py.json files alongside .zig.json files" {
         defer processor.deinit();
         // No enhancer → returns 0, but both files are visited without error.
 
-        var skip: std.StringHashMapUnmanaged(void) = .{};
+        var skip: std.StringHashMapUnmanaged(void) = .empty;
         defer skip.deinit(allocator);
 
         const count = try processor.infillAllJson(tmp_path, &skip);
         try std.testing.expectEqual(@as(usize, 0), count);
     }
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 // ---------------------------------------------------------------------------
@@ -1236,8 +1236,8 @@ test "infillAllJson processes .py.json files alongside .zig.json files" {
 // ---------------------------------------------------------------------------
 
 test "loadConfig falls back to built-in defaults when no config file exists" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1282,7 +1282,8 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
 }
 
 test "loadConfig deinit releases all memory (no leaks)" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     {
@@ -1294,13 +1295,11 @@ test "loadConfig deinit releases all memory (no leaks)" {
         var cfg = try config_mod.loadConfig(allocator, tmp_path);
         cfg.deinit();
     }
-
-    try std.testing.expectEqual(.ok, gpa.deinit());
 }
 
 test "loadConfig reads guidance_dir from project config JSON" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1326,8 +1325,8 @@ test "loadConfig reads guidance_dir from project config JSON" {
 }
 
 test "loadConfig reads src_dirs array from JSON" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1353,8 +1352,8 @@ test "loadConfig reads src_dirs array from JSON" {
 }
 
 test "loadConfig reads models.fast for model_fast" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1378,8 +1377,8 @@ test "loadConfig reads models.fast for model_fast" {
 }
 
 test "loadConfig falls back to models.default when fast absent" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1402,8 +1401,8 @@ test "loadConfig falls back to models.default when fast absent" {
 }
 
 test "loadConfig constructs providers with base_url and chat_endpoint" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1429,8 +1428,8 @@ test "loadConfig constructs providers with base_url and chat_endpoint" {
 }
 
 test "loadConfig with invalid JSON falls back to defaults" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1521,8 +1520,8 @@ test "chunkFilePath: returns empty string for malformed chunk" {
 }
 
 test "splitDiffByFile: single file diff produces one chunk" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const diff =
@@ -1543,8 +1542,8 @@ test "splitDiffByFile: single file diff produces one chunk" {
 }
 
 test "splitDiffByFile: multi-file diff splits into correct chunks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const diff =
@@ -1573,8 +1572,8 @@ test "splitDiffByFile: multi-file diff splits into correct chunks" {
 test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
     // The filter (chunkIsIgnored) runs after splitting, so we verify that
     // guidance chunks split cleanly and are correctly tagged as ignored.
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const guidance_dir = ".guidance";
 
@@ -1602,8 +1601,8 @@ test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
 // ---------------------------------------------------------------------------
 
 test "reportCapabilityLifecycle: all new when previous index missing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     const current = [_]main.CapabilityEntryPub{
@@ -1637,8 +1636,8 @@ test "reportCapabilityLifecycle: all new when previous index missing" {
 }
 
 test "reportCapabilityLifecycle: removed caps detected from previous index" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     // Write a fake previous index to a temp file
@@ -1676,8 +1675,8 @@ test "reportCapabilityLifecycle: removed caps detected from previous index" {
 }
 
 test "reportCapabilityLifecycle: updated cap detected when anchors change" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var tmp = std.testing.tmpDir(.{});
@@ -1718,8 +1717,8 @@ test "reportCapabilityLifecycle: updated cap detected when anchors change" {
 // ---------------------------------------------------------------------------
 
 test "extractMemberCommentsFromSource: extracts comment from source" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -1768,8 +1767,8 @@ test "extractMemberCommentsFromSource: extracts comment from source" {
 }
 
 test "extractMemberCommentsFromSource: preserves existing comments" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);
@@ -1802,8 +1801,8 @@ test "extractMemberCommentsFromSource: preserves existing comments" {
 }
 
 test "extractMemberCommentsFromSource: handles nested members" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
     var store = json_store.JsonStore.init(allocator);

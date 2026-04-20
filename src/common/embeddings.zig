@@ -27,6 +27,20 @@ const validateHttpsOrLocalHttp = url_mod.validateHttpsOrLocalHttp;
 
 // ── EmbeddingProvider vtable ──────────────────────────────────────
 
+pub const BatchEmbedding = struct {
+    flat: []f32,
+    count: usize,
+    dims: usize,
+
+    pub fn vector(self: BatchEmbedding, i: usize) []f32 {
+        return self.flat[i * self.dims .. (i + 1) * self.dims];
+    }
+
+    pub fn deinit(self: BatchEmbedding, allocator: std.mem.Allocator) void {
+        allocator.free(self.flat);
+    }
+};
+
 pub const EmbeddingProvider = struct {
     ptr: *anyopaque,
     vtable: *const VTable,
@@ -40,6 +54,7 @@ pub const EmbeddingProvider = struct {
         name: *const fn (ptr: *anyopaque) []const u8,
         dimensions: *const fn (ptr: *anyopaque) u32,
         embed: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) anyerror![]f32,
+        embedBatch: *const fn (ptr: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) anyerror!BatchEmbedding,
         deinit: *const fn (ptr: *anyopaque) void,
     };
 
@@ -72,6 +87,13 @@ pub const EmbeddingProvider = struct {
         return self.vtable.embed(self.ptr, allocator, text);
     }
 
+    pub fn embedBatch(self: EmbeddingProvider, allocator: std.mem.Allocator, texts: []const []const u8) !BatchEmbedding {
+        if (runtime_safety and !self.thread_safe) {
+            std.debug.assert(std.Thread.getCurrentId() == self.thread_id);
+        }
+        return self.vtable.embedBatch(self.ptr, allocator, texts);
+    }
+
     pub fn deinit(self: EmbeddingProvider) void {
         self.vtable.deinit(self.ptr);
     }
@@ -97,6 +119,10 @@ pub const NoopEmbedding = struct {
         return allocator.alloc(f32, 0);
     }
 
+    fn implEmbedBatch(_: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) anyerror!BatchEmbedding {
+        return .{ .flat = try allocator.alloc(f32, 0), .count = texts.len, .dims = 0 };
+    }
+
     fn implDeinit(ptr: *anyopaque) void {
         const self_: *Self = @ptrCast(@alignCast(ptr));
         if (self_.allocator) |alloc| {
@@ -108,6 +134,7 @@ pub const NoopEmbedding = struct {
         .name = &implName,
         .dimensions = &implDimensions,
         .embed = &implEmbed,
+        .embedBatch = &implEmbedBatch,
         .deinit = &implDeinit,
     };
 
@@ -219,6 +246,61 @@ pub const OllamaEmbedding = struct {
         return parseOllamaResponse(allocator, resp_body);
     }
 
+    fn implEmbedBatch(ptr: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) anyerror!BatchEmbedding {
+        const self_: *Self = @ptrCast(@alignCast(ptr));
+
+        if (texts.len == 0) {
+            return .{ .flat = try allocator.alloc(f32, 0), .count = 0, .dims = 0 };
+        }
+
+        if (texts.len == 1) {
+            const vec = try implEmbed(ptr, allocator, texts[0]);
+            return .{ .flat = vec, .count = 1, .dims = self_.dims };
+        }
+
+        var body_buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer body_buf.deinit(allocator);
+
+        try body_buf.appendSlice(allocator, "{\"model\":\"");
+        try appendJsonEscaped(&body_buf, allocator, self_.model);
+        try body_buf.appendSlice(allocator, "\",\"input\":[");
+        for (texts, 0..) |text, i| {
+            if (i > 0) try body_buf.appendSlice(allocator, ",");
+            try body_buf.appendSlice(allocator, "\"");
+            try appendJsonEscaped(&body_buf, allocator, text);
+            try body_buf.appendSlice(allocator, "\"");
+        }
+        try body_buf.appendSlice(allocator, "]}");
+
+        const url = try self_.buildUrl(allocator);
+        defer allocator.free(url);
+
+        var client = std.http.Client{ .allocator = allocator };
+        defer client.deinit();
+
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        defer aw.deinit();
+
+        const result = client.fetch(.{
+            .location = .{ .url = url },
+            .method = .POST,
+            .payload = body_buf.items,
+            .extra_headers = &.{
+                .{ .name = "Content-Type", .value = "application/json" },
+            },
+            .response_writer = &aw.writer,
+        }) catch return error.EmbeddingApiError;
+
+        if (result.status != .ok) {
+            return error.EmbeddingApiError;
+        }
+
+        const resp_body = aw.writer.buffer[0..aw.writer.end];
+        if (resp_body.len == 0) return error.EmbeddingApiError;
+
+        return parseOllamaBatchResponse(allocator, resp_body);
+    }
+
     fn implDeinit(ptr: *anyopaque) void {
         const self_: *Self = @ptrCast(@alignCast(ptr));
         self_.deinitSelf();
@@ -228,6 +310,7 @@ pub const OllamaEmbedding = struct {
         .name = &implName,
         .dimensions = &implDimensions,
         .embed = &implEmbed,
+        .embedBatch = &implEmbedBatch,
         .deinit = &implDeinit,
     };
 
@@ -268,6 +351,51 @@ pub fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
         };
     }
     return result;
+}
+
+/// Parses a batch Ollama /api/embed response into a flat f32 array.
+/// Response format: {"embeddings": [[f1,f2,...], [f1,f2,...], ...]}
+pub fn parseOllamaBatchResponse(allocator: std.mem.Allocator, json_bytes: []const u8) !BatchEmbedding {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_bytes, .{}) catch return error.InvalidEmbeddingResponse;
+    defer parsed.deinit();
+
+    const root = switch (parsed.value) {
+        .object => |obj| obj,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    const embeddings = root.get("embeddings") orelse return error.InvalidEmbeddingResponse;
+    const outer_array = switch (embeddings) {
+        .array => |a| a,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    if (outer_array.items.len == 0) return error.InvalidEmbeddingResponse;
+
+    const first_inner = switch (outer_array.items[0]) {
+        .array => |a| a,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    const dims: usize = first_inner.items.len;
+    const count: usize = outer_array.items.len;
+
+    const flat = try allocator.alloc(f32, count * dims);
+    errdefer allocator.free(flat);
+
+    for (outer_array.items, 0..) |item, i| {
+        const emb_array = switch (item) {
+            .array => |a| a,
+            else => return error.InvalidEmbeddingResponse,
+        };
+        if (emb_array.items.len != dims) return error.InvalidEmbeddingResponse;
+        for (emb_array.items, 0..) |val, j| {
+            flat[i * dims + j] = switch (val) {
+                .float => |f| @floatCast(f),
+                .integer => |n| @floatFromInt(n),
+                else => return error.InvalidEmbeddingResponse,
+            };
+        }
+    }
+
+    return .{ .flat = flat, .count = count, .dims = dims };
 }
 
 // ── OpenAI-compatible provider ────────────────────────────────────
@@ -393,6 +521,65 @@ pub const OpenAiEmbedding = struct {
         return parseOpenAiResponse(allocator, resp_body);
     }
 
+    fn implEmbedBatch(ptr: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) anyerror!BatchEmbedding {
+        const self_: *Self = @ptrCast(@alignCast(ptr));
+
+        if (texts.len == 0) {
+            return .{ .flat = try allocator.alloc(f32, 0), .count = 0, .dims = 0 };
+        }
+
+        if (texts.len == 1) {
+            const vec = try implEmbed(ptr, allocator, texts[0]);
+            return .{ .flat = vec, .count = 1, .dims = self_.dims };
+        }
+
+        var body_buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer body_buf.deinit(allocator);
+
+        try body_buf.appendSlice(allocator, "{\"model\":\"");
+        try appendJsonEscaped(&body_buf, allocator, self_.model);
+        try body_buf.appendSlice(allocator, "\",\"input\":[");
+        for (texts, 0..) |text, i| {
+            if (i > 0) try body_buf.appendSlice(allocator, ",");
+            try body_buf.appendSlice(allocator, "\"");
+            try appendJsonEscaped(&body_buf, allocator, text);
+            try body_buf.appendSlice(allocator, "\"");
+        }
+        try body_buf.appendSlice(allocator, "]}");
+
+        const url = try self_.embeddingsUrl(allocator);
+        defer allocator.free(url);
+
+        const auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{self_.api_key});
+        defer allocator.free(auth_header);
+
+        var client = std.http.Client{ .allocator = allocator };
+        defer client.deinit();
+
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        defer aw.deinit();
+
+        const result = client.fetch(.{
+            .location = .{ .url = url },
+            .method = .POST,
+            .payload = body_buf.items,
+            .extra_headers = &.{
+                .{ .name = "Authorization", .value = auth_header },
+                .{ .name = "Content-Type", .value = "application/json" },
+            },
+            .response_writer = &aw.writer,
+        }) catch return error.EmbeddingApiError;
+
+        if (result.status != .ok) {
+            return error.EmbeddingApiError;
+        }
+
+        const resp_body = aw.writer.buffer[0..aw.writer.end];
+        if (resp_body.len == 0) return error.EmbeddingApiError;
+
+        return parseOpenAiBatchResponse(allocator, resp_body);
+    }
+
     fn implDeinit(ptr: *anyopaque) void {
         const self_: *Self = @ptrCast(@alignCast(ptr));
         self_.deinitSelf();
@@ -402,6 +589,7 @@ pub const OpenAiEmbedding = struct {
         .name = &implName,
         .dimensions = &implDimensions,
         .embed = &implEmbed,
+        .embedBatch = &implEmbedBatch,
         .deinit = &implDeinit,
     };
 
@@ -446,6 +634,60 @@ pub fn parseOpenAiResponse(allocator: std.mem.Allocator, json_bytes: []const u8)
         };
     }
     return result;
+}
+
+/// Parses a batch OpenAI /v1/embeddings response into a flat f32 array.
+/// Response format: {"data": [{"embedding": [f1,f2,...], "index": 0}, ...]}
+pub fn parseOpenAiBatchResponse(allocator: std.mem.Allocator, json_bytes: []const u8) !BatchEmbedding {
+    const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_bytes, .{}) catch return error.InvalidEmbeddingResponse;
+    defer parsed.deinit();
+
+    const root = switch (parsed.value) {
+        .object => |obj| obj,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    const data = root.get("data") orelse return error.InvalidEmbeddingResponse;
+    const data_array = switch (data) {
+        .array => |a| a,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    if (data_array.items.len == 0) return error.InvalidEmbeddingResponse;
+
+    const first_emb = switch (data_array.items[0]) {
+        .object => |obj| obj.get("embedding") orelse return error.InvalidEmbeddingResponse,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    const first_arr = switch (first_emb) {
+        .array => |a| a,
+        else => return error.InvalidEmbeddingResponse,
+    };
+    const dims: usize = first_arr.items.len;
+    const count: usize = data_array.items.len;
+
+    const flat = try allocator.alloc(f32, count * dims);
+    errdefer allocator.free(flat);
+
+    for (data_array.items, 0..) |item, i| {
+        const emb_obj = switch (item) {
+            .object => |obj| obj,
+            else => return error.InvalidEmbeddingResponse,
+        };
+        const emb_val = emb_obj.get("embedding") orelse return error.InvalidEmbeddingResponse;
+        const emb_array = switch (emb_val) {
+            .array => |a| a,
+            else => return error.InvalidEmbeddingResponse,
+        };
+        if (emb_array.items.len != dims) return error.InvalidEmbeddingResponse;
+        for (emb_array.items, 0..) |val, j| {
+            flat[i * dims + j] = switch (val) {
+                .float => |f| @floatCast(f),
+                .integer => |n| @floatFromInt(n),
+                else => return error.InvalidEmbeddingResponse,
+            };
+        }
+    }
+
+    return .{ .flat = flat, .count = count, .dims = dims };
 }
 
 // ── Content hash for embedding cache ─────────────────────────────

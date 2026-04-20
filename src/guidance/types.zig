@@ -1,4 +1,15 @@
 //! Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
+//!
+//! ## Memory Ownership
+//!
+//!   - GuidanceDoc: Owns members slice and module-level comment; call deinit() to release.
+//!   - Stage: Content and source strings are allocator-owned; free with freeStage() or
+//!     freeStages() (frees the entire []Stage slice and each stage's content/source).
+//!   - Member, Skill, Param, Meta: Contain borrowed string slices from their parent
+//!     GuidanceDoc or source JSON — do not free individually; valid until parent deinit.
+//!   - FileType, MemberType, StageKind, QueryResult, FileMatch, GuidanceInfo: Value types
+//!     (no heap allocation).
+//!   - jsonifyMember / jsonifyGuidanceDoc: Return owned ArrayList(u8); caller owns.
 const std = @import("std");
 const common = @import("common");
 const json_writer = @import("sync/json_writer.zig");
@@ -241,7 +252,11 @@ pub const SyncResult = struct {
 pub fn stepPrint(comptime fmt: []const u8, args: anytype) void {
     var buf: [512]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
-    std.fs.File.stdout().writeAll(msg) catch {};
+    var out_buf: [4096]u8 = undefined;
+    var out_fw = std.fs.File.stdout().writer(&out_buf);
+    const w = &out_fw.interface;
+    w.writeAll(msg) catch {};
+    w.flush() catch {};
 }
 
 pub const jsonifyMember = json_writer.jsonifyMember;

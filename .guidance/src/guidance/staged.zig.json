@@ -4,7 +4,7 @@
     "source": "src/guidance/staged.zig",
     "language": "zig"
   },
-  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output",
+  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output\n\n ## Memory Ownership\n\n   - executeStagedConfig() / executeStagedWithAliasesOriginal(): Caller-owns\n     returned []Stage; free with types.freeStages(allocator, stages).\n   - expandFollowUps(): Caller-owns returned []Stage; free with types.freeStages().\n   - All other public functions return borrowed slices or value types (no heap).\n   - executeStagedWithAliasesOriginal() uses an ArenaAllocator internally\n     for deduplication maps; the arena is freed at function exit.",
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/staged_tests.zig"],
   "members": [
     {
@@ -13,7 +13,7 @@
       "match_hash": "e65690f6813d0999751e896b5e10a034c17011c4ac7ab84e6c8718f9431f7633",
       "signature": "keyword_struct StagedConfig { ... }",
       "is_pub": true,
-      "line": 30
+      "line": 39
     },
     {
       "type": "fn_decl",
@@ -27,7 +27,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 41
+      "line": 50
     },
     {
       "type": "fn_decl",
@@ -42,7 +42,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 55
+      "line": 64
     },
     {
       "type": "fn_decl",
@@ -58,7 +58,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 65
+      "line": 74
     },
     {
       "type": "fn_private",
@@ -72,7 +72,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 83
+      "line": 92
     },
     {
       "type": "fn_private",
@@ -85,7 +85,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 131
+      "line": 140
     },
     {
       "type": "fn_private",
@@ -101,7 +101,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 166
+      "line": 175
     },
     {
       "type": "fn_private",
@@ -116,7 +116,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 199
+      "line": 208
     },
     {
       "type": "fn_private",
@@ -133,7 +133,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 240
+      "line": 249
     },
     {
       "type": "fn_private",
@@ -149,7 +149,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 296
+      "line": 305
     },
     {
       "type": "fn_private",
@@ -166,7 +166,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 340
+      "line": 349
     },
     {
       "type": "fn_decl",
@@ -183,7 +183,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 510
+      "line": 519
     },
     {
       "type": "fn_decl",
@@ -203,7 +203,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 565
+      "line": 574
     },
     {
       "type": "fn_decl",
@@ -220,7 +220,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 661
+      "line": 670
     },
     {
       "type": "fn_decl",
@@ -236,7 +236,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 673
+      "line": 682
     },
     {
       "type": "fn_decl",
@@ -251,7 +251,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 684
+      "line": 693
     },
     {
       "type": "fn_private",
@@ -264,7 +264,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 701
+      "line": 710
     },
     {
       "type": "fn_decl",
@@ -277,7 +277,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 715
+      "line": 724
     },
     {
       "type": "fn_decl",
@@ -291,7 +291,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 722
+      "line": 731
     }
   ]
 }

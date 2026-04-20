@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " skeleton.zig — File and struct skeleton extraction for token-efficient discovery.\n\n Implements the \"File Skeleton\" pattern from VISION.md:\n - TIER 2: `guidance explain \"filename.zig\"` → show signatures + comments only\n - TIER 3: `guidance explain \"StructName\"` → show struct members only\n\n Private members are omitted from skeleton views to reduce noise and token usage.",
-  "capabilities": ["coral-database", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig"],
   "members": [
     {

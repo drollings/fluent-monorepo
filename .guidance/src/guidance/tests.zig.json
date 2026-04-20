@@ -348,121 +348,121 @@
       "type": "test_decl",
       "name": "loadConfig reads guidance_dir from project config JSON",
       "is_pub": false,
-      "line": 1301
+      "line": 1300
     },
     {
       "type": "test_decl",
       "name": "loadConfig reads src_dirs array from JSON",
       "is_pub": false,
-      "line": 1328
+      "line": 1327
     },
     {
       "type": "test_decl",
       "name": "loadConfig reads models.fast for model_fast",
       "is_pub": false,
-      "line": 1355
+      "line": 1354
     },
     {
       "type": "test_decl",
       "name": "loadConfig falls back to models.default when fast absent",
       "is_pub": false,
-      "line": 1380
+      "line": 1379
     },
     {
       "type": "test_decl",
       "name": "loadConfig constructs providers with base_url and chat_endpoint",
       "is_pub": false,
-      "line": 1404
+      "line": 1403
     },
     {
       "type": "test_decl",
       "name": "loadConfig with invalid JSON falls back to defaults",
       "is_pub": false,
-      "line": 1431
+      "line": 1430
     },
     {
       "type": "test_decl",
       "name": "chunkIsIgnored: .guidance/ prefix is filtered",
       "is_pub": false,
-      "line": 1462
+      "line": 1461
     },
     {
       "type": "test_decl",
       "name": "chunkIsIgnored: guidance/ prefix is NOT filtered (regression guard)",
       "is_pub": false,
-      "line": 1474
+      "line": 1473
     },
     {
       "type": "test_decl",
       "name": "chunkIsIgnored: regular source files are not filtered",
       "is_pub": false,
-      "line": 1488
+      "line": 1487
     },
     {
       "type": "test_decl",
       "name": "chunkFilePath: extracts path from diff --git header",
       "is_pub": false,
-      "line": 1509
+      "line": 1508
     },
     {
       "type": "test_decl",
       "name": "chunkFilePath: returns empty string for malformed chunk",
       "is_pub": false,
-      "line": 1518
+      "line": 1517
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: single file diff produces one chunk",
       "is_pub": false,
-      "line": 1523
+      "line": 1522
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: multi-file diff splits into correct chunks",
       "is_pub": false,
-      "line": 1545
+      "line": 1544
     },
     {
       "type": "test_decl",
       "name": "splitDiffByFile: .guidance/ chunks split correctly and are identifiable",
       "is_pub": false,
-      "line": 1573
+      "line": 1572
     },
     {
       "type": "test_decl",
       "name": "reportCapabilityLifecycle: all new when previous index missing",
       "is_pub": false,
-      "line": 1604
+      "line": 1603
     },
     {
       "type": "test_decl",
       "name": "reportCapabilityLifecycle: removed caps detected from previous index",
       "is_pub": false,
-      "line": 1639
+      "line": 1638
     },
     {
       "type": "test_decl",
       "name": "reportCapabilityLifecycle: updated cap detected when anchors change",
       "is_pub": false,
-      "line": 1678
+      "line": 1677
     },
     {
       "type": "test_decl",
       "name": "extractMemberCommentsFromSource: extracts comment from source",
       "is_pub": false,
-      "line": 1720
+      "line": 1719
     },
     {
       "type": "test_decl",
       "name": "extractMemberCommentsFromSource: preserves existing comments",
       "is_pub": false,
-      "line": 1770
+      "line": 1769
     },
     {
       "type": "test_decl",
       "name": "extractMemberCommentsFromSource: handles nested members",
       "is_pub": false,
-      "line": 1804
+      "line": 1803
     }
   ]
 }

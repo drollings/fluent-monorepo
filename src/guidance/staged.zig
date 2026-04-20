@@ -6,6 +6,15 @@
 //!   executeStaged()   — search → collect Stage slices
 //!   expandFollowUps() — follow see_also / skill refs → more stages
 //!   formatStaged()    — render []Stage to markdown output
+//!
+//! ## Memory Ownership
+//!
+//!   - executeStagedConfig() / executeStagedWithAliasesOriginal(): Caller-owns
+//!     returned []Stage; free with types.freeStages(allocator, stages).
+//!   - expandFollowUps(): Caller-owns returned []Stage; free with types.freeStages().
+//!   - All other public functions return borrowed slices or value types (no heap).
+//!   - executeStagedWithAliasesOriginal() uses an ArenaAllocator internally
+//!     for deduplication maps; the arena is freed at function exit.
 
 const std = @import("std");
 const vector_db_mod = @import("vector");

@@ -4,6 +4,20 @@
 //!   LlmError, LlmConfig, LlmClient  — HTTP chat-completion client
 //!   stripThinkBlock, extractCommentTag, isMalformedResponse, stripPreamble
 //!   LocalDecomposer, DecomposerConfig  — query decomposition
+//!
+//! ## Memory Ownership
+//!
+//!   - LlmClient: Owns http_client (persistent, pooled connections) and chat_url (owned slice).
+//!     Call init() to create, deinit() to release. HTTP connections are reused when keep_alive=true.
+//!   - LlmClient.complete(): Returns owned slice on success; caller must free with allocator.free().
+//!     Returns null on non-200 response; returns LlmError on network failure.
+//!   - LlmClient.available(): No allocation (caches result internally).
+//!   - LlmConfig: Holds borrowed string slices (api_url, model) — valid only as long as the
+//!     source strings live. Does not own heap.
+//!   - LocalDecomposer: No heap ownership; holds config by value. The ephemeral LlmClient created
+//!     in decompose() is init/deinit within the function.
+//!   - stripPreamble(): Returns owned string; caller must free with allocator.free().
+//!   - All strip*/extract*/is* helper functions: Return borrowed slices or boolean values; no allocation.
 
 const std = @import("std");
 const common = @import("common");
@@ -69,6 +83,19 @@ pub const LlmClient = struct {
     /// The normalised chat completions URL (owned; freed in deinit).
     /// For Ollama: corrects /v1/completions → /v1/chat/completions if needed.
     chat_url: []const u8,
+    /// Persistent HTTP client — reused across all requests for connection pooling.
+    ///
+    /// ## Memory Ownership
+    ///   - LlmClient owns the http_client; deinit() calls http_client.deinit().
+    ///   - All TCP/TLS connections are pooled internally by std.http.Client.
+    ///   - keep_alive=true enables connection reuse: subsequent requests to the
+    ///     same host reuse the established TCP+TLS session, eliminating handshake
+    ///     overhead for batch operations (guidance gen across N files).
+    ///
+    /// ## Thread Safety
+    ///   - NOT thread-safe: create on a single thread, call from that thread,
+    ///     destroy after all work is complete.
+    ///   - For multi-threaded use, create one LlmClient per worker thread.
     http_client: std.http.Client,
     /// Cached availability result (null = not checked yet).
     /// After first check, stores the result to avoid repeated network calls.
@@ -131,15 +158,15 @@ pub const LlmClient = struct {
             if (think_val) {
                 try writer.writeAll(",\"think\":true");
                 try writer.writeAll(",\"max_completion_tokens\":");
-                try writer.print("{}", .{max_tokens});
+                try writer.print("{d}", .{max_tokens});
             } else {
                 try writer.writeAll(",\"think\":false");
                 try writer.writeAll(",\"max_tokens\":");
-                try writer.print("{}", .{max_tokens});
+                try writer.print("{d}", .{max_tokens});
             }
         } else {
             try writer.writeAll(",\"max_tokens\":");
-            try writer.print("{}", .{max_tokens});
+            try writer.print("{d}", .{max_tokens});
         }
         try writer.writeAll(",\"temperature\":");
         try writer.writeAll(temp_str);
@@ -164,13 +191,13 @@ pub const LlmClient = struct {
             },
             .payload = json_body,
             .response_writer = &aw.writer,
-            .keep_alive = false,
+            .keep_alive = true,
         }) catch |err| {
-            if (self.config.debug) std.debug.print("DEBUG: HTTP POST failed: {}\n", .{err});
+            if (self.config.debug) std.debug.print("DEBUG: HTTP POST failed: {any}\n", .{err});
             return LlmError.RequestFailed;
         };
 
-        const response_bytes = aw.writer.buffer[0..aw.writer.end];
+        const response_bytes = aw.written();
 
         if (self.config.debug) {
             std.debug.print("DEBUG: HTTP status {d}, response ({d} bytes): {s}\n", .{
@@ -277,7 +304,7 @@ pub const LlmClient = struct {
             .method = .GET,
             .location = .{ .url = check_url },
         }) catch |err| {
-            if (self.config.debug) std.debug.print("DEBUG: availability check failed: {}\n", .{err});
+            if (self.config.debug) std.debug.print("DEBUG: availability check failed: {any}\n", .{err});
             self.availability_cache = false;
             return false;
         };

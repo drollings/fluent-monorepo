@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " AST parser for Zig source files — extracts declarations and comments.",
-  "capabilities": ["ast-indexing", "coral-database"],
-  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "struct",

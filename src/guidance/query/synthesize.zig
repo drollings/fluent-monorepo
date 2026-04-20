@@ -56,7 +56,7 @@ pub fn synthesize(
     var sources: std.ArrayList([]const u8) = .{};
     defer sources.deinit(allocator);
     {
-        var seen_src: std.StringHashMapUnmanaged(void) = .{};
+        var seen_src: std.StringHashMapUnmanaged(void) = .empty;
         defer seen_src.deinit(allocator);
         for (stages) |s| {
             if (!seen_src.contains(s.source)) {

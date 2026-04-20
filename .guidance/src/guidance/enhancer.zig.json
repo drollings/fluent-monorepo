@@ -4,8 +4,8 @@
     "source": "src/guidance/enhancer.zig",
     "language": "zig"
   },
-  "comment": " AI Docstring Enhancer for Zig guidance generation.\n\n Mirrors Python's AIDocstringEnhancer class in guidance.py.\n Generates descriptions (≤240 chars) for functions, structs, and files\n by calling the configured LLM endpoint.  The enhancer is opt-in: sync",
-  "used_by": ["src/guidance/enhancer_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig"],
+  "comment": " AI Docstring Enhancer for Zig guidance generation.\n\n Mirrors Python's AIDocstringEnhancer class in guidance.py.\n Generates descriptions (≤240 chars) for functions, structs, and files\n by calling the configured LLM endpoint.  The enhancer is opt-in: sync\n runs without it by default; pass --upgrade-comments or --regen_comments\n to activate.\n\n Behaviour mirrors Python AIDocstringEnhancer:\n   - infill_comments: enhance only new members or those whose API hash changed.\n   - regen_comments: exhaustive mode — regenerate for all members, keep best score.\n   - File-level documentation is generated from the module name + member list.\n   - Tags (e.g. #ring-buffer) are extracted from the last line \"Tags: #a #b\".\n   - Hallucination guard: responses containing terms absent from source are rejected.\n\n ## Memory Ownership\n\n   - Enhancer: Owns client (LlmClient) and owned_url; call deinit() to release.\n   - Enhancer.init(): Allocates LlmClient internally; caller must call enhancer.deinit().\n   - EnrichmentResult: Caller-owns comment and tags; free with result.deinit().\n   - SemanticPhrasesResult: Caller-owns phrases; free with result.deinit().\n   - All enhance* methods: Return owned strings (caller must free with allocator).",
+  "used_by": ["src/guidance/enhancer_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "struct",
@@ -25,10 +25,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 46
+          "line": 54
         }
       ],
-      "line": 39
+      "line": 47
     },
     {
       "type": "struct",
@@ -48,7 +48,7 @@
           ],
           "returns": "Enhancer",
           "is_pub": true,
-          "line": 78
+          "line": 86
         }
     ,    {
           "type": "fn_decl",
@@ -60,7 +60,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 96
+          "line": 104
         }
     ,    {
           "type": "fn_decl",
@@ -72,7 +72,7 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 104
+          "line": 112
         }
     ,    {
           "type": "fn_private",
@@ -85,7 +85,7 @@
           ],
           "returns": "usize",
           "is_pub": false,
-          "line": 110
+          "line": 118
         }
     ,    {
           "type": "fn_decl",
@@ -101,7 +101,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": true,
-          "line": 126
+          "line": 134
         }
     ,    {
           "type": "fn_decl",
@@ -118,7 +118,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": true,
-          "line": 140
+          "line": 148
         }
     ,    {
           "type": "fn_decl",
@@ -133,7 +133,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 155
+          "line": 163
         }
     ,    {
           "type": "fn_decl",
@@ -145,7 +145,7 @@
           ],
           "returns": "u32",
           "is_pub": true,
-          "line": 203
+          "line": 211
         }
     ,    {
           "type": "fn_private",
@@ -160,7 +160,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 228
+          "line": 236
         }
     ,    {
           "type": "fn_private",
@@ -173,7 +173,7 @@
           ],
           "returns": "EnrichmentResult",
           "is_pub": false,
-          "line": 266
+          "line": 274
         }
     ,    {
           "type": "fn_private",
@@ -186,7 +186,7 @@
           ],
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 273
+          "line": 281
         }
     ,    {
           "type": "fn_private",
@@ -199,7 +199,7 @@
           ],
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 304
+          "line": 312
         }
     ,    {
           "type": "fn_private",
@@ -215,7 +215,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 329
+          "line": 337
         }
     ,    {
           "type": "fn_private",
@@ -232,7 +232,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 363
+          "line": 371
         }
     ,    {
           "type": "fn_private",
@@ -247,7 +247,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 410
+          "line": 418
         }
     ,    {
           "type": "fn_decl",
@@ -265,7 +265,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": true,
-          "line": 474
+          "line": 482
         }
     ,    {
           "type": "fn_private",
@@ -283,7 +283,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 502
+          "line": 510
         }
     ,    {
           "type": "fn_private",
@@ -297,7 +297,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 570
+          "line": 578
         }
     ,    {
           "type": "fn_private",
@@ -310,7 +310,7 @@
           ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
-          "line": 629
+          "line": 637
         }
     ,    {
           "type": "fn_decl",
@@ -326,7 +326,7 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": true,
-          "line": 654
+          "line": 662
         }
     ,    {
           "type": "fn_private",
@@ -342,7 +342,7 @@
           ],
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 703
+          "line": 711
         }
     ,    {
           "type": "fn_private",
@@ -355,7 +355,7 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": false,
-          "line": 737
+          "line": 745
         }
     ,    {
           "type": "fn_private",
@@ -368,10 +368,10 @@
           ],
           "returns": "SemanticPhrasesResult",
           "is_pub": false,
-          "line": 774
+          "line": 782
         }
       ],
-      "line": 66
+      "line": 74
     },
     {
       "type": "fn_private",
@@ -383,7 +383,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 829
+      "line": 837
     },
     {
       "type": "fn_private",
@@ -396,37 +396,37 @@
       ],
       "returns": "?usize",
       "is_pub": false,
-      "line": 842
+      "line": 850
     },
     {
       "type": "test_decl",
       "name": "lastIndexOf basic",
       "is_pub": false,
-      "line": 856
+      "line": 864
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag extracts content",
       "is_pub": false,
-      "line": 861
+      "line": 869
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag returns null for missing tag",
       "is_pub": false,
-      "line": 868
+      "line": 876
     },
     {
       "type": "test_decl",
       "name": "extractPhrasesTag handles whitespace",
       "is_pub": false,
-      "line": 874
+      "line": 882
     },
     {
       "type": "test_decl",
       "name": "fallbackPhrases skips generic words",
       "is_pub": false,
-      "line": 881
+      "line": 889
     }
   ]
 }

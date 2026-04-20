@@ -57,20 +57,24 @@ guidance gen --infill           # fill missing LLM comments
 ```
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (12 files, auto-discovered)
+## Sources (16 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/guidance/sync.zig` | 1.0 | defines_anchor |
 | `src/guidance/sync/marker.zig` | 1.0 | defines_anchor |
 | `src/vector/vector_db.zig` | 1.0 | defines_anchor |
+| `src/guidance/comments/sync_tests.zig` | 0.9 | used_by |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/guidance/sync/marker_tests.zig` | 0.9 | used_by |
 | `src/vector/root.zig` | 0.9 | used_by |
 | `src/vector/vector_db_tests.zig` | 0.9 | used_by |
+| `src/guidance/sync/gen_files.zig` | 0.4 | path_heuristic |
 | `src/guidance/comments/sync.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/json_writer.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync/commit.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync/ralph.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/line_verify.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/json_store.zig` | 0.4 | path_heuristic |
+| `src/guidance/sync_engine.zig` | 0.4 | path_heuristic |
 

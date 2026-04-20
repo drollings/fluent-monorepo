@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " Pattern detection for Zig AST nodes — detects GoF and domain patterns.",
-  "capabilities": ["coral-database", "ast-indexing"],
-  "used_by": ["src/common/root.zig", "src/guidance/ast_parser.zig"],
+  "used_by": ["src/common/pattern_tests.zig", "src/common/root.zig", "src/guidance/ast_parser.zig"],
   "members": [
     {
       "type": "fn_decl",

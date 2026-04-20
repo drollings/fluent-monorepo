@@ -17,6 +17,17 @@
 //!   vectorSearch    — cosine similarity over stored embeddings (semantic)
 //!   keywordSearch   — SQL LIKE on name / comment / module / signature
 //!   search          — hybrid: vector + keyword, fused by weighted score
+//!
+//! ## Memory Ownership
+//!
+//!   - GuidanceDb: Owns the SQLite database handle; call deinit() to close.
+//!   - SemanticAliases: Owns all key/value/alias strings; call deinit() to release.
+//!   - syncDatabase(): Writes to .guidance.db; no caller-owned heap beyond allocator.
+//!   - SearchResult fields (name, file_path, comment, etc.): Borrowed from the DB query;
+//!     valid only until the next query or GuidanceDb.close(). Callers must dupe strings
+//!     that need to outlive the query scope.
+//!   - DbSyncBuilder: Value-typed builder; call sync() which consumes and writes; no
+//!     separate deinit needed (builder owns no heap).
 
 const std = @import("std");
 const vector = @import("root.zig");
@@ -1376,11 +1387,143 @@ pub const GuidanceDb = struct {
         return false;
     }
 
+    /// Batch-prefetch embeddings for all embeddable nodes in a parsed file.
+    /// Collects embedding texts, checks the cache for each, batches the
+    /// uncached ones into embedBatch() calls (batch size 16), and stores
+    /// results in embedding_cache.  Subsequent getOrComputeEmbedding() calls
+    /// in insertModule/insertMember will then hit the cache.
+    ///
+    /// On error, logs a warning and returns — indexFile continues with
+    /// per-node getOrComputeEmbedding as fallback.
+    fn prefetchFileEmbeddings(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        doc: ParsedDoc,
+        source_text: ?[]const u8,
+    ) !void {
+        const model_name = self.embedder.getName();
+        if (std.mem.eql(u8, model_name, "none")) return;
+
+        // Collect embedding texts for all embeddable nodes.
+        var texts: std.ArrayList([]const u8) = .{};
+        defer {
+            for (texts.items) |t| allocator.free(t);
+            texts.deinit(allocator);
+        }
+
+        // Module embedding
+        const source_comment: ?[]u8 = if (doc.module_comment == null)
+            if (source_text) |src| try extractSourceModuleDoc(allocator, src) else null
+        else
+            null;
+        defer if (source_comment) |sc| allocator.free(sc);
+        const effective_module_comment: ?[]const u8 = doc.module_comment orelse source_comment;
+
+        const module_name = effective_module_comment orelse doc.module;
+        const has_module_semantic = effective_module_comment != null and effective_module_comment.?.len > 0;
+        if (has_module_semantic) {
+            const emb_text = try buildEmbeddingText(allocator, doc.module, module_name, "module", effective_module_comment, null, null);
+            try texts.append(allocator, emb_text);
+        }
+
+        // Member embeddings
+        for (doc.members) |m| {
+            const member_source_comment: ?[]u8 = if (m.comment == null)
+                if (source_text) |src| if (m.line) |ln| try extractSourceMemberDoc(allocator, src, ln) else null else null
+            else
+                null;
+            defer if (member_source_comment) |sc| allocator.free(sc);
+            const effective_comment: ?[]const u8 = m.comment orelse member_source_comment;
+
+            const is_test = std.mem.eql(u8, m.node_type, "test_decl");
+            const has_comment = effective_comment != null and effective_comment.?.len > 0;
+            const has_module_context = doc.module_comment != null and doc.module_comment.?.len > 0;
+            const is_top_level = std.mem.eql(u8, m.node_type, "struct") or
+                std.mem.eql(u8, m.node_type, "enum") or
+                std.mem.eql(u8, m.node_type, "fn_decl");
+            const comment_is_noisy = if (effective_comment) |cm| common.isNoisyComment(cm) else false;
+            const should_embed = !is_test and !comment_is_noisy and (has_comment or (is_top_level and has_module_context));
+
+            if (should_embed) {
+                const emb_text = try buildEmbeddingText(allocator, doc.module, m.name, m.node_type, effective_comment, m.signature, doc.module_comment);
+                try texts.append(allocator, emb_text);
+            }
+        }
+
+        if (texts.items.len == 0) return;
+
+        // Filter: only embed texts not already in cache.
+        var uncached: std.ArrayList([]const u8) = .{};
+        defer uncached.deinit(allocator);
+
+        for (texts.items) |txt| {
+            const txt_lower = try std.ascii.allocLowerString(allocator, txt);
+            defer allocator.free(txt_lower);
+            const hash = vector.contentHashWithModel(txt_lower, model_name);
+            const hash_str: []const u8 = &hash;
+            const cached = try self.getCachedEmbedding(allocator, hash_str);
+            if (cached) |emb| {
+                allocator.free(emb);
+            } else {
+                try uncached.append(allocator, txt);
+            }
+        }
+
+        if (uncached.items.len == 0) return;
+
+        // Batch embed in chunks of 16 (reduces HTTP round-trips by ~16x).
+        const batch_size: usize = 16;
+        var offset: usize = 0;
+        while (offset < uncached.items.len) : (offset += batch_size) {
+            const end = @min(offset + batch_size, uncached.items.len);
+            const batch = uncached.items[offset..end];
+
+            // Build lowercase texts for embedding
+            var lower_batch: std.ArrayList([]const u8) = .{};
+            defer {
+                for (lower_batch.items) |lb| allocator.free(lb);
+                lower_batch.deinit(allocator);
+            }
+            for (batch) |txt| {
+                try lower_batch.append(allocator, try std.ascii.allocLowerString(allocator, txt));
+            }
+
+            const result = self.embedder.embedBatch(allocator, lower_batch.items) catch |err| {
+                log.warn("embedBatch failed ({d} texts): {s} — falling back to per-node embed", .{ batch.len, @errorName(err) });
+                // Fallback: embed individually and cache each
+                for (batch) |txt| {
+                    if (try self.getOrComputeEmbedding(allocator, txt)) |emb| {
+                        allocator.free(emb);
+                    }
+                }
+                continue;
+            };
+            defer result.deinit(allocator);
+
+            // Cache each result
+            for (0..result.count) |i| {
+                const vec = result.vector(i);
+                const txt_lower = lower_batch.items[i];
+                const hash = vector.contentHashWithModel(txt_lower, model_name);
+                const hash_str: []const u8 = &hash;
+                self.cacheEmbedding(hash_str, model_name, vec);
+            }
+        }
+    }
+
     fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64, workspace: []const u8) !void {
         const file_data = try std.fs.cwd().readFileAlloc(allocator, file_path, 8 * 1024 * 1024);
         defer allocator.free(file_data);
 
-        const parsed = try parseGuidanceJson(allocator, file_data);
+        if (file_data.len == 0) {
+            log.warn("indexFile({s}): empty JSON file — skipping", .{file_path});
+            return;
+        }
+
+        const parsed = parseGuidanceJson(allocator, file_data) catch |err| {
+            log.warn("indexFile({s}): parse error: {s} — skipping", .{ file_path, @errorName(err) });
+            return;
+        };
 
         // For Zig files, read source text so insertModule/insertMember can
         // fall back to /// and //! inline comments when JSON has none.
@@ -1390,6 +1533,13 @@ pub const GuidanceDb = struct {
             break :blk std.fs.cwd().readFileAlloc(allocator, src_path, 5 * 1024 * 1024) catch null;
         } else null;
         defer if (source_text) |t| allocator.free(t);
+
+        // Batch-prefetch embeddings for all embeddable nodes in this file.
+        // This populates embedding_cache so subsequent getOrComputeEmbedding
+        // calls inside insertModule/insertMember are cache hits.
+        self.prefetchFileEmbeddings(allocator, parsed, source_text) catch |err| {
+            log.warn("prefetchFileEmbeddings({s}): {s} — continuing with per-node embed", .{ file_path, @errorName(err) });
+        };
 
         try self.execSimple("BEGIN");
         errdefer _ = self.execSimpleNoErr("ROLLBACK");
@@ -2197,9 +2347,11 @@ pub const GuidanceDb = struct {
                 continue;
             }
 
-            // Embed the keyword (lowercase for case-insensitive matching)
-            const emb = self.embedder.embed(allocator, kw_lower) catch |err| {
+            const emb = self.getOrComputeEmbedding(allocator, kw_lower) catch |err| {
                 log.debug("failed to embed keyword '{s}': {s}", .{ kw, @errorName(err) });
+                continue;
+            } orelse {
+                log.debug("no embedding for keyword '{s}'", .{kw});
                 continue;
             };
             defer allocator.free(emb);
@@ -3404,9 +3556,12 @@ pub const GuidanceDb = struct {
                 continue;
             }
 
-            // Embed the lowercase alias key
-            const emb = self.embedder.embed(allocator, key_lower) catch |err| {
+            const emb = self.getOrComputeEmbedding(allocator, key_lower) catch |err| {
                 std.debug.print("error: failed to embed alias key '{s}': {s}\n", .{ alias.key, @errorName(err) });
+                failed += 1;
+                continue;
+            } orelse {
+                std.debug.print("error: no embedding for alias key '{s}'\n", .{alias.key});
                 failed += 1;
                 continue;
             };

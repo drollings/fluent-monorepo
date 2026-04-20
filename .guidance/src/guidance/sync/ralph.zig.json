@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "module": "src.guidance.sync.ralph",
+    "source": "src/guidance/sync/ralph.zig",
+    "language": "zig"
+  },
+  "comment": " sync/ralph.zig — RALPH loop orchestration (check phase helpers).\n\n Extracted from sync_engine.zig (M2.1) to keep file sizes navigable.\n Public API: cmdCheck, runPhaseCommand, collectFilesWithExts.\n\n ## Memory Ownership\n\n   - cmdCheck(): Accepts gen_fn and caps_sync_fn function pointers for decoupled\n     dispatch; no circular imports. All allocations are arena-scoped per phase.\n   - runPhaseCommand(): Runs an external command; output is allocator-owned.\n   - collectFilesWithExts(): Returns allocator-owned ArrayList of file paths;\n     caller owns and must deinit.",
+  "used_by": ["src/guidance/query_engine.zig", "src/guidance/ralph_tests.zig"],
+  "members": [
+    {
+      "type": "fn_decl",
+      "name": "cmdCheck",
+      "match_hash": "c45837dc6c9561200cc39edb36043d65baa1fd0b9724690cdbba4c56cf3599e1",
+      "signature": "fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8, gen_fn: *const fn (std.mem.Allocator, gen_files_mod.GenArgs, ?gen_files_mod.CapabilitiesSyncFn) anyerror!void, caps_sync_fn: gen_files_mod.CapabilitiesSyncFn) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" },
+        { "name": "gen_fn", "type": "*const fn (std.mem.Allocator, gen_files_mod.GenArgs, ?gen_files_mod.CapabilitiesSyncFn) anyerror!void" },
+        { "name": "caps_sync_fn", "type": "gen_files_mod.CapabilitiesSyncFn" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 22
+    },
+    {
+      "type": "fn_decl",
+      "name": "runPhaseCommand",
+      "match_hash": "db25d3eed9e616d739efcbb121c4b8dc3e99101aad2233f95e7093f40aa76778",
+      "signature": "fn runPhaseCommand(allocator: std.mem.Allocator, argv_template: []const []const u8, file_path: []const u8) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "argv_template", "type": "[]const []const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 80
+    },
+    {
+      "type": "fn_decl",
+      "name": "collectFilesWithExts",
+      "match_hash": "f3c9cbed1e148f37491c740fa237689ae1175cff9b9073fa8e05ffea9601bbc3",
+      "signature": "fn collectFilesWithExts(allocator: std.mem.Allocator, dir_abs: []const u8, exts: []const []const u8) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "dir_abs", "type": "[]const u8" },
+        { "name": "exts", "type": "[]const []const u8" }
+      ],
+      "returns": "[][]const u8",
+      "is_pub": true,
+      "line": 93
+    }
+  ]
+}

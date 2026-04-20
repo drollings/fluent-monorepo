@@ -18,7 +18,7 @@ const std = @import("std");
 
 /// A source file that is not imported by any other file and is not an entry point.
 pub const OrphanedFile = struct {
-    /// Workspace-relative path, e.g. "src/guidance/vector_db.zig".
+    /// Workspace-relative path, e.g. "src/vector/vector_db.zig".
     source: []const u8,
     last_modified: i64,
 };

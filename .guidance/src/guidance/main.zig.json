@@ -4,7 +4,7 @@
     "source": "src/guidance/main.zig",
     "language": "zig"
   },
-  "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON",
+  "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n\n ## Memory Ownership\n\n   - main() creates a DebugAllocator and passes the allocator to all subcommands.\n     All subcommand allocations are scoped to the command lifetime.\n   - No module-level state; all data flows through function parameters.\n   - stdout writes use buffered std.Io.Writer with explicit flush before return.",
   "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
   "members": [
     {
@@ -18,112 +18,112 @@
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 47
+          "line": 54
         }
     ,    {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 48
+          "line": 55
         }
     ,    {
           "type": "enum_field",
           "name": "status",
           "is_pub": false,
-          "line": 49
+          "line": 56
         }
     ,    {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 50
+          "line": 57
         }
     ,    {
           "type": "enum_field",
           "name": "structure",
           "is_pub": false,
-          "line": 51
+          "line": 58
         }
     ,    {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 52
+          "line": 59
         }
     ,    {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 53
+          "line": 60
         }
     ,    {
           "type": "enum_field",
           "name": "check",
           "is_pub": false,
-          "line": 54
+          "line": 61
         }
     ,    {
           "type": "enum_field",
           "name": "show",
           "is_pub": false,
-          "line": 55
+          "line": 62
         }
     ,    {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 56
+          "line": 63
         }
     ,    {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 57
+          "line": 64
         }
     ,    {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 58
+          "line": 65
         }
     ,    {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 59
+          "line": 66
         }
     ,    {
           "type": "enum_field",
           "name": "@\"cache-stats\"",
           "is_pub": false,
-          "line": 60
+          "line": 67
         }
     ,    {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 61
+          "line": 68
         }
     ,    {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 62
+          "line": 69
         }
     ,    {
           "type": "enum_field",
           "name": "scan",
           "is_pub": false,
-          "line": 63
+          "line": 70
         }
     ,    {
           "type": "enum_field",
           "name": "codehealth",
           "is_pub": false,
-          "line": 64
+          "line": 71
         }
       ],
-      "line": 46
+      "line": 53
     },
     {
       "type": "fn_decl",
@@ -132,7 +132,7 @@
       "signature": "fn main() -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 68
+      "line": 75
     },
     {
       "type": "fn_private",
@@ -145,7 +145,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 134
+      "line": 141
     },
     {
       "type": "fn_private",
@@ -154,7 +154,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 139
+      "line": 146
     },
     {
       "type": "fn_private",
@@ -167,7 +167,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 258
+      "line": 265
     }
   ]
 }

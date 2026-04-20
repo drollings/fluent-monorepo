@@ -69,7 +69,7 @@ pub const PluginRegistry = struct {
     /// Return the names of all registered languages.
     /// Caller owns the returned slice (strings point into plugin storage).
     pub fn registeredLanguages(self: *const Self, allocator: std.mem.Allocator) ![]const []const u8 {
-        var seen: std.StringHashMapUnmanaged(void) = .{};
+        var seen: std.StringHashMapUnmanaged(void) = .empty;
         defer seen.deinit(allocator);
         var names: std.ArrayList([]const u8) = .{};
         errdefer names.deinit(allocator);
