@@ -8,6 +8,28 @@
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/staged_tests.zig"],
   "members": [
     {
+      "type": "struct",
+      "name": "StagedConfig",
+      "match_hash": "e65690f6813d0999751e896b5e10a034c17011c4ac7ab84e6c8718f9431f7633",
+      "signature": "keyword_struct StagedConfig { ... }",
+      "is_pub": true,
+      "line": 30
+    },
+    {
+      "type": "fn_decl",
+      "name": "executeStagedConfig",
+      "match_hash": "d47f74e47e6e5cbcb459fe808eecc8dbf842ff190b1abc5e6ae3e9beb3148366",
+      "signature": "fn executeStagedConfig(allocator: std.mem.Allocator, db: *GuidanceDb, config: StagedConfig) -> []types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*GuidanceDb" },
+        { "name": "config", "type": "StagedConfig" }
+      ],
+      "returns": "[]types.Stage",
+      "is_pub": true,
+      "line": 41
+    },
+    {
       "type": "fn_decl",
       "name": "executeStaged",
       "match_hash": "d523032026e65dbfe5d29d0f753338317f0ec81728cc1255485d21afa2abe28e",
@@ -20,7 +42,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 25
+      "line": 55
     },
     {
       "type": "fn_decl",
@@ -36,7 +58,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 35
+      "line": 65
     },
     {
       "type": "fn_private",
@@ -50,7 +72,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 53
+      "line": 83
     },
     {
       "type": "fn_private",
@@ -63,7 +85,88 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 101
+      "line": 131
+    },
+    {
+      "type": "fn_private",
+      "name": "applyCapabilityBoosting",
+      "match_hash": "61b554e219098debe2a165ed81e78baee4e1a96a01a56708b65843bf2933f885",
+      "signature": "fn applyCapabilityBoosting(allocator: std.mem.Allocator, aa: std.mem.Allocator, db: *GuidanceDb, matched_cap_names: []const []const u8, results: []SearchResult) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*GuidanceDb" },
+        { "name": "matched_cap_names", "type": "[]const []const u8" },
+        { "name": "results", "type": "[]SearchResult" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 166
+    },
+    {
+      "type": "fn_private",
+      "name": "collectProseStages",
+      "match_hash": "a9774e9db84738b08bd31bb995b7a1d87b22d64886e7a01506dc77c25d77fcdf",
+      "signature": "fn collectProseStages(allocator: std.mem.Allocator, aa: std.mem.Allocator, results: []const SearchResult, stages: *std.ArrayList(types.Stage)) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "results", "type": "[]const SearchResult" },
+        { "name": "stages", "type": "*std.ArrayList(types.Stage)" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 199
+    },
+    {
+      "type": "fn_private",
+      "name": "collectCodeStages",
+      "match_hash": "d1150c6cebff37797887561cb48e01af99046e780ca6f2df51002d5c9ff50d65",
+      "signature": "fn collectCodeStages(allocator: std.mem.Allocator, aa: std.mem.Allocator, workspace: []const u8, original_query: []const u8, results: []const SearchResult, stages: *std.ArrayList(types.Stage)) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "original_query", "type": "[]const u8" },
+        { "name": "results", "type": "[]const SearchResult" },
+        { "name": "stages", "type": "*std.ArrayList(types.Stage)" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 240
+    },
+    {
+      "type": "fn_private",
+      "name": "collectMetadataStages",
+      "match_hash": "29fcd3ef4872f979d32dbc3fad1324265caf9fe334e4abbbed36e580ea67822f",
+      "signature": "fn collectMetadataStages(allocator: std.mem.Allocator, aa: std.mem.Allocator, workspace: []const u8, results: []const SearchResult, stages: *std.ArrayList(types.Stage)) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "results", "type": "[]const SearchResult" },
+        { "name": "stages", "type": "*std.ArrayList(types.Stage)" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 296
+    },
+    {
+      "type": "fn_private",
+      "name": "collectCapabilityStages",
+      "match_hash": "e46d53e5549eb265bee0614b7693c4eadcbc82f0dc489eab464d7f86efb2c2a6",
+      "signature": "fn collectCapabilityStages(allocator: std.mem.Allocator, aa: std.mem.Allocator, workspace: []const u8, db: *GuidanceDb, matched_cap_names: []const []const u8, stages: *std.ArrayList(types.Stage)) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "db", "type": "*GuidanceDb" },
+        { "name": "matched_cap_names", "type": "[]const []const u8" },
+        { "name": "stages", "type": "*std.ArrayList(types.Stage)" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 340
     },
     {
       "type": "fn_decl",
@@ -80,7 +183,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 131
+      "line": 510
     },
     {
       "type": "fn_decl",
@@ -100,23 +203,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 636
-    },
-    {
-      "type": "fn_decl",
-      "name": "formatStaged",
-      "match_hash": "9bf98d12219b057c9cd9cf8c263e8dd07b91f43b742fb04ad63800e8431423c8",
-      "signature": "fn formatStaged(allocator: std.mem.Allocator, query: []const u8, stages: []const types.Stage, summary: ?[]const u8, _: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types.Stage" },
-        { "name": "summary", "type": "?[]const u8" },
-        { "name": "_", "type": "[]const u8" }
-      ],
-      "returns": "[]u8",
-      "is_pub": true,
-      "line": 725
+      "line": 565
     },
     {
       "type": "fn_decl",
@@ -133,19 +220,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 951
-    },
-    {
-      "type": "fn_private",
-      "name": "memberTypeFromNodeType",
-      "match_hash": "02842473bc4649d0533b819de5534f5b6f228826ee25b7b89c8c2663a725db2b",
-      "signature": "fn memberTypeFromNodeType(node_type: []const u8) -> types.MemberType",
-      "params": [
-        { "name": "node_type", "type": "[]const u8" }
-      ],
-      "returns": "types.MemberType",
-      "is_pub": false,
-      "line": 989
+      "line": 661
     },
     {
       "type": "fn_decl",
@@ -161,7 +236,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 1003
+      "line": 673
     },
     {
       "type": "fn_decl",
@@ -176,21 +251,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 1021
-    },
-    {
-      "type": "fn_decl",
-      "name": "buildMetadataStage",
-      "match_hash": "6f71ac91a6140629c0b0a386493d21db41afcf839134be8ae1e53059f5fd6c3e",
-      "signature": "fn buildMetadataStage(allocator: std.mem.Allocator, json_path: []const u8, source: []const u8) -> ?types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" },
-        { "name": "source", "type": "[]const u8" }
-      ],
-      "returns": "?types.Stage",
-      "is_pub": true,
-      "line": 1037
+      "line": 684
     },
     {
       "type": "fn_private",
@@ -203,20 +264,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 1152
-    },
-    {
-      "type": "fn_decl",
-      "name": "loadSkillNamesFromJson",
-      "match_hash": "e59a3cdaa9116bc75ebc438021091de150e20ce9f41793dc1671a5cbedf5ebec",
-      "signature": "fn loadSkillNamesFromJson(allocator: std.mem.Allocator, json_path: []const u8) -> [][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_path", "type": "[]const u8" }
-      ],
-      "returns": "[][]const u8",
-      "is_pub": true,
-      "line": 1162
+      "line": 701
     },
     {
       "type": "fn_decl",
@@ -229,7 +277,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1198
+      "line": 715
     },
     {
       "type": "fn_decl",
@@ -243,7 +291,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 1203
+      "line": 722
     }
   ]
 }

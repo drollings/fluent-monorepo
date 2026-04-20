@@ -66,12 +66,14 @@ The hybrid search combines:
 - `src/common/embeddings.zig` — `EmbeddingProvider` vtable
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (8 files, auto-discovered)
+## Sources (10 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/guidance/staged.zig` | 1.0 | defines_anchor |
 | `src/guidance/query_engine.zig` | 1.0 | defines_anchor |
+| `src/guidance/core/format.zig` | 1.0 | defines_anchor |
+| `src/common/root.zig` | 0.9 | used_by |
 | `src/guidance/main.zig` | 0.9 | used_by |
 | `src/guidance/mcp.zig` | 0.9 | used_by |
 | `src/guidance/sync_engine.zig` | 0.9 | used_by |

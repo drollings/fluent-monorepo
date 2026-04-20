@@ -51,7 +51,7 @@ pub fn extractExcerpt(
     node_type: NodeType,
     max_lines: usize,
 ) ![]const u8 {
-    var lines: std.ArrayList([]const u8) = .{};
+    var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(allocator);
 
     var iter = std.mem.splitScalar(u8, src, '\n');

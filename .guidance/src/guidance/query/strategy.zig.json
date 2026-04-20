@@ -18,28 +18,28 @@
           "type": "enum_field",
           "name": "identifier_lookup",
           "is_pub": false,
-          "line": 29
+          "line": 30
         }
     ,    {
           "type": "enum_field",
           "name": "capability_query",
           "is_pub": false,
-          "line": 31
+          "line": 32
         }
     ,    {
           "type": "enum_field",
           "name": "concept_query",
           "is_pub": false,
-          "line": 33
+          "line": 34
         }
     ,    {
           "type": "enum_field",
           "name": "general_search",
           "is_pub": false,
-          "line": 35
+          "line": 36
         }
       ],
-      "line": 27
+      "line": 28
     },
     {
       "type": "struct",
@@ -60,25 +60,22 @@
           ],
           "returns": "bool",
           "is_pub": true,
-          "line": 71
+          "line": 69
         }
     ,    {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "8e45e268c8f8244d7d98a8f920ab155e8ee047cbaca1839cd2f2a93e069bdb37",
-          "signature": "fn execute(self: QueryStrategy, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
+          "match_hash": "64a47e46b8a8bd3b1ca059b417b30cb953c9591959b6d0d34cf3564f2d662728",
+          "signature": "fn execute(self: QueryStrategy, allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> []types.Stage",
           "params": [
             { "name": "self", "type": "QueryStrategy" },
             { "name": "allocator", "type": "std.mem.Allocator" },
             { "name": "db", "type": "*GuidanceDb" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "original_query", "type": "[]const u8" },
-            { "name": "workspace", "type": "[]const u8" },
-            { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
+            { "name": "config", "type": "staged_mod.StagedConfig" }
           ],
           "returns": "[]types.Stage",
           "is_pub": true,
-          "line": 75
+          "line": 73
         }
     ,    {
           "type": "fn_decl",
@@ -90,7 +87,7 @@
           ],
           "returns": "QueryIntent",
           "is_pub": true,
-          "line": 87
+          "line": 82
         }
     ,    {
           "type": "fn_decl",
@@ -102,10 +99,10 @@
           ],
           "returns": "u8",
           "is_pub": true,
-          "line": 91
+          "line": 86
         }
       ],
-      "line": 43
+      "line": 44
     },
     {
       "type": "fn_private",
@@ -119,25 +116,22 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 116
+      "line": 111
     },
     {
       "type": "fn_private",
       "name": "identifierExecute",
-      "match_hash": "3354d1ebe2c72fc97a9212150351fb53372c7bd6aa0843e89b66943dbf8df870",
-      "signature": "fn identifierExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
+      "match_hash": "ae4b9f2a56bc19a49e80757bf7470d71865015b05c023b6717fd47f0c4b0bed0",
+      "signature": "fn identifierExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "original_query", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
+        { "name": "config", "type": "staged_mod.StagedConfig" }
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 123
+      "line": 118
     },
     {
       "type": "fn_private",
@@ -151,25 +145,22 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 170
+      "line": 150
     },
     {
       "type": "fn_private",
       "name": "capabilityExecute",
-      "match_hash": "acfe4de6f6dd7ae6690cb63d92c1dfc93cdf20e00d8c33e4305e5459c8923b18",
-      "signature": "fn capabilityExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
+      "match_hash": "0762ce629bccb2f17221880e33aa3ac726ac31498ac26b27ca9d06a59b01180e",
+      "signature": "fn capabilityExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "original_query", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
+        { "name": "config", "type": "staged_mod.StagedConfig" }
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 187
+      "line": 167
     },
     {
       "type": "fn_private",
@@ -183,25 +174,22 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 229
+      "line": 198
     },
     {
       "type": "fn_private",
       "name": "conceptExecute",
-      "match_hash": "f3415486576299cfcc739383b65372b191286daa173bc60489e73a26a92824bf",
-      "signature": "fn conceptExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> anyerror![]types.Stage",
+      "match_hash": "ca22102fead5d75a82678f327725ad5a765d54079dd336c0d79e9672a113be3d",
+      "signature": "fn conceptExecute(ptr: *anyopaque, allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> anyerror![]types.Stage",
       "params": [
         { "name": "ptr", "type": "*anyopaque" },
         { "name": "allocator", "type": "std.mem.Allocator" },
         { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "original_query", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
+        { "name": "config", "type": "staged_mod.StagedConfig" }
       ],
       "returns": "anyerror![]types.Stage",
       "is_pub": false,
-      "line": 240
+      "line": 209
     },
     {
       "type": "fn_decl",
@@ -219,7 +207,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 272
+      "line": 231
     },
     {
       "type": "fn_decl",
@@ -233,7 +221,7 @@
       ],
       "returns": "[3]QueryStrategy",
       "is_pub": true,
-      "line": 299
+      "line": 255
     },
     {
       "type": "fn_decl",
@@ -245,19 +233,7 @@
       ],
       "returns": "bool",
       "is_pub": true,
-      "line": 316
-    },
-    {
-      "type": "fn_private",
-      "name": "looksLikeNaturalLanguageQuestion",
-      "match_hash": "0ec55bc9a237bab0f5245956a6f7b4b3e807ab101616530db815fb63d2a51b78",
-      "signature": "fn looksLikeNaturalLanguageQuestion(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
-      "returns": "bool",
-      "is_pub": false,
-      "line": 335
+      "line": 272
     }
   ]
 }

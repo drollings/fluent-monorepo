@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "module": "src.guidance.core.ranking",
+    "source": "src/guidance/core/ranking.zig",
+    "language": "zig"
+  },
+  "comment": " core/ranking.zig — Unified result ranking and scoring.\n\n Consolidates:\n   - query_engine.zig:isExactNameMatch() sort\n   - staged.zig capability boosting via cap_confidence HashMap\n   - vector_db.zig RRF merge weighting",
+  "used_by": ["src/guidance/core/drift.zig", "src/guidance/core/format.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "RankParams",
+      "match_hash": "6d8ebc1a86a2550b78edb40bad11e0bf77f550780016de77676a288a8bf3e11e",
+      "signature": "keyword_struct RankParams { ... }",
+      "is_pub": true,
+      "line": 15
+    },
+    {
+      "type": "fn_decl",
+      "name": "rankResults",
+      "match_hash": "676c331f1e53b0062019ab9d23252254f82a2d7fef2573d41131bb66df685736",
+      "signature": "fn rankResults(results: []SearchResult, params: RankParams) -> void",
+      "params": [
+        { "name": "results", "type": "[]SearchResult" },
+        { "name": "params", "type": "RankParams" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 30
+    },
+    {
+      "type": "fn_decl",
+      "name": "isExactNameMatch",
+      "match_hash": "eb28e3747669297948649ee1c1c572666ff84a63cb67d32ad021da3298a7a7a2",
+      "signature": "fn isExactNameMatch(name: []const u8, terms: []const []const u8) -> bool",
+      "params": [
+        { "name": "name", "type": "[]const u8" },
+        { "name": "terms", "type": "[]const []const u8" }
+      ],
+      "returns": "bool",
+      "is_pub": true,
+      "line": 60
+    },
+    {
+      "type": "test_decl",
+      "name": "isExactNameMatch: case-insensitive match",
+      "is_pub": false,
+      "line": 76
+    },
+    {
+      "type": "test_decl",
+      "name": "isExactNameMatch: empty terms never match",
+      "is_pub": false,
+      "line": 83
+    },
+    {
+      "type": "test_decl",
+      "name": "isExactNameMatch: long name returns false",
+      "is_pub": false,
+      "line": 88
+    }
+  ]
+}

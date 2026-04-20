@@ -242,6 +242,7 @@ Then you you must read
 │   │   │   ├── inserter_tests.zig              # Tests for inserter.zig.
 │   │   │   ├── sync.zig                        # comment_sync.zig — Source-code-first comment sync workflow for guidance.
 │   │   │   └── sync_tests.zig                  # Tests for sync.zig.
+│   │   ├── core
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   ├── markdown_plugin_tests.zig       # Tests for markdown_plugin.zig.

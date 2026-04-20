@@ -16,22 +16,52 @@ const doc_parser = @import("doc_parser.zig");
 
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
+const core_excerpt = @import("core/excerpt.zig");
+const core_skill_loader = @import("core/skill_loader.zig");
+const core_metadata = @import("core/metadata.zig");
+const core_format = @import("core/format.zig");
+
+// ---------------------------------------------------------------------------
+// StagedConfig — unified query configuration (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// Configuration for a staged query execution.
+/// Replaces the 6-argument triad; defaults produce conservative behaviour.
+pub const StagedConfig = struct {
+    query: []const u8,
+    /// Original (pre-alias-expansion) query for token matching.  Defaults to query when null.
+    original_query: ?[]const u8 = null,
+    workspace: []const u8,
+    aliases: ?vector_db_mod.SemanticAliases = null,
+    max_results: usize = 15,
+};
+
+/// Execute staged query pipeline.
+/// Stages are allocator-owned; caller frees via types.freeStages(allocator, stages).
+pub fn executeStagedConfig(
+    allocator: std.mem.Allocator,
+    db: *GuidanceDb,
+    config: StagedConfig,
+) ![]types.Stage {
+    const original_query = config.original_query orelse config.query;
+    return executeStagedWithAliasesOriginal(allocator, db, config.query, original_query, config.workspace, config.aliases);
+}
 
 // ---------------------------------------------------------------------------
 // Stage collection entry point
 // ---------------------------------------------------------------------------
 
-/// Executes a staged query using the provided allocator, database, and workspace, returning a Stage slice.
+/// Shim — delegates to executeStagedConfig.
 pub fn executeStaged(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
     query: []const u8,
     workspace: []const u8,
 ) ![]types.Stage {
-    return executeStagedWithAliases(allocator, db, query, workspace, null);
+    return executeStagedConfig(allocator, db, .{ .query = query, .workspace = workspace });
 }
 
-/// Executes a Zig stage with optional alias resolution, returning the processed stage.
+/// Shim — delegates to executeStagedConfig.
 pub fn executeStagedWithAliases(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -39,7 +69,7 @@ pub fn executeStagedWithAliases(
     workspace: []const u8,
     aliases: ?vector_db_mod.SemanticAliases,
 ) ![]types.Stage {
-    return executeStagedWithAliasesOriginal(allocator, db, query, query, workspace, aliases);
+    return executeStagedConfig(allocator, db, .{ .query = query, .workspace = workspace, .aliases = aliases });
 }
 
 /// Executes a Zig stage with original aliases, processing the provided query and returning the resulting stage.
@@ -55,7 +85,7 @@ fn buildNotFoundStages(
     query: []const u8,
     db: *GuidanceDb,
 ) ![]types.Stage {
-    var stages: std.ArrayList(types.Stage) = .{};
+    var stages: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, stages.items);
         stages.deinit(allocator);
@@ -80,7 +110,7 @@ fn buildNotFoundStages(
         allocator.free(caps);
     }
     if (caps.len > 0) {
-        var buf: std.ArrayList(u8) = .{};
+        var buf: std.ArrayList(u8) = .empty;
         defer buf.deinit(allocator);
         const bw = buf.writer(allocator);
         try bw.writeAll("Related capabilities you might mean:\n");
@@ -128,118 +158,58 @@ fn anyResultIsRelevant(results: []const SearchResult, original_query: []const u8
 }
 
 /// Executes a Zig stage with original query and aliases, returning the processed stage.
-pub fn executeStagedWithAliasesOriginal(
+// ---------------------------------------------------------------------------
+// Stage collection helpers (Phase 5.2)
+// ---------------------------------------------------------------------------
+
+/// Boosts result scores in-place for sources affiliated with matched capabilities.
+fn applyCapabilityBoosting(
     allocator: std.mem.Allocator,
+    aa: std.mem.Allocator,
     db: *GuidanceDb,
-    query: []const u8,
-    original_query: []const u8,
-    workspace: []const u8,
-    aliases: ?vector_db_mod.SemanticAliases,
-) ![]types.Stage {
-    // ── Vector/hybrid search with alias expansion ─────────────────────────────
-    const results = try db.searchWithAliasesOriginal(allocator, query, original_query, 15, aliases);
-    defer {
-        for (results) |r| GuidanceDb.freeSearchResult(allocator, r);
-        allocator.free(results);
-    }
-
-    // ── M7: Negative answer path ──────────────────────────────────────────────
-    // For multi-word queries: if no result name or source contains any key query
-    // token AND no Phase-1 exact match was found (score < 0.9), return "not found".
-    //
-    // Phase 1 (exact name match) sets score = 1.0 — always relevant, skip check.
-    // Phase 2/3 (vector/hybrid RRF) sets score in [0.004, 0.04] — unreliable alone.
-    // We use token overlap as the primary signal, score only to detect Phase 1.
-    {
-        var orig_tok_count: usize = 0;
-        var tc = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
-        while (tc.next()) |_| orig_tok_count += 1;
-
-        const is_multi_word = orig_tok_count >= 2;
-        // If top result score >= 0.9, Phase 1 exact match was found — definitely relevant.
-        const no_exact_match = results.len == 0 or results[0].score < 0.9;
-
-        if (is_multi_word and no_exact_match and !anyResultIsRelevant(results, original_query)) {
-            return buildNotFoundStages(allocator, original_query, db);
-        }
-    }
-
-    // ── Capability routing: which capabilities influenced the search ──────────
-    const matched_cap_names = db.findMatchedCapabilityNamesForQuery(allocator, query, 0.45, 3) catch &[_][]const u8{};
-    defer {
-        for (matched_cap_names) |n| allocator.free(n);
-        allocator.free(matched_cap_names);
-    }
-
-    // ── M7.2: Capability score boosting ───────────────────────────────────────
-    // Boost scores for results whose source file is a capability source.
-    // boost = 1.0 + (confidence * 0.3), so range is 1.0–1.3
-    if (matched_cap_names.len > 0) {
-        var cap_confidence: std.StringHashMapUnmanaged(f32) = .{};
+    matched_cap_names: []const []const u8,
+    results: []SearchResult,
+) void {
+    if (matched_cap_names.len == 0) return;
+    var cap_confidence: std.StringHashMapUnmanaged(f32) = .empty;
+    for (matched_cap_names) |cap_name| {
+        const sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch continue;
         defer {
-            var it = cap_confidence.iterator();
-            while (it.next()) |entry| allocator.free(entry.key_ptr.*);
-            cap_confidence.deinit(allocator);
-        }
-
-        for (matched_cap_names) |cap_name| {
-            const sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch continue;
-            defer {
-                for (sources) |cs| {
-                    allocator.free(cs.source_path);
-                    allocator.free(cs.reason);
-                }
-                allocator.free(sources);
-            }
             for (sources) |cs| {
-                if (cap_confidence.get(cs.source_path)) |existing| {
-                    if (cs.confidence > existing) {
-                        cap_confidence.put(allocator, cs.source_path, cs.confidence) catch continue;
-                    }
-                } else {
-                    const key = allocator.dupe(u8, cs.source_path) catch continue;
-                    cap_confidence.put(allocator, key, cs.confidence) catch {
-                        allocator.free(key);
-                        continue;
-                    };
-                }
+                allocator.free(cs.source_path);
+                allocator.free(cs.reason);
             }
+            allocator.free(sources);
         }
-
-        for (results, 0..) |r, i| {
-            if (cap_confidence.get(r.source)) |conf| {
-                const boost = 1.0 + conf * 0.3;
-                results[i].score *= boost;
+        for (sources) |cs| {
+            if (cap_confidence.get(cs.source_path)) |existing| {
+                if (cs.confidence > existing) cap_confidence.put(aa, cs.source_path, cs.confidence) catch continue;
+            } else {
+                const key = aa.dupe(u8, cs.source_path) catch continue;
+                cap_confidence.put(aa, key, cs.confidence) catch continue;
             }
         }
     }
-
-    var stages: std.ArrayList(types.Stage) = .{};
-    errdefer {
-        types.freeStages(allocator, stages.items);
-        stages.deinit(allocator);
+    for (results, 0..) |r, i| {
+        if (cap_confidence.get(r.source)) |conf| results[i].score *= 1.0 + conf * 0.3;
     }
+}
 
-    // ── Prose stages: module detail + member comments ────────────────────────────────
-    // Track seen (source, name) pairs to avoid duplicate prose entries.
-    var seen_prose: std.StringHashMapUnmanaged(void) = .{};
-    defer {
-        var it = seen_prose.keyIterator();
-        while (it.next()) |k| allocator.free(k.*);
-        seen_prose.deinit(allocator);
-    }
-
-    // First, add module detail stages (high-value comprehensive documentation)
+/// Appends prose stages (module detail + member comments) to stages.
+fn collectProseStages(
+    allocator: std.mem.Allocator,
+    aa: std.mem.Allocator,
+    results: []const SearchResult,
+    stages: *std.ArrayList(types.Stage),
+) !void {
+    var seen_prose: std.StringHashMapUnmanaged(void) = .empty;
     for (results[0..@min(5, results.len)]) |r| {
         if (!std.mem.eql(u8, r.node_type, "module")) continue;
         const detail = r.detail orelse continue;
         if (detail.len < 50) continue;
-
-        const key = try std.fmt.allocPrint(allocator, "{s}\x00detail", .{r.source});
-        defer allocator.free(key);
+        const key = try std.fmt.allocPrint(aa, "{s}\x00detail", .{r.source});
         if (seen_prose.contains(key)) continue;
-        try seen_prose.put(allocator, try allocator.dupe(u8, key), {});
-
+        try seen_prose.put(aa, key, {});
         try stages.append(allocator, .{
             .kind = .prose,
             .content = try allocator.dupe(u8, detail),
@@ -247,24 +217,16 @@ pub fn executeStagedWithAliasesOriginal(
             .line = r.line,
         });
     }
-
-    // Then add member comments
     for (results[0..@min(10, results.len)]) |r| {
         const comment = r.comment orelse continue;
         if (comment.len < 10) continue;
-
-        // Key: "source\x00name" to dedup per-member comments.
-        const key = try std.fmt.allocPrint(allocator, "{s}\x00{s}", .{ r.source, r.name });
-        defer allocator.free(key);
+        const key = try std.fmt.allocPrint(aa, "{s}\x00{s}", .{ r.source, r.name });
         if (seen_prose.contains(key)) continue;
-        try seen_prose.put(allocator, try allocator.dupe(u8, key), {});
-
-        // For module-level rows show a brief label.
+        try seen_prose.put(aa, key, {});
         const prose_src = if (std.mem.eql(u8, r.node_type, "module"))
             try allocator.dupe(u8, r.source)
         else
             try std.fmt.allocPrint(allocator, "{s}:{s}", .{ r.source, r.name });
-
         try stages.append(allocator, .{
             .kind = .prose,
             .content = try allocator.dupe(u8, comment),
@@ -272,73 +234,54 @@ pub fn executeStagedWithAliasesOriginal(
             .line = r.line,
         });
     }
+}
 
-    // ── Code stages: per-token exact matching then top-3-files fallback ─────────
-    // For each token in the original query, find an exact name match in results
-    // and emit its code excerpt.  This handles multi-keyword queries like
-    // "filterStages dupeStage" by showing a separate excerpt for each identifier.
-    // Falls back to top-3-unique-files when no token matches exactly (e.g. for
-    // pure concept queries like "staged pipeline architecture").
-    var seen_code_by_loc: std.StringHashMapUnmanaged(void) = .{};
-    defer {
-        var kit = seen_code_by_loc.keyIterator();
-        while (kit.next()) |k| allocator.free(k.*);
-        seen_code_by_loc.deinit(allocator);
-    }
-
+/// Appends code stages (per-token match + top-3-files fallback) to stages.
+fn collectCodeStages(
+    allocator: std.mem.Allocator,
+    aa: std.mem.Allocator,
+    workspace: []const u8,
+    original_query: []const u8,
+    results: []const SearchResult,
+    stages: *std.ArrayList(types.Stage),
+) !void {
+    var seen_code_by_loc: std.StringHashMapUnmanaged(void) = .empty;
     var token_match_count: usize = 0;
-    {
-        var tok_it = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
-        while (tok_it.next()) |token| {
-            const token_lower = std.ascii.allocLowerString(allocator, token) catch continue;
-            defer allocator.free(token_lower);
-            for (results) |r| {
-                const name_lower = std.ascii.allocLowerString(allocator, r.name) catch continue;
-                defer allocator.free(name_lower);
-                if (!std.mem.eql(u8, token_lower, name_lower)) continue;
-                const line = r.line orelse break;
-                const loc_key = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, line });
-                if (seen_code_by_loc.contains(loc_key)) {
-                    allocator.free(loc_key);
-                    break;
-                }
-                try seen_code_by_loc.put(allocator, loc_key, {});
-                const excerpt = extractSourceExcerptVerified(allocator, workspace, r.source, line, r.node_type, r.name) catch break;
-                if (excerpt.len > 0) {
-                    try stages.append(allocator, .{
-                        .kind = .code,
-                        .content = excerpt,
-                        .source = try allocator.dupe(u8, r.source),
-                        .line = line,
-                    });
-                    token_match_count += 1;
-                } else {
-                    allocator.free(excerpt);
-                }
-                break; // one match per token
-            }
+    var tok_it = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
+    while (tok_it.next()) |token| {
+        const token_lower = std.ascii.allocLowerString(aa, token) catch continue;
+        for (results) |r| {
+            const name_lower = std.ascii.allocLowerString(aa, r.name) catch continue;
+            if (!std.mem.eql(u8, token_lower, name_lower)) continue;
+            const line = r.line orelse break;
+            const loc_key = try std.fmt.allocPrint(aa, "{s}:{d}", .{ r.source, line });
+            if (seen_code_by_loc.contains(loc_key)) break;
+            try seen_code_by_loc.put(aa, loc_key, {});
+            const excerpt = extractSourceExcerptVerified(allocator, workspace, r.source, line, r.node_type, r.name) catch break;
+            if (excerpt.len > 0) {
+                try stages.append(allocator, .{
+                    .kind = .code,
+                    .content = excerpt,
+                    .source = try allocator.dupe(u8, r.source),
+                    .line = line,
+                });
+                token_match_count += 1;
+            } else allocator.free(excerpt);
+            break;
         }
     }
-
-    // Fallback: no token matched exactly — show top 3 unique source files
     if (token_match_count == 0) {
-        var seen_code_files: std.StringHashMapUnmanaged(void) = .{};
-        defer seen_code_files.deinit(allocator);
-
+        var seen_code_files: std.StringHashMapUnmanaged(void) = .empty;
         for (results) |r| {
             if (seen_code_files.count() >= 3) break;
-            if (r.source.len == 0) continue;
-            if (seen_code_files.contains(r.source)) continue;
+            if (r.source.len == 0 or seen_code_files.contains(r.source)) continue;
             const line = r.line orelse continue;
-
-            try seen_code_files.put(allocator, r.source, {});
-
+            try seen_code_files.put(aa, r.source, {});
             const excerpt = extractSourceExcerptVerified(allocator, workspace, r.source, line, r.node_type, r.name) catch continue;
             if (excerpt.len == 0) {
                 allocator.free(excerpt);
                 continue;
             }
-
             try stages.append(allocator, .{
                 .kind = .code,
                 .content = excerpt,
@@ -347,283 +290,269 @@ pub fn executeStagedWithAliasesOriginal(
             });
         }
     }
+}
 
-    // ── Metadata stages: guidance JSON keywords / see_also / skills ───────────
-    var seen_guidance: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_guidance.deinit(allocator);
-
+/// Appends metadata stages (guidance JSON + see-also traversal) to stages.
+fn collectMetadataStages(
+    allocator: std.mem.Allocator,
+    aa: std.mem.Allocator,
+    workspace: []const u8,
+    results: []const SearchResult,
+    stages: *std.ArrayList(types.Stage),
+) !void {
+    var seen_guidance: std.StringHashMapUnmanaged(void) = .empty;
     for (results[0..@min(5, results.len)]) |r| {
         if (seen_guidance.contains(r.file_path)) continue;
-        try seen_guidance.put(allocator, r.file_path, {});
-
-        const meta = buildMetadataStage(allocator, r.file_path, r.source) catch continue;
+        try seen_guidance.put(aa, r.file_path, {});
+        const meta = core_metadata.buildMetadataStage(allocator, r.file_path, r.source) catch continue;
         const meta_stage = meta orelse continue;
         try stages.append(allocator, meta_stage);
     }
-
-    // ── See-also traversal for sparse results ──────────────────────────────────
-    // If we have few results (< 3 code stages), follow used_by paths.
     if (stages.items.len < 5 and results.len > 0) {
-        var seen_sources: std.StringHashMapUnmanaged(void) = .{};
-        defer seen_sources.deinit(allocator);
-
+        var seen_sources: std.StringHashMapUnmanaged(void) = .empty;
         for (stages.items) |s| {
-            if (s.kind == .code or s.kind == .prose) {
-                seen_sources.put(allocator, s.source, {}) catch {};
-            }
+            if (s.kind == .code or s.kind == .prose) seen_sources.put(aa, s.source, {}) catch {};
         }
-
         for (results[0..@min(3, results.len)]) |r| {
             if (r.used_by.len == 0) continue;
-
             for (r.used_by[0..@min(3, r.used_by.len)]) |ub_path| {
                 if (seen_sources.contains(ub_path)) continue;
-
                 const excerpt = extractSourceExcerpt(allocator, workspace, ub_path, 1, "module") catch continue;
                 if (excerpt.len == 0) {
                     allocator.free(excerpt);
                     continue;
                 }
-
-                seen_sources.put(allocator, ub_path, {}) catch {};
+                seen_sources.put(aa, ub_path, {}) catch {};
                 try stages.append(allocator, .{
                     .kind = .code,
                     .content = excerpt,
                     .source = try allocator.dupe(u8, ub_path),
                     .line = 1,
                 });
-
                 if (stages.items.len >= 8) break;
             }
             if (stages.items.len >= 8) break;
         }
     }
+}
 
-    // ── Matched-Capabilities metadata stage ───────────────────────────────────
-    // Emit a metadata stage recording which capabilities routed this query,
-    // so formatStaged() can render a "Matched Capabilities" line.
-    if (matched_cap_names.len > 0) {
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(allocator);
-        try buf.appendSlice(allocator, "matched_capabilities: ");
-        for (matched_cap_names, 0..) |name, i| {
-            if (i > 0) try buf.appendSlice(allocator, ", ");
-            try buf.appendSlice(allocator, name);
-        }
-        try stages.append(allocator, .{
-            .kind = .metadata,
-            .content = try buf.toOwnedSlice(allocator),
-            .source = try allocator.dupe(u8, "capability-routing"),
-        });
+/// Appends capability-routing metadata + doc + expansion stages to stages.
+fn collectCapabilityStages(
+    allocator: std.mem.Allocator,
+    aa: std.mem.Allocator,
+    workspace: []const u8,
+    db: *GuidanceDb,
+    matched_cap_names: []const []const u8,
+    stages: *std.ArrayList(types.Stage),
+) !void {
+    if (matched_cap_names.len == 0) return;
+
+    // Routing metadata stage
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
+    try buf.appendSlice(allocator, "matched_capabilities: ");
+    for (matched_cap_names, 0..) |name, i| {
+        if (i > 0) try buf.appendSlice(allocator, ", ");
+        try buf.appendSlice(allocator, name);
     }
+    try stages.append(allocator, .{
+        .kind = .metadata,
+        .content = try buf.toOwnedSlice(allocator),
+        .source = try allocator.dupe(u8, "capability-routing"),
+    });
 
-    // ── Capability doc stages (M7.3) ──────────────────────────────────────────
-    // Emit a capability_doc stage for each matched capability so formatStaged()
-    // can render "## Capability: name" blocks with description, anchors, and
-    // top source files. This requires loading the capability-index.json.
-    if (matched_cap_names.len > 0) {
-        const cap_index_path = std.fmt.allocPrint(
-            allocator,
-            "{s}/.guidance/capability-index.json",
-            .{workspace},
-        ) catch null;
-        defer if (cap_index_path) |p| allocator.free(p);
-
-        if (cap_index_path) |index_path| {
-            if (std.fs.cwd().readFileAlloc(allocator, index_path, 2 * 1024 * 1024)) |index_content| {
-                defer allocator.free(index_content);
-                if (std.json.parseFromSlice(std.json.Value, allocator, index_content, .{ .ignore_unknown_fields = true })) |parsed| {
-                    defer parsed.deinit();
-                    if (parsed.value == .object) {
-                        const caps_val = parsed.value.object.get("capabilities") orelse
-                            std.json.Value{ .null = {} };
-                        if (caps_val == .array) {
-                            for (matched_cap_names) |cap_name| {
-                                // Find this capability in the index
-                                for (caps_val.array.items) |cap_item| {
-                                    if (cap_item != .object) continue;
-                                    const cap_obj = cap_item.object;
-                                    const idx_name = (cap_obj.get("name") orelse continue).string;
-                                    if (!std.mem.eql(u8, idx_name, cap_name)) continue;
-
-                                    // Build capability_doc content
-                                    var cbuf: std.ArrayList(u8) = .{};
-                                    errdefer cbuf.deinit(allocator);
-
-                                    // Description
-                                    if (cap_obj.get("description")) |dv| {
-                                        if (dv == .string and dv.string.len > 0) {
-                                            try cbuf.appendSlice(allocator, dv.string);
-                                            try cbuf.appendSlice(allocator, "\n\n");
-                                        }
+    // Capability doc stages from index
+    const cap_index_path = std.fmt.allocPrint(allocator, "{s}/.guidance/capability-index.json", .{workspace}) catch null;
+    defer if (cap_index_path) |p| allocator.free(p);
+    if (cap_index_path) |index_path| {
+        if (std.fs.cwd().readFileAlloc(allocator, index_path, 2 * 1024 * 1024)) |index_content| {
+            defer allocator.free(index_content);
+            if (std.json.parseFromSlice(std.json.Value, allocator, index_content, .{ .ignore_unknown_fields = true })) |parsed| {
+                defer parsed.deinit();
+                if (parsed.value == .object) {
+                    const caps_val = parsed.value.object.get("capabilities") orelse std.json.Value{ .null = {} };
+                    if (caps_val == .array) {
+                        for (matched_cap_names) |cap_name| {
+                            for (caps_val.array.items) |cap_item| {
+                                if (cap_item != .object) continue;
+                                const cap_obj = cap_item.object;
+                                const idx_name = (cap_obj.get("name") orelse continue).string;
+                                if (!std.mem.eql(u8, idx_name, cap_name)) continue;
+                                var cbuf: std.ArrayList(u8) = .empty;
+                                errdefer cbuf.deinit(allocator);
+                                if (cap_obj.get("description")) |dv| {
+                                    if (dv == .string and dv.string.len > 0) {
+                                        try cbuf.appendSlice(allocator, dv.string);
+                                        try cbuf.appendSlice(allocator, "\n\n");
                                     }
-
-                                    // Anchors
-                                    if (cap_obj.get("anchors")) |av| {
-                                        if (av == .array and av.array.items.len > 0) {
-                                            try cbuf.appendSlice(allocator, "**Anchors**: ");
-                                            for (av.array.items, 0..) |anchor, j| {
-                                                if (anchor != .string) continue;
-                                                if (j > 0) try cbuf.appendSlice(allocator, ", ");
-                                                try cbuf.appendSlice(allocator, anchor.string);
-                                            }
-                                            try cbuf.appendSlice(allocator, "\n");
-                                        }
-                                    }
-
-                                    // Top source files from capability_sources
-                                    const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
-                                    defer {
-                                        for (cap_sources) |cs| {
-                                            allocator.free(cs.source_path);
-                                            allocator.free(cs.reason);
-                                        }
-                                        allocator.free(cap_sources);
-                                    }
-                                    if (cap_sources.len > 0) {
-                                        try cbuf.appendSlice(allocator, "**Sources**: ");
-                                        const take = @min(4, cap_sources.len);
-                                        for (cap_sources[0..take], 0..) |cs, j| {
+                                }
+                                if (cap_obj.get("anchors")) |av| {
+                                    if (av == .array and av.array.items.len > 0) {
+                                        try cbuf.appendSlice(allocator, "**Anchors**: ");
+                                        for (av.array.items, 0..) |anchor, j| {
+                                            if (anchor != .string) continue;
                                             if (j > 0) try cbuf.appendSlice(allocator, ", ");
-                                            try cbuf.writer(allocator).print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                            try cbuf.appendSlice(allocator, anchor.string);
                                         }
                                         try cbuf.appendSlice(allocator, "\n");
                                     }
-
-                                    if (cbuf.items.len > 0) {
-                                        try stages.append(allocator, .{
-                                            .kind = .capability_doc,
-                                            .content = try cbuf.toOwnedSlice(allocator),
-                                            .source = try allocator.dupe(u8, cap_name),
-                                        });
-                                    } else {
-                                        cbuf.deinit(allocator);
-                                    }
-                                    break;
                                 }
+                                const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
+                                defer {
+                                    for (cap_sources) |cs| {
+                                        allocator.free(cs.source_path);
+                                        allocator.free(cs.reason);
+                                    }
+                                    allocator.free(cap_sources);
+                                }
+                                if (cap_sources.len > 0) {
+                                    try cbuf.appendSlice(allocator, "**Sources**: ");
+                                    const take = @min(4, cap_sources.len);
+                                    for (cap_sources[0..take], 0..) |cs, j| {
+                                        if (j > 0) try cbuf.appendSlice(allocator, ", ");
+                                        try cbuf.writer(allocator).print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                    }
+                                    try cbuf.appendSlice(allocator, "\n");
+                                }
+                                if (cbuf.items.len > 0) {
+                                    try stages.append(allocator, .{
+                                        .kind = .capability_doc,
+                                        .content = try cbuf.toOwnedSlice(allocator),
+                                        .source = try allocator.dupe(u8, cap_name),
+                                    });
+                                } else cbuf.deinit(allocator);
+                                break;
                             }
                         }
                     }
-                } else |_| {}
+                }
             } else |_| {}
-        }
+        } else |_| {}
     }
 
-    // ── Capability-guided expansion (M7) ───────────────────────────────────────
-    // For each matched capability, query capability_sources and add source files
-    // at confidence >= 0.7 that are not already in the search results.
-    if (matched_cap_names.len > 0) {
-        // Derive guidance_dir from workspace
-        const guidance_dir = std.fmt.allocPrint(allocator, "{s}/.guidance", .{workspace}) catch workspace;
-        defer if (!std.mem.eql(u8, guidance_dir, workspace)) allocator.free(@as([]const u8, @constCast(guidance_dir)));
+    // Capability-guided expansion
+    const guidance_dir = std.fmt.allocPrint(allocator, "{s}/.guidance", .{workspace}) catch workspace;
+    defer if (!std.mem.eql(u8, guidance_dir, workspace)) allocator.free(@as([]const u8, @constCast(guidance_dir)));
 
-        // Build seen_sources set from existing stages
-        var seen_sources: std.StringHashMapUnmanaged(void) = .{};
+    var seen_sources: std.StringHashMapUnmanaged(void) = .empty;
+    for (stages.items) |s| {
+        if (s.kind == .code or s.kind == .prose) {
+            if (!seen_sources.contains(s.source)) seen_sources.put(aa, try aa.dupe(u8, s.source), {}) catch {};
+        }
+    }
+    var cap_expansion_count: usize = 0;
+    for (matched_cap_names) |cap_name| {
+        const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
         defer {
-            var kit = seen_sources.keyIterator();
-            while (kit.next()) |k| allocator.free(k.*);
-            seen_sources.deinit(allocator);
-        }
-
-        for (stages.items) |s| {
-            if (s.kind == .code or s.kind == .prose) {
-                if (!seen_sources.contains(s.source)) {
-                    try seen_sources.put(allocator, try allocator.dupe(u8, s.source), {});
-                }
-            }
-        }
-
-        // Track files added from capability expansion for verbose output
-        var cap_expansion_count: usize = 0;
-
-        for (matched_cap_names) |cap_name| {
-            const cap_sources = db.getCapabilitySources(allocator, cap_name, 0.65) catch &.{};
-            defer {
-                for (cap_sources) |cs| {
-                    allocator.free(cs.source_path);
-                    allocator.free(cs.reason);
-                }
-                allocator.free(cap_sources);
-            }
-
             for (cap_sources) |cs| {
-                // Skip if already seen
-                if (seen_sources.contains(cs.source_path)) continue;
-
-                // Try to load guidance JSON for this source.
-                // source_path is already project-relative (e.g. "src/common/embeddings.zig"),
-                // so the JSON lives at {guidance_dir}/{source_path}.json.
-                const json_path = std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ guidance_dir, cs.source_path }) catch continue;
-                defer allocator.free(json_path);
-
-                const json_content = std.fs.cwd().readFileAllocOptions(allocator, json_path, 2 * 1024 * 1024, null, .@"1", 0) catch continue;
-                defer allocator.free(json_content);
-
-                const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch continue;
-                defer parsed.deinit();
-
-                if (parsed.value != .object) continue;
-                const obj = parsed.value.object;
-
-                var added_prose = false;
-
-                // Add module detail if available
-                if (obj.get("detail")) |detail_val| {
-                    if (detail_val == .string and detail_val.string.len >= 50) {
-                        try seen_sources.put(allocator, try allocator.dupe(u8, cs.source_path), {});
-                        try stages.append(allocator, .{
-                            .kind = .prose,
-                            .content = try allocator.dupe(u8, detail_val.string),
-                            .source = try std.fmt.allocPrint(allocator, "{s} (cap:{s})", .{ cs.source_path, cap_name }),
-                        });
-                        cap_expansion_count += 1;
-                        added_prose = true;
-                    }
+                allocator.free(cs.source_path);
+                allocator.free(cs.reason);
+            }
+            allocator.free(cap_sources);
+        }
+        for (cap_sources) |cs| {
+            if (seen_sources.contains(cs.source_path)) continue;
+            const json_path = std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ guidance_dir, cs.source_path }) catch continue;
+            defer allocator.free(json_path);
+            const json_content = std.fs.cwd().readFileAllocOptions(allocator, json_path, 2 * 1024 * 1024, null, .@"1", 0) catch continue;
+            defer allocator.free(json_content);
+            const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch continue;
+            defer parsed.deinit();
+            if (parsed.value != .object) continue;
+            const obj = parsed.value.object;
+            var added_prose = false;
+            if (obj.get("detail")) |dv| {
+                if (dv == .string and dv.string.len >= 50) {
+                    try seen_sources.put(aa, try aa.dupe(u8, cs.source_path), {});
+                    try stages.append(allocator, .{
+                        .kind = .prose,
+                        .content = try allocator.dupe(u8, dv.string),
+                        .source = try std.fmt.allocPrint(allocator, "{s} (cap:{s})", .{ cs.source_path, cap_name }),
+                    });
+                    cap_expansion_count += 1;
+                    added_prose = true;
                 }
-
-                // Add top member comments if available
-                if (obj.get("members")) |members_val| {
-                    if (members_val == .array) {
-                        for (members_val.array.items[0..@min(3, members_val.array.items.len)]) |member| {
-                            if (member != .object) continue;
-                            const m_obj = member.object;
-                            const m_name = m_obj.get("name") orelse continue;
-                            const m_comment = m_obj.get("comment") orelse continue;
-                            if (m_name == .string and m_comment == .string and m_comment.string.len >= 10) {
-                                try stages.append(allocator, .{
-                                    .kind = .prose,
-                                    .content = try allocator.dupe(u8, m_comment.string),
-                                    .source = try std.fmt.allocPrint(allocator, "{s}:{s} (cap:{s})", .{ cs.source_path, m_name.string, cap_name }),
-                                });
-                                added_prose = true;
-                            }
+            }
+            if (obj.get("members")) |mv| {
+                if (mv == .array) {
+                    for (mv.array.items[0..@min(3, mv.array.items.len)]) |member| {
+                        if (member != .object) continue;
+                        const mo = member.object;
+                        const mn = mo.get("name") orelse continue;
+                        const mc = mo.get("comment") orelse continue;
+                        if (mn == .string and mc == .string and mc.string.len >= 10) {
+                            try stages.append(allocator, .{
+                                .kind = .prose,
+                                .content = try allocator.dupe(u8, mc.string),
+                                .source = try std.fmt.allocPrint(allocator, "{s}:{s} (cap:{s})", .{ cs.source_path, mn.string, cap_name }),
+                            });
+                            added_prose = true;
                         }
                     }
                 }
-
-                // Fallback: when there is no prose (no detail, no member comments),
-                // emit a metadata stage listing public member names. This surfaces
-                // the file as relevant even before LLM comments are generated.
-                if (!added_prose) {
-                    const meta_stage = buildMetadataStage(allocator, json_path, cs.source_path) catch null;
-                    if (meta_stage) |ms| {
-                        try seen_sources.put(allocator, try allocator.dupe(u8, cs.source_path), {});
-                        try stages.append(allocator, ms);
-                        cap_expansion_count += 1;
-                    }
+            }
+            if (!added_prose) {
+                if (core_metadata.buildMetadataStage(allocator, json_path, cs.source_path) catch null) |ms| {
+                    try seen_sources.put(aa, try aa.dupe(u8, cs.source_path), {});
+                    try stages.append(allocator, ms);
+                    cap_expansion_count += 1;
                 }
-
-                // Limit expansion to prevent too many stages
-                if (cap_expansion_count >= 5) break;
             }
             if (cap_expansion_count >= 5) break;
         }
+        if (cap_expansion_count >= 5) break;
+    }
+    if (cap_expansion_count > 0) {
+        std.debug.print("[explain] capability expansion: added {d} stages from {d} matched capabilities\n", .{ cap_expansion_count, matched_cap_names.len });
+    }
+}
 
-        // Verbose output
-        if (cap_expansion_count > 0) {
-            std.debug.print("[explain] capability expansion: added {d} stages from {d} matched capabilities\n", .{ cap_expansion_count, matched_cap_names.len });
+pub fn executeStagedWithAliasesOriginal(
+    allocator: std.mem.Allocator,
+    db: *GuidanceDb,
+    query: []const u8,
+    original_query: []const u8,
+    workspace: []const u8,
+    aliases: ?vector_db_mod.SemanticAliases,
+) ![]types.Stage {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const results = try db.searchWithAliasesOriginal(allocator, query, original_query, 15, aliases);
+    defer {
+        for (results) |r| GuidanceDb.freeSearchResult(allocator, r);
+        allocator.free(results);
+    }
+
+    {
+        var orig_tok_count: usize = 0;
+        var tc = std.mem.tokenizeAny(u8, original_query, " \t\n\r");
+        while (tc.next()) |_| orig_tok_count += 1;
+        const no_exact_match = results.len == 0 or results[0].score < 0.9;
+        if (orig_tok_count >= 2 and no_exact_match and !anyResultIsRelevant(results, original_query)) {
+            return buildNotFoundStages(allocator, original_query, db);
         }
     }
+
+    const matched_cap_names = db.findMatchedCapabilityNamesForQuery(allocator, query, 0.45, 3) catch &[_][]const u8{};
+    defer {
+        for (matched_cap_names) |n| allocator.free(n);
+        allocator.free(matched_cap_names);
+    }
+
+    applyCapabilityBoosting(allocator, aa, db, matched_cap_names, results);
+
+    var stages: std.ArrayList(types.Stage) = .empty;
+    errdefer {
+        types.freeStages(allocator, stages.items);
+        stages.deinit(allocator);
+    }
+
+    try collectProseStages(allocator, aa, results, &stages);
+    try collectCodeStages(allocator, aa, workspace, original_query, results, &stages);
+    try collectMetadataStages(allocator, aa, workspace, results, &stages);
+    try collectCapabilityStages(allocator, aa, workspace, db, matched_cap_names, &stages);
 
     return stages.toOwnedSlice(allocator);
 }
@@ -645,13 +574,13 @@ pub fn expandFollowUps(
     limit: usize,
 ) ![]types.Stage {
     _ = workspace; // reserved for future source excerpt expansion
-    var extra: std.ArrayList(types.Stage) = .{};
+    var extra: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, extra.items);
         extra.deinit(allocator);
     }
 
-    var seen: std.StringHashMapUnmanaged(void) = .{};
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
     defer seen.deinit(allocator);
 
     // Pre-populate seen with existing sources.
@@ -685,7 +614,7 @@ pub fn expandFollowUps(
     }
 
     // ── Skill docs from guidance JSON skill refs ────────────────────────────────
-    var seen_skills: std.StringHashMapUnmanaged(void) = .{};
+    var seen_skills: std.StringHashMapUnmanaged(void) = .empty;
     defer {
         var kit = seen_skills.keyIterator();
         while (kit.next()) |k| allocator.free(k.*);
@@ -721,233 +650,14 @@ pub fn expandFollowUps(
 // Output formatting (M9)
 // ---------------------------------------------------------------------------
 
-/// Converts a Zig code snippet into a formatted string using allocator and stage data.
-pub fn formatStaged(
-    allocator: std.mem.Allocator,
-    query: []const u8,
-    stages: []const types.Stage,
-    summary: ?[]const u8,
-    _: []const u8,
-) ![]u8 {
-    var out: std.ArrayList(u8) = .{};
-    defer out.deinit(allocator);
-    const w = out.writer(allocator);
-
-    try w.print("# Explain: {s}\n\n", .{query});
-
-    // ── Synthesized summary ────────────────────────────────────────────────────
-    if (summary) |s| {
-        const trimmed = std.mem.trim(u8, s, " \t\n\r");
-        if (trimmed.len > 0) {
-            try w.print("{s}\n\n", .{trimmed});
-        }
-    }
-
-    // ── M7: not_found sentinel — render directly and return early ─────────────
-    for (stages) |s| {
-        if (s.kind != .not_found) continue;
-        try w.print("{s}\n\n", .{std.mem.trim(u8, s.content, " \t\n\r")});
-        return out.toOwnedSlice(allocator);
-    }
-
-    // ── Emit CODE stages only (prose/insight used for synthesis, not display) ──
-    // Deduplicate by source:line so multi-keyword queries show every matched
-    // function/struct/enum even when several live in the same file.
-    var seen_code: std.StringHashMapUnmanaged(void) = .{};
-    defer {
-        var kit = seen_code.keyIterator();
-        while (kit.next()) |k| allocator.free(k.*);
-        seen_code.deinit(allocator);
-    }
-
-    for (stages) |s| {
-        if (s.kind != .code) continue;
-        const dedup_key = if (s.line) |ln|
-            try std.fmt.allocPrint(allocator, "{s}:{d}", .{ s.source, ln })
-        else
-            try allocator.dupe(u8, s.source);
-        if (seen_code.contains(dedup_key)) {
-            allocator.free(dedup_key);
-            continue;
-        }
-        try seen_code.put(allocator, dedup_key, {}); // map owns key
-
-        const lang = common.langFromPath(s.source);
-        if (s.line) |ln| {
-            const trimmed_content = std.mem.trimRight(u8, s.content, " \t\n\r");
-            const end_ln = ln + std.mem.count(u8, trimmed_content, "\n");
-            try w.print("## Source location: `{s}:{d}-{d}`\n\n```{s}\n", .{ s.source, ln, end_ln, lang });
-        } else {
-            try w.print("## Source location: `{s}`\n\n```{s}\n", .{ s.source, lang });
-        }
-
-        try w.print("{s}", .{s.content});
-        try w.writeAll("\n```\n\n");
-    }
-
-    // ── Capability doc stages (M7.3) ─────────────────────────────────────────
-    for (stages) |s| {
-        if (s.kind != .capability_doc) continue;
-        try w.print("## Capability: {s}\n\n", .{s.source});
-        try w.print("{s}\n", .{std.mem.trim(u8, s.content, "\t\n\r")});
-        try w.writeByte('\n');
-    }
-
-    // ── Skill doc stages ──────────────────────────────────────────────────────
-    var skill_header_written = false;
-    for (stages) |s| {
-        if (s.kind != .skill_doc) continue;
-        if (!skill_header_written) {
-            try w.writeAll("## Knowledge Base\n\n**READ BEFORE IMPLEMENTING**\n\n");
-            skill_header_written = true;
-        }
-        const excerpt = std.mem.trim(u8, s.content, "\t\n\r");
-        const first_nl = std.mem.indexOfScalar(u8, excerpt, '\n') orelse excerpt.len;
-        try w.print("- **{s}**: {s}\n", .{ s.source, excerpt[0..@min(first_nl, 200)] });
-    }
-    if (skill_header_written) try w.writeByte('\n');
-
-    // ── References: collect all metadata stages ───────────────────────────────
-    var ref_header_written = false;
-    var all_keywords: std.ArrayList(u8) = .{};
-    defer all_keywords.deinit(allocator);
-    var keyword_list: std.ArrayList([]const u8) = .{};
-    defer keyword_list.deinit(allocator);
-    var all_see_also: std.ArrayList(u8) = .{};
-    defer all_see_also.deinit(allocator);
-    var all_skills: std.ArrayList(u8) = .{};
-    defer all_skills.deinit(allocator);
-
-    // Deduplicate keywords, see_also paths, and skills across all metadata stages.
-    var seen_kw: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_kw.deinit(allocator);
-    var seen_see_also: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_see_also.deinit(allocator);
-    var seen_skills_ref: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_skills_ref.deinit(allocator);
-    var seen_caps_ref: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_caps_ref.deinit(allocator);
-    var seen_matched_caps: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_matched_caps.deinit(allocator);
-
-    var all_capabilities: std.ArrayList(u8) = .{};
-    defer all_capabilities.deinit(allocator);
-    var all_matched_caps: std.ArrayList(u8) = .{};
-    defer all_matched_caps.deinit(allocator);
-
-    for (stages) |s| {
-        if (s.kind != .metadata) continue;
-        var lines = std.mem.splitScalar(u8, s.content, '\n');
-        while (lines.next()) |line| {
-            if (std.mem.startsWith(u8, line, "keywords: ")) {
-                const v = line["keywords: ".len..];
-                var parts = std.mem.splitSequence(u8, v, ", ");
-                while (parts.next()) |part| {
-                    const p = std.mem.trim(u8, part, " \t");
-                    if (p.len == 0 or seen_kw.contains(p)) continue;
-                    if (std.ascii.eqlIgnoreCase(p, query)) continue;
-                    if (seen_kw.count() >= 10) continue; // cap at 10 items
-                    try seen_kw.put(allocator, p, {});
-                    try keyword_list.append(allocator, p);
-                }
-            } else if (std.mem.startsWith(u8, line, "used_by: ")) {
-                // Split comma-separated paths and deduplicate.
-                const v = line["used_by: ".len..];
-                var parts = std.mem.splitSequence(u8, v, ", ");
-                while (parts.next()) |part| {
-                    const p = std.mem.trim(u8, part, " \t");
-                    if (p.len == 0 or seen_see_also.contains(p)) continue;
-                    try seen_see_also.put(allocator, p, {});
-                    if (all_see_also.items.len > 0) try all_see_also.appendSlice(allocator, ", ");
-                    try all_see_also.append(allocator, '`');
-                    try all_see_also.appendSlice(allocator, p);
-                    try all_see_also.append(allocator, '`');
-                }
-            } else if (std.mem.startsWith(u8, line, "skills: ")) {
-                const v = line["skills: ".len..];
-                var parts = std.mem.splitSequence(u8, v, ", ");
-                while (parts.next()) |part| {
-                    const p = std.mem.trim(u8, part, " \t");
-                    if (p.len == 0 or seen_skills_ref.contains(p)) continue;
-                    try seen_skills_ref.put(allocator, p, {});
-                    if (all_skills.items.len > 0) try all_skills.appendSlice(allocator, ", ");
-                    try all_skills.append(allocator, '`');
-                    try all_skills.appendSlice(allocator, p);
-                    try all_skills.append(allocator, '`');
-                }
-            } else if (std.mem.startsWith(u8, line, "capabilities: ")) {
-                const v = line["capabilities: ".len..];
-                var parts = std.mem.splitSequence(u8, v, ", ");
-                while (parts.next()) |part| {
-                    const p = std.mem.trim(u8, part, " \t");
-                    if (p.len == 0 or seen_caps_ref.contains(p)) continue;
-                    try seen_caps_ref.put(allocator, p, {});
-                    if (all_capabilities.items.len > 0) try all_capabilities.appendSlice(allocator, "\x00");
-                    try all_capabilities.appendSlice(allocator, p);
-                }
-            } else if (std.mem.startsWith(u8, line, "matched_capabilities: ")) {
-                const v = line["matched_capabilities: ".len..];
-                var parts = std.mem.splitSequence(u8, v, ", ");
-                while (parts.next()) |part| {
-                    const p = std.mem.trim(u8, part, " \t");
-                    if (p.len == 0 or seen_matched_caps.contains(p)) continue;
-                    try seen_matched_caps.put(allocator, p, {});
-                    if (all_matched_caps.items.len > 0) try all_matched_caps.appendSlice(allocator, ", ");
-                    try all_matched_caps.append(allocator, '`');
-                    try all_matched_caps.appendSlice(allocator, p);
-                    try all_matched_caps.append(allocator, '`');
-                }
-            }
-        }
-    }
-
-    if (keyword_list.items.len > 0) {
-        const first_keyword = keyword_list.items[0];
-        for (keyword_list.items[1..]) |kw| {
-            if (all_keywords.items.len > 0) try all_keywords.appendSlice(allocator, ", ");
-            try all_keywords.append(allocator, '`');
-            try all_keywords.appendSlice(allocator, kw);
-            try all_keywords.append(allocator, '`');
-        }
-        if (!ref_header_written) {
-            try w.writeAll("## References\n\n");
-            ref_header_written = true;
-        }
-        try w.print("- **Recommended search command**: `guidance explain \"{s}\"`\n", .{first_keyword});
-        if (all_keywords.items.len > 0) {
-            try w.print("- **Other terms to search**: {s}\n", .{all_keywords.items});
-        }
-    }
-
-    if (all_see_also.items.len > 0 or all_skills.items.len > 0 or all_capabilities.items.len > 0 or all_matched_caps.items.len > 0) {
-        if (!ref_header_written) {
-            try w.writeAll("## References\n\n");
-            ref_header_written = true;
-        }
-        if (all_matched_caps.items.len > 0) try w.print("- **Matched capabilities**: {s}\n", .{all_matched_caps.items});
-        if (all_see_also.items.len > 0) try w.print("- **Files used most in**: {s}\n", .{all_see_also.items});
-        if (all_skills.items.len > 0) try w.print("- **Skills**: {s}\n", .{all_skills.items});
-        if (all_capabilities.items.len > 0) {
-            try w.writeAll("- **Capabilities**: ");
-            var cap_it = std.mem.splitScalar(u8, all_capabilities.items, '\x00');
-            var cap_first = true;
-            while (cap_it.next()) |cap_name| {
-                if (!cap_first) try w.writeAll(", ");
-                cap_first = false;
-                try w.print("`{s}`", .{cap_name});
-            }
-            try w.writeByte('\n');
-        }
-    }
-
-    return out.toOwnedSlice(allocator);
-}
+/// Delegates to core/format.formatStaged.
+pub const formatStaged = core_format.formatStaged;
 
 // ---------------------------------------------------------------------------
 // Source excerpt extraction
 // ---------------------------------------------------------------------------
 
-/// Extracts verified source excerpt from workspace, returning a slice of extracted bytes.
+/// Delegates to core/excerpt.extractFromPath (with line verification).
 pub fn extractSourceExcerptVerified(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -956,50 +666,10 @@ pub fn extractSourceExcerptVerified(
     node_type: []const u8,
     member_name: ?[]const u8,
 ) ![]u8 {
-    const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
-    defer allocator.free(abs_path);
-
-    const src = common.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
-        return allocator.dupe(u8, "");
-    defer allocator.free(src);
-
-    var effective_line = start_line;
-
-    if (member_name) |name| {
-        const member_type = memberTypeFromNodeType(node_type);
-        const member = types.Member{
-            .type = member_type,
-            .name = name,
-            .line = start_line,
-        };
-        const vr = try line_verify.verifyMemberLine(allocator, src, member);
-        defer vr.deinit(allocator);
-        if (!vr.verified) {
-            if (vr.corrected_line) |cl| {
-                std.log.debug("[staged] stale line for {s}:{s} — was {}, corrected to {}", .{ rel_source, name, start_line, cl });
-                effective_line = cl;
-            }
-        }
-    }
-
-    return extractExcerptFromSource(allocator, src, effective_line, node_type);
+    return core_excerpt.extractFromPath(allocator, workspace, rel_source, start_line, node_type, member_name);
 }
 
-/// Converts a list of node types into their corresponding Zig member type.
-fn memberTypeFromNodeType(node_type: []const u8) types.MemberType {
-    if (std.mem.eql(u8, node_type, "fn_decl")) return .fn_decl;
-    if (std.mem.eql(u8, node_type, "fn_private")) return .fn_private;
-    if (std.mem.eql(u8, node_type, "method")) return .method;
-    if (std.mem.eql(u8, node_type, "method_private")) return .method_private;
-    if (std.mem.eql(u8, node_type, "struct")) return .@"struct";
-    if (std.mem.eql(u8, node_type, "enum")) return .@"enum";
-    if (std.mem.eql(u8, node_type, "union")) return .@"union";
-    if (std.mem.eql(u8, node_type, "test_decl")) return .test_decl;
-    if (std.mem.eql(u8, node_type, "enum_field")) return .enum_field;
-    return .fn_decl; // fallback
-}
-
-/// Extracts a source excerpt from a workspace slice using an allocator and node metadata.
+/// Delegates to core/excerpt.extractFromPath (without line verification).
 pub fn extractSourceExcerpt(
     allocator: std.mem.Allocator,
     workspace: []const u8,
@@ -1007,146 +677,25 @@ pub fn extractSourceExcerpt(
     start_line: u32,
     node_type: []const u8,
 ) ![]u8 {
-    const abs_path = try std.fs.path.join(allocator, &.{ workspace, rel_source });
-    defer allocator.free(abs_path);
-
-    const src = common.readFileAlloc(allocator, abs_path, 10 * 1024 * 1024) orelse
-        return allocator.dupe(u8, "");
-    defer allocator.free(src);
-
-    return extractExcerptFromSource(allocator, src, start_line, node_type);
+    return core_excerpt.extractFromPath(allocator, workspace, rel_source, start_line, node_type, null);
 }
 
-/// Extracts a specified excerpt from a Zig source slice using an allocator and node types.
+/// Delegates to core/excerpt.extractFromSource.
 pub fn extractExcerptFromSource(
     allocator: std.mem.Allocator,
     src: []const u8,
     start_line: u32,
     node_type: []const u8,
 ) ![]u8 {
-    const node_type_enum = common.NodeType.fromString(node_type);
-    const result = try common.extractExcerpt(allocator, src, start_line, node_type_enum, common.DEFAULT_MAX_LINES);
-    return @constCast(result);
+    return core_excerpt.extractFromSource(allocator, src, start_line, node_type, common.DEFAULT_MAX_LINES);
 }
 
 // ---------------------------------------------------------------------------
 // Guidance JSON helpers
 // ---------------------------------------------------------------------------
 
-/// Constructs a Zig stage metadata object using provided allocator and source data.
-pub fn buildMetadataStage(
-    allocator: std.mem.Allocator,
-    json_path: []const u8,
-    source: []const u8,
-) !?types.Stage {
-    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
-    defer parsed.deinit();
-    const root = parsed.value.object;
-
-    var meta_buf: std.ArrayList(u8) = .{};
-    errdefer meta_buf.deinit(allocator);
-    const mw = meta_buf.writer(allocator);
-
-    // keywords: public member names.
-    if (root.get("members")) |mv| {
-        if (mv == .array) {
-            var kw_count: usize = 0;
-            var kw_buf: std.ArrayList(u8) = .{};
-            defer kw_buf.deinit(allocator);
-            for (mv.array.items) |item| {
-                if (item != .object) continue;
-                const is_pub: bool = blk: {
-                    const pv = item.object.get("is_pub") orelse break :blk false;
-                    if (pv != .bool) break :blk false;
-                    break :blk pv.bool;
-                };
-                if (!is_pub) continue;
-                const tv = item.object.get("type") orelse continue;
-                if (tv != .string) continue;
-                if (std.mem.eql(u8, tv.string, "test_decl")) continue;
-                const nv = item.object.get("name") orelse continue;
-                if (nv != .string) continue;
-                if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
-                try kw_buf.appendSlice(allocator, nv.string);
-                kw_count += 1;
-                if (kw_count >= 12) break;
-            }
-            if (kw_buf.items.len > 0) {
-                try mw.print("keywords: {s}\n", .{kw_buf.items});
-            }
-        }
-    }
-
-    // used_by: reverse dependency paths (exclude test files).
-    if (root.get("used_by")) |ubv| {
-        if (ubv == .array and ubv.array.items.len > 0) {
-            var count: usize = 0;
-            for (ubv.array.items) |item| {
-                if (item != .string) continue;
-                if (common.isTestPath(item.string)) continue;
-                if (count == 0) {
-                    try mw.writeAll("used_by: ");
-                } else {
-                    try mw.writeAll(", ");
-                }
-                try mw.writeAll(item.string);
-                count += 1;
-                if (count >= 5) break;
-            }
-            if (count > 0) try mw.writeByte('\n');
-        }
-    }
-
-    // skills: skill refs.
-    if (root.get("skills")) |sv| {
-        if (sv == .array and sv.array.items.len > 0) {
-            try mw.writeAll("skills: ");
-            for (sv.array.items[0..@min(4, sv.array.items.len)], 0..) |item, i| {
-                const ref: []const u8 = switch (item) {
-                    .string => |s| s,
-                    .object => blk: {
-                        const rv = item.object.get("ref") orelse break :blk "";
-                        if (rv != .string) break :blk "";
-                        break :blk rv.string;
-                    },
-                    else => "",
-                };
-                if (ref.len == 0) continue;
-                // Extract skill name from path: "skills/foo/SKILL.md" → "foo".
-                const skill_name = common.skillNameFromRef(ref);
-                if (skill_name.len == 0) continue;
-                if (i > 0) try mw.writeAll(", ");
-                try mw.writeAll(skill_name);
-            }
-            try mw.writeByte('\n');
-        }
-    }
-
-    // capabilities: capability refs.
-    if (root.get("capabilities")) |cv| {
-        if (cv == .array and cv.array.items.len > 0) {
-            try mw.writeAll("capabilities: ");
-            for (cv.array.items[0..@min(4, cv.array.items.len)], 0..) |item, i| {
-                const cap_name: []const u8 = switch (item) {
-                    .string => |s| s,
-                    else => "",
-                };
-                if (cap_name.len == 0) continue;
-                if (i > 0) try mw.writeAll(", ");
-                try mw.writeAll(cap_name);
-            }
-            try mw.writeByte('\n');
-        }
-    }
-
-    if (meta_buf.items.len == 0) return null;
-
-    return types.Stage{
-        .kind = .metadata,
-        .content = try meta_buf.toOwnedSlice(allocator),
-        .source = try allocator.dupe(u8, source),
-    };
-}
+/// Delegates to core/metadata.buildMetadataStage.
+pub const buildMetadataStage = core_metadata.buildMetadataStage;
 
 /// Loads a JSON module comment from a file path into a Zig array of bytes.
 fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
@@ -1159,47 +708,17 @@ fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) ?[]con
 }
 
 /// Loads skill names from a JSON file into a Zig array of byte slices.
-pub fn loadSkillNamesFromJson(
-    allocator: std.mem.Allocator,
-    json_path: []const u8,
-) ![][]const u8 {
-    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return &.{};
-    defer parsed.deinit();
+/// Delegates to core/metadata.loadSkillNamesFromJson.
+pub const loadSkillNamesFromJson = core_metadata.loadSkillNamesFromJson;
 
-    const sv = parsed.value.object.get("skills") orelse return &.{};
-    if (sv != .array) return &.{};
-
-    var out: std.ArrayList([]const u8) = .{};
-    errdefer {
-        for (out.items) |s| allocator.free(s);
-        out.deinit(allocator);
-    }
-
-    for (sv.array.items) |item| {
-        const ref: []const u8 = switch (item) {
-            .string => |s| s,
-            .object => blk: {
-                const rv = item.object.get("ref") orelse break :blk "";
-                if (rv != .string) break :blk "";
-                break :blk rv.string;
-            },
-            else => "",
-        };
-        if (ref.len == 0) continue;
-        const skill_name = common.skillNameFromRef(ref);
-        if (skill_name.len == 0) continue;
-        try out.append(allocator, try allocator.dupe(u8, skill_name));
-    }
-
-    return out.toOwnedSlice(allocator);
-}
-
-/// Converts a C string into a Zig-safe slice, handling memory allocation and parsing.
+/// Delegates to core/skill_loader.parseSkillDocContent.
 pub fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) !?[]const u8 {
-    return doc_parser.parseSkillDocContent(allocator, content);
+    return core_skill_loader.parseSkillDocContent(allocator, content);
 }
 
-/// Loads a skill excerpt from a directory into a Zig array slice.
+/// Loads a skill excerpt from a skills_dir/{skill_name}/SKILL.md.
+/// NOTE: staged.zig callers pass a skills_dir directly; use core_skill_loader.loadSkillExcerpt
+/// for the two-path search used in query_engine.
 pub fn loadSkillExcerpt(
     allocator: std.mem.Allocator,
     skills_dir: []const u8,

@@ -30,21 +30,8 @@ const StringInterner = common.interner.StringInterner;
 const BitSetDrift = common.drift.BitSetDrift;
 const hash_mod = @import("hash.zig");
 const skeleton_mod = @import("skeleton.zig");
-
-// =============================================================================
-// explain — shared types
-// =============================================================================
-
-const SkillExcerpt = struct { name: []const u8, excerpt: []const u8 };
-/// Manages structured excerpt data for query processing; owned by the engine; key invariant is consistent structure.
-const ExcerptEntry = struct {
-    file_path: []const u8, // borrowed from SearchResult
-    label: []const u8, // owned: "src/foo.zig:42"
-    code: []const u8, // owned: pruned source block
-    lang: []const u8, // borrowed constant
-};
-/// File match metadata with path, count, and line numbers.
-const FileMatchItem = struct { path: []const u8, count: usize, lines: []usize };
+const core_intent = @import("core/intent.zig");
+const core_drift = @import("core/drift.zig");
 
 // =============================================================================
 // explain — small path/config helpers
@@ -191,295 +178,30 @@ const ExplainArgs = struct {
     capabilities_dir: []const u8 = "",
 };
 
-/// Checks if a query string is short enough to be considered valid.
-fn isShortQuery(query: []const u8) bool {
-    const trimmed = std.mem.trim(u8, query, " \t\n\r");
-    if (trimmed.len == 0) return true;
-
-    // Question mark at end triggers LLM filter
-    if (trimmed[trimmed.len - 1] == '?') return false;
-
-    // Check for question word prefixes (case-insensitive, with trailing space)
-    const question_prefixes = [_][]const u8{ "if ", "how ", "where ", "when ", "does ", "why ", "what " };
-    for (question_prefixes) |prefix| {
-        if (trimmed.len >= prefix.len) {
-            const candidate = trimmed[0..prefix.len];
-            var i: usize = 0;
-            while (i < prefix.len) : (i += 1) {
-                if (std.ascii.toLower(candidate[i]) != std.ascii.toLower(prefix[i])) break;
-            }
-            if (i == prefix.len) return false;
-        }
-    }
-
-    // Word count: 1 or fewer = short (no LLM filter)
-    var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
-    var count: usize = 0;
-    while (tok.next()) |_| {
-        count += 1;
-        if (count > 1) return false;
-    }
-    return true;
-}
+/// Delegates to core/intent.isShortQuery.
+const isShortQuery = core_intent.isShortQuery;
 
 // =============================================================================
-// explain — phase helpers
+// explain — context + dispatch helpers (Phase 5.1)
 // =============================================================================
 
-/// Collects skill excerpts from JSON paths using an allocator, returning a slice of SkillExcerpt objects.
-fn collectSkillExcerpts(
-    allocator: std.mem.Allocator,
-    top_json_path: []const u8,
+/// Resolved context for a query: workspace paths and loaded config.
+const QueryContext = struct {
+    workspace: []const u8,
     guidance_dir: []const u8,
-    workspace: []const u8,
-) ![]SkillExcerpt {
-    var out: std.ArrayList(SkillExcerpt) = .empty;
-    errdefer {
-        for (out.items) |se| {
-            allocator.free(se.name);
-            allocator.free(se.excerpt);
-        }
-        out.deinit(allocator);
+    db_path: []const u8,
+    cfg: config_mod.ProjectConfig,
+
+    fn deinit(self: *QueryContext, allocator: std.mem.Allocator) void {
+        allocator.free(self.workspace);
+        allocator.free(self.guidance_dir);
+        allocator.free(self.db_path);
+        self.cfg.deinit();
     }
+};
 
-    const skills_str = loadSkillsFromJson(allocator, top_json_path) orelse return out.toOwnedSlice(allocator);
-    defer allocator.free(skills_str);
-
-    var seen: std.StringHashMapUnmanaged(void) = .{};
-    defer seen.deinit(allocator);
-
-    var sp = std.mem.splitScalar(u8, skills_str, '\n');
-    while (sp.next()) |raw| {
-        const name = std.mem.trim(u8, raw, " \t\r");
-        if (name.len == 0 or seen.contains(name)) continue;
-        try seen.put(allocator, name, {});
-        if (loadSkillPara(allocator, guidance_dir, workspace, name)) |para| {
-            try out.append(allocator, .{
-                .name = try allocator.dupe(u8, name),
-                .excerpt = para,
-            });
-        }
-    }
-    return out.toOwnedSlice(allocator);
-}
-
-/// Collects source excerpts matching search terms from memory allocator results.
-fn collectSourceExcerpts(
-    allocator: std.mem.Allocator,
-    results: []const SearchResult,
-    search_terms: []const []const u8,
-    workspace: []const u8,
-) ![]ExcerptEntry {
-    var out: std.ArrayList(ExcerptEntry) = .empty;
-    errdefer {
-        for (out.items) |e| {
-            allocator.free(e.label);
-            allocator.free(e.code);
-        }
-        out.deinit(allocator);
-    }
-
-    // Re-sort: exact-name-match first, then non-test, then score.
-    var sorted: std.ArrayList(SearchResult) = .empty;
-    defer sorted.deinit(allocator);
-    for (results) |r| try sorted.append(allocator, r);
-    std.sort.insertion(SearchResult, sorted.items, search_terms, struct {
-        fn lessThan(terms: []const []const u8, a: SearchResult, b: SearchResult) bool {
-            const a_exact = isExactNameMatch(a.name, terms);
-            const b_exact = isExactNameMatch(b.name, terms);
-            if (a_exact != b_exact) return a_exact;
-            const a_test = std.mem.eql(u8, a.node_type, "test_decl");
-            const b_test = std.mem.eql(u8, b.node_type, "test_decl");
-            if (a_test != b_test) return !a_test;
-            return a.score > b.score;
-        }
-    }.lessThan);
-
-    var seen_files: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_files.deinit(allocator);
-
-    for (sorted.items) |r| {
-        if (out.items.len >= 3) break;
-        if (r.source.len == 0 or seen_files.contains(r.source)) continue;
-        const start_line = r.line orelse continue;
-
-        const src_abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
-        defer allocator.free(src_abs);
-
-        const src_opt: ?[]const u8 = blk: {
-            const f = std.fs.openFileAbsolute(src_abs, .{}) catch break :blk null;
-            defer f.close();
-            break :blk f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch null;
-        };
-        const src = src_opt orelse continue;
-        defer allocator.free(src);
-
-        const code = try explainExtractExcerpt(allocator, src, start_line, r.node_type);
-        if (code.len == 0) {
-            allocator.free(code);
-            continue;
-        }
-        const lang = common.langFromPath(r.source);
-        const label = try std.fmt.allocPrint(allocator, "{s}:{d}", .{ r.source, start_line });
-        try out.append(allocator, .{ .file_path = r.source, .label = label, .code = code, .lang = lang });
-        try seen_files.put(allocator, r.source, {});
-    }
-    return out.toOwnedSlice(allocator);
-}
-
-/// Filters search results to return top matching files based on provided terms.
-fn grepTopFiles(
-    allocator: std.mem.Allocator,
-    results: []const SearchResult,
-    search_terms: []const []const u8,
-    workspace: []const u8,
-) ![]FileMatchItem {
-    var out: std.ArrayList(FileMatchItem) = .empty;
-    errdefer {
-        for (out.items) |fm| allocator.free(fm.lines);
-        out.deinit(allocator);
-    }
-
-    var seen: std.StringHashMapUnmanaged(void) = .{};
-    defer seen.deinit(allocator);
-
-    for (results[0..@min(5, results.len)]) |r| {
-        if (r.source.len == 0 or seen.contains(r.source)) continue;
-        try seen.put(allocator, r.source, {});
-
-        const abs = try std.fs.path.join(allocator, &.{ workspace, r.source });
-        defer allocator.free(abs);
-
-        const matches = try explainGrepFile(allocator, abs, search_terms, 10);
-        if (matches.len > 0) {
-            try out.append(allocator, .{ .path = r.source, .count = matches.len, .lines = matches });
-        } else {
-            allocator.free(matches);
-        }
-    }
-
-    std.sort.insertion(FileMatchItem, out.items, {}, struct {
-        fn less(_: void, a: FileMatchItem, b: FileMatchItem) bool {
-            return a.count > b.count;
-        }
-    }.less);
-
-    return out.toOwnedSlice(allocator);
-}
-
-/// Renders explanation output using provided data structures and allocator.
-fn renderExplainOutput(
-    allocator: std.mem.Allocator,
-    query_text: []const u8,
-    results: []const SearchResult,
-    search_terms: []const []const u8,
-    ai_summary: ?[]const u8,
-    skill_excerpts: []const SkillExcerpt,
-    excerpts: []const ExcerptEntry,
-    file_matches: []const FileMatchItem,
-) !void {
-    var ws: common.WriterState = .{};
-    ws.initStdout();
-    const stdout = ws.writer();
-
-    try stdout.print("# Explain: {s}\n\n", .{query_text});
-
-    if (ai_summary) |s| {
-        const trimmed_s = std.mem.trim(u8, s, " \t\n\r");
-        if (trimmed_s.len > 0) try stdout.print("{s}\n\n", .{trimmed_s});
-    }
-
-    try stdout.print("---\n", .{});
-    try stdout.print("**Source**: `{s}`\n", .{results[0].source});
-
-    for (skill_excerpts[0..@min(2, skill_excerpts.len)]) |se| {
-        const first_nl = std.mem.indexOfScalar(u8, se.excerpt, '\n') orelse se.excerpt.len;
-        try stdout.print("**Pattern**: `{s}` — {s}\n", .{ se.name, se.excerpt[0..@min(first_nl, 120)] });
-    }
-    try stdout.print("\n", .{});
-
-    for (excerpts) |e| {
-        try stdout.print("```{s}\n// {s}\n{s}\n```\n\n", .{ e.lang, e.label, e.code });
-    }
-
-    // Keywords: public non-test members from primary source JSON, excluding search terms.
-    {
-        var kw_buf: std.ArrayList(u8) = .empty;
-        defer kw_buf.deinit(allocator);
-        var kw_count: usize = 0;
-
-        if (loadPublicMemberNames(allocator, results[0].file_path)) |names| {
-            defer {
-                for (names) |n| allocator.free(n);
-                allocator.free(names);
-            }
-            for (names) |mname| {
-                if (kw_count >= 8) break;
-                const mname_lower = try std.ascii.allocLowerString(allocator, mname);
-                defer allocator.free(mname_lower);
-                const is_term = for (search_terms) |term| {
-                    if (std.mem.eql(u8, mname_lower, term)) break true;
-                } else false;
-                if (is_term) continue;
-                if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
-                try kw_buf.writer(allocator).print("`{s}`", .{mname});
-                kw_count += 1;
-            }
-        }
-        if (kw_count > 0) try stdout.print("**See Also**: {s}\n\n", .{kw_buf.items});
-    }
-
-    // See also: used_by from top result + secondary file paths.
-    {
-        var see_buf: std.ArrayList(u8) = .empty;
-        defer see_buf.deinit(allocator);
-        var see_count: usize = 0;
-
-        var ub_from_json: ?[][]const u8 = null;
-        defer if (ub_from_json) |ub| {
-            for (ub) |s| allocator.free(s);
-            allocator.free(ub);
-        };
-        const top_used_by: [][]const u8 = if (results[0].used_by.len > 0)
-            results[0].used_by
-        else blk: {
-            ub_from_json = loadUsedByFromJson(allocator, results[0].file_path);
-            break :blk ub_from_json orelse &.{};
-        };
-
-        for (top_used_by[0..@min(4, top_used_by.len)]) |ub| {
-            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{ub});
-            see_count += 1;
-        }
-        for (results[1..@min(results.len, 6)]) |r| {
-            if (see_count >= 6) break;
-            if (r.source.len == 0 or std.mem.eql(u8, r.source, results[0].source)) continue;
-            if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{r.source});
-            see_count += 1;
-        }
-        if (see_count > 0) try stdout.print("**See also**: {s}\n\n", .{see_buf.items});
-    }
-
-    if (file_matches.len > 0) {
-        try stdout.print("### Files with most matches\n\n", .{});
-        for (file_matches[0..@min(3, file_matches.len)]) |fm| {
-            try stdout.print("- `{s}` ({d} matches): lines ", .{ fm.path, fm.count });
-            for (fm.lines[0..@min(10, fm.lines.len)], 0..) |ln, li| {
-                if (li > 0) try stdout.print(", ", .{});
-                try stdout.print("{d}", .{ln});
-            }
-            try stdout.print("\n", .{});
-        }
-        try stdout.print("\n", .{});
-    }
-
-    try stdout.flush();
-}
-
-/// Processes allocation arguments to generate explanation output.
-pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
+/// Parses explain command-line args. Returns error.MissingArg (after printing) on malformed input.
+fn parseExplainArgs(args: []const []const u8) error{MissingArg}!ExplainArgs {
     var ea: ExplainArgs = .{};
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -488,35 +210,35 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --limit requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.limit = std.fmt.parseInt(usize, args[i], 10) catch 10;
         } else if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --db requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.db_path = args[i];
         } else if (std.mem.eql(u8, arg, "-w") or std.mem.eql(u8, arg, "--workspace")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --workspace requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.workspace = args[i];
         } else if (std.mem.eql(u8, arg, "--api-url")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --api-url requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.api_url = args[i];
         } else if (std.mem.eql(u8, arg, "-m") or std.mem.eql(u8, arg, "--model")) {
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --model requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.model = args[i];
         } else if (std.mem.eql(u8, arg, "--debug")) {
@@ -529,7 +251,7 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --guidance requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.guidance = args[i];
         } else if (std.mem.startsWith(u8, arg, "--staged=")) {
@@ -539,11 +261,10 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         } else if (std.mem.startsWith(u8, arg, "--filter=")) {
             ea.filter = std.meta.stringToEnum(FilterMode, arg["--filter=".len..]) orelse .auto;
         } else if (std.mem.eql(u8, arg, "--guidance-db")) {
-            // Alias for -o / --db for backward compatibility.
             i += 1;
             if (i >= args.len) {
                 std.debug.print("Error: --guidance-db requires a value\n", .{});
-                return;
+                return error.MissingArg;
             }
             ea.db_path = args[i];
         } else if (std.mem.eql(u8, arg, "--db-type=lance") or
@@ -555,12 +276,11 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
             ea.query_str = arg;
         }
     }
+    return ea;
+}
 
-    // TIER 0: empty query → hot files (no query_text required)
-    const query_text = ea.query_str orelse "";
-    const is_empty_query = std.mem.trim(u8, query_text, " \t\n\r").len == 0;
-
-    // ── Resolve paths ─────────────────────────────────────────────────────────
+/// Resolves workspace, config, db_path, and guidance_dir. Caller must call ctx.deinit().
+fn openQueryContext(allocator: std.mem.Allocator, ea: ExplainArgs) !QueryContext {
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
 
@@ -568,39 +288,32 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         try common.resolvePath(allocator, cwd, w)
     else
         try allocator.dupe(u8, cwd);
-    defer allocator.free(workspace);
+    errdefer allocator.free(workspace);
 
-    // Load config for embedding provider and db path defaults.
-    const cfg = config_mod.loadConfig(allocator, workspace) catch
+    var cfg = config_mod.loadConfig(allocator, workspace) catch
         try config_mod.loadConfig(allocator, cwd);
-    defer @constCast(&cfg).deinit();
-    ea.capabilities_dir = cfg.capabilities_dir;
+    errdefer cfg.deinit();
 
-    const db_path = try common.resolvePath(
-        allocator,
-        workspace,
-        ea.db_path orelse cfg.db_path,
-    );
-    defer allocator.free(db_path);
+    const db_path = try common.resolvePath(allocator, workspace, ea.db_path orelse cfg.db_path);
+    errdefer allocator.free(db_path);
 
     const guidance_dir = try common.resolvePath(allocator, workspace, ea.guidance orelse cfg.guidance_dir);
-    defer allocator.free(guidance_dir);
 
-    // ── TIER 0: Empty query → INDEX.md introduction ─────────────────────────────
-    // Check before database open - no DB needed for INDEX display
-    if (is_empty_query) {
-        try showIndexIntro(allocator, workspace, guidance_dir, cfg.capabilities_dir, &cfg);
-        return;
-    }
+    return .{ .workspace = workspace, .guidance_dir = guidance_dir, .db_path = db_path, .cfg = cfg };
+}
 
-    // ── TIER 1/2/3: Capability, file, and struct skeleton routing ────────────────
-    // Check for capability name, file path, or struct name before database lookup
+/// Routes to tier 1/2/3 handler (capability/file/struct). Returns true if handled.
+fn routeToTierHandler(
+    allocator: std.mem.Allocator,
+    ctx: *const QueryContext,
+    query_text: []const u8,
+) !bool {
     const tier_match = try skeleton_mod.classifyQuery(
         allocator,
         query_text,
-        cfg.capabilities_dir,
-        workspace,
-        guidance_dir,
+        ctx.cfg.capabilities_dir,
+        ctx.workspace,
+        ctx.guidance_dir,
     );
     defer {
         switch (tier_match) {
@@ -615,438 +328,96 @@ pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void 
         }
     }
 
-    // Determine if query has natural language (requires summarization)
-    const has_natural_language = blk: {
+    const has_nl = blk: {
         const trimmed = std.mem.trim(u8, query_text, " \t\n\r");
-        // Question mark or multi-word query indicates natural language
         if (trimmed.len > 0 and trimmed[trimmed.len - 1] == '?') break :blk true;
         var tok = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
         var count: usize = 0;
         while (tok.next()) |_| count += 1;
-        if (count > 2) break :blk true; // Multi-word query likely natural language
-        break :blk false;
+        break :blk count > 2;
     };
 
     switch (tier_match) {
         .capability => |cap_name| {
-            try handleCapabilityQuery(allocator, cap_name, cfg.capabilities_dir, query_text, has_natural_language, &cfg);
-            return;
+            try handleCapabilityQuery(allocator, cap_name, ctx.cfg.capabilities_dir, query_text, has_nl, &ctx.cfg);
+            return true;
         },
         .file_path => |file_path| {
-            try handleFileSkeletonQuery(allocator, file_path, workspace, guidance_dir, query_text);
-            return;
+            try handleFileSkeletonQuery(allocator, file_path, ctx.workspace, ctx.guidance_dir, query_text);
+            return true;
         },
         .struct_name => |struct_name| {
-            try handleStructSkeletonQuery(allocator, struct_name, guidance_dir, query_text);
-            return;
+            try handleStructSkeletonQuery(allocator, struct_name, ctx.guidance_dir, query_text);
+            return true;
         },
         .disambiguate => |paths| {
             try handleDisambiguationQuery(allocator, paths, query_text);
-            return;
+            return true;
         },
-        .none => {},
+        .none => return false,
     }
+}
 
-    // ── Open .guidance.db ─────────────────────────────────────────────────────
-    std.fs.accessAbsolute(db_path, .{}) catch {
-        std.debug.print("Error: No .guidance.db found at {s}\n", .{db_path});
+/// Opens .guidance.db, builds LLM config, and dispatches through the staged pipeline.
+fn openDbAndRunStaged(
+    allocator: std.mem.Allocator,
+    ctx: *const QueryContext,
+    ea: ExplainArgs,
+    query_text: []const u8,
+) !void {
+    std.fs.accessAbsolute(ctx.db_path, .{}) catch {
+        std.debug.print("Error: No .guidance.db found at {s}\n", .{ctx.db_path});
         std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
     };
 
-    const embedder = try createEmbedderWithFallback(allocator, &cfg);
+    const embedder = try createEmbedderWithFallback(allocator, &ctx.cfg);
     defer embedder.deinit();
 
-    var db = GuidanceDb.init(allocator, db_path, embedder) catch |err| {
+    var db = GuidanceDb.init(allocator, ctx.db_path, embedder) catch |err| {
         std.debug.print("Error opening database: {s}\n", .{@errorName(err)});
         return;
     };
     defer db.deinit();
 
-    // ── Staged pipeline (default) ──────────────────────────────────────────────
-    if (ea.staged) {
-        staged_path: {
-            // Resolve LLM config with thinking model support
-            var resolved_url_to_free: ?[]const u8 = null;
-            defer if (resolved_url_to_free) |url| allocator.free(url);
+    if (!ea.staged) std.debug.print("warning: --staged=false is deprecated; staged pipeline is now the only search path\n", .{});
 
-            const model = if (std.mem.eql(u8, ea.model, config_mod.DEFAULT_MODEL))
-                cfg.model_default
-            else
-                ea.model;
+    var resolved_url_to_free: ?[]const u8 = null;
+    defer if (resolved_url_to_free) |url| allocator.free(url);
 
-            const llm_config = blk: {
-                const resolved = resolveLlmConfigForThinking(
-                    allocator,
-                    &cfg,
-                    model,
-                    if (std.mem.eql(u8, ea.api_url, config_mod.DEFAULT_API_URL)) null else ea.api_url,
-                ) catch {
-                    // Fallback to direct args
-                    break :blk llm.LlmConfig{
-                        .api_url = ea.api_url,
-                        .model = ea.model,
-                        .debug = ea.debug,
-                    };
-                };
-                resolved_url_to_free = resolved.resolved_url;
-                break :blk llm.LlmConfig{
-                    .api_url = resolved.api_url,
-                    .model = resolved.model,
-                    .think = resolved.think,
-                    .debug = ea.debug,
-                };
-            };
-
-            cmdExplainStaged(allocator, &db, query_text, workspace, guidance_dir, llm_config, cfg.infillModel(), ea) catch |err| {
-                if (ea.verbose) std.debug.print("staged explain failed ({s}), falling back to legacy\n", .{@errorName(err)});
-                break :staged_path;
-            };
-            return;
-        }
-    }
-
-    // ── Legacy path (--staged=false) ──────────────────────────────────────────
-    const results = db.search(allocator, query_text, ea.limit) catch |err| {
-        std.debug.print("Search failed: {s}\n", .{@errorName(err)});
-        return;
+    const model = if (std.mem.eql(u8, ea.model, config_mod.DEFAULT_MODEL)) ctx.cfg.model_default else ea.model;
+    const llm_config = blk: {
+        const resolved = resolveLlmConfigForThinking(
+            allocator,
+            &ctx.cfg,
+            model,
+            if (std.mem.eql(u8, ea.api_url, config_mod.DEFAULT_API_URL)) null else ea.api_url,
+        ) catch {
+            break :blk llm.LlmConfig{ .api_url = ea.api_url, .model = ea.model, .debug = ea.debug };
+        };
+        resolved_url_to_free = resolved.resolved_url;
+        break :blk llm.LlmConfig{ .api_url = resolved.api_url, .model = resolved.model, .think = resolved.think, .debug = ea.debug };
     };
-    defer {
-        for (results) |r| freeSearchResult(allocator, r);
-        allocator.free(results);
-    }
 
-    if (results.len == 0) {
-        const lower_q = try std.ascii.allocLowerString(allocator, query_text);
-        defer allocator.free(lower_q);
-        std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, query_text });
-        std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
-        std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
+    try cmdExplainStaged(allocator, &db, query_text, ctx.workspace, ctx.guidance_dir, llm_config, ctx.cfg.infillModel(), ea);
+}
+
+/// Routes explain command invocations to the appropriate query handler.
+pub fn cmdExplain(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var ea = parseExplainArgs(args) catch return;
+    const query_text = ea.query_str orelse "";
+
+    var ctx = try openQueryContext(allocator, ea);
+    defer ctx.deinit(allocator);
+    ea.capabilities_dir = ctx.cfg.capabilities_dir;
+
+    if (std.mem.trim(u8, query_text, " \t\n\r").len == 0) {
+        try showIndexIntro(allocator, ctx.workspace, ctx.guidance_dir, ctx.cfg.capabilities_dir, &ctx.cfg);
         return;
     }
 
-    // Build normalised search terms (lowercase tokens).
-    var search_terms: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (search_terms.items) |t| allocator.free(t);
-        search_terms.deinit(allocator);
-    }
-    {
-        var tok = std.mem.tokenizeAny(u8, query_text, " \t_");
-        while (tok.next()) |word| {
-            try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, word));
-        }
-        if (search_terms.items.len == 0)
-            try search_terms.append(allocator, try std.ascii.allocLowerString(allocator, query_text));
-    }
-
-    // ── Phase A: Skill excerpts ───────────────────────────────────────────────
-    const skill_excerpts = try collectSkillExcerpts(allocator, results[0].file_path, guidance_dir, workspace);
-    defer {
-        for (skill_excerpts) |se| {
-            allocator.free(se.name);
-            allocator.free(se.excerpt);
-        }
-        allocator.free(skill_excerpts);
-    }
-
-    // ── Phase B: Source excerpts ──────────────────────────────────────────────
-    const excerpts = try collectSourceExcerpts(allocator, results, search_terms.items, workspace);
-    defer {
-        for (excerpts) |e| {
-            allocator.free(e.label);
-            allocator.free(e.code);
-        }
-        allocator.free(excerpts);
-    }
-
-    // ── Phase C: Grep top files ───────────────────────────────────────────────
-    const file_matches = try grepTopFiles(allocator, results, search_terms.items, workspace);
-    defer {
-        for (file_matches) |fm| allocator.free(fm.lines);
-        allocator.free(file_matches);
-    }
-
-    // ── Phase D: LLM synthesis ────────────────────────────────────────────────
-    var ai_summary: ?[]const u8 = null;
-    defer if (ai_summary) |s| allocator.free(s);
-
-    if (!ea.no_llm) {
-        var client_opt: ?llm.LlmClient = llm.LlmClient.init(allocator, makeLlmConfig(ea)) catch null;
-        defer if (client_opt) |*c| c.deinit();
-        if (client_opt) |*client| {
-            ai_summary = buildLlmSummary(allocator, client, query_text, results, skill_excerpts, excerpts) catch null;
-        }
-    }
-
-    // ── Phase E: Render output ────────────────────────────────────────────────
-    try renderExplainOutput(allocator, query_text, results, search_terms.items, ai_summary, skill_excerpts, excerpts, file_matches);
-}
-
-// ---------------------------------------------------------------------------
-// explain helpers
-// ---------------------------------------------------------------------------
-
-/// Loads used data from a JSON path into a Zig array of slices.
-fn loadUsedByFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
-    defer parsed.deinit();
-
-    const ub_val = parsed.value.object.get("used_by") orelse return null;
-    if (ub_val != .array) return null;
-
-    var out: std.ArrayList([]const u8) = .empty;
-    for (ub_val.array.items) |item| {
-        if (item != .string) continue;
-        out.append(allocator, allocator.dupe(u8, item.string) catch continue) catch continue;
-    }
-    if (out.items.len == 0) {
-        out.deinit(allocator);
-        return null;
-    }
-    return out.toOwnedSlice(allocator) catch null;
-}
-
-/// Checks if a list of characters exactly matches a list of character lists in the query terms.
-fn isExactNameMatch(name: []const u8, terms: []const []const u8) bool {
-    // Fast path — avoid allocation for short names.
-    var buf: [128]u8 = undefined;
-    if (name.len > buf.len) return false;
-    const lower = std.ascii.lowerString(buf[0..name.len], name);
-    for (terms) |term| {
-        if (std.mem.eql(u8, lower, term)) return true;
-    }
-    return false;
-}
-
-/// Loads skill data from a JSON string into a Zig array of byte slices.
-fn loadSkillsFromJson(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
-    defer parsed.deinit();
-
-    const skills_val = parsed.value.object.get("skills") orelse return null;
-    if (skills_val != .array) return null;
-
-    var out: std.ArrayList(u8) = .empty;
-    for (skills_val.array.items) |item| {
-        // skills[] entries may be strings or objects with a "ref" field.
-        const ref: []const u8 = switch (item) {
-            .string => |s| s,
-            .object => blk: {
-                const rv = item.object.get("ref") orelse break :blk "";
-                if (rv != .string) break :blk "";
-                break :blk rv.string;
-            },
-            else => "",
-        };
-        if (ref.len == 0) continue;
-        // Derive skill name: last path component before SKILL.md.
-        // e.g. "skills/gof-patterns/SKILL.md" → "gof-patterns"
-        const skill_name = common.skillNameFromRef(ref);
-        if (skill_name.len == 0) continue;
-        out.appendSlice(allocator, skill_name) catch continue;
-        out.append(allocator, '\n') catch continue;
-    }
-    if (out.items.len == 0) {
-        out.deinit(allocator);
-        return null;
-    }
-    return out.toOwnedSlice(allocator) catch null;
-}
-
-/// Loads public member names from a JSON path into a Zig array of slices.
-fn loadPublicMemberNames(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    var parsed = common.parseJsonFile(allocator, json_path, 8 * 1024 * 1024) orelse return null;
-    defer parsed.deinit();
-
-    const members_val = parsed.value.object.get("members") orelse return null;
-    if (members_val != .array) return null;
-
-    var out: std.ArrayList([]const u8) = .empty;
-    for (members_val.array.items) |item| {
-        if (item != .object) continue;
-        // Skip non-public members.
-        const is_pub: bool = blk: {
-            const pv = item.object.get("is_pub") orelse break :blk false;
-            if (pv != .bool) break :blk false;
-            break :blk pv.bool;
-        };
-        if (!is_pub) continue;
-        // Skip test declarations.
-        const type_v = item.object.get("type") orelse continue;
-        if (type_v != .string) continue;
-        if (std.mem.eql(u8, type_v.string, "test_decl")) continue;
-        // Get name.
-        const name_v = item.object.get("name") orelse continue;
-        if (name_v != .string) continue;
-        if (name_v.string.len == 0) continue;
-        out.append(allocator, allocator.dupe(u8, name_v.string) catch continue) catch continue;
-    }
-    if (out.items.len == 0) {
-        out.deinit(allocator);
-        return null;
-    }
-    return out.toOwnedSlice(allocator) catch null;
-}
-
-/// Loads a skill parameter slice from the guidance directory using the provided allocator and returns it.
-fn loadSkillPara(
-    allocator: std.mem.Allocator,
-    guidance_dir: []const u8,
-    cwd: []const u8,
-    skill_name: []const u8,
-) ?[]const u8 {
-    const SearchPath = struct { base: []const u8, rel: []const u8 };
-    const paths = [_]SearchPath{
-        .{ .base = guidance_dir, .rel = "skills" },
-        .{ .base = cwd, .rel = "doc/skills" },
-    };
-    for (paths) |sp| {
-        const path = std.fs.path.join(allocator, &.{ sp.base, sp.rel, skill_name, "SKILL.md" }) catch continue;
-        defer allocator.free(path);
-        const sf = std.fs.openFileAbsolute(path, .{}) catch continue;
-        defer sf.close();
-        const content = sf.readToEndAlloc(allocator, 512 * 1024) catch continue;
-        defer allocator.free(content);
-        if (staged_mod.parseSkillDocContent(allocator, content) catch null) |doc| return doc;
-    }
-    return null;
-}
-
-/// Extracts and explains a specified excerpt from a Zig source file, returning its contents.
-fn explainExtractExcerpt(
-    allocator: std.mem.Allocator,
-    src: []const u8,
-    start_line: u32,
-    node_type: []const u8,
-) ![]const u8 {
-    const node_type_enum = common.NodeType.fromString(node_type);
-    return common.extractExcerpt(allocator, src, start_line, node_type_enum, 80);
-}
-
-/// Explains grep-like behavior for a file, returning matching result indices.
-fn explainGrepFile(
-    allocator: std.mem.Allocator,
-    file_path: []const u8,
-    terms: []const []const u8,
-    max_results: usize,
-) ![]usize {
-    const f = std.fs.openFileAbsolute(file_path, .{}) catch return &.{};
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return &.{};
-    defer allocator.free(content);
-
-    var line_numbers: std.ArrayList(usize) = .empty;
-    errdefer line_numbers.deinit(allocator);
-    var it = std.mem.splitScalar(u8, content, '\n');
-    var line_no: usize = 0;
-    while (it.next()) |line| {
-        line_no += 1;
-        if (line_numbers.items.len >= max_results) break;
-        const trimmed = std.mem.trimLeft(u8, line, " \t");
-        if (std.mem.startsWith(u8, trimmed, "//") or std.mem.startsWith(u8, trimmed, "#")) continue;
-        const lower = try std.ascii.allocLowerString(allocator, line);
-        defer allocator.free(lower);
-        for (terms) |term| {
-            if (std.mem.indexOf(u8, lower, term) != null) {
-                try line_numbers.append(allocator, line_no);
-                break;
-            }
-        }
-    }
-    return line_numbers.toOwnedSlice(allocator);
-}
-
-/// Constructs a summary slice from LLM query results, using allocator, client, and query data.
-fn buildLlmSummary(
-    allocator: std.mem.Allocator,
-    client: *llm.LlmClient,
-    query_text: []const u8,
-    results: []const SearchResult,
-    skill_excerpts_in: []const SkillExcerpt,
-    excerpts_in: []const ExcerptEntry,
-) !?[]const u8 {
-    var kb: std.ArrayList(u8) = .empty;
-    defer kb.deinit(allocator);
-    const kbw = kb.writer(allocator);
-
-    // 1. Skill context first.
-    if (skill_excerpts_in.len > 0) {
-        try kbw.writeAll("=== Skill patterns ===\n");
-        for (skill_excerpts_in[0..@min(2, skill_excerpts_in.len)]) |se| {
-            try kbw.print("{s}: {s}\n\n", .{ se.name, se.excerpt });
-        }
-    }
-
-    // 2. Module sections.
-    var seen_files: std.StringHashMapUnmanaged(void) = .{};
-    defer seen_files.deinit(allocator);
-    for (results[0..@min(5, results.len)]) |r| {
-        const src_key = if (r.source.len > 0) r.source else r.file_path;
-        if (seen_files.contains(src_key)) {
-            // Just add the member line.
-            try kbw.print("  {s} (line {?})", .{ r.name, r.line });
-            if (r.signature) |sig| try kbw.print(": {s}", .{sig});
-            if (r.comment) |cm| {
-                const nl = std.mem.indexOfScalar(u8, cm, '\n') orelse cm.len;
-                try kbw.print(" — {s}", .{cm[0..@min(nl, 120)]});
-            }
-            try kbw.print("\n", .{});
-            continue;
-        }
-        try seen_files.put(allocator, src_key, {});
-        try kbw.print("=== {s} ===\n", .{src_key});
-        if (r.comment) |cm| {
-            const nl = std.mem.indexOfScalar(u8, cm, '\n') orelse cm.len;
-            try kbw.print("{s}\n", .{cm[0..nl]});
-        }
-        if (r.used_by.len > 0) {
-            try kbw.writeAll("Used by: ");
-            for (r.used_by, 0..) |ub, ui| {
-                if (ui > 0) try kbw.writeAll(", ");
-                try kbw.writeAll(ub);
-            }
-            try kbw.writeByte('\n');
-        }
-        try kbw.print("\nMember: {s} (line {?})", .{ r.name, r.line });
-        if (r.signature) |sig| try kbw.print(": {s}", .{sig});
-        try kbw.writeByte('\n');
-    }
-
-    // 3. Source excerpts.
-    for (excerpts_in[0..@min(2, excerpts_in.len)]) |e| {
-        try kbw.print("\nSource excerpt ({s}):\n{s}\n\n", .{ e.label, e.code });
-    }
-
-    // 4. Build skill-name string for the instruction.
-    var skill_names_buf: std.ArrayList(u8) = .empty;
-    defer skill_names_buf.deinit(allocator);
-    for (skill_excerpts_in, 0..) |se, si| {
-        if (si > 0) try skill_names_buf.appendSlice(allocator, ", ");
-        try skill_names_buf.appendSlice(allocator, se.name);
-    }
-    const skill_instruction: []const u8 = if (skill_names_buf.items.len > 0)
-        try std.fmt.allocPrint(allocator, "SKILL PATTERNS APPLIED: {s}\nThe code implements these patterns — name them in your summary.\n", .{skill_names_buf.items})
-    else
-        try allocator.dupe(u8, "");
-    defer allocator.free(skill_instruction);
-
-    const prompt = try std.fmt.allocPrint(
-        allocator,
-        "You are a code navigation assistant for a Zig/Python codebase. Be precise and terse.\n{s}\nSummarise '{s}': what it is, what design pattern it implements (if any), key members/functions with line numbers, and who calls it. 3-5 sentences. Use only facts from KNOWLEDGE. STRICT RULE: Never write sentences about absence.\n\nKNOWLEDGE:\n{s}\n\nReturn only the summary.",
-        .{ skill_instruction, query_text, kb.items },
-    );
-    defer allocator.free(prompt);
-
-    const raw = (client.complete(prompt, 1500, 0.15, null) catch null) orelse return null;
-    defer allocator.free(raw);
-
-    const cleaned = try synthesize_mod.stripAbsenceSentences(allocator, llm.stripThinkBlock(raw));
-    defer allocator.free(cleaned);
-
-    const trimmed = std.mem.trim(u8, cleaned, " \t\n\r");
-    if (trimmed.len == 0) return null;
-    return try allocator.dupe(u8, trimmed);
+    if (try routeToTierHandler(allocator, &ctx, query_text)) return;
+    try openDbAndRunStaged(allocator, &ctx, ea, query_text);
 }
 
 // =============================================================================
@@ -1101,89 +472,11 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
 // DRIFT helpers — Phase 7
 // ---------------------------------------------------------------------------
 
-const drift_stop_words = [_][]const u8{
-    "the",  "a",    "an",   "is",   "in",  "of",   "to",   "for",  "and",   "or",
-    "with", "from", "that", "this", "how", "does", "what", "when", "where", "why",
-    "use",  "get",  "set",  "its",  "are", "not",
-};
+/// Delegates to core/drift.tokenizeCapabilityWords.
+const tokenizeCapabilityWords = core_drift.tokenizeCapabilityWords;
 
-/// Converts a C string into a list of tokenized capability words using the allocator.
-fn tokenizeCapabilityWords(
-    allocator: std.mem.Allocator,
-    text: []const u8,
-    out: *std.ArrayList([]const u8),
-) !void {
-    var it = std.mem.tokenizeAny(u8, text, " \t\n\r_-./");
-    while (it.next()) |raw| {
-        if (raw.len < 3) continue;
-        const lower = try std.ascii.allocLowerString(allocator, raw);
-        var is_stop = false;
-        for (drift_stop_words) |sw| {
-            if (std.mem.eql(u8, lower, sw)) {
-                is_stop = true;
-                break;
-            }
-        }
-        if (is_stop) {
-            allocator.free(lower);
-            continue;
-        }
-        try out.append(allocator, lower);
-    }
-}
-
-/// Processes query results to generate drift follow-up indices using allocator and text data.
-fn computeDriftFollowUps(
-    allocator: std.mem.Allocator,
-    query_text: []const u8,
-    results: []const SearchResult,
-) ![]const []const u8 {
-    var interner = StringInterner.init(allocator);
-    defer interner.deinit();
-
-    // Collect needed words (from query)
-    var needed_words: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (needed_words.items) |w| allocator.free(w);
-        needed_words.deinit(allocator);
-    }
-    try tokenizeCapabilityWords(allocator, query_text, &needed_words);
-
-    if (needed_words.items.len == 0) return try allocator.alloc([]const u8, 0);
-
-    // Collect available words (from result modules and symbol names)
-    var avail_words: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (avail_words.items) |w| allocator.free(w);
-        avail_words.deinit(allocator);
-    }
-    for (results) |r| {
-        try tokenizeCapabilityWords(allocator, r.module, &avail_words);
-        try tokenizeCapabilityWords(allocator, r.name, &avail_words);
-    }
-
-    // Intern all words first to fix total capacity
-    for (needed_words.items) |w| _ = try interner.intern(w);
-    for (avail_words.items) |w| _ = try interner.intern(w);
-    const cap = @max(1, interner.count());
-
-    // Build needed bitset
-    var needed_bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, cap);
-    defer needed_bs.deinit(allocator);
-    for (needed_words.items) |w| {
-        if (interner.getIndex(w)) |idx| needed_bs.set(idx);
-    }
-
-    // Build available bitset
-    var avail_bs = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, cap);
-    defer avail_bs.deinit(allocator);
-    for (avail_words.items) |w| {
-        if (interner.getIndex(w)) |idx| avail_bs.set(idx);
-    }
-
-    const drift = BitSetDrift{ .interner = &interner };
-    return try drift.generateFollowUps(allocator, &needed_bs, &avail_bs);
-}
+/// Delegates to core/drift.computeDriftFollowUps.
+const computeDriftFollowUps = core_drift.computeDriftFollowUps;
 
 /// Processes a query text to generate explanation data using the provided LLM configuration.
 fn cmdExplainStaged(
@@ -1569,45 +862,6 @@ fn emitStagedOutput(
     const stdout = ws.writer();
     try stdout.writeAll(output);
     try stdout.flush();
-}
-/// Checks if a list of name terms exactly matches a query result, returning true if they align perfectly.
-pub fn isExactNameMatchPub(name: []const u8, terms: []const []const u8) bool {
-    return isExactNameMatch(name, terms);
-}
-
-/// Loads skill data from a JSON path into a Zig array of byte slices.
-pub fn loadSkillsFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[]const u8 {
-    return loadSkillsFromJson(allocator, json_path);
-}
-
-/// Loads used data from a JSON path into a Zig array of slices.
-pub fn loadUsedByFromJsonPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    return loadUsedByFromJson(allocator, json_path);
-}
-
-/// Loads public member names from a JSON path into a Zig array of arrays of bytes.
-pub fn loadPublicMemberNamesPub(allocator: std.mem.Allocator, json_path: []const u8) ?[][]const u8 {
-    return loadPublicMemberNames(allocator, json_path);
-}
-
-/// Loads a skill parameter pack into a Zig array, returning the allocated slice.
-pub fn loadSkillParaPub(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) ?[]const u8 {
-    return loadSkillPara(allocator, guidance_dir, cwd, skill_name);
-}
-
-/// Explains the extracted excerpt in the query engine, taking allocator, source slice, line number, and node type as inputs.
-pub fn explainExtractExcerptPub(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) ![]const u8 {
-    return explainExtractExcerpt(allocator, src, start_line, node_type);
-}
-
-/// Explains grep results for file paths, returning matching indices.
-pub fn explainGrepFilePub(allocator: std.mem.Allocator, file_path: []const u8, terms: []const []const u8, max_results: usize) ![]usize {
-    return explainGrepFile(allocator, file_path, terms, max_results);
-}
-
-/// Checks if a query string is short enough for public use, returning true or false.
-pub fn isShortQueryPub(query: []const u8) bool {
-    return isShortQuery(query);
 }
 
 // =============================================================================

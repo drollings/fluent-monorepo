@@ -15,6 +15,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const vector_db_mod = @import("vector");
 const staged_mod = @import("../staged.zig");
+const core_intent = @import("../core/intent.zig");
 
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -55,10 +56,7 @@ pub const QueryStrategy = struct {
             ptr: *anyopaque,
             allocator: std.mem.Allocator,
             db: *GuidanceDb,
-            query: []const u8,
-            original_query: []const u8,
-            workspace: []const u8,
-            aliases: ?vector_db_mod.SemanticAliases,
+            config: staged_mod.StagedConfig,
         ) anyerror![]types.Stage,
 
         /// Intent this strategy handles (for diagnostics).
@@ -76,12 +74,9 @@ pub const QueryStrategy = struct {
         self: QueryStrategy,
         allocator: std.mem.Allocator,
         db: *GuidanceDb,
-        query: []const u8,
-        original_query: []const u8,
-        workspace: []const u8,
-        aliases: ?vector_db_mod.SemanticAliases,
+        config: staged_mod.StagedConfig,
     ) ![]types.Stage {
-        return self.vtable.execute(self.ptr, allocator, db, query, original_query, workspace, aliases);
+        return self.vtable.execute(self.ptr, allocator, db, config);
     }
 
     pub fn intent(self: QueryStrategy) QueryIntent {
@@ -124,25 +119,10 @@ fn identifierExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
-    query: []const u8,
-    original_query: []const u8,
-    workspace: []const u8,
-    aliases: ?vector_db_mod.SemanticAliases,
+    config: staged_mod.StagedConfig,
 ) anyerror![]types.Stage {
     _ = ptr;
-    // Delegate to the staged pipeline for unified processing.
-    // The staged pipeline handles both keyword and natural language queries,
-    // prioritizing exact name matches and providing consistent LLM synthesis.
-    // This ensures keyword queries get the same rich output: source code,
-    // capabilities, skills, metadata, and LLM-synthesized explanations.
-    return staged_mod.executeStagedWithAliasesOriginal(
-        allocator,
-        db,
-        query,
-        original_query,
-        workspace,
-        aliases,
-    );
+    return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
 const identifier_vtable: QueryStrategy.VTable = .{
@@ -180,29 +160,18 @@ fn capabilityMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     var tok_count: usize = 0;
     var it = std.mem.tokenizeAny(u8, trimmed, " \t\n\r");
     while (it.next()) |_| tok_count += 1;
-    return tok_count >= 2 and tok_count <= 4 and !looksLikeNaturalLanguageQuestion(trimmed);
+    return tok_count >= 2 and tok_count <= 4 and !core_intent.isNaturalLanguageQuery(trimmed);
 }
 
-/// Executes a capability query, accepting parameters for database, query, workspace, and aliases, returning results or errors.
+/// Executes a capability query, returning results or errors.
 fn capabilityExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
-    query: []const u8,
-    original_query: []const u8,
-    workspace: []const u8,
-    aliases: ?vector_db_mod.SemanticAliases,
+    config: staged_mod.StagedConfig,
 ) anyerror![]types.Stage {
     _ = ptr;
-    // Delegate to staged pipeline — it already handles capability routing well.
-    return staged_mod.executeStagedWithAliasesOriginal(
-        allocator,
-        db,
-        query,
-        original_query,
-        workspace,
-        aliases,
-    );
+    return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
 const capability_vtable: QueryStrategy.VTable = .{
@@ -236,25 +205,15 @@ fn conceptMatches(ptr: *anyopaque, query: []const u8, db: *GuidanceDb) bool {
     return tok_count >= 2;
 }
 
-/// Executes a query using provided parameters and returns results or errors.
+/// Executes a concept query, returning results or errors.
 fn conceptExecute(
     ptr: *anyopaque,
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
-    query: []const u8,
-    original_query: []const u8,
-    workspace: []const u8,
-    aliases: ?vector_db_mod.SemanticAliases,
+    config: staged_mod.StagedConfig,
 ) anyerror![]types.Stage {
     _ = ptr;
-    return staged_mod.executeStagedWithAliasesOriginal(
-        allocator,
-        db,
-        query,
-        original_query,
-        workspace,
-        aliases,
-    );
+    return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
 const concept_vtable: QueryStrategy.VTable = .{
@@ -268,7 +227,7 @@ const concept_vtable: QueryStrategy.VTable = .{
 // Strategy dispatcher
 // =============================================================================
 
-/// Executes a query using the specified strategy, allocating memory and processing the query result.
+/// Execute query through the first matching strategy, or fall back to staged pipeline.
 pub fn executeWithStrategy(
     allocator: std.mem.Allocator,
     db: *GuidanceDb,
@@ -278,21 +237,18 @@ pub fn executeWithStrategy(
     aliases: ?vector_db_mod.SemanticAliases,
     strategies: []const QueryStrategy,
 ) ![]types.Stage {
-    // Strategies should already be sorted by priority at build time.
+    const config: staged_mod.StagedConfig = .{
+        .query = query,
+        .original_query = original_query,
+        .workspace = workspace,
+        .aliases = aliases,
+    };
     for (strategies) |s| {
         if (s.matches(query, db)) {
-            return s.execute(allocator, db, query, original_query, workspace, aliases);
+            return s.execute(allocator, db, config);
         }
     }
-    // Ultimate fallback: staged pipeline.
-    return staged_mod.executeStagedWithAliasesOriginal(
-        allocator,
-        db,
-        query,
-        original_query,
-        workspace,
-        aliases,
-    );
+    return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
 /// Constructs default query strategies from provided identifiers, capabilities, and concepts.
@@ -329,23 +285,6 @@ pub fn looksLikeIdentifier(query: []const u8) bool {
     }
 
     return true;
-}
-
-/// Checks if a Zig query string resembles a natural language question, returning true or false.
-fn looksLikeNaturalLanguageQuestion(query: []const u8) bool {
-    const nl_prefixes = [_][]const u8{
-        "how ",  "what ",    "where ",    "why ",  "when ", "which ",
-        "show ", "explain ", "describe ", "find ", "list ",
-    };
-    // Case-insensitive prefix check using a stack buffer (no allocator needed).
-    var buf: [128]u8 = undefined;
-    const copy_len = @min(query.len, buf.len);
-    const lower = std.ascii.lowerString(buf[0..copy_len], query[0..copy_len]);
-    for (nl_prefixes) |prefix| {
-        if (std.mem.startsWith(u8, lower, prefix)) return true;
-    }
-    if (std.mem.endsWith(u8, std.mem.trim(u8, query, " \t"), "?")) return true;
-    return false;
 }
 
 // =============================================================================
