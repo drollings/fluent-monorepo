@@ -234,6 +234,18 @@ const NL_PREFIXES = [_][]const u8{
     "i need ",          "i want ",    "help me ",
 };
 
+// =============================================================================
+// Hot-path lowercase helpers — zero-allocation for identifiers ≤ 256 bytes
+// =============================================================================
+
+/// Copy `src` into `dst`, lowercasing every byte. Returns the written slice.
+/// `dst.len` must be >= `src.len`; the result is clamped to `@min(src.len, dst.len)`.
+/// Does NOT allocate. Safe to call in tight loops.
+pub fn lowerInto(dst: []u8, src: []const u8) []u8 {
+    const len = @min(src.len, dst.len);
+    return std.ascii.lowerString(dst[0..len], src[0..len]);
+}
+
 /// Removes leading null characters from a UTF-8 string slice.
 pub fn stripNlPrefix(query: []const u8) []const u8 {
     // Lowercase a buffer large enough for the longest prefix we check.

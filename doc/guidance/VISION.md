@@ -469,6 +469,8 @@ CREATE TABLE query_telemetry (
 14. **`--debug` flag**: Pipeline logging and cache tracking
 15. **INDEX.md Generation**: Capability listing
 16. **codehealth Command**: Dead code detection
+17. **Hot Path Allocation Elimination**: Zero-allocation token matching in `staged.zig` via `std.ascii.eqlIgnoreCase`; eliminates O(tokens×results) heap allocations entirely
+18. **Query Result Cache**: Session-scoped `QueryCache` (FNV-keyed) integrated into `cmdExplainStaged`; `--no-cache` flag to bypass; `guidance cache-stats --reset` to clear DB synthesis cache
 
 ### In Progress 🔄
 

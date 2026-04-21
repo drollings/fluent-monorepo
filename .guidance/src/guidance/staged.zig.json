@@ -4,7 +4,7 @@
     "source": "src/guidance/staged.zig",
     "language": "zig"
   },
-  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output\n\n ## Memory Ownership\n\n   - executeStagedConfig() / executeStagedWithAliasesOriginal(): Caller-owns\n     returned []Stage; free with types.freeStages(allocator, stages).\n   - expandFollowUps(): Caller-owns returned []Stage; free with types.freeStages().\n   - All other public functions return borrowed slices or value types (no heap).\n   - executeStagedWithAliasesOriginal() uses an ArenaAllocator internally\n     for deduplication maps; the arena is freed at function exit.",
+  "comment": " staged.zig — Staged explain pipeline for `guidance explain`.\n\n Implements the hybrid vector + keyword search pipeline for the explain\n subcommand. The key exported functions are:\n\n   executeStaged()   — search → collect Stage slices\n   expandFollowUps() — follow see_also / skill refs → more stages\n   formatStaged()    — render []Stage to markdown output\n\n ## Memory Ownership\n\n   - executeStagedConfig() / executeStagedWithAliasesOriginal(): Caller-owns\n     returned []Stage; free with types.freeStages(allocator, stages).\n   - expandFollowUps(): Caller-owns returned []Stage; free with types.freeStages().\n   - All other public functions return borrowed slices or value types (no heap).\n   - executeStagedWithAliasesOriginal() uses an ArenaAllocator internally\n     for deduplication maps; the arena is freed at function exit.\n\n ## Hot Path Optimizations\n\n Token-matching in `collectCodeStages` uses `std.ascii.eqlIgnoreCase` for\n zero-allocation case-insensitive comparison, eliminating O(tokens×results)\n heap allocations entirely. See ROADMAP_20260420_QUALITY.md for rationale.",
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/staged_tests.zig"],
   "members": [
     {
@@ -13,7 +13,7 @@
       "match_hash": "e65690f6813d0999751e896b5e10a034c17011c4ac7ab84e6c8718f9431f7633",
       "signature": "keyword_struct StagedConfig { ... }",
       "is_pub": true,
-      "line": 39
+      "line": 45
     },
     {
       "type": "fn_decl",
@@ -27,7 +27,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 50
+      "line": 56
     },
     {
       "type": "fn_decl",
@@ -42,7 +42,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 64
+      "line": 70
     },
     {
       "type": "fn_decl",
@@ -58,7 +58,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 74
+      "line": 80
     },
     {
       "type": "fn_private",
@@ -72,7 +72,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 92
+      "line": 98
     },
     {
       "type": "fn_private",
@@ -85,7 +85,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 140
+      "line": 146
     },
     {
       "type": "fn_private",
@@ -101,7 +101,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 175
+      "line": 181
     },
     {
       "type": "fn_private",
@@ -116,7 +116,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 208
+      "line": 214
     },
     {
       "type": "fn_private",
@@ -133,7 +133,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 249
+      "line": 255
     },
     {
       "type": "fn_private",
@@ -149,7 +149,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 305
+      "line": 312
     },
     {
       "type": "fn_private",
@@ -166,7 +166,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 349
+      "line": 356
     },
     {
       "type": "fn_decl",
@@ -183,7 +183,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 519
+      "line": 526
     },
     {
       "type": "fn_decl",
@@ -203,7 +203,7 @@
       ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 574
+      "line": 581
     },
     {
       "type": "fn_decl",
@@ -220,7 +220,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 670
+      "line": 677
     },
     {
       "type": "fn_decl",
@@ -236,7 +236,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 682
+      "line": 689
     },
     {
       "type": "fn_decl",
@@ -251,7 +251,7 @@
       ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 693
+      "line": 700
     },
     {
       "type": "fn_private",
@@ -264,7 +264,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 710
+      "line": 717
     },
     {
       "type": "fn_decl",
@@ -277,7 +277,7 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 724
+      "line": 731
     },
     {
       "type": "fn_decl",
@@ -291,7 +291,13 @@
       ],
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 731
+      "line": 738
+    },
+    {
+      "type": "test_decl",
+      "name": "benchmark: zero-alloc token match — 100 tokens × 100 results",
+      "is_pub": false,
+      "line": 762
     }
   ]
 }

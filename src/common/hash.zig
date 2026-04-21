@@ -159,6 +159,99 @@ pub fn blake3Hash(data: []const u8) [32]u8 {
     return out;
 }
 
+// =============================================================================
+// In-memory query cache — FNV-keyed, session-scoped
+// =============================================================================
+
+/// In-memory cache for query results, keyed by FNV-1a64 hash of the query string.
+/// Intended for session-scoped use (e.g. `guidance serve`) to avoid repeating
+/// the expensive search + synthesis pipeline for identical queries.
+///
+/// Thread-safety: NOT thread-safe — query execution is single-threaded per VISION.md.
+/// Eviction: when `entries.count() >= max_entries`, the oldest-iterated entry is dropped
+/// (first-found, not true LRU — sufficient for the expected small working set).
+pub const QueryCache = struct {
+    allocator: std.mem.Allocator,
+    entries: std.StringHashMapUnmanaged(CacheEntry),
+    max_entries: usize,
+
+    pub const CacheEntry = struct {
+        /// Owned lowercase copy of the original query.
+        lower_query: []u8,
+        /// Owned copy of the synthesised result summary.
+        result_summary: []u8,
+        timestamp: i128,
+    };
+
+    pub fn init(allocator: std.mem.Allocator) QueryCache {
+        return .{
+            .allocator = allocator,
+            .entries = .empty,
+            .max_entries = 256,
+        };
+    }
+
+    pub fn deinit(self: *QueryCache) void {
+        var it = self.entries.iterator();
+        while (it.next()) |kv| {
+            self.allocator.free(kv.key_ptr.*);
+            self.allocator.free(kv.value_ptr.lower_query);
+            self.allocator.free(kv.value_ptr.result_summary);
+        }
+        self.entries.deinit(self.allocator);
+    }
+
+    /// Returns the cached summary for `query`, or `null` on a cache miss.
+    pub fn get(self: *QueryCache, query: []const u8) ?[]const u8 {
+        var key_buf: [17]u8 = undefined;
+        const h = fnv1a64(query);
+        const key = std.fmt.bufPrint(&key_buf, "{x:0>16}", .{h}) catch return null;
+        const entry = self.entries.get(key) orelse return null;
+        return entry.result_summary;
+    }
+
+    /// Stores `summary` under `query`. Evicts one entry if at capacity.
+    /// Caller retains ownership of `summary`; an internal copy is made.
+    pub fn put(self: *QueryCache, query: []const u8, summary: []const u8) !void {
+        if (self.entries.count() >= self.max_entries) {
+            var evict_it = self.entries.iterator();
+            if (evict_it.next()) |kv| {
+                const old_key = kv.key_ptr.*;
+                const old_val = kv.value_ptr.*;
+                _ = self.entries.remove(old_key);
+                self.allocator.free(old_key);
+                self.allocator.free(old_val.lower_query);
+                self.allocator.free(old_val.result_summary);
+            }
+        }
+
+        const h = fnv1a64(query);
+        const key = try std.fmt.allocPrint(self.allocator, "{x:0>16}", .{h});
+        errdefer self.allocator.free(key);
+
+        const lower_query = try std.ascii.allocLowerString(self.allocator, query);
+        errdefer self.allocator.free(lower_query);
+
+        const result_summary = try self.allocator.dupe(u8, summary);
+        errdefer self.allocator.free(result_summary);
+
+        const gop = try self.entries.getOrPut(self.allocator, key);
+        if (gop.found_existing) {
+            // Update existing entry; the key slot in the map already owns its key.
+            self.allocator.free(key);
+            self.allocator.free(gop.value_ptr.lower_query);
+            self.allocator.free(gop.value_ptr.result_summary);
+        } else {
+            gop.key_ptr.* = key;
+        }
+        gop.value_ptr.* = .{
+            .lower_query = lower_query,
+            .result_summary = result_summary,
+            .timestamp = std.time.nanoTimestamp(),
+        };
+    }
+};
+
 /// Converts input data into a hexadecimal string using the Blake3 algorithm.
 pub fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) ![]const u8 {
     const h = blake3Hash(data);

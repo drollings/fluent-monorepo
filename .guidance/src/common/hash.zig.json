@@ -177,6 +177,67 @@
       "line": 156
     },
     {
+      "type": "struct",
+      "name": "QueryCache",
+      "match_hash": "ccd2f3cd7419f164c2f76f1f7e1995d7a255b5e65b7afe5763cf579c15fa0d6a",
+      "signature": "keyword_struct QueryCache { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "59db808660d3b7f7b56837c586cd77f262a58b4b04b9de6ea9f5641a36ab9dc4",
+          "signature": "fn init(allocator: std.mem.Allocator) -> QueryCache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "QueryCache",
+          "is_pub": true,
+          "line": 186
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "c9cbd31d6cd45413341e379d6d221cca70b8b6815ea6bd198e2fee27c5e02b14",
+          "signature": "fn deinit(self: *QueryCache) -> void",
+          "params": [
+            { "name": "self", "type": "*QueryCache" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 194
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "bc10a0ab052db00cfc177c612cc78836ce2d520a025ff59f06e54386d56cab66",
+          "signature": "fn get(self: *QueryCache, query: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*QueryCache" },
+            { "name": "query", "type": "[]const u8" }
+          ],
+          "returns": "?[]const u8",
+          "is_pub": true,
+          "line": 205
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "put",
+          "match_hash": "8eb6e65829e19ff005940bbd5d13b13e8a4cfb018689b1bd2b12c56364835d61",
+          "signature": "fn put(self: *QueryCache, query: []const u8, summary: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*QueryCache" },
+            { "name": "query", "type": "[]const u8" },
+            { "name": "summary", "type": "[]const u8" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 215
+        }
+      ],
+      "line": 173
+    },
+    {
       "type": "fn_decl",
       "name": "blake3Hex",
       "match_hash": "5c65ee9a160e92e51ae716d35357970c81d569dd46306adee0d31cf56fb08245",
@@ -187,7 +248,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 163
+      "line": 256
     },
     {
       "type": "struct",
@@ -206,7 +267,7 @@
           ],
           "returns": "HashState",
           "is_pub": true,
-          "line": 175
+          "line": 268
         }
     ,    {
           "type": "fn_decl",
@@ -219,7 +280,7 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 183
+          "line": 276
         }
     ,    {
           "type": "fn_decl",
@@ -232,10 +293,10 @@
           ],
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 192
+          "line": 285
         }
       ],
-      "line": 169
+      "line": 262
     },
     {
       "type": "fn_private",
@@ -248,7 +309,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 201
+      "line": 294
     }
   ]
 }

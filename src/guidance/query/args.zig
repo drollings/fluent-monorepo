@@ -44,6 +44,8 @@ pub const ExplainArgs = struct {
     filter: FilterMode = .auto,
     /// Disable deterministic DRIFT follow-up generation.
     no_drift: bool = false,
+    /// Skip the session-level in-memory query result cache.
+    no_cache: bool = false,
     /// Absolute path to the capabilities tree; sourced from cfg.capabilities_dir.
     capabilities_dir: []const u8 = "",
 };
@@ -108,6 +110,8 @@ pub fn parseExplainArgs(args: []const []const u8) error{MissingArg}!ExplainArgs 
             ea.debug = true;
         } else if (std.mem.eql(u8, arg, "--no-llm")) {
             ea.no_llm = true;
+        } else if (std.mem.eql(u8, arg, "--no-cache")) {
+            ea.no_cache = true;
         } else if (std.mem.eql(u8, arg, "--no-drift")) {
             ea.no_drift = true;
         } else if (std.mem.eql(u8, arg, "--guidance")) {

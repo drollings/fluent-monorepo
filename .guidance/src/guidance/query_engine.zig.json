@@ -4,7 +4,7 @@
     "source": "src/guidance/query_engine.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.\n\n Extracted from main.zig (M1.6) to keep individual file sizes navigable.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at\n     function exit. Returns void; all output goes to stdout.\n   - cmdShow() / cmdTelemetry() / cmdCacheStats(): Return void; all output to stdout.\n   - LlmClient instances created within command functions are ephemeral — init/deinit\n     within the function scope. The Enhancer (when used) owns the LlmClient.\n   - ExplainArgs: Borrowed CLI string slices — no deinit needed.\n   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.",
+  "comment": "[gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.\n\n Extracted from main.zig (M1.6) to keep individual file sizes navigable.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at\n     function exit. Returns void; all output goes to stdout.\n   - cmdShow() / cmdTelemetry() / cmdCacheStats(): Return void; all output to stdout.\n   - LlmClient instances created within command functions are ephemeral — init/deinit\n     within the function scope. The Enhancer (when used) owns the LlmClient.\n   - ExplainArgs: Borrowed CLI string slices — no deinit needed.\n   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.\n\n ## Hot Path Optimizations\n\n A session-scoped QueryCache (FNV-1a64 keyed) is initialised at the top of\n cmdExplainStaged and checked before the expensive search pipeline. Bypassed\n by --no-cache. See ROADMAP_20260420_QUALITY.md for rationale.",
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
@@ -24,7 +24,7 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 60
+      "line": 66
     },
     {
       "type": "fn_private",
@@ -39,7 +39,7 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 78
+      "line": 84
     },
     {
       "type": "fn_decl",
@@ -54,7 +54,7 @@
       ],
       "returns": "struct { api_url: []const u8, model: []const u8, think: ?bool, resolved_url: ?[]const u8 }",
       "is_pub": true,
-      "line": 83
+      "line": 89
     },
     {
       "type": "fn_private",
@@ -67,7 +67,7 @@
       ],
       "returns": "QueryContext",
       "is_pub": false,
-      "line": 167
+      "line": 173
     },
     {
       "type": "fn_private",
@@ -81,7 +81,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 190
+      "line": 196
     },
     {
       "type": "fn_private",
@@ -96,7 +96,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 246
+      "line": 252
     },
     {
       "type": "fn_decl",
@@ -109,7 +109,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 290
+      "line": 296
     },
     {
       "type": "fn_private",
@@ -122,7 +122,7 @@
       ],
       "returns": "?vector_db_mod.SemanticAliases",
       "is_pub": false,
-      "line": 312
+      "line": 318
     },
     {
       "type": "fn_private",
@@ -136,7 +136,7 @@
       ],
       "returns": "?[][]const u8",
       "is_pub": false,
-      "line": 319
+      "line": 325
     },
     {
       "type": "fn_private",
@@ -155,7 +155,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 366
+      "line": 372
     },
     {
       "type": "fn_private",
@@ -171,7 +171,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 731
+      "line": 758
     },
     {
       "type": "fn_private",
@@ -184,7 +184,7 @@
       ],
       "returns": "?IndexCapability",
       "is_pub": false,
-      "line": 757
+      "line": 784
     },
     {
       "type": "fn_private",
@@ -199,7 +199,7 @@
       ],
       "returns": "bool",
       "is_pub": false,
-      "line": 791
+      "line": 818
     },
     {
       "type": "fn_private",
@@ -215,7 +215,7 @@
       ],
       "returns": "anyerror!?[]const u8",
       "is_pub": false,
-      "line": 822
+      "line": 849
     },
     {
       "type": "fn_private",
@@ -230,7 +230,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 856
+      "line": 883
     },
     {
       "type": "fn_private",
@@ -246,7 +246,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 975
+      "line": 1002
     },
     {
       "type": "fn_private",
@@ -263,7 +263,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1005
+      "line": 1032
     },
     {
       "type": "fn_private",
@@ -279,7 +279,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1092
+      "line": 1119
     },
     {
       "type": "fn_private",
@@ -293,7 +293,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1130
+      "line": 1157
     },
     {
       "type": "fn_private",
@@ -308,7 +308,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 1151
+      "line": 1178
     },
     {
       "type": "fn_private",
@@ -321,7 +321,7 @@
       ],
       "returns": "u32",
       "is_pub": false,
-      "line": 1233
+      "line": 1260
     },
     {
       "type": "struct",
@@ -329,7 +329,7 @@
       "match_hash": "663e28f78b928ac316219cd29e7ed7efefd03917e9e1d304fc181c1374cf89cd",
       "signature": "keyword_struct StructInfo { ... }",
       "is_pub": false,
-      "line": 1262
+      "line": 1289
     },
     {
       "type": "fn_private",
@@ -343,7 +343,7 @@
       ],
       "returns": "?StructInfo",
       "is_pub": false,
-      "line": 1268
+      "line": 1295
     },
     {
       "type": "fn_decl",
@@ -356,7 +356,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1339
+      "line": 1366
     },
     {
       "type": "struct",
@@ -364,7 +364,7 @@
       "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 1455
+      "line": 1482
     },
     {
       "type": "struct",
@@ -372,7 +372,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 1463
+      "line": 1490
     },
     {
       "type": "fn_decl",
@@ -385,7 +385,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1472
+      "line": 1499
     },
     {
       "type": "fn_private",
@@ -397,7 +397,7 @@
       ],
       "returns": "?u8",
       "is_pub": false,
-      "line": 1877
+      "line": 1904
     },
     {
       "type": "fn_private",
@@ -410,7 +410,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1891
+      "line": 1918
     },
     {
       "type": "fn_private",
@@ -423,7 +423,7 @@
       ],
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1919
+      "line": 1946
     },
     {
       "type": "fn_decl",
@@ -436,7 +436,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 1998
+      "line": 2025
     },
     {
       "type": "fn_decl",
@@ -449,7 +449,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2061
+      "line": 2090
     },
     {
       "type": "fn_decl",
@@ -462,7 +462,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2092
+      "line": 2134
     },
     {
       "type": "fn_decl",
@@ -475,55 +475,55 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 2102
+      "line": 2144
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2174
+      "line": 2216
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2179
+      "line": 2221
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2184
+      "line": 2226
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2189
+      "line": 2231
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2194
+      "line": 2236
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2199
+      "line": 2241
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2209
+      "line": 2251
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2215
+      "line": 2257
     }
   ]
 }

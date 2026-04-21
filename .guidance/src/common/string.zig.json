@@ -248,6 +248,19 @@
     },
     {
       "type": "fn_decl",
+      "name": "lowerInto",
+      "match_hash": "f58ff9b8d97a038c2eaceb6f12726184ee842de7b2bdeb4ee5b18f10f1450f07",
+      "signature": "fn lowerInto(dst: []u8, src: []const u8) -> []u8",
+      "params": [
+        { "name": "dst", "type": "[]u8" },
+        { "name": "src", "type": "[]const u8" }
+      ],
+      "returns": "[]u8",
+      "is_pub": true,
+      "line": 244
+    },
+    {
+      "type": "fn_decl",
       "name": "stripNlPrefix",
       "match_hash": "e7161a7902fa22b05c3f595d5137f5c5b5d32f5fe96b1ad4dff84ee7762ca773",
       "signature": "fn stripNlPrefix(query: []const u8) -> []const u8",
@@ -256,7 +269,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 238
+      "line": 250
     },
     {
       "type": "fn_decl",
@@ -269,7 +282,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 257
+      "line": 269
     },
     {
       "type": "fn_decl",
@@ -283,7 +296,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 284
+      "line": 296
     },
     {
       "type": "fn_decl",
@@ -295,7 +308,7 @@
       ],
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 312
+      "line": 324
     }
   ]
 }

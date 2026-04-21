@@ -111,6 +111,11 @@ pub const SemanticAliases = struct {
         }
 
         for (tokens) |tok| {
+            // M3.1 audit: allocLowerString here is on the critical path for
+            // cmdExplainStaged (called from expandTokens → searchWithAliases).
+            // The lowercase copy must outlive the loop iteration (it's inserted
+            // into seen_lowercase as a map key), so a stack buffer cannot replace
+            // it without structural refactoring. Deferred to a future milestone.
             const lower = try std.ascii.allocLowerString(allocator, tok);
             const contains_lower = seen_lowercase.contains(lower);
             if (!contains_lower) {
@@ -4257,6 +4262,17 @@ pub const GuidanceDb = struct {
             .entries = c.sqlite3_column_int64(stmt.?, 0),
             .bytes = c.sqlite3_column_int64(stmt.?, 1),
         };
+    }
+
+    /// Clears all entries from the LLM synthesis cache table. Returns true on success.
+    pub fn clearCache(self: *Self) bool {
+        const sql = "DELETE FROM llm_cache";
+        var stmt: ?*c.sqlite3_stmt = null;
+        if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return false;
+        defer {
+            if (stmt) |s| _ = c.sqlite3_finalize(s);
+        }
+        return c.sqlite3_step(stmt.?) == c.SQLITE_DONE;
     }
 };
 

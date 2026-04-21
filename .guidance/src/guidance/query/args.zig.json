@@ -38,7 +38,7 @@
     {
       "type": "struct",
       "name": "ExplainArgs",
-      "match_hash": "e3bff893ed176f040df4cae2225085e72e0ba65538dc8de2c5a2565d173f7dee",
+      "match_hash": "a499d9b17bc8ad1a8b292ddc8ca121f4afc3e1bf194f88b95c37c1b10f4c2c6c",
       "signature": "keyword_struct ExplainArgs { ... }",
       "is_pub": true,
       "line": 28
@@ -61,10 +61,10 @@
           ],
           "returns": "void",
           "is_pub": true,
-          "line": 58
+          "line": 60
         }
       ],
-      "line": 52
+      "line": 54
     },
     {
       "type": "fn_decl",
@@ -76,7 +76,7 @@
       ],
       "returns": "error{MissingArg}!ExplainArgs",
       "is_pub": true,
-      "line": 67
+      "line": 69
     }
   ]
 }

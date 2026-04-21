@@ -129,6 +129,7 @@ pub const stripNlPrefix = string_mod.stripNlPrefix;
 pub const STOP_WORDS = string_mod.STOP_WORDS;
 pub const stripBoilerplate = string_mod.stripBoilerplate;
 pub const isNoisyComment = string_mod.isNoisyComment;
+pub const lowerInto = string_mod.lowerInto;
 pub const truncateAtSentence = string_mod.truncateAtSentence;
 pub const firstCommentLine = string_mod.firstCommentLine;
 
@@ -188,6 +189,7 @@ pub const metrics = @import("metrics.zig");
 
 // ── FNV-1a hash (fnv1a64) ─────────────────────────────────────────────────────
 pub const fnv1a64 = hash_mod.fnv1a64;
+pub const QueryCache = hash_mod.QueryCache;
 
 // ── Format utilities (Table, Column) ─────────────────────────────────────────────
 pub const format = @import("format.zig");

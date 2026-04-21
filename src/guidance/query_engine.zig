@@ -12,6 +12,12 @@
 //!     within the function scope. The Enhancer (when used) owns the LlmClient.
 //!   - ExplainArgs: Borrowed CLI string slices — no deinit needed.
 //!   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.
+//!
+//! ## Hot Path Optimizations
+//!
+//! A session-scoped QueryCache (FNV-1a64 keyed) is initialised at the top of
+//! cmdExplainStaged and checked before the expensive search pipeline. Bypassed
+//! by --no-cache. See ROADMAP_20260420_QUALITY.md for rationale.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -384,6 +390,11 @@ fn cmdExplainStaged(
     const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
     defer allocator.free(skills_dir);
 
+    // Session-level in-memory cache: avoids repeating synthesis for identical queries
+    // within the same process lifetime (e.g. guidance serve). Bypassed by --no-cache.
+    var session_cache = common.QueryCache.init(allocator);
+    defer session_cache.deinit();
+
     var aliases_opt: ?vector_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
     defer if (aliases_opt) |*a| a.deinit();
 
@@ -488,6 +499,15 @@ fn cmdExplainStaged(
         } else {
             std.debug.print("[DEBUG]   was_expanded: false\n", .{});
         }
+    }
+
+    // Session cache check — short-circuit before the expensive search pipeline.
+    if (!ea.no_cache) {
+        if (session_cache.get(effective_query)) |cached_summary| {
+            if (ea.debug) std.debug.print("[DEBUG] session_cache: HIT for \"{s}\"\n", .{effective_query});
+            return emitStagedOutput(allocator, query_text, &.{}, cached_summary, workspace);
+        }
+        if (ea.debug) std.debug.print("[DEBUG] session_cache: MISS for \"{s}\"\n", .{effective_query});
     }
 
     const matches = query_strategy_mod.buildDefaultStrategies();
@@ -723,6 +743,13 @@ fn cmdExplainStaged(
     defer if (drift_followups.len > 0) {
         if (merged_followups) |mf| allocator.free(mf);
     };
+
+    // Store synthesis result in session cache for future repeated queries (best-effort).
+    if (!ea.no_cache) {
+        if (effective_summary) |summary| {
+            session_cache.put(effective_query, summary) catch {};
+        }
+    }
 
     return emitStagedOutput(allocator, query_text, combined.items, effective_summary, workspace);
 }
@@ -2058,8 +2085,13 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
 // =============================================================================
 
 /// Processes cache statistics using an allocator and returns no value.
+/// Flags:
+///   --reset   Delete all LLM synthesis cache entries from the database.
 pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    _ = args;
+    var do_reset = false;
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--reset")) do_reset = true;
+    }
 
     const cwd = try std.process.getCwdAlloc(allocator);
     defer allocator.free(cwd);
@@ -2079,6 +2111,16 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
     defer embedder.deinit();
     var db = GuidanceDb.init(allocator, db_path, embedder) catch return;
     defer db.deinit();
+
+    if (do_reset) {
+        const ok = db.clearCache();
+        if (ok) {
+            std.debug.print("LLM synthesis cache cleared.\n", .{});
+        } else {
+            std.debug.print("Failed to clear LLM synthesis cache.\n", .{});
+        }
+        return;
+    }
 
     const stats = db.cacheStats();
     std.debug.print("LLM synthesis cache: {d} entries, {d} bytes\n", .{ stats.entries, stats.bytes });
