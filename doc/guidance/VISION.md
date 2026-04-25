@@ -16,6 +16,56 @@ The vision is to evolve guidance into a fully-capable subagent that offloads AI 
 
 ---
 
+## The Closed Maintenance Cycle
+
+The core purpose of guidance is a **closed incremental loop** that keeps codebase navigation indexes current with every change:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        GUIDANCE CLOSED LOOP                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+   Source Files (.zig, .py)
+          │
+          ▼
+   [1] AST Parsing + Member Extraction
+          │  std.zig.Ast / ast.parse
+          │  match_hash = SHA-256(signature + comment)
+          ▼
+   [2] Incremental JSON Sync
+          │  fileNeedsProcessing(src_mtime, json_mtime)
+          │  match_hash unchanged → preserve existing comments
+          │  json_mtime = src_mtime - 1 second (validated marker)
+          ▼
+   [3] .guidance/src/**/*.json   (metadata mirrors, NOT source of truth)
+          │
+          ▼
+   [4] Database Sync (GuidanceDb.syncFromDir)
+          │  Walk .guidance/src/ → upsert into .guidance.db
+          │  Embed cosine similarity vectors
+          │  Populate capability_sources, fts_inverted_index
+          ▼
+   [5] Query Explain (guidance explain "query")
+          │  SQLite keyword + vector hybrid search
+          │  Staged pipeline: code excerpts + prose + metadata
+          ▼
+   Codebase Navigation
+```
+
+**Each phase has change detection built in** — the loop runs incrementally, not from scratch:
+
+| Phase | Change Detection | DRY Enforcement |
+|--------|-----------------|-----------------|
+| AST Parsing | Extract fresh match_hash | Source `///` comments not stored in JSON |
+| Incremental Sync | `fileNeedsProcessing()` mtime comparison | LLM enhancement only when comment missing |
+| JSON Write | Skip if `hash unchanged AND line numbers stable` | Preserve existing tags/patterns |
+| Database Sync | Only upsert changed nodes (by path + mtime) | Comments extracted from source on query |
+| Query Explain | Return cached results for repeated queries | Never regenerate without source change |
+
+The loop is **complete and operational** — all phases are implemented in the current codebase. The roadmap targets performance enhancements (WordIndex O(1) lookup, git-aware snapshots) and capability extensions (centroid classification, RRF merge), not missing cycle phases.
+
+---
+
 ## Core Goals
 
 ### Goal 1: Deterministic-First Code Navigation
@@ -37,20 +87,22 @@ guidance:                 Query → SQLite Search → Cached Result
 
 ### Goal 2: RALPH Loop Orchestration
 
-The `guidance check` command enforces the RALPH loop:
+The `guidance check` command enforces the RALPH loop. Each phase runs **incrementally** — only files detected stale by `fileNeedsProcessing()` are reprocessed:
 
 ```
-build → test → lint → fmt → guidance gen → structure → db
+build → test (skipped if test_passed marker current) → lint → fmt → guidance gen (stale files only) → structure → db
 ```
 
 This is deterministic waterfall execution: each stage must pass before the next begins. The `guidance check` command is the pre-commit hook entry point that ensures codebase integrity before any commit.
 
-**Key Invariants:**
-- JSON mtime is the universal "all stages passed" marker
-- Source mtime > JSON mtime = stale file requiring re-sync
-- `match_hash` (SHA-256 of signature + comment) enables incremental comment preservation
-- `guidance gen` processes only changed files; `guidance gen --force` reprocesses all
-- `comment_generated` flag tracks LLM-generated comments for source sync
+**Key Invariants — all fully implemented:**
+- **JSON mtime is the universal "all stages passed" marker**: A file's JSON mtime advances only when all phases (test→lint→fmt→guidance) have succeeded for that file
+- **Source mtime > JSON mtime = stale file requiring re-sync**: `fileNeedsProcessing()` in `marker.zig:51` detects this
+- **JSON mtime = source_mtime - 1 second = validated marker**: `touchFileAfter()` sets this pattern; `fileNeedsProcessing()` skips validated files
+- **`match_hash` preservation**: Hash unchanged → preserve existing comments/tags/patterns (`json_store.zig:552`)
+- **`guidance gen` processes only stale files**: `gen_files.zig:866` calls `fileNeedsProcessing()` per file
+- **`guidance gen --force` reprocesses all**: Bypasses staleness checks
+- **`comment_generated` flag tracks LLM-generated comments**: Set by enhancer, used by comment sync phase to write back to source
 
 ### Goal 3: Token-Efficient Context for AI Coders
 
@@ -128,65 +180,135 @@ guidance explain "nonexistent" --output=json
 The query engine implements a **finite state machine** for deterministic routing. This replaces the cosmetic TIER classification with actual state transitions:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      QUERY PROCESSING FSM                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐       │
-│  │ INTAKE  │────▶│ CLASSIFY│────▶│  ROUTE  │────▶│VALIDATE │────▶SYNTH │
-│  └─────────┘     └─────────┘     └─────────┘     └─────────┘       │
-│       │            │            │            │            │                     │
-│       ▼            ▼            ▼            ▼            ▼                     │
-│  Tokenize     Intent      Search      Result       Prompt                  │
-│  detection   extraction   strategy    quality                     │
-│                                                                  │
-│  States:                                                         │
-│  INTAKE   → Parse query into tokens, detect file paths, identify patterns     │
-│  CLASSIFY → Classify intent: SINGLE_IDENTIFIER, CAPABILITY_KEYWORD,         │
-│           FILE_PATH, CONCEPTUAL, HOW_TO, MULTI_KEYWORD                     │
-│  ROUTE    → Select search primitive: WordIndex, AnchorLookup,           │
-│           FTS keyword, Hybrid fallback, RRF merge                       │
-│  VALIDATE → Verify results: match_hash, relevance threshold,            │
-│           anchor verification, SimHash structural match               │
-│  SYNTH   → LLM with grounded excerpts                                   │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  QUERY PROCESSING FSM                                  │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│  ┌────────┐    ┌──────────┐    ┌───────┐    ┌──────────┐    ┌──────────┐    ┌───────┐  │
+│  │ INTAKE │───▶│ CLASSIFY │───▶│ ROUTE │───▶│ VALIDATE │───▶│ ASSEMBLE │───▶│ SYNTH │  │
+│  └────────┘    └──────────┘    └───────┘    └──────────┘    └──────────┘    └───────┘  │
+│       │            │              │            │               │               │       │
+│       ▼            ▼              ▼            ▼               ▼               ▼       │
+│  Tokenize        Intent         Search       Result          Token        Prompt LLM   │
+│  detection       + Domain      strategy      quality         budget        synthesis   │
+│                   extraction                                                           │
+│                                                                                        │
+│  States:                                                                               │
+│  INTAKE   → Parse query into tokens, detect file paths, detect identifiers             │
+│  CLASSIFY → Classify intent: SINGLE_IDENTIFIER, CAPABILITY, FILE_PATH,                 │
+│             HOW_TO, CONCEPTUAL, MULTI_KEYWORD; Extract domain                          │
+│             via SimHash centroid matching (on WordIndex miss only)                     │
+│  ROUTE    → Select search primitive: WordIndex, AnchorLookup,                          │
+│             FTS keyword, Hybrid fallback, RRF merge                                    │
+│  VALIDATE → Verify results: match_hash, relevance threshold,                           │
+│             anchor verification, SimHash structural match                              │
+│  ASSEMBLE → Token-budgeted stage collection: HEAD/BODY/TAIL with binary search         │
+│  SYNTH    → LLM with grounded excerpts (only if confidence < 0.7)                      │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**QueryClass — Three-Dimensional Classification:**
+
+The FSM produces three classification dimensions, not just intent:
+
+```zig
+pub const QueryClass = struct {
+    intent: Intent,           // IDENTIFIER, CAPABILITY, HOW_TO, CONCEPTUAL, etc.
+    domain: []const u8,       // "coral", "guidance", "dag", "common", "llm"
+    confidence: f64,          // 0.0-1.0
+};
+```
+
+**Domain/Subdomain Classification (via Centroid Matching):**
+
+When WordIndex misses (no exact identifier match), the FSM computes the query SimHash and compares it against pre-computed capability centroids to classify domain:
+
+| Centroid Match | Domain | Subdomain | Confidence |
+|----------------|--------|-----------|------------|
+| High proximity (hamming ≤ 3) | From centroid | From centroid | 0.85-0.94 |
+| Medium proximity (hamming 4-7) | From centroid | From centroid | 0.70-0.84 |
+| Low proximity (hamming 8-10) | From centroid | null | 0.50-0.69 |
+| No match (hamming > 10) | Best effort | null | < 0.50 |
 
 **Intent Classification Rules:**
 
-| Intent | Detection | Search Path |
-|--------|-----------|-----------|
-| `single_identifier` | 1 token, matches identifier pattern (CamelCase, snake_case) | WordIndex exact match |
-| `capability_keyword` | Token matches capability name in INDEX.md | AnchorLookup |
-| `file_path` | Contains `/` or .zig suffix | Direct JSON lookup |
-| `how_to` | Starts with question verb | Capability + skill + FTS |
-| `conceptual` | Multi-word, no identifier | RRF hybrid |
-| `multi_keyword` | Multiple tokens | Per-token matching |
+| Intent | Detection | Domain/Subdomain | Search Path |
+|--------|-----------|------------------|-------------|
+| `single_identifier` | 1 token, CamelCase/snake_case | From centroid or null | WordIndex exact match |
+| `capability_keyword` | Token matches capability name | From capability mapping | AnchorLookup |
+| `file_path` | Contains `/` or .zig suffix | From path | Direct JSON lookup |
+| `how_to` | Starts with question verb | From centroid or null | FTS + skill docs |
+| `conceptual` | Multi-word, no identifier | From centroid or null | SimHash + FTS |
+| `multi_keyword` | Multiple tokens | From centroid or null | Per-token WordIndex → RRF |
 
 ### Component 2: Search Primitives Hierarchy
 
-The query engine implements a **primitives hierarchy** ordered by determinism:
+The query engine implements a **primitives hierarchy** ordered by determinism, with centroid-based domain classification as the bridge between WordIndex and broader search:
 
-| Rank | Primitive | Implementation | Latency | LLM Required |
-|------|-----------|--------------|---------|---------------|
-| 1 | **WordIndex** | Inverted index lookup | <1ms | No |
-| 2 | **AnchorLookup** | Capability anchors → WordIndex | <5ms | No |
-| 3 | **FTS Keyword** | SQLite LIKE + position rank | <10ms | No |
-| 4 | **SimHash Filter** | Hamming distance pre-filter | <20ms | No |
-| 5 | **RRF Merge** | Reciprocal rank fusion | <30ms | No |
-| 6 | **Hybrid Fallback** | Vector + keyword weighted | <100ms | Optional |
-| 7 | **Vector Only** | Cosine similarity only | <200ms | Required |
+| Rank | Primitive | When | Implementation | Latency | LLM Required |
+|------|-----------|------|--------------|---------|---------------|
+| 1 | **WordIndex** | Always tried first | Inverted index lookup (exact identifier match) | <1ms | No |
+| 2 | **Centroid Classification** | On WordIndex miss | SimHash centroid matching for domain | <20ms | No |
+| 3 | **AnchorLookup** | When domain classified | Capability anchors → domain-limited WordIndex | <5ms | No |
+| 4 | **FTS Keyword** | Domain-limited or fallback | SQLite LIKE + position rank | <10ms | No |
+| 5 | **SimHash Filter** | After FTS | Hamming distance structural validation | <20ms | No |
+| 6 | **RRF Merge** | Multi-keyword | Reciprocal rank fusion | <30ms | No |
+| 7 | **Hybrid Fallback** | After RRF | Vector + keyword weighted | <100ms | Optional |
+| 8 | **Vector Only** | Last resort | Cosine similarity only | <200ms | Required |
+
+**Activation Flow:**
+
+```
+Query
+  │
+  ▼
+WordIndex exact match?
+  │
+  ├─ YES → Return result (confidence 0.95, deterministic path)
+  │
+  └─ NO → Compute query SimHash
+             │
+             ▼
+        Compare against capability centroids (SimHash hamming distance)
+             │
+             ▼
+        Domain/Subdomain classified?
+             │
+             ├─ YES → Route to domain-limited AnchorLookup + FTS
+             │         (confidence 0.70-0.94 based on centroid proximity)
+             │
+             └─ NO → Fall through to FTS → RRF → Hybrid → Vector
+                      (escalation candidate if confidence < 0.7)
+```
+
+**Centroid Storage:**
+
+Pre-computed at `guidance gen` index time:
+
+```sql
+CREATE TABLE capability_centroids (
+    id TEXT PRIMARY KEY,             -- capability name
+    domain TEXT NOT NULL,            -- "coral", "guidance", etc.
+    simhash BLOB NOT NULL,           -- 256-bit SimHash of all members
+    member_count INTEGER,
+    intent_domain TEXT,              -- "how-to", "conceptual", "identifier"
+    computed_at INTEGER,
+    version INTEGER DEFAULT 1
+);
+```
 
 **Fallback Chain:**
-- Single identifier → WordIndex → FTS fallback
+- Single identifier → WordIndex exact match → (miss) → Centroid classification → domain-limited search
 - Capability keyword → AnchorLookup → FTS anchor fallback → Hybrid
-- Conceptual/How-to → RRF merge → Hybrid fallback → Vector only
+- Conceptual/How-to → Centroid classification → RRF merge → Hybrid fallback → Vector only
 - No results → ESCALATE with reason
 
 ### Component 3: Grounding Enforcement
 
 **Critical Invariant:** No synthesis without source. The LLM must receive verbatim code excerpts, never file paths.
+
+**Escalation Threshold:** Confidence < 0.7 triggers structured escalation to the frontier orchestrator.
 
 **Grounding Protocol:**
 - Extract source excerpts for matched identifiers
@@ -229,7 +351,7 @@ When the deterministic workflow cannot resolve, it signals failure clearly:
 | Condition | Reason | Frontier Action |
 |-----------|--------|---------------|
 | No anchor hits | `no_anchor_hits` | Try capability keyword expansion |
-| Confidence < 0.3 | `low_confidence` | Use multiple classification |
+| Confidence < 0.7 | `low_confidence` | Use multiple classification |
 | Zero results | `no_results` | Fall back to hybrid search |
 | Context overflow | `context_overflow` | Reduce tokens, retry |
 | Unknown capability | `unknown_capability` | Let frontier determine |
@@ -268,47 +390,72 @@ Stage Collection with Budget:
 
 ### Component 7: Sync Pipeline (`SyncProcessor`)
 
+The sync pipeline is a **closed incremental loop** — each source file is processed independently, and only stale files are touched:
+
 ```
 Source File (.zig/.py/.md/.json)
-        ↓
+        │
+        ▼
     [Plugin Registry] ─→ Extension for each file type
-        ↓
+        │
+        ▼
     AST Parser (Zig: std.zig.Ast, Python: ast.parse)
-        ↓
+        │
+        ▼
     Member Extraction ──→ members[] with signatures, line numbers
-        ↓
-    [match_hash Check] ──→ Preserve comments if signature unchanged
-        ↓
+        │
+        ▼
+    [match_hash Check] ──→ Hash unchanged? Preserve existing comments/tags/patterns
+        │
+        ▼
     [Pattern Detection] ──→ Auto-attach GoF/domain patterns
-        ↓
-    [Capability Anchor Extraction] ──→ Store anchors for capability lookup
-        ↓
+        │
+        ▼
+    [Capability Anchor Extraction] ──→ Mark `is_anchor` on members matching anchor names
+        │
+        ▼
     [LLM Enhancement] ──→ Generate missing comments (comment_generated=true)
-        ↓
+        │
+        ▼
     Guidance JSON ──→ .guidance/src/<path>.json
-        ↓
-    [Database Sync] ──→ .guidance.db (SQLite + inverted index)
+        │
+        ▼
+    [Database Sync] ──→ .guidance.db (SQLite + vector embeddings)
 ```
 
-**Incremental Design:**
-- `fileNeedsProcessing()`: Compare source mtime vs JSON mtime
-- `match_hash`: SHA-256 of `signature ++ "|||COMMENT|||" ++ comment`; unchanged = preserve comments
-- Per-file processing: `guidance gen --file src/foo.zig`
-- Ancor extraction: Populate capability anchors during sync
+**Incremental Design — fully implemented:**
+- `fileNeedsProcessing(src_abs, json_abs)`: JSON absent → stale; JSON mtime < source mtime → stale; JSON mtime = source_mtime - 1s → validated, skip
+- `match_hash`: SHA-256 of `signature ++ "|||COMMENT|||" ++ comment`; unchanged = preserve existing comments/tags/patterns (json_store.zig:552)
+- Per-file processing: `guidance gen --file src/foo.zig` processes only the named file
+- Line number correction: `lines_corrected` counter when AST reports different line than stored (json_store.zig:557)
+- Comment source of truth: `///` doc comments live in source, NOT in JSON (sync.zig:217-220)
+
+**Key Invariant — No DRY Violation:**
+Member-level doc comments (`///`) are extracted from source at query time, never stored in JSON. The JSON is a metadata mirror — the source file is the authoritative record. This means:
+- `guidance gen` never overwrites source comments
+- LLM enhancement writes back to source via the comment sync phase, not the JSON phase
+- JSON remains minimal (no comment redundancy, cleaner diffs)
 
 ### Component 8: RALPH Loop (`cmdCheck`)
+
+The RALPH loop is the **human-in-the-loop gate** before commits. It runs incrementally — only files detected stale by `fileNeedsProcessing()` are reprocessed:
 
 ```
 pub fn cmdCheck(allocator, args) !void {
     // 1. Build (zig build)
-    // 2. Test (zig build test)
+    // 2. Test (zig build test --summary all)  — skipped if test_passed marker is current
     // 3. Lint (zig fmt --check)
     // 4. Format (zig fmt)
-    // 5. Guidance gen (all languages, incremental)
+    // 5. Guidance gen (ONLY stale files, via fileNeedsProcessing check)
     // 6. Structure (regenerate STRUCTURE.md)
-    // 7. Database (sync .guidance.db)
+    // 7. Database (sync .guidance.db via syncFromDir)
 }
 ```
+
+**Incremental behavior:**
+- `guidance gen --all-languages` calls `processFiles()` which iterates all source files and calls `fileNeedsProcessing()` per file
+- Only stale files (JSON absent or source newer than JSON) are processed
+- `guidance gen --force` bypasses staleness checks and reprocesses everything
 
 **Failure Modes:**
 - `error.TestFailed`: Exit 1, print test output
@@ -317,12 +464,14 @@ pub fn cmdCheck(allocator, args) !void {
 
 ### Component 9: Registry Layer (shared with Coral)
 
+The registry layer provides shared building blocks used by both guidance and coral:
+
 ```
 src/common/
 ├── registry.zig    ──→ TargetRegistry, TargetBuilder (Fluent Builder)
 ├── target.zig      ──→ Target, TargetSchema, DynamicEditable
 ├── interner.zig    ──→ StringInterner (RwLock-protected bitset index)
-├── embeddings.zig ──→ EmbeddingProvider VTable
+├── embeddings.zig ──→ EmbeddingProvider VTable (embeddinggemma via Ollama)
 └── llm.zig       ──→ LlmClient (Ollama/OpenAI HTTP client)
 ```
 
@@ -454,39 +603,47 @@ CREATE TABLE query_telemetry (
 ### Completed ✅
 
 1. **AST Parsing**: Zig (`std.zig.Ast`) and Python (`ast.parse`) with plugin registry
-2. **Incremental Sync**: `match_hash` comparison, mtime-based staleness detection
-3. **Hybrid Search**: SQLite keyword + cosine similarity vector fusion with SimHash pre-filter
-4. **Staged Pipeline**: `executeStaged()`, `expandFollowUps()`, `formatStaged()`
-5. **Multi-Level Inverted Index**: Semantic aliases, capability keywords, member enrichment
-6. **LLM Filtering**: `filterStages()` for relevance pruning
-7. **RALPH Loop**: `guidance check` orchestration
+2. **Incremental Sync**: `match_hash` comparison (`json_store.zig:552`), mtime-based staleness detection (`marker.zig:51`), validated-file mtime pattern (`touchFileAfter()`)
+3. **Hybrid Search**: SQLite keyword + cosine similarity vector fusion (`vector_db.zig`)
+4. **Staged Pipeline**: `executeStaged()`, `expandFollowUps()`, `formatStaged()` (`staged.zig`)
+5. **Multi-Level Inverted Index**: Semantic aliases, capability keywords, member enrichment (`vector_db.zig:expandTokens`)
+6. **LLM Filtering**: `filterStages()` for relevance pruning (`query/llm_filter.zig`)
+7. **RALPH Loop**: `guidance check` → build→test→lint→fmt→guidance→structure→db (`sync/ralph.zig:cmdCheck`)
 8. **Fluent WVR**: Registry, target, interner from `src/common/`
-9. **Skills/Capabilities**: Auto-attachment during pattern detection
-10. **Capability Routing**: `findMatchedCapabilityNamesForQuery()` in `executeStaged()`
-11. **Comment In-filling**: Automatic LLM-generated comment sync
-12. **TIER 0/1/2/3 Query Classification**: Query routing by complexity
-13. **Per-Token Exact Matching**: Multi-keyword queries with separate excerpts
-14. **`--debug` flag**: Pipeline logging and cache tracking
-15. **INDEX.md Generation**: Capability listing
-16. **codehealth Command**: Dead code detection
+9. **Skills/Capabilities**: Auto-attachment during pattern detection (`sync.zig:394`)
+10. **Capability Routing**: `findMatchedCapabilityNamesForQuery()` in `executeStaged()` (`staged.zig`)
+11. **Comment In-filling**: Automatic LLM-generated comment sync to source (`comments/sync.zig`)
+12. **TIER 0/1/2/3 Query Classification**: Query routing by complexity (`query/identifier.zig`)
+13. **Per-Token Exact Matching**: Multi-keyword queries with separate excerpts (`staged.zig:anyResultIsRelevant`)
+14. **`--debug` flag**: Pipeline logging and cache tracking (`enhancer.zig`)
+15. **INDEX.md Generation**: Capability listing (`structure.zig`)
+16. **codehealth Command**: Dead code detection (`codehealth/`)
 17. **Hot Path Allocation Elimination**: Zero-allocation token matching in `staged.zig` via `std.ascii.eqlIgnoreCase`; eliminates O(tokens×results) heap allocations entirely
 18. **Query Result Cache**: Session-scoped `QueryCache` (FNV-keyed) integrated into `cmdExplainStaged`; `--no-cache` flag to bypass; `guidance cache-stats --reset` to clear DB synthesis cache
+19. **match_hash Comment Preservation**: Hash unchanged → preserve existing comments/tags/patterns (`json_store.zig:mergeMember`)
+20. **leaked_prompt Detection**: Filter LLM preambles from stored comments (`json_store.zig:164`)
+21. **Line Number Correction**: `lines_corrected` counter when AST line numbers shift (`json_store.zig:557`)
+22. **test_passed Marker**: Skip test phase when marker is newer than all source files (`marker.zig:testsCanBeSkipped`)
+23. **GUIDANCE.md Integration**: `guidance init` updates AGENTS.md with guidance integration section (`sync_engine.zig:92-146`)
 
 ### In Progress 🔄
 
-1. **Intent FSM Implementation**: Replace cosmetic TIER with deterministic state machine
-2. **WordIndex Primary**: O(1) inverted index for single-token lookup
-3. **Capability Anchors**: Population during sync
-4. **Structured JSON Output**: `--output=json` flag
+1. **Intent FSM Implementation**: Replace cosmetic TIER with deterministic state machine (INTAKE→CLASSIFY→ROUTE→VALIDATE→ASSEMBLE→SYNTH)
+2. **WordIndex Primary**: O(1) inverted index for single-token lookup (replaces SQL LIKE table scan)
+3. **Capability Anchors**: Population during sync (mark `is_anchor` on members matching anchor names)
+4. **RRF Merge**: Replace weighted fusion with reciprocal rank fusion
+5. **Grounding Enforcement**: Formal `canSynthesize()` check before LLM synthesis
+6. **Structured JSON Output**: IntentSchema, RetrievalSchema, ValidationSchema, SynthesisSchema, EscalationSchema
 
 ### Planned 📋
 
-1. **Grounding Enforcement**: No synthesis without verbatim source
-2. **Escalation Protocol**: Clear failure signals
-3. **Token-Budgeted Assembly**: Hard limits on context
-4. **RRF Merge**: Replace weighted fusion
-5. **Query Telemetry**: Learning from query history
-6. **MCP Server**: IDE integration
+1. **Token-Budgeted Assembly**: Binary search for optimal subset fitting budget, head/tail protection
+2. **Escalation Protocol**: Clear failure signals with `suggested_capability` / `frontier_action` fields
+3. **Query Telemetry**: Learning from query history
+4. **MCP Server**: IDE integration
+5. **Git-Aware Snapshot**: Snapshot persistence for <1s index loading on `guidance check` startup
+6. **Persistent Query Cache**: TTL-based disk-backed cache for LLM synthesis results
+7. **Centroid Classification**: SimHash centroid matching for domain routing on WordIndex miss
 
 ---
 
@@ -555,14 +712,18 @@ Input Query
 
 ### Cache Hierarchy
 
-| Cache Level | Content | Hit Rate | Latency |
-|-------------|---------|---------|--------|
-| L1: WordIndex | Exact identifier | ~40% | <1ms |
-| L2: AnchorLookup | Capability anchors | ~20% | <5ms |
-| L3: FTS Keyword | Full-text search | ~15% | <10ms |
-| L4: RRF Merge | Hybrid fusion | ~10% | <30ms |
-| L5: LLM Synthesis | Cached summaries | ~10% | <50ms |
-| Miss | Local LLM | ~15% | 200-800ms |
+The cache hierarchy reflects the closed loop's incremental nature — query results at each level are reused before escalating to more expensive operations:
+
+| Cache Level | Content | Hit Rate | Latency | Source |
+|-------------|---------|---------|---------|--------|
+| L1: WordIndex | Exact identifier | ~40% | <1ms | TODO: word_index.zig (planned) |
+| L2: AnchorLookup | Capability anchors | ~20% | <5ms | GuidanceDb (current: SQL LIKE) |
+| L3: FTS Keyword | Full-text search | ~15% | <10ms | SQLite LIKE + position rank |
+| L4: RRF Merge | Hybrid fusion | ~10% | <30ms | Weighted fusion (RRF planned) |
+| L5: LLM Synthesis | Cached summaries | ~10% | <50ms | llm_cache table in .guidance.db |
+| Miss | Local LLM | ~15% | 200-800ms | enhancer.zig |
+
+**Key insight:** L1 WordIndex (planned) is the highest-value target — 40% of queries are exact identifier matches that can be answered in <1ms without any LLM call. This directly reduces the "Miss" row from ~15% to ~5%, making the system dramatically faster for the majority of queries.
 
 ---
 
@@ -572,7 +733,7 @@ Input Query
 ```
 zig build guidance
 ```
-**Invariant:** Binary depends ONLY on source files.
+**Invariant:** Binary depends ONLY on source files — never on STRUCTURE.md or markers that themselves depend on the binary.
 
 ### Test Phase
 ```
@@ -667,27 +828,31 @@ Context Packing:
 
 ## Future Directions
 
-### Near-Term (1-2 Sprints)
+The closed loop is complete. The roadmap targets performance and capability enhancements, organized by impact priority.
 
-1. **Intent FSM**: Replace cosmetic TIER with deterministic state machine
-2. **--output=json**: Structured JSON for local LLM orchestration
-3. **Capability Anchors**: Populate during sync
-4. **Grounding Enforcement**: No synthesis without source
+### Priority 1 — Query Speed (immediate runtime impact)
 
-### Mid-Term (3-4 Sprints)
+1. **WordIndex O(1)**: Replace SQL LIKE table scans with inverted word index (`src/common/word_index.zig`). Target: <1ms per exact identifier lookup, eliminating LLM synthesis for 40% of queries.
+2. **Persistent Query Cache**: TTL-based disk-backed cache for LLM synthesis results. Target: Zero marginal cost for repeated queries.
 
-1. **WordIndex Primary**: O(1) inverted index
-2. **Token-Budget Assembly**: Hard limits
-3. **RRF Merge**: Replace weighted fusion
-4. **Escalation Protocol**: Clear failure signals
-5. **Query Telemetry**: Learning from queries
+### Priority 2 — Startup Speed
 
-### Long-Term (5+ Sprints)
+3. **Git-Aware Snapshot**: Snapshot persistence for <1s index loading on `guidance check` startup. Target: Eliminate full filesystem scan when snapshot git HEAD matches current HEAD.
+4. **Memory-Mapped Trigram Index**: `src/common/trigram_index.zig` with mmap'd storage. Target: Zero RSS after load; OS page cache serves all searches.
 
-1. **Skill Auto-Linking**: Continuous learning
-2. **MCP Server**: IDE integration
-3. **Hot Files Tracking**: Query frequency
-4. **Memory Learning**: Cache optimization
+### Priority 3 — Routing Intelligence
+
+5. **Intent FSM**: Replace cosmetic TIER with deterministic INTAKE→CLASSIFY→ROUTE→VALIDATE→ASSEMBLE→SYNTH state machine.
+6. **Centroid Classification**: SimHash centroid matching for domain routing on WordIndex miss.
+7. **Grounding Enforcement**: Formal `canSynthesize()` check before LLM synthesis.
+8. **RRF Merge**: Replace weighted fusion with reciprocal rank fusion.
+
+### Priority 4 — Future Scale
+
+9. **Two-Tier Content**: Drawer/closet architecture for topic pointer compression. Target: Less redundant content in drawers for large codebases.
+10. **Reverse Dependency Index**: `getImportedBy()` / `getTransitiveDependents()` via `src/common/dep_graph.zig`.
+11. **Query Telemetry**: Learning from query history.
+12. **MCP Server**: IDE integration.
 
 ---
 
@@ -709,7 +874,3 @@ The architecture achieves the vision through pattern convergence:
 - Continuous learning through skill auto-linking
 
 The result is an AI-assisted development tool that grows more capable with every use while remaining fast, deterministic, and auditable.
-
----
-
-*Vision Document v2.0 — April 2026*
