@@ -146,6 +146,15 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const simhash_module = b.createModule(.{
+        .root_source_file = b.path("src/vector/simhash.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "common", .module = common_module },
+        },
+    });
+
     // `wasm` — Extism WASM sandboxing + binary IPC.
     // Build with `-Dextism=true` when libextism is installed to enable real WASM execution.
     const have_extism = b.option(bool, "extism", "Enable Extism WASM runtime (requires libextism)") orelse false;
@@ -906,6 +915,92 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(coral_global_search_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_algorithm_runner_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_type_inference_tests).step);
+
+    // -- New foundation module tests (from REVIEW_20260425) --
+    const tokenizer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/tokenizer.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(tokenizer_tests).step);
+
+    const word_index_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/word_index.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(word_index_tests).step);
+
+    const freq_table_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/freq_table.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(freq_table_tests).step);
+
+    const trigram_index_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/trigram_index.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(trigram_index_tests).step);
+
+    const dep_graph_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/dep_graph.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(dep_graph_tests).step);
+
+    const entity_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/entity.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(entity_tests).step);
+
+    const kg_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/kg.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    kg_tests.linkLibC();
+    kg_tests.linkSystemLibrary("sqlite3");
+    test_step.dependOn(&b.addRunArtifact(kg_tests).step);
+
+    const centroid_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/query/centroid.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "vector", .module = vector_module },
+                .{ .name = "simhash", .module = simhash_module },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(centroid_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

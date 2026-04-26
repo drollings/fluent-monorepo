@@ -6,7 +6,7 @@
     .dependencies = .{
         .vaxis = .{
             .url = "git+https://github.com/rockorager/libvaxis#main",
-            .hash = "122037a90cc01e3b0db98ba82edfe5baddd398dfa21a40bdc49a2886e318462a1c68",
+            .hash = "12203b5e7e7432c0a4dcc4a0bdb33c91b088b2d03814c724d64e6f6d7d4892fce7d6",
         },
         .zigsharedstring = .{
             .path = "../zigsharedstring",

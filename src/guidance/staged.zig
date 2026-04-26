@@ -574,6 +574,24 @@ pub fn executeStagedWithAliasesOriginal(
 }
 
 // ---------------------------------------------------------------------------
+// Grounding enforcement — no synthesis without source
+// ---------------------------------------------------------------------------
+
+pub fn canSynthesize(stages: []const types.Stage) bool {
+    for (stages) |stage| {
+        if (stage.kind == .code and stage.content.len > 0) return true;
+    }
+    return false;
+}
+
+pub fn buildEscalationOutput(allocator: std.mem.Allocator, query: []const u8, reason: []const u8) []const types.Stage {
+    _ = allocator;
+    _ = query;
+    _ = reason;
+    return &.{};
+}
+
+// ---------------------------------------------------------------------------
 // Follow-up expansion (M7)
 // ---------------------------------------------------------------------------
 

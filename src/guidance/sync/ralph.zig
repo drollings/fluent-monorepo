@@ -17,6 +17,7 @@ const common = @import("common");
 const structure_mod = @import("../structure.zig");
 const types = @import("../types.zig");
 const gen_files_mod = @import("gen_files.zig");
+const snapshot_mod = @import("common").snapshot;
 const stepPrint = types.stepPrint;
 
 pub fn cmdCheck(
@@ -27,6 +28,7 @@ pub fn cmdCheck(
 ) !void {
     var ga: gen_files_mod.GenArgs = .{ .all_languages = true, .compile_db = true };
     var run_structure = true;
+    var use_snapshot = true;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
@@ -53,6 +55,35 @@ pub fn cmdCheck(
             ga.dry_run = true;
             ga.skip_tests = true;
             run_structure = false;
+        } else if (std.mem.eql(u8, arg, "--no-snapshot")) {
+            use_snapshot = false;
+        }
+    }
+
+    if (use_snapshot and !ga.force) {
+        const cwd = std.process.getCwdAlloc(allocator) catch "";
+        defer if (cwd.len > 0) allocator.free(cwd);
+        var dir_buf: [4096]u8 = undefined;
+        const guidance_dir = std.fmt.bufPrint(&dir_buf, "{s}/.guidance", .{cwd}) catch ".guidance";
+
+        const git_result = try std.process.Child.run(.{
+            .allocator = allocator,
+            .argv = &[_][]const u8{ "git", "rev-parse", "HEAD" },
+        });
+        defer {
+            allocator.free(git_result.stdout);
+            allocator.free(git_result.stderr);
+        }
+        const git_head = std.mem.trim(u8, git_result.stdout, "\n\r ");
+
+        if (git_head.len >= 40) {
+            if (snapshot_mod.GuidanceSnapshot.isCurrent(guidance_dir, git_head[0..40])) {
+                stepPrint("check: snapshot current (git HEAD matches), skipping gen\n", .{});
+                if (!run_structure) {
+                    stepPrint("check: done\n", .{});
+                    return;
+                }
+            }
         }
     }
 

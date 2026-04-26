@@ -199,3 +199,54 @@ pub const terminal = @import("terminal.zig");
 
 // ── Global logger (Logger, LogConfig, setupLogging) ─────────────────────────────
 pub const log = @import("log.zig");
+
+// ── Tokenizer (WordTokenizer, normalizeChar, splitIdentifier) ──────────────────
+pub const tokenizer = @import("tokenizer.zig");
+
+// ── Word index (inverted word index with O(1) lookup) ──────────────────────────
+pub const word_index = @import("word_index.zig");
+pub const WordHit = word_index.WordHit;
+pub const WordIndex = word_index.WordIndex;
+
+// ── Trigram index (content search with mmap support) ──────────────────────────
+pub const trigram_index = @import("trigram_index.zig");
+pub const TrigramIndex = trigram_index.TrigramIndex;
+pub const TrigramHit = trigram_index.TrigramHit;
+
+// ── Frequency table (pair frequency for adaptive tokenization) ────────────────
+pub const freq_table = @import("freq_table.zig");
+pub const FrequencyTable = freq_table.FrequencyTable;
+pub const pairWeight = freq_table.pairWeight;
+
+// ── Snapshot persistence (git-aware index snapshots) ───────────────────────────
+pub const snapshot = @import("snapshot.zig");
+pub const GuidanceSnapshot = snapshot.GuidanceSnapshot;
+
+// ── Dependency graph (forward/reverse index) ──────────────────────────────────
+pub const dep_graph = @import("dep_graph.zig");
+pub const DependencyGraph = dep_graph.DependencyGraph;
+
+// ── Search backend (vtable abstraction) ────────────────────────────────────────
+pub const search_backend = @import("search_backend.zig");
+pub const SearchBackend = search_backend.SearchBackend;
+pub const SearchHit = search_backend.SearchHit;
+pub const SqliteSearchBackend = search_backend.SqliteSearchBackend;
+pub const MmapSearchBackend = search_backend.MmapSearchBackend;
+
+// ── Entity extraction (with stoplist) ────────────────────────────────────────
+pub const entity = @import("entity.zig");
+pub const EntityFreq = entity.EntityFreq;
+pub const EntityType = entity.EntityType;
+pub const ENTITY_STOPLIST = entity.ENTITY_STOPLIST;
+
+// ── Knowledge graph (temporal entity-relationship graph) ──────────────────────
+pub const kg = @import("kg.zig");
+pub const KnowledgeGraph = kg.KnowledgeGraph;
+
+// ── File locking (cross-platform) ────────────────────────────────────────────
+pub const file_lock = @import("file_lock.zig");
+pub const FileLock = file_lock.FileLock;
+
+// ── Persistent query cache (TTL-based, SQLite-backed) ───────────────────────
+pub const query_cache = @import("query_cache.zig");
+pub const PersistentQueryCache = query_cache.PersistentQueryCache;

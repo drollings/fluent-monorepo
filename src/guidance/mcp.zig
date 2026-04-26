@@ -18,6 +18,76 @@ const query_engine_mod = @import("query_engine.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 
 // ---------------------------------------------------------------------------
+// Scan state machine — communicates indexing progress to MCP clients
+// ---------------------------------------------------------------------------
+
+pub const ScanState = enum {
+    loading_snapshot,
+    walking,
+    indexing,
+    ready,
+
+    pub fn toString(self: ScanState) []const u8 {
+        return switch (self) {
+            .loading_snapshot => "loading_snapshot",
+            .walking => "walking",
+            .indexing => "indexing",
+            .ready => "ready",
+        };
+    }
+};
+
+var current_scan_state: ScanState = .ready;
+
+pub fn setScanState(state: ScanState) void {
+    current_scan_state = state;
+}
+
+pub fn getScanState() ScanState {
+    return current_scan_state;
+}
+
+pub const IdleWatchdog = struct {
+    idle_timeout_ms: u64,
+    last_activity_ms: i64,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, idle_timeout_ms: u64) IdleWatchdog {
+        return .{
+            .idle_timeout_ms = idle_timeout_ms,
+            .last_activity_ms = std.time.milliTimestamp(),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn recordActivity(self: *IdleWatchdog) void {
+        self.last_activity_ms = std.time.milliTimestamp();
+    }
+
+    pub fn isIdle(self: *IdleWatchdog) bool {
+        const now = std.time.milliTimestamp();
+        const elapsed = @as(u64, @intCast(now - self.last_activity_ms));
+        return elapsed > self.idle_timeout_ms;
+    }
+
+    pub fn watchStdin(self: *IdleWatchdog) bool {
+        _ = self;
+        const poll_fd = std.posix.pollfd{
+            .fd = std.posix.STDIN_FD,
+            .events = std.posix.POLL.IN,
+            .revents = 0,
+        };
+        var fds = [1]std.posix.pollfd{poll_fd};
+        const rc = std.posix.poll(&fds, 0);
+        if (rc == 0) return true;
+        for (&fds) |fd| {
+            if (fd.revents & (std.posix.POLL.HUP | std.posix.POLL.ERR) != 0) return false;
+        }
+        return true;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // JSON-RPC 2.0 request/response types
 // ---------------------------------------------------------------------------
 
