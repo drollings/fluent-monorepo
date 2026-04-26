@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " cache.zig — 5-Tier Cache Hierarchy for Query Routing (re-export facade)\n\n Type definitions moved to:\n   cache_l1.zig    — CacheTier, RoutingResult, L1Cache, L1HashCache\n   cache_reactor.zig — QueueReactorBuilder, QueueReactor\n   cache_router.zig — ParallelRouter",
-  "capabilities": ["coral-cache", "coral-ingestion", "coral-database", "coral-mcp"],
   "used_by": ["src/coral/main.zig", "src/coral/mcp.zig", "src/coral/root.zig"],
   "members": [
     {

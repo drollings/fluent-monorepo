@@ -4,7 +4,6 @@
     "source": "src/coral/global_search.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -35,9 +34,6 @@
           "name": "init",
           "match_hash": "7867a7f570ed7e2613c4af77d884502b0880020b6bf978057632cec8c8bf9f29",
           "signature": "fn init(config: GlobalSearchConfig) -> Self",
-          "params": [
-            { "name": "config", "type": "GlobalSearchConfig" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 61
@@ -47,13 +43,6 @@
           "name": "search",
           "match_hash": "a4c38a2cff6bee34af2c780007ee8ed747bfc421e418515a5fa22df5efe157f0",
           "signature": "fn search(self: Self, arena: Allocator, query: []const u8, summaries: []const CommunitySummary, reduce_fn) -> GlobalSearchResult",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "summaries", "type": "[]const CommunitySummary" },
-            { "name": "reduce_fn" }
-          ],
           "returns": "GlobalSearchResult",
           "is_pub": true,
           "line": 75

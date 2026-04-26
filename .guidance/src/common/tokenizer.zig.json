@@ -18,9 +18,6 @@
           "name": "next",
           "match_hash": "6139a54598117e1e9e77f46c1d2abf4a7888f0c7deed0697bad89f0eca54b844",
           "signature": "fn next(self: *WordTokenizer) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*WordTokenizer" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 7
@@ -30,10 +27,6 @@
           "name": "reset",
           "match_hash": "c2af9f67084f263ac0afcf886642e6de7709acf05c1099a8ed137d79df9aa723",
           "signature": "fn reset(self: *WordTokenizer, buf: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*WordTokenizer" },
-            { "name": "buf", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 19
@@ -46,9 +39,6 @@
       "name": "isWordChar",
       "match_hash": "c1b384c038efa871fe8aaa1d4ff9140bb127fb0ef4a32bce4299423f3f9e892d",
       "signature": "fn isWordChar(c: u8) -> bool",
-      "params": [
-        { "name": "c", "type": "u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 25
@@ -58,9 +48,6 @@
       "name": "normalizeChar",
       "match_hash": "5b8c128f0cbc5fbcc14c4e306830612336c873724a941ac927967e79b853ab66",
       "signature": "fn normalizeChar(c: u8) -> u8",
-      "params": [
-        { "name": "c", "type": "u8" }
-      ],
       "returns": "u8",
       "is_pub": true,
       "line": 29
@@ -70,11 +57,6 @@
       "name": "splitIdentifier",
       "match_hash": "b05605ec40e506a2971d851ee039c5a59ef1d22fc3a3f3f1006f153e651caf1a",
       "signature": "fn splitIdentifier(token: []const u8, results: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "token", "type": "[]const u8" },
-        { "name": "results", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 34
@@ -84,11 +66,6 @@
       "name": "emitSubToken",
       "match_hash": "9d8b323fed82f6231e998293a64ffece97a261804fe4c14b52d0df810f159e62",
       "signature": "fn emitSubToken(seg: []const u8, results: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "seg", "type": "[]const u8" },
-        { "name": "results", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 77
@@ -98,10 +75,6 @@
       "name": "normalizeInto",
       "match_hash": "c785fc5015d6b84f1a1536eb5e2392a1b082cd532a3679aff540ae7ac1eaad42",
       "signature": "fn normalizeInto(dst: []u8, src: []const u8) -> []u8",
-      "params": [
-        { "name": "dst", "type": "[]u8" },
-        { "name": "src", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 90

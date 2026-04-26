@@ -26,9 +26,6 @@
           "name": "init",
           "match_hash": "316941a7602c8a038677485517c84a150808ab3c4b020cc543010d11b6eb2587",
           "signature": "fn init(allocator: std.mem.Allocator) -> CommandRegistry",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "CommandRegistry",
           "is_pub": true,
           "line": 26
@@ -38,9 +35,6 @@
           "name": "deinit",
           "match_hash": "6caf07263e3203a5000470f7b7f143e0b3d807c2a3b1bab3d96b4b3f55780b03",
           "signature": "fn deinit(self: *CommandRegistry) -> void",
-          "params": [
-            { "name": "self", "type": "*CommandRegistry" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 33
@@ -50,10 +44,6 @@
           "name": "register",
           "match_hash": "a7effecdfc2dbb8f0027aa09901efd9c54adfedab0b69f66e444ea9e8c48a731",
           "signature": "fn register(self: *CommandRegistry, cmd: Command) -> void",
-          "params": [
-            { "name": "self", "type": "*CommandRegistry" },
-            { "name": "cmd", "type": "Command" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 37
@@ -63,10 +53,6 @@
           "name": "get",
           "match_hash": "2e6ef2893d7cceaff456099a68eea49156434943c69ea7f440a6a32d106ed596",
           "signature": "fn get(self: *const CommandRegistry, name: []const u8) -> ?Command",
-          "params": [
-            { "name": "self", "type": "*const CommandRegistry" },
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "?Command",
           "is_pub": true,
           "line": 41
@@ -76,10 +62,6 @@
           "name": "names",
           "match_hash": "e64df58eca25c0a79e5821bddbdf15b800699c666991efc1c25b7fcba027c681",
           "signature": "fn names(self: *const CommandRegistry, allocator: std.mem.Allocator) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*const CommandRegistry" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 45
@@ -99,12 +81,6 @@
           "name": "init",
           "match_hash": "4c9a133dba8418365b5354887a22d610b937869a9abf2e6ecadca1c23d798c34",
           "signature": "fn init(allocator: std.mem.Allocator, name: []const u8, description: []const u8, version: []const u8) -> App",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "description", "type": "[]const u8" },
-            { "name": "version", "type": "[]const u8" }
-          ],
           "returns": "App",
           "is_pub": true,
           "line": 68
@@ -114,9 +90,6 @@
           "name": "deinit",
           "match_hash": "60d8fe3bd5efac6ef3d834179ec0c27e38389acceaefd60ddef0d082bd624392",
           "signature": "fn deinit(self: *App) -> void",
-          "params": [
-            { "name": "self", "type": "*App" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 83
@@ -126,10 +99,6 @@
           "name": "registerCommand",
           "match_hash": "31266cee5d533c2c0732a4b2e4ce9bf2462d1cc744a1b0f1912b376f087d91ce",
           "signature": "fn registerCommand(self: *App, cmd: Command) -> void",
-          "params": [
-            { "name": "self", "type": "*App" },
-            { "name": "cmd", "type": "Command" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 87
@@ -139,11 +108,6 @@
           "name": "printHelp",
           "match_hash": "d50993b507f768af3757f4e5fc81264daa9d56d4ab7668f2a72d1bdba52152ff",
           "signature": "fn printHelp(self: *const App, allocator: std.mem.Allocator, writer: *std.Io.Writer) -> void",
-          "params": [
-            { "name": "self", "type": "*const App" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "writer", "type": "*std.Io.Writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 91
@@ -153,11 +117,6 @@
           "name": "run",
           "match_hash": "c05f043b3719c1ebf7ecafb325fe45e95a178291e5451226205297b66d1f1213",
           "signature": "fn run(self: *App, allocator: std.mem.Allocator, argv: []const []const u8) -> i32",
-          "params": [
-            { "name": "self", "type": "*App" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "argv", "type": "[]const []const u8" }
-          ],
           "returns": "i32",
           "is_pub": true,
           "line": 113

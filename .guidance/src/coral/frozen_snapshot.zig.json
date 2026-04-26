@@ -4,7 +4,7 @@
     "source": "src/coral/frozen_snapshot.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -27,10 +27,6 @@
           "name": "load",
           "match_hash": "8da8a6a81ded81f9548483846bf71f796a910cbed29faaded778d17c73070801",
           "signature": "fn load(allocator: std.mem.Allocator, paths: []const []const u8) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "paths", "type": "[]const []const u8" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 40
@@ -40,12 +36,6 @@
           "name": "loadSections",
           "match_hash": "fb26704e68172a87eb207528f6de4165d08463bb8c010a2ff52a78a8a0fcb55a",
           "signature": "fn loadSections(allocator: std.mem.Allocator, memory_paths: []const []const u8, skill_paths: []const []const u8, context_paths: []const []const u8) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "memory_paths", "type": "[]const []const u8" },
-            { "name": "skill_paths", "type": "[]const []const u8" },
-            { "name": "context_paths", "type": "[]const []const u8" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 52
@@ -55,10 +45,6 @@
           "name": "formatForSystemPrompt",
           "match_hash": "43ef3cb6ce7ff7cf4da31e579821d95b23441998ff28c2887cec861e86e7d085",
           "signature": "fn formatForSystemPrompt(self: *const Self, allocator: std.mem.Allocator) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 76
@@ -68,10 +54,6 @@
           "name": "deinit",
           "match_hash": "9450bcb32205961f46e5992b23a25af0c0c456ae6706c50ef37e742cc8f2d489",
           "signature": "fn deinit(self: *Self, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 104
@@ -81,10 +63,6 @@
           "name": "readAndJoin",
           "match_hash": "4720671f3f6f9cb3de98d7c8e9eaaeba37a052d58ce00c8bce0e62265cb19115",
           "signature": "fn readAndJoin(allocator: std.mem.Allocator, paths: []const []const u8) -> []const u8",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "paths", "type": "[]const []const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 117

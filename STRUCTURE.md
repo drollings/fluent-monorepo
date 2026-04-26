@@ -36,10 +36,7 @@ Then you you must read
 ```
 .
 ├── bin
-│   ├── gen_simhash_projections.py                  # Generate 64x384 random unit vectors for SimHash random projection LSH.
-│   ├── guidance-php
-│   ├── guidance-py
-│   └── guidance-ts
+│   └── gen_simhash_projections.py                  # Generate 64x384 random unit vectors for SimHash random projection LSH.
 ├── doc
 │   ├── capabilities
 │   │   ├── ast-indexing
@@ -263,6 +260,9 @@ Then you you must read
 │   │   ├── plugins
 │   │   │   ├── markdown_plugin.zig             # MarkdownPlugin — extracts sections and metadata from Markdown files.
 │   │   │   ├── markdown_plugin_tests.zig       # Tests for markdown_plugin.zig.
+│   │   │   ├── treesitter_extractor.zig        # TreeSitterExtractor — walks tree-sitter syntax trees and extracts guidance members.
+│   │   │   ├── treesitter_loader.zig           # TreeSitterLoader — loads and manages tree-sitter language grammars.
+│   │   │   ├── treesitter_plugin.zig           # TreeSitterPlugin — universal AST parser using tree-sitter for non-Zig languages.
 │   │   │   ├── zig_plugin.zig                  # ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.
 │   │   │   └── zig_plugin_tests.zig            # Tests for zig_plugin.zig.
 │   │   ├── query
@@ -329,7 +329,7 @@ Then you you must read
 │   │   ├── types.zig                             # Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
 │   │   └── types_tests.zig                       # Tests for types.zig.
 │   ├── guidance-cpp
-│   │   └── main.cpp                              # guidance-cpp: C++ AST provider for the guidance system
+│   │   └── main.cpp
 │   ├── guidance-rs
 │   │   └── src
 │   │       └── main.rs
@@ -387,7 +387,6 @@ Then you you must read
 │       ├── execution_request.zig                   # execution_request.zig — M1.1 ExecutionRequestBuilder and ExecutionResultReader
 │       ├── root.zig                                # wasm — WebAssembly Sandboxing (Extism)
 │       └── wasm.zig                                # wasm.zig — Milestone 4: WebAssembly Sandboxing (Extism)
-├── tools
 ├── vendor
 │   └── sqlite3
 │       ├── sqlite3.c

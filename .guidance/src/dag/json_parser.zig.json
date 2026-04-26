@@ -4,7 +4,6 @@
     "source": "src/dag/json_parser.zig",
     "language": "zig"
   },
-  "capabilities": ["target-registry"],
   "used_by": ["src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {
@@ -12,12 +11,6 @@
       "name": "parseFile",
       "match_hash": "c4c27b7d46a82c578c65f1fd8247ab3d16413b0577c559446048f55c88070252",
       "signature": "fn parseFile(allocator: std.mem.Allocator, path: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "path", "type": "[]const u8" },
-        { "name": "registry", "type": "*TargetRegistry" },
-        { "name": "interner", "type": "*StringInterner" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 21
@@ -27,12 +20,6 @@
       "name": "parseJson",
       "match_hash": "ef96f72591b032408aa1139188daf45f2acd40af4232560328f19c77499d8fd0",
       "signature": "fn parseJson(allocator: std.mem.Allocator, json_text: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_text", "type": "[]const u8" },
-        { "name": "registry", "type": "*TargetRegistry" },
-        { "name": "interner", "type": "*StringInterner" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 42
@@ -42,13 +29,6 @@
       "name": "parseTarget",
       "match_hash": "e5bd1c97717c17c4e24ffe0321962a6265e70e912b12cd9ef33180bec33d1b5a",
       "signature": "fn parseTarget(allocator: std.mem.Allocator, name: []const u8, value: std.json.Value, registry: *TargetRegistry, interner: *StringInterner) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "value", "type": "std.json.Value" },
-        { "name": "registry", "type": "*TargetRegistry" },
-        { "name": "interner", "type": "*StringInterner" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 76
@@ -58,9 +38,6 @@
       "name": "determineTargetType",
       "match_hash": "774771ff117549f5c5413b33ccfb6ef41b95f9182dd39eeeadc81b9b7bb18bc8",
       "signature": "fn determineTargetType(obj: std.json.ObjectMap) -> TargetType",
-      "params": [
-        { "name": "obj", "type": "std.json.ObjectMap" }
-      ],
       "returns": "TargetType",
       "is_pub": false,
       "line": 160
@@ -70,10 +47,6 @@
       "name": "writeExample",
       "match_hash": "38788f3fd95504e6d9d60edae1a92a15eb97619dae2e7e7438d8732357799886",
       "signature": "fn writeExample(allocator: std.mem.Allocator, path: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 183

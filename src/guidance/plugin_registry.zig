@@ -12,6 +12,7 @@ const std = @import("std");
 const plugin_mod = @import("plugin.zig");
 const zig_plugin = @import("plugins/zig_plugin.zig");
 const markdown_plugin = @import("plugins/markdown_plugin.zig");
+const treesitter_plugin = @import("plugins/treesitter_plugin.zig");
 
 const LanguagePlugin = plugin_mod.LanguagePlugin;
 
@@ -35,6 +36,15 @@ pub const PluginRegistry = struct {
         // Register built-in plugins (ignore errors — only fails on OOM).
         self.register(allocator, zig_plugin.plugin()) catch {};
         self.register(allocator, markdown_plugin.plugin()) catch {};
+
+        // Register tree-sitter plugins for non-Zig languages
+        self.register(allocator, treesitter_plugin.pythonPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.cppPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.rustPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.goPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.typescriptPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.tsxPlugin()) catch {};
+        self.register(allocator, treesitter_plugin.phpPlugin()) catch {};
         return self;
     }
 

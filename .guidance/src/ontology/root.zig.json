@@ -4,6 +4,5 @@
     "source": "src/ontology/root.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "ontology"],
-  "used_by": ["src/vector/vector_db.zig"]
+  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
 }

@@ -21,11 +21,6 @@
       "name": "parseMarkdown",
       "match_hash": "e2e6ff359df950fde93726a450f67d4a9d129852adcef0f51f16875b2bd02998",
       "signature": "fn parseMarkdown(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
-      "params": [
-        { "name": "arena", "type": "std.mem.Allocator" },
-        { "name": "source", "type": "[:0]const u8" },
-        { "name": "file_path", "type": "[]const u8" }
-      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 37
@@ -35,10 +30,6 @@
       "name": "extractMarkdownLinks",
       "match_hash": "ce6e891b06bf14842e46ad325e88d09287cceff5a68fa1abcdd45a39b435b450",
       "signature": "fn extractMarkdownLinks(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
-      "params": [
-        { "name": "arena", "type": "std.mem.Allocator" },
-        { "name": "source", "type": "[:0]const u8" }
-      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 132
@@ -48,10 +39,6 @@
       "name": "deriveMarkdownModule",
       "match_hash": "72df3c07751c0f9a5e6b61167d29b2d900025bb2439b340a239a68f13842e81b",
       "signature": "fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
-      "params": [
-        { "name": "arena", "type": "std.mem.Allocator" },
-        { "name": "file_path", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 166

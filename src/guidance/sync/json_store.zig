@@ -237,36 +237,6 @@ pub const JsonStore = struct {
             }
         }
 
-        if (member_val.object.get("params")) |params_val| {
-            if (params_val == .array) {
-                var params: std.ArrayList(types.Param) = .{};
-                for (params_val.array.items) |param_val| {
-                    if (param_val == .object) {
-                        var param: types.Param = .{ .name = "" };
-                        if (param_val.object.get("name")) |pn| {
-                            if (pn == .string) {
-                                param.name = try self.allocator.dupe(u8, pn.string);
-                            }
-                        }
-                        if (param_val.object.get("type")) |pt| {
-                            if (pt == .string) {
-                                param.type = try self.allocator.dupe(u8, pt.string);
-                            }
-                        }
-                        if (param_val.object.get("default")) |pd| {
-                            if (pd == .string) {
-                                param.default = try self.allocator.dupe(u8, pd.string);
-                            }
-                        }
-                        if (param.name.len > 0) {
-                            try params.append(self.allocator, param);
-                        }
-                    }
-                }
-                member.params = try params.toOwnedSlice(self.allocator);
-            }
-        }
-
         if (member_val.object.get("tags")) |tags_val| {
             if (tags_val == .array) {
                 var tags: std.ArrayList([]const u8) = .{};

@@ -4,7 +4,6 @@
     "source": "src/coral/benchmark.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -19,10 +18,6 @@
           "name": "format",
           "match_hash": "b5b17eb8a8a32eba9e1bf217ff9ca8ca62aae9de0f64762fc2712906d707d98e",
           "signature": "fn format(self: BenchmarkResult, writer) -> void",
-          "params": [
-            { "name": "self", "type": "BenchmarkResult" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 28
@@ -42,13 +37,6 @@
           "name": "run",
           "match_hash": "6d2141b764174adddc6218a6f709ffc618b3c61e28cf57b5e7df4ac8c0f7b193",
           "signature": "fn run(allocator: Allocator, name: []const u8, warmup: usize, measure: usize, func: RunFn) -> BenchmarkResult",
-          "params": [
-            { "name": "allocator", "type": "Allocator" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "warmup", "type": "usize" },
-            { "name": "measure", "type": "usize" },
-            { "name": "func", "type": "RunFn" }
-          ],
           "returns": "BenchmarkResult",
           "is_pub": true,
           "line": 49
@@ -68,9 +56,6 @@
           "name": "init",
           "match_hash": "7debb977c37852e78d5b17770c37b5b244fcbc743cc2822b64341cca713fb595",
           "signature": "fn init(allocator: Allocator) -> CoralBenchmarks",
-          "params": [
-            { "name": "allocator", "type": "Allocator" }
-          ],
           "returns": "CoralBenchmarks",
           "is_pub": true,
           "line": 96
@@ -80,9 +65,6 @@
           "name": "deinit",
           "match_hash": "bc33f15810951bd2a5ceee0155fc69c10c8d9196a5148dab1e5c700e7fced4e9",
           "signature": "fn deinit(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 103
@@ -92,9 +74,6 @@
           "name": "runAll",
           "match_hash": "1ba49e85d446fc01db8615da0c56ce069fb3ae175ddc0bc8d00bbcbcb9e4e6f5",
           "signature": "fn runAll(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 108
@@ -104,9 +83,6 @@
           "name": "benchmarkL1Cache",
           "match_hash": "033d3e473030e2ccbe4cc866738e513cf4974628e24c62b52e1d51c4e666d751",
           "signature": "fn benchmarkL1Cache(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 117
@@ -116,9 +92,6 @@
           "name": "benchmarkHnswBuild",
           "match_hash": "8833e889f40dfdd4aca372643996436a334b02f711cc67e40dbbd8bb1e9ede00",
           "signature": "fn benchmarkHnswBuild(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 163
@@ -128,9 +101,6 @@
           "name": "benchmarkHnswSearch",
           "match_hash": "074081a8ad514ec7f93b8bb51de0fe0c0f648dd199bc7f9dff33d0da0f4cfb10",
           "signature": "fn benchmarkHnswSearch(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 219
@@ -140,9 +110,6 @@
           "name": "benchmarkArenaOverhead",
           "match_hash": "cb71a6226475bff0b58c26ab6cd0684e49f1e43c566aaa6f06c7e1a91120ae1a",
           "signature": "fn benchmarkArenaOverhead(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 277
@@ -152,9 +119,6 @@
           "name": "printResults",
           "match_hash": "058c83427fdfeb1201c117fe2a913433a38bac40d40885d1ad4a0abf70aac7cb",
           "signature": "fn printResults(self: *CoralBenchmarks) -> void",
-          "params": [
-            { "name": "self", "type": "*CoralBenchmarks" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 325
@@ -167,10 +131,6 @@
       "name": "benchmarkArenaOverhead",
       "match_hash": "57423a34d51f3c006d034abf70e2b5ba2acf9089adefcc7768eead83580b95e9",
       "signature": "fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) -> u64",
-      "params": [
-        { "name": "allocator", "type": "Allocator" },
-        { "name": "iterations", "type": "usize" }
-      ],
       "returns": "u64",
       "is_pub": true,
       "line": 369

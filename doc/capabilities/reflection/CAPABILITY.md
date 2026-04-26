@@ -66,7 +66,7 @@ admin   — full access (broadest permissions)
 - `src/reflection/enum_registry.zig` — `EnumRegistry`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (10 files, auto-discovered)
+## Sources (11 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -75,6 +75,7 @@ admin   — full access (broadest permissions)
 | `src/reflection/root.zig` | 0.9 | used_by |
 | `src/reflection/sql.zig` | 0.9 | used_by |
 | `src/reflection/validate.zig` | 0.9 | used_by |
+| `src/reflection/sql_tests.zig` | 0.9 | used_by |
 | `src/reflection/typed.zig` | 0.9 | used_by |
 | `src/reflection/binary.zig` | 0.4 | path_heuristic |
 | `src/reflection/schema_version.zig` | 0.4 | path_heuristic |

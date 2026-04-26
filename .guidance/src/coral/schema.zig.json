@@ -4,68 +4,67 @@
     "source": "src/coral/schema.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
-  "used_by": ["src/coral/db.zig"],
+  "used_by": ["src/coral/db.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "test_decl",
       "name": "schema DDL constants are non-empty",
       "is_pub": false,
-      "line": 431
+      "line": 429
     },
     {
       "type": "test_decl",
       "name": "LOD_COUNT is 6",
       "is_pub": false,
-      "line": 440
+      "line": 438
     },
     {
       "type": "test_decl",
       "name": "schema DDL contains expected column names",
       "is_pub": false,
-      "line": 444
+      "line": 442
     },
     {
       "type": "test_decl",
       "name": "schema uses SQLite syntax",
       "is_pub": false,
-      "line": 471
+      "line": 469
     },
     {
       "type": "test_decl",
       "name": "SCHEMA_DDL has 14 statements",
       "is_pub": false,
-      "line": 480
+      "line": 478
     },
     {
       "type": "test_decl",
       "name": "entity_types DDL is non-empty",
       "is_pub": false,
-      "line": 484
+      "line": 482
     },
     {
       "type": "test_decl",
       "name": "property_uses DDL is non-empty",
       "is_pub": false,
-      "line": 489
+      "line": 487
     },
     {
       "type": "test_decl",
       "name": "query templates are SQL",
       "is_pub": false,
-      "line": 496
+      "line": 494
     },
     {
       "type": "test_decl",
       "name": "new DDL constants are non-empty",
       "is_pub": false,
-      "line": 506
+      "line": 504
     },
     {
       "type": "test_decl",
       "name": "LOD columns are generically named",
       "is_pub": false,
-      "line": 512
+      "line": 510
     }
   ]
 }

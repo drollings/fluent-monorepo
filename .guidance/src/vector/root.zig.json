@@ -5,6 +5,5 @@
     "language": "zig"
   },
   "comment": " guidance vector module — cosine search, embeddings, hybrid merge.",
-  "capabilities": ["vector-search", "sync-pipeline"],
-  "used_by": ["src/vector/vector_db.zig"]
+  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
 }

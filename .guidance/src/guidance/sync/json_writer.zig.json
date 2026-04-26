@@ -12,10 +12,6 @@
       "name": "writeEscapedValue",
       "match_hash": "d2d72ecbe63536e0b701a6b21fa972d63b855299baedb396df1c52ef5e83ef2f",
       "signature": "fn writeEscapedValue(writer, value: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 8
@@ -25,11 +21,6 @@
       "name": "writeEscapedString",
       "match_hash": "6223b0721dadb199f1e583f91d5d512c57c56fb85300b90e6ed8a739f67756ad",
       "signature": "fn writeEscapedString(writer, key: []const u8, value: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "key", "type": "[]const u8" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 12
@@ -39,10 +30,6 @@
       "name": "jsonifyMember",
       "match_hash": "a9d6cb387eb599dd94736838eb5aedc168ebba925d50a40a15a7ba2999347d9a",
       "signature": "fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) -> ?[]u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "member", "type": "types.Member" }
-      ],
       "returns": "?[]u8",
       "is_pub": true,
       "line": 18
@@ -52,13 +39,9 @@
       "name": "jsonifyGuidanceDoc",
       "match_hash": "811d24b667ec86876f2261b01155d5c5a8ef49b4cb220b64c4975b7e54c367ca",
       "signature": "fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "doc", "type": "types.GuidanceDoc" }
-      ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 123
+      "line": 100
     }
   ]
 }

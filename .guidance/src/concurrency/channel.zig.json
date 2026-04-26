@@ -12,9 +12,6 @@
       "name": "Channel",
       "match_hash": "c98f26087417e93e1f4c4f045a960cfd7a746817b54d890b8108b274ed16d286",
       "signature": "fn Channel(T: type) -> type",
-      "params": [
-        { "name": "T", "type": "type" }
-      ],
       "returns": "type",
       "is_pub": true,
       "line": 27

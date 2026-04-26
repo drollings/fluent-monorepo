@@ -4,6 +4,5 @@
     "source": "src/rdf/root.zig",
     "language": "zig"
   },
-  "capabilities": ["rdf-parsing"],
-  "used_by": ["src/vector/vector_db.zig"]
+  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
 }

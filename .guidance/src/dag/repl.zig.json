@@ -4,7 +4,6 @@
     "source": "src/dag/repl.zig",
     "language": "zig"
   },
-  "capabilities": ["target-registry"],
   "used_by": ["src/dag/root.zig"],
   "members": [
     {
@@ -12,10 +11,6 @@
       "name": "init",
       "match_hash": "5fe11cb9d5d51fc4d4a8e0c44494c5535e25532a7998d01b070a2d1a38f7d43c",
       "signature": "fn init(allocator: std.mem.Allocator, ctx: *BuildContext) -> Repl",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "*BuildContext" }
-      ],
       "returns": "Repl",
       "is_pub": true,
       "line": 15
@@ -25,9 +20,6 @@
       "name": "deinit",
       "match_hash": "48e322a15afd825a2f74779319d8289a984148490eda117d34b3f91ac99a95cd",
       "signature": "fn deinit(_: *Repl) -> void",
-      "params": [
-        { "name": "_", "type": "*Repl" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 23
@@ -37,9 +29,6 @@
       "name": "run",
       "match_hash": "9ab4f9974fd768f246034d3960f63ffa568a8d635d3a54f3a0103da074be9540",
       "signature": "fn run(self: *Repl) -> void",
-      "params": [
-        { "name": "self", "type": "*Repl" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 26
@@ -49,11 +38,6 @@
       "name": "handleDotCommand",
       "match_hash": "7090e29e73a37982ea5a382b05648478758fecc06f231927a8037c9a7e755d31",
       "signature": "fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> bool",
-      "params": [
-        { "name": "self", "type": "*Repl" },
-        { "name": "input", "type": "[]const u8" },
-        { "name": "writer", "type": "*std.Io.Writer" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 66
@@ -63,11 +47,6 @@
       "name": "handleBuildCommand",
       "match_hash": "1074af0e306cd4d63f59a66a245a71f785ecb428efdeff90bd779584b9999c5f",
       "signature": "fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> void",
-      "params": [
-        { "name": "self", "type": "*Repl" },
-        { "name": "input", "type": "[]const u8" },
-        { "name": "writer", "type": "*std.Io.Writer" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 132

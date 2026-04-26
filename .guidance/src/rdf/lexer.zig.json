@@ -126,9 +126,6 @@
           "name": "init",
           "match_hash": "78019a859a610607d23ec6d359b9a984c940a188c23cdda8f9c57708ef9aea43",
           "signature": "fn init(source: []const u8) -> Lexer",
-          "params": [
-            { "name": "source", "type": "[]const u8" }
-          ],
           "returns": "Lexer",
           "is_pub": true,
           "line": 62
@@ -138,9 +135,6 @@
           "name": "skipWhitespaceAndComments",
           "match_hash": "9fdf2bafdfe692b5f97bcb41a1aa562e575426c4160f088e754837a43a432fa6",
           "signature": "fn skipWhitespaceAndComments(self: *Lexer) -> void",
-          "params": [
-            { "name": "self", "type": "*Lexer" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 67
@@ -150,9 +144,6 @@
           "name": "advance",
           "match_hash": "05955270d5af50c9d00745f3aff0861ec06842d835610daf49e9bae5d094ba80",
           "signature": "fn advance(self: *Lexer) -> void",
-          "params": [
-            { "name": "self", "type": "*Lexer" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 92
@@ -162,9 +153,6 @@
           "name": "nextToken",
           "match_hash": "e2147fbd61a1ecb6cab196f41c4df038d4f23f6d270770da8934789743de01a1",
           "signature": "fn nextToken(self: *Lexer) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" }
-          ],
           "returns": "LexError!Token",
           "is_pub": true,
           "line": 104
@@ -174,11 +162,6 @@
           "name": "lexIRI",
           "match_hash": "a251b77a798b9cfb8a961c23334703adfe0046ba3331eed285d7d89f1358e220",
           "signature": "fn lexIRI(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 207
@@ -188,11 +171,6 @@
           "name": "lexLiteral",
           "match_hash": "3319c24e3fdf4671eb9af8293dc0dee9b2afade0844f25b9db1e2067cc0a0d19",
           "signature": "fn lexLiteral(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 232
@@ -202,11 +180,6 @@
           "name": "lexNumericLiteral",
           "match_hash": "e4dc909596b707d8766a30ddbcc1cabe45e7613649edd4588edbcd61ab24cef7",
           "signature": "fn lexNumericLiteral(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 290
@@ -216,11 +189,6 @@
           "name": "lexBlankNode",
           "match_hash": "4d728a657e0229dc7bc7a0827e5ae4a8f82c36025f94b84cf5f7d72098706f3b",
           "signature": "fn lexBlankNode(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 325
@@ -230,11 +198,6 @@
           "name": "lexAtDirective",
           "match_hash": "cdb192d820c470328310ef32e8699466c897ee192077160804597ae6db512f0f",
           "signature": "fn lexAtDirective(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 335
@@ -244,11 +207,6 @@
           "name": "lexPrefixedName",
           "match_hash": "9f6db1a28b56c3509ec3429b0234dfb445fe859ff9c23cf34aeb92d8a56161fe",
           "signature": "fn lexPrefixedName(self: *Lexer, start_line: u32, start_col: u32) -> LexError!Token",
-          "params": [
-            { "name": "self", "type": "*Lexer" },
-            { "name": "start_line", "type": "u32" },
-            { "name": "start_col", "type": "u32" }
-          ],
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 355
@@ -258,9 +216,6 @@
           "name": "isNameEndChar",
           "match_hash": "6d6f36f57350eaea5356cc4ec122f0f4a9dc70054090d5bd2b93472ceca2f0ec",
           "signature": "fn isNameEndChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 387
@@ -270,9 +225,6 @@
           "name": "isPrefixStartChar",
           "match_hash": "16568417fb8d3a9d68b3b992fe8d9754da6fbe9f9ca897df0af55d9e9d5fa471",
           "signature": "fn isPrefixStartChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 393
@@ -282,9 +234,6 @@
           "name": "isPrefixChar",
           "match_hash": "84c4f2b21577ee33694c1b6c0f547e2ed5b2c9fc3bbf821846b8357703ceb54f",
           "signature": "fn isPrefixChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 397
@@ -294,9 +243,6 @@
           "name": "isLocalNameChar",
           "match_hash": "bc39b6f1336a944c09881d874f3be37e0a64cc64b1d2a8dadba21d0ecc86340a",
           "signature": "fn isLocalNameChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 401
@@ -306,9 +252,6 @@
           "name": "isNameChar",
           "match_hash": "f957b93ea55c74e0ea153496b134c2950a0b4734ac365a063f25ebb8553cc7d6",
           "signature": "fn isNameChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 408
@@ -318,9 +261,6 @@
           "name": "isLangChar",
           "match_hash": "f3e424e6ccfcf4ff5a4c57246e2296a618acc04521e6f558f318cab4c259e9be",
           "signature": "fn isLangChar(ch: u8) -> bool",
-          "params": [
-            { "name": "ch", "type": "u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 413

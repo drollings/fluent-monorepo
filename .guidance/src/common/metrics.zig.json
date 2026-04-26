@@ -4,7 +4,7 @@
     "source": "src/common/metrics.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig", "src/coral/main.zig"],
+  "used_by": ["src/common/root.zig", "src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -27,10 +27,6 @@
           "name": "observe",
           "match_hash": "71d81e2725e2360e172ccc59957c8162077eb9ba9fe91b6b83a7628a5370f92c",
           "signature": "fn observe(self: *LatencyHistogram, latency_ms: u64) -> void",
-          "params": [
-            { "name": "self", "type": "*LatencyHistogram" },
-            { "name": "latency_ms", "type": "u64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 43
@@ -40,10 +36,6 @@
           "name": "cumulativeBucket",
           "match_hash": "0d252a674e881e4280fd512fd812c6a71032efe9b44430b253a942f8861ab6ec",
           "signature": "fn cumulativeBucket(self: *const LatencyHistogram, idx: usize) -> u64",
-          "params": [
-            { "name": "self", "type": "*const LatencyHistogram" },
-            { "name": "idx", "type": "usize" }
-          ],
           "returns": "u64",
           "is_pub": true,
           "line": 59
@@ -53,10 +45,6 @@
           "name": "estimatePercentile",
           "match_hash": "db5ada9d3127e4e477482a1c6d80af96ff5726a28a1b70d79cd164e91d6f0f8f",
           "signature": "fn estimatePercentile(self: *const LatencyHistogram, p: f64) -> u64",
-          "params": [
-            { "name": "self", "type": "*const LatencyHistogram" },
-            { "name": "p", "type": "f64" }
-          ],
           "returns": "u64",
           "is_pub": true,
           "line": 71

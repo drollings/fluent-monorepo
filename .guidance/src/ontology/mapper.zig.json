@@ -4,7 +4,6 @@
     "source": "src/ontology/mapper.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [
     {
@@ -19,10 +18,6 @@
           "name": "init",
           "match_hash": "0908ad809c2a7a9122a4f9ae5b693ab3e8a18c2c3240cde27e64126ed56c8f9c",
           "signature": "fn init(allocator: std.mem.Allocator, id: i64) -> PendingNode",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "id", "type": "i64" }
-          ],
           "returns": "PendingNode",
           "is_pub": true,
           "line": 43
@@ -32,9 +27,6 @@
           "name": "deinit",
           "match_hash": "ea78ccbc6df08f540a360d82f08855b77abfcbb89dabc620730cd84776d15d8c",
           "signature": "fn deinit(self: *PendingNode) -> void",
-          "params": [
-            { "name": "self", "type": "*PendingNode" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 56
@@ -44,10 +36,6 @@
           "name": "toContextNode",
           "match_hash": "6c43ee1330847ca35ff152189085e3bcc9e8a64887087e0cc5abbd142e7201e5",
           "signature": "fn toContextNode(self: *const PendingNode, allocator: std.mem.Allocator) -> ContextNode",
-          "params": [
-            { "name": "self", "type": "*const PendingNode" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "ContextNode",
           "is_pub": true,
           "line": 64
@@ -83,10 +71,6 @@
           "name": "init",
           "match_hash": "b793c62e6d8bf868d8d200ed85001b0fe67f4bf5fbb994485117ab4c14036929",
           "signature": "fn init(allocator: std.mem.Allocator, config: MappingConfig) -> TripleMapper",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "MappingConfig" }
-          ],
           "returns": "TripleMapper",
           "is_pub": true,
           "line": 130
@@ -96,9 +80,6 @@
           "name": "deinit",
           "match_hash": "b943bf43593ecf4f264eb1c8ec99e4de0a62ef83c6d7d9ba1e0825b4bdc3b912",
           "signature": "fn deinit(self: *TripleMapper) -> void",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 141
@@ -108,10 +89,6 @@
           "name": "processTriple",
           "match_hash": "7c897d0dadaf8e925540c7d4ca2599e424a0129d3c3d42df33c1760941260d94",
           "signature": "fn processTriple(self: *TripleMapper, triple: Triple) -> void",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "triple", "type": "Triple" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 160
@@ -121,10 +98,6 @@
           "name": "flush",
           "match_hash": "2b8c230c5ee4483de731c04110f19070e30e3a7cad9bd26c4b993523b2515408",
           "signature": "fn flush(self: *TripleMapper, library: *Library) -> FlushResult",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "FlushResult",
           "is_pub": true,
           "line": 221
@@ -134,14 +107,6 @@
           "name": "detectAndRecordContradiction",
           "match_hash": "8dc03945c4ab9e8e267771f79049a9573ccbcf41bc39cdca7ee44cdba1e7d13e",
           "signature": "fn detectAndRecordContradiction(self: *TripleMapper, node: *const PendingNode, subject_id: i64, predicate: []const u8, lod_index: usize, new_value: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "node", "type": "*const PendingNode" },
-            { "name": "subject_id", "type": "i64" },
-            { "name": "predicate", "type": "[]const u8" },
-            { "name": "lod_index", "type": "usize" },
-            { "name": "new_value", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 276
@@ -151,10 +116,6 @@
           "name": "termKey",
           "match_hash": "973b7b2486005f11c79948b9703a4bfa86ab7fe0ab04eb33b79552be60473a07",
           "signature": "fn termKey(self: *TripleMapper, term: Term) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "term", "type": "Term" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 307
@@ -164,10 +125,6 @@
           "name": "termToId",
           "match_hash": "36cf94605a97c3daeaef83a8d94eaacc508148323eca06fd780a5ec3187f9e17",
           "signature": "fn termToId(self: *TripleMapper, term: Term) -> i64",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "term", "type": "Term" }
-          ],
           "returns": "i64",
           "is_pub": false,
           "line": 319
@@ -177,10 +134,6 @@
           "name": "termToIRI",
           "match_hash": "7d3c7c8ebfe714ca47f092429dfde8e989a7e7cbf87eb9731dc0336673d7afbf",
           "signature": "fn termToIRI(self: *TripleMapper, term: Term) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "term", "type": "Term" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 327
@@ -190,11 +143,6 @@
           "name": "getOrCreateNode",
           "match_hash": "163d7522428149deaef5279731fcfca94710919db261b1cae229c9df8ac31b57",
           "signature": "fn getOrCreateNode(self: *TripleMapper, term: Term, id: i64) -> *PendingNode",
-          "params": [
-            { "name": "self", "type": "*TripleMapper" },
-            { "name": "term", "type": "Term" },
-            { "name": "id", "type": "i64" }
-          ],
           "returns": "*PendingNode",
           "is_pub": false,
           "line": 336
@@ -215,10 +163,6 @@
       "name": "shouldUseLang",
       "match_hash": "4043278801090d4e423dc0093d686a54ec272427ea7c041e2514e05b96d11835",
       "signature": "fn shouldUseLang(actual: ?[]const u8, preferred: []const u8) -> bool",
-      "params": [
-        { "name": "actual", "type": "?[]const u8" },
-        { "name": "preferred", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 359

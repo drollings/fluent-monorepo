@@ -139,10 +139,6 @@
       "name": "cmdRalph",
       "match_hash": "7495cf0a6ad6b22b3838b5ad4211c48ab06c3aa0183602baf6c1a51740097cf6",
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 141
@@ -161,10 +157,6 @@
       "name": "cmdStructure",
       "match_hash": "365c31948bb590f64739040f33bae9cf97759257d419d376cac44a3ec8a03e2d",
       "signature": "fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 265

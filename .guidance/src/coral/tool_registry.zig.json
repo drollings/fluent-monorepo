@@ -4,7 +4,6 @@
     "source": "src/coral/tool_registry.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -35,10 +34,6 @@
           "name": "deinit",
           "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
           "signature": "fn deinit(self: *Self, allocator: Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 51
@@ -48,11 +43,6 @@
           "name": "register",
           "match_hash": "a3ca50b017656d1933417acce7d55344dc9f0cb2ed814fe1fe4eebfa764ef128",
           "signature": "fn register(self: *Self, allocator: Allocator, tool: Tool) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "Allocator" },
-            { "name": "tool", "type": "Tool" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 57
@@ -62,12 +52,6 @@
           "name": "getDefinitions",
           "match_hash": "7ee7ac8450b19f86be82703b331b033b145a42cc883ebcde4aaa6c94c66c55bc",
           "signature": "fn getDefinitions(self: *const Self, arena: Allocator, toolset_filter: ?[]const []const u8, check_availability: bool) -> []ToolDefinition",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "toolset_filter", "type": "?[]const []const u8" },
-            { "name": "check_availability", "type": "bool" }
-          ],
           "returns": "[]ToolDefinition",
           "is_pub": true,
           "line": 68
@@ -77,9 +61,6 @@
           "name": "count",
           "match_hash": "4530c74400f9100048e974d022c090f26167ad4d851218c55ceb610c34d627ce",
           "signature": "fn count(self: *const Self) -> usize",
-          "params": [
-            { "name": "self", "type": "*const Self" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 103

@@ -20,9 +20,6 @@
       "name": "printHelp",
       "match_hash": "7d8bab1e5fad33bd27b72b476652eb393c442c974629deac5917eb9fff389c2b",
       "signature": "fn printHelp(writer) -> void",
-      "params": [
-        { "name": "writer" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 478

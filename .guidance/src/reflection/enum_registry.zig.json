@@ -4,7 +4,6 @@
     "source": "src/reflection/enum_registry.zig",
     "language": "zig"
   },
-  "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig"],
   "members": [
     {
@@ -19,9 +18,6 @@
           "name": "init",
           "match_hash": "de1572295b2f259b2a068f8c47c2441547420ac52b55059c6e0ea3b22ce1c640",
           "signature": "fn init(allocator: std.mem.Allocator) -> EnumRegistry",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "EnumRegistry",
           "is_pub": true,
           "line": 10
@@ -31,10 +27,6 @@
           "name": "deinit",
           "match_hash": "0adfc97f36fa9742f94ca521ccb4b70f37ff1bb1fd0fc6f8bb118793e8dbd42d",
           "signature": "fn deinit(self: *EnumRegistry, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*EnumRegistry" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 19
@@ -44,11 +36,6 @@
           "name": "registerEnum",
           "match_hash": "fdb5d78f69e6870824af4979e0401e45708804c4635115c7cddde909978203c3",
           "signature": "fn registerEnum(self: *EnumRegistry, allocator: std.mem.Allocator, T: type) -> void",
-          "params": [
-            { "name": "self", "type": "*EnumRegistry" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "T", "type": "type" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 25
@@ -58,10 +45,6 @@
           "name": "nameToValue",
           "match_hash": "1b65db87674c01f9dd12c64f73e5d912866fa985ce4d5ffd18ab3e3506e4bab3",
           "signature": "fn nameToValue(self: *const EnumRegistry, name: []const u8) -> ?i64",
-          "params": [
-            { "name": "self", "type": "*const EnumRegistry" },
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "?i64",
           "is_pub": true,
           "line": 44
@@ -71,10 +54,6 @@
           "name": "valueToName",
           "match_hash": "e19f625a0fee5ea4fa3070eb63d25857be8a4935e6bc6967d3d8bb67d5cac33e",
           "signature": "fn valueToName(self: *const EnumRegistry, value: i64) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*const EnumRegistry" },
-            { "name": "value", "type": "i64" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 49

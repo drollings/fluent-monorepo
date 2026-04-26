@@ -4,7 +4,6 @@
     "source": "src/coral/mcp.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-mcp", "coral-cache", "coral-ingestion", "coral-database"],
   "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
@@ -28,9 +27,6 @@
       "name": "sessionIdFromInt",
       "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
       "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
-      "params": [
-        { "name": "i", "type": "i64" }
-      ],
       "returns": "SessionId",
       "is_pub": true,
       "line": 28
@@ -40,9 +36,6 @@
       "name": "sessionIdToInt",
       "match_hash": "22cc545510b58d8cc7afd337817960e55d1bec5efe6ceaea1e0c2139962324c4",
       "signature": "fn sessionIdToInt(id: SessionId) -> i64",
-      "params": [
-        { "name": "id", "type": "SessionId" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 33
@@ -59,9 +52,6 @@
           "name": "describeField",
           "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
           "line": 46
@@ -81,9 +71,6 @@
           "name": "describeField",
           "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
           "line": 63
@@ -103,9 +90,6 @@
           "name": "describeField",
           "match_hash": "51afd784c150712022d3f67fd6c1aa8c3b9d7cf40b294c9752ddc0e071df9ff2",
           "signature": "fn describeField(name: []const u8) -> reflection.FieldMeta",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "reflection.FieldMeta",
           "is_pub": true,
           "line": 85
@@ -118,10 +102,6 @@
       "name": "validateRequiredFields",
       "match_hash": "4f98115d739101e2dfece646a753839ae08265bf8de781ef83428a40db8a3c60",
       "signature": "fn validateRequiredFields(T: type, args: std.json.ObjectMap) -> void",
-      "params": [
-        { "name": "T", "type": "type" },
-        { "name": "args", "type": "std.json.ObjectMap" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 107
@@ -154,11 +134,6 @@
           "name": "serve",
           "match_hash": "443e491ffd1557f07ddc7085c62cdeabf7cb41910f854d8d6bf3f4c928f1dec1",
           "signature": "fn serve(self: *McpServer, reader: *std.Io.Reader, writer: *std.Io.Writer) -> void",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "reader", "type": "*std.Io.Reader" },
-            { "name": "writer", "type": "*std.Io.Writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 182
@@ -168,10 +143,6 @@
           "name": "handleRequest",
           "match_hash": "80c4b8760e6b07cd87d34c1ca057b7572795bfa86d25fc9845b4d6af1d270e4c",
           "signature": "fn handleRequest(self: *McpServer, raw_json: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "raw_json", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 237
@@ -181,11 +152,6 @@
           "name": "dispatch",
           "match_hash": "5100c6977d712144e98eff0260bbbc863dd4d0b7f2d5a4dbf961d2eedc790b45",
           "signature": "fn dispatch(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 256
@@ -195,11 +161,6 @@
           "name": "handleInitialize",
           "match_hash": "ae6270a448351f9aba1392771ee6bb49d97c4d99d7fbd007ef041b3f1a311ac3",
           "signature": "fn handleInitialize(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 269
@@ -209,11 +170,6 @@
           "name": "handleToolsList",
           "match_hash": "e7e41b3318f222ae55985b1bf405ef40af5f5e58f2761f0e5358a469d6e57f57",
           "signature": "fn handleToolsList(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 284
@@ -223,11 +179,6 @@
           "name": "handleToolsCall",
           "match_hash": "137febeba3ab2c1edac76ca91324b811e99d10e51e021703c3c1445db8a603aa",
           "signature": "fn handleToolsCall(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 320
@@ -237,12 +188,6 @@
           "name": "toolCoralQuery",
           "match_hash": "1b4b2fe581b67ae47a0c08ded6ff22af8f7247f02068e3921a18b8a4cef4468b",
           "signature": "fn toolCoralQuery(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" },
-            { "name": "args", "type": "std.json.ObjectMap" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 354
@@ -252,12 +197,6 @@
           "name": "toolCoralInsertNode",
           "match_hash": "97ab32862b504ce0128c571794cf46c7aadf710f037795404c46b017bdd86d9f",
           "signature": "fn toolCoralInsertNode(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" },
-            { "name": "args", "type": "std.json.ObjectMap" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 385
@@ -267,12 +206,6 @@
           "name": "toolCoralExplain",
           "match_hash": "ce5d72151990d7de8b81dfc891fcc74e5b4776c93959222c4ab0e8b085d3c181",
           "signature": "fn toolCoralExplain(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "a", "type": "std.mem.Allocator" },
-            { "name": "req", "type": "JsonRpcRequest" },
-            { "name": "args", "type": "std.json.ObjectMap" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 427
@@ -282,13 +215,6 @@
           "name": "errorResponse",
           "match_hash": "05c74c7a681c58023d43b454b1617b5fe11d770afd99a167540975e0c86ca6c0",
           "signature": "fn errorResponse(self: *McpServer, id: ?std.json.Value, code: i32, message: []const u8, err: anyerror) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*McpServer" },
-            { "name": "id", "type": "?std.json.Value" },
-            { "name": "code", "type": "i32" },
-            { "name": "message", "type": "[]const u8" },
-            { "name": "err", "type": "anyerror" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 486
@@ -298,10 +224,6 @@
           "name": "idToJson",
           "match_hash": "e76b709694d30d4a2e59e50d958e3cc633abacb055e82a4578b81666fbaabbe8",
           "signature": "fn idToJson(allocator: std.mem.Allocator, id: ?std.json.Value) -> []const u8",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "id", "type": "?std.json.Value" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 500
@@ -314,10 +236,6 @@
       "name": "parseJsonRpc",
       "match_hash": "3d37f747bfee38de24999c9f9494df5af5e9a99587a518cdce03ba0da3133baf",
       "signature": "fn parseJsonRpc(allocator: std.mem.Allocator, raw: []const u8) -> JsonRpcRequest",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "raw", "type": "[]const u8" }
-      ],
       "returns": "JsonRpcRequest",
       "is_pub": false,
       "line": 513
@@ -327,10 +245,6 @@
       "name": "writeJsonEscaped",
       "match_hash": "8d6cb81056a6d69a7f9221cdea605965277527ebe8f956b32e1b6469c174560a",
       "signature": "fn writeJsonEscaped(writer, s: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 538

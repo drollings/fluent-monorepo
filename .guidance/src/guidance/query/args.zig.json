@@ -55,10 +55,6 @@
           "name": "deinit",
           "match_hash": "2d7e071f651d501df3e4d0c45bca750e8a5aba97128d69b9841f75cb1ecae6c6",
           "signature": "fn deinit(self: *QueryContext, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*QueryContext" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 60
@@ -71,9 +67,6 @@
       "name": "parseExplainArgs",
       "match_hash": "e5525e6e025d0ff38b5d295f14fed141e6ae8bae90b6ecc6a92f66e86e7a3140",
       "signature": "fn parseExplainArgs(args: []const []const u8) -> error{MissingArg}!ExplainArgs",
-      "params": [
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "error{MissingArg}!ExplainArgs",
       "is_pub": true,
       "line": 69

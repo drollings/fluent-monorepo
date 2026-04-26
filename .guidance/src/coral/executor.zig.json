@@ -4,7 +4,6 @@
     "source": "src/coral/executor.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -12,10 +11,6 @@
       "name": "handleYagoMap",
       "match_hash": "9e7017f0740739ae0bae19d248350edc3e59aed7459310a83b5fe399cf62c9e8",
       "signature": "fn handleYagoMap(allocator: std.mem.Allocator, ctx: *anyopaque) -> anyerror!void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "*anyopaque" }
-      ],
       "returns": "anyerror!void",
       "is_pub": false,
       "line": 32
@@ -32,10 +27,6 @@
           "name": "init",
           "match_hash": "5ad974043807e3a1e44144bf56f3f6f75a9f86eb92081fd8a9f7e8d327a66d78",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 52
@@ -45,11 +36,6 @@
           "name": "run",
           "match_hash": "6ee5daa54d493c5ab0ff9960f264ceb4a3a5bddfda95b834613b2f76d2adbd46",
           "signature": "fn run(self: *Self, ctx: *ExecutionContext, requested_names: []const []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "ctx", "type": "*ExecutionContext" },
-            { "name": "requested_names", "type": "[]const []const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 64
@@ -59,11 +45,6 @@
           "name": "collectDeps",
           "match_hash": "3c824dee2a145b38e774772fb6d6ee6e3577ea0859b6d0e295240ff4abdf1005",
           "signature": "fn collectDeps(self: *Self, name: []const u8, set: *std.StringHashMapUnmanaged(void)) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "set", "type": "*std.StringHashMapUnmanaged(void)" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 103
@@ -73,12 +54,6 @@
           "name": "runParallel",
           "match_hash": "b8ae6ec2ff8f67de2ba3c11ab434fb1de5eaf2e25a6a5b21dd2d73f4c886d3e9",
           "signature": "fn runParallel(self: *Self, ctx: *ExecutionContext, requested_names: []const []const u8, pool: ?*std.Thread.Pool) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "ctx", "type": "*ExecutionContext" },
-            { "name": "requested_names", "type": "[]const []const u8" },
-            { "name": "pool", "type": "?*std.Thread.Pool" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 117

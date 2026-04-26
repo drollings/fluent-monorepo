@@ -32,29 +32,6 @@ pub fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) !?[]u8 
     if (member.signature) |s| {
         try writeEscapedString(writer, "signature", s);
     }
-    if (member.params.len > 0) {
-        try writer.writeAll("  \"params\": [\n");
-        for (member.params, 0..) |param, i| {
-            try writer.writeAll("    { ");
-            try writer.writeAll("\"name\": \"");
-            try writeEscapedValue(writer, param.name);
-            try writer.writeAll("\"");
-            if (param.type) |t| {
-                try writer.writeAll(", \"type\": \"");
-                try writeEscapedValue(writer, t);
-                try writer.writeAll("\"");
-            }
-            if (param.default) |d| {
-                try writer.writeAll(", \"default\": \"");
-                try writeEscapedValue(writer, d);
-                try writer.writeAll("\"");
-            }
-            try writer.writeAll(" }");
-            if (i < member.params.len - 1) try writer.writeAll(",");
-            try writer.writeAll("\n");
-        }
-        try writer.writeAll("  ],\n");
-    }
     if (member.returns) |r| {
         try writeEscapedString(writer, "returns", r);
     }

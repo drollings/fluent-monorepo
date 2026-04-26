@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " degree_centrality.zig — Node degree computation for Coral Context graph.\n\n Computes out-degree for each node in `context_nodes` via a single SQL\n aggregate query over `neighbor_of`, then writes the results back to\n `context_nodes.degree`.\n\n §Why degree over PageRank as default:\n - O(E) — single GROUP BY pass over edges (vs O(E × iterations) for PageRank)\n - No damping factor or convergence threshold to tune\n - GraphRAG itself uses degree for entity ranking in global search\n - On Pi 5 with 100K nodes: Degree ≈50ms; PageRank ≈seconds\n\n §Usage (ingestion-time only — never called from query path):\n ```zig\n var arena = std.heap.ArenaAllocator.init(allocator);\n defer arena.deinit();\n try DegreeCentrality.compute(arena.allocator(), &library);\n ```",
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "test_decl",

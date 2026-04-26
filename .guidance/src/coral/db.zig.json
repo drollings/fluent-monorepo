@@ -7,7 +7,6 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["coral-database", "wasm-tools", "coral-ingestion", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -31,9 +30,6 @@
       "name": "nodeIdFromInt",
       "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
       "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
-      "params": [
-        { "name": "i", "type": "i64" }
-      ],
       "returns": "NodeId",
       "is_pub": true,
       "line": 43
@@ -43,9 +39,6 @@
       "name": "nodeIdToInt",
       "match_hash": "19b77e91a29008ae9413ff1b9ac45e605d5c73146f0af94fa4126aaf4abb65aa",
       "signature": "fn nodeIdToInt(id: NodeId) -> i64",
-      "params": [
-        { "name": "id", "type": "NodeId" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 48
@@ -62,12 +55,6 @@
           "name": "init",
           "match_hash": "d1fd5557efc34a91b33c1fc943a890307abc56c8f462cf61b0056890b53b4e96",
           "signature": "fn init(id: i64, name: []const u8, full_text: []const u8, allocator: std.mem.Allocator) -> ContextNode",
-          "params": [
-            { "name": "id", "type": "i64" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "full_text", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "ContextNode",
           "is_pub": true,
           "line": 79
@@ -77,10 +64,6 @@
           "name": "getLod",
           "match_hash": "616cc7f05e43998d1889eb0198eb465e2b70cc09c502c2f41537b09dbdd9ffe3",
           "signature": "fn getLod(self: *const ContextNode, level: u3) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*const ContextNode" },
-            { "name": "level", "type": "u3" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 97
@@ -90,11 +73,6 @@
           "name": "setLod",
           "match_hash": "81a811335cd2f3c3ec2a8bbf7a96d32edbda9038a68fd53b328a2c97919fc5db",
           "signature": "fn setLod(self: *ContextNode, level: u3, value: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*ContextNode" },
-            { "name": "level", "type": "u3" },
-            { "name": "value", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 102
@@ -104,11 +82,6 @@
           "name": "setSource",
           "match_hash": "577014c87a997a7dda03652e69ed4e45637237001f1d51b196b721df5f7a6d49",
           "signature": "fn setSource(self: *ContextNode, allocator: std.mem.Allocator, text: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*ContextNode" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 107
@@ -118,10 +91,6 @@
           "name": "clone",
           "match_hash": "b6393da743aa7936ed227b16f78370b37f4c1c42b7105f2d5219698aee918fa4",
           "signature": "fn clone(self: *const ContextNode, allocator: std.mem.Allocator) -> ContextNode",
-          "params": [
-            { "name": "self", "type": "*const ContextNode" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "ContextNode",
           "is_pub": true,
           "line": 113
@@ -131,10 +100,6 @@
           "name": "free",
           "match_hash": "38fdb4302519c796581a31d75fe5f49a7e2608d17e243978db2e914725c657aa",
           "signature": "fn free(self: *ContextNode, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*ContextNode" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 120
@@ -147,10 +112,6 @@
       "name": "generateLodSlices",
       "match_hash": "e7d8573dfaf9409373329f96928ab054bb779f35a0358d74bfcdd537835b39a1",
       "signature": "fn generateLodSlices(allocator: std.mem.Allocator, full_text: []const u8) -> [schema.LOD_COUNT][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "full_text", "type": "[]const u8" }
-      ],
       "returns": "[schema.LOD_COUNT][]const u8",
       "is_pub": true,
       "line": 143
@@ -205,9 +166,6 @@
           "name": "relation",
           "match_hash": "d5b51c2f0218478c4459a3f9af138f24cfde5a147165479fd386ac3eac2b4c50",
           "signature": "fn relation(self: EdgeType) -> []const u8",
-          "params": [
-            { "name": "self", "type": "EdgeType" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 170
@@ -217,9 +175,6 @@
           "name": "label",
           "match_hash": "162f8233838b9a0d87319352b9b4156fbdb2399c2882c4449a3b6a390f4f58de",
           "signature": "fn label(self: EdgeType) -> []const u8",
-          "params": [
-            { "name": "self", "type": "EdgeType" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 179
@@ -250,11 +205,6 @@
           "name": "init",
           "match_hash": "632e130c99a4217cbf1b2f885100d0aa2226ced3b14fa7ef8a92fc33d3a4f091",
           "signature": "fn init(allocator: std.mem.Allocator, engine: StorageEngine, path: []const u8) -> *Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "engine", "type": "StorageEngine" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 236
@@ -264,9 +214,6 @@
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 266
@@ -276,10 +223,6 @@
           "name": "exec",
           "match_hash": "4aab8bee3871c3413163c0219eaba37bf9b1917517436c1f03118fb6f60fa44c",
           "signature": "fn exec(self: *Self, sql: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "sql", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 279
@@ -289,10 +232,6 @@
           "name": "prepare",
           "match_hash": "f1c5507e7959f8f926c5406a5458fb34a9853e8a7e6ee8ceb7df364f45ffb041",
           "signature": "fn prepare(self: *Self, sql: []const u8) -> *c.sqlite3_stmt",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "sql", "type": "[]const u8" }
-          ],
           "returns": "*c.sqlite3_stmt",
           "is_pub": false,
           "line": 287
@@ -302,9 +241,6 @@
           "name": "step",
           "match_hash": "98eff056c0071a63e927dba6fb274a0e7f9af13eea7f07d258fa3503fd62d848",
           "signature": "fn step(stmt: *c.sqlite3_stmt) -> bool",
-          "params": [
-            { "name": "stmt", "type": "*c.sqlite3_stmt" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 294
@@ -314,9 +250,6 @@
           "name": "initSchema",
           "match_hash": "299374d1092e4999ef42a1bf8554916404c43770f694917c7e9ce12711821690",
           "signature": "fn initSchema(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 308
@@ -326,9 +259,6 @@
           "name": "getSchemaVersion",
           "match_hash": "2e0bbbf8a94af303eeea3d38d5562a2fb99a95427806f918f697e4fc3d5f56fe",
           "signature": "fn getSchemaVersion(self: *Self) -> u32",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 328
@@ -338,9 +268,6 @@
           "name": "migrate",
           "match_hash": "429e183661f29ba7cdf660db5f208697c2a1f5f9b93ec8e326afdf1e74d6836f",
           "signature": "fn migrate(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 337
@@ -350,10 +277,6 @@
           "name": "insertNode",
           "match_hash": "a5af120c08daf012589afaf3b15bef1cd971ef700307f367a866eabe13c918fd",
           "signature": "fn insertNode(self: *Self, node: ContextNode) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node", "type": "ContextNode" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 361
@@ -363,10 +286,6 @@
           "name": "fetchNode",
           "match_hash": "ef487e3d2a638b3e83b8d922ac7d0583ac1fd8525d00456422a7b170d3a245b2",
           "signature": "fn fetchNode(self: *Self, id: i64) -> ?ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id", "type": "i64" }
-          ],
           "returns": "?ContextNode",
           "is_pub": true,
           "line": 411
@@ -376,15 +295,6 @@
           "name": "insertTarget",
           "match_hash": "277bb7c73815e7d4a677f295c525c4363345741515e4b0a4526391cd3db68661",
           "signature": "fn insertTarget(self: *Self, id: i64, name: []const u8, depends: *const std.bit_set.DynamicBitSetUnmanaged, provides: *const std.bit_set.DynamicBitSetUnmanaged, total_bits: usize, is_essential: bool) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id", "type": "i64" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "depends", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
-            { "name": "provides", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
-            { "name": "total_bits", "type": "usize" },
-            { "name": "is_essential", "type": "bool" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 474
@@ -394,10 +304,6 @@
           "name": "insertWasmTool",
           "match_hash": "dced9c4bbfd9673db752b400a22d85548e855ab0e50497510471e7b2ef7ff065",
           "signature": "fn insertWasmTool(self: *Self, tool: WasmTool) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "tool", "type": "WasmTool" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 513
@@ -407,10 +313,6 @@
           "name": "fetchWasmTool",
           "match_hash": "c25e9ed773c47faf7487fa15ac361a4e07e0d685685b79e40b37f756b956d417",
           "signature": "fn fetchWasmTool(self: *Self, id: i64) -> ?WasmTool",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id", "type": "i64" }
-          ],
           "returns": "?WasmTool",
           "is_pub": true,
           "line": 541
@@ -420,10 +322,6 @@
           "name": "freeWasmTool",
           "match_hash": "0d40143284b2b0be13721a89337b990fd898eec4f21a0342cd150d1fb3523f7a",
           "signature": "fn freeWasmTool(self: *Self, tool: WasmTool) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "tool", "type": "WasmTool" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 574
@@ -433,9 +331,6 @@
           "name": "cleanupExpiredTools",
           "match_hash": "6d6b05e51f733cd3ff3ecdadcc909f5f9b8c6b2ab11d49f8876952538db6eb86",
           "signature": "fn cleanupExpiredTools(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 581
@@ -445,11 +340,6 @@
           "name": "insertDependsOn",
           "match_hash": "4c0e8a9ba0229511bd2919df8f0f431329084f6aec444ceb08f322081f61c8d0",
           "signature": "fn insertDependsOn(self: *Self, from_id: i64, to_id: i64) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "from_id", "type": "i64" },
-            { "name": "to_id", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 600
@@ -459,13 +349,6 @@
           "name": "insertNeighborOf",
           "match_hash": "e4c793a3bdc106c108ee85bdf493564059395e7429ca0ab957e007aaa2d521f2",
           "signature": "fn insertNeighborOf(self: *Self, from_id: i64, to_id: i64, distance: f32, edge_type: EdgeType) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "from_id", "type": "i64" },
-            { "name": "to_id", "type": "i64" },
-            { "name": "distance", "type": "f32" },
-            { "name": "edge_type", "type": "EdgeType" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 610
@@ -475,11 +358,6 @@
           "name": "updateNodeDegree",
           "match_hash": "b0ae1d32c66de1c690a4daee128b47f31e3150ac5b7c83f2932b328e5041317a",
           "signature": "fn updateNodeDegree(self: *Self, node_id: i64, degree: u32) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "degree", "type": "u32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 638
@@ -489,11 +367,6 @@
           "name": "updateNodePageRank",
           "match_hash": "35bac91d9779bdb042373b8adc7420bc02ffd38244eda4b5251887fca52d09b4",
           "signature": "fn updateNodePageRank(self: *Self, node_id: i64, pagerank: f32) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "pagerank", "type": "f32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 648
@@ -503,12 +376,6 @@
           "name": "updateNodeCommunity",
           "match_hash": "bd065319a90972f58c1baa669c960931ecc063b0ab7aa5676155b334781dd502",
           "signature": "fn updateNodeCommunity(self: *Self, node_id: i64, community_id: i64, level: u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "community_id", "type": "i64" },
-            { "name": "level", "type": "u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 658
@@ -518,13 +385,6 @@
           "name": "updateEdgeWeight",
           "match_hash": "0faa28af2455bbf98e61fbe472e7bbd9d3ce699c542c38a959f72be1fdec01ef",
           "signature": "fn updateEdgeWeight(self: *Self, from_id: i64, to_id: i64, weight: f32, predicate_iri: ?[]const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "from_id", "type": "i64" },
-            { "name": "to_id", "type": "i64" },
-            { "name": "weight", "type": "f32" },
-            { "name": "predicate_iri", "type": "?[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 669
@@ -534,13 +394,6 @@
           "name": "saveCsrCache",
           "match_hash": "4e0fd95a64a9d21f17b163e7540c4f82479d2d4c0c8e5be0e23f32fb10c8f1d3",
           "signature": "fn saveCsrCache(self: *Self, data: []const u8, node_count: u32, edge_count: u32, predicate_filter: ?[]const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "data", "type": "[]const u8" },
-            { "name": "node_count", "type": "u32" },
-            { "name": "edge_count", "type": "u32" },
-            { "name": "predicate_filter", "type": "?[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 685
@@ -550,10 +403,6 @@
           "name": "loadCsrCache",
           "match_hash": "0c65f803e793114112a6955bddee2cb8f7a09c87a80f311beb049ee94ab62678",
           "signature": "fn loadCsrCache(self: *Self, allocator: std.mem.Allocator) -> ?[]u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "?[]u8",
           "is_pub": true,
           "line": 713
@@ -563,11 +412,6 @@
           "name": "iterateNeighborOf",
           "match_hash": "9ac8667eaee14e494f79057d78d9e4c355fec85b560bcf60aeb9c3a7e20f7027",
           "signature": "fn iterateNeighborOf(self: *Self, arena: std.mem.Allocator, callback) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "callback" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 732
@@ -577,11 +421,6 @@
           "name": "iterateDegrees",
           "match_hash": "a0e785b4c289da54a2503aacd6358b64ecc0dbf5708085767e26a5ce274bc5dd",
           "signature": "fn iterateDegrees(self: *Self, arena: std.mem.Allocator, callback) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "callback" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 748
@@ -591,10 +430,6 @@
           "name": "allNodeIds",
           "match_hash": "f28a535288f5a1f99861161c592050558a3db1626b2989113a62b8d97726c732",
           "signature": "fn allNodeIds(self: *Self, arena: std.mem.Allocator) -> []i64",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]i64",
           "is_pub": true,
           "line": 763
@@ -604,10 +439,6 @@
           "name": "countOutEdges",
           "match_hash": "7c5c1185d2b1022dcc55446ab174d7f1756b4a9f05f28013bbf5efb6af705881",
           "signature": "fn countOutEdges(self: *Self, node_id: i64) -> u32",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 777
@@ -617,11 +448,6 @@
           "name": "iterateNeighborOfWithDegrees",
           "match_hash": "3f00bde4d0dd909bf3f089187217e5471f419ebd3e8e5ca9f2ce44827c43cad1",
           "signature": "fn iterateNeighborOfWithDegrees(self: *Self, arena: std.mem.Allocator, callback) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "callback" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 789
@@ -631,9 +457,6 @@
           "name": "createHydrationPipeline",
           "match_hash": "c546fe4ac2c5ba373c157c5304243a6d5d9dfcb2ee84a6c9c719df2ee0f1b600",
           "signature": "fn createHydrationPipeline(self: *Self) -> HydrationPipeline",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "HydrationPipeline",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -646,10 +469,6 @@
           "name": "createContextPacker",
           "match_hash": "702786a42163c934ef7930c69551333ac31aa3436f3f4a65c188e96b0816b62a",
           "signature": "fn createContextPacker(self: *Self, max_tokens: usize) -> ContextPacker",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "max_tokens", "type": "usize" }
-          ],
           "returns": "ContextPacker",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -662,10 +481,6 @@
           "name": "persistNeighborEdges",
           "match_hash": "9c47af5143817685ef4878252b74e6e044f6973767760f81e86fe73d8f83daf8",
           "signature": "fn persistNeighborEdges(self: *Self, knn_hits: []const KnnHit) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "knn_hits", "type": "[]const KnnHit" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 823
@@ -675,11 +490,6 @@
           "name": "getNeighborIds",
           "match_hash": "b89894b366e397b4b15782f20f11a80070ac9bf4643a8c5c55de7ac4b13d8c52",
           "signature": "fn getNeighborIds(self: *Self, allocator: std.mem.Allocator, node_id: i64) -> []i64",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "[]i64",
           "is_pub": true,
           "line": 837
@@ -689,12 +499,6 @@
           "name": "knnSearch",
           "match_hash": "082603b29b8891167c7d57de1034808b0724db996f5a63f98aa016d29abe2733",
           "signature": "fn knnSearch(self: *Self, allocator: std.mem.Allocator, query_vec: []const f32, k: usize) -> []KnnHit",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "query_vec", "type": "[]const f32" },
-            { "name": "k", "type": "usize" }
-          ],
           "returns": "[]KnnHit",
           "is_pub": true,
           "line": 853
@@ -704,12 +508,6 @@
           "name": "traverseFrom",
           "match_hash": "eced0a0ef34dc2c0f48cdbf7f68785d5e00a85729edba4b2207426c24ce197d1",
           "signature": "fn traverseFrom(self: *Self, arena: std.mem.Allocator, root_id: i64, max_depth: u8) -> []ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "root_id", "type": "i64" },
-            { "name": "max_depth", "type": "u8" }
-          ],
           "returns": "[]ContextNode",
           "is_pub": true,
           "line": 861
@@ -719,9 +517,6 @@
           "name": "countNodes",
           "match_hash": "10d11ede94daf33bc2d40d6526c46a313546d7d8527076e373ad9fb892bb5d79",
           "signature": "fn countNodes(self: *Self) -> usize",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 895
@@ -731,10 +526,6 @@
           "name": "findNodeByName",
           "match_hash": "481ffbcd68fc8096787d360629c3dbbb8054a52f8fd99fda2bf420a6d6f78dc0",
           "signature": "fn findNodeByName(self: *Self, name: []const u8) -> ?i64",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "?i64",
           "is_pub": true,
           "line": 904
@@ -744,12 +535,6 @@
           "name": "keywordSearch",
           "match_hash": "1c4db62f893df981892bc894d5cf1699800d444c862354b4c099ed504136b145",
           "signature": "fn keywordSearch(self: *Self, allocator: std.mem.Allocator, query: []const u8, limit: usize) -> []ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "limit", "type": "usize" }
-          ],
           "returns": "[]ContextNode",
           "is_pub": true,
           "line": 920
@@ -759,14 +544,6 @@
           "name": "hybridSearch",
           "match_hash": "54c210907679f1790ed836b1dc6315412f72d965f9f8ad61ab8ad0f9f2b10481",
           "signature": "fn hybridSearch(self: *Self, allocator: std.mem.Allocator, query: []const u8, query_embedding: []const f32, limit: usize, threshold: f32) -> []ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "query_embedding", "type": "[]const f32" },
-            { "name": "limit", "type": "usize" },
-            { "name": "threshold", "type": "f32" }
-          ],
           "returns": "[]ContextNode",
           "is_pub": true,
           "line": 958
@@ -776,11 +553,6 @@
           "name": "isA",
           "match_hash": "bfdcec6f9b641c44a3611f7ace1a272e08cedb148e200766d068e32f2f67ac18",
           "signature": "fn isA(self: *Self, child_id: i64, parent_name: []const u8) -> bool",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "child_id", "type": "i64" },
-            { "name": "parent_name", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 1037
@@ -790,11 +562,6 @@
           "name": "getAllAncestors",
           "match_hash": "3cbd0e4fbedbcbbf8ca017da4f0783b47901c2eee3bec2067aef95cd7751e6a9",
           "signature": "fn getAllAncestors(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> []i64",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "entity_id", "type": "i64" }
-          ],
           "returns": "[]i64",
           "is_pub": true,
           "line": 1060
@@ -804,11 +571,6 @@
           "name": "getCapabilitiesForEntity",
           "match_hash": "80d7e6719e5c660d63e77dd26e7d4a1f5f1ca6ce024d9f8be567be6cfb65bc59",
           "signature": "fn getCapabilitiesForEntity(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "entity_id", "type": "i64" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 1096
@@ -818,11 +580,6 @@
           "name": "insertEntityType",
           "match_hash": "5c102c101f6f265a997cb2cdb292cbfd4628754cee92d18933db8ed86e169aa8",
           "signature": "fn insertEntityType(self: *Self, entity_id: i64, type_id: i64) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "entity_id", "type": "i64" },
-            { "name": "type_id", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1137
@@ -832,11 +589,6 @@
           "name": "getInheritedProperties",
           "match_hash": "b6ce1deb11ccd04bad6e061cbe6dfc020bcf5e6e9428bd958bb133706297b881",
           "signature": "fn getInheritedProperties(self: *Self, allocator: std.mem.Allocator, entity_id: i64) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "entity_id", "type": "i64" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 1150
@@ -846,11 +598,6 @@
           "name": "insertPropertyUse",
           "match_hash": "d3cb699226d4a7e8172e1e35dbebb63cb222483b5214f81814651b54ec8bf40f",
           "signature": "fn insertPropertyUse(self: *Self, predicate: []const u8, domain_type_id: i64) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "predicate", "type": "[]const u8" },
-            { "name": "domain_type_id", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1188
@@ -860,12 +607,6 @@
           "name": "insertRdfEdge",
           "match_hash": "15e221f431dd75bf37da5e4025aee4e789ef22c720bd061f502bbb299ad47cd4",
           "signature": "fn insertRdfEdge(self: *Self, from_id: i64, to_id: i64, predicate: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "from_id", "type": "i64" },
-            { "name": "to_id", "type": "i64" },
-            { "name": "predicate", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1199
@@ -875,10 +616,6 @@
           "name": "getCommunityRoot",
           "match_hash": "aa58bb8ec3875a73768654d12e6be680a3a2c145f726eeb802289ba0f8766241",
           "signature": "fn getCommunityRoot(self: *Self, community_id: i64) -> ?CommunityPathEntry",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "community_id", "type": "i64" }
-          ],
           "returns": "?CommunityPathEntry",
           "is_pub": true,
           "line": 1225
@@ -888,11 +625,6 @@
           "name": "getCommunityPath",
           "match_hash": "f57a8f9def7d3f17a2720651745c626cf11ef5de291b4aab75889f82117c648b",
           "signature": "fn getCommunityPath(self: *Self, arena: std.mem.Allocator, node_id: i64) -> []CommunityPathEntry",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "[]CommunityPathEntry",
           "is_pub": true,
           "line": 1238
@@ -902,11 +634,6 @@
           "name": "getLeafCommunities",
           "match_hash": "8b96d3c9ad2944f698c565a65d3bb3d5fd2785fbe5e04194bad3e92c9105cb63",
           "signature": "fn getLeafCommunities(self: *Self, arena: std.mem.Allocator, parent_community_id: i64) -> []CommunityPathEntry",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "parent_community_id", "type": "i64" }
-          ],
           "returns": "[]CommunityPathEntry",
           "is_pub": true,
           "line": 1254
@@ -916,11 +643,6 @@
           "name": "getNodesInSameRootCommunity",
           "match_hash": "a78b41e1eba12fb7e47f1b299ab207f781fd079af79cf7524dff9d3b625e1afc",
           "signature": "fn getNodesInSameRootCommunity(self: *Self, arena: std.mem.Allocator, node_id: i64) -> []NodeInCommunity",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "[]NodeInCommunity",
           "is_pub": true,
           "line": 1271
@@ -930,12 +652,6 @@
           "name": "insertProvenance",
           "match_hash": "6eab81773c9cc1fa7582f4afb345280081472cdda5fcd81981df2adca20749ac",
           "signature": "fn insertProvenance(self: *Self, provenance_id: i32, source: []const u8, authority: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "provenance_id", "type": "i32" },
-            { "name": "source", "type": "[]const u8" },
-            { "name": "authority", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1291
@@ -945,11 +661,6 @@
           "name": "insertApproval",
           "match_hash": "8b1efc155e9abfe1b8aa4f9341629bbe5fccbea1e930ace7bc773886c4c68066",
           "signature": "fn insertApproval(self: *Self, node_id: i64, confidence_before: i32) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "confidence_before", "type": "i32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1310
@@ -959,13 +670,6 @@
           "name": "updateApproval",
           "match_hash": "48df4d9ff47963a0bb31275a1fde37e375477c7f38e73290f77a0e93c3c43d2c",
           "signature": "fn updateApproval(self: *Self, node_id: i64, status: []const u8, reviewed_by: []const u8, confidence_after: i32) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "status", "type": "[]const u8" },
-            { "name": "reviewed_by", "type": "[]const u8" },
-            { "name": "confidence_after", "type": "i32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1323
@@ -975,14 +679,6 @@
           "name": "insertContradiction",
           "match_hash": "b257544e08d1f6d0102034e804f3108c6857a33484053225bb1cdd466e09ebbc",
           "signature": "fn insertContradiction(self: *Self, node_a: i64, node_b: i64, predicate: []const u8, value_a: []const u8, value_b: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_a", "type": "i64" },
-            { "name": "node_b", "type": "i64" },
-            { "name": "predicate", "type": "[]const u8" },
-            { "name": "value_a", "type": "[]const u8" },
-            { "name": "value_b", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1343
@@ -1002,10 +698,6 @@
           "name": "init",
           "match_hash": "5ad974043807e3a1e44144bf56f3f6f75a9f86eb92081fd8a9f7e8d327a66d78",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 1371
@@ -1015,10 +707,6 @@
           "name": "cosineDistance",
           "match_hash": "6c2a7d2ae6b70dd90117f7dfa175edf920b3a41e2bd1c1c60435d6dd6a681ca2",
           "signature": "fn cosineDistance(a: []const f32, b: []const f32) -> f32",
-          "params": [
-            { "name": "a", "type": "[]const f32" },
-            { "name": "b", "type": "[]const f32" }
-          ],
           "returns": "f32",
           "is_pub": true,
           "line": 1377
@@ -1028,11 +716,6 @@
           "name": "knnSearch",
           "match_hash": "dc1adba4948bc81d7f9f850b777f8d0a2aca3c6ebf23d29a2d551d3cc5b8fca6",
           "signature": "fn knnSearch(self: *Self, query_vec: []const f32, k: usize) -> []KnnHit",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query_vec", "type": "[]const f32" },
-            { "name": "k", "type": "usize" }
-          ],
           "returns": "[]KnnHit",
           "is_pub": true,
           "line": 1394
@@ -1042,10 +725,6 @@
           "name": "persistEdges",
           "match_hash": "6024a21fdc2cb44ec3075adcff1d625d9097afe8c03f2b205312fa269c9b3df0",
           "signature": "fn persistEdges(self: *Self, knn_hits: []const KnnHit) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "knn_hits", "type": "[]const KnnHit" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 1443
@@ -1055,11 +734,6 @@
           "name": "hydrate",
           "match_hash": "baee61a9e59e9702697a9081eb2e31a20a894446f76e52fa1d0492c035120bfd",
           "signature": "fn hydrate(self: *Self, query_vec: []const f32, k: usize) -> usize",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query_vec", "type": "[]const f32" },
-            { "name": "k", "type": "usize" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 1448
@@ -1079,11 +753,6 @@
           "name": "init",
           "match_hash": "25709b719014beb0361bb012fdb3b7edece29f00e034aa59803a133fb80f2e4f",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library, max_tokens: usize) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "library", "type": "*Library" },
-            { "name": "max_tokens", "type": "usize" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 1468
@@ -1093,11 +762,6 @@
           "name": "selectLod",
           "match_hash": "8f9fb59913fce4dd721f0a728f6b2f2c5d44d7e64766f77dc2de0c0a6d755884",
           "signature": "fn selectLod(self: *Self, node: ContextNode, graph_distance: u32) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node", "type": "ContextNode" },
-            { "name": "graph_distance", "type": "u32" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 1473
@@ -1107,12 +771,6 @@
           "name": "selectLodByDistance",
           "match_hash": "ae128e1ccfc835605fc2edf091d7d67575c873ffac8b860a286a995a53071e6f",
           "signature": "fn selectLodByDistance(_: *Self, node: ContextNode, graph_distance: u32, avg_degree: u32) -> u3",
-          "params": [
-            { "name": "_", "type": "*Self" },
-            { "name": "node", "type": "ContextNode" },
-            { "name": "graph_distance", "type": "u32" },
-            { "name": "avg_degree", "type": "u32" }
-          ],
           "returns": "u3",
           "is_pub": true,
           "line": 1492
@@ -1122,10 +780,6 @@
           "name": "getNodesByDistance",
           "match_hash": "86e1474f8a3e9d49c75382e6534edd3b25d423590ff31849ca91aa43cc69ff41",
           "signature": "fn getNodesByDistance(self: *Self, semantic_center_id: i64) -> []GraphNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "semantic_center_id", "type": "i64" }
-          ],
           "returns": "[]GraphNode",
           "is_pub": true,
           "line": 1506
@@ -1135,10 +789,6 @@
           "name": "pack",
           "match_hash": "14163cfff983247b6a9556f98ae44865114a7cfa2852b5a0a8778f4b38a30b1b",
           "signature": "fn pack(self: *Self, semantic_center_id: i64) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "semantic_center_id", "type": "i64" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 1525
@@ -1148,10 +798,6 @@
           "name": "packFFD",
           "match_hash": "7717ba14c1b0f79c17563c6ed1589f7bee4dced602a7c757dbb33877428d5406",
           "signature": "fn packFFD(self: *Self, semantic_center_id: i64) -> struct { text: []const u8, tokens_used: usize, nodes_included: usize }",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "semantic_center_id", "type": "i64" }
-          ],
           "returns": "struct { text: []const u8, tokens_used: usize, nodes_included: usize }",
           "is_pub": true,
           "line": 1570

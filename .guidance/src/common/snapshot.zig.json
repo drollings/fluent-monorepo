@@ -18,14 +18,6 @@
           "name": "writeSnapshot",
           "match_hash": "778a4236b5d0bb99dd9e2589f1a042b6e4fc4975a70684fc91c438eb2f26650c",
           "signature": "fn writeSnapshot(allocator: std.mem.Allocator, dir_path: []const u8, git_head: ?[]const u8, wi: *word_index.WordIndex, tri: *trigram_index.TrigramIndex, file_count: u32) -> void",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "git_head", "type": "?[]const u8" },
-            { "name": "wi", "type": "*word_index.WordIndex" },
-            { "name": "tri", "type": "*trigram_index.TrigramIndex" },
-            { "name": "file_count", "type": "u32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 14
@@ -35,10 +27,6 @@
           "name": "loadSnapshot",
           "match_hash": "74e15f0071767ce826973de4453664a01ae6b66c9f961fd4bfa1551ff119d5d8",
           "signature": "fn loadSnapshot(allocator: std.mem.Allocator, dir_path: []const u8) -> ?GuidanceSnapshot",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "dir_path", "type": "[]const u8" }
-          ],
           "returns": "?GuidanceSnapshot",
           "is_pub": true,
           "line": 52
@@ -48,9 +36,6 @@
           "name": "readSnapshotGitHead",
           "match_hash": "fbbff370c01ce663d8cd972d16c139367900ee9000182761a473bd0d952a8cbc",
           "signature": "fn readSnapshotGitHead(dir_path: []const u8) -> ?[40]u8",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" }
-          ],
           "returns": "?[40]u8",
           "is_pub": true,
           "line": 93
@@ -60,10 +45,6 @@
           "name": "isCurrent",
           "match_hash": "bbb68d93f8df617ae0e1dd60abb05104dc7b0df24a556287b5b008a61db7a01a",
           "signature": "fn isCurrent(dir_path: []const u8, current_head: []const u8) -> bool",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "current_head", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 116

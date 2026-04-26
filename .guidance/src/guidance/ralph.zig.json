@@ -87,12 +87,6 @@
           "name": "init",
           "match_hash": "4ca977d19b8f3c93d735892f1a2f758def1ce465231e477b84702e9b82333120",
           "signature": "fn init(allocator: std.mem.Allocator, workspace: []const u8, db: *GuidanceDb, aliases: ?vector_db_mod.SemanticAliases) -> *RalphContext",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "workspace", "type": "[]const u8" },
-            { "name": "db", "type": "*GuidanceDb" },
-            { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
-          ],
           "returns": "*RalphContext",
           "is_pub": true,
           "line": 63
@@ -102,9 +96,6 @@
           "name": "deinit",
           "match_hash": "516d0cffe977de8df0c07777a785a1d1458388f879470b4f8876df3f2ecf5551",
           "signature": "fn deinit(ctx: *RalphContext) -> void",
-          "params": [
-            { "name": "ctx", "type": "*RalphContext" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 82
@@ -117,11 +108,6 @@
       "name": "step",
       "match_hash": "ed674e7f33d647a7ed121e45b9b263567085e1d6810b9719f2da6bf89ce61389",
       "signature": "fn step(ctx: *RalphContext, allocator: std.mem.Allocator, user_input: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "user_input", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 100
@@ -131,11 +117,6 @@
       "name": "ralphRead",
       "match_hash": "8e477070b5655d1c10e2f2f25a17497694230696f098707d8d52547b9f522172",
       "signature": "fn ralphRead(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "_", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 116
@@ -145,11 +126,6 @@
       "name": "ralphAsk",
       "match_hash": "e0c3a302855b94302dcee5f73374bda53f067d2595314a7de72119458568ca65",
       "signature": "fn ralphAsk(ctx: *RalphContext, allocator: std.mem.Allocator, query: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 123
@@ -159,11 +135,6 @@
       "name": "ralphLearn",
       "match_hash": "5fa75f8adcdcd21151ad4fd255fd6ef71f72a69483ca580f4e8dbbb687dfdef3",
       "signature": "fn ralphLearn(ctx: *RalphContext, allocator: std.mem.Allocator, query: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 142
@@ -173,11 +144,6 @@
       "name": "ralphPlan",
       "match_hash": "bcdf861188045c3c6111ed693626ef528bb65809e9354d4c28e2a51ac96c5923",
       "signature": "fn ralphPlan(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "_", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 161
@@ -187,11 +153,6 @@
       "name": "ralphHelp",
       "match_hash": "5c08671c769e4c805c685dd0edba3f76b8447de27801cd9f2dabaff9f1fb9c2a",
       "signature": "fn ralphHelp(ctx: *RalphContext, allocator: std.mem.Allocator, _: []const u8) -> []types.Stage",
-      "params": [
-        { "name": "ctx", "type": "*RalphContext" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "_", "type": "[]const u8" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 171
@@ -201,10 +162,6 @@
       "name": "formatReadSummary",
       "match_hash": "fea5ad4cade0a12226866f3ebfbc11c2538ba267604becc1961d9a3756636c65",
       "signature": "fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "*const RalphContext" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 185
@@ -214,10 +171,6 @@
       "name": "formatPlanSuggestions",
       "match_hash": "03f58f69cd16032ea281d50e6dfad2c61eb53e250fbd9726dd69e765f3a650f1",
       "signature": "fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "*const RalphContext" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 239
@@ -227,9 +180,6 @@
       "name": "formatHelpStages",
       "match_hash": "c7f908d2cc8d11d6f0fa0a012f2c56ff3ee813865c84bb030adb762e30e45349",
       "signature": "fn formatHelpStages(allocator: std.mem.Allocator) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": false,
       "line": 287
@@ -239,11 +189,6 @@
       "name": "classifyIntent",
       "match_hash": "85b19a6a7e7ed43bd10f6f44eb81f31cbcc95a8ee1311ebd19fdb047605d2ef2",
       "signature": "fn classifyIntent(query: []const u8, matches: []const QueryMatch, db: *GuidanceDb) -> QueryIntent",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "matches", "type": "[]const QueryMatch" },
-        { "name": "db", "type": "*GuidanceDb" }
-      ],
       "returns": "QueryIntent",
       "is_pub": false,
       "line": 317
@@ -253,13 +198,6 @@
       "name": "runQuery",
       "match_hash": "d4cd79032769e56fce7ee56bf697d568120ebae2c1fee48b49ed1944f036c377",
       "signature": "fn runQuery(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 329

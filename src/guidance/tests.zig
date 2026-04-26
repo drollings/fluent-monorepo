@@ -145,10 +145,10 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
         \\  "members": [
         \\    {"type": "fn_decl", "name": "alpha", "line": 10, "is_pub": true,
         \\     "comment": "Does alpha.", "signature": "fn alpha() void",
-        \\     "params": [], "tags": [], "patterns": [], "members": []},
+        \\     "tags": [], "patterns": [], "members": []},
         \\    {"type": "fn_decl", "name": "beta",  "line": 30, "is_pub": true,
         \\     "comment": "Does beta.",  "signature": "fn beta() void",
-        \\     "params": [], "tags": [], "patterns": [], "members": []}
+        \\     "tags": [], "patterns": [], "members": []}
         \\  ]
         \\}
     ;
@@ -192,10 +192,10 @@ test "loadChangedMembers filters by hunk range with context window" {
         \\  "members": [
         \\    {"type": "fn_decl", "name": "near",  "line": 20, "is_pub": true,
         \\     "comment": "Near the hunk.", "signature": "fn near() void",
-        \\     "params": [], "tags": [], "patterns": [], "members": []},
+        \\     "tags": [], "patterns": [], "members": []},
         \\    {"type": "fn_decl", "name": "far",   "line": 200, "is_pub": true,
         \\     "comment": "Far from hunk.", "signature": "fn far() void",
-        \\     "params": [], "tags": [], "patterns": [], "members": []}
+        \\     "tags": [], "patterns": [], "members": []}
         \\  ]
         \\}
     ;
@@ -1023,7 +1023,7 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
         \\  "hashtags": ["#test"],
         \\  "members": [
         \\    {{"type": "fn_decl", "name": "doThing", "match_hash": "abc", "is_pub": true, "line": 1,
-        \\      "signature": "fn doThing() void", "comment": "Does a thing.", "params": [], "tags": [], "patterns": [], "members": []}}
+        \\      "signature": "fn doThing() void", "comment": "Does a thing.", "tags": [], "patterns": [], "members": []}}
         \\  ]
         \\}}
     , .{module});

@@ -4,7 +4,7 @@
     "source": "src/coral/type_inference.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -18,11 +18,6 @@
           "name": "build",
           "match_hash": "9b44993b70856037e95e16857541dd9952188f5b8a24c0e47d1e9b4ed24eea7d",
           "signature": "fn build(arena: Allocator, class_ids: []const i64, edges: []const [2]i64) -> Self",
-          "params": [
-            { "name": "arena", "type": "Allocator" },
-            { "name": "class_ids", "type": "[]const i64" },
-            { "name": "edges", "type": "[]const [2]i64" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 46
@@ -32,10 +27,6 @@
           "name": "deinit",
           "match_hash": "792ef6ba61fc23fec40369ab9c53c481653a1b3233a99dac34f0ebefa662b4e0",
           "signature": "fn deinit(self: *Self, arena: Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 93
@@ -45,11 +36,6 @@
           "name": "isSubclassOf",
           "match_hash": "4f854983251f1516a8bee8c0056e448209ee7ec50922520a2a5ba6d5a6cb47ec",
           "signature": "fn isSubclassOf(self: *const Self, class_id: i64, ancestor_id: i64) -> bool",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "class_id", "type": "i64" },
-            { "name": "ancestor_id", "type": "i64" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 101
@@ -59,9 +45,6 @@
           "name": "classCount",
           "match_hash": "0c2511ff70837ef404482d63a8da5f2fcb3969fa25ca283d90e24fdd2a812505",
           "signature": "fn classCount(self: *const Self) -> usize",
-          "params": [
-            { "name": "self", "type": "*const Self" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 108

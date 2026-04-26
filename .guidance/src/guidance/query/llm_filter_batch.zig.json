@@ -11,9 +11,6 @@
       "name": "estimateTokens",
       "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
       "signature": "fn estimateTokens(content: []const u8) -> usize",
-      "params": [
-        { "name": "content", "type": "[]const u8" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 26
@@ -23,11 +20,6 @@
       "name": "preFilterByBudget",
       "match_hash": "39661cee5b8cd3f9eb37f6bb4e0082837865c39ca71a4ee6dbe1892dcf5cc203",
       "signature": "fn preFilterByBudget(allocator: Allocator, stages: []const types.Stage, budget: usize) -> []const types.Stage",
-      "params": [
-        { "name": "allocator", "type": "Allocator" },
-        { "name": "stages", "type": "[]const types.Stage" },
-        { "name": "budget", "type": "usize" }
-      ],
       "returns": "[]const types.Stage",
       "is_pub": true,
       "line": 31
@@ -37,13 +29,6 @@
       "name": "filterStagesBatch",
       "match_hash": "ce6cb4bc93619f24f8ed0acdad41347b780f700c408afe47d4cdfd04ad01d99c",
       "signature": "fn filterStagesBatch(allocator: Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage, budget: usize) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "Allocator" },
-        { "name": "client", "type": "*llm.LlmClient" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types.Stage" },
-        { "name": "budget", "type": "usize" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 65
@@ -53,12 +38,6 @@
       "name": "askRelevantBatch",
       "match_hash": "f3fe27af696bbec7759a400a3df9454e77bc545bf76bc9d246c5ec6beca1aa66",
       "signature": "fn askRelevantBatch(allocator: Allocator, client: *llm.LlmClient, query: []const u8, stages: []const types.Stage) -> []usize",
-      "params": [
-        { "name": "allocator", "type": "Allocator" },
-        { "name": "client", "type": "*llm.LlmClient" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types.Stage" }
-      ],
       "returns": "[]usize",
       "is_pub": false,
       "line": 153
@@ -68,10 +47,6 @@
       "name": "dupeStage",
       "match_hash": "1175848e07eef2749758deb990af4965b7e78a11b164cacb4dc1153f8cb4bac6",
       "signature": "fn dupeStage(allocator: Allocator, s: types.Stage) -> types.Stage",
-      "params": [
-        { "name": "allocator", "type": "Allocator" },
-        { "name": "s", "type": "types.Stage" }
-      ],
       "returns": "types.Stage",
       "is_pub": false,
       "line": 206

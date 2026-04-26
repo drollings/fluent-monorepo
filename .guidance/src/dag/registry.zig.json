@@ -11,10 +11,6 @@
       "name": "init",
       "match_hash": "1a8e99d563e14c374835b224be0217a209edcac1a4128c85907de59bce0f4fc0",
       "signature": "fn init(allocator: std.mem.Allocator, interner: *StringInterner) -> TargetRegistry",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "interner", "type": "*StringInterner" }
-      ],
       "returns": "TargetRegistry",
       "is_pub": true,
       "line": 21
@@ -24,9 +20,6 @@
       "name": "deinit",
       "match_hash": "6b6fc487674cf448b31e28373d568cf12126a59b613ac6366a8543272ace282f",
       "signature": "fn deinit(self: *TargetRegistry) -> void",
-      "params": [
-        { "name": "self", "type": "*TargetRegistry" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 32
@@ -36,10 +29,6 @@
       "name": "add",
       "match_hash": "37859e3df234d0e7163e99cd6395d0dfb5d74c983dcb7d854eb007a20183e4ae",
       "signature": "fn add(self: *TargetRegistry, tgt: *Target) -> void",
-      "params": [
-        { "name": "self", "type": "*TargetRegistry" },
-        { "name": "tgt", "type": "*Target" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 49
@@ -49,10 +38,6 @@
       "name": "get",
       "match_hash": "247b0e36352acb9a4509c1d0f09f4a28f72899cb426f0178c2467c76529ad1e7",
       "signature": "fn get(self: *const TargetRegistry, name: []const u8) -> ?*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "name", "type": "[]const u8" }
-      ],
       "returns": "?*Target",
       "is_pub": true,
       "line": 56
@@ -62,10 +47,6 @@
       "name": "getByBitIndex",
       "match_hash": "25f280dc1e53ad14518db40fd14d0d710d64fe2d8a6ab4e5b6ef866a0b87923d",
       "signature": "fn getByBitIndex(self: *const TargetRegistry, idx: usize) -> ?*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "idx", "type": "usize" }
-      ],
       "returns": "?*Target",
       "is_pub": true,
       "line": 61
@@ -75,10 +56,6 @@
       "name": "remove",
       "match_hash": "52bc41bb0848b6e3252cfb562c1e23b0a94ebc9e61e3d531ce90bafdabdb0139",
       "signature": "fn remove(self: *TargetRegistry, name: []const u8) -> void",
-      "params": [
-        { "name": "self", "type": "*TargetRegistry" },
-        { "name": "name", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 66
@@ -88,10 +65,6 @@
       "name": "listNames",
       "match_hash": "02cfa09f0513d3d2d9177efd8f1fc87acb1e0acb66569c2be5fec8e86087176a",
       "signature": "fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) -> [][]const u8",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "[][]const u8",
       "is_pub": true,
       "line": 74
@@ -101,10 +74,6 @@
       "name": "updateProviderMap",
       "match_hash": "93b1f0e7a24645153ed576e1c0d8c28a6876c5426880fdb24d60b3be884ba851",
       "signature": "fn updateProviderMap(self: *TargetRegistry, tgt: *Target) -> void",
-      "params": [
-        { "name": "self", "type": "*TargetRegistry" },
-        { "name": "tgt", "type": "*Target" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 93
@@ -114,10 +83,6 @@
       "name": "getProviders",
       "match_hash": "f7e18553caf391efa58edb45f701a64d37bc34174b834db7f0b942e4d45b18ff",
       "signature": "fn getProviders(self: *const TargetRegistry, bit_index: usize) -> ?[]*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "bit_index", "type": "usize" }
-      ],
       "returns": "?[]*Target",
       "is_pub": true,
       "line": 105
@@ -127,10 +92,6 @@
       "name": "getProvidersForName",
       "match_hash": "a3a44712d29c572d6776a075ac13e6fe855e67e42f47fe6f18925e89fb0ca624",
       "signature": "fn getProvidersForName(self: *const TargetRegistry, name: []const u8) -> ?[]*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "name", "type": "[]const u8" }
-      ],
       "returns": "?[]*Target",
       "is_pub": true,
       "line": 113
@@ -140,9 +101,6 @@
       "name": "count",
       "match_hash": "7657124174e915ce9dba8bf0fb7c0b84414b3ee5ded4b74fa994bdec3cc448df",
       "signature": "fn count(self: *const TargetRegistry) -> usize",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 119
@@ -152,10 +110,6 @@
       "name": "essentialTargets",
       "match_hash": "f44585422082a098ce9bd4d4a576f0c76de0031ac0eecf3211b3b879190e8930",
       "signature": "fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) -> []*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "[]*Target",
       "is_pub": true,
       "line": 124
@@ -165,10 +119,6 @@
       "name": "abstractTargets",
       "match_hash": "adcc83d9f488f5c396ea892a26798179176d0ed99c55fe749eac3c12a36d9ee4",
       "signature": "fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) -> []*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "[]*Target",
       "is_pub": true,
       "line": 139
@@ -185,9 +135,6 @@
           "name": "hasError",
           "match_hash": "37077c4f548f4ff22f04104a613193bb3a53c9bc3963ab0bab6a4c4b36f68913",
           "signature": "fn hasError(self: *const TargetBuilder) -> bool",
-          "params": [
-            { "name": "self", "type": "*const TargetBuilder" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 187
@@ -197,14 +144,6 @@
           "name": "setError",
           "match_hash": "33ba833f0ef6bb8fef0828f7cc3c53e3401a5f62926be0171c46ae87f8abb22d",
           "signature": "fn setError(self: *TargetBuilder, phase: BuilderPhase, field: []const u8, value: ?[]const u8, constraint: []const u8, cause: anyerror) -> void",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "phase", "type": "BuilderPhase" },
-            { "name": "field", "type": "[]const u8" },
-            { "name": "value", "type": "?[]const u8" },
-            { "name": "constraint", "type": "[]const u8" },
-            { "name": "cause", "type": "anyerror" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 191
@@ -214,10 +153,6 @@
           "name": "depends",
           "match_hash": "dabad4ae5f4c1dd9359a3bc97248a9ea54d9ddb891b186d88b851d6bf659f495",
           "signature": "fn depends(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "names", "type": "[]const []const u8" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 202
@@ -227,10 +162,6 @@
           "name": "provides",
           "match_hash": "5b8360b2b6289472f374077a4fa78c6bdd1de4ac7080a7734b51626adee1ce9f",
           "signature": "fn provides(self: *TargetBuilder, names: []const []const u8) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "names", "type": "[]const []const u8" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 212
@@ -240,10 +171,6 @@
           "name": "command",
           "match_hash": "12fdb8b079594bc127e5ac89bdf3992f5639eaedb7da2b0523ff2af6d73e40ab",
           "signature": "fn command(self: *TargetBuilder, cmd: []const u8) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "cmd", "type": "[]const u8" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 222
@@ -253,9 +180,6 @@
           "name": "essential",
           "match_hash": "36e5ee39fcdb5662d0c2da79ec6fc4e7324dbb442aa12e5f7108b09b195b2274",
           "signature": "fn essential(self: *TargetBuilder) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 236
@@ -265,10 +189,6 @@
           "name": "exists",
           "match_hash": "8f79094d1fe2212de63b62f47fd68b928800cfc992f2d3a0275034f6eb8b899a",
           "signature": "fn exists(self: *TargetBuilder, path: []const u8) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 242
@@ -278,10 +198,6 @@
           "name": "id",
           "match_hash": "778289342dd52cd53645693b42a90c2ab8b93ca207a971b2ec7fa2ac33b0c0c9",
           "signature": "fn id(self: *TargetBuilder, node_id: i64) -> *TargetBuilder",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 254
@@ -291,9 +207,6 @@
           "name": "register",
           "match_hash": "97e2f2f88d6b35c928cef0f26f4c422d2156ffbc2552efce9ba693f6b83121ab",
           "signature": "fn register(self: *TargetBuilder) -> void",
-          "params": [
-            { "name": "self", "type": "*TargetBuilder" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 264
@@ -306,11 +219,6 @@
       "name": "target",
       "match_hash": "585bb7b5e41af86cc82ac5e1e61e369618333a9ef30deaba1201fa10e7b43b38",
       "signature": "fn target(self: *TargetRegistry, name: []const u8, target_type: TargetType) -> TargetBuilder",
-      "params": [
-        { "name": "self", "type": "*TargetRegistry" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "target_type", "type": "TargetType" }
-      ],
       "returns": "TargetBuilder",
       "is_pub": true,
       "line": 291
@@ -320,11 +228,6 @@
       "name": "capabilityDistance",
       "match_hash": "7e8b1f73d97f2a2265f6561e510208c6cc69bc03c062254ca7d54ea1c438fbf3",
       "signature": "fn capabilityDistance(allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, provides: *const std.bit_set.DynamicBitSetUnmanaged) -> usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
-        { "name": "provides", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
-      ],
       "returns": "usize",
       "is_pub": false,
       "line": 314
@@ -334,11 +237,6 @@
       "name": "resolveByCapability",
       "match_hash": "82f3d3a420ab3dc6e876f5dc8203ef6b70b1e6f8360790671c5be7026c2a49c3",
       "signature": "fn resolveByCapability(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged) -> ?*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
-      ],
       "returns": "?*Target",
       "is_pub": true,
       "line": 333
@@ -348,12 +246,6 @@
       "name": "resolveByCapabilityWithHierarchy",
       "match_hash": "003040ddbd20f9ef1bd6f797614db45da30fc08a1be7979067a21a5aedf6d775",
       "signature": "fn resolveByCapabilityWithHierarchy(self: *const TargetRegistry, allocator: std.mem.Allocator, needed: *const std.bit_set.DynamicBitSetUnmanaged, ancestor_caps: []const []const u8) -> ?*Target",
-      "params": [
-        { "name": "self", "type": "*const TargetRegistry" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "needed", "type": "*const std.bit_set.DynamicBitSetUnmanaged" },
-        { "name": "ancestor_caps", "type": "[]const []const u8" }
-      ],
       "returns": "?*Target",
       "is_pub": true,
       "line": 359

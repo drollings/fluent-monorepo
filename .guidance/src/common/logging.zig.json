@@ -19,9 +19,6 @@
           "name": "set",
           "match_hash": "c4930964ccf497d0fec1af7359003f678fc0d7a04ea6d9a5b175dba3ff810797",
           "signature": "fn set(ctx: LogContext) -> void",
-          "params": [
-            { "name": "ctx", "type": "LogContext" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 53
@@ -49,10 +46,6 @@
           "name": "format",
           "match_hash": "ae2d3dac206169875996d726dae1caca26de841fb2c8d5b1aa298d115d3c8729",
           "signature": "fn format(self: LogContext, writer) -> void",
-          "params": [
-            { "name": "self", "type": "LogContext" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 70
@@ -72,9 +65,6 @@
           "name": "begin",
           "match_hash": "7fe067cd4dfb279e55f34b5c0bdb1e88c7aa8cbf3194b14ffffaf0bc297cdd6f",
           "signature": "fn begin(name: []const u8) -> Scope",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "Scope",
           "is_pub": true,
           "line": 104
@@ -84,9 +74,6 @@
           "name": "end",
           "match_hash": "2f28e2f9865312619ad4a56e5546a068c04a4b6b7ac6ae147104cc530dcd9737",
           "signature": "fn end(self: Scope) -> void",
-          "params": [
-            { "name": "self", "type": "Scope" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 118
@@ -99,11 +86,6 @@
       "name": "callLogged",
       "match_hash": "11cfcf8aad127b1e0496c9aad502790fceb0800512416349ed89d22e5c60a009",
       "signature": "fn callLogged(name: []const u8, func, args) -> @typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
-      "params": [
-        { "name": "name", "type": "[]const u8" },
-        { "name": "func" },
-        { "name": "args" }
-      ],
       "returns": "@typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
       "is_pub": true,
       "line": 133

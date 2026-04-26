@@ -12,10 +12,6 @@
       "name": "validateEnumValues",
       "match_hash": "bbd65b9c5a99cadda185ba251210384989b2fc16aeab4d8c30dfccf1056939a4",
       "signature": "fn validateEnumValues(meta: FieldMeta, value: []const u8) -> ValidationError!void",
-      "params": [
-        { "name": "meta", "type": "FieldMeta" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "ValidationError!void",
       "is_pub": true,
       "line": 55
@@ -25,10 +21,6 @@
       "name": "validateCustom",
       "match_hash": "865f332f41479a55582d2ef260ca4a4cb615ad8f59e8394fe120e55bfc476569",
       "signature": "fn validateCustom(meta: FieldMeta, value: []const u8) -> ValidationError!void",
-      "params": [
-        { "name": "meta", "type": "FieldMeta" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "ValidationError!void",
       "is_pub": true,
       "line": 66
@@ -38,10 +30,6 @@
       "name": "validatePattern",
       "match_hash": "2f67c69c304a0f77168cd335dfc94ceb6c08f47effa395e62725735590cbae4c",
       "signature": "fn validatePattern(meta: FieldMeta, value: []const u8) -> ValidationError!void",
-      "params": [
-        { "name": "meta", "type": "FieldMeta" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "ValidationError!void",
       "is_pub": true,
       "line": 74
@@ -51,10 +39,6 @@
       "name": "validateValue",
       "match_hash": "2473c1898b13ddf33b7e04bdaeee829a35cfc1a85f7749bd090b0f7e7889c674",
       "signature": "fn validateValue(meta: FieldMeta, value: []const u8) -> ValidationError!void",
-      "params": [
-        { "name": "meta", "type": "FieldMeta" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "ValidationError!void",
       "is_pub": true,
       "line": 133

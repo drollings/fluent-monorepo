@@ -11,11 +11,6 @@
       "name": "gitDiff",
       "match_hash": "f7daaa717baab373ee4811d9bcd5fa5be3ec7098300c6b00905d76a77806a1a5",
       "signature": "fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cwd", "type": "[]const u8" },
-        { "name": "staged", "type": "bool" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 26
@@ -25,11 +20,6 @@
       "name": "splitDiffByFile",
       "match_hash": "ddd664bc1e8c40711bc194d383817ecb475f931e3bf4a3fbe4cb6384d05e413b",
       "signature": "fn splitDiffByFile(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "out", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 43
@@ -39,9 +29,6 @@
       "name": "chunkFilePath",
       "match_hash": "39248ac34b6782cc5591766c56a71dbed452ffa5144727f9211e6446ba4148fa",
       "signature": "fn chunkFilePath(chunk: []const u8) -> []const u8",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 59
@@ -51,10 +38,6 @@
       "name": "chunkIsExplainGenJson",
       "match_hash": "f9049a93bad7551de61ee3d048a514b7a3c303354c502c8359e8eb578797f68e",
       "signature": "fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) -> bool",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 70
@@ -64,10 +47,6 @@
       "name": "parseHunkRanges",
       "match_hash": "043a4711d602994c84cf80601bd5259aa67c5514d36b629c642002db8149d6e7",
       "signature": "fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) -> [][2]u32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "chunk", "type": "[]const u8" }
-      ],
       "returns": "[][2]u32",
       "is_pub": false,
       "line": 78
@@ -84,10 +63,6 @@
           "name": "deinit",
           "match_hash": "042783b2c7d1799953f4e60a7a88a2547ce835045b075796b877679379a8ca0d",
           "signature": "fn deinit(self: CommitMemberInfo, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "CommitMemberInfo" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 105
@@ -100,9 +75,6 @@
       "name": "memberLineNum",
       "match_hash": "711192274b261d0eb403a2569b3d2b77c7da17db889ff99ac77857dd32d713f3",
       "signature": "fn memberLineNum(obj: std.json.ObjectMap) -> ?u32",
-      "params": [
-        { "name": "obj", "type": "std.json.ObjectMap" }
-      ],
       "returns": "?u32",
       "is_pub": false,
       "line": 113
@@ -112,11 +84,6 @@
       "name": "lineInRanges",
       "match_hash": "6c6546f3359a39aec799fe1d149299703aebe5016c15d028f77697df8c918fee",
       "signature": "fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) -> bool",
-      "params": [
-        { "name": "line", "type": "u32" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" },
-        { "name": "context", "type": "u32" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 123
@@ -126,13 +93,6 @@
       "name": "appendMemberIfInRange",
       "match_hash": "ffb2954ecb59b0242deb44d868f318b69e29bce74faad0d2deada69aeeca5efa",
       "signature": "fn appendMemberIfInRange(allocator: std.mem.Allocator, member: std.json.Value, hunk_ranges: []const [2]u32, context: u32, out: *std.ArrayList(CommitMemberInfo)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "member", "type": "std.json.Value" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" },
-        { "name": "context", "type": "u32" },
-        { "name": "out", "type": "*std.ArrayList(CommitMemberInfo)" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 133
@@ -142,12 +102,6 @@
       "name": "loadChangedMembers",
       "match_hash": "bf108ce8e330598adf5e1436f8a053bbe69cc97e5f3b4759dc55e4261a4a129e",
       "signature": "fn loadChangedMembers(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "rel_path", "type": "[]const u8" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" }
-      ],
       "returns": "[]CommitMemberInfo",
       "is_pub": false,
       "line": 160
@@ -157,16 +111,6 @@
       "name": "generateCommitMessage",
       "match_hash": "137d7180ccc4d09b6ad26f8197ff3b7c5206137bf23fde0ec44ba389b99881a3",
       "signature": "fn generateCommitMessage(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_dir: []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "changed_files", "type": "[]const []const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "api_url", "type": "[]const u8" },
-        { "name": "model", "type": "[]const u8" },
-        { "name": "debug", "type": "bool" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 198
@@ -176,10 +120,6 @@
       "name": "writeTmpCommitMsg",
       "match_hash": "1cb02367971e603a40d939e715883c96b1c5c368cdcf7fdb477301b00e76fee1",
       "signature": "fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "msg", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 380
@@ -189,10 +129,6 @@
       "name": "loadCommitModelFromConfig",
       "match_hash": "f846a71c4a28ec8e67d7c230c13f1435c4957bc70fbcf25f262495838ffee7cb",
       "signature": "fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cwd", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 391
@@ -202,10 +138,6 @@
       "name": "cmdCommit",
       "match_hash": "5c061e6303cffe22101b8f53a1b5a7c2c2e2e4ac95f101e8d73d8339e89ac704",
       "signature": "fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 410
@@ -215,10 +147,6 @@
       "name": "parseHunkRangesPub",
       "match_hash": "bfcd78f146390ba27b671ff6b96dd2ce39bf7d64e4de449efb8370bbd4e83f99",
       "signature": "fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) -> [][2]u32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "chunk", "type": "[]const u8" }
-      ],
       "returns": "[][2]u32",
       "is_pub": true,
       "line": 630
@@ -228,12 +156,6 @@
       "name": "loadChangedMembersPub",
       "match_hash": "c1f862f15709622d7401df2febe47dd8ae5b8bf039fde614457f9d79c667de88",
       "signature": "fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "rel_path", "type": "[]const u8" },
-        { "name": "hunk_ranges", "type": "[]const [2]u32" }
-      ],
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
       "line": 634
@@ -243,10 +165,6 @@
       "name": "chunkIsIgnoredPub",
       "match_hash": "cab0bb84013ca986daef8929c18a462404c72c21956ed8064efe203b5ff28ad3",
       "signature": "fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) -> bool",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 638
@@ -256,9 +174,6 @@
       "name": "chunkFilePathPub",
       "match_hash": "b36b2bdb56d51fbd58b789a4697a0e1908bf3e4999040239552e41796cfa4d5a",
       "signature": "fn chunkFilePathPub(chunk: []const u8) -> []const u8",
-      "params": [
-        { "name": "chunk", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 642
@@ -268,11 +183,6 @@
       "name": "splitDiffByFilePub",
       "match_hash": "d072ca8ccfb1a0d91106496f203f642009e6d5508394f2b2620f6d46351fb8f8",
       "signature": "fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "diff", "type": "[]const u8" },
-        { "name": "out", "type": "*std.ArrayList([]const u8)" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 646

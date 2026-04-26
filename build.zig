@@ -184,6 +184,114 @@ pub fn build(b: *std.Build) void {
     });
 
     // -------------------------------------------------------------------------
+    // Tree-sitter libraries — AST parsing for non-Zig languages
+    // -------------------------------------------------------------------------
+    const ts_root = "/opt/src/development/tree-sitter";
+
+    const treesitter_c = b.addLibrary(.{
+        .name = "tree-sitter",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_c.addCSourceFile(.{
+        .file = .{ .cwd_relative = ts_root ++ "/tree-sitter/lib/src/lib.c" },
+        .flags = &.{ "-std=c11", "-O2", "-D_DEFAULT_SOURCE", "-D_POSIX_C_SOURCE=200809L" },
+    });
+    treesitter_c.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_c.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/src" });
+    treesitter_c.linkLibC();
+
+    const treesitter_python = b.addLibrary(.{
+        .name = "tree-sitter-python",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_python.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-python/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_python.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-python/src" });
+    treesitter_python.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_python.linkLibC();
+
+    const treesitter_cpp = b.addLibrary(.{
+        .name = "tree-sitter-cpp",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_cpp.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-cpp/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_cpp.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-cpp/src" });
+    treesitter_cpp.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_cpp.linkLibC();
+
+    const treesitter_rust = b.addLibrary(.{
+        .name = "tree-sitter-rust",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_rust.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-rust/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_rust.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-rust/src" });
+    treesitter_rust.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_rust.linkLibC();
+
+    const treesitter_go = b.addLibrary(.{
+        .name = "tree-sitter-go",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_go.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-go/src" },
+        .files = &.{"parser.c"},
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_go.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-go/src" });
+    treesitter_go.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_go.linkLibC();
+
+    const treesitter_typescript = b.addLibrary(.{
+        .name = "tree-sitter-typescript",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_typescript.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-typescript/typescript/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_typescript.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-typescript/typescript/src" });
+    treesitter_typescript.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_typescript.linkLibC();
+
+    const treesitter_tsx = b.addLibrary(.{
+        .name = "tree-sitter-tsx",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_tsx.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-typescript/tsx/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_tsx.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-typescript/tsx/src" });
+    treesitter_tsx.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_tsx.linkLibC();
+
+    const treesitter_php = b.addLibrary(.{
+        .name = "tree-sitter-php",
+        .root_module = b.createModule(.{ .target = target, .optimize = optimize }),
+    });
+    treesitter_php.addCSourceFiles(.{
+        .root = .{ .cwd_relative = ts_root ++ "/tree-sitter-php/php/src" },
+        .files = &.{ "parser.c", "scanner.c" },
+        .flags = &.{ "-std=c11", "-O2" },
+    });
+    treesitter_php.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter-php/php/src" });
+    treesitter_php.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+    treesitter_php.linkLibC();
+
+    // -------------------------------------------------------------------------
     // 1. Guidance executable
     // -------------------------------------------------------------------------
     const guidance_exe = b.addExecutable(.{
@@ -201,6 +309,15 @@ pub fn build(b: *std.Build) void {
     });
     guidance_exe.linkLibC();
     guidance_exe.linkSystemLibrary("sqlite3");
+    guidance_exe.linkLibrary(treesitter_c);
+    guidance_exe.linkLibrary(treesitter_python);
+    guidance_exe.linkLibrary(treesitter_cpp);
+    guidance_exe.linkLibrary(treesitter_rust);
+    guidance_exe.linkLibrary(treesitter_go);
+    guidance_exe.linkLibrary(treesitter_typescript);
+    guidance_exe.linkLibrary(treesitter_tsx);
+    guidance_exe.linkLibrary(treesitter_php);
+    guidance_exe.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
     b.installArtifact(guidance_exe);
 
     // Named step used by the Makefile TARGET_BIN rule so that only the
@@ -270,6 +387,15 @@ pub fn build(b: *std.Build) void {
     });
     explain_tests.linkLibC();
     explain_tests.linkSystemLibrary("sqlite3");
+    explain_tests.linkLibrary(treesitter_c);
+    explain_tests.linkLibrary(treesitter_python);
+    explain_tests.linkLibrary(treesitter_cpp);
+    explain_tests.linkLibrary(treesitter_rust);
+    explain_tests.linkLibrary(treesitter_go);
+    explain_tests.linkLibrary(treesitter_typescript);
+    explain_tests.linkLibrary(treesitter_tsx);
+    explain_tests.linkLibrary(treesitter_php);
+    explain_tests.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
 
     const guidance_tests_module = b.addTest(.{
         .root_module = b.createModule(.{
@@ -285,6 +411,15 @@ pub fn build(b: *std.Build) void {
     });
     guidance_tests_module.linkLibC();
     guidance_tests_module.linkSystemLibrary("sqlite3");
+    guidance_tests_module.linkLibrary(treesitter_c);
+    guidance_tests_module.linkLibrary(treesitter_python);
+    guidance_tests_module.linkLibrary(treesitter_cpp);
+    guidance_tests_module.linkLibrary(treesitter_rust);
+    guidance_tests_module.linkLibrary(treesitter_go);
+    guidance_tests_module.linkLibrary(treesitter_typescript);
+    guidance_tests_module.linkLibrary(treesitter_tsx);
+    guidance_tests_module.linkLibrary(treesitter_php);
+    guidance_tests_module.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
 
     // -- Vector / embedding tests --
     const vector_tests = b.addTest(.{

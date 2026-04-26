@@ -4,7 +4,6 @@
     "source": "src/ontology/yago.zig",
     "language": "zig"
   },
-  "capabilities": ["ontology"],
   "used_by": ["src/ontology/mapper.zig", "src/ontology/migration.zig", "src/ontology/root.zig"],
   "members": [
     {
@@ -86,9 +85,6 @@
       "name": "whitelistIRIs",
       "match_hash": "b4f2d47ff1c50c7bea97846dbbb0c9ffe61b657a4d27b516ab50b82bbd926246",
       "signature": "fn whitelistIRIs(out: [][]const u8) -> usize",
-      "params": [
-        { "name": "out", "type": "[][]const u8" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 147
@@ -98,9 +94,6 @@
       "name": "lookupClass",
       "match_hash": "71069eb59d32b3d652013448109c1b8db2102d12a9dda4fb84eae3ed67c7b8f2",
       "signature": "fn lookupClass(iri: []const u8) -> ?*const OntologyClass",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "?*const OntologyClass",
       "is_pub": true,
       "line": 158
@@ -110,10 +103,6 @@
       "name": "superclassChain",
       "match_hash": "382f298c8058e74358030efd3363006d377a5b62679357e1b492102025137a4f",
       "signature": "fn superclassChain(iri: []const u8, out: [][]const u8) -> usize",
-      "params": [
-        { "name": "iri", "type": "[]const u8" },
-        { "name": "out", "type": "[][]const u8" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 166
@@ -123,10 +112,6 @@
       "name": "isSubclassOf",
       "match_hash": "92cb617957ab94fa85802858db2276ad7904ff774bd6d8fb393a10fcb018d88f",
       "signature": "fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) -> bool",
-      "params": [
-        { "name": "child_iri", "type": "[]const u8" },
-        { "name": "parent_iri", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 180
@@ -136,9 +121,6 @@
       "name": "lookupProperty",
       "match_hash": "0013ab4f5493995d4512ebebc38ee9ef58de99edd375e1b43d9b7d3bfe195dae",
       "signature": "fn lookupProperty(iri: []const u8) -> ?*const OntologyProperty",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "?*const OntologyProperty",
       "is_pub": true,
       "line": 321

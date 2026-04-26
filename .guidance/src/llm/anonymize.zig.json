@@ -90,9 +90,6 @@
           "name": "placeholder",
           "match_hash": "4aea789f50a3c879ccfb34ff7d92675fc38b6f5875f40e33734e3b0032d4bd4e",
           "signature": "fn placeholder(self: AnonymizationPattern) -> []const u8",
-          "params": [
-            { "name": "self", "type": "AnonymizationPattern" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 23
@@ -105,11 +102,6 @@
       "name": "anonymizeContext",
       "match_hash": "54cac12ad7353c9d582873a1e112d41b368eb70f113c9fbe5866ecb9b0814ca9",
       "signature": "fn anonymizeContext(allocator: std.mem.Allocator, context: []const u8, patterns: []const AnonymizationPattern) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "context", "type": "[]const u8" },
-        { "name": "patterns", "type": "[]const AnonymizationPattern" }
-      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 42
@@ -119,11 +111,6 @@
       "name": "replacePattern",
       "match_hash": "1c141a67a62f0521b473bcfcdaaa53943271b3be9ad660aed32d4c0f50cda39e",
       "signature": "fn replacePattern(allocator: std.mem.Allocator, input: []const u8, pattern: AnonymizationPattern) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" },
-        { "name": "pattern", "type": "AnonymizationPattern" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 57
@@ -133,10 +120,6 @@
       "name": "replaceEmails",
       "match_hash": "58132a48634fc28914f1a8b07c86dbfecb273ae69b7e06ec9debd60c09b82c7f",
       "signature": "fn replaceEmails(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 79
@@ -146,9 +129,6 @@
       "name": "isEmailChar",
       "match_hash": "0d6a2214fa911d8a7def12f36bf1ce21c341dbd8bc1e493e87420e52faeec631",
       "signature": "fn isEmailChar(ch: u8) -> bool",
-      "params": [
-        { "name": "ch", "type": "u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 116
@@ -158,10 +138,6 @@
       "name": "replacePhones",
       "match_hash": "ef991e2e24cc27864cc46b3d4a0c26d7e2a008a7d7505823c9dfc443f025ed0c",
       "signature": "fn replacePhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 121
@@ -171,10 +147,6 @@
       "name": "replaceCreditCards",
       "match_hash": "000fdf74fc72a2895f0ac12fd5c4921aefedebe06a4fdeaedc9f28289100af31",
       "signature": "fn replaceCreditCards(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 151
@@ -184,10 +156,6 @@
       "name": "replaceIntlPhones",
       "match_hash": "e64e0b02d41ebfae76253241777ee8c3f068e06ada1d09517d2b6fae81e202b9",
       "signature": "fn replaceIntlPhones(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 180
@@ -197,10 +165,6 @@
       "name": "replaceSsnUs",
       "match_hash": "78540c096c1413b766085bf0a67cc31f65435ed4e0dab6dd25b6f218cccceeb6",
       "signature": "fn replaceSsnUs(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 215
@@ -210,10 +174,6 @@
       "name": "replaceSsnUk",
       "match_hash": "75adad53054d8ed6ac4cbdb11b49653de26654c024c94a60c03fbdc9cce60a09",
       "signature": "fn replaceSsnUk(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 245
@@ -223,10 +183,6 @@
       "name": "replaceSsnCa",
       "match_hash": "a92a60362a700afa3fda0e489b414de61fa14f467796f77441c7a5db9baa88f5",
       "signature": "fn replaceSsnCa(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 278
@@ -236,9 +192,6 @@
       "name": "isNDigits",
       "match_hash": "56cbb914f4ae5cb36f2950490fc6d10468b7ba597a3bc8faf27749cc55fd4ce4",
       "signature": "fn isNDigits(s: []const u8) -> bool",
-      "params": [
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 306
@@ -248,10 +201,6 @@
       "name": "replaceIpv4",
       "match_hash": "ce52e842864b8b93241834c7dd38b9acfb3bea3f6343fb5689f3f07732a213ea",
       "signature": "fn replaceIpv4(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 312
@@ -261,9 +210,6 @@
       "name": "looksLikeIpv4",
       "match_hash": "9160a75f42b35bab69be2a48efccf950e8450778ac5447ba1df48d2d052ad4e5",
       "signature": "fn looksLikeIpv4(s: []const u8) -> bool",
-      "params": [
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 344
@@ -273,10 +219,6 @@
       "name": "replaceIpv6",
       "match_hash": "5af31d98a99863a0c9f2bfb38ccbf450e4c0b35ef6dd9cd605ac17b7a010aaee",
       "signature": "fn replaceIpv6(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 363
@@ -286,9 +228,6 @@
       "name": "isHexChar",
       "match_hash": "15d3a006694f7894335944477ba0106338144591caddaddf84fc8c9a1af3ee3f",
       "signature": "fn isHexChar(c: u8) -> bool",
-      "params": [
-        { "name": "c", "type": "u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 394
@@ -298,10 +237,6 @@
       "name": "replaceBearerTokens",
       "match_hash": "7da19ca16ab65153ca1520bdd1c686bd907da65719676bb64282240bbf36645e",
       "signature": "fn replaceBearerTokens(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 399
@@ -311,10 +246,6 @@
       "name": "replaceAwsKeys",
       "match_hash": "af328bc4bb455eae767c8c22d96c127aa366e0ebf537e83a97f954e52751628e",
       "signature": "fn replaceAwsKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 430
@@ -324,10 +255,6 @@
       "name": "replaceGenericApiKeys",
       "match_hash": "8288cfbf74447a86821ece6dda2072232ddcdd89494149fe7506bc29e8a4b623",
       "signature": "fn replaceGenericApiKeys(allocator: std.mem.Allocator, input: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 463

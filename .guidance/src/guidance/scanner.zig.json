@@ -47,10 +47,6 @@
           "name": "init",
           "match_hash": "af21dc3b201891cc02da278d73b5a3733dbcf4412c8bf9ba9713235dd0cb0a5b",
           "signature": "fn init(allocator: std.mem.Allocator, workspace: []const u8) -> CodebaseScanner",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "workspace", "type": "[]const u8" }
-          ],
           "returns": "CodebaseScanner",
           "is_pub": true,
           "line": 65
@@ -60,9 +56,6 @@
           "name": "deinit",
           "match_hash": "0a9722d8de3cc259e49397feb16f1e5d0e9f8079a8eabe401ca13e02260410be",
           "signature": "fn deinit(self: *CodebaseScanner) -> void",
-          "params": [
-            { "name": "self", "type": "*CodebaseScanner" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 77
@@ -72,9 +65,6 @@
           "name": "scan",
           "match_hash": "a1be12a89b7f2f647bb833a5c09104e93e095d9b3afae6cfcda5a0f22d4364b8",
           "signature": "fn scan(self: *CodebaseScanner) -> void",
-          "params": [
-            { "name": "self", "type": "*CodebaseScanner" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 89
@@ -84,10 +74,6 @@
           "name": "scanWithDb",
           "match_hash": "35ae524cd77160fe79ebc167a3131148771d2556ff476e1052279bc1beef785b",
           "signature": "fn scanWithDb(self: *CodebaseScanner, db: *GuidanceDb) -> void",
-          "params": [
-            { "name": "self", "type": "*CodebaseScanner" },
-            { "name": "db", "type": "*GuidanceDb" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 101
@@ -97,13 +83,6 @@
           "name": "explain",
           "match_hash": "c8b50532f3aaa6905c539a521a5de3f80bff46aa1ff6cbcb6d6d3683a7482760",
           "signature": "fn explain(self: *CodebaseScanner, allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
-          "params": [
-            { "name": "self", "type": "*CodebaseScanner" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "db", "type": "*GuidanceDb" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" }
-          ],
           "returns": "[]types.Stage",
           "is_pub": true,
           "line": 120
@@ -113,10 +92,6 @@
           "name": "diagnose",
           "match_hash": "29dabcce4408ddf7a841720658f736b9076ac41bba91a185f3b382954779b752",
           "signature": "fn diagnose(self: *const CodebaseScanner, allocator: std.mem.Allocator) -> []u8",
-          "params": [
-            { "name": "self", "type": "*const CodebaseScanner" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]u8",
           "is_pub": true,
           "line": 142
@@ -126,9 +101,6 @@
           "name": "hasCapabilityDocs",
           "match_hash": "f1de32ee8cebce046dcb344538001f720e61f08918b980c20c9607fbfcd64a2a",
           "signature": "fn hasCapabilityDocs(self: *const CodebaseScanner) -> bool",
-          "params": [
-            { "name": "self", "type": "*const CodebaseScanner" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 203
@@ -141,10 +113,6 @@
       "name": "cmdScan",
       "match_hash": "57969508fd3c59c08c7cf88011610f556c56f8d7f8c5578b436aa15cc7990b12",
       "signature": "fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 214
@@ -154,10 +122,6 @@
       "name": "emitDiagnosis",
       "match_hash": "05c7df18a4e351244929c1b77444ed3defc5b2a10dd99dc4a2b4de5090c8897e",
       "signature": "fn emitDiagnosis(allocator: std.mem.Allocator, scanner: *const CodebaseScanner) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "scanner", "type": "*const CodebaseScanner" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 261

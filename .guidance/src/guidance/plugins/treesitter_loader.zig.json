@@ -1,0 +1,178 @@
+{
+  "meta": {
+    "module": "src.guidance.plugins.treesitter_loader",
+    "source": "src/guidance/plugins/treesitter_loader.zig",
+    "language": "zig"
+  },
+  "comment": " TreeSitterLoader — loads and manages tree-sitter language grammars.\n\n Each language grammar is exposed as a C function returning TSLanguage*.\n This module provides Zig wrappers for those functions.\n\n Grammars are loaded from tree-sitter-grammars/ directory, which contains\n submodules for each language parser.",
+  "used_by": ["src/guidance/plugins/treesitter_plugin.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Grammar",
+      "match_hash": "33c876df0c6fcaa6fcbd7dd761443c218b7d0fa0fe956aae0965cdb0c2cca7c9",
+      "signature": "keyword_struct Grammar { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "getLanguage",
+          "match_hash": "a0b55df9f2d581cdeec61af523c7c074a8849ae40d7a6e57f37587940a9ead8a",
+          "signature": "fn getLanguage(self: *const Grammar) -> *const c.TSLanguage",
+          "returns": "*const c.TSLanguage",
+          "is_pub": true,
+          "line": 21
+        }
+      ],
+      "line": 15
+    },
+    {
+      "type": "enum",
+      "name": "GrammarList",
+      "match_hash": "0fbf22316bfd00a909b92fceceb7495284d209cf4223a95bb009be93e8fddb45",
+      "signature": "keyword_enum GrammarList { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "python",
+          "is_pub": false,
+          "line": 28
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "cpp",
+          "is_pub": false,
+          "line": 29
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "rust",
+          "is_pub": false,
+          "line": 30
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "go",
+          "is_pub": false,
+          "line": 31
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "typescript",
+          "is_pub": false,
+          "line": 32
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "tsx",
+          "is_pub": false,
+          "line": 33
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "php",
+          "is_pub": false,
+          "line": 34
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getDescriptor",
+          "match_hash": "915baa2ad725793337ca1eb43fb2c0c0e5266333a2078a291c2d14822ff67a42",
+          "signature": "fn getDescriptor(self: GrammarList) -> Grammar",
+          "returns": "Grammar",
+          "is_pub": true,
+          "line": 37
+        }
+      ],
+      "line": 27
+    },
+    {
+      "type": "fn_decl",
+      "name": "pythonGrammar",
+      "match_hash": "259cd278009f63c24dae5567bf3ad7552f1363a97330e1d629f0c4c9bc436b52",
+      "signature": "fn pythonGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 51
+    },
+    {
+      "type": "fn_decl",
+      "name": "cppGrammar",
+      "match_hash": "d5992f69c3f9d042cff627a41b90ac5e1fc56b1b6e96dddd438dbdd00626c937",
+      "signature": "fn cppGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 62
+    },
+    {
+      "type": "fn_decl",
+      "name": "rustGrammar",
+      "match_hash": "e839c4baa1b6539dd8e3b1cc8e84a3d8b2efc1a6513e834d53eaa8ae476e63a2",
+      "signature": "fn rustGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 73
+    },
+    {
+      "type": "fn_decl",
+      "name": "goGrammar",
+      "match_hash": "260eb9de5fb7a3bd55ef19b28139ad2767af14fadf729cdb04206b0338194ad0",
+      "signature": "fn goGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 84
+    },
+    {
+      "type": "fn_decl",
+      "name": "typescriptGrammar",
+      "match_hash": "ab34d99a9326adea3685c08d15352a12c84851e0435c755ed6d95950c115f28b",
+      "signature": "fn typescriptGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 95
+    },
+    {
+      "type": "fn_decl",
+      "name": "tsxGrammar",
+      "match_hash": "a62e99adb36a29272c5efdf714b5549b18b41d16b194f86a4c5a65a6f880871a",
+      "signature": "fn tsxGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 106
+    },
+    {
+      "type": "fn_decl",
+      "name": "phpGrammar",
+      "match_hash": "3b7570d88e1851dfb23c713aaa61bb98c49509f42055969f1bf711a1c2d08646",
+      "signature": "fn phpGrammar() -> Grammar",
+      "returns": "Grammar",
+      "is_pub": true,
+      "line": 117
+    },
+    {
+      "type": "fn_decl",
+      "name": "findGrammarByExtension",
+      "match_hash": "8366a60ebbe00653d6cea84256733894837dd7a22471f681c4cdddd6b0884db9",
+      "signature": "fn findGrammarByExtension(ext: []const u8) -> ?Grammar",
+      "returns": "?Grammar",
+      "is_pub": true,
+      "line": 128
+    },
+    {
+      "type": "fn_decl",
+      "name": "validateGrammarABI",
+      "match_hash": "5d9238369ac581d22dc062419f82ee007c0fddca3d5473b2f25fffc4a7d72dfa",
+      "signature": "fn validateGrammarABI(grammar: Grammar) -> void",
+      "returns": "void",
+      "is_pub": true,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "grammar loading",
+      "is_pub": false,
+      "line": 162
+    }
+  ]
+}

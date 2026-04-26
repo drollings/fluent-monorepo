@@ -7,7 +7,6 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["llm-client"],
   "used_by": ["src/llm/root.zig"],
   "members": [
     {
@@ -38,11 +37,6 @@
           "name": "pack",
           "match_hash": "cedac4132f119898f67c7952902176f211a9b9995f06747db44ebc0772a0250c",
           "signature": "fn pack(self: *const Self, allocator: std.mem.Allocator, stages: []const Stage) -> []Stage",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "stages", "type": "[]const Stage" }
-          ],
           "returns": "[]Stage",
           "is_pub": true,
           "line": 65
@@ -55,9 +49,6 @@
       "name": "estimateTokens",
       "match_hash": "9c3d3ee2e8fc07d16cab08802d81332a4d8390d65afd3d6a00cf7113ed86b56d",
       "signature": "fn estimateTokens(content: []const u8) -> usize",
-      "params": [
-        { "name": "content", "type": "[]const u8" }
-      ],
       "returns": "usize",
       "is_pub": false,
       "line": 127
@@ -67,11 +58,6 @@
       "name": "makeStage",
       "match_hash": "d08cd3b1b99d680e99e7bed71df0016b76322d8788602814ffe010e7e76fdaa5",
       "signature": "fn makeStage(kind: StageKind, content: []const u8, relevance: f32) -> Stage",
-      "params": [
-        { "name": "kind", "type": "StageKind" },
-        { "name": "content", "type": "[]const u8" },
-        { "name": "relevance", "type": "f32" }
-      ],
       "returns": "Stage",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }

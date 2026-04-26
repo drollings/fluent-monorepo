@@ -4,7 +4,6 @@
     "source": "src/coral/verify.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -87,9 +86,6 @@
           "name": "init",
           "match_hash": "cbe207e837633d16cf6d0488014f98f99e0694583af85d7d5ac6223ae7a7b428",
           "signature": "fn init(allocator: std.mem.Allocator) -> IngestionReport",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "IngestionReport",
           "is_pub": true,
           "line": 46
@@ -99,9 +95,6 @@
           "name": "deinit",
           "match_hash": "6a21f4dca068ef78389e991f030e4e68dee764d3359fc041c60ec8bdc4b960d3",
           "signature": "fn deinit(self: *IngestionReport) -> void",
-          "params": [
-            { "name": "self", "type": "*IngestionReport" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 57
@@ -111,9 +104,6 @@
           "name": "hasErrors",
           "match_hash": "69b720f43cbf3b486e5b1ed9146253d7e41794db44df0ea54cfdca821ab7c492",
           "signature": "fn hasErrors(self: *const IngestionReport) -> bool",
-          "params": [
-            { "name": "self", "type": "*const IngestionReport" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 64
@@ -141,10 +131,6 @@
           "name": "init",
           "match_hash": "e07e85750f05d3456c9575280f986c446ba18a1b4f397dcadb1ce155d815e601",
           "signature": "fn init(allocator: std.mem.Allocator, config: VerifierConfig) -> Verifier",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "VerifierConfig" }
-          ],
           "returns": "Verifier",
           "is_pub": true,
           "line": 88
@@ -154,11 +140,6 @@
           "name": "verifyMapper",
           "match_hash": "e130255f4a10fcedfb1c7fd3bb53b75cb946deff9d5733497e8ca3809f89ecfa",
           "signature": "fn verifyMapper(self: *Verifier, mapper: *const TripleMapper, report: *IngestionReport) -> void",
-          "params": [
-            { "name": "self", "type": "*Verifier" },
-            { "name": "mapper", "type": "*const TripleMapper" },
-            { "name": "report", "type": "*IngestionReport" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 93
@@ -168,13 +149,6 @@
           "name": "verifyStats",
           "match_hash": "9c5489405198a852450995b8f3315296f6e95e9baa1c0ca68626d3b07584e6bd",
           "signature": "fn verifyStats(self: *Verifier, triples: usize, nodes: usize, edges: usize, report: *IngestionReport) -> void",
-          "params": [
-            { "name": "self", "type": "*Verifier" },
-            { "name": "triples", "type": "usize" },
-            { "name": "nodes", "type": "usize" },
-            { "name": "edges", "type": "usize" },
-            { "name": "report", "type": "*IngestionReport" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 129

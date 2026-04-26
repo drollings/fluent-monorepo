@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " edge_weights.zig — Co-occurrence edge weight computation.\n\n Computes edge weights for `neighbor_of` edges using a simplified PMI-inspired\n co-occurrence formula:\n\n   weight(a, b) = cooccurrence(a, b) / sqrt(degree(a) * degree(b))\n\n This normalises by the geometric mean of node degrees, so edges between\n high-degree nodes are not artificially inflated.\n\n §Usage (ingestion-time only — never called from query path):\n ```zig\n try EdgeWeights.compute(arena.allocator(), &library);\n ```\n\n §Notes:\n - Assumes `context_nodes.degree` has already been populated (run DegreeCentrality first).\n - Edge weights are stored in `neighbor_of.weight` for use by Dijkstra and Louvain.\n - Edges with zero weight (degree product is zero) are assigned weight 1.0 (fallback).",
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "test_decl",

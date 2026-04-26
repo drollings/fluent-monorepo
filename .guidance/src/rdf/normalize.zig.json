@@ -4,7 +4,6 @@
     "source": "src/rdf/normalize.zig",
     "language": "zig"
   },
-  "capabilities": ["rdf-parsing"],
   "used_by": ["src/rdf/root.zig"],
   "members": [
     {
@@ -12,9 +11,6 @@
       "name": "hashIRI",
       "match_hash": "3bd11917f4a916c532d18e551371516cf47532f50d137a6ed5d0119c2886bf87",
       "signature": "fn hashIRI(iri: []const u8) -> i64",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 20
@@ -24,10 +20,6 @@
       "name": "hashBlankNode",
       "match_hash": "d2b95131a34ddee8b3e71dde6abfca0e467972c76911003821b38c428c77c19b",
       "signature": "fn hashBlankNode(scope: []const u8, id: []const u8) -> i64",
-      "params": [
-        { "name": "scope", "type": "[]const u8" },
-        { "name": "id", "type": "[]const u8" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 28
@@ -103,9 +95,6 @@
       "name": "detectXsdType",
       "match_hash": "c1e63cb442ec667365d71614b8ebd76fead6a1c619752762660ab2e6114db3f4",
       "signature": "fn detectXsdType(datatype: ?[]const u8) -> XsdType",
-      "params": [
-        { "name": "datatype", "type": "?[]const u8" }
-      ],
       "returns": "XsdType",
       "is_pub": true,
       "line": 72
@@ -115,11 +104,6 @@
       "name": "normalizeLiteral",
       "match_hash": "805837019a562f646269d42aa7ff7ce573afc0d02aed02c1ee34baf7c0b9f1fa",
       "signature": "fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const u8) -> TypedValue",
-      "params": [
-        { "name": "value", "type": "[]const u8" },
-        { "name": "lang", "type": "?[]const u8" },
-        { "name": "datatype", "type": "?[]const u8" }
-      ],
       "returns": "TypedValue",
       "is_pub": true,
       "line": 89
@@ -136,10 +120,6 @@
           "name": "init",
           "match_hash": "5f263b9f4b18157fbf3ec32f8ad84c629e08b6f5a37d4d2a4d47afc08ba38cc5",
           "signature": "fn init(allocator: std.mem.Allocator, scope_id: []const u8) -> BlankNodeScope",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "scope_id", "type": "[]const u8" }
-          ],
           "returns": "BlankNodeScope",
           "is_pub": true,
           "line": 125
@@ -149,9 +129,6 @@
           "name": "deinit",
           "match_hash": "6d0dfb8993d5dcb20def820da0e2f7c04bb228c1bdf2a37d249693e303e837ca",
           "signature": "fn deinit(self: *BlankNodeScope) -> void",
-          "params": [
-            { "name": "self", "type": "*BlankNodeScope" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 133
@@ -161,10 +138,6 @@
           "name": "resolve",
           "match_hash": "4ad607e6f6c3fc1d475d7e525729976df4340e2861d3e41e42270207eb7627cb",
           "signature": "fn resolve(self: *BlankNodeScope, id: []const u8) -> i64",
-          "params": [
-            { "name": "self", "type": "*BlankNodeScope" },
-            { "name": "id", "type": "[]const u8" }
-          ],
           "returns": "i64",
           "is_pub": true,
           "line": 140

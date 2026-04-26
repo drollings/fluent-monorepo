@@ -1,0 +1,135 @@
+{
+  "meta": {
+    "module": "src.guidance.plugins.treesitter_extractor",
+    "source": "src/guidance/plugins/treesitter_extractor.zig",
+    "language": "zig"
+  },
+  "comment": " TreeSitterExtractor — walks tree-sitter syntax trees and extracts guidance members.\n\n Provides language-specific extraction logic for converting tree-sitter nodes\n into guidance Member types.",
+  "used_by": ["src/guidance/plugins/treesitter_plugin.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "MemberExtractor",
+      "match_hash": "68319129a7dfb21c84d65feba8f86a9c0661a62f1e960f934fabf13f2a6f2b84",
+      "signature": "keyword_struct MemberExtractor { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "e2c9b3c99a35dd7147f8311a8beabc67ecda708a27c003b3786356c8ae1ef81f",
+          "signature": "fn init(allocator: std.mem.Allocator, lang_name: []const u8, source: [:0]const u8) -> Self",
+          "returns": "Self",
+          "is_pub": true,
+          "line": 26
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "signature": "fn deinit(self: *Self) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 35
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "extract",
+          "match_hash": "80e5d089a5f5557a6eec765ac9ba5e8c3ff7f930072b4f4f4fec8b0719d9acf9",
+          "signature": "fn extract(self: *Self, root: c.TSNode) -> []Member",
+          "returns": "[]Member",
+          "is_pub": true,
+          "line": 40
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "walkNode",
+          "match_hash": "0ea5a4fe6665e4e87eeb418b7d28b25b8e2b8ab45bf7e896586735d52fea744b",
+          "signature": "fn walkNode(self: *Self, node: c.TSNode, depth: usize) -> void",
+          "returns": "void",
+          "is_pub": false,
+          "line": 46
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractMember",
+          "match_hash": "19e16733c836f588704d5c89120f5169d29ab1cd9d2afefccd2d139453632534",
+          "signature": "fn extractMember(self: *Self, node: c.TSNode, kind: []const u8, depth: usize) -> bool",
+          "returns": "bool",
+          "is_pub": false,
+          "line": 67
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getNodeType",
+          "match_hash": "3d6bc025cbdb0e8d36ae4b3dde686d76bd80b7a0983813788b6cf8e23e1ac927",
+          "signature": "fn getNodeType(self: *const Self, kind: []const u8) -> ?MemberType",
+          "returns": "?MemberType",
+          "is_pub": false,
+          "line": 115
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getNodeName",
+          "match_hash": "0ca1ce998cc38120e3574f40b2a68afc7fba402fdacb3696d073038e937c7f92",
+          "signature": "fn getNodeName(self: *const Self, node: c.TSNode, kind: []const u8) -> ?[]const u8",
+          "returns": "?[]const u8",
+          "is_pub": false,
+          "line": 172
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "getSignature",
+          "match_hash": "0ab3e294b9b1d5b00fd3d5dd632b02ec31bdcfda33112eb7104ac51c8dfc919d",
+          "signature": "fn getSignature(self: *const Self, node: c.TSNode, kind: []const u8, mtype: MemberType) -> []const u8",
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 200
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractParams",
+          "match_hash": "4d57e7862f03e3f3e9e6468b65fa13e2c6a0b5c96124469e77de65077ae0e229",
+          "signature": "fn extractParams(self: *const Self, node: c.TSNode, kind: []const u8) -> []const Param",
+          "returns": "[]const Param",
+          "is_pub": false,
+          "line": 231
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "extractReturnType",
+          "match_hash": "0223fb7ae5e4734b1e906fc0c947eea38f823ef86065cb7933162ddd46b198ba",
+          "signature": "fn extractReturnType(self: *const Self, node: c.TSNode, kind: []const u8) -> ?[]const u8",
+          "returns": "?[]const u8",
+          "is_pub": false,
+          "line": 239
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "isPublic",
+          "match_hash": "7e3157898d50a7a517d4cc9db7f3aaa069f5d2b1be86a5d4559884fc490e307b",
+          "signature": "fn isPublic(self: *const Self, node: c.TSNode, kind: []const u8) -> bool",
+          "returns": "bool",
+          "is_pub": false,
+          "line": 248
+        }
+    ,    {
+          "type": "fn_private",
+          "name": "nodeToSlice",
+          "match_hash": "4304c501fa782bf373080dce08d368333baafaac3e985beb6163ac6422ef1350",
+          "signature": "fn nodeToSlice(self: *const Self, node: c.TSNode) -> []const u8",
+          "returns": "[]const u8",
+          "is_pub": false,
+          "line": 279
+        }
+      ],
+      "line": 18
+    },
+    {
+      "type": "test_decl",
+      "name": "member extractor",
+      "is_pub": false,
+      "line": 286
+    }
+  ]
+}

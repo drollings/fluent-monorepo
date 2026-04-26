@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " pagerank.zig — PageRank via power iteration (optional, CLI-only).\n\n Adapted from the classic power-iteration algorithm.\n\n §When to use:\n PageRank is an optional ingestion-time algorithm.  It is NOT the default\n importance metric (degree centrality is).  Use PageRank for datasets where\n link topology matters more than raw connectivity:\n - Citation networks (authority detection)\n - Web-like graphs with strong hub/authority structure\n\n §Usage (CLI-only — never on query path):\n ```\n coral compute-pagerank [--damping 0.85] [--tolerance 0.0001] [--max-iter 20]\n ```\n\n §Implementation:\n Power iteration: `r' = (1-d)/n + d * A^T r`\n where A is the column-normalised adjacency matrix and d is the damping factor.\n We iterate until |r' - r|₁ < tolerance or max_iterations is reached.\n\n All intermediates are arena-allocated.",
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "struct",
@@ -27,9 +26,6 @@
           "name": "init",
           "match_hash": "a939b22a383b6e8ee81430bd4728902008dfc39ee15d8ce475a6fca75dbff8d6",
           "signature": "fn init(config: PageRankConfig) -> Self",
-          "params": [
-            { "name": "config", "type": "PageRankConfig" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 40
@@ -39,11 +35,6 @@
           "name": "run",
           "match_hash": "384653f431176f7d40f8d8a9012a7485eb6b1f42862f3a9c6371354ac818aac0",
           "signature": "fn run(self: Self, arena: Allocator, graph: *const CSRGraph) -> []f32",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "graph", "type": "*const CSRGraph" }
-          ],
           "returns": "[]f32",
           "is_pub": true,
           "line": 48

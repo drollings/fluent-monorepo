@@ -59,9 +59,6 @@
       "name": "detectIdentifierPattern",
       "match_hash": "809a63d310b48829bac0db0c7b76dcd05655b07ccf83e8cf2b88b4eabef3c719",
       "signature": "fn detectIdentifierPattern(query: []const u8) -> ?IdentifierMatch",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "?IdentifierMatch",
       "is_pub": true,
       "line": 40
@@ -71,9 +68,6 @@
       "name": "isPascalCase",
       "match_hash": "ee13e6822b929b781c3365d1ae8cd2642a10f4389fc90c90c5e6db52d9b9d533",
       "signature": "fn isPascalCase(s: []const u8) -> bool",
-      "params": [
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 93
@@ -83,10 +77,6 @@
       "name": "shouldSkipLLMSynthesis",
       "match_hash": "edb19eb02c82cb0a4dd606ac2535696bdbde212136bea4199940d1060af7d95c",
       "signature": "fn shouldSkipLLMSynthesis(query: []const u8, exact_match: bool) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "exact_match", "type": "bool" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 98

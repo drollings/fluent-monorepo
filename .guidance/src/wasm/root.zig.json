@@ -5,5 +5,5 @@
     "language": "zig"
   },
   "comment": " wasm — WebAssembly Sandboxing (Extism)\n\n Provides:\n   ExtismPlugin    — Extism C-API bindings\n   WasmManifest     — WASM module metadata\n   WasmPlugin      — Loaded plugin handle\n   HostFunctionContext — Host function execution context\n   WasmExecutionResult — Execution result\n   ToolCompilerConfig — Tool compiler configuration\n   ToolGenerator  — ToolGenerator from WASM\n   WasmToolCache  — Cache for compiled tools",
-  "used_by": ["src/vector/vector_db.zig"]
+  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
 }

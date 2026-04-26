@@ -66,10 +66,10 @@ guidance gen --infill           # fill missing LLM comments
 | `src/vector/vector_db.zig` | 1.0 | defines_anchor |
 | `src/guidance/comments/sync_tests.zig` | 0.9 | used_by |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
+| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
 | `src/guidance/sync/marker_tests.zig` | 0.9 | used_by |
 | `src/vector/root.zig` | 0.9 | used_by |
 | `src/vector/vector_db_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync/gen_files.zig` | 0.4 | path_heuristic |
 | `src/guidance/comments/sync.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/json_writer.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/commit.zig` | 0.4 | path_heuristic |

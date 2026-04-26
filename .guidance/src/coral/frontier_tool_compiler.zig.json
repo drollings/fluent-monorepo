@@ -4,8 +4,7 @@
     "source": "src/coral/frontier_tool_compiler.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
-  "used_by": ["src/coral/frontier.zig"],
+  "used_by": ["src/coral/frontier.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -19,9 +18,6 @@
           "name": "deinit",
           "match_hash": "e2a3a459cb01d474f140fbea3127f7d117963903ba146cc9186a49d386d18889",
           "signature": "fn deinit(self: *ExtractedCode) -> void",
-          "params": [
-            { "name": "self", "type": "*ExtractedCode" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 19
@@ -34,10 +30,6 @@
       "name": "extractFirstCodeBlock",
       "match_hash": "398f3579457ceb6e1b25729e69f9ebfc78ae6c97bbe023fdf8f231eee9d41410",
       "signature": "fn extractFirstCodeBlock(allocator: std.mem.Allocator, llm_response: []const u8) -> ?ExtractedCode",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "llm_response", "type": "[]const u8" }
-      ],
       "returns": "?ExtractedCode",
       "is_pub": true,
       "line": 25
@@ -47,9 +39,6 @@
       "name": "validateSource",
       "match_hash": "57727eb56d1e8c646ed1a7668eaa4a3b9914c77d3ebe2c634f496c6236e4403f",
       "signature": "fn validateSource(source: []const u8) -> bool",
-      "params": [
-        { "name": "source", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 54

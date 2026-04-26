@@ -12,11 +12,6 @@
       "name": "spawn",
       "match_hash": "b6250aa9aa819a9f1661df8ce2021517fd728b892c14123dd66e64f3fb843cda",
       "signature": "fn spawn(pool: *std.Thread.Pool, wg: *std.Thread.WaitGroup, unit: AnyWorkUnit) -> void",
-      "params": [
-        { "name": "pool", "type": "*std.Thread.Pool" },
-        { "name": "wg", "type": "*std.Thread.WaitGroup" },
-        { "name": "unit", "type": "AnyWorkUnit" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 23
@@ -26,9 +21,6 @@
       "name": "runUnit",
       "match_hash": "0f2b8e26654f27d04856a0a1204c420c56b5fc8c1d7faf57f982a2710335c751",
       "signature": "fn runUnit(unit: AnyWorkUnit) -> void",
-      "params": [
-        { "name": "unit", "type": "AnyWorkUnit" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 32

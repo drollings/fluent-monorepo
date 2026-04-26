@@ -687,6 +687,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
             ga.dry_run,
         );
         csp.generate_headers = ga.sync_headers;
+        csp.incremental = !ga.force;
         setupCspEnhancer(allocator, ga, &cfg, &csp);
         defer teardownCspEnhancer(allocator, &csp);
 

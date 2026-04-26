@@ -11,12 +11,6 @@
       "name": "loadSkillExcerpt",
       "match_hash": "9f3d219efa2895a40e36331519ebd887907af3dc64860e563973cb1018ec35a6",
       "signature": "fn loadSkillExcerpt(allocator: std.mem.Allocator, guidance_dir: []const u8, cwd: []const u8, skill_name: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "cwd", "type": "[]const u8" },
-        { "name": "skill_name", "type": "[]const u8" }
-      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 21
@@ -26,10 +20,6 @@
       "name": "parseSkillDocContent",
       "match_hash": "64451ca4a6636d27c055c1742efe8e4038fac8c27f28fbe852fb6a55319d2a68",
       "signature": "fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "content", "type": "[]const u8" }
-      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 47

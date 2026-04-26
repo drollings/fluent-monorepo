@@ -28,11 +28,6 @@
       "name": "formatCodeStages",
       "match_hash": "efa3de95d2c0ba1d2400b15ca184b05f2f44792e4c7e11385a6ef47b3020d462",
       "signature": "fn formatCodeStages(allocator: std.mem.Allocator, writer, stages: []const types_mod.Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "writer" },
-        { "name": "stages", "type": "[]const types_mod.Stage" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 40
@@ -42,10 +37,6 @@
       "name": "formatCapabilitySection",
       "match_hash": "a8b733db6658505bccef1925f6595a5843cea2ecd83d4957ba23963c68d724c5",
       "signature": "fn formatCapabilitySection(writer, stages: []const types_mod.Stage) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "stages", "type": "[]const types_mod.Stage" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 69
@@ -55,12 +46,6 @@
       "name": "formatMetadataSection",
       "match_hash": "08fed11289250478a7717761e0acb82b96cd0c7f43589b655c7e20886629e2e1",
       "signature": "fn formatMetadataSection(allocator: std.mem.Allocator, writer, query: []const u8, stages: []const types_mod.Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "writer" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types_mod.Stage" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 91
@@ -70,13 +55,6 @@
       "name": "formatStaged",
       "match_hash": "aed60b9366e52693044d4fbbdfde6fc48bddd69f12f380779617e310ef365c76",
       "signature": "fn formatStaged(allocator: std.mem.Allocator, query: []const u8, stages: []const types_mod.Stage, summary: ?[]const u8, _: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "stages", "type": "[]const types_mod.Stage" },
-        { "name": "summary", "type": "?[]const u8" },
-        { "name": "_", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 218
@@ -86,16 +64,6 @@
       "name": "formatLegacy",
       "match_hash": "41600d0d51fc105ba349931337c4de268488be11da3b2ebbd9b5d91560d545a4",
       "signature": "fn formatLegacy(allocator: std.mem.Allocator, query_text: []const u8, results: []const SearchResult, search_terms: []const []const u8, ai_summary: ?[]const u8, skill_excerpts: []const SkillExcerpt, excerpts: []const ExcerptEntry, file_matches: []const FileMatchItem) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "results", "type": "[]const SearchResult" },
-        { "name": "search_terms", "type": "[]const []const u8" },
-        { "name": "ai_summary", "type": "?[]const u8" },
-        { "name": "skill_excerpts", "type": "[]const SkillExcerpt" },
-        { "name": "excerpts", "type": "[]const ExcerptEntry" },
-        { "name": "file_matches", "type": "[]const FileMatchItem" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 254

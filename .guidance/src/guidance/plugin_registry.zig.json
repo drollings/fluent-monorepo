@@ -19,80 +19,57 @@
           "name": "init",
           "match_hash": "4cf7ef047edd8c359228c38b52c1f94c509665d7e1cc3508be970d1f9e73bb3f",
           "signature": "fn init(allocator: std.mem.Allocator) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "Self",
           "is_pub": true,
-          "line": 29
+          "line": 30
         }
     ,    {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
-          "line": 41
+          "line": 51
         }
     ,    {
           "type": "fn_decl",
           "name": "register",
           "match_hash": "d78862e92de5d2d10c9b946f3868181da086379cba68a6853c4791dec486e094",
           "signature": "fn register(self: *Self, allocator: std.mem.Allocator, p: LanguagePlugin) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "p", "type": "LanguagePlugin" }
-          ],
           "returns": "void",
           "is_pub": true,
-          "line": 48
+          "line": 58
         }
     ,    {
           "type": "fn_decl",
           "name": "getForExtension",
           "match_hash": "271c7cd9421f09de72cda3dcf7b55be13f60f8cf4c40f14f474f9624d3ee0b80",
           "signature": "fn getForExtension(self: *const Self, ext: []const u8) -> ?*const LanguagePlugin",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "ext", "type": "[]const u8" }
-          ],
           "returns": "?*const LanguagePlugin",
           "is_pub": true,
-          "line": 58
+          "line": 68
         }
     ,    {
           "type": "fn_decl",
           "name": "getForPath",
           "match_hash": "872b2971025031c58dcaa143cd89024333fe3a3834890bf57ef6f1f0d9bcef6a",
           "signature": "fn getForPath(self: *const Self, path: []const u8) -> ?*const LanguagePlugin",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "?*const LanguagePlugin",
           "is_pub": true,
-          "line": 63
+          "line": 73
         }
     ,    {
           "type": "fn_decl",
           "name": "registeredLanguages",
           "match_hash": "8b375d9555bbd0dc3d8cca6fe7a2007954d9afce3dcd0e96005e41809bf8294e",
           "signature": "fn registeredLanguages(self: *const Self, allocator: std.mem.Allocator) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 71
+          "line": 81
         }
       ],
-      "line": 18
+      "line": 19
     }
   ]
 }

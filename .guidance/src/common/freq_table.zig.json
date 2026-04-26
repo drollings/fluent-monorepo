@@ -29,9 +29,6 @@
       "name": "setFrequencyTable",
       "match_hash": "c505ac25eba40f4217ea5ae3f25b56516df69cb710811643b20780549b854153",
       "signature": "fn setFrequencyTable(table: *const FrequencyTable) -> void",
-      "params": [
-        { "name": "table", "type": "*const FrequencyTable" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 50
@@ -50,10 +47,6 @@
       "name": "pairWeight",
       "match_hash": "fc8bbf9e6d9c0544715ae0494c4238b6d4638925fd7c5d92a5a470fc6d45c2fb",
       "signature": "fn pairWeight(a: u8, b: u8) -> u16",
-      "params": [
-        { "name": "a", "type": "u8" },
-        { "name": "b", "type": "u8" }
-      ],
       "returns": "u16",
       "is_pub": true,
       "line": 58
@@ -63,9 +56,6 @@
       "name": "buildFrequencyTable",
       "match_hash": "7271e00c212a14455edda0dd184e9af8e18227bb1e474f0d6e11c18727252ccd",
       "signature": "fn buildFrequencyTable(contents: []const u8) -> FrequencyTable",
-      "params": [
-        { "name": "contents", "type": "[]const u8" }
-      ],
       "returns": "FrequencyTable",
       "is_pub": true,
       "line": 62
@@ -75,9 +65,6 @@
       "name": "buildFrequencyTableFromMap",
       "match_hash": "adbcc3bc2b79f9f92256ca46294bf0039c256b704dfa22cc89d12c797a666eb0",
       "signature": "fn buildFrequencyTableFromMap(contents_map: *const std.StringHashMap([]const u8)) -> FrequencyTable",
-      "params": [
-        { "name": "contents_map", "type": "*const std.StringHashMap([]const u8)" }
-      ],
       "returns": "FrequencyTable",
       "is_pub": true,
       "line": 75
@@ -87,10 +74,6 @@
       "name": "writeFrequencyTable",
       "match_hash": "65fcf853b75146e7dc5473354215a343b8b63b0b93a2a2deaca0bf781daf38e2",
       "signature": "fn writeFrequencyTable(dir_path: []const u8, table: *const FrequencyTable) -> void",
-      "params": [
-        { "name": "dir_path", "type": "[]const u8" },
-        { "name": "table", "type": "*const FrequencyTable" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 92
@@ -100,9 +83,6 @@
       "name": "readFrequencyTable",
       "match_hash": "013cd7c92f42d9ee383a538c9427a949cf49f7358669840cb797ffc1e838e5c1",
       "signature": "fn readFrequencyTable(dir_path: []const u8) -> ?FrequencyTable",
-      "params": [
-        { "name": "dir_path", "type": "[]const u8" }
-      ],
       "returns": "?FrequencyTable",
       "is_pub": true,
       "line": 112

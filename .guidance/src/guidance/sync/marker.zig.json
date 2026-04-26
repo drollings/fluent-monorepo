@@ -5,17 +5,13 @@
     "language": "zig"
   },
   "comment": " Mtime-based change detection for guidance's incremental RALPH loop.\n\n ## Design\n\n The guidance JSON file's mtime IS the per-file marker.  When a provider\n (Zig built-in, guidance-py, or any future language tool) finishes its\n full test→lint→fmt→guidance cycle for a source file, it writes the JSON,\n advancing its mtime.  guidance then uses a simple mtime comparison to\n decide whether re-processing is needed:\n\n   - JSON absent → stale, needs processing\n   - JSON mtime == src_mtime - 1 second → validated, no changes, skip\n   - JSON mtime > src_mtime → needs processing (e.g., imported JSON)\n   - JSON mtime < src_mtime (but not src_mtime - 1) → stale, needs processing\n\n ## Validated Pattern\n\n When a file is processed and no meaningful changes are needed (members match,\n comments in sync), we set JSON mtime to src_mtime - 1 second. This creates\n a recognizable pattern that `fileNeedsProcessing` can identify to skip\n reprocessing on subsequent runs.\n\n ## Test marker\n\n A separate marker file `.guidance/.marks/test_passed` records the last\n successful test run.  If no source file is newer than this marker, tests\n can be skipped.  This enables fast incremental runs of lint→fmt→guidance\n without re-running the full test suite.\n\n ## Provider contract\n\n Each provider (built-in or external) must:\n   1. Run the language test suite (once, whole suite).\n   2. Run lint on the file.\n   3. Run the formatter on the file (must precede AST parse so line numbers\n      in the JSON reflect the final formatted source).\n   4. Generate or update the guidance JSON.\n\n The Zig provider implements steps 1-4 inside guidance itself.\n External providers (e.g. guidance-py) honour the same contract in their\n own implementation.",
-  "used_by": ["src/guidance/sync/marker_tests.zig"],
+  "used_by": ["src/guidance/sync/gen_files.zig", "src/guidance/sync/marker_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "fileNeedsProcessing",
       "match_hash": "b526235a30c8c21f2653a5630d8aed4adad1cb4edc7e3316e18431ff71f919e7",
       "signature": "fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) -> bool",
-      "params": [
-        { "name": "src_abs", "type": "[]const u8" },
-        { "name": "json_abs", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 51
@@ -25,9 +21,6 @@
       "name": "fileMtime",
       "match_hash": "cc7b532687c5ba2e7739740fe9e69621e2b34b09b18db587033c52e004805a95",
       "signature": "fn fileMtime(path: []const u8) -> ?i128",
-      "params": [
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "?i128",
       "is_pub": true,
       "line": 60
@@ -37,9 +30,6 @@
       "name": "touchTestMarker",
       "match_hash": "bb2145b4d939f413c260fea37d699671045554089dd092a32a5098bc0398555c",
       "signature": "fn touchTestMarker(marker_path: []const u8) -> void",
-      "params": [
-        { "name": "marker_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 101
@@ -49,10 +39,6 @@
       "name": "touchFileAfter",
       "match_hash": "05c519a4d7d5e3e624410207eccc611466c64fff97b9522b546987a8b11253cb",
       "signature": "fn touchFileAfter(target_path: []const u8, ref_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" },
-        { "name": "ref_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 109
@@ -62,9 +48,6 @@
       "name": "touchFileNow",
       "match_hash": "ed8a2859edaa3a8a5fae56d6144a5b1b5f647c83a7f7a4e68c7bccfe9587db27",
       "signature": "fn touchFileNow(target_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 123
@@ -74,9 +57,6 @@
       "name": "touchFileNowPlusOne",
       "match_hash": "3f57dff9c746a84ee181f61767a40d2e7ccd3ffbf29916047431be6a298df9fd",
       "signature": "fn touchFileNowPlusOne(target_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 132

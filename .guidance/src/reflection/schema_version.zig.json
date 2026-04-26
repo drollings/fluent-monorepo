@@ -19,10 +19,6 @@
           "name": "compatible",
           "match_hash": "30edc5ac9ae48c60a9bd595b22ae36d6c18ebf0ed597810fd6d89f43c16dfc3e",
           "signature": "fn compatible(self: SchemaVersion, other: SchemaVersion) -> bool",
-          "params": [
-            { "name": "self", "type": "SchemaVersion" },
-            { "name": "other", "type": "SchemaVersion" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 55
@@ -32,10 +28,6 @@
           "name": "isNewerThan",
           "match_hash": "b7d5ec51daa48c8870d9ba6a89b2621a5c019d61a4a27b16e7cb3aa986d3f53e",
           "signature": "fn isNewerThan(self: SchemaVersion, other: SchemaVersion) -> bool",
-          "params": [
-            { "name": "self", "type": "SchemaVersion" },
-            { "name": "other", "type": "SchemaVersion" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 60
@@ -45,10 +37,6 @@
           "name": "eql",
           "match_hash": "15b1b5087ea49b816e79d96bf2af6d6d8487a5dfda48e938b497695058b1598f",
           "signature": "fn eql(self: SchemaVersion, other: SchemaVersion) -> bool",
-          "params": [
-            { "name": "self", "type": "SchemaVersion" },
-            { "name": "other", "type": "SchemaVersion" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 66
@@ -58,10 +46,6 @@
           "name": "format",
           "match_hash": "5e8ce5fcb00bc1ecd38738b1eb8de7cba51692bf525cc4f620aa770e4d719f14",
           "signature": "fn format(self: SchemaVersion, writer) -> void",
-          "params": [
-            { "name": "self", "type": "SchemaVersion" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 71
@@ -74,10 +58,6 @@
       "name": "checkCompatible",
       "match_hash": "194f410bb9942fa06c4db647fb2bb705d1f4d569bb9b52bbc56b5437c40f0b57",
       "signature": "fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) -> error{SchemaMismatch}!void",
-      "params": [
-        { "name": "stored", "type": "SchemaVersion" },
-        { "name": "current", "type": "SchemaVersion" }
-      ],
       "returns": "error{SchemaMismatch}!void",
       "is_pub": true,
       "line": 83

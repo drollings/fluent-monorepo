@@ -22,10 +22,6 @@
           "name": "vector",
           "match_hash": "95dd6799f2819a084f715ac0d752ef974c6fbff1829cdf8a3fc37726726697b9",
           "signature": "fn vector(self: BatchEmbedding, i: usize) -> []f32",
-          "params": [
-            { "name": "self", "type": "BatchEmbedding" },
-            { "name": "i", "type": "usize" }
-          ],
           "returns": "[]f32",
           "is_pub": true,
           "line": 35
@@ -35,10 +31,6 @@
           "name": "deinit",
           "match_hash": "c4af9de290d5ea2d11c73f4eb0f23f8648560d9aef3b299a3b4de57430b40841",
           "signature": "fn deinit(self: BatchEmbedding, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "BatchEmbedding" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 39
@@ -61,10 +53,6 @@
           "name": "make",
           "match_hash": "b4274a83762efb75a8650de093cf6537806521b1ef4b64f3da16feb412c7e72c",
           "signature": "fn make(ptr: *anyopaque, vtable: *const VTable) -> EmbeddingProvider",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" },
-            { "name": "vtable", "type": "*const VTable" }
-          ],
           "returns": "EmbeddingProvider",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -77,9 +65,6 @@
           "name": "getName",
           "match_hash": "838473841a2c48a0e9228f36440126f7f952f77e063057d4f048f15385f95657",
           "signature": "fn getName(self: EmbeddingProvider) -> []const u8",
-          "params": [
-            { "name": "self", "type": "EmbeddingProvider" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 71
@@ -89,9 +74,6 @@
           "name": "getDimensions",
           "match_hash": "e51c12fd4f727741faa13cecaf87c571fc884137f83f01d338b3daa437353b4b",
           "signature": "fn getDimensions(self: EmbeddingProvider) -> u32",
-          "params": [
-            { "name": "self", "type": "EmbeddingProvider" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 75
@@ -101,11 +83,6 @@
           "name": "embed",
           "match_hash": "7284091b5dfdcd07d48d7edad0315d6d32c7b5e0e055577ee304d242cfac5bad",
           "signature": "fn embed(self: EmbeddingProvider, allocator: std.mem.Allocator, text: []const u8) -> []f32",
-          "params": [
-            { "name": "self", "type": "EmbeddingProvider" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "[]f32",
           "is_pub": true,
           "line": 83
@@ -115,11 +92,6 @@
           "name": "embedBatch",
           "match_hash": "774bca816066d15948585cf60897846d8675721ddd01ee6e729d356ce28c16fe",
           "signature": "fn embedBatch(self: EmbeddingProvider, allocator: std.mem.Allocator, texts: []const []const u8) -> BatchEmbedding",
-          "params": [
-            { "name": "self", "type": "EmbeddingProvider" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "texts", "type": "[]const []const u8" }
-          ],
           "returns": "BatchEmbedding",
           "is_pub": true,
           "line": 90
@@ -129,9 +101,6 @@
           "name": "deinit",
           "match_hash": "9725b124a22f8c70559ec633e1d924bc2ef505457c692efef955f4e1a3aac1bf",
           "signature": "fn deinit(self: EmbeddingProvider) -> void",
-          "params": [
-            { "name": "self", "type": "EmbeddingProvider" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 97
@@ -151,9 +120,6 @@
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
-          "params": [
-            { "name": "_", "type": "*anyopaque" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 110
@@ -163,9 +129,6 @@
           "name": "implDimensions",
           "match_hash": "830c732514f31488a60e54fc79b0e2ddda15ebf03d50c93cce944edf850dded8",
           "signature": "fn implDimensions(_: *anyopaque) -> u32",
-          "params": [
-            { "name": "_", "type": "*anyopaque" }
-          ],
           "returns": "u32",
           "is_pub": false,
           "line": 114
@@ -175,11 +138,6 @@
           "name": "implEmbed",
           "match_hash": "5d8603ff383bcf92f1b7ea77dadd6dec8c935589d78bacc30992c9110d0d974a",
           "signature": "fn implEmbed(_: *anyopaque, allocator: std.mem.Allocator, _: []const u8) -> anyerror![]f32",
-          "params": [
-            { "name": "_", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "_", "type": "[]const u8" }
-          ],
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 118
@@ -189,11 +147,6 @@
           "name": "implEmbedBatch",
           "match_hash": "46975e87444b1e556a8a193f7135e35352425b68139094c3c10367b682301d30",
           "signature": "fn implEmbedBatch(_: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) -> anyerror!BatchEmbedding",
-          "params": [
-            { "name": "_", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "texts", "type": "[]const []const u8" }
-          ],
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 122
@@ -203,9 +156,6 @@
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 126
@@ -215,9 +165,6 @@
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
           "line": 141
@@ -237,12 +184,6 @@
           "name": "init",
           "match_hash": "d692d61afff8ac31585aab33a9e5112452ae002cc0f4a45c7f571385e7a8bf8e",
           "signature": "fn init(allocator: std.mem.Allocator, model: ?[]const u8, base_url: ?[]const u8, dims: ?u32) -> *Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "model", "type": "?[]const u8" },
-            { "name": "base_url", "type": "?[]const u8" },
-            { "name": "dims", "type": "?u32" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 161
@@ -252,9 +193,6 @@
           "name": "deinitSelf",
           "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
           "signature": "fn deinitSelf(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 185
@@ -264,10 +202,6 @@
           "name": "buildUrl",
           "match_hash": "4828b1765b4c2c18871c4c0550a26bb8e3e4ece3a8c29714865446005671db1f",
           "signature": "fn buildUrl(self: *const Self, allocator: std.mem.Allocator) -> []u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]u8",
           "is_pub": false,
           "line": 191
@@ -277,9 +211,6 @@
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
-          "params": [
-            { "name": "_", "type": "*anyopaque" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 195
@@ -289,9 +220,6 @@
           "name": "implDimensions",
           "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
           "signature": "fn implDimensions(ptr: *anyopaque) -> u32",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" }
-          ],
           "returns": "u32",
           "is_pub": false,
           "line": 199
@@ -301,11 +229,6 @@
           "name": "implEmbed",
           "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
           "signature": "fn implEmbed(ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) -> anyerror![]f32",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 204
@@ -315,11 +238,6 @@
           "name": "implEmbedBatch",
           "match_hash": "7759cdf3db2bdb545c83356b9d06197cc5a97a166a9b4eeb2351d65c58b1a06a",
           "signature": "fn implEmbedBatch(ptr: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) -> anyerror!BatchEmbedding",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "texts", "type": "[]const []const u8" }
-          ],
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 249
@@ -329,9 +247,6 @@
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 304
@@ -341,9 +256,6 @@
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
           "line": 317
@@ -356,10 +268,6 @@
       "name": "parseOllamaResponse",
       "match_hash": "fe564fea578ea45e95c15e03e80ec2eca656ce3506493b04740c1d2934f131dd",
       "signature": "fn parseOllamaResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> []f32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_bytes", "type": "[]const u8" }
-      ],
       "returns": "[]f32",
       "is_pub": true,
       "line": 323
@@ -369,10 +277,6 @@
       "name": "parseOllamaBatchResponse",
       "match_hash": "4bc626ce11432f161f7ebd5e1bf9ac5cfe032d02994b4b2dc691b79d8d05a25f",
       "signature": "fn parseOllamaBatchResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> BatchEmbedding",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_bytes", "type": "[]const u8" }
-      ],
       "returns": "BatchEmbedding",
       "is_pub": true,
       "line": 358
@@ -389,13 +293,6 @@
           "name": "init",
           "match_hash": "321e062d17072c6308647d6388b8dd36193297c16018548fa1ae88702cac1316",
           "signature": "fn init(allocator: std.mem.Allocator, base_url: []const u8, api_key: []const u8, model: []const u8, dims: u32) -> *Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "base_url", "type": "[]const u8" },
-            { "name": "api_key", "type": "[]const u8" },
-            { "name": "model", "type": "[]const u8" },
-            { "name": "dims", "type": "u32" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 413
@@ -405,9 +302,6 @@
           "name": "deinitSelf",
           "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
           "signature": "fn deinitSelf(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 441
@@ -417,10 +311,6 @@
           "name": "embeddingsUrl",
           "match_hash": "be0462ccd4878425a12848483f8a147713a870f024609fb8810366f93161f9cf",
           "signature": "fn embeddingsUrl(self: *const Self, allocator: std.mem.Allocator) -> []u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]u8",
           "is_pub": false,
           "line": 448
@@ -430,9 +320,6 @@
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
           "signature": "fn implName(_: *anyopaque) -> []const u8",
-          "params": [
-            { "name": "_", "type": "*anyopaque" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 466
@@ -442,9 +329,6 @@
           "name": "implDimensions",
           "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
           "signature": "fn implDimensions(ptr: *anyopaque) -> u32",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" }
-          ],
           "returns": "u32",
           "is_pub": false,
           "line": 470
@@ -454,11 +338,6 @@
           "name": "implEmbed",
           "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
           "signature": "fn implEmbed(ptr: *anyopaque, allocator: std.mem.Allocator, text: []const u8) -> anyerror![]f32",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 475
@@ -468,11 +347,6 @@
           "name": "implEmbedBatch",
           "match_hash": "7759cdf3db2bdb545c83356b9d06197cc5a97a166a9b4eeb2351d65c58b1a06a",
           "signature": "fn implEmbedBatch(ptr: *anyopaque, allocator: std.mem.Allocator, texts: []const []const u8) -> anyerror!BatchEmbedding",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "texts", "type": "[]const []const u8" }
-          ],
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 524
@@ -482,9 +356,6 @@
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
           "signature": "fn implDeinit(ptr: *anyopaque) -> void",
-          "params": [
-            { "name": "ptr", "type": "*anyopaque" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 583
@@ -494,9 +365,6 @@
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
           "signature": "fn provider(self: *Self) -> EmbeddingProvider",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "EmbeddingProvider",
           "is_pub": true,
           "line": 596
@@ -509,10 +377,6 @@
       "name": "parseOpenAiResponse",
       "match_hash": "07e942a3f138de935f27e37dbeee413047b56588e8135f16c377751c397cb9f5",
       "signature": "fn parseOpenAiResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> []f32",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_bytes", "type": "[]const u8" }
-      ],
       "returns": "[]f32",
       "is_pub": true,
       "line": 602
@@ -522,10 +386,6 @@
       "name": "parseOpenAiBatchResponse",
       "match_hash": "20630d79d80990b51b5b956752cf547e42e86556a13a3bb0740506c36e44a595",
       "signature": "fn parseOpenAiBatchResponse(allocator: std.mem.Allocator, json_bytes: []const u8) -> BatchEmbedding",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_bytes", "type": "[]const u8" }
-      ],
       "returns": "BatchEmbedding",
       "is_pub": true,
       "line": 641
@@ -535,13 +395,6 @@
       "name": "createEmbeddingProvider",
       "match_hash": "f4541a49074bdd4a13ca18f33d2460fa69d532c4e3cc42a30b505e84db89e18b",
       "signature": "fn createEmbeddingProvider(allocator: std.mem.Allocator, provider_name: []const u8, api_key: ?[]const u8, model: []const u8, dims: u32) -> EmbeddingProvider",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "provider_name", "type": "[]const u8" },
-        { "name": "api_key", "type": "?[]const u8" },
-        { "name": "model", "type": "[]const u8" },
-        { "name": "dims", "type": "u32" }
-      ],
       "returns": "EmbeddingProvider",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }

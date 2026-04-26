@@ -61,9 +61,6 @@
           "name": "fromExtension",
           "match_hash": "6f447af6c3fa7a291b29f33742dfd4c6450fe9893bc11a7f92c5b8d6d2eb651b",
           "signature": "fn fromExtension(ext: []const u8) -> FileType",
-          "params": [
-            { "name": "ext", "type": "[]const u8" }
-          ],
           "returns": "FileType",
           "is_pub": true,
           "line": 28
@@ -73,9 +70,6 @@
           "name": "toStr",
           "match_hash": "c096e2640d86a44aa2ad5650646b8de6b6c1e751e03ad85871504e2dc7db80ee",
           "signature": "fn toStr(self: FileType) -> []const u8",
-          "params": [
-            { "name": "self", "type": "FileType" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 46
@@ -282,10 +276,6 @@
       "name": "freeStage",
       "match_hash": "9f2aee87a48630684efef7ee99c3c969ce8d889340e1d03519eaec3031f08a41",
       "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "s", "type": "Stage" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 228
@@ -295,10 +285,6 @@
       "name": "freeStages",
       "match_hash": "6b08128aa825462aa313132148b4892e55db1ae9e5834757b4a6625b607d58d4",
       "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "stages", "type": "[]const Stage" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 234
@@ -316,10 +302,6 @@
       "name": "stepPrint",
       "match_hash": "57b5a35bdde4fc3d956262379dc8fc4730808f5aaddcaa8b4cc1dc67b3d2b3bc",
       "signature": "fn stepPrint(fmt: []const u8, args) -> void",
-      "params": [
-        { "name": "fmt", "type": "[]const u8" },
-        { "name": "args" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 252

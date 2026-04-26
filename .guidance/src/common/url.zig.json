@@ -11,9 +11,6 @@
       "name": "isLocalHost",
       "match_hash": "d12c391f50883063f3382e61372876a778c2bcb977bbc1ac582f84a592b22200",
       "signature": "fn isLocalHost(host: []const u8) -> bool",
-      "params": [
-        { "name": "host", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 11
@@ -23,9 +20,6 @@
       "name": "isPrivateIp",
       "match_hash": "323ca53f5899f43d8df925ad8aa7d7ee4ad2336639a374210a970c562603489e",
       "signature": "fn isPrivateIp(host: []const u8) -> bool",
-      "params": [
-        { "name": "host", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 20
@@ -35,9 +29,6 @@
       "name": "extractHost",
       "match_hash": "2d345d024d6b848ca716f474b0eb1b82a66f779eb7615c42143701cbfe96ea93",
       "signature": "fn extractHost(url: []const u8) -> []const u8",
-      "params": [
-        { "name": "url", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 61
@@ -47,9 +38,6 @@
       "name": "validateHttpsOrLocalHttp",
       "match_hash": "8f87f3aa049f96389f4164f1ee8fa3de02b56b28388f89a6747045969953b792",
       "signature": "fn validateHttpsOrLocalHttp(url: []const u8) -> void",
-      "params": [
-        { "name": "url", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 69

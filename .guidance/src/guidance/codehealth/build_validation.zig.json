@@ -20,10 +20,6 @@
       "name": "extractPathRefs",
       "match_hash": "591e3800d09cb85003331348da4b592459e63b3c85418ae0661a88feb6dcaa7c",
       "signature": "fn extractPathRefs(allocator: std.mem.Allocator, src: []const u8) -> []PathRef",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "src", "type": "[]const u8" }
-      ],
       "returns": "[]PathRef",
       "is_pub": false,
       "line": 43
@@ -33,10 +29,6 @@
       "name": "validateBuildZig",
       "match_hash": "54959a4c2c154ebbcc5325d46a149f302a35cde0e1cda66a411309c311d6e340",
       "signature": "fn validateBuildZig(allocator: std.mem.Allocator, workspace: []const u8) -> []BuildAnomaly",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
       "returns": "[]BuildAnomaly",
       "is_pub": true,
       "line": 91
@@ -46,10 +38,6 @@
       "name": "writeAiOutput",
       "match_hash": "af53f17afca799d70692bf43645760e9db3d07106bdbb83c69fbba1f3d683383",
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const BuildAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 139
@@ -59,10 +47,6 @@
       "name": "writeHumanOutput",
       "match_hash": "590642ac0e2b87e91c00df57d8f80f2df350fbcbed1c6f8022a84e4507eabd15",
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const BuildAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 161
@@ -72,10 +56,6 @@
       "name": "writeJsonFragment",
       "match_hash": "c00faddbbfe0990c99b48dd271ac42b0996826a8f17b1089752911f577c66639",
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const BuildAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 171
@@ -93,12 +73,6 @@
       "name": "fixUncoveredTestFiles",
       "match_hash": "422f17162e9aee9fbf032a1b5ae1411aa90fd8b93fa4304b2e69b3ee79d43365",
       "signature": "fn fixUncoveredTestFiles(allocator: std.mem.Allocator, workspace: []const u8, uncovered: []const []const u8, dry_run: bool) -> FixBuildStats",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "uncovered", "type": "[]const []const u8" },
-        { "name": "dry_run", "type": "bool" }
-      ],
       "returns": "FixBuildStats",
       "is_pub": true,
       "line": 209
@@ -108,13 +82,6 @@
       "name": "addOneTestTarget",
       "match_hash": "e98bbdec08eea28e9b15bb740644891e277d02acd3b364bc22b43581e15fe1b7",
       "signature": "fn addOneTestTarget(allocator: std.mem.Allocator, build_zig_path: []const u8, workspace: []const u8, tests_zig_rel: []const u8, dry_run: bool) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "build_zig_path", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "tests_zig_rel", "type": "[]const u8" },
-        { "name": "dry_run", "type": "bool" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 236

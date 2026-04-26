@@ -28,9 +28,6 @@
           "name": "inc",
           "match_hash": "bcd3554714d4fba18dd44f524bbca423d56e929b564a1821191d04788360d721",
           "signature": "fn inc(self: *AtomicRefCount) -> usize",
-          "params": [
-            { "name": "self", "type": "*AtomicRefCount" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 55
@@ -40,9 +37,6 @@
           "name": "dec",
           "match_hash": "649836632eeb9982190e4f79354d8445b2cbabde9e05caaadf0cce84c1de015d",
           "signature": "fn dec(self: *AtomicRefCount) -> bool",
-          "params": [
-            { "name": "self", "type": "*AtomicRefCount" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 61
@@ -52,9 +46,6 @@
           "name": "load",
           "match_hash": "ec29704be00b9b524755d17ef9e39e1141f444e4d1010b4c982eb8aa51ba29bc",
           "signature": "fn load(self: *const AtomicRefCount) -> usize",
-          "params": [
-            { "name": "self", "type": "*const AtomicRefCount" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 66
@@ -67,9 +58,6 @@
       "name": "RefCounted",
       "match_hash": "0b08d7947d7d2eec4df288ea621a5c768c852a7f28ca5ff76926df3aedbc79ba",
       "signature": "fn RefCounted(T: type) -> type",
-      "params": [
-        { "name": "T", "type": "type" }
-      ],
       "returns": "type",
       "is_pub": true,
       "line": 74

@@ -20,12 +20,6 @@
       "name": "hasNonTestDecl",
       "match_hash": "fc1f8125ddf112280259cffad43f49b9327bb27f4f3b419be4f7260089df77ad",
       "signature": "fn hasNonTestDecl(allocator: std.mem.Allocator, source: [:0]const u8, out_name: *?[]const u8, out_line: *?u32) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "source", "type": "[:0]const u8" },
-        { "name": "out_name", "type": "*?[]const u8" },
-        { "name": "out_line", "type": "*?u32" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 44
@@ -35,10 +29,6 @@
       "name": "nameOfDecl",
       "match_hash": "7e3eb14ad43ce6157002a3c3acd688386caca2f45142953f64fc119488a90708",
       "signature": "fn nameOfDecl(tree: *const std.zig.Ast, decl: std.zig.Ast.Node.Index) -> ?[]const u8",
-      "params": [
-        { "name": "tree", "type": "*const std.zig.Ast" },
-        { "name": "decl", "type": "std.zig.Ast.Node.Index" }
-      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 124
@@ -48,10 +38,6 @@
       "name": "lineOfDecl",
       "match_hash": "085e7b4e3fbd13535d2596b2c99836d22d14f6151f282c850124df97c6fccd68",
       "signature": "fn lineOfDecl(tree: *const std.zig.Ast, decl: std.zig.Ast.Node.Index) -> ?u32",
-      "params": [
-        { "name": "tree", "type": "*const std.zig.Ast" },
-        { "name": "decl", "type": "std.zig.Ast.Node.Index" }
-      ],
       "returns": "?u32",
       "is_pub": false,
       "line": 143
@@ -61,10 +47,6 @@
       "name": "auditTestFiles",
       "match_hash": "042ff7acd0f1e2bf1f4df8d7c53e864dc599f43b85726b7a6fc7afac8e16fa92",
       "signature": "fn auditTestFiles(allocator: std.mem.Allocator, workspace: []const u8) -> []TestAnomaly",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
       "returns": "[]TestAnomaly",
       "is_pub": true,
       "line": 155
@@ -74,10 +56,6 @@
       "name": "writeAiOutput",
       "match_hash": "a325c7ad055b8a3392d708faf6b6af096a113c551cd1b6b7af0f7cd8157af367",
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 252
@@ -87,10 +65,6 @@
       "name": "writeHumanOutput",
       "match_hash": "4a670c6631f3a1b44ddccd0f4b30e52765b4746f9226f4d310bb2a0b1ba9ea50",
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 280
@@ -100,10 +74,6 @@
       "name": "writeJsonFragment",
       "match_hash": "f5b1ad311986b1f2c5ab929f5a4e986e5cd81937b0e8eb6d42c96878bfd29deb",
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 292
