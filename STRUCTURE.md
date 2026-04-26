@@ -124,6 +124,8 @@ Then you you must read
 │   │   ├── cli.zig
 │   │   ├── constants.zig                         # constants.zig — Shared resource-limit constants
 │   │   ├── content_node.zig                      # content_node.zig — ContentNode: LOD text pyramid backed by SharedString
+│   │   ├── csr_graph.zig                         # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
+│   │   ├── doc_registry.zig                      # doc_registry.zig — Shared path ↔ u32 doc_id mapping for word and trigram indices.
 │   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                        # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── embeddings_tests.zig                  # Tests for embeddings.zig.
@@ -132,8 +134,10 @@ Then you you must read
 │   │   ├── file_lock.zig
 │   │   ├── format.zig
 │   │   ├── freq_table.zig
+│   │   ├── frozen_snapshot.zig                   # frozen_snapshot.zig — Frozen State Snapshot for Session Prompt Stability
 │   │   ├── hash.zig                              # hash.zig — Generic cryptographic hashing utilities
 │   │   ├── hash_tests.zig                        # Tests for hash.zig.
+│   │   ├── index_header.zig                      # index_header.zig — Binary file header shared by word_index.bin and trigram_index.bin.
 │   │   ├── interner.zig                          # interner.zig — String interning with optional bitset support.
 │   │   ├── io.zig                                # io.zig — Shared buffered I/O helpers
 │   │   ├── io_tests.zig                          # Tests for io.zig.
@@ -160,6 +164,7 @@ Then you you must read
 │   │   ├── terminal.zig
 │   │   ├── tokenizer.zig
 │   │   ├── trigram_index.zig
+│   │   ├── type_inference.zig                    # type_inference.zig — Type Inference Cache (P3.7)
 │   │   ├── types.zig                             # Number of LOD (Level of Detail) text slots per content node.
 │   │   ├── url.zig                               # url.zig — Generic URL validation helpers
 │   │   ├── url_tests.zig                         # Tests for url.zig.
@@ -325,11 +330,6 @@ Then you you must read
 │   │   ├── triage_tests.zig                      # Tests for triage.zig.
 │   │   ├── types.zig                             # Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.
 │   │   └── types_tests.zig                       # Tests for types.zig.
-│   ├── guidance-cpp
-│   │   └── main.cpp
-│   ├── guidance-rs
-│   │   └── src
-│   │       └── main.rs
 │   ├── llm
 │   │   ├── anonymize.zig                         # anonymize.zig — PII anonymization for frontier LLM context minimization.
 │   │   ├── context_compressor.zig                # context_compressor.zig — Context Compression for Token Budget Management

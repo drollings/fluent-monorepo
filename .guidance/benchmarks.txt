@@ -1,38 +1,26 @@
 # Benchmark queries for guidance test
 # Format: one query per line, lines starting with # are comments
 # Short queries (fast path, no LLM)
-database
-AST parser
-LLM integration
-sync guidance
-query text search
-plugin system architecture
-JSON store
-configuration loading
-hash function
-dependencies imports
-design patterns
-error handling
-memory allocation
-gitignore filtering
-triage functionality
-structure generation
-command line arguments
-test infrastructure
-types data structures
-sqlite database schema
-source code extraction
-semantic aliases
-staged pipeline
-zig plugin
-markdown plugin
-Workspace root
+cmdExplain
+src/coral/targets.zig
+src/dag/target.zig
 # Long queries (LLM synthesis path)
 How does filterStages work?
-How does the staged query pipeline work?
-What design patterns are used in this codebase?
-Where is the LLM client defined?
-How do I add a new language plugin?
-enhancer AI documentation generation
-Using embeddings for full text search
 How does this code use cosine similarity?
+# Queries that should escalate as unknown
+How does the quantum entanglement protocol work in the coral module?
+Show me the implementation of the flux capacitor pattern for warp drive acceleration.
+# New keyword queries (AST/deterministic)
+match_hash
+fileNeedsProcessing
+GuidanceDoc
+JsonStore
+apiHash
+# New natural language queries
+How does the staged query pipeline work?
+How is the RALPH loop implemented?
+What capabilities does this codebase have?
+# New natural language compound queries
+How does the staged query pipeline work and how does it integrate with the RALPH loop?
+The VectorDb class implements cosine similarity search for the guidance database, but how does it handle hybrid queries?
+I want to understand how match_hash and fileNeedsProcessing work together to detect staleness.
