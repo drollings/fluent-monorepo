@@ -1,10 +1,10 @@
 {
   "meta": {
-    "module": "src.coral.frozen_snapshot",
-    "source": "src/coral/frozen_snapshot.zig",
+    "module": "src.common.frozen_snapshot",
+    "source": "src/common/frozen_snapshot.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/root.zig"],
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",

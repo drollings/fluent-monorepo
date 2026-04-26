@@ -28,6 +28,7 @@ const types = @import("types.zig");
 const common = @import("common");
 const line_verify = @import("sync/line_verify.zig");
 const doc_parser = @import("doc_parser.zig");
+const context_packer = @import("llm").context_packer;
 
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -570,7 +571,51 @@ pub fn executeStagedWithAliasesOriginal(
     try collectMetadataStages(allocator, aa, workspace, results, &stages);
     try collectCapabilityStages(allocator, aa, workspace, db, matched_cap_names, &stages);
 
-    return stages.toOwnedSlice(allocator);
+    // Apply token-budget enforcement via ContextPacker.packIndices.
+    // Projects []types.Stage → []context_packer.Stage for the selection algorithm,
+    // then uses the returned indices to rebuild the final slice from the originals.
+    const raw = try stages.toOwnedSlice(allocator);
+    errdefer types.freeStages(allocator, raw);
+
+    if (raw.len == 0) return raw;
+
+    const projected = try allocator.alloc(context_packer.Stage, raw.len);
+    defer allocator.free(projected);
+    for (raw, 0..) |s, i| {
+        projected[i] = .{
+            .kind = if (s.kind == .code) .code else .prose,
+            .content = s.content,
+            .relevance_score = 1.0,
+        };
+    }
+
+    const packer = context_packer.ContextPacker{ .config = .{} };
+    const indices = try packer.packIndices(allocator, projected);
+    defer allocator.free(indices);
+
+    if (indices.len == raw.len) return raw; // no truncation needed
+
+    // Build the packed result; free stages not selected.
+    var out_stages: std.ArrayList(types.Stage) = .empty;
+    errdefer {
+        types.freeStages(allocator, out_stages.items);
+        out_stages.deinit(allocator);
+    }
+    try out_stages.ensureTotalCapacity(allocator, indices.len);
+
+    var selected = std.AutoHashMap(usize, void).init(aa);
+    for (indices) |idx| selected.put(idx, {}) catch {};
+
+    for (raw, 0..) |s, i| {
+        if (selected.contains(i)) {
+            out_stages.appendAssumeCapacity(s);
+        } else {
+            types.freeStage(allocator, s);
+        }
+    }
+    allocator.free(raw);
+
+    return out_stages.toOwnedSlice(allocator);
 }
 
 // ---------------------------------------------------------------------------

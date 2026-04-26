@@ -1,4 +1,7 @@
 const std = @import("std");
+const doc_registry = @import("doc_registry.zig");
+const DocRegistry = doc_registry.DocRegistry;
+const index_header = @import("index_header.zig");
 
 pub const Trigram = u24;
 
@@ -27,17 +30,13 @@ pub const MAX_POSTINGS: u16 = 512;
 pub const TrigramIndex = struct {
     allocator: std.mem.Allocator,
     index: std.AutoHashMap(Trigram, std.ArrayList(TrigramHit)),
-    path_to_id: std.StringHashMap(u32),
-    id_to_path: std.ArrayList([]const u8),
-    doc_count: u32,
+    registry: DocRegistry,
 
     pub fn init(allocator: std.mem.Allocator) TrigramIndex {
         return .{
             .allocator = allocator,
             .index = std.AutoHashMap(Trigram, std.ArrayList(TrigramHit)).init(allocator),
-            .path_to_id = std.StringHashMap(u32).init(allocator),
-            .id_to_path = .empty,
-            .doc_count = 0,
+            .registry = DocRegistry.init(allocator, true),
         };
     }
 
@@ -48,26 +47,11 @@ pub const TrigramIndex = struct {
         }
         self.index.deinit();
 
-        var path_iter = self.path_to_id.iterator();
-        while (path_iter.next()) |entry| {
-            self.allocator.free(entry.key_ptr.*);
-        }
-        self.path_to_id.deinit();
-        self.id_to_path.deinit(self.allocator);
-    }
-
-    fn getOrCreateDocId(self: *TrigramIndex, path: []const u8) !u32 {
-        if (self.path_to_id.get(path)) |id| return id;
-        const id: u32 = self.doc_count;
-        const owned = try self.allocator.dupe(u8, path);
-        try self.path_to_id.put(owned, id);
-        try self.id_to_path.append(self.allocator, owned);
-        self.doc_count += 1;
-        return id;
+        self.registry.deinit();
     }
 
     pub fn buildFromContent(self: *TrigramIndex, path: []const u8, content: []const u8) !void {
-        const doc_id = try self.getOrCreateDocId(path);
+        const doc_id = try self.registry.getOrCreate(path);
         var pos: u32 = 0;
         while (pos + 3 <= content.len) : (pos += 1) {
             const tri: Trigram = @as(Trigram, content[pos]) |
@@ -139,8 +123,7 @@ pub const TrigramIndex = struct {
     }
 
     pub fn hitPath(self: *const TrigramIndex, hit: TrigramHit) []const u8 {
-        if (hit.doc_id < self.id_to_path.items.len) return self.id_to_path.items[hit.doc_id];
-        return "";
+        return self.registry.pathForId(hit.doc_id);
     }
 
     const MAGIC: u32 = 0x54524947;
@@ -155,13 +138,10 @@ pub const TrigramIndex = struct {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(self.allocator);
 
-        std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), MAGIC, .little);
-        std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), VERSION, .little);
-        const gh = git_head orelse "";
-        std.mem.writeInt(u16, try out.addManyAsArray(self.allocator, 2), @intCast(gh.len), .little);
-        if (gh.len > 0) try out.appendSlice(self.allocator, gh);
+        var hdr_writer = out.writer(self.allocator);
+        try index_header.write(&hdr_writer, .{ .magic = MAGIC, .version = VERSION, .git_head = git_head });
 
-        std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), self.doc_count, .little);
+        std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), self.registry.count(), .little);
 
         var keys: std.ArrayList(Trigram) = .empty;
         defer keys.deinit(self.allocator);
@@ -195,26 +175,13 @@ pub const TrigramIndex = struct {
         const content = std.fs.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize)) catch return null;
         defer allocator.free(content);
 
-        if (content.len < 12) return null;
-        var offset: usize = 0;
-
-        const magic = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (magic != MAGIC) return null;
-
-        const version = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (version != VERSION) return null;
-
-        const gh_len = std.mem.readInt(u16, content[offset..][0..2], .little);
-        offset += 2;
-        if (gh_len > 0) offset += gh_len;
+        const hdr = index_header.read(content, MAGIC, VERSION) orelse return null;
+        var offset: usize = hdr.offset;
 
         const doc_count = std.mem.readInt(u32, content[offset..][0..4], .little);
         offset += 4;
 
         var idx = init(allocator);
-        idx.doc_count = doc_count;
         for (0..doc_count) |_| {
             offset += 4;
             offset += 8;
@@ -255,24 +222,7 @@ pub const TrigramIndex = struct {
     pub fn readGitHead(dir_path: []const u8) ?[40]u8 {
         var buf: [4096]u8 = undefined;
         const path = std.fmt.bufPrint(&buf, "{s}/trigram_index.bin", .{dir_path}) catch return null;
-        const content = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return null;
-        defer std.heap.page_allocator.free(content);
-
-        if (content.len < 10) return null;
-        var offset: usize = 0;
-        const magic = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (magic != MAGIC) return null;
-        const version = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (version != VERSION) return null;
-        const gh_len = std.mem.readInt(u16, content[offset..][0..2], .little);
-        offset += 2;
-        if (gh_len == 0 or gh_len > 40) return null;
-        if (offset + gh_len > content.len) return null;
-        var result: [40]u8 = [_]u8{0} ** 40;
-        @memcpy(result[0..gh_len], content[offset..][0..gh_len]);
-        return result;
+        return index_header.readGitHeadFromFile(path, MAGIC, VERSION);
     }
 };
 

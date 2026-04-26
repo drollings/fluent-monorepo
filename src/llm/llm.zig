@@ -133,6 +133,13 @@ pub const LlmClient = struct {
         self.http_client.deinit();
     }
 
+    /// Calls complete() and returns null on any error.
+    /// Use for "fail-silent, try-again-later" call sites where an LLM failure
+    /// should degrade gracefully rather than propagate an error.
+    pub fn completeOrNull(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) ?[]const u8 {
+        return self.complete(prompt, max_tokens, temperature, system) catch null;
+    }
+
     pub fn complete(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) LlmError!?[]const u8 {
         var body: std.ArrayList(u8) = .{};
         defer body.deinit(self.allocator);

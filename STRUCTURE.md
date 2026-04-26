@@ -194,13 +194,11 @@ Then you you must read
 │   │   ├── cli.zig                               # cli.zig — Ingestion CLI Command Implementation
 │   │   ├── config.zig                            # Coral project configuration loader.
 │   │   ├── context_node_schema.zig
-│   │   ├── csr_graph.zig                         # [domain-patterns]  csr_graph.zig — Compressed Sparse Row (CSR) graph representation.
 │   │   ├── db.zig                                # db.zig — Coral Context Database Layer (SQLite backend)
 │   │   ├── delegation.zig                        # delegation.zig — Delegation Pattern for Child Agent Spawning (P4.3)
 │   │   ├── executor.zig                          # executor.zig — DAG Executor for the YAGO ingestion pipeline.
 │   │   ├── frontier.zig                          # frontier.zig — M6: L5 Frontier Loop Context Minimization & Validation
 │   │   ├── frontier_tool_compiler.zig            # frontier_tool_compiler.zig — Compiles LLM-generated source into WASM tools.
-│   │   ├── frozen_snapshot.zig                   # frozen_snapshot.zig — Frozen State Snapshot for Session Prompt Stability
 │   │   ├── global_search.zig                     # global_search.zig — GlobalSearch Map-Reduce over Communities (P3.4)
 │   │   ├── http_transport.zig                    # http_transport.zig — M4.1/M4.2 HTTP Transport Layer with SSE
 │   │   ├── http_transport_test.zig               # http_transport_test.zig — Unit tests for HTTP transport layer
@@ -214,7 +212,6 @@ Then you you must read
 │   │   ├── targets.zig                           # targets.zig — Ingestion DAG Target Definitions
 │   │   ├── token_budget.zig                      # token_budget.zig — Token Estimation for Context Packing (M7.1)
 │   │   ├── tool_registry.zig                     # tool_registry.zig — Tool Registry Pattern (P4.1)
-│   │   ├── type_inference.zig                    # type_inference.zig — Type Inference Cache (P3.7)
 │   │   ├── verify.zig                            # verify.zig — Ingestion Verification and Integrity Checking
 │   │   └── yago_ingest.zig                       # yago_ingest.zig — YAGO 4.5 Baseline Ingestion (M3.2)
 │   ├── dag

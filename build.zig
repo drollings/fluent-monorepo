@@ -119,7 +119,7 @@ pub fn build(b: *std.Build) void {
 
     // `coral_csr` — CSR graph module (csr_graph.zig). Standalone, no deps.
     const coral_csr_module = b.createModule(.{
-        .root_source_file = b.path("src/coral/csr_graph.zig"),
+        .root_source_file = b.path("src/common/csr_graph.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -865,7 +865,7 @@ pub fn build(b: *std.Build) void {
     // -- Coral CSR graph tests (P1.1) --
     const coral_csr_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/csr_graph.zig"),
+            .root_source_file = b.path("src/common/csr_graph.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -948,7 +948,7 @@ pub fn build(b: *std.Build) void {
     // -- Coral Frozen Snapshot tests (P2.2) --
     const coral_frozen_snapshot_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/frozen_snapshot.zig"),
+            .root_source_file = b.path("src/common/frozen_snapshot.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -989,7 +989,7 @@ pub fn build(b: *std.Build) void {
 
     const coral_type_inference_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/coral/type_inference.zig"),
+            .root_source_file = b.path("src/common/type_inference.zig"),
             .target = target,
             .optimize = optimize,
         }),

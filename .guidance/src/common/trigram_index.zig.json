@@ -23,10 +23,10 @@
           "signature": "fn hasTrigramAt(self: PostingMask, pos_in_unit: u3) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 14
+          "line": 17
         }
       ],
-      "line": 10
+      "line": 13
     },
     {
       "type": "struct",
@@ -34,12 +34,12 @@
       "match_hash": "6b1e5119e47b3def2487bcf06cd498ab676353e2f43bba167c6df19cf85dfc49",
       "signature": "keyword_struct DocPosting { ... }",
       "is_pub": true,
-      "line": 19
+      "line": 22
     },
     {
       "type": "struct",
       "name": "TrigramIndex",
-      "match_hash": "14002808e1a41cd7e16710060c32a1d0f72fca3f8594e83e165bfd5c902f4ebf",
+      "match_hash": "e81dc1c99305204bb09ffbdc2a2ab6b79d77e3a6be2487d091d3134a5a7ff9d0",
       "signature": "keyword_struct TrigramIndex { ... }",
       "is_pub": true,
       "members": [
@@ -50,7 +50,7 @@
           "signature": "fn init(allocator: std.mem.Allocator) -> TrigramIndex",
           "returns": "TrigramIndex",
           "is_pub": true,
-          "line": 34
+          "line": 35
         }
     ,    {
           "type": "fn_decl",
@@ -59,16 +59,7 @@
           "signature": "fn deinit(self: *TrigramIndex) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 44
-        }
-    ,    {
-          "type": "fn_private",
-          "name": "getOrCreateDocId",
-          "match_hash": "1a702461aeebe617d17078d632624fb9c34b28ed3ba9aa05c276941618565cdc",
-          "signature": "fn getOrCreateDocId(self: *TrigramIndex, path: []const u8) -> u32",
-          "returns": "u32",
-          "is_pub": false,
-          "line": 59
+          "line": 43
         }
     ,    {
           "type": "fn_decl",
@@ -77,7 +68,7 @@
           "signature": "fn buildFromContent(self: *TrigramIndex, path: []const u8, content: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 69
+          "line": 53
         }
     ,    {
           "type": "fn_decl",
@@ -86,7 +77,7 @@
           "signature": "fn search(self: *TrigramIndex, tri_bytes: [3]u8) -> []const TrigramHit",
           "returns": "[]const TrigramHit",
           "is_pub": true,
-          "line": 88
+          "line": 72
         }
     ,    {
           "type": "fn_decl",
@@ -95,7 +86,7 @@
           "signature": "fn searchTrigram(self: *TrigramIndex, tri: Trigram) -> []const TrigramHit",
           "returns": "[]const TrigramHit",
           "is_pub": true,
-          "line": 96
+          "line": 80
         }
     ,    {
           "type": "fn_decl",
@@ -104,7 +95,7 @@
           "signature": "fn candidates(self: *TrigramIndex, query: []const u8, allocator: std.mem.Allocator) -> []u32",
           "returns": "[]u32",
           "is_pub": true,
-          "line": 101
+          "line": 85
         }
     ,    {
           "type": "fn_decl",
@@ -113,7 +104,7 @@
           "signature": "fn hitPath(self: *const TrigramIndex, hit: TrigramHit) -> []const u8",
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 141
+          "line": 125
         }
     ,    {
           "type": "fn_decl",
@@ -122,7 +113,7 @@
           "signature": "fn writeToDisk(self: *TrigramIndex, dir_path: []const u8, git_head: ?[]const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 149
+          "line": 132
         }
     ,    {
           "type": "fn_decl",
@@ -131,7 +122,7 @@
           "signature": "fn readFromDisk(dir_path: []const u8, allocator: std.mem.Allocator) -> ?TrigramIndex",
           "returns": "?TrigramIndex",
           "is_pub": true,
-          "line": 192
+          "line": 172
         }
     ,    {
           "type": "fn_decl",
@@ -140,10 +131,10 @@
           "signature": "fn readGitHead(dir_path: []const u8) -> ?[40]u8",
           "returns": "?[40]u8",
           "is_pub": true,
-          "line": 255
+          "line": 222
         }
       ],
-      "line": 27
+      "line": 30
     },
     {
       "type": "struct",
@@ -159,7 +150,7 @@
           "signature": "fn readFromMmap(path: []const u8) -> ?MmapTrigramIndex",
           "returns": "?MmapTrigramIndex",
           "is_pub": true,
-          "line": 284
+          "line": 234
         }
     ,    {
           "type": "fn_decl",
@@ -168,7 +159,7 @@
           "signature": "fn deinit(self: *MmapTrigramIndex) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 299
+          "line": 249
         }
     ,    {
           "type": "fn_decl",
@@ -177,7 +168,7 @@
           "signature": "fn fileCount(self: MmapTrigramIndex) -> u32",
           "returns": "u32",
           "is_pub": true,
-          "line": 309
+          "line": 259
         }
     ,    {
           "type": "fn_decl",
@@ -186,10 +177,10 @@
           "signature": "fn search(_: MmapTrigramIndex, _: Trigram) -> []const TrigramHit",
           "returns": "[]const TrigramHit",
           "is_pub": true,
-          "line": 315
+          "line": 265
         }
       ],
-      "line": 279
+      "line": 229
     },
     {
       "type": "fn_private",
@@ -201,25 +192,25 @@
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": false,
-      "line": 320
+      "line": 270
     },
     {
       "type": "test_decl",
       "name": "TrigramIndex buildFromContent and search",
       "is_pub": false,
-      "line": 326
+      "line": 276
     },
     {
       "type": "test_decl",
       "name": "TrigramIndex candidates",
       "is_pub": false,
-      "line": 337
+      "line": 287
     },
     {
       "type": "test_decl",
       "name": "makeTrigram",
       "is_pub": false,
-      "line": 347
+      "line": 297
     }
   ]
 }

@@ -1,0 +1,83 @@
+{
+  "meta": {
+    "module": "src.common.doc_registry",
+    "source": "src/common/doc_registry.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig", "src/common/trigram_index.zig", "src/common/word_index.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "DocRegistry",
+      "match_hash": "545a95836ef015ddfa0a21cdabfa88436bc9614ff764f508e01a4249e9ea2d7c",
+      "signature": "keyword_struct DocRegistry { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "ac87cd8c8403a160897b99dfe6f2a9f23eb3a9676c67c5b582e247c7e0214eda",
+          "signature": "fn init(allocator: std.mem.Allocator, own_strings: bool) -> DocRegistry",
+          "returns": "DocRegistry",
+          "is_pub": true,
+          "line": 18
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "eea9f574dfdc97b3b51f5bc1c6a83e75472dd5ca661e41808db98c840b0aaead",
+          "signature": "fn deinit(self: *DocRegistry) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 27
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "getOrCreate",
+          "match_hash": "4448670f486e61d0e62e19a6cea376e365b430752275df9f04ac2ca0bad82447",
+          "signature": "fn getOrCreate(self: *DocRegistry, path: []const u8) -> u32",
+          "returns": "u32",
+          "is_pub": true,
+          "line": 40
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "pathForId",
+          "match_hash": "152473c40a28f7615fa0b30f8a31708bd2317e9d55542d0298c5f4ec0c5f9353",
+          "signature": "fn pathForId(self: *const DocRegistry, id: u32) -> []const u8",
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 56
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "count",
+          "match_hash": "c79189362381c55b356c9a319c2a5c88c2a7095d330e94a928007f522d24a2b5",
+          "signature": "fn count(self: *const DocRegistry) -> u32",
+          "returns": "u32",
+          "is_pub": true,
+          "line": 62
+        }
+      ],
+      "line": 12
+    },
+    {
+      "type": "test_decl",
+      "name": "DocRegistry borrow: getOrCreate returns consistent ids",
+      "is_pub": false,
+      "line": 73
+    },
+    {
+      "type": "test_decl",
+      "name": "DocRegistry borrow: pathForId roundtrips",
+      "is_pub": false,
+      "line": 87
+    },
+    {
+      "type": "test_decl",
+      "name": "DocRegistry own: dupes and frees strings",
+      "is_pub": false,
+      "line": 99
+    }
+  ]
+}

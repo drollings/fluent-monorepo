@@ -1,10 +1,10 @@
 {
   "meta": {
-    "module": "src.coral.type_inference",
-    "source": "src/coral/type_inference.zig",
+    "module": "src.common.type_inference",
+    "source": "src/common/type_inference.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/root.zig"],
+  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",

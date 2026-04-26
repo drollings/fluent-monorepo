@@ -13,6 +13,7 @@ const types = @import("../types.zig");
 const vector_db_mod = @import("vector");
 const staged_mod = @import("../staged.zig");
 const core_intent = @import("../core/intent.zig");
+const identifier = @import("identifier.zig");
 
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const SearchResult = GuidanceDb.SearchResult;
@@ -56,7 +57,7 @@ fn queryMatch(
 
 fn identifierMatches(query: []const u8, db: *GuidanceDb) bool {
     _ = db;
-    return looksLikeIdentifier(query);
+    return identifier.detectIdentifierPattern(query) != null;
 }
 
 fn capabilityMatches(query: []const u8, db: *GuidanceDb) bool {
@@ -121,34 +122,10 @@ pub fn buildDefaultStrategies() [3]QueryMatch {
 }
 
 // =============================================================================
-// Helpers
-// =============================================================================
-
-pub fn looksLikeIdentifier(query: []const u8) bool {
-    const trimmed = std.mem.trim(u8, query, " \t\n\r");
-    if (trimmed.len < 2 or trimmed.len > 64) return false;
-    if (std.mem.indexOfAny(u8, trimmed, " \t\n\r") != null) return false;
-    if (!std.ascii.isAlphabetic(trimmed[0]) and trimmed[0] != '_') return false;
-    for (trimmed) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') return false;
-    }
-    return true;
-}
-
-// =============================================================================
 // Tests
 // =============================================================================
 
 const testing = std.testing;
-
-test "looksLikeIdentifier" {
-    try testing.expect(looksLikeIdentifier("GuidanceDb"));
-    try testing.expect(looksLikeIdentifier("cmdExplain"));
-    try testing.expect(looksLikeIdentifier("some_function"));
-    try testing.expect(!looksLikeIdentifier("how does x work"));
-    try testing.expect(!looksLikeIdentifier(""));
-    try testing.expect(!looksLikeIdentifier("a"));
-}
 
 test "QueryMatch priority ordering" {
     const strategies = buildDefaultStrategies();

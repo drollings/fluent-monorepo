@@ -200,6 +200,14 @@ pub const terminal = @import("terminal.zig");
 // ── Global logger (Logger, LogConfig, setupLogging) ─────────────────────────────
 pub const log = @import("log.zig");
 
+// ── Document registry (path ↔ u32 doc_id mapping) ───────────────────────────
+/// Shared by word_index and trigram_index for path↔id bookkeeping.
+pub const DocRegistry = @import("doc_registry.zig").DocRegistry;
+
+// ── Index binary header (magic/version/git_head envelope) ───────────────────
+/// Shared by word_index.bin and trigram_index.bin.
+pub const index_header = @import("index_header.zig");
+
 // ── Tokenizer (WordTokenizer, normalizeChar, splitIdentifier) ──────────────────
 pub const tokenizer = @import("tokenizer.zig");
 
@@ -235,3 +243,11 @@ pub const FileLock = file_lock.FileLock;
 // ── Persistent query cache (TTL-based, SQLite-backed) ───────────────────────
 pub const query_cache = @import("query_cache.zig");
 pub const PersistentQueryCache = query_cache.PersistentQueryCache;
+
+// ── Graph / snapshot primitives (shared by coral and any future consumer) ──
+/// Frozen runtime snapshot: memory, skills, context_files strings.
+pub const frozen_snapshot = @import("frozen_snapshot.zig");
+/// Bitset-based transitive subclass / type-inference closure.
+pub const type_inference = @import("type_inference.zig");
+/// Compressed Sparse Row graph (adjacency + edge payloads).
+pub const csr_graph = @import("csr_graph.zig");

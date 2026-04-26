@@ -655,7 +655,7 @@ fn callLlm(
     var client = llm.LlmClient.init(allocator, config) catch return null;
     defer client.deinit();
     if (!client.available()) return null;
-    return client.complete(prompt, max_tokens, 0.3, system) catch null;
+    return client.completeOrNull(prompt, max_tokens, 0.3, system);
 }
 
 // =============================================================================

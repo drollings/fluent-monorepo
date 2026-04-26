@@ -18,28 +18,28 @@
           "type": "enum_field",
           "name": "identifier_lookup",
           "is_pub": false,
-          "line": 25
+          "line": 26
         }
     ,    {
           "type": "enum_field",
           "name": "capability_query",
           "is_pub": false,
-          "line": 26
+          "line": 27
         }
     ,    {
           "type": "enum_field",
           "name": "concept_query",
           "is_pub": false,
-          "line": 27
+          "line": 28
         }
     ,    {
           "type": "enum_field",
           "name": "general_search",
           "is_pub": false,
-          "line": 28
+          "line": 29
         }
       ],
-      "line": 24
+      "line": 25
     },
     {
       "type": "struct",
@@ -47,7 +47,7 @@
       "match_hash": "646c5ca3961e162d84b4790a0f4e5a4b075ca06c7cc988693cc4b8deebb256ee",
       "signature": "keyword_struct QueryMatch { ... }",
       "is_pub": true,
-      "line": 35
+      "line": 36
     },
     {
       "type": "fn_private",
@@ -56,7 +56,7 @@
       "signature": "fn queryMatch(matches_fn: *const fn (query: []const u8, db: *GuidanceDb) bool, intent: QueryIntent, priority: u8) -> QueryMatch",
       "returns": "QueryMatch",
       "is_pub": false,
-      "line": 41
+      "line": 42
     },
     {
       "type": "fn_private",
@@ -65,7 +65,7 @@
       "signature": "fn identifierMatches(query: []const u8, db: *GuidanceDb) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 57
+      "line": 58
     },
     {
       "type": "fn_private",
@@ -74,7 +74,7 @@
       "signature": "fn capabilityMatches(query: []const u8, db: *GuidanceDb) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 62
+      "line": 63
     },
     {
       "type": "fn_private",
@@ -83,7 +83,7 @@
       "signature": "fn conceptMatches(query: []const u8, db: *GuidanceDb) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 71
+      "line": 72
     },
     {
       "type": "fn_decl",
@@ -92,7 +92,7 @@
       "signature": "fn executeQuery(allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 84
+      "line": 85
     },
     {
       "type": "fn_decl",
@@ -101,7 +101,7 @@
       "signature": "fn executeQueryWithMatch(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases, matches: []const QueryMatch) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 92
+      "line": 93
     },
     {
       "type": "fn_decl",
@@ -110,28 +110,13 @@
       "signature": "fn buildDefaultStrategies() -> [3]QueryMatch",
       "returns": "[3]QueryMatch",
       "is_pub": true,
-      "line": 115
-    },
-    {
-      "type": "fn_decl",
-      "name": "looksLikeIdentifier",
-      "match_hash": "9599a60a845f4a9c12667a8f3b632524021279a756150c9fca06d3134e06cca9",
-      "signature": "fn looksLikeIdentifier(query: []const u8) -> bool",
-      "returns": "bool",
-      "is_pub": true,
-      "line": 127
-    },
-    {
-      "type": "test_decl",
-      "name": "looksLikeIdentifier",
-      "is_pub": false,
-      "line": 144
+      "line": 116
     },
     {
       "type": "test_decl",
       "name": "QueryMatch priority ordering",
       "is_pub": false,
-      "line": 153
+      "line": 130
     }
   ]
 }

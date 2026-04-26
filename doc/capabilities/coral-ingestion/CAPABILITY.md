@@ -62,7 +62,7 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 - `src/coral/config.zig` — `YAGO_TYPE_WHITELIST` constant
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (43 files, auto-discovered)
+## Sources (40 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -72,7 +72,6 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 | `src/coral/root.zig` | 0.9 | used_by |
 | `src/ontology/root.zig` | 0.9 | used_by |
 | `src/rdf/parser.zig` | 0.7 | keyword_overlap |
-| `src/coral/frozen_snapshot.zig` | 0.4 | path_heuristic |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/http_transport.zig` | 0.4 | path_heuristic |
 | `src/coral/frontier_tool_compiler.zig` | 0.4 | path_heuristic |
@@ -96,10 +95,8 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 | `src/coral/cache_l1.zig` | 0.4 | path_heuristic |
 | `src/coral/benchmark.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/shortest_path.zig` | 0.4 | path_heuristic |
-| `src/coral/type_inference.zig` | 0.4 | path_heuristic |
 | `src/coral/yago_ingest.zig` | 0.4 | path_heuristic |
 | `src/coral/mcp.zig` | 0.4 | path_heuristic |
-| `src/coral/csr_graph.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithm_runner.zig` | 0.4 | path_heuristic |
 | `src/coral/main.zig` | 0.4 | path_heuristic |
 | `src/coral/algorithms/degree_centrality.zig` | 0.4 | path_heuristic |

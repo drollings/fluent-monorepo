@@ -117,6 +117,72 @@ pub const ContextPacker = struct {
 
         return result.toOwnedSlice(allocator);
     }
+
+    /// Like pack(), but returns the indices of selected stages into the original
+    /// `stages` slice rather than copying Stage values.  Useful when the caller's
+    /// Stage type is richer than context_packer.Stage and it needs to preserve
+    /// extra fields (e.g. source path, line number) that are not present here.
+    ///
+    /// The selection algorithm is identical to pack().  Code stages are always
+    /// selected; prose body stages are filtered by relevance + token budget.
+    /// Head and tail indices are always included.
+    ///
+    /// The returned slice must be freed by the caller: `allocator.free(result)`.
+    pub fn packIndices(
+        self: *const Self,
+        allocator: std.mem.Allocator,
+        stages: []const Stage,
+    ) ![]usize {
+        if (stages.len == 0) return allocator.alloc(usize, 0);
+
+        var result: std.ArrayListUnmanaged(usize) = .empty;
+
+        var tokens: usize = 0;
+        const cfg = self.config;
+
+        const n = stages.len;
+        const head = @min(cfg.head_protect, n);
+        const tail = if (n > cfg.head_protect) @min(cfg.tail_protect, n - head) else 0;
+        const body_start = head;
+        const body_end = if (n > tail) n - tail else n;
+
+        // ── Head: always include.
+        for (0..head) |i| {
+            try result.append(allocator, i);
+            tokens += estimateTokens(stages[i].content);
+        }
+
+        // ── Body: code always kept; prose filtered by relevance + budget.
+        if (body_end > body_start) {
+            for (body_start..body_end) |i| {
+                if (tokens >= cfg.token_budget) break;
+                if (result.items.len >= cfg.max_stages) break;
+
+                const s = stages[i];
+                switch (s.kind) {
+                    .code => {
+                        try result.append(allocator, i);
+                        tokens += estimateTokens(s.content);
+                    },
+                    .prose => {
+                        if (s.relevance_score >= cfg.prose_relevance_threshold) {
+                            try result.append(allocator, i);
+                            tokens += estimateTokens(s.content);
+                        }
+                    },
+                }
+            }
+        }
+
+        // ── Tail: always include.
+        if (tail > 0) {
+            for ((n - tail)..n) |i| {
+                try result.append(allocator, i);
+            }
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
 };
 
 // ---------------------------------------------------------------------------

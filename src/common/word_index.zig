@@ -1,5 +1,8 @@
 const std = @import("std");
 const tokenizer = @import("tokenizer.zig");
+const doc_registry = @import("doc_registry.zig");
+const DocRegistry = doc_registry.DocRegistry;
+const index_header = @import("index_header.zig");
 
 pub const WordHit = struct {
     doc_id: u32,
@@ -11,16 +14,14 @@ pub const WordIndex = struct {
     file_words: std.StringHashMap([]const []const u8),
     allocator: std.mem.Allocator,
     skip_file_words: bool = false,
-    path_to_id: std.StringHashMap(u32),
-    id_to_path: std.ArrayList([]const u8),
+    registry: DocRegistry,
 
     pub fn init(allocator: std.mem.Allocator) WordIndex {
         return .{
             .index = std.StringHashMap(std.ArrayList(WordHit)).init(allocator),
             .file_words = std.StringHashMap([]const []const u8).init(allocator),
             .allocator = allocator,
-            .path_to_id = std.StringHashMap(u32).init(allocator),
-            .id_to_path = .empty,
+            .registry = DocRegistry.init(allocator, false),
         };
     }
 
@@ -39,21 +40,11 @@ pub const WordIndex = struct {
         }
         self.file_words.deinit();
 
-        self.path_to_id.deinit();
-        self.id_to_path.deinit(self.allocator);
+        self.registry.deinit();
     }
 
     pub fn hitPath(self: *const WordIndex, hit: WordHit) []const u8 {
-        if (hit.doc_id < self.id_to_path.items.len) return self.id_to_path.items[hit.doc_id];
-        return "";
-    }
-
-    fn getOrCreateDocId(self: *WordIndex, path: []const u8) !u32 {
-        if (self.path_to_id.get(path)) |id| return id;
-        const id: u32 = @intCast(self.id_to_path.items.len);
-        try self.id_to_path.append(self.allocator, path);
-        try self.path_to_id.put(path, id);
-        return id;
+        return self.registry.pathForId(hit.doc_id);
     }
 
     fn indexOneToken(
@@ -91,7 +82,7 @@ pub const WordIndex = struct {
         const stable_path = try self.allocator.dupe(u8, path);
         errdefer self.allocator.free(stable_path);
 
-        const doc_id = try self.getOrCreateDocId(stable_path);
+        const doc_id = try self.registry.getOrCreate(stable_path);
 
         var words_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer words_arena.deinit();
@@ -158,14 +149,14 @@ pub const WordIndex = struct {
         const stable_path = removed.key;
         const words_slice = removed.value;
 
-        const doc_id = self.path_to_id.get(stable_path) orelse {
+        const doc_id = self.registry.path_to_id.get(stable_path) orelse {
             self.allocator.free(words_slice);
             self.allocator.free(stable_path);
             return;
         };
-        _ = self.path_to_id.remove(stable_path);
-        if (doc_id < self.id_to_path.items.len) {
-            self.id_to_path.items[doc_id] = "";
+        _ = self.registry.path_to_id.remove(stable_path);
+        if (doc_id < self.registry.id_to_path.items.len) {
+            self.registry.id_to_path.items[doc_id] = "";
         }
         defer {
             self.allocator.free(words_slice);
@@ -277,11 +268,7 @@ pub const WordIndex = struct {
         var fw = f.writer(&buf);
         const w = &fw.interface;
 
-        try w.writeInt(u32, MAGIC, .little);
-        try w.writeInt(u32, VERSION, .little);
-        const gh = git_head orelse "";
-        try w.writeInt(u32, @intCast(gh.len), .little);
-        if (gh.len > 0) try w.writeAll(gh);
+        try index_header.write(w, .{ .magic = MAGIC, .version = VERSION, .git_head = git_head });
 
         var words = std.ArrayList([]const u8).empty;
         defer words.deinit(self.allocator);
@@ -315,22 +302,8 @@ pub const WordIndex = struct {
         const content = std.fs.cwd().readFileAlloc(std.heap.page_allocator, idx_path, std.math.maxInt(usize)) catch return null;
         defer std.heap.page_allocator.free(content);
 
-        if (content.len < 8) return null;
-        var offset: usize = 0;
-
-        const magic = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (magic != MAGIC) return error.InvalidData;
-
-        const version = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (version != VERSION) return null;
-
-        const gh_len = std.mem.readInt(u32, content[offset..][0..4], .little);
-        offset += 4;
-        if (gh_len > 0 and offset + gh_len <= content.len) {
-            offset += gh_len;
-        }
+        const hdr = index_header.read(content, MAGIC, VERSION) orelse return null;
+        var offset: usize = hdr.offset;
 
         const n_words = std.mem.readInt(u32, content[offset..][0..4], .little);
         offset += 4;
@@ -367,20 +340,7 @@ pub const WordIndex = struct {
     pub fn readGitHead(dir_path: []const u8) ?[40]u8 {
         var buf: [4096]u8 = undefined;
         const idx_path = std.fmt.bufPrint(&buf, "{s}/word_index.bin", .{dir_path}) catch return null;
-        const content = std.fs.cwd().readFileAlloc(std.heap.page_allocator, idx_path, std.math.maxInt(usize)) catch return null;
-        defer std.heap.page_allocator.free(content);
-
-        if (content.len < 12) return null;
-        const magic = std.mem.readInt(u32, content[0..4], .little);
-        if (magic != MAGIC) return null;
-        const version = std.mem.readInt(u32, content[4..8], .little);
-        if (version != VERSION) return null;
-        const gh_len = std.mem.readInt(u32, content[8..12], .little);
-        if (gh_len == 0 or gh_len > 40) return null;
-        if (content.len < 12 + gh_len) return null;
-        var result: [40]u8 = [_]u8{0} ** 40;
-        @memcpy(result[0..gh_len], content[12..][0..gh_len]);
-        return result;
+        return index_header.readGitHeadFromFile(idx_path, MAGIC, VERSION);
     }
 };
 

@@ -311,7 +311,7 @@ fn generateCommitMessage(
 
                 if (debug) std.debug.print("[commit] prompt ({d} chars):\n{s}\n---\n", .{ prompt.len, prompt });
 
-                const result = client.complete(prompt, 8192, 0.1, null) catch null;
+                const result = client.completeOrNull(prompt, 8192, 0.1, null);
 
                 if (result) |raw| {
                     defer allocator.free(raw);

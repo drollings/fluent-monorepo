@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "module": "src.common.index_header",
+    "source": "src/common/index_header.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/common/root.zig", "src/common/trigram_index.zig", "src/common/word_index.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "Header",
+      "match_hash": "7d78ef9d66009214f36442c737ef21c9e92a0204b9bc160c0f9232de6105f606",
+      "signature": "keyword_struct Header { ... }",
+      "is_pub": true,
+      "line": 18
+    },
+    {
+      "type": "fn_decl",
+      "name": "write",
+      "match_hash": "d35662ac04807c495b743a6d6505241f61da121fb5245e5e61ed659a19c3d515",
+      "signature": "fn write(w, h: Header) -> void",
+      "returns": "void",
+      "is_pub": true,
+      "line": 38
+    },
+    {
+      "type": "fn_decl",
+      "name": "read",
+      "match_hash": "7ba9acc47f1f8d1bae0a3a2b8b963b8a2f5c1333a1720f173ff84348fb802a63",
+      "signature": "fn read(content: []const u8, expected_magic: u32, expected_version: u32) -> ?ReadResult",
+      "returns": "?ReadResult",
+      "is_pub": true,
+      "line": 56
+    },
+    {
+      "type": "fn_decl",
+      "name": "readGitHeadFromFile",
+      "match_hash": "bf3bd13dc17bab86fbf0d28e7255d0f76031ea12ad5f102819312c6f662ce9f2",
+      "signature": "fn readGitHeadFromFile(path: []const u8, expected_magic: u32, expected_version: u32) -> ?[40]u8",
+      "returns": "?[40]u8",
+      "is_pub": true,
+      "line": 92
+    },
+    {
+      "type": "test_decl",
+      "name": "write/read round-trip: no git head",
+      "is_pub": false,
+      "line": 120
+    },
+    {
+      "type": "test_decl",
+      "name": "write/read round-trip: with git head",
+      "is_pub": false,
+      "line": 135
+    },
+    {
+      "type": "test_decl",
+      "name": "read: wrong magic returns null",
+      "is_pub": false,
+      "line": 150
+    },
+    {
+      "type": "test_decl",
+      "name": "read: wrong version returns null",
+      "is_pub": false,
+      "line": 159
+    }
+  ]
+}

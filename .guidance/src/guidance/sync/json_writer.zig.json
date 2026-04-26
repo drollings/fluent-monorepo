@@ -9,21 +9,48 @@
   "members": [
     {
       "type": "fn_private",
-      "name": "writeEscapedValue",
-      "match_hash": "d2d72ecbe63536e0b701a6b21fa972d63b855299baedb396df1c52ef5e83ef2f",
-      "signature": "fn writeEscapedValue(writer, value: []const u8) -> void",
-      "returns": "void",
-      "is_pub": false,
-      "line": 8
-    },
-    {
-      "type": "fn_private",
-      "name": "writeEscapedString",
-      "match_hash": "6223b0721dadb199f1e583f91d5d512c57c56fb85300b90e6ed8a739f67756ad",
-      "signature": "fn writeEscapedString(writer, key: []const u8, value: []const u8) -> void",
+      "name": "writeEscaped",
+      "match_hash": "077026ee3d033679836a5ee4f29beaeb161343ad76d626164363457720d62cce",
+      "signature": "fn writeEscaped(writer, value: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
       "line": 12
+    },
+    {
+      "type": "fn_private",
+      "name": "writeStrField",
+      "match_hash": "ef4d3d1d51ba6286746bf23a253ca802e827409a5b687691bfe00b45280023b5",
+      "signature": "fn writeStrField(writer, key: []const u8, value: []const u8) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 17
+    },
+    {
+      "type": "fn_private",
+      "name": "writeSep",
+      "match_hash": "3683c290b956bc93358c62c7f46d4c5ee2810d971fa8a8f197c8b34235fb30b5",
+      "signature": "fn writeSep(writer, need: *bool) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 25
+    },
+    {
+      "type": "fn_private",
+      "name": "writeStringArray",
+      "match_hash": "9cf4c0c11279ac6c51a4bc408c32190a6d05099c666f6512155b63b87f93266f",
+      "signature": "fn writeStringArray(writer, key: []const u8, items: []const []const u8) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 31
+    },
+    {
+      "type": "fn_private",
+      "name": "writeMember",
+      "match_hash": "2f3431173912515626795e45899759f79da73d6cd078e0104948368f2ac3837d",
+      "signature": "fn writeMember(writer, member: types.Member, indent: []const u8) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 49
     },
     {
       "type": "fn_decl",
@@ -32,7 +59,7 @@
       "signature": "fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) -> ?[]u8",
       "returns": "?[]u8",
       "is_pub": true,
-      "line": 18
+      "line": 136
     },
     {
       "type": "fn_decl",
@@ -41,7 +68,7 @@
       "signature": "fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 100
+      "line": 144
     }
   ]
 }
