@@ -956,15 +956,6 @@ pub fn build(b: *std.Build) void {
     });
     test_step.dependOn(&b.addRunArtifact(trigram_index_tests).step);
 
-    const dep_graph_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/dep_graph.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(dep_graph_tests).step);
-
     const entity_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/common/entity.zig"),
@@ -976,31 +967,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(entity_tests).step);
-
-    const kg_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/kg.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    kg_tests.linkLibC();
-    kg_tests.linkSystemLibrary("sqlite3");
-    test_step.dependOn(&b.addRunArtifact(kg_tests).step);
-
-    const centroid_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/guidance/query/centroid.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "common", .module = common_module },
-                .{ .name = "vector", .module = vector_module },
-                .{ .name = "simhash", .module = simhash_module },
-            },
-        }),
-    });
-    test_step.dependOn(&b.addRunArtifact(centroid_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

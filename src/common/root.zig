@@ -222,26 +222,11 @@ pub const pairWeight = freq_table.pairWeight;
 pub const snapshot = @import("snapshot.zig");
 pub const GuidanceSnapshot = snapshot.GuidanceSnapshot;
 
-// ── Dependency graph (forward/reverse index) ──────────────────────────────────
-pub const dep_graph = @import("dep_graph.zig");
-pub const DependencyGraph = dep_graph.DependencyGraph;
-
-// ── Search backend (vtable abstraction) ────────────────────────────────────────
-pub const search_backend = @import("search_backend.zig");
-pub const SearchBackend = search_backend.SearchBackend;
-pub const SearchHit = search_backend.SearchHit;
-pub const SqliteSearchBackend = search_backend.SqliteSearchBackend;
-pub const MmapSearchBackend = search_backend.MmapSearchBackend;
-
 // ── Entity extraction (with stoplist) ────────────────────────────────────────
 pub const entity = @import("entity.zig");
 pub const EntityFreq = entity.EntityFreq;
 pub const EntityType = entity.EntityType;
 pub const ENTITY_STOPLIST = entity.ENTITY_STOPLIST;
-
-// ── Knowledge graph (temporal entity-relationship graph) ──────────────────────
-pub const kg = @import("kg.zig");
-pub const KnowledgeGraph = kg.KnowledgeGraph;
 
 // ── File locking (cross-platform) ────────────────────────────────────────────
 pub const file_lock = @import("file_lock.zig");
