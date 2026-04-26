@@ -73,7 +73,7 @@ pub const PersistentQueryCache = struct {
     fn queryKey(query: []const u8) u64 {
         var lower_buf: [512]u8 = undefined;
         const len = @min(query.len, lower_buf.len);
-        for (query[0..len], 0..) |c, i| lower_buf[i] = std.ascii.toLower(c);
+        for (query[0..len], 0..) |ch, i| lower_buf[i] = std.ascii.toLower(ch);
         return hash_mod.fnv1a64(lower_buf[0..len]);
     }
 
@@ -155,7 +155,6 @@ pub const PersistentQueryCache = struct {
     }
 
     fn evictIfNeeded(self: *PersistentQueryCache, db: *c.sqlite3) !void {
-        _ = self;
         const count_sql = "SELECT COUNT(*) FROM query_cache";
         var cnt_stmt: ?*c.sqlite3_stmt = null;
         const prep_rc = c.sqlite3_prepare_v2(db, count_sql, -1, &cnt_stmt, null);

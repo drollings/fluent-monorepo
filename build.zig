@@ -7,11 +7,12 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     // External dependencies
     // -------------------------------------------------------------------------
-    const vaxis = b.dependency("vaxis", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    _ = vaxis; // Reserved for future TUI work; remove _ when coral TUI lands.
+    // vaxis: reserved for future TUI work. Disabled until its uucode transitive
+    // dependency is compatible with Zig 0.15.
+    // const vaxis = b.dependency("vaxis", .{
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
 
     const zigsharedstring = b.dependency("zigsharedstring", .{
         .target = target,
@@ -154,6 +155,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "common", .module = common_module },
         },
     });
+    _ = simhash_module;
 
     // `wasm` — Extism WASM sandboxing + binary IPC.
     // Build with `-Dextism=true` when libextism is installed to enable real WASM execution.

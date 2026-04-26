@@ -4,10 +4,6 @@
     .minimum_zig_version = "0.15.0",
     .fingerprint = 0x7b6bc5a9c6c9ebd,
     .dependencies = .{
-        .vaxis = .{
-            .url = "git+https://github.com/rockorager/libvaxis#main",
-            .hash = "12203b5e7e7432c0a4dcc4a0bdb33c91b088b2d03814c724d64e6f6d7d4892fce7d6",
-        },
         .zigsharedstring = .{
             .path = "../zigsharedstring",
         },

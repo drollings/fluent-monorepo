@@ -140,17 +140,17 @@ pub const WordIndex = struct {
         }
 
         if (!self.skip_file_words) {
-        const compact = try self.allocator.alloc([]const u8, words_set.count());
-        var ki: usize = 0;
-        var wk_iter = words_set.keyIterator();
-        while (wk_iter.next()) |k| : (ki += 1) {
-            compact[ki] = k.*;
+            const compact = try self.allocator.alloc([]const u8, words_set.count());
+            var ki: usize = 0;
+            var wk_iter = words_set.keyIterator();
+            while (wk_iter.next()) |k| : (ki += 1) {
+                compact[ki] = k.*;
+            }
+            try self.file_words.put(stable_path, compact);
+        } else {
+            self.allocator.free(stable_path);
         }
-        try self.file_words.put(stable_path, compact);
-    } else {
-        self.allocator.free(stable_path);
-    }
-    words_set.deinit();
+        words_set.deinit();
     }
 
     pub fn removeFile(self: *WordIndex, path: []const u8) void {

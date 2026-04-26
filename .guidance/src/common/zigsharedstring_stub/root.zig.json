@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "module": "src.common.zigsharedstring_stub.root",
+    "source": "src/common/zigsharedstring_stub/root.zig",
+    "language": "zig"
+  },
+  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "SharedString",
+      "match_hash": "60049d8e0eba17f837b0a35cf2486bc58311eb3ac71adf5ab5b5b71965a45680",
+      "signature": "keyword_struct SharedString { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "00445980cfdd3600387b0638a958e6c2cdc2079d6482a9e32fe8a0087ddc1f25",
+          "signature": "fn init(allocator: std.mem.Allocator, data: []const u8) -> SharedString",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "data", "type": "[]const u8" }
+          ],
+          "returns": "SharedString",
+          "is_pub": true,
+          "line": 14
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "asSlice",
+          "match_hash": "053618b40e10cb5fe678458252d370a29884fde74a549aa5911e543a5dc6b35d",
+          "signature": "fn asSlice(self: *const SharedString) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const SharedString" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 22
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "retain",
+          "match_hash": "1cd29f5237ffa694d89ad6f91f4238e0665adbf3724c6eaff6b832ac923ff7a0",
+          "signature": "fn retain(self: *const SharedString) -> SharedString",
+          "params": [
+            { "name": "self", "type": "*const SharedString" }
+          ],
+          "returns": "SharedString",
+          "is_pub": true,
+          "line": 26
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "release",
+          "match_hash": "f617ccc3b0ed9f054b3c3789444e208dbd02fc9a2d7c98ed9bea100c4a8df313",
+          "signature": "fn release(self: *const SharedString, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*const SharedString" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 31
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "slice",
+          "match_hash": "5d77e7b759c165d1dc20af06dac89d02b36c32efed3bbc3c31e56ea68f17638a",
+          "signature": "fn slice(self: *const SharedString) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const SharedString" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 40
+        }
+      ],
+      "line": 3
+    }
+  ]
+}

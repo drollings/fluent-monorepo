@@ -8,12 +8,138 @@
   "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
+      "type": "enum",
+      "name": "ScanState",
+      "match_hash": "821b0806d83fbf657499be5ff0e6defea71a2f82edd4aee0c8057fb6c4e97d07",
+      "signature": "keyword_enum ScanState { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "enum_field",
+          "name": "loading_snapshot",
+          "is_pub": false,
+          "line": 25
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "walking",
+          "is_pub": false,
+          "line": 26
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "indexing",
+          "is_pub": false,
+          "line": 27
+        }
+    ,    {
+          "type": "enum_field",
+          "name": "ready",
+          "is_pub": false,
+          "line": 28
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "toString",
+          "match_hash": "8c0fc5a9a0ebbd606ebd3b65b6da97094cb3bef979f2f2fff8694079ded32890",
+          "signature": "fn toString(self: ScanState) -> []const u8",
+          "params": [
+            { "name": "self", "type": "ScanState" }
+          ],
+          "returns": "[]const u8",
+          "is_pub": true,
+          "line": 30
+        }
+      ],
+      "line": 24
+    },
+    {
+      "type": "fn_decl",
+      "name": "setScanState",
+      "match_hash": "2bc563f8533d4c2cd364e5d31ff7c7700b7f5eb3280ec606f46fe27ccb4213d8",
+      "signature": "fn setScanState(state: ScanState) -> void",
+      "params": [
+        { "name": "state", "type": "ScanState" }
+      ],
+      "returns": "void",
+      "is_pub": true,
+      "line": 42
+    },
+    {
+      "type": "fn_decl",
+      "name": "getScanState",
+      "match_hash": "874d1ccc1a5106472b972c85278aeb3ac40894d850dd35afdcf52336880d312a",
+      "signature": "fn getScanState() -> ScanState",
+      "returns": "ScanState",
+      "is_pub": true,
+      "line": 46
+    },
+    {
+      "type": "struct",
+      "name": "IdleWatchdog",
+      "match_hash": "a24aba8929b0521c3475fcd4e3b21400bd18110cafe1229cd0d361515372e7f5",
+      "signature": "keyword_struct IdleWatchdog { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "04eed43bc1dfc3e87d35a7b474d16cd9ed04b99eb11bf5c171941547c855a4bd",
+          "signature": "fn init(allocator: std.mem.Allocator, idle_timeout_ms: u64) -> IdleWatchdog",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "idle_timeout_ms", "type": "u64" }
+          ],
+          "returns": "IdleWatchdog",
+          "is_pub": true,
+          "line": 55
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "recordActivity",
+          "match_hash": "6267edab84983927d0649a76116b35b13fe5a470b9906b0b03eda4133d3b37e9",
+          "signature": "fn recordActivity(self: *IdleWatchdog) -> void",
+          "params": [
+            { "name": "self", "type": "*IdleWatchdog" }
+          ],
+          "returns": "void",
+          "is_pub": true,
+          "line": 63
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "isIdle",
+          "match_hash": "902f8711be38e68af8f9041d662f363e697b4b08b12897f97034a4eac36265f4",
+          "signature": "fn isIdle(self: *IdleWatchdog) -> bool",
+          "params": [
+            { "name": "self", "type": "*IdleWatchdog" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 67
+        }
+    ,    {
+          "type": "fn_decl",
+          "name": "watchStdin",
+          "match_hash": "114ae9d86c6ba2eeeb26362ef2b78b36f8bd31711330f26afce5db4b0a113867",
+          "signature": "fn watchStdin(self: *IdleWatchdog) -> bool",
+          "params": [
+            { "name": "self", "type": "*IdleWatchdog" }
+          ],
+          "returns": "bool",
+          "is_pub": true,
+          "line": 73
+        }
+      ],
+      "line": 50
+    },
+    {
       "type": "struct",
       "name": "Request",
       "match_hash": "2b345c894ea6745785bd353c470d9ee6f03cee527e4f280160c3c1f4d41eb3c0",
       "signature": "keyword_struct Request { ... }",
       "is_pub": false,
-      "line": 27
+      "line": 97
     },
     {
       "type": "fn_private",
@@ -26,7 +152,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 34
+      "line": 104
     },
     {
       "type": "fn_private",
@@ -40,7 +166,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 51
+      "line": 121
     },
     {
       "type": "fn_private",
@@ -55,7 +181,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 63
+      "line": 133
     },
     {
       "type": "fn_private",
@@ -69,7 +195,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 82
+      "line": 152
     },
     {
       "type": "fn_private",
@@ -82,7 +208,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 93
+      "line": 163
     },
     {
       "type": "fn_private",
@@ -98,7 +224,7 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 108
+      "line": 178
     },
     {
       "type": "fn_decl",
@@ -111,7 +237,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 195
+      "line": 265
     }
   ]
 }

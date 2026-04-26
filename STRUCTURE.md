@@ -119,6 +119,8 @@ Then you you must read
 │       └── target_language.mk
 ├── src
 │   ├── common
+│   │   ├── vaxis_stub
+│   │   │   └── root.zig
 │   │   ├── args.zig
 │   │   ├── builder_error.zig                     # builder_error.zig — Structured error type for fluent builder chains.
 │   │   ├── builder_error_tests.zig               # Tests for builder_error.zig.
@@ -128,8 +130,11 @@ Then you you must read
 │   │   ├── drift.zig                             # drift.zig — BitSet DRIFT: deterministic follow-up query generation.
 │   │   ├── embeddings.zig                        # [gof-patterns]  Embedding providers — convert text to vectors for semantic search.
 │   │   ├── embeddings_tests.zig                  # Tests for embeddings.zig.
+│   │   ├── entity.zig
 │   │   ├── error_context.zig                     # error_context.zig — Structured error context for non-builder code paths.
+│   │   ├── file_lock.zig
 │   │   ├── format.zig
+│   │   ├── freq_table.zig
 │   │   ├── hash.zig                              # hash.zig — Generic cryptographic hashing utilities
 │   │   ├── hash_tests.zig                        # Tests for hash.zig.
 │   │   ├── interner.zig                          # interner.zig — String interning with optional bitset support.
@@ -143,20 +148,25 @@ Then you you must read
 │   │   ├── metrics.zig                           # metrics.zig — Generic latency histogram primitive (M8.1)
 │   │   ├── pattern.zig                           # pattern.zig — Design pattern detection heuristics for Zig source code
 │   │   ├── pattern_tests.zig                     # Tests for pattern.zig.
+│   │   ├── query_cache.zig
 │   │   ├── refcount.zig                          # refcount.zig — Reference-counted VTable handle wrapper (M7).
 │   │   ├── root.zig                              # common — Module umbrella root.
 │   │   ├── shell.zig                             # shell.zig — Shared shell command execution helpers
 │   │   ├── shell_parser.zig                      # shell_parser.zig — Safe command-string tokenizer
 │   │   ├── shell_parser_tests.zig                # Tests for shell_parser.zig.
 │   │   ├── shell_tests.zig                       # Tests for shell.zig.
+│   │   ├── snapshot.zig
 │   │   ├── source.zig                            # source.zig — Source code excerpt extraction helpers
 │   │   ├── source_tests.zig                      # Tests for source.zig.
 │   │   ├── string.zig                            # string.zig — Generic string classification and inspection helpers
 │   │   ├── string_tests.zig                      # Tests for string.zig.
 │   │   ├── terminal.zig
+│   │   ├── tokenizer.zig
+│   │   ├── trigram_index.zig
 │   │   ├── types.zig                             # Number of LOD (Level of Detail) text slots per content node.
 │   │   ├── url.zig                               # url.zig — Generic URL validation helpers
 │   │   ├── url_tests.zig                         # Tests for url.zig.
+│   │   ├── word_index.zig
 │   │   ├── wrapper.zig                           # wrapper.zig — Conditional and composable comptime wrappers (M9).
 │   │   └── wrapper_tests.zig                     # Tests for wrapper.zig.
 │   ├── concurrency

@@ -15,17 +15,16 @@ pub const EntityType = enum {
 };
 
 pub const ENTITY_STOPLIST = std.StaticStringMap(void).initComptime(.{
-    .{"The", {}}, .{"This", {}}, .{"That", {}}, .{"When", {}},
-    .{"Where", {}}, .{"What", {}}, .{"Why", {}}, .{"Who", {}},
-    .{"Which", {}}, .{"How", {}}, .{"Then", {}}, .{"There", {}},
-    .{"Here", {}}, .{"Now", {}}, .{"Just", {}}, .{"Also", {}},
-    .{"Some", {}}, .{"Such", {}}, .{"Each", {}}, .{"Every", {}},
-    .{"Monday", {}}, .{"Tuesday", {}}, .{"Wednesday", {}},
-    .{"Thursday", {}}, .{"Friday", {}}, .{"Saturday", {}}, .{"Sunday", {}},
-    .{"January", {}}, .{"February", {}}, .{"March", {}},
-    .{"April", {}}, .{"May", {}}, .{"June", {}},
-    .{"July", {}}, .{"August", {}}, .{"September", {}},
-    .{"October", {}}, .{"November", {}}, .{"December", {}},
+    .{ "The", {} },      .{ "This", {} },     .{ "That", {} },      .{ "When", {} },
+    .{ "Where", {} },    .{ "What", {} },     .{ "Why", {} },       .{ "Who", {} },
+    .{ "Which", {} },    .{ "How", {} },      .{ "Then", {} },      .{ "There", {} },
+    .{ "Here", {} },     .{ "Now", {} },      .{ "Just", {} },      .{ "Also", {} },
+    .{ "Some", {} },     .{ "Such", {} },     .{ "Each", {} },      .{ "Every", {} },
+    .{ "Monday", {} },   .{ "Tuesday", {} },  .{ "Wednesday", {} }, .{ "Thursday", {} },
+    .{ "Friday", {} },   .{ "Saturday", {} }, .{ "Sunday", {} },    .{ "January", {} },
+    .{ "February", {} }, .{ "March", {} },    .{ "April", {} },     .{ "May", {} },
+    .{ "June", {} },     .{ "July", {} },     .{ "August", {} },    .{ "September", {} },
+    .{ "October", {} },  .{ "November", {} }, .{ "December", {} },
 });
 
 pub fn candidateEntityWords(text: []const u8, allocator: std.mem.Allocator) ![]const []const u8 {
