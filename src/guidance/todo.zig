@@ -582,20 +582,12 @@ pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir
         const basename = std.fs.path.basename(item_dir);
         const header = try std.fmt.allocPrint(allocator, "# Diary: {s}\n\n", .{basename});
         defer allocator.free(header);
-        var wbuf: [4096]u8 = undefined;
-        var writer = df.writer(io, &wbuf);
-        try writer.interface.writeAll(header);
-        try writer.interface.flush();
-    } else {
-        const end_pos = try df.stat(io);
-        try df.seekTo(io, end_pos.size);
+        try std.Io.File.writePositionalAll(df, io, header, 0);
     }
 
     {
-        var wbuf: [4096]u8 = undefined;
-        var writer = df.writer(io, &wbuf);
-        try writer.interface.writeAll(entry);
-        try writer.interface.flush();
+        const end_pos = try df.stat(io);
+        try std.Io.File.writePositionalAll(df, io, entry, end_pos.size);
     }
     std.debug.print("diary: {s}", .{entry});
 }
@@ -651,7 +643,7 @@ pub fn writeCommittedMd(
     const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_dir});
     defer allocator.free(committed_path);
 
-    const ts: i64 = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s);
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s));
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
     const day = epoch.getDaySeconds();
     const year_day = epoch.getEpochDay().calculateYearDay();
@@ -688,7 +680,10 @@ pub fn writeCommittedMd(
 
     const cf = try std.Io.Dir.createFileAbsolute(io, committed_path, .{});
     defer cf.close(io);
-    try cf.writeAll(io, buf.items);
+    var wbuf: [4096]u8 = undefined;
+    var writer = cf.writer(io, &wbuf);
+    try writer.interface.writeAll(buf.items);
+    try writer.interface.flush();
 }
 
 // ---------------------------------------------------------------------------

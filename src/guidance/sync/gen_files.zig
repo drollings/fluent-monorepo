@@ -37,7 +37,7 @@ const stepPrint = types.stepPrint;
 /// Callback type for synchronizing capabilities during gen.
 /// Avoids circular dependency: sync_engine.zig owns the actual implementation,
 /// gen_files.zig calls it via this function pointer when provided.
-pub const CapabilitiesSyncFn = *const fn (std.mem.Allocator, []const u8, []const u8, []const u8, bool) void;
+pub const CapabilitiesSyncFn = *const fn (std.mem.Allocator, []const u8, []const u8, []const u8, bool) anyerror!void;
 
 // =============================================================================
 // GenArgs — parsed CLI flags for the gen subcommand
@@ -628,7 +628,7 @@ pub fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) !void {
     const aliases_path = try std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" });
     defer allocator.free(aliases_path);
 
-    std.Io.Dir.cwd().access(aliases_path, .{}) catch |err| {
+    std.Io.Dir.cwd().access(std.Io.Threaded.global_single_threaded.io(), aliases_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
             if (verbose) std.debug.print("semantic-aliases: {s} not found, using default aliases\n", .{aliases_path});
             // Create a minimal default aliases file
@@ -1006,7 +1006,11 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     if (ga.compile_db) {
         // M8.2: Auto-sync capabilities before DB sync so capability embeddings
         // and source mappings are always current.
-        if (caps_sync_fn) |syncFn| syncFn(allocator, paths.json_dir, paths.db_path, cfg.capabilities_dir, ga.verbose);
+        if (caps_sync_fn) |syncFn| {
+            syncFn(allocator, paths.json_dir, paths.db_path, cfg.capabilities_dir, ga.verbose) catch |err| {
+                std.debug.print("warning: capability sync failed: {s}\n", .{@errorName(err)});
+            };
+        }
 
         // Generate semantic aliases from keyword frequency analysis
         // json_dir is the .guidance directory
@@ -1226,7 +1230,10 @@ pub fn postProcessCommentSync(
                 continue;
             };
             defer file.close(io);
-            try file.writeAll(current_source);
+            var wbuf: [4096]u8 = undefined;
+            var writer = file.writer(io, &wbuf);
+            try writer.interface.writeAll(current_source);
+            try writer.interface.flush();
             modified_count += 1;
 
             // Run fmt on the modified file.

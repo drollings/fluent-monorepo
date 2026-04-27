@@ -6,7 +6,7 @@
 const std = @import("std");
 
 pub fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) !bool {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = @import("io.zig").singleIo();
     const result = try std.process.run(allocator, io, .{ .argv = argv });
     defer {
         allocator.free(result.stdout);

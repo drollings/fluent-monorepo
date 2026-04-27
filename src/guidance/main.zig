@@ -72,7 +72,12 @@ const Command = enum {
 };
 
 /// Starts the Zig program execution by defining the entry point.
-pub fn main(init: std.process.Init.Minimal) !void {
+pub fn main(init: std.process.Init) !void {
+    // Inject the runtime-provided Io into the common io layer so that
+    // std.process.run / spawn work correctly (global_single_threaded.allocator
+    // is a failing allocator that cannot back process spawning).
+    common.io.setGlobalIo(init.io);
+
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
@@ -84,7 +89,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         args_list.deinit(allocator);
     }
     {
-        var iter = try init.args.iterateAllocator(allocator);
+        var iter = try init.minimal.args.iterateAllocator(allocator);
         defer iter.deinit();
         while (iter.next()) |arg| try args_list.append(allocator, try allocator.dupe(u8, arg));
     }

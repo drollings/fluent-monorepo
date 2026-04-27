@@ -10,10 +10,25 @@ const std = @import("std");
 
 pub const BUFFER_SIZE = 4096;
 
-/// Returns the global single-threaded Io context.
-/// Use this for synchronous file I/O in functions that don't receive an Io from their caller.
+/// Process-capable Io set by main() from std.process.Init.io.
+/// Null until setGlobalIo() is called; falls back to global_single_threaded for
+/// file-only operations (openDir, readFileAlloc, etc.) which work without a
+/// backing allocator.  Process spawning (std.process.run/spawn) requires the
+/// non-null io provided by std.process.Init.
+var g_io: ?std.Io = null;
+
+/// Call once from main() before any subcommand is dispatched.
+pub fn setGlobalIo(io: std.Io) void {
+    g_io = io;
+}
+
+/// Returns the global Io context.
+/// After setGlobalIo() is called this returns the Init-provided io which
+/// supports all operations including process spawning.  Before that (e.g. in
+/// unit tests) it falls back to global_single_threaded which only supports
+/// file I/O.
 pub fn singleIo() std.Io {
-    return std.Io.Threaded.global_single_threaded.io();
+    return g_io orelse std.Io.Threaded.global_single_threaded.io();
 }
 
 pub const WriterState = struct {

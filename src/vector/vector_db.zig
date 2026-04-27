@@ -767,14 +767,14 @@ pub const GuidanceDb = struct {
         const guidance_dir = std.fs.path.dirname(src_dir_path) orelse ".";
         const workspace = std.fs.path.dirname(guidance_dir) orelse ".";
 
-        var src_dir = std.fs.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
+        var src_dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_dir_path, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
                 log.warn("guidance src dir not found: {s}", .{src_dir_path});
                 return;
             }
             return err;
         };
-        defer src_dir.close();
+        defer src_dir.close(std.Io.Threaded.global_single_threaded.io());
 
         var walker = try src_dir.walk(allocator);
         defer walker.deinit();
@@ -789,11 +789,11 @@ pub const GuidanceDb = struct {
             const rel_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ src_dir_path, entry.path });
             defer allocator.free(rel_path);
 
-            const stat = std.fs.cwd().statFile(rel_path) catch |err| {
+            const stat = std.Io.Dir.cwd().statFile(std.Io.Threaded.global_single_threaded.io(), rel_path, .{}) catch |err| {
                 log.warn("stat({s}): {s}", .{ rel_path, @errorName(err) });
                 continue;
             };
-            const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime, std.time.ns_per_s));
+            const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime.nanoseconds, std.time.ns_per_s));
 
             if (try self.fileIsUpToDate(rel_path, mtime_sec)) {
                 skipped += 1;
@@ -827,15 +827,14 @@ pub const GuidanceDb = struct {
         mapping_path: ?[]const u8,
     ) !void {
         std.debug.print("[sync-capabilities] scanning {s}\n", .{cap_dir});
-        var dir = std.fs.cwd().openDir(cap_dir, .{ .iterate = true }) catch |err| {
+        var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), cap_dir, .{ .iterate = true }) catch |err| {
             if (err == error.FileNotFound) {
                 std.debug.print("[sync-capabilities] dir not found: {s}\n", .{cap_dir});
                 return;
             }
-            std.debug.print("[sync-capabilities] error opening dir: {s}\n", .{@errorName(err)});
             return err;
         };
-        defer dir.close();
+        defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
         // Pre-load capability keywords from mapping file for embedding enrichment.
         // This is a best-effort load — missing file is not an error.
@@ -863,8 +862,8 @@ pub const GuidanceDb = struct {
             const abs_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ cap_dir, entry.path });
             defer allocator.free(abs_path);
 
-            const stat = std.fs.cwd().statFile(abs_path) catch continue;
-            const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime, std.time.ns_per_s));
+            const stat = std.Io.Dir.cwd().statFile(std.Io.Threaded.global_single_threaded.io(), abs_path, .{}) catch continue;
+            const mtime_sec: i64 = @intCast(@divTrunc(stat.mtime.nanoseconds, std.time.ns_per_s));
 
             // Check if already up-to-date
             const up_to_date = blk: {
@@ -908,7 +907,7 @@ pub const GuidanceDb = struct {
         mtime: i64,
         keywords: []const []const u8,
     ) !void {
-        const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 512 * 1024);
+        const content = try std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), file_path, allocator, .limited(512 * 1024));
         defer allocator.free(content);
 
         // Parse YAML-ish frontmatter: ---\nname: ...\ndescription: ...\n---
@@ -1243,7 +1242,7 @@ pub const GuidanceDb = struct {
         confidence: f32,
         reason: []const u8,
     ) !bool {
-        const timestamp: i64 = @intCast(std.time.nanoTimestamp());
+        const timestamp: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s));
         const sql = "INSERT OR REPLACE INTO capability_sources" ++
             "(capability_name, source_path, confidence, reason, updated_at)" ++
             " VALUES (?1, ?2, ?3, ?4, ?5)";
@@ -1518,7 +1517,7 @@ pub const GuidanceDb = struct {
     }
 
     fn indexFile(self: *Self, allocator: std.mem.Allocator, file_path: []const u8, mtime: i64, workspace: []const u8) !void {
-        const file_data = try std.fs.cwd().readFileAlloc(allocator, file_path, 8 * 1024 * 1024);
+        const file_data = try std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), file_path, allocator, .limited(8 * 1024 * 1024));
         defer allocator.free(file_data);
 
         if (file_data.len == 0) {
@@ -1536,7 +1535,7 @@ pub const GuidanceDb = struct {
         const source_text: ?[]u8 = if (std.mem.eql(u8, parsed.language, "zig")) blk: {
             const src_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ workspace, parsed.source });
             defer allocator.free(src_path);
-            break :blk std.fs.cwd().readFileAlloc(allocator, src_path, 5 * 1024 * 1024) catch null;
+            break :blk std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), src_path, allocator, .limited(5 * 1024 * 1024)) catch null;
         } else null;
         defer if (source_text) |t| allocator.free(t);
 
@@ -4318,7 +4317,7 @@ fn loadCapabilityKeywordsMap(
     mapping_path: []const u8,
     map: *std.StringHashMapUnmanaged([]const []const u8),
 ) !void {
-    const content = std.fs.cwd().readFileAlloc(alloc, mapping_path, 512 * 1024) catch return;
+    const content = try std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), mapping_path, alloc, .limited(512 * 1024));
 
     const Value = std.json.Value;
     var parsed = try std.json.parseFromSlice(Value, alloc, content, .{ .ignore_unknown_fields = true });

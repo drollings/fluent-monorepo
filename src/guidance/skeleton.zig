@@ -553,7 +553,8 @@ fn findAndGenerateStructSkeleton(
     const full_path = std.fs.path.join(allocator, &.{ json_dir, rel_path }) catch return null;
     defer allocator.free(full_path);
 
-    const content = std.Io.Dir.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, full_path, allocator, .limited(2 * 1024 * 1024)) catch return null;
     defer allocator.free(content);
 
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
@@ -581,7 +582,7 @@ fn findAndGenerateStructSkeleton(
         defer allocator.free(cwd);
         const abs_src = std.fs.path.join(allocator, &.{ cwd, sp }) catch break :blk;
         defer allocator.free(abs_src);
-        source_content = std.Io.Dir.cwd().readFileAlloc(allocator, abs_src, 10 * 1024 * 1024) catch break :blk;
+        source_content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), abs_src, allocator, .limited(10 * 1024 * 1024)) catch break :blk;
     }
 
     for (members.array.items) |m| {

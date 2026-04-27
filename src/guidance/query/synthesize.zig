@@ -133,15 +133,15 @@ pub fn synthesize(
             \\
         , .{query});
 
-        if (prose_buf.items.len > 0) {
-            try fw.print("\nComment:\n{s}\n", .{prose_buf.items});
+        if (prose_buf_aw.written().len > 0) {
+            try full_prompt_aw.writer.print("\nComment:\n{s}\n", .{prose_buf_aw.written()});
         }
 
-        if (code_buf.items.len > 0) {
-            try fw.print("\nCode:\n{s}\n", .{code_buf.items});
+        if (code_buf_aw.written().len > 0) {
+            try full_prompt_aw.writer.print("\nCode:\n{s}\n", .{code_buf_aw.written()});
         }
 
-        try fw.writeAll(
+        try full_prompt_aw.writer.writeAll(
             \\
             \\Write a ONE-SENTENCE summary (under 400 characters) describing what this is.
             \\Do NOT use headers or sections. Just one clear sentence.
@@ -151,7 +151,7 @@ pub fn synthesize(
         );
 
         // Use lower max_tokens for brief output
-        const raw_opt = client.complete(full_prompt.items, 300, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
+        const raw_opt = client.complete(full_prompt_aw.written(), 300, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
         const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
         defer allocator.free(raw);
 
@@ -215,7 +215,7 @@ pub fn synthesize(
 
     if (is_long_query) {
         // Enhanced synthesis for long queries with structured sections + grounding
-        try fw.print(
+        try full_prompt_aw.writer.print(
             \\You are a technical documentation expert. Explain how the code works in detail.
             \\
             \\Query: {s}
@@ -241,10 +241,10 @@ pub fn synthesize(
             \\## Data Flow
             \\Brief description of how data moves through the system.
             \\
-        , .{ query, sources_buf.items });
+        , .{ query, sources_buf_aw.written() });
     } else {
         // Brief synthesis for short queries + grounding
-        try fw.print(
+        try full_prompt_aw.writer.print(
             \\You are a code documentation assistant. Write a concise technical answer.
             \\
             \\Query: {s}
@@ -254,23 +254,23 @@ pub fn synthesize(
             \\
             \\{s}
             \\
-        , .{ query, sources_buf.items });
+        , .{ query, sources_buf_aw.written() });
     }
 
-    if (detail_buf.items.len > 0) {
-        try fw.print("\n## Module Documentation\n\n{s}\n", .{detail_buf.items});
+    if (detail_buf_aw.written().len > 0) {
+        try full_prompt_aw.writer.print("\n## Module Documentation\n\n{s}\n", .{detail_buf_aw.written()});
     }
 
-    if (prose_buf.items.len > 0) {
-        try fw.print("\n## Code Comments\n\n{s}\n", .{prose_buf.items});
+    if (prose_buf_aw.written().len > 0) {
+        try full_prompt_aw.writer.print("\n## Code Comments\n\n{s}\n", .{prose_buf_aw.written()});
     }
 
-    if (code_buf.items.len > 0) {
-        try fw.print("\n## Source Code\n\n{s}\n", .{code_buf.items});
+    if (code_buf_aw.written().len > 0) {
+        try full_prompt_aw.writer.print("\n## Source Code\n\n{s}\n", .{code_buf_aw.written()});
     }
 
     if (is_long_query) {
-        try fw.writeAll(
+        try full_prompt_aw.writer.writeAll(
             \\
             \\Be thorough and technical. Use specific terms from the source code above.
             \\After your answer, suggest 2-3 related search queries.
@@ -278,7 +278,7 @@ pub fn synthesize(
             \\
         );
     } else {
-        try fw.writeAll(
+        try full_prompt_aw.writer.writeAll(
             \\
             \\Write a concise answer (200-400 words). Cover:
             \\- What it does (1-2 sentences)
@@ -293,7 +293,7 @@ pub fn synthesize(
     }
 
     // Use fast model with moderate max_tokens for concise output
-    const raw_opt = client.complete(full_prompt.items, 600, 0.3, null) catch return .{ .summary = null, .followup_keywords = null };
+    const raw_opt = client.complete(full_prompt_aw.written(), 600, 0.3, null) catch return .{ .summary = null, .followup_keywords = null };
     const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
     defer allocator.free(raw);
 

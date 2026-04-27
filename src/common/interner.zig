@@ -14,46 +14,47 @@ const reflection = @import("reflection");
 pub const StringInterner = @This();
 
 arena: std.heap.ArenaAllocator,
-string_to_index: std.StringHashMapUnmanaged(usize),
-index_to_string: std.ArrayListUnmanaged([]const u8),
+string_to_index: std.StringHashMap(usize),
+index_to_string: std.ArrayList([]const u8),
 next_index: usize = 0,
-lock: std.Thread.RwLock = .{},
+lock: std.Io.RwLock = .init,
 
 /// Initializes a memory allocator with a string interner for efficient string handling.
 pub fn init(allocator: std.mem.Allocator) StringInterner {
     return .{
         .arena = std.heap.ArenaAllocator.init(allocator),
-        .string_to_index = .{},
-        .index_to_string = .{},
+        .string_to_index = std.StringHashMap(usize).init(allocator),
+        .index_to_string = .empty,
     };
 }
 
 /// Releases resources associated with the StringInterner instance.
 pub fn deinit(self: *StringInterner) void {
-    self.string_to_index.deinit(self.arena.allocator());
+    self.string_to_index.deinit();
     self.index_to_string.deinit(self.arena.allocator());
     self.arena.deinit();
 }
 
 /// Converts a null-terminated C string into a Zig-safe slice, returning its length.
 pub fn intern(self: *StringInterner, str: []const u8) !usize {
+    const io = std.Io.Threaded.global_single_threaded.io();
     // fast path: read lock
-    self.lock.lockShared();
+    try self.lock.lockShared(io);
     if (self.string_to_index.get(str)) |idx| {
-        self.lock.unlockShared();
+        self.lock.unlockShared(io);
         return idx;
     }
-    self.lock.unlockShared();
+    self.lock.unlockShared(io);
 
     // slow path: write lock
-    self.lock.lock();
-    defer self.lock.unlock();
+    try self.lock.lock(io);
+    defer self.lock.unlock(io);
     // double-check after acquiring write lock
     if (self.string_to_index.get(str)) |idx| {
         return idx;
     }
 
-    const gop = try self.string_to_index.getOrPut(self.arena.allocator(), str);
+    const gop = try self.string_to_index.getOrPut(str);
     if (gop.found_existing) {
         return gop.value_ptr.*;
     }
@@ -71,8 +72,9 @@ pub fn intern(self: *StringInterner, str: []const u8) !usize {
 
 /// Retrieves the index position of a given string slice within a StringInterner context.
 pub fn getIndex(self: *StringInterner, str: []const u8) ?usize {
-    self.lock.lockShared();
-    defer self.lock.unlockShared();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    self.lock.lockShared(io) catch unreachable;
+    defer self.lock.unlockShared(io);
     return self.string_to_index.get(str);
 }
 

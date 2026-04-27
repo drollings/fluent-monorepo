@@ -191,10 +191,16 @@ pub const SyncProcessor = struct {
         };
         defer file.close(io);
 
-        const source = std.Io.Dir.cwd().readFileAlloc(io, filepath, self.allocator, .limited(10 * 1024 * 1024)) catch {
+        const source_slice = std.Io.Dir.cwd().readFileAlloc(io, filepath, self.allocator, .limited(10 * 1024 * 1024)) catch {
             return error.ReadError;
         };
-        defer self.allocator.free(source);
+        defer self.allocator.free(source_slice);
+
+        // Ensure null-terminated for AstParser
+        const source: [:0]const u8 = if (source_slice[source_slice.len - 1] == 0)
+            source_slice[0..source_slice.len - 1 :0]
+        else try self.allocator.dupeZ(u8, source_slice);
+        defer if (!std.mem.eql(u8, source, source_slice)) self.allocator.free(source);
 
         var parser = ast_parser.AstParser.init(self.allocator, source) catch {
             return error.ParseError;
@@ -596,7 +602,7 @@ pub const SyncProcessor = struct {
         // purely to rate-limit API calls.  Without an enhancer there is nothing
         // to rate-limit and the sleep would just add unnecessary latency.
         if (timeout_seconds > 0 and self.enhancer != null) {
-            std.Thread.sleep(timeout_seconds * std.time.ns_per_s);
+            std.Io.sleep(std.Io.Threaded.global_single_threaded.io(), .{ .nanoseconds = timeout_seconds * std.time.ns_per_s }, .real) catch {};
         }
 
         return result;
@@ -606,7 +612,7 @@ pub const SyncProcessor = struct {
         var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), dir_path, .{ .iterate = true }) catch {
             return error.DirectoryNotFound;
         };
-        defer dir.close();
+        defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
         var count: usize = 0;
         var walker = dir.walk(self.allocator) catch return 0;
@@ -623,7 +629,7 @@ pub const SyncProcessor = struct {
                     const json_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.output_dir, rel });
                     defer self.allocator.free(json_path);
                     const exists = if (std.Io.Dir.openFileAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path, .{})) |f| blk: {
-                        f.close();
+                        f.close(std.Io.Threaded.global_single_threaded.io());
                         break :blk true;
                     } else |_| false;
                     if (exists) continue; // guidance JSON already present — skip
@@ -1055,7 +1061,7 @@ pub const SyncProcessor = struct {
         defer self.allocator.free(src_dir_path);
 
         var src_dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_dir_path, .{ .iterate = true }) catch return &.{};
-        defer src_dir.close();
+        defer src_dir.close(std.Io.Threaded.global_single_threaded.io());
 
         // Derive the stem (filename without .zig) and @import pattern to search for.
         const basename = std.fs.path.basename(rel_path);

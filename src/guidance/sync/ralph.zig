@@ -61,12 +61,12 @@ pub fn cmdCheck(
     }
 
     if (use_snapshot and !ga.force) {
-        const cwd = std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator) catch "";
+        const cwd = std.process.currentPathAlloc(common.io.singleIo(), allocator) catch "";
         defer if (cwd.len > 0) allocator.free(cwd);
         var dir_buf: [4096]u8 = undefined;
         const guidance_dir = std.fmt.bufPrint(&dir_buf, "{s}/.guidance", .{cwd}) catch ".guidance";
 
-        const git_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
+        const git_result = try std.process.run(allocator, common.io.singleIo(), .{
             .argv = &[_][]const u8{ "git", "rev-parse", "HEAD" },
         });
         defer {
@@ -89,7 +89,7 @@ pub fn cmdCheck(
     try gen_fn(allocator, ga, caps_sync_fn);
 
     if (run_structure and !ga.dry_run) {
-        const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
+        const cwd = try std.process.currentPathAlloc(common.io.singleIo(), allocator);
         defer allocator.free(cwd);
 
         var cfg = config_mod.loadConfig(allocator, cwd) catch
@@ -131,14 +131,14 @@ pub fn collectFilesWithExts(
         results.deinit(allocator);
     }
 
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     var dir = std.Io.Dir.openDirAbsolute(io, dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
     defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
+    while (try walker.next(common.io.singleIo())) |entry| {
         if (entry.kind != .file) continue;
         if (std.mem.endsWith(u8, entry.basename, "_tests.zig")) continue;
         const ext = std.fs.path.extension(entry.basename);

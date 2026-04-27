@@ -247,7 +247,7 @@ pub const QueryCache = struct {
         gop.value_ptr.* = .{
             .lower_query = lower_query,
             .result_summary = result_summary,
-            .timestamp = std.time.nanoTimestamp(),
+            .timestamp = @as(i128, std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds),
         };
     }
 };

@@ -202,7 +202,7 @@ fn syncCapabilitiesIfStale(
     db_path: []const u8,
     capabilities_dir: []const u8,
     verbose: bool,
-) void {
+) !void {
     const index_path = std.fs.path.join(allocator, &.{ json_dir, "capability-index.json" }) catch return;
     defer allocator.free(index_path);
 
@@ -216,7 +216,7 @@ fn syncCapabilitiesIfStale(
         std.Io.Dir.accessAbsolute(io, capabilities_dir, .{}) catch return; // no cap dir → nothing to do
         var cap_dir = std.Io.Dir.openDirAbsolute(io, capabilities_dir, .{ .iterate = true }) catch return;
         defer cap_dir.close(io);
-        var walker = try cap_dir.walk(allocator);
+        var walker = cap_dir.walk(allocator) catch return;
         defer walker.deinit();
         while (true) {
             const entry = walker.next(io) catch continue;
@@ -811,39 +811,39 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
     // ------------------------------------------------------------------
     // Step 2: Build and write capability-index.json.
     // ------------------------------------------------------------------
-    var index_obj = std.json.ObjectMap.init(fa);
-    try index_obj.put("version", .{ .integer = 1 });
+    var index_obj = std.json.ObjectMap.init(fa, &[_][]const u8{}, &[_]std.json.Value{}) catch unreachable;
+    try index_obj.put(fa, "version", .{ .integer = 1 });
 
     const io = std.Io.Threaded.global_single_threaded.io();
     const timestamp: i128 = @as(i128, std.Io.Timestamp.now(io, .real).nanoseconds);
     const timestamp_str = try std.fmt.allocPrint(fa, "{d}", .{timestamp});
-    try index_obj.put("generated", .{ .string = timestamp_str });
+    try index_obj.put(fa, "generated", .{ .string = timestamp_str });
 
     var capabilities_arr = std.json.Array.init(fa);
     for (capabilities.items) |cap| {
-        var cap_obj = std.json.ObjectMap.init(fa);
-        try cap_obj.put("name", .{ .string = cap.name });
+        var cap_obj = std.json.ObjectMap.init(fa, &[_][]const u8{}, &[_]std.json.Value{}) catch unreachable;
+        try cap_obj.put(fa, "name", .{ .string = cap.name });
         if (cap.description) |d| {
-            try cap_obj.put("description", .{ .string = d });
+        try cap_obj.put(fa, "description", .{ .string = d });
         }
 
         var anchors_arr = std.json.Array.init(fa);
         for (cap.anchors) |a| {
             try anchors_arr.append(.{ .string = a });
         }
-        try cap_obj.put("anchors", .{ .array = anchors_arr });
+        try cap_obj.put(fa, "anchors", .{ .array = anchors_arr });
 
         var keywords_arr = std.json.Array.init(fa);
         for (cap.keywords) |k| {
             try keywords_arr.append(.{ .string = k });
         }
-        try cap_obj.put("keywords", .{ .array = keywords_arr });
+        try cap_obj.put(fa, "keywords", .{ .array = keywords_arr });
 
-        try cap_obj.put("source", .{ .string = cap.source });
+        try cap_obj.put(fa, "source", .{ .string = cap.source });
 
         try capabilities_arr.append(.{ .object = cap_obj });
     }
-    try index_obj.put("capabilities", .{ .array = capabilities_arr });
+    try index_obj.put(fa, "capabilities", .{ .array = capabilities_arr });
 
     const json_out = try common.jsonStringifyAlloc(fa, std.json.Value{ .object = index_obj });
 
@@ -855,10 +855,7 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
     // ── Lifecycle detection (compare with previous index) ─────────────────
     _ = reportCapabilityLifecycle(fa, index_path, capabilities.items, verbose) catch null;
 
-    const file = std.Io.Dir.cwd().createFile(index_path, .{}) catch |err| {
-        std.debug.print("[sync-capabilities] cannot write {s}: {s}\n", .{ index_path, @errorName(err) });
-        return;
-    };
+    const file = try std.Io.Dir.cwd().createFile(io, index_path, .{});
     defer file.close(io);
     var wbuf: [8192]u8 = undefined;
     var fw = file.writer(io, &wbuf);
@@ -913,7 +910,7 @@ pub fn reportCapabilityLifecycle(
     var unchanged_count: usize = 0;
 
     // Load previous index if exists
-    const prev_content = std.Io.Dir.cwd().readFileAlloc(allocator, prev_index_path, 2 * 1024 * 1024) catch null;
+    const prev_content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), prev_index_path, allocator, .limited(2 * 1024 * 1024)) catch null;
     defer if (prev_content) |pc| allocator.free(pc);
 
     var prev_caps: std.StringHashMapUnmanaged(struct {
@@ -1065,7 +1062,7 @@ fn pruneCapabilitySources(
         const md_abs = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
         defer allocator.free(md_abs);
 
-        const content = std.Io.Dir.cwd().readFileAlloc(fa, md_abs, 512 * 1024) catch continue;
+        const content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), md_abs, fa, .limited(512 * 1024)) catch continue;
         const marker = "<!-- AUTO-SOURCES:";
         const marker_pos = std.mem.indexOf(u8, content, marker);
 
@@ -1211,8 +1208,8 @@ fn updateCapabilitySourcesSection(
     errdefer out_aw.deinit();
     const w = &out_aw.writer;
 
-    try out_aw.writeAll(base_trimmed);
-    try out_aw.writeAll("\n\n<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->\n");
+    try w.writeAll(base_trimmed);
+    try w.writeAll("\n\n<!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->\n");
     try w.print("## Sources ({d} file{s}, auto-discovered)\n\n", .{
         deduped.items.len,
         if (deduped.items.len == 1) @as([]const u8, "") else "s",
@@ -1224,11 +1221,11 @@ fn updateCapabilitySourcesSection(
     }
     try w.writeAll("\n");
 
-    const file = std.Io.Dir.cwd().createFile(cap_md_path, .{}) catch return;
+    const file = try std.Io.Dir.cwd().createFile(io, cap_md_path, .{});
     defer file.close(io);
     var wbuf: [8192]u8 = undefined;
     var fw = file.writer(io, &wbuf);
-    try fw.interface.writeAll(w.written());
+    try fw.interface.writeAll(out_aw.written());
     try fw.interface.flush();
 
     if (verbose) {
@@ -1359,7 +1356,7 @@ pub fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const 
     var file_to_used_by: std.StringHashMapUnmanaged([]const []const u8) = .empty;
     defer file_to_used_by.deinit(fa);
 
-    var src_dir = std.Io.Dir.cwd().openDir(src_dir_path, .{ .iterate = true }) catch |err| {
+    var src_dir = std.Io.Dir.cwd().openDir(std.Io.Threaded.global_single_threaded.io(), src_dir_path, .{ .iterate = true }) catch |err| {
         std.debug.print("[discover] ERROR: cannot open {s}: {s}\n", .{ src_dir_path, @errorName(err) });
         return;
     };

@@ -233,7 +233,7 @@ pub fn findUnusedSymbols(
 
 /// Calculates days elapsed since a given modification timestamp.
 fn daysSince(last_modified: i64) u32 {
-    const now: i64 = std.time.timestamp();
+    const now: i64 = @intCast(@divTrunc(@as(i128, std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds), std.time.ns_per_s));
     const diff = now - last_modified;
     if (diff <= 0) return 0;
     return @intCast(@divTrunc(diff, 86400));
