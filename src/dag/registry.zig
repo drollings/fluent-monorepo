@@ -72,7 +72,7 @@ pub fn remove(self: *TargetRegistry, name: []const u8) void {
 
 /// Converts a registry string into a slice of byte slices, returning an array of arrays of u8.
 pub fn listNames(self: *const TargetRegistry, allocator: std.mem.Allocator) ![][]const u8 {
-    var names: std.ArrayList([]const u8) = .{};
+    var names: std.ArrayList([]const u8) = .empty;
     errdefer names.deinit(allocator);
 
     var iter = self.targets.keyIterator();
@@ -122,7 +122,7 @@ pub fn count(self: *const TargetRegistry) usize {
 
 /// Retrieves essential target registry entries with allocator support.
 pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
-    var essentials: std.ArrayList(*Target) = .{};
+    var essentials: std.ArrayList(*Target) = .empty;
     errdefer essentials.deinit(allocator);
 
     var iter = self.targets.valueIterator();
@@ -137,7 +137,7 @@ pub fn essentialTargets(self: *const TargetRegistry, allocator: std.mem.Allocato
 
 /// Converts a TargetRegistry reference into a slice of Target objects.
 pub fn abstractTargets(self: *const TargetRegistry, allocator: std.mem.Allocator) ![]*Target {
-    var abstracts: std.ArrayList(*Target) = .{};
+    var abstracts: std.ArrayList(*Target) = .empty;
     errdefer abstracts.deinit(allocator);
 
     var iter = self.targets.valueIterator();
@@ -408,7 +408,7 @@ test "TargetRegistry basic operations" {
 }
 
 test "TargetRegistry GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {
@@ -699,7 +699,7 @@ test "TargetBuilder: id field set via fluent" {
 }
 
 test "TargetBuilder: GPA no leaks — happy path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -852,7 +852,7 @@ test "resolveByCapabilityWithHierarchy: no ancestors returns same as resolveByCa
 
 test "TargetBuilder: arena freed on happy path — GPA no leaks" {
     // Verify that the builder arena is deinited by register() with no leaks.
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
     const allocator = gpa.allocator();
 

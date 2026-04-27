@@ -55,9 +55,8 @@ pub const GuidanceJsonStageBuilderImpl = struct {
         }
 
         if ((doc.keywords.len > 0 or doc.capabilities.len > 0) and i < out.len) {
-            var meta_buf: std.ArrayList(u8) = .{};
-            defer meta_buf.deinit(alloc);
-            const mw = meta_buf.writer(alloc);
+            var meta_buf_aw: std.Io.Writer.Allocating = .init(alloc);
+            errdefer meta_buf_aw.deinit();
 
             if (doc.keywords.len > 0) {
                 mw.writeAll("Keywords: ") catch return i;
@@ -80,7 +79,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
             if (meta_buf.items.len > 0) {
                 out[i] = .{
                     .kind = .metadata,
-                    .content = meta_buf.toOwnedSlice(alloc) catch return i,
+                    .content = meta_buf_aw.toOwnedSlice() catch return i,
                     .source = alloc.dupe(u8, doc.meta.source) catch return i,
                 };
                 i += 1;
@@ -132,7 +131,7 @@ pub fn collectRelevantStages(
     query_tokens: []const []const u8,
     max_stages: usize,
 ) ![]types.Stage {
-    var all: std.ArrayList(types.Stage) = .{};
+    var all: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, all.items);
         all.deinit(allocator);

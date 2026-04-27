@@ -91,7 +91,7 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
         .float => |f| std.fmt.allocPrint(allocator, "{d}", .{f}),
         .string => |s| allocator.dupe(u8, s),
         .array => blk: {
-            var buf: std.ArrayListUnmanaged(u8) = .{};
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
             errdefer buf.deinit(allocator);
             try buf.append(allocator, '[');
             for (val.array.items, 0..) |item, idx| {
@@ -104,7 +104,7 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
             break :blk buf.toOwnedSlice(allocator);
         },
         .object => blk: {
-            var buf: std.ArrayListUnmanaged(u8) = .{};
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
             errdefer buf.deinit(allocator);
             try buf.append(allocator, '{');
             var iter = val.object.iterator();
@@ -127,7 +127,7 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
 
 /// Converts a JSON value into a formatted Zig array with indentation.
 pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     try stringify(value, indent, 0, buf.writer(allocator));
     return buf.toOwnedSlice(allocator);
@@ -174,7 +174,7 @@ fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void
 pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) ![]const u8 {
     if (rows.len == 0) return allocator.dupe(u8, "");
 
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     const writer = buf.writer(allocator);
 

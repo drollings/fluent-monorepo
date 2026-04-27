@@ -40,7 +40,7 @@ pub const std_options: std.Options = .{
     .logFn = struct {
         fn log(
             comptime level: std.log.Level,
-            comptime scope: @Type(.enum_literal),
+            comptime scope: @EnumLiteral(),
             comptime format: []const u8,
             args: anytype,
         ) void {
@@ -72,13 +72,23 @@ const Command = enum {
 };
 
 /// Starts the Zig program execution by defining the entry point.
-pub fn main() !void {
+pub fn main(init: std.process.Init.Minimal) !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    // Collect args into owned slice (replaces the removed std.process.argsAlloc)
+    var args_list: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (args_list.items) |a| allocator.free(a);
+        args_list.deinit(allocator);
+    }
+    {
+        var iter = try init.args.iterateAllocator(allocator);
+        defer iter.deinit();
+        while (iter.next()) |arg| try args_list.append(allocator, try allocator.dupe(u8, arg));
+    }
+    const args = args_list.items;
 
     for (args) |arg| {
         if (std.mem.eql(u8, arg, "--verbose")) {
@@ -279,7 +289,7 @@ fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const _no_llm = no_llm;
     _ = _no_llm;
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const json_dir = try common.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);

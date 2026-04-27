@@ -3,6 +3,7 @@
 /// Centralises the repeated pattern of extracting relevant source code
 /// excerpts from files for LLM context, documentation, and error messages.
 const std = @import("std");
+const string_mod = @import("string.zig");
 
 /// Default maximum lines for excerpt extraction.
 pub const DEFAULT_MAX_LINES: usize = 200;
@@ -64,7 +65,7 @@ pub fn extractExcerpt(
         line_no += 1;
         if (line_no < start_line) continue;
 
-        const trimmed = std.mem.trimRight(u8, raw, "\r");
+        const trimmed = string_mod.trimRight(u8, raw, "\r");
         const is_first = line_no == start_line;
 
         // Count braces in this line
@@ -86,11 +87,11 @@ pub fn extractExcerpt(
         }
 
         // Skip separator comments
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
+        if (std.mem.startsWith(u8, string_mod.trimLeft(u8, trimmed, " \t"), "// ---")) continue;
 
         if (node_type.isContainer() and started_scope and brace_depth > scope_start_depth) {
             // Inside nested container - skip body content
-            const stripped = std.mem.trimLeft(u8, trimmed, " \t");
+            const stripped = string_mod.trimLeft(u8, trimmed, " \t");
             if (stripped.len > 0 and stripped[0] != '/' and stripped[0] != '*' and
                 !std.mem.startsWith(u8, stripped, "pub ") and
                 !std.mem.startsWith(u8, stripped, "fn ") and
@@ -147,7 +148,7 @@ pub fn extractExcerpt(
 
     if (lines.items.len == 0) return allocator.dupe(u8, "");
 
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
     for (lines.items, 0..) |line, idx| {
         if (idx > 0) try buf.append(allocator, '\n');
@@ -170,13 +171,13 @@ pub fn extractSimpleExcerpt(
         _ = lines_iter.next() orelse return allocator.dupe(u8, "") catch return "";
     }
 
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     var captured: usize = 0;
     var first = true;
     var saw_close_brace = false;
     while (lines_iter.next()) |line| {
         if (captured >= max_lines) break;
-        const trimmed_line = std.mem.trimRight(u8, line, "\r");
+        const trimmed_line = string_mod.trimRight(u8, line, "\r");
         if (!first and trimmed_line.len > 0 and trimmed_line[0] != ' ' and trimmed_line[0] != '\t') {
             if (std.mem.startsWith(u8, trimmed_line, "pub ") or
                 std.mem.startsWith(u8, trimmed_line, "fn ") or
@@ -193,7 +194,7 @@ pub fn extractSimpleExcerpt(
         if (!first and std.mem.eql(u8, std.mem.trim(u8, trimmed_line, " \t"), "};")) {
             saw_close_brace = true;
         }
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, trimmed_line, " \t"), "// ---")) {
+        if (std.mem.startsWith(u8, string_mod.trimLeft(u8, trimmed_line, " \t"), "// ---")) {
             captured += 1;
             first = false;
             continue;
@@ -205,7 +206,7 @@ pub fn extractSimpleExcerpt(
     }
 
     const raw = buf.toOwnedSlice(allocator) catch return "";
-    const trimmed = std.mem.trimRight(u8, raw, " \t\r\n");
+    const trimmed = string_mod.trimRight(u8, raw, " \t\r\n");
     defer allocator.free(raw);
     return allocator.dupe(u8, trimmed) catch "";
 }

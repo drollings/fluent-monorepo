@@ -357,7 +357,7 @@ pub const QueueReactor = struct {
         const knn_hits = try self.library.knnSearch(search_arena.allocator(), embedding, self.max_knn_k);
         if (knn_hits.len == 0) return null;
 
-        var result_list: std.ArrayListUnmanaged(ContextNode) = .{};
+        var result_list: std.ArrayListUnmanaged(ContextNode) = .empty;
         errdefer {
             for (result_list.items) |*n| n.free(self.allocator);
             result_list.deinit(self.allocator);

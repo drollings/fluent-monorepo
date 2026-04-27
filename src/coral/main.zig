@@ -24,15 +24,25 @@ const Louvain = @import("algorithms/louvain.zig").Louvain;
 pub const version = "0.1.0";
 
 /// Starts the Zig program execution by defining the entry point.
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+pub fn main(init: std.process.Init.Minimal) !void {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const raw_args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, raw_args);
+    // Collect args into owned slice (replaces the removed std.process.argsAlloc)
+    var raw_args_list: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (raw_args_list.items) |a| allocator.free(a);
+        raw_args_list.deinit(allocator);
+    }
+    {
+        var iter = try init.args.iterateAllocator(allocator);
+        defer iter.deinit();
+        while (iter.next()) |arg| try raw_args_list.append(allocator, try allocator.dupe(u8, arg));
+    }
+    const raw_args = raw_args_list.items;
 
-    var positional: std.ArrayListUnmanaged([]const u8) = .{};
+    var positional: std.ArrayListUnmanaged([]const u8) = .empty;
     defer positional.deinit(allocator);
 
     const args = common.parseCommonArgs(raw_args[1..], &positional, allocator) catch |err| {

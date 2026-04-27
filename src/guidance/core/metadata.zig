@@ -149,9 +149,9 @@ pub fn buildMetadataStage(
     defer parsed.deinit();
     const root = parsed.value.object;
 
-    var meta_buf: std.ArrayList(u8) = .empty;
-    errdefer meta_buf.deinit(allocator);
-    const mw = meta_buf.writer(allocator);
+    var meta_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer meta_buf_aw.deinit();
+    const mw = &meta_buf_aw.writer;
 
     // keywords: public member names.
     if (root.get("members")) |mv| {
@@ -244,11 +244,11 @@ pub fn buildMetadataStage(
         }
     }
 
-    if (meta_buf.items.len == 0) return null;
+    if (meta_buf_aw.written().len == 0) return null;
 
     return types_mod.Stage{
         .kind = .metadata,
-        .content = try meta_buf.toOwnedSlice(allocator),
+        .content = try meta_buf_aw.toOwnedSlice(),
         .source = try allocator.dupe(u8, source),
     };
 }

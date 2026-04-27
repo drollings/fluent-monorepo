@@ -43,7 +43,7 @@ pub const CommandRegistry = struct {
     }
 
     pub fn names(self: *const CommandRegistry, allocator: std.mem.Allocator) ![][]const u8 {
-        var list: std.ArrayListUnmanaged([]const u8) = .{};
+        var list: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer list.deinit(allocator);
         var iter = self.commands.iterator();
         while (iter.next()) |entry| {
@@ -111,7 +111,7 @@ pub const App = struct {
     }
 
     pub fn run(self: *App, allocator: std.mem.Allocator, argv: []const []const u8) !i32 {
-        var positional: std.ArrayListUnmanaged([]const u8) = .{};
+        var positional: std.ArrayListUnmanaged([]const u8) = .empty;
         defer positional.deinit(allocator);
 
         self.global_args = parseCommonArgs(argv, &positional, allocator) catch |err| {

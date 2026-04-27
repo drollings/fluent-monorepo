@@ -73,8 +73,8 @@ pub const RalphContext = struct {
         ctx.db = db;
         ctx.aliases = aliases;
         ctx.map = null;
-        ctx.query_history = .{};
-        ctx.pending_relationships = .{};
+        ctx.query_history = .empty;
+        ctx.pending_relationships = .empty;
         ctx.matches = query_strategy_mod.buildDefaultStrategies();
         return ctx;
     }
@@ -183,15 +183,15 @@ fn ralphHelp(
 
 /// Converts a raw C string into a Zig-safe slice for read operations.
 fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
-    var stages: std.ArrayList(types.Stage) = .{};
+    var stages: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, stages.items);
         stages.deinit(allocator);
     }
 
-    var buf: std.ArrayList(u8) = .{};
-    defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    const w = &aw.writer;
 
     try w.writeAll("# RALPH Loop — Codebase Discovery\n\n");
 
@@ -228,7 +228,7 @@ fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]
 
     try stages.append(allocator, .{
         .kind = .prose,
-        .content = try buf.toOwnedSlice(allocator),
+        .content = try aw.toOwnedSlice(),
         .source = try allocator.dupe(u8, "guidance"),
     });
 
@@ -237,7 +237,7 @@ fn formatReadSummary(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]
 
 /// Converts a RALPH context into a structured plan suggestion slice using the provided allocator.
 fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext) ![]types.Stage {
-    var stages: std.ArrayList(types.Stage) = .{};
+    var stages: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, stages.items);
         stages.deinit(allocator);
@@ -245,26 +245,28 @@ fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext)
 
     if (ctx.query_history.items.len == 0) return stages.toOwnedSlice(allocator);
 
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
 
-    try w.writeAll("**Suggested next queries** (based on session history):\n");
+    try buf.appendSlice(allocator, "**Suggested next queries** (based on session history):\n");
 
-    // Suggest related queries for each unique intent seen.
     var seen_identifier = false;
     var seen_concept = false;
     for (ctx.query_history.items) |r| {
         switch (r.intent) {
             .identifier_lookup => {
                 if (!seen_identifier) {
-                    try w.print("- `{s}` — trace callers and dependencies\n", .{r.query});
+                    try buf.appendSlice(allocator, "- `");
+                    try buf.appendSlice(allocator, r.query);
+                    try buf.appendSlice(allocator, "` — trace callers and dependencies\n");
                     seen_identifier = true;
                 }
             },
             .concept_query => {
                 if (!seen_concept) {
-                    try w.print("- How does {s} integrate with the system?\n", .{r.query});
+                    try buf.appendSlice(allocator, "- How does ");
+                    try buf.appendSlice(allocator, r.query);
+                    try buf.appendSlice(allocator, " integrate with the system?\n");
                     seen_concept = true;
                 }
             },
@@ -285,7 +287,7 @@ fn formatPlanSuggestions(allocator: std.mem.Allocator, ctx: *const RalphContext)
 
 /// Converts a Zig stage string into a slice of Stage objects.
 fn formatHelpStages(allocator: std.mem.Allocator) ![]types.Stage {
-    var stages: std.ArrayList(types.Stage) = .{};
+    var stages: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, stages.items);
         stages.deinit(allocator);
@@ -362,7 +364,7 @@ pub fn runQuery(
     }
 
     // Combine query + plan into one slice.
-    var combined: std.ArrayList(types.Stage) = .{};
+    var combined: std.ArrayList(types.Stage) = .empty;
     errdefer {
         // Don't free individual stage strings here — they're owned by query_stages.
         combined.deinit(allocator);

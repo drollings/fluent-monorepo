@@ -97,7 +97,7 @@ pub fn parseCommonArgs(
 const testing = std.testing;
 
 test "parseCommonArgs: basic flags" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{ "--verbose", "--dry-run", "--force" };
@@ -110,7 +110,7 @@ test "parseCommonArgs: basic flags" {
 }
 
 test "parseCommonArgs: model and api-url with set flags" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{ "-m", "llama3", "--api-url", "http://host:11434/v1/chat/completions" };
@@ -123,7 +123,7 @@ test "parseCommonArgs: model and api-url with set flags" {
 }
 
 test "parseCommonArgs: positional arguments collected" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{ "build", "clean", "--force" };
@@ -136,7 +136,7 @@ test "parseCommonArgs: positional arguments collected" {
 }
 
 test "parseCommonArgs: --file and --llm-query" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{ "-f", "targets.json", "--llm-query", "how do I add a target?" };
@@ -147,7 +147,7 @@ test "parseCommonArgs: --file and --llm-query" {
 }
 
 test "parseCommonArgs: unknown flags are skipped (permissive mode)" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{ "--unknown-flag", "--verbose", "--guidance", "dir" };
@@ -158,7 +158,7 @@ test "parseCommonArgs: unknown flags are skipped (permissive mode)" {
 }
 
 test "parseCommonArgs: missing value for -m returns error" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{"-m"};
@@ -167,7 +167,7 @@ test "parseCommonArgs: missing value for -m returns error" {
 }
 
 test "parseCommonArgs: defaults when no args given" {
-    var pos: std.ArrayListUnmanaged([]const u8) = .{};
+    var pos: std.ArrayListUnmanaged([]const u8) = .empty;
     defer pos.deinit(testing.allocator);
 
     const argv = [_][]const u8{};

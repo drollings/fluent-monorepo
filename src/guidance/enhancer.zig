@@ -279,7 +279,7 @@ pub const Enhancer = struct {
 
     /// Extract #hashtags from a "Tags: #a #b" line at the end of the response.
     fn extractTags(self: *Enhancer, text: []const u8) ![]const []const u8 {
-        var tags: std.ArrayList([]const u8) = .{};
+        var tags: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (tags.items) |t| self.allocator.free(t);
             tags.deinit(self.allocator);
@@ -341,18 +341,24 @@ pub const Enhancer = struct {
         existing_doc: ?[]const u8,
         module_context: []const u8,
     ) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        const w = buf.writer(self.allocator);
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(self.allocator);
 
-        try w.print("Zig function in {s}:\n  {s}\n\n", .{ module_context, signature });
+        try buf.appendSlice(self.allocator, "Zig function in ");
+        try buf.appendSlice(self.allocator, module_context);
+        try buf.appendSlice(self.allocator, ":\n  ");
+        try buf.appendSlice(self.allocator, signature);
+        try buf.appendSlice(self.allocator, "\n\n");
 
         if (existing_doc) |d| {
             if (d.len > 0) {
-                try w.print("Existing comment: {s}\n\n", .{d});
+                try buf.appendSlice(self.allocator, "Existing comment: ");
+                try buf.appendSlice(self.allocator, d);
+                try buf.appendSlice(self.allocator, "\n\n");
             }
         }
 
-        try w.writeAll(
+        try buf.appendSlice(self.allocator,
             \\Write a single-line comment for this function.
             \\Rules:
             \\- Plain English, technically specific — state what it does, key args, return value or error
@@ -363,7 +369,10 @@ pub const Enhancer = struct {
             \\<comment>Parses a null-terminated C string into an owned Zig slice.</comment>
             \\
         );
-        try w.print("Function: {s}\n", .{name});
+
+        try buf.appendSlice(self.allocator, "Function: ");
+        try buf.appendSlice(self.allocator, name);
+        try buf.appendSlice(self.allocator, "\n");
 
         return buf.toOwnedSlice(self.allocator);
     }
@@ -376,8 +385,9 @@ pub const Enhancer = struct {
         existing_doc: ?[]const u8,
         module_context: []const u8,
     ) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         try w.print("Zig type in {s}:\n  {s}\n", .{ module_context, signature });
 
@@ -412,7 +422,7 @@ pub const Enhancer = struct {
         );
         try w.print("Type: {s}\n", .{name});
 
-        return buf.toOwnedSlice(self.allocator);
+        return try aw.toOwnedSlice();
     }
 
     fn buildFilePrompt(
@@ -421,8 +431,9 @@ pub const Enhancer = struct {
         existing_doc: ?[]const u8,
         source_preview: []const u8,
     ) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         // First 3000 chars of source gives the model the module doc comment and
         // enough declarations to understand what the file actually does.
@@ -455,7 +466,7 @@ pub const Enhancer = struct {
             \\
         );
 
-        return buf.toOwnedSlice(self.allocator);
+        return try aw.toOwnedSlice();
     }
 
     // -------------------------------------------------------------------------
@@ -516,8 +527,9 @@ pub const Enhancer = struct {
         skills: []const u8,
         existing_comment: ?[]const u8,
     ) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         try w.print("You are documenting a Zig module for an AI coding assistant.\n\n", .{});
         try w.print("MODULE: {s}\n\n", .{module_name});
@@ -572,7 +584,7 @@ pub const Enhancer = struct {
             \\
         );
 
-        return buf.toOwnedSlice(self.allocator);
+        return try aw.toOwnedSlice();
     }
 
     fn parseModuleDetailResponse(
@@ -589,7 +601,7 @@ pub const Enhancer = struct {
         };
 
         // Extract <keywords> tag
-        var keywords: std.ArrayList([]const u8) = .{};
+        var keywords: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (keywords.items) |kw| self.allocator.free(kw);
             keywords.deinit(self.allocator);
@@ -715,8 +727,9 @@ pub const Enhancer = struct {
         comment: []const u8,
         module_context: []const u8,
     ) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         try w.writeAll(
             \\Extract 3-5 specific, searchable phrases from this code comment.
@@ -737,13 +750,13 @@ pub const Enhancer = struct {
             \\
         );
 
-        return buf.toOwnedSlice(self.allocator);
+        return try aw.toOwnedSlice();
     }
 
     /// Parse the LLM response for phrases.
     /// Handles both comma-separated and newline-separated formats.
     fn parsePhrasesResponse(self: *Enhancer, tagged: []const u8) !SemanticPhrasesResult {
-        var phrases: std.ArrayList([]const u8) = .{};
+        var phrases: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (phrases.items) |p| self.allocator.free(p);
             phrases.deinit(self.allocator);
@@ -780,7 +793,7 @@ pub const Enhancer = struct {
     /// Fallback: extract phrases locally without LLM.
     /// Uses simple heuristics to identify compound terms and identifiers.
     fn fallbackPhrases(self: *Enhancer, comment: []const u8) !SemanticPhrasesResult {
-        var phrases: std.ArrayList([]const u8) = .{};
+        var phrases: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (phrases.items) |p| self.allocator.free(p);
             phrases.deinit(self.allocator);

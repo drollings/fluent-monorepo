@@ -171,7 +171,7 @@ pub fn resolveLlmConfigForThinking(
 
 /// Resolves workspace, config, db_path, and guidance_dir. Caller must call ctx.deinit().
 fn openQueryContext(allocator: std.mem.Allocator, ea: ExplainArgs) !QueryContext {
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const workspace = if (ea.workspace) |w|
@@ -255,7 +255,7 @@ fn openDbAndRunStaged(
     ea: ExplainArgs,
     query_text: []const u8,
 ) !void {
-    std.fs.accessAbsolute(ctx.db_path, .{}) catch {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), ctx.db_path, .{}) catch {
         std.debug.print("Error: No .guidance.db found at {s}\n", .{ctx.db_path});
         std.debug.print("Run 'guidance gen' to generate it.\n", .{});
         return;
@@ -701,14 +701,14 @@ fn cmdExplainStaged(
         if (synth_result.summary) |summary| {
             if (query_hash) |qh| {
                 // Compute signature_hash from stage file paths for future invalidation.
-                var sig_buf: std.ArrayList(u8) = .empty;
-                defer sig_buf.deinit(allocator);
-                const sig_writer = sig_buf.writer(allocator);
+                var sig_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+                errdefer sig_buf_aw.deinit();
+                const sig_writer = &sig_buf_aw.writer;
                 for (combined.items) |s| {
                     sig_writer.writeAll(s.source) catch {};
-                    sig_writer.writeByte(0) catch {};
+                    sig_writer.writeAll(&.{0}) catch {};
                 }
-                const sig_hash = common.sha256Hex(allocator, sig_buf.items) catch null;
+                const sig_hash = common.sha256Hex(allocator, sig_buf_aw.written()) catch null;
                 defer if (sig_hash) |sh| allocator.free(sh);
                 db.storeSynthesisCache(qh, summary, sig_hash orelse qh);
             }
@@ -782,7 +782,8 @@ const IndexCapability = struct {
 
 /// Converts a Zig source snippet into an IndexCapability type, handling allocator and path inputs.
 fn parseCapabilityFrontmatter(allocator: std.mem.Allocator, cap_path: []const u8) ?IndexCapability {
-    const content = std.fs.cwd().readFileAlloc(allocator, cap_path, 64 * 1024) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, cap_path, allocator, .limited(64 * 1024)) catch return null;
     defer allocator.free(content);
 
     if (!std.mem.startsWith(u8, content, "---")) return null;
@@ -825,14 +826,15 @@ fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabiliti
         if (smt > idx_mtime) return true;
     }
 
-    std.fs.accessAbsolute(capabilities_dir, .{}) catch return false;
-    var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return false;
-    defer cap_dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.accessAbsolute(io, capabilities_dir, .{}) catch return false;
+    var cap_dir = std.Io.Dir.openDirAbsolute(io, capabilities_dir, .{ .iterate = true }) catch return false;
+    defer cap_dir.close(io);
 
     var walker = cap_dir.walk(allocator) catch return false;
     defer walker.deinit();
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, "CAPABILITY.md")) continue;
         const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
@@ -889,7 +891,7 @@ fn generateIndexMd(
     const index_path = try std.fs.path.join(allocator, &.{ capabilities_dir, "INDEX.md" });
     defer allocator.free(index_path);
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
     const structure_path = try std.fs.path.join(allocator, &.{ cwd, "STRUCTURE.md" });
     defer allocator.free(structure_path);
@@ -907,14 +909,15 @@ fn generateIndexMd(
         capabilities.deinit(allocator);
     }
 
-    std.fs.accessAbsolute(capabilities_dir, .{}) catch return;
-    var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return;
-    defer cap_dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.accessAbsolute(io, capabilities_dir, .{}) catch return;
+    var cap_dir = std.Io.Dir.openDirAbsolute(io, capabilities_dir, .{ .iterate = true }) catch return;
+    defer cap_dir.close(io);
 
     var walker = cap_dir.walk(allocator) catch return;
     defer walker.deinit();
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, "CAPABILITY.md")) continue;
         const full = try std.fs.path.join(allocator, &.{ capabilities_dir, entry.path });
@@ -954,19 +957,16 @@ fn generateIndexMd(
 
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(allocator);
-    const w = out.writer(allocator);
 
-    try w.print("# guidance — AST-guided Vector Search\n\n", .{});
-    try w.print("`guidance explain \"<query>\"` is the first stop to gain relevant context about this codebase.\n\n", .{});
-    try w.print("A single keyword like `cmdExplain` triggers a deterministic search without LLM synthesis. Queries with spaces use the LLM for synthesis.\n\n", .{});
-    try w.print("**Example:**  \n", .{});
-    try w.print("```\n", .{});
-    try w.print("guidance explain \"cmdExplain\"\n", .{});
-    try w.print("```\n\n", .{});
-    try w.print("Look up suggested search terms from results to discover related features. Use regular file tools once you're confident about the implementation.\n\n", .{});
-    try w.print("**Important:** Run `guidance explain` to check for existing features before writing duplicate code.\n\n", .{});
-    try w.print("---\n\n", .{});
-    try w.print("## Capabilities\n\n", .{});
+    try out.appendSlice(allocator, "# guidance — AST-guided Vector Search\n\n");
+    try out.appendSlice(allocator, "`guidance explain \"<query>\"` is the first stop to gain relevant context about this codebase.\n\n");
+    try out.appendSlice(allocator, "A single keyword like `cmdExplain` triggers a deterministic search without LLM synthesis. Queries with spaces use the LLM for synthesis.\n\n");
+    try out.appendSlice(allocator, "**Example:**\n\n");
+    try out.appendSlice(allocator, "```\nguidance explain \"cmdExplain\"\n```\n\n");
+    try out.appendSlice(allocator, "Look up suggested search terms from results to discover related features. Use regular file tools once you're confident about the implementation.\n\n");
+    try out.appendSlice(allocator, "**Important:** Run `guidance explain` to check for existing features before writing duplicate code.\n\n");
+    try out.appendSlice(allocator, "---\n\n");
+    try out.appendSlice(allocator, "## Capabilities\n\n");
 
     for (capabilities.items) |cap| {
         const desc = if (llm_client_opt) |*client| blk: {
@@ -975,27 +975,35 @@ fn generateIndexMd(
         } else null;
 
         const effective_desc = if (desc) |d| d else blk: {
-            // Fallback: truncate at 120 chars
             if (cap.description.len <= 120) break :blk allocator.dupe(u8, cap.description) catch break :blk cap.description;
             const trunc = cap.description[0..77];
             break :blk std.fmt.allocPrint(allocator, "{s}...", .{trunc}) catch cap.description;
         };
         defer if (desc != null) allocator.free(effective_desc);
 
-        try w.print("- **{s}**: {s}\n", .{ cap.name, effective_desc });
+        try out.appendSlice(allocator, "- **");
+        try out.appendSlice(allocator, cap.name);
+        try out.appendSlice(allocator, "**: ");
+        try out.appendSlice(allocator, effective_desc);
+        try out.appendSlice(allocator, "\n");
     }
 
-    try w.print("\n---\n\n", .{});
-    try w.print("Run `guidance explain \"<keyword>\"` to explore any capability.\n", .{});
+    try out.appendSlice(allocator, "\n---\n\n");
+    try out.appendSlice(allocator, "Run `guidance explain \"<keyword>\"` to explore any capability.\n");
 
     const index_content = try out.toOwnedSlice(allocator);
     defer allocator.free(index_content);
 
     const index_dir = std.fs.path.dirname(index_path) orelse guidance_dir;
-    std.fs.makeDirAbsolute(index_dir) catch {};
-    const file = try std.fs.createFileAbsolute(index_path, .{ .truncate = true });
-    defer file.close();
-    try file.writeAll(index_content);
+    std.Io.Dir.createDirAbsolute(io, index_dir, .default_dir) catch {};
+    const file = try std.Io.Dir.createFileAbsolute(io, index_path, .{ .truncate = true });
+    defer file.close(io);
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = file.writer(io, &wbuf);
+        try writer.interface.writeAll(index_content);
+        try writer.interface.flush();
+    }
 }
 
 /// Displays an introductory index section using allocator, guidance, and configuration data.
@@ -1011,7 +1019,7 @@ fn showIndexIntro(
     const index_path = try std.fs.path.join(allocator, &.{ capabilities_dir, "INDEX.md" });
     defer allocator.free(index_path);
 
-    const content = std.fs.cwd().readFileAlloc(allocator, index_path, 64 * 1024) catch |err| {
+    const content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), index_path, allocator, .limited(64 * 1024)) catch |err| {
         std.debug.print("Error reading INDEX.md: {s}\n", .{@errorName(err)});
         return;
     };
@@ -1045,7 +1053,7 @@ fn handleCapabilityQuery(
     const cap_path = try std.fs.path.join(allocator, &.{ capabilities_dir, cap_name, "CAPABILITY.md" });
     defer allocator.free(cap_path);
 
-    const content = std.fs.cwd().readFileAlloc(allocator, cap_path, 256 * 1024) catch |err| {
+    const content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), cap_path, allocator, .limited(256 * 1024)) catch |err| {
         try stdout.print("# Capability: {s}\n\nError reading capability file: {s}\n", .{ cap_name, @errorName(err) });
         try stdout.flush();
         return;
@@ -1194,7 +1202,7 @@ fn handleStructSkeletonQuery(
         }
 
         const end_line = blk: {
-            const workspace = std.process.getCwdAlloc(allocator) catch break :blk struct_info.line orelse 1;
+            const workspace = std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator) catch break :blk struct_info.line orelse 1;
             defer allocator.free(workspace);
             const abs_path = std.fs.path.join(allocator, &.{ workspace, struct_info.source_path }) catch break :blk struct_info.line orelse 1;
             defer allocator.free(abs_path);
@@ -1296,20 +1304,21 @@ fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidanc
     const json_dir = std.fs.path.join(allocator, &.{ guidance_dir, "src" }) catch return null;
     defer allocator.free(json_dir);
 
-    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.cwd().openDir(io, json_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(io);
 
     var walker = dir.walk(allocator) catch return null;
     defer walker.deinit();
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
         const full_path = std.fs.path.join(allocator, &.{ json_dir, entry.path }) catch continue;
         defer allocator.free(full_path);
 
-        const content = std.fs.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch continue;
+        const content = std.Io.Dir.cwd().readFileAlloc(io, full_path, allocator, .limited(2 * 1024 * 1024)) catch continue;
         defer allocator.free(content);
 
         var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch continue;
@@ -1382,7 +1391,7 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const db_path = try common.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
@@ -1481,6 +1490,7 @@ pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Manages query keywords with ownership model; ensures invariants are preserved during initialization and cleanup.
 const TestQuery = struct {
     query: []const u8,
+    rubric: []const u8,
     accuracy: u8 = 0,
     relevance: u8 = 0,
     completeness: u8 = 0,
@@ -1568,7 +1578,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const ws = if (workspace) |w|
@@ -1625,7 +1635,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // Load queries: from benchmarks.txt, single query arg, or generate from module comments
     const all_queries = if (single_query) |sq| blk: {
         var single: std.ArrayList(TestQuery) = .empty;
-        try single.append(allocator, .{ .query = try allocator.dupe(u8, sq) });
+        try single.append(allocator, .{ .query = try allocator.dupe(u8, sq), .rubric = &.{} });
         break :blk try single.toOwnedSlice(allocator);
     } else blk: {
         const from_file = loadBenchmarkQueries(allocator, gdir_abs) catch null;
@@ -1635,6 +1645,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer {
         for (all_queries) |q| {
             allocator.free(q.query);
+            if (q.rubric.len > 0) allocator.free(q.rubric);
             if (q.observations.len > 0) allocator.free(q.observations);
         }
         allocator.free(all_queries);
@@ -1708,9 +1719,9 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
         if (llm_client_opt) |*client| {
             // Build stages summary for LLM evaluation (mirrors actual explain output)
-            var results_buf: std.ArrayList(u8) = .empty;
-            defer results_buf.deinit(allocator);
-            const rw = results_buf.writer(allocator);
+            var results_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+            errdefer results_buf_aw.deinit();
+            const rw = &results_buf_aw.writer;
             try rw.print("Query: \"{s}\"\n\n", .{query_text});
             if (stages.len > 0) {
                 try rw.print("Found {d} stages:\n\n", .{stages.len});
@@ -1729,20 +1740,23 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
             const eval_prompt = try std.fmt.allocPrint(allocator,
                 \\You are a code intelligence evaluator for AI subagent workflows. Assess whether search results provide actionable code navigation for an AI assistant that needs to understand, modify, or extend the codebase.
                 \\
+                \\Query: "{s}"
+                \\Rubric (expected answer criteria): {s}
+                \\
                 \\Query and results:
                 \\{s}
                 \\
                 \\Rate each dimension (0-10):
-                \\- Accuracy: Results directly match what the query asks for. No false positives.
+                \\- Accuracy: Results directly match what the query asks for. No false positives. CRITICAL: Check if results satisfy the rubric criteria.
                 \\- Relevance: Top results are the most important/defining code for the query. First result is the best entry point.
                 \\- Completeness: All critical code locations, types, and functions needed to understand the topic are found. No major gaps.
                 \\- Navigation Quality: Results provide file paths, line numbers, function signatures, and context that enable an AI to immediately read and understand the relevant code.
                 \\
-                \\Score 9-10: Excellent code intelligence — AI can navigate directly to implementation with confidence.
-                \\Score 7-8: Good results with minor gaps or noise.
-                \\Score 5-6: Partial coverage, significant noise, or missing critical locations.
-                \\Score 3-4: Mostly irrelevant or incomplete for subagent use.
-                \\Score 0-2: No useful results or wrong topic entirely.
+                \\Score 9-10: Excellent code intelligence — AI can navigate directly to implementation with confidence. Rubric criteria satisfied.
+                \\Score 7-8: Good results with minor gaps or noise. Rubric mostly satisfied.
+                \\Score 5-6: Partial coverage, significant noise, or missing critical locations. Rubric partially satisfied.
+                \\Score 3-4: Mostly irrelevant or incomplete for subagent use. Rubric not satisfied.
+                \\Score 0-2: No useful results or wrong topic entirely. Rubric not satisfiable — query is about something not in codebase.
                 \\
                 \\Respond EXACTLY in this format (no other text):
                 \\Accuracy: <0-10>
@@ -1750,7 +1764,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 \\Completeness: <0-10>
                 \\Navigation: <0-10>
                 \\Observation: <one sentence assessing subagent utility>
-            , .{results_buf.items});
+                , .{ query_text, tq.rubric, results_buf_aw.written() });
             defer allocator.free(eval_prompt);
 
             const response_opt = client.complete(eval_prompt, 400, 0.1, null) catch |err| blk: {
@@ -1914,29 +1928,73 @@ fn parseScoreFromLine(line: []const u8) ?u8 {
     return @min(10, v);
 }
 
-/// Loads benchmark query data from a file into a Zig test query slice.
+/// Loads benchmark query data from benchmarks.md into a Zig test query slice.
+/// Format: query on its own line, then ---, then rubric lines until next --- or EOF.
 fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]TestQuery {
-    const path = try std.fs.path.join(allocator, &.{ guidance_dir, "benchmarks.txt" });
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const path = try std.fs.path.join(allocator, &.{ guidance_dir, "benchmarks.md" });
     defer allocator.free(path);
 
-    var file = std.fs.cwd().openFile(path, .{}) catch |err| return err;
-    defer file.close();
+    var file = std.Io.Dir.cwd().openFile(io, path, .{}) catch |err| return err;
+    defer file.close(io);
 
-    const content = try file.readToEndAlloc(allocator, 512 * 1024);
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(512 * 1024)) catch |err| return err;
     defer allocator.free(content);
 
     var queries: std.ArrayList(TestQuery) = .empty;
     errdefer {
-        for (queries.items) |q| allocator.free(q.query);
+        for (queries.items) |q| {
+            allocator.free(q.query);
+            allocator.free(q.rubric);
+        }
         queries.deinit(allocator);
     }
 
     var lines = std.mem.splitScalar(u8, content, '\n');
+    var current_query: ?[]const u8 = null;
+    var rubric_lines: std.ArrayList([]const u8) = .empty;
+    defer rubric_lines.deinit(allocator);
+
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0) continue;
-        if (std.mem.startsWith(u8, trimmed, "#")) continue;
-        try queries.append(allocator, .{ .query = try allocator.dupe(u8, trimmed) });
+
+        if (std.mem.startsWith(u8, trimmed, "#")) {
+            if (current_query != null) {
+                try queries.append(allocator, .{
+                    .query = current_query.?,
+                    .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
+                });
+                current_query = null;
+                rubric_lines.shrinkAndFree(allocator, 0);
+            }
+            continue;
+        }
+
+        if (std.mem.eql(u8, trimmed, "---")) {
+            if (current_query != null and rubric_lines.items.len > 0) {
+                try queries.append(allocator, .{
+                    .query = current_query.?,
+                    .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
+                });
+                current_query = null;
+                rubric_lines.shrinkAndFree(allocator, 0);
+            }
+            continue;
+        }
+
+        if (current_query == null) {
+            current_query = try allocator.dupe(u8, trimmed);
+        } else {
+            try rubric_lines.append(allocator, try allocator.dupe(u8, trimmed));
+        }
+    }
+
+    if (current_query != null) {
+        try queries.append(allocator, .{
+            .query = current_query.?,
+            .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
+        });
     }
 
     return queries.toOwnedSlice(allocator);
@@ -1948,35 +2006,37 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
     errdefer {
         for (queries.items) |q| {
             allocator.free(q.query);
+            if (q.rubric.len > 0) allocator.free(q.rubric);
             if (q.observations.len > 0) allocator.free(q.observations);
         }
         queries.deinit(allocator);
     }
 
     // Scan .guidance/src/**/*.json for module-level comments
+    const io = std.Io.Threaded.global_single_threaded.io();
     const src_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "src" });
     defer allocator.free(src_dir);
 
-    var dir = std.fs.cwd().openDir(src_dir, .{ .iterate = true }) catch |err| {
+    var dir = std.Io.Dir.cwd().openDir(io, src_dir, .{ .iterate = true }) catch |err| {
         std.debug.print("Warning: cannot open guidance src dir: {s}\n", .{@errorName(err)});
         return queries.toOwnedSlice(allocator);
     };
-    defer dir.close();
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
 
         const json_path = try std.fs.path.join(allocator, &.{ src_dir, entry.path });
         defer allocator.free(json_path);
 
-        const file = std.fs.cwd().openFile(json_path, .{}) catch continue;
-        defer file.close();
+        const file = std.Io.Dir.cwd().openFile(std.Io.Threaded.global_single_threaded.io(), json_path, .{}) catch continue;
+        defer file.close(std.Io.Threaded.global_single_threaded.io());
 
-        const content = file.readToEndAlloc(allocator, 1024 * 1024) catch continue;
+        const content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), json_path, allocator, .limited(1024 * 1024)) catch continue;
         defer allocator.free(content);
 
         var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch continue;
@@ -2004,11 +2064,11 @@ fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) !
 
         // Generate simple query from module name
         const query1 = try std.fmt.allocPrint(allocator, "{s}", .{basename});
-        try queries.append(allocator, .{ .query = query1 });
+        try queries.append(allocator, .{ .query = query1, .rubric = &.{} });
 
         // Generate question-style query
         const query2 = try std.fmt.allocPrint(allocator, "How does {s} work?", .{basename});
-        try queries.append(allocator, .{ .query = query2 });
+        try queries.append(allocator, .{ .query = query2, .rubric = &.{} });
 
         // Limit to 20 queries
         if (queries.items.len >= 20) break;
@@ -2034,7 +2094,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
         // --tier-breakdown: future work
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
     const cfg = config_mod.loadConfig(allocator, cwd) catch
         try config_mod.loadConfig(allocator, cwd);
@@ -2043,7 +2103,7 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
     const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
     defer allocator.free(db_path);
 
-    std.fs.accessAbsolute(db_path, .{}) catch {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), db_path, .{}) catch {
         std.debug.print("No .guidance.db found at {s}\n", .{db_path});
         return;
     };
@@ -2093,7 +2153,7 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
         if (std.mem.eql(u8, arg, "--reset")) do_reset = true;
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
     const cfg = config_mod.loadConfig(allocator, cwd) catch
         try config_mod.loadConfig(allocator, cwd);
@@ -2102,7 +2162,7 @@ pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !vo
     const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
     defer allocator.free(db_path);
 
-    std.fs.accessAbsolute(db_path, .{}) catch {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), db_path, .{}) catch {
         std.debug.print("No .guidance.db found at {s}\n", .{db_path});
         return;
     };
@@ -2158,7 +2218,7 @@ pub fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
     const query = query_buf.items;
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const cfg = config_mod.loadConfig(allocator, cwd) catch {

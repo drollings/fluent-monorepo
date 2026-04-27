@@ -763,7 +763,7 @@ pub const Library = struct {
     pub fn allNodeIds(self: *Self, arena: std.mem.Allocator) ![]i64 {
         const sql = "SELECT id FROM context_nodes ORDER BY id";
         const stmt = try self.prepare(sql);
-        var ids: std.ArrayListUnmanaged(i64) = .{};
+        var ids: std.ArrayListUnmanaged(i64) = .empty;
         errdefer ids.deinit(arena);
 
         while (try step(stmt)) {
@@ -840,7 +840,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, node_id);
 
-        var ids: std.ArrayListUnmanaged(i64) = .{};
+        var ids: std.ArrayListUnmanaged(i64) = .empty;
         errdefer ids.deinit(allocator);
         while (try step(stmt)) {
             try ids.append(allocator, c.sqlite3_column_int64(stmt, 0));
@@ -863,7 +863,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, root_id);
 
-        var nodes: std.ArrayListUnmanaged(ContextNode) = .{};
+        var nodes: std.ArrayListUnmanaged(ContextNode) = .empty;
         errdefer {
             for (nodes.items) |*n| n.free(arena);
             nodes.deinit(arena);
@@ -932,13 +932,13 @@ pub const Library = struct {
         _ = c.sqlite3_bind_text(stmt, 1, pattern.ptr, @intCast(pattern.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
 
-        var ids: std.ArrayListUnmanaged(i64) = .{};
+        var ids: std.ArrayListUnmanaged(i64) = .empty;
         defer ids.deinit(allocator);
         while (try step(stmt)) {
             try ids.append(allocator, c.sqlite3_column_int64(stmt, 0));
         }
 
-        var nodes: std.ArrayListUnmanaged(ContextNode) = .{};
+        var nodes: std.ArrayListUnmanaged(ContextNode) = .empty;
         errdefer {
             for (nodes.items) |*n| n.free(allocator);
             nodes.deinit(allocator);
@@ -994,7 +994,7 @@ pub const Library = struct {
         if (scores.count() == 0) return allocator.alloc(ContextNode, 0);
 
         // Sort by score descending
-        var sorted: std.ArrayListUnmanaged(ScoreEntry) = .{};
+        var sorted: std.ArrayListUnmanaged(ScoreEntry) = .empty;
         defer sorted.deinit(allocator);
         var it = scores.iterator();
         while (it.next()) |entry| {
@@ -1007,7 +1007,7 @@ pub const Library = struct {
         }.lt);
 
         // Fetch ContextNodes for top results
-        var result: std.ArrayListUnmanaged(ContextNode) = .{};
+        var result: std.ArrayListUnmanaged(ContextNode) = .empty;
         errdefer {
             for (result.items) |*n| n.free(allocator);
             result.deinit(allocator);
@@ -1076,7 +1076,7 @@ pub const Library = struct {
 
         _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
 
-        var result: std.ArrayListUnmanaged(i64) = .{};
+        var result: std.ArrayListUnmanaged(i64) = .empty;
         errdefer result.deinit(allocator);
 
         while (try step(stmt)) {
@@ -1114,7 +1114,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
 
-        var result: std.ArrayListUnmanaged([]const u8) = .{};
+        var result: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer {
             for (result.items) |s| allocator.free(s);
             result.deinit(allocator);
@@ -1167,7 +1167,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, entity_id);
 
-        var result: std.ArrayListUnmanaged([]const u8) = .{};
+        var result: std.ArrayListUnmanaged([]const u8) = .empty;
         errdefer {
             for (result.items) |s| allocator.free(s);
             result.deinit(allocator);
@@ -1240,7 +1240,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, node_id);
 
-        var path: std.ArrayListUnmanaged(CommunityPathEntry) = .{};
+        var path: std.ArrayListUnmanaged(CommunityPathEntry) = .empty;
         while (try step(stmt)) {
             const cid = c.sqlite3_column_int64(stmt, 0);
             const lvl: u8 = @intCast(c.sqlite3_column_int(stmt, 1));
@@ -1256,7 +1256,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, parent_community_id);
 
-        var leaves: std.ArrayListUnmanaged(CommunityPathEntry) = .{};
+        var leaves: std.ArrayListUnmanaged(CommunityPathEntry) = .empty;
         while (try step(stmt)) {
             const cid = c.sqlite3_column_int64(stmt, 0);
             const lvl: u8 = @intCast(c.sqlite3_column_int(stmt, 1));
@@ -1273,7 +1273,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, node_id);
 
-        var nodes: std.ArrayListUnmanaged(NodeInCommunity) = .{};
+        var nodes: std.ArrayListUnmanaged(NodeInCommunity) = .empty;
         while (try step(stmt)) {
             const id = c.sqlite3_column_int64(stmt, 0);
             const ptr: [*c]const u8 = c.sqlite3_column_text(stmt, 1);
@@ -1396,7 +1396,7 @@ pub const HydrationPipeline = struct {
         const stmt = try self.library.prepare(sql);
         defer _ = c.sqlite3_finalize(stmt);
 
-        var hits: std.ArrayListUnmanaged(KnnHit) = .{};
+        var hits: std.ArrayListUnmanaged(KnnHit) = .empty;
         defer hits.deinit(self.allocator);
 
         while (try Library.step(stmt)) {
@@ -1408,7 +1408,7 @@ pub const HydrationPipeline = struct {
 
             const blob_ptr = c.sqlite3_column_blob(stmt, 2);
             const blob_len: usize = @intCast(c.sqlite3_column_bytes(stmt, 2));
-            var emb_buf: std.ArrayListUnmanaged(f32) = .{};
+            var emb_buf: std.ArrayListUnmanaged(f32) = .empty;
             defer emb_buf.deinit(self.allocator);
             if (blob_ptr != null and blob_len >= 4) {
                 const raw = @as([*]const u8, @ptrCast(blob_ptr))[0..blob_len];
@@ -1509,7 +1509,7 @@ pub const ContextPacker = struct {
 
         _ = c.sqlite3_bind_int64(stmt, 1, semantic_center_id);
 
-        var nodes: std.ArrayListUnmanaged(GraphNode) = .{};
+        var nodes: std.ArrayListUnmanaged(GraphNode) = .empty;
         errdefer nodes.deinit(self.allocator);
 
         while (try Library.step(stmt)) {
@@ -1523,7 +1523,7 @@ pub const ContextPacker = struct {
 
     /// Pack context window text for LLM injection, respecting token budget.
     pub fn pack(self: *Self, semantic_center_id: i64) ![]const u8 {
-        var context_buffer: std.ArrayListUnmanaged(u8) = .{};
+        var context_buffer: std.ArrayListUnmanaged(u8) = .empty;
         defer context_buffer.deinit(self.allocator);
         var token_budget = self.max_tokens;
 
@@ -1571,7 +1571,7 @@ pub const ContextPacker = struct {
         const lod_weights = [_]f32{ 1.0, 0.8, 0.6, 0.4, 0.2 };
         const distance_decay: f32 = 0.9;
 
-        var context_buffer: std.ArrayListUnmanaged(u8) = .{};
+        var context_buffer: std.ArrayListUnmanaged(u8) = .empty;
         defer context_buffer.deinit(self.allocator);
         var tokens_used: usize = 0;
         var nodes_included: usize = 0;
@@ -1587,7 +1587,7 @@ pub const ContextPacker = struct {
             lod_level: usize,
             text: []const u8,
             tokens: usize,
-        }) = .{};
+        }) = .empty;
         defer {
             for (candidates.items) |candidate| {
                 if (candidate.text.len > 0) self.allocator.free(@constCast(candidate.text));
@@ -1757,7 +1757,7 @@ test "HydrationPipeline: cosine distance — equal unit vectors" {
 }
 
 test "ContextPacker: LOD selection" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1779,7 +1779,7 @@ test "ContextPacker: LOD selection" {
 }
 
 test "ContextPacker: empty LOD fallbacks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1794,7 +1794,7 @@ test "ContextPacker: empty LOD fallbacks" {
 }
 
 test "Library: open in-memory, init schema" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1803,7 +1803,7 @@ test "Library: open in-memory, init schema" {
 }
 
 test "Library: insert and fetch ContextNode" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1820,7 +1820,7 @@ test "Library: insert and fetch ContextNode" {
 }
 
 test "Library: insert and fetch ContextNode round-trip all fields" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1880,7 +1880,7 @@ test "Library: insert and fetch ContextNode round-trip all fields" {
 }
 
 test "Library: insert target and depends_on edge" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1903,7 +1903,7 @@ test "Library: insert target and depends_on edge" {
 }
 
 test "Library: neighbor_of edge insertion" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1921,7 +1921,7 @@ test "Library: neighbor_of edge insertion" {
 }
 
 test "Library: fetchNode returns null for unknown id" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1932,7 +1932,7 @@ test "Library: fetchNode returns null for unknown id" {
 }
 
 test "Library: upsert overwrites existing node" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1954,7 +1954,7 @@ test "Library: upsert overwrites existing node" {
 }
 
 test "Library: initSchema is idempotent" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -1984,7 +1984,7 @@ test "WasmTool: reflective get on scalar fields" {
 }
 
 test "Library: insert and fetch WasmTool" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2012,7 +2012,7 @@ test "Library: insert and fetch WasmTool" {
 }
 
 test "Library: fetchWasmTool returns null for unknown id" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2023,7 +2023,7 @@ test "Library: fetchWasmTool returns null for unknown id" {
 }
 
 test "Library: insertWasmTool upsert overwrites existing record" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2040,7 +2040,7 @@ test "Library: insertWasmTool upsert overwrites existing record" {
 }
 
 test "Library: persistNeighborEdges with empty slice is a no-op" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2049,7 +2049,7 @@ test "Library: persistNeighborEdges with empty slice is a no-op" {
 }
 
 test "Library: persistNeighborEdges single-element slice is also a no-op" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2063,7 +2063,7 @@ test "Library: persistNeighborEdges single-element slice is also a no-op" {
 }
 
 test "Library: all EdgeType variants can be inserted" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2088,7 +2088,7 @@ test "Library: all EdgeType variants can be inserted" {
 }
 
 test "ContextPacker: selectLod distance 3 always returns name" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2104,7 +2104,7 @@ test "ContextPacker: selectLod distance 3 always returns name" {
 }
 
 test "ContextPacker: selectLodByDistance high-degree gets lower effective distance" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2127,7 +2127,7 @@ test "ContextPacker: selectLodByDistance high-degree gets lower effective distan
 }
 
 test "Library: KNN search returns top-K hits sorted by distance" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2162,7 +2162,7 @@ test "Library: KNN search returns top-K hits sorted by distance" {
 }
 
 test "Library: BFS distance via ContextPacker.getNodesByDistance" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
     const lib = try testOpenLib(allocator);
@@ -2201,7 +2201,7 @@ test "ContextPacker: BFS distance → LOD assignment → token-budget downgrade"
     //   - Center (distance 0) → lod[0] (full text, longest)
     //   - Distance-1 nodes   → lod[1] (summary, shorter)
     //   - Token budget cuts off if total would overflow
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2254,7 +2254,7 @@ test "ContextPacker: BFS distance → LOD assignment → token-budget downgrade"
 
 test "Library: hybridSearch returns nodes matching keyword" {
     // M2.4 integration test
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2283,7 +2283,7 @@ test "Library: hybridSearch returns nodes matching keyword" {
 }
 
 test "Library: keywordSearch finds name and description matches" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2308,7 +2308,7 @@ test "Library: keywordSearch finds name and description matches" {
 test "Library: concurrent insert+read, 4 threads" {
     // spawn 4 threads: 2 insert (with mutex) + 2 read (lock-free)
     // verify no panic/data races
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2350,7 +2350,7 @@ test "Library: concurrent insert+read, 4 threads" {
 }
 
 test "Library: getAllAncestors returns empty for unknown entity" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2364,7 +2364,7 @@ test "Library: getAllAncestors returns empty for unknown entity" {
 }
 
 test "Library: getSchemaVersion returns SCHEMA_VERSION after initSchema" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2378,7 +2378,7 @@ test "Library: getSchemaVersion returns SCHEMA_VERSION after initSchema" {
 }
 
 test "Library: migrate is idempotent on fresh install" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2393,7 +2393,7 @@ test "Library: migrate is idempotent on fresh install" {
 }
 
 test "Library.getCapabilitiesForEntity: returns capabilities for subtype" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2432,7 +2432,7 @@ test "Library.getCapabilitiesForEntity: returns capabilities for subtype" {
 }
 
 test "Library.getCapabilitiesForEntity: empty for unknown entity" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -2449,7 +2449,7 @@ test "Library.getCapabilitiesForEntity: empty for unknown entity" {
 }
 
 test "Library.getInheritedProperties: returns predicates via type hierarchy" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

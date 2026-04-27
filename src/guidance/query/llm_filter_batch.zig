@@ -157,9 +157,8 @@ fn askRelevantBatch(
     stages: []const types.Stage,
 ) ![]usize {
     // Build prompt listing all prose excerpts numbered 1..N.
-    var prompt_buf: std.ArrayList(u8) = .empty;
-    defer prompt_buf.deinit(allocator);
-    const w = prompt_buf.writer(allocator);
+    var prompt_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer prompt_buf_aw.deinit();
 
     try w.print(
         "Query: \"{s}\"\n\n" ++

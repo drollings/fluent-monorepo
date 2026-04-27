@@ -219,7 +219,7 @@ pub const HnswIndex = struct {
         // Min-heap for candidates (closest first).
         var candidates = std.PriorityQueue(Candidate, void, Candidate.lessThan).init(aa, {});
         // Sorted list of best ef candidates seen so far.
-        var w: std.ArrayList(SearchResult) = .{};
+        var w: std.ArrayList(SearchResult) = .empty;
         var visited = std.AutoHashMap(i64, void).init(aa);
 
         // Seed with entry point.

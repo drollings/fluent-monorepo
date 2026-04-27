@@ -59,7 +59,7 @@ pub const InferenceEngine = struct {
     /// subject/predicate/object strings (allocated from `self.allocator`).
     /// Free with: for (result) |t| t.deinit(allocator); allocator.free(result);
     pub fn infer(self: *InferenceEngine, triples: []const Triple) ![]Triple {
-        var derived: std.ArrayList(Triple) = .{};
+        var derived: std.ArrayList(Triple) = .empty;
         errdefer {
             for (derived.items) |t| t.deinit(self.allocator);
             derived.deinit(self.allocator);
@@ -135,7 +135,7 @@ fn inferSubclassTransitivity(
         changed = false;
 
         // Collect current edge list (stable snapshot).
-        var edges: std.ArrayList(Edge) = .{};
+        var edges: std.ArrayList(Edge) = .empty;
         defer edges.deinit(allocator);
         var kit = known.keyIterator();
         while (kit.next()) |k| try edges.append(allocator, k.*);

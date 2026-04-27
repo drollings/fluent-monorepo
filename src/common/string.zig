@@ -5,6 +5,18 @@
 /// tool that needs lightweight text analysis.
 const std = @import("std");
 
+pub fn trimRight(comptime T: type, slice: []const T, pattern: []const T) []const T {
+    var end: usize = slice.len;
+    while (end > 0 and std.mem.indexOfScalar(T, pattern, slice[end - 1]) != null) end -= 1;
+    return slice[0..end];
+}
+
+pub fn trimLeft(comptime T: type, slice: []const T, pattern: []const T) []const T {
+    var start: usize = 0;
+    while (start < slice.len and std.mem.indexOfScalar(T, pattern, slice[start]) != null) start += 1;
+    return slice[start..];
+}
+
 /// Checks if a needle substring exists within the haystack, ignoring case sensitivity.
 pub fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
     if (needle.len == 0) return true;
@@ -181,7 +193,7 @@ const STRIP_PREFIXES = [_][]const u8{
 
 /// Removes unnecessary comment bytes from a Zig source file.
 pub fn stripBoilerplate(comment: []const u8) []const u8 {
-    const trimmed = std.mem.trimLeft(u8, comment, " \t");
+    const trimmed = trimLeft(u8, comment, " \t");
     for (STRIP_PREFIXES) |pfx| {
         if (std.mem.startsWith(u8, trimmed, pfx)) {
             return trimmed[pfx.len..];
@@ -267,7 +279,7 @@ pub fn stripNlPrefix(query: []const u8) []const u8 {
 
 /// Converts a string into a slugified format by trimming, lowercasing, and replacing spaces with hyphens.
 pub fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     var prev_dash = true;
     for (s) |c| {
         if (std.ascii.isAlphanumeric(c)) {
@@ -310,7 +322,7 @@ pub fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_ch
     i = max_chars;
     while (i > max_chars / 2) : (i -= 1) {
         if (window[i - 1] == ' ') {
-            return allocator.dupe(u8, std.mem.trimRight(u8, text[0 .. i - 1], " \t"));
+            return allocator.dupe(u8, trimRight(u8, text[0 .. i - 1], " \t"));
         }
     }
     // Hard cut if no boundary found.

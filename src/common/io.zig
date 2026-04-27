@@ -2,7 +2,7 @@
 ///
 /// Centralises the repeated pattern:
 ///   var buf: [4096]u8 = undefined;
-///   var fw = std.fs.File.stdout().writer(&buf);
+///   var fw = std.Io.File.stdout().writer(io, &buf);
 ///   const w = &fw.interface;
 ///
 /// that appeared verbatim in both main.zig and repl.zig.
@@ -10,14 +10,23 @@ const std = @import("std");
 
 pub const BUFFER_SIZE = 4096;
 
+/// Returns the global single-threaded Io context.
+/// Use this for synchronous file I/O in functions that don't receive an Io from their caller.
+pub fn singleIo() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
+
 pub const WriterState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
-    fw: std.fs.File.Writer = undefined,
+    fw: std.Io.File.Writer = undefined,
 
     /// Wire up the buffered writer to stdout.  Call this exactly once on a
     /// stack-allocated `WriterState` before calling `writer()`.
     pub fn initStdout(self: *WriterState) void {
-        self.fw = std.fs.File.stdout().writer(&self.buf);
+        self.fw = std.Io.File.stdout().writer(
+            std.Io.Threaded.global_single_threaded.io(),
+            &self.buf,
+        );
     }
 
     pub fn writer(self: *WriterState) *std.Io.Writer {
@@ -28,12 +37,15 @@ pub const WriterState = struct {
 /// Manages streaming data with fixed buffers; encapsulates state, not shared; key invariant is buffer integrity.
 pub const ReaderState = struct {
     buf: [BUFFER_SIZE]u8 = undefined,
-    fr: std.fs.File.Reader = undefined,
+    fr: std.Io.File.Reader = undefined,
 
     /// Wire up the buffered reader to stdin.  Call this exactly once on a
     /// stack-allocated `ReaderState` before calling `reader()`.
     pub fn initStdin(self: *ReaderState) void {
-        self.fr = std.fs.File.stdin().reader(&self.buf);
+        self.fr = std.Io.File.stdin().reader(
+            std.Io.Threaded.global_single_threaded.io(),
+            &self.buf,
+        );
     }
 
     pub fn reader(self: *ReaderState) *std.Io.Reader {
@@ -72,7 +84,7 @@ pub fn makePathAbsolute(abs_path: []const u8) !void {
         }
 
         const current = buf[0..pos];
-        std.fs.makeDirAbsolute(current) catch |err| switch (err) {
+        std.Io.Dir.createDirAbsolute(singleIo(), current, .default_dir) catch |err| switch (err) {
             error.PathAlreadyExists => {},
             else => return err,
         };
@@ -91,16 +103,14 @@ pub const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 /// NOTE: OutOfMemory is also returned as null. Use readFileAllocErr()
 /// for explicit error propagation.
 pub fn readFileAlloc(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ?[]const u8 {
-    const file = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer file.close();
-    return file.readToEndAlloc(allocator, max_size) catch null;
+    const io = singleIo();
+    return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch null;
 }
 
 /// Reads a file using an allocator, returning its contents or an error if allocation fails.
 pub fn readFileAllocErr(allocator: std.mem.Allocator, path: []const u8, max_size: usize) ![]const u8 {
-    const file = try std.fs.openFileAbsolute(path, .{});
-    defer file.close();
-    return try file.readToEndAlloc(allocator, max_size);
+    const io = singleIo();
+    return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size));
 }
 
 /// Removes leading zig path prefix from a given root slice.

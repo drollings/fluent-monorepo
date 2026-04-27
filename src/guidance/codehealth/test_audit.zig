@@ -166,7 +166,7 @@ pub fn auditTestFiles(
 
     {
         const build_zig_path = try std.fmt.allocPrint(aa, "{s}/build.zig", .{workspace});
-        const build_src = std.fs.cwd().readFileAlloc(aa, build_zig_path, 5 * 1024 * 1024) catch null;
+        const build_src = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), build_zig_path, aa, .limited(5 * 1024 * 1024)) catch null;
         if (build_src) |src| {
             const needle = ".path(\"";
             var pos: usize = 0;
@@ -192,16 +192,17 @@ pub fn auditTestFiles(
     }
 
     {
-        var base_dir = std.fs.cwd().openDir(workspace, .{ .iterate = true }) catch |err| {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var base_dir = std.Io.Dir.cwd().openDir(io, workspace, .{ .iterate = true }) catch |err| {
             std.debug.print("[test_audit] cannot open workspace '{s}': {s}\n", .{ workspace, @errorName(err) });
             return allocator.alloc(TestAnomaly, 0);
         };
-        defer base_dir.close();
+        defer base_dir.close(io);
 
         var walker = try base_dir.walk(aa);
         defer walker.deinit();
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             const basename = std.fs.path.basename(entry.path);
             if (!std.mem.endsWith(u8, basename, "_tests.zig")) continue;
@@ -212,7 +213,7 @@ pub fn auditTestFiles(
             const abs_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, rel_path });
 
             // Check 1: does the file contain non-test declarations?
-            const src_raw = std.fs.cwd().readFileAlloc(aa, abs_path, 5 * 1024 * 1024) catch continue;
+            const src_raw = std.Io.Dir.cwd().readFileAlloc(io, abs_path, aa, .limited(5 * 1024 * 1024)) catch continue;
             const src_z = try aa.dupeZ(u8, src_raw);
 
             var out_name: ?[]const u8 = null;

@@ -119,7 +119,7 @@ pub fn writeJsonSchemaFile(allocator: std.mem.Allocator, path: []const u8) !void
     const dir = std.fs.path.dirname(path) orelse ".";
     std.fs.makeDirAbsolute(dir) catch |err| if (err != error.PathAlreadyExists) return err;
 
-    const file = try std.fs.createFileAbsolute(path, .{});
+    const file = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{});
     defer file.close();
     try file.writeAll(schema);
     _ = allocator; // not needed for static string write

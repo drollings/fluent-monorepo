@@ -145,7 +145,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         DEFAULT_GUIDANCE_DIR;
 
     // --- src_dirs (array of strings, optional) ---
-    var src_dirs: std.ArrayList([]const u8) = .{};
+    var src_dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (src_dirs.items) |d| allocator.free(d);
         src_dirs.deinit(allocator);

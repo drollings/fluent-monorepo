@@ -429,7 +429,7 @@ pub fn addToTestsZig(
     tests_zig_path: []const u8,
     import_line: []const u8,
 ) !void {
-    const content = std.fs.cwd().readFileAlloc(allocator, tests_zig_path, 5 * 1024 * 1024) catch return;
+    const content = std.Io.Dir.cwd().readFileAlloc(allocator, tests_zig_path, 5 * 1024 * 1024) catch return;
     defer allocator.free(content);
 
     if (std.mem.indexOf(u8, content, import_line) != null) return;
@@ -438,9 +438,10 @@ pub fn addToTestsZig(
     const close = std.mem.lastIndexOf(u8, content, "\n}") orelse return;
 
     var buf: [256]u8 = undefined;
-    const f = try std.fs.cwd().createFile(tests_zig_path, .{});
-    var fw = f.writer(&buf);
-    defer f.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = try std.Io.Dir.cwd().createFile(tests_zig_path, .{});
+    var fw = f.writer(io, &buf);
+    defer f.close(io);
     try fw.interface.writeAll(content[0 .. close + 1]); // up to the '\n' before '}'
     try fw.interface.print("    {s}\n", .{import_line});
     try fw.interface.writeAll(content[close + 1 ..]); // '}' onward
@@ -498,16 +499,17 @@ pub fn fixAll(
         .files_updated = 0,
     };
 
-    var src_dir = std.fs.cwd().openDir(workspace, .{ .iterate = true }) catch |err| {
+    var src_dir = std.Io.Dir.cwd().openDir(workspace, .{ .iterate = true }) catch |err| {
         std.debug.print("[test_mover] cannot open workspace '{s}': {s}\n", .{ workspace, @errorName(err) });
         return stats;
     };
-    defer src_dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    defer src_dir.close(io);
 
     var walker = try src_dir.walk(aa);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
         if (std.mem.startsWith(u8, entry.path, "zig-")) continue;
@@ -519,7 +521,7 @@ pub fn fixAll(
         const rel_path = entry.path;
         const abs_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, rel_path });
 
-        const src_raw = std.fs.cwd().readFileAlloc(aa, abs_path, 10 * 1024 * 1024) catch continue;
+        const src_raw = std.Io.Dir.cwd().readFileAlloc(aa, abs_path, 10 * 1024 * 1024) catch continue;
         const src_z = try aa.dupeZ(u8, src_raw);
 
         var tree = std.zig.Ast.parse(aa, src_z, .zig) catch continue;
@@ -553,7 +555,7 @@ pub fn fixAll(
         const source_basename = std.fs.path.basename(rel_path);
         const alias = try modAlias(aa, source_basename);
 
-        const existing = std.fs.cwd().readFileAlloc(aa, tests_abs, 10 * 1024 * 1024) catch null;
+        const existing = std.Io.Dir.cwd().readFileAlloc(aa, tests_abs, 10 * 1024 * 1024) catch null;
         const is_new = existing == null;
 
         // Qualify pub-symbol references in each movable test.
@@ -581,17 +583,17 @@ pub fn fixAll(
         // Write _tests.zig.
         {
             const parent = std.fs.path.dirname(tests_abs) orelse ".";
-            std.fs.cwd().makePath(parent) catch {};
+            std.Io.Dir.cwd().makePath(parent) catch {};
 
             var buf: [256]u8 = undefined;
-            const f = std.fs.cwd().createFile(tests_abs, .{}) catch continue;
-            var fw = f.writer(&buf);
+            const f = std.Io.Dir.cwd().createFile(tests_abs, .{}) catch continue;
+            var fw = f.writer(io, &buf);
             fw.interface.writeAll(tests_content) catch {
-                f.close();
+                f.close(io);
                 continue;
             };
             fw.interface.flush() catch {};
-            f.close();
+            f.close(io);
         }
 
         if (is_new) {
@@ -611,14 +613,14 @@ pub fn fixAll(
         const new_source = removeBlocks(aa, src_raw, sorted) catch continue;
         {
             var buf: [256]u8 = undefined;
-            const f = std.fs.cwd().createFile(abs_path, .{}) catch continue;
-            var fw = f.writer(&buf);
+            const f = std.Io.Dir.cwd().createFile(abs_path, .{}) catch continue;
+            var fw = f.writer(io, &buf);
             fw.interface.writeAll(new_source) catch {
-                f.close();
+                f.close(io);
                 continue;
             };
             fw.interface.flush() catch {};
-            f.close();
+            f.close(io);
         }
 
         runZigFmt(aa, abs_path);

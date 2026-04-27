@@ -43,13 +43,13 @@ fn isMetachar(c: u8) bool {
 
 /// Interprets a Zig command string, validating input and returning parsed components.
 pub fn parseCommand(allocator: std.mem.Allocator, cmd: []const u8) ShellParseError![][]const u8 {
-    var args: std.ArrayList([]const u8) = .{};
+    var args: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (args.items) |arg| allocator.free(arg);
         args.deinit(allocator);
     }
 
-    var current: std.ArrayList(u8) = .{};
+    var current: std.ArrayList(u8) = .empty;
     defer current.deinit(allocator);
 
     const State = enum { idle, token, single_quote, double_quote };

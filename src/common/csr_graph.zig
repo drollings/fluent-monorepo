@@ -86,7 +86,7 @@ pub const CSRGraph = struct {
         // Step 2: collect all edges (from_id, to_id, weight) sorted by from_id.
         // We use an arena-allocated intermediate array.
         const Edge = struct { from: u32, to: u32, weight: f32 };
-        var edges: std.ArrayListUnmanaged(Edge) = .{};
+        var edges: std.ArrayListUnmanaged(Edge) = .empty;
         _ = predicate_filter; // Used by SQL query below when implemented
 
         // Load edges from library via iterateNeighborOf.

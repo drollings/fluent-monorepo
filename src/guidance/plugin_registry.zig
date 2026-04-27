@@ -81,7 +81,7 @@ pub const PluginRegistry = struct {
     pub fn registeredLanguages(self: *const Self, allocator: std.mem.Allocator) ![]const []const u8 {
         var seen: std.StringHashMapUnmanaged(void) = .empty;
         defer seen.deinit(allocator);
-        var names: std.ArrayList([]const u8) = .{};
+        var names: std.ArrayList([]const u8) = .empty;
         errdefer names.deinit(allocator);
         for (self.plugins.items) |p| {
             if (!seen.contains(p.name)) {

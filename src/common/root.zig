@@ -132,6 +132,8 @@ pub const isNoisyComment = string_mod.isNoisyComment;
 pub const lowerInto = string_mod.lowerInto;
 pub const truncateAtSentence = string_mod.truncateAtSentence;
 pub const firstCommentLine = string_mod.firstCommentLine;
+pub const trimRight = string_mod.trimRight;
+pub const trimLeft = string_mod.trimLeft;
 
 // ── Reference-counted VTable handles (M7) ─────────────────────────────────────
 pub const refcount = @import("refcount.zig");

@@ -11,12 +11,12 @@ const std = @import("std");
 
 /// Converts a value to a memory-safe Zig slice using an allocator.
 pub fn jsonStringifyAlloc(allocator: std.mem.Allocator, value: anytype) ![]u8 {
-    var out: std.io.Writer.Allocating = .init(allocator);
+    var out: std.Io.Writer.Allocating = .init(allocator);
     const writer = &out.writer;
     defer out.deinit();
 
     try std.json.Stringify.value(value, .{ .whitespace = .indent_2 }, writer);
-    return try allocator.dupe(u8, out.written());
+    return try out.toOwnedSlice();
 }
 
 // =============================================================================
@@ -39,7 +39,7 @@ pub fn writeEscaped(writer: anytype, s: []const u8) !void {
 
 /// Appends escaped characters to a Zig buffer, handling null-terminated strings with an allocator.
 pub fn appendEscaped(
-    buf: *std.ArrayListUnmanaged(u8),
+    buf: *std.ArrayList(u8),
     allocator: std.mem.Allocator,
     text: []const u8,
 ) !void {
@@ -70,9 +70,10 @@ pub fn parseJsonFile(
     path: []const u8,
     max_size: usize,
 ) ?std.json.Parsed(std.json.Value) {
-    const f = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, max_size) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
+    defer f.close(io);
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_size)) catch return null;
     defer allocator.free(content);
     var parsed = std.json.parseFromSlice(
         std.json.Value,

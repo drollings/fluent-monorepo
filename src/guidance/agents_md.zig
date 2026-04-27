@@ -17,11 +17,10 @@ pub const AGENTS_INSERTION: []const u8 =
 ;
 
 pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) ![]const u8 {
-    var buf: std.ArrayList(u8) = .{};
-    errdefer buf.deinit(allocator);
-    const w = buf.writer(allocator);
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(allocator);
 
-    try w.writeAll(
+    try buf.appendSlice(allocator,
         \\# guidance Integration
         \\
         \\This project uses guidance for AST-guided code navigation and documentation.
@@ -84,9 +83,13 @@ pub fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []con
         \\```
         \\
     );
-    try w.print("- `{s}/guidance-config.json` — Model and provider configuration\n", .{guidance_dir});
-    try w.print("- `{s}/src/` — Generated guidance JSON files\n", .{guidance_dir});
-    try w.writeAll(
+    try buf.appendSlice(allocator, "- `");
+    try buf.appendSlice(allocator, guidance_dir);
+    try buf.appendSlice(allocator, "/guidance-config.json` — Model and provider configuration\n");
+    try buf.appendSlice(allocator, "- `");
+    try buf.appendSlice(allocator, guidance_dir);
+    try buf.appendSlice(allocator, "/src/` — Generated guidance JSON files\n");
+    try buf.appendSlice(allocator,
         \\- `.guidance.db` — SQLite vector search database
         \\- `STRUCTURE.md` — Project structure documentation (auto-generated)
         \\

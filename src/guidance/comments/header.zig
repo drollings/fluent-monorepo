@@ -17,9 +17,9 @@ pub fn generateFileHeader(
     if (sourceHasModuleDoc(source_preview)) return null;
 
     // Build a minimal header from available information.
-    var out: std.ArrayList(u8) = .{};
-    errdefer out.deinit(allocator);
-    const w = out.writer(allocator);
+    var out_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer out_aw.deinit();
+    const w = &out_aw.writer;
 
     // Module identifier from path.
     const basename = std.fs.path.basename(rel_path);
@@ -66,7 +66,7 @@ pub fn generateFileHeader(
         }
     }
 
-    return @as(?[]const u8, try out.toOwnedSlice(allocator));
+    return @as(?[]const u8, try out_aw.toOwnedSlice());
 }
 
 /// Inserts a file header into a Zig source file using provided allocator and data.
@@ -75,8 +75,7 @@ pub fn insertFileHeader(
     source: []const u8,
     header: []const u8,
 ) ![]const u8 {
-    var out: std.ArrayList(u8) = .{};
-    errdefer out.deinit(allocator);
+    var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(allocator, header);
     if (!std.mem.endsWith(u8, header, "\n")) try out.append(allocator, '\n');
     try out.appendSlice(allocator, source);

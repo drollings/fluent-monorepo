@@ -5,7 +5,7 @@ const sql_mod = @import("sql.zig");
 
 test "TableSchema SQL generation" {
     const testing = std.testing;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

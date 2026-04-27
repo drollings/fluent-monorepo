@@ -28,7 +28,7 @@ fn makeTestLib(allocator: std.mem.Allocator) !*Library {
 }
 
 test "L1: cache returns pre-populated result" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -56,7 +56,7 @@ test "L1: cache returns pre-populated result" {
 }
 
 test "L3: graph traversal finds node by exact name match" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -80,7 +80,7 @@ test "L3: graph traversal finds node by exact name match" {
 }
 
 test "L3: graph traversal returns null for unknown name" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -99,7 +99,7 @@ test "L3: graph traversal returns null for unknown name" {
 }
 
 test "L5: fallback when no caches hit and no LLM configured" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -118,7 +118,7 @@ test "L5: fallback when no caches hit and no LLM configured" {
 }
 
 test "L2 skipped when wasm_tools is empty" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -137,7 +137,7 @@ test "L2 skipped when wasm_tools is empty" {
 }
 
 test "L4 skipped when embedder is null" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -156,7 +156,7 @@ test "L4 skipped when embedder is null" {
 }
 
 test "routing pipeline falls through all tiers to L5" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -175,7 +175,7 @@ test "routing pipeline falls through all tiers to L5" {
 }
 
 test "QueueReactor.route returns allocator-owned nodes for L3" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

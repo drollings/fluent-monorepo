@@ -286,7 +286,8 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
     }
 
     // 2. User-global config (~/.config/guidance/guidance-config.json).
-    if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |home| {
+    if (std.c.getenv("HOME")) |home_ptr| {
+        const home = std.mem.span(home_ptr);
         defer allocator.free(home);
         const path = try std.fs.path.join(allocator, &.{ home, ".config", "guidance", CONFIG_FILENAME });
         defer allocator.free(path);
@@ -315,7 +316,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
     const dir_path = try std.fs.path.join(allocator, &.{ cwd, guidance_dir });
     defer allocator.free(dir_path);
 
-    std.fs.makeDirAbsolute(dir_path) catch |err| {
+    std.Io.Dir.createDirAbsolute(std.Io.Threaded.global_single_threaded.io(), dir_path, .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
     };
 
@@ -323,17 +324,16 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
     defer allocator.free(config_path);
 
     // Check if config already exists.
-    std.fs.accessAbsolute(config_path, .{}) catch |err| {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), config_path, .{}) catch |err| {
         if (err != error.FileNotFound) return err;
         // File doesn't exist, create it.
-        const file = try std.fs.createFileAbsolute(config_path, .{});
-        defer file.close();
+        const file = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), config_path, .{});
+        defer file.close(std.Io.Threaded.global_single_threaded.io());
 
-        var buf: [64 * 1024]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const writer = fbs.writer();
+        var aw: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+        defer aw.deinit();
 
-        try writer.print(
+        try aw.writer.print(
             \\{{
             \\  "version": "1",
             \\  "guidance_dir": "{s}",
@@ -379,7 +379,10 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
             \\
         , .{ guidance_dir, db_path, DEFAULT_EMBEDDING_DIMS, DEFAULT_EMBEDDING_CACHE_LIMIT });
 
-        try file.writeAll(fbs.getWritten());
+        var wbuf: [4096]u8 = undefined;
+        var uwriter = file.writer(std.Io.Threaded.global_single_threaded.io(), &wbuf);
+        try uwriter.interface.writeAll(aw.written());
+        try uwriter.interface.flush();
         std.debug.print("Created {s}\n", .{config_path});
         return true;
     };
@@ -394,7 +397,7 @@ pub fn initConfig(allocator: std.mem.Allocator, cwd: []const u8, options: InitOp
 
 /// Converts a JSON object map into a list of Zig command checks.
 fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![]LintCommand {
-    var commands: std.ArrayList(LintCommand) = .{};
+    var commands: std.ArrayList(LintCommand) = .empty;
     errdefer {
         for (commands.items) |c| c.deinit(allocator);
         commands.deinit(allocator);
@@ -404,7 +407,7 @@ fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![
         const ext_str = entry.key_ptr.*;
         const argv_val = entry.value_ptr.*;
         if (argv_val != .array) continue;
-        var argv: std.ArrayList([]const u8) = .{};
+        var argv: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (argv.items) |a| allocator.free(a);
             argv.deinit(allocator);
@@ -428,10 +431,11 @@ fn parseCommandsObject(allocator: std.mem.Allocator, obj: std.json.ObjectMap) ![
 
 /// Attempts to load a file into a project configuration, returning a ProjectConfig or error.
 fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) !ProjectConfig {
-    const file = try std.fs.openFileAbsolute(path, .{});
-    defer file.close();
+    const file = try std.Io.Dir.openFileAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{});
+    defer file.close(std.Io.Threaded.global_single_threaded.io());
 
-    const content = try file.readToEndAlloc(allocator, 64 * 1024);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(64 * 1024));
     defer allocator.free(content);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, allocator, content, .{});
@@ -450,7 +454,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
     else
         DEFAULT_DB_PATH;
 
-    var src_dirs: std.ArrayList([]const u8) = .{};
+    var src_dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (src_dirs.items) |d| allocator.free(d);
         src_dirs.deinit(allocator);
@@ -493,7 +497,7 @@ fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) 
         break :blk DEFAULT_THINKING_MODEL;
     };
 
-    var providers: std.ArrayList(Provider) = .{};
+    var providers: std.ArrayList(Provider) = .empty;
     errdefer {
         for (providers.items) |*p| p.deinit(allocator);
         providers.deinit(allocator);

@@ -1029,7 +1029,7 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
     , .{module});
     defer allocator.free(json);
 
-    const file = try std.fs.createFileAbsolute(path, .{});
+    const file = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{});
     defer file.close();
     try file.writeAll(json);
 
@@ -1533,7 +1533,7 @@ test "splitDiffByFile: single file diff produces one chunk" {
         \\ fn foo() void {}
         \\+fn bar() void {}
     ;
-    var chunks: std.ArrayList([]const u8) = .{};
+    var chunks: std.ArrayList([]const u8) = .empty;
     defer chunks.deinit(allocator);
     try main.splitDiffByFilePub(diff, &chunks, allocator);
 
@@ -1560,7 +1560,7 @@ test "splitDiffByFile: multi-file diff splits into correct chunks" {
         \\@@ -5,2 +5,3 @@
         \\+added to bar
     ;
-    var chunks: std.ArrayList([]const u8) = .{};
+    var chunks: std.ArrayList([]const u8) = .empty;
     defer chunks.deinit(allocator);
     try main.splitDiffByFilePub(diff, &chunks, allocator);
 
@@ -1587,7 +1587,7 @@ test "splitDiffByFile: .guidance/ chunks split correctly and are identifiable" {
         \\@@ -1,3 +1,4 @@
         \\+  "comment": "updated"
     ;
-    var chunks: std.ArrayList([]const u8) = .{};
+    var chunks: std.ArrayList([]const u8) = .empty;
     defer chunks.deinit(allocator);
     try main.splitDiffByFilePub(diff, &chunks, allocator);
 

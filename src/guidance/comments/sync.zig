@@ -413,9 +413,13 @@ fn relPath(filepath: []const u8, root: []const u8) []const u8 {
 
 /// Writes binary content to a file path, handling data and errors.
 fn writeFile(path: []const u8, content: []const u8) !void {
-    const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
-    defer file.close();
-    try file.writeAll(content);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = try std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
+    defer file.close(io);
+    var wbuf: [4096]u8 = undefined;
+    var fw = file.writer(io, &wbuf);
+    try fw.interface.writeAll(content);
+    try fw.interface.flush();
 }
 
 // ---------------------------------------------------------------------------
@@ -517,7 +521,7 @@ pub fn syncCommentsToSource(
     dry_run: bool,
     verbose: bool,
 ) ![]const []const u8 {
-    var modified_files: std.ArrayList([]const u8) = .{};
+    var modified_files: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (modified_files.items) |f| allocator.free(f);
         modified_files.deinit(allocator);
@@ -559,14 +563,8 @@ pub fn syncCommentsToSource(
         }
 
         // Read current source.
-        const source = std.fs.cwd().readFileAllocOptions(
-            allocator,
-            result.filepath,
-            10 * 1024 * 1024,
-            null,
-            .@"1",
-            0,
-        ) catch |err| {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const source = std.Io.Dir.cwd().readFileAlloc(io, result.filepath, allocator, .limited(10 * 1024 * 1024)) catch |err| {
             std.debug.print("[comment-sync] WARN: cannot read {s}: {s}\n", .{ result.filepath, @errorName(err) });
             store.freeGuidanceDoc(doc);
             continue;
@@ -658,14 +656,8 @@ pub fn correctLineNumbers(
     defer store.freeGuidanceDoc(doc);
 
     // Re-parse source.
-    const source = std.fs.cwd().readFileAllocOptions(
-        allocator,
-        filepath,
-        10 * 1024 * 1024,
-        null,
-        .@"1",
-        0,
-    ) catch |err| {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const source = std.Io.Dir.cwd().readFileAlloc(io, filepath, allocator, .limited(10 * 1024 * 1024)) catch |err| {
         std.debug.print("[line-correct] WARN: cannot read {s}: {s}\n", .{ filepath, @errorName(err) });
         return;
     };
@@ -686,7 +678,7 @@ pub fn correctLineNumbers(
     }
 
     // Merge: keep comments and match_hash, update line numbers.
-    var merged_members: std.ArrayList(types.Member) = .{};
+    var merged_members: std.ArrayList(types.Member) = .empty;
     defer merged_members.deinit(allocator);
 
     // Build a name → new_member map.

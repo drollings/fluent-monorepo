@@ -96,7 +96,7 @@ fn parseTarget(
 
     if (value.object.get("depends")) |depends_val| {
         if (depends_val == .array) {
-            var dep_names: std.ArrayList([]const u8) = .{};
+            var dep_names: std.ArrayList([]const u8) = .empty;
             defer dep_names.deinit(allocator);
 
             for (depends_val.array.items) |dep| {
@@ -111,7 +111,7 @@ fn parseTarget(
 
     if (value.object.get("provides")) |provides_val| {
         if (provides_val == .array) {
-            var prov_names: std.ArrayList([]const u8) = .{};
+            var prov_names: std.ArrayList([]const u8) = .empty;
             defer prov_names.deinit(allocator);
 
             for (provides_val.array.items) |prov| {
@@ -259,7 +259,7 @@ test "JSON parsing" {
 }
 
 test "JSON parsing GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {

@@ -121,7 +121,7 @@ pub const FrozenSnapshot = struct {
         defer buf.deinit(allocator);
 
         for (paths, 0..) |path, i| {
-            const content = std.fs.cwd().readFileAlloc(
+            const content = std.Io.Dir.cwd().readFileAlloc(
                 allocator,
                 path,
                 std.math.maxInt(usize),

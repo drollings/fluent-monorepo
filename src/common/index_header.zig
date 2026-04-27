@@ -94,7 +94,7 @@ pub fn readGitHeadFromFile(
     expected_magic: u32,
     expected_version: u32,
 ) ?[40]u8 {
-    const content = std.fs.cwd().readFileAlloc(
+    const content = std.Io.Dir.cwd().readFileAlloc(
         std.heap.page_allocator,
         path,
         std.math.maxInt(usize),
@@ -118,49 +118,49 @@ pub fn readGitHeadFromFile(
 const testing = std.testing;
 
 test "write/read round-trip: no git head" {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(testing.allocator);
-    const bw = buf.writer(testing.allocator);
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    errdefer aw.deinit();
+    const bw = &aw.writer;
 
-    try write(&bw, .{ .magic = 0xDEAD, .version = 1, .git_head = null });
+    try write(bw, .{ .magic = 0xDEAD, .version = 1, .git_head = null });
     // Append some payload
     try bw.writeAll("payload");
 
-    const result = read(buf.items, 0xDEAD, 1).?;
+    const result = read(aw.written(), 0xDEAD, 1).?;
     try testing.expectEqual(@as(usize, 10), result.offset);
     try testing.expectEqual(@as(u16, 0), result.git_head_len);
-    try testing.expectEqualStrings("payload", buf.items[result.offset..]);
+    try testing.expectEqualStrings("payload", aw.written()[result.offset..]);
 }
 
 test "write/read round-trip: with git head" {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(testing.allocator);
-    const bw = buf.writer(testing.allocator);
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    errdefer aw.deinit();
+    const bw = &aw.writer;
 
     const sha = "aabbccddeeff00112233445566778899aabbccdd";
-    try write(&bw, .{ .magic = 0xBEEF, .version = 2, .git_head = sha });
+    try write(bw, .{ .magic = 0xBEEF, .version = 2, .git_head = sha });
     try bw.writeAll("after");
 
-    const result = read(buf.items, 0xBEEF, 2).?;
+    const result = read(aw.written(), 0xBEEF, 2).?;
     try testing.expectEqual(@as(u16, 40), result.git_head_len);
     try testing.expectEqual(@as(usize, 10 + 40), result.offset);
-    try testing.expectEqualStrings("after", buf.items[result.offset..]);
+    try testing.expectEqualStrings("after", aw.written()[result.offset..]);
 }
 
 test "read: wrong magic returns null" {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(testing.allocator);
-    const bw = buf.writer(testing.allocator);
-    try write(&bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    errdefer aw.deinit();
+    const bw = &aw.writer;
+    try write(bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
 
-    try testing.expect(read(buf.items, 0xFFFF, 1) == null);
+    try testing.expect(read(aw.written(), 0xFFFF, 1) == null);
 }
 
 test "read: wrong version returns null" {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(testing.allocator);
-    const bw = buf.writer(testing.allocator);
-    try write(&bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    errdefer aw.deinit();
+    const bw = &aw.writer;
+    try write(bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
 
-    try testing.expect(read(buf.items, 0x1234, 99) == null);
+    try testing.expect(read(aw.written(), 0x1234, 99) == null);
 }

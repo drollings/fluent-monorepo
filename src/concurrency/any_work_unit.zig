@@ -185,7 +185,7 @@ test "WorkUnit: deinitFn cleans up without executing" {
 
 test "WorkUnit: GPA no leaks — success, error, cancelled paths" {
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: success path");
         var executed = false;
         var ctx = Context.background();
@@ -193,7 +193,7 @@ test "WorkUnit: GPA no leaks — success, error, cancelled paths" {
         _ = unit.toAny().runFn(unit.toAny().ptr) catch {};
     }
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: error path");
         var executed = false;
         var ctx = Context.background();
@@ -201,7 +201,7 @@ test "WorkUnit: GPA no leaks — success, error, cancelled paths" {
         _ = unit.toAny().runFn(unit.toAny().ptr) catch {};
     }
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: deinit path");
         var executed = false;
         var ctx = Context.background();

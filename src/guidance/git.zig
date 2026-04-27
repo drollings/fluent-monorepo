@@ -37,8 +37,8 @@ pub const GitignoreFilter = struct {
         const content = common.readFileAlloc(self.allocator, path, 512 * 1024) orelse return;
         defer self.allocator.free(content);
 
-        var patterns_list: std.ArrayList([]const u8) = .{};
-        var negations_list: std.ArrayList([]const u8) = .{};
+        var patterns_list: std.ArrayList([]const u8) = .empty;
+        var negations_list: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (patterns_list.items) |p| self.allocator.free(p);
             patterns_list.deinit(self.allocator);
@@ -72,34 +72,20 @@ pub const GitignoreFilter = struct {
     /// Must be called before isTracked() can return meaningful results.
     /// Returns true on success, false if git command fails or not a git repo.
     pub fn loadTrackedFiles(self: *GitignoreFilter) !void {
-        var child = std.process.Child.init(&.{ "git", "ls-files", "--cached" }, self.allocator);
-        child.stdin_behavior = .Ignore;
-        child.stdout_behavior = .Pipe;
-        child.stderr_behavior = .Pipe;
-
-        child.spawn() catch return error.GitCommandFailed;
-        errdefer {
-            _ = child.wait() catch {};
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const result = std.process.run(self.allocator, io, .{
+            .argv = &.{ "git", "ls-files", "--cached" },
+        }) catch return error.GitCommandFailed;
+        defer {
+            self.allocator.free(result.stdout);
+            self.allocator.free(result.stderr);
         }
-
-        var stdout: std.ArrayList(u8) = .empty;
-        defer stdout.deinit(self.allocator);
-
-        var stderr: std.ArrayList(u8) = .empty;
-        defer stderr.deinit(self.allocator);
-
-        child.collectOutput(self.allocator, &stdout, &stderr, 10 * 1024 * 1024) catch {
-            _ = child.wait() catch {};
-            return error.GitCommandFailed;
-        };
-
-        const term = child.wait() catch return error.GitCommandFailed;
-        switch (term) {
-            .Exited => |code| if (code != 0) return error.GitCommandFailed,
+        switch (result.term) {
+            .exited => |code| if (code != 0) return error.GitCommandFailed,
             else => return error.GitCommandFailed,
         }
 
-        var line_it = std.mem.splitScalar(u8, stdout.items, '\n');
+        var line_it = std.mem.splitScalar(u8, result.stdout, '\n');
         while (line_it.next()) |line| {
             const trimmed = std.mem.trim(u8, line, " \t\r");
             if (trimmed.len == 0) continue;

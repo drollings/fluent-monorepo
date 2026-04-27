@@ -4,7 +4,7 @@ const std = @import("std");
 const channel_mod = @import("channel.zig");
 
 test "Channel: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
 
     const ch = try channel_mod.Channel(i32).init(gpa.allocator(), 4);

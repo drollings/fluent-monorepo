@@ -57,28 +57,28 @@ pub const GuidanceJsonIndexerImpl = struct {
     pub fn extractMetadata(self: *GuidanceJsonIndexerImpl, alloc: std.mem.Allocator) !DocumentMetadata {
         const doc = self.doc;
 
-        var keywords: std.ArrayList([]const u8) = .{};
+        var keywords: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (keywords.items) |k| alloc.free(k);
             keywords.deinit(alloc);
         }
         for (doc.keywords) |kw| try keywords.append(alloc, try alloc.dupe(u8, kw));
 
-        var caps: std.ArrayList([]const u8) = .{};
+        var caps: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (caps.items) |c| alloc.free(c);
             caps.deinit(alloc);
         }
         for (doc.capabilities) |cap| try caps.append(alloc, try alloc.dupe(u8, cap));
 
-        var skills: std.ArrayList([]const u8) = .{};
+        var skills: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (skills.items) |s| alloc.free(s);
             skills.deinit(alloc);
         }
         for (doc.skills) |sk| try skills.append(alloc, try alloc.dupe(u8, sk.ref));
 
-        var used_by: std.ArrayList([]const u8) = .{};
+        var used_by: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (used_by.items) |u| alloc.free(u);
             used_by.deinit(alloc);
@@ -100,7 +100,7 @@ pub const GuidanceJsonIndexerImpl = struct {
         _ = score;
         const doc = self.doc;
 
-        var stages: std.ArrayList(types.Stage) = .{};
+        var stages: std.ArrayList(types.Stage) = .empty;
         errdefer {
             types.freeStages(alloc, stages.items);
             stages.deinit(alloc);
@@ -127,9 +127,9 @@ pub const GuidanceJsonIndexerImpl = struct {
         }
 
         if (doc.keywords.len > 0 or doc.capabilities.len > 0) {
-            var meta_buf: std.ArrayList(u8) = .{};
-            defer meta_buf.deinit(alloc);
-            const mw = meta_buf.writer(alloc);
+            var meta_buf_aw: std.Io.Writer.Allocating = .init(alloc);
+            errdefer meta_buf_aw.deinit();
+            const mw = &meta_buf_aw.writer;
 
             if (doc.keywords.len > 0) {
                 try mw.writeAll("Keywords: ");
@@ -149,10 +149,10 @@ pub const GuidanceJsonIndexerImpl = struct {
                 try mw.writeAll("\n");
             }
 
-            if (meta_buf.items.len > 0) {
+            if (meta_buf_aw.written().len > 0) {
                 try stages.append(alloc, .{
                     .kind = .metadata,
-                    .content = try meta_buf.toOwnedSlice(alloc),
+                    .content = try meta_buf_aw.toOwnedSlice(),
                     .source = try alloc.dupe(u8, doc.meta.source),
                 });
             }

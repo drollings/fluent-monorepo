@@ -93,7 +93,7 @@ pub fn writeFrequencyTable(dir_path: []const u8, table: *const FrequencyTable) !
     var buf: [4096]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "{s}/pair_freq.bin", .{dir_path});
 
-    const f = try std.fs.cwd().createFile(path, .{});
+    const f = try std.Io.Dir.cwd().createFile(path, .{});
     defer f.close();
     var fw_buf: [4096]u8 = undefined;
     var fw = f.writer(&fw_buf);
@@ -113,7 +113,7 @@ pub fn readFrequencyTable(dir_path: []const u8) !?FrequencyTable {
     var buf: [4096]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "{s}/pair_freq.bin", .{dir_path});
 
-    const content = std.fs.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return null;
+    const content = std.Io.Dir.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return null;
     defer std.heap.page_allocator.free(content);
 
     if (content.len < 8) return null;
@@ -168,9 +168,9 @@ test "setFrequencyTable and getFrequencyTable" {
 test "write and read frequency table" {
     const dir = ".test_tmp_freq";
     defer {
-        std.fs.cwd().deleteTree(dir) catch {};
+        std.Io.Dir.cwd().deleteTree(dir) catch {};
     }
-    std.fs.cwd().makePath(dir) catch {};
+    std.Io.Dir.cwd().makePath(dir) catch {};
 
     var table = buildFrequencyTable("hello world");
     try writeFrequencyTable(dir, &table);

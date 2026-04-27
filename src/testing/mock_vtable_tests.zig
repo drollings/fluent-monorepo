@@ -4,7 +4,7 @@ const std = @import("std");
 const mock_vtable_mod = @import("mock_vtable.zig");
 
 test "MockEmbeddingProvider: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
 
     var mock = mock_vtable_mod.MockEmbeddingProvider.init(gpa.allocator());

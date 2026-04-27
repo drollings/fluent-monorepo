@@ -7,37 +7,35 @@ const sha256Hex = common.sha256Hex;
 
 /// Computes a hash from allocator, name, and parameters, returning a slice of hash values.
 pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
-    var sig_buf: std.ArrayList(u8) = .{};
+    var sig_buf: std.ArrayList(u8) = .empty;
     defer sig_buf.deinit(allocator);
-    const writer = sig_buf.writer(allocator);
 
-    try writer.writeAll(name);
-    try writer.writeByte('(');
+    try sig_buf.appendSlice(allocator, name);
+    try sig_buf.append(allocator, '(');
     for (params, 0..) |param, i| {
-        if (i > 0) try writer.writeByte(',');
-        try writer.writeAll(param.name);
-        try writer.writeByte(':');
-        try writer.writeAll(param.type orelse "anytype");
+        if (i > 0) try sig_buf.append(allocator, ',');
+        try sig_buf.appendSlice(allocator, param.name);
+        try sig_buf.append(allocator, ':');
+        try sig_buf.appendSlice(allocator, param.type orelse "anytype");
     }
-    try writer.writeAll(")->");
-    try writer.writeAll(normalizeType(returns orelse "void"));
+    try sig_buf.appendSlice(allocator, ")->");
+    try sig_buf.appendSlice(allocator, normalizeType(returns orelse "void"));
 
     return sha256Hex(allocator, sig_buf.items);
 }
 
 /// Generates a hash for a given Zig struct using its allocator and base data.
 pub fn structHash(allocator: std.mem.Allocator, name: []const u8, bases: []const []const u8) ![]const u8 {
-    var sig_buf: std.ArrayList(u8) = .{};
+    var sig_buf: std.ArrayList(u8) = .empty;
     defer sig_buf.deinit(allocator);
-    const writer = sig_buf.writer(allocator);
 
-    try writer.writeAll(name);
-    try writer.writeByte('(');
+    try sig_buf.appendSlice(allocator, name);
+    try sig_buf.append(allocator, '(');
     for (bases, 0..) |base, i| {
-        if (i > 0) try writer.writeByte(',');
-        try writer.writeAll(base);
+        if (i > 0) try sig_buf.append(allocator, ',');
+        try sig_buf.appendSlice(allocator, base);
     }
-    try writer.writeByte(')');
+    try sig_buf.append(allocator, ')');
 
     return sha256Hex(allocator, sig_buf.items);
 }

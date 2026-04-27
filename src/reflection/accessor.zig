@@ -548,7 +548,7 @@ pub fn describeSchemaFromAccessors(
     type_name: []const u8,
     accessors_slice: []const Accessor,
 ) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     const writer = buf.writer(allocator);
 

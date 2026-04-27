@@ -54,12 +54,12 @@ test "makePathAbsolute creates nested directories" {
     // Verify all levels exist
     const level_a = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "a" });
     defer std.testing.allocator.free(level_a);
-    var dir_a = try std.fs.openDirAbsolute(level_a, .{});
+    var dir_a = try std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), level_a, .{});
     dir_a.close();
 
     const level_b = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "a", "b" });
     defer std.testing.allocator.free(level_b);
-    var dir_b = try std.fs.openDirAbsolute(level_b, .{});
+    var dir_b = try std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), level_b, .{});
     dir_b.close();
 }
 test "makePathAbsolute is idempotent for existing paths" {
@@ -90,7 +90,7 @@ test "readFileAlloc reads file content" {
     const file_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.txt" });
     defer std.testing.allocator.free(file_path);
 
-    const f = try std.fs.createFileAbsolute(file_path, .{});
+    const f = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), file_path, .{});
     try f.writeAll("hello world");
     f.close();
 

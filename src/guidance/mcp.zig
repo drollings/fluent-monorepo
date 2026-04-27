@@ -183,12 +183,12 @@ fn handleToolCall(
     params: ?std.json.Value,
 ) !void {
     // Capture all output to a buffer so we can return it as the tool result.
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
 
     if (std.mem.eql(u8, name, "explain")) {
         // Build argv for cmdExplain.
-        var argv: std.ArrayList([]const u8) = .{};
+        var argv: std.ArrayList([]const u8) = .empty;
         defer argv.deinit(allocator);
 
         if (params) |p| {
@@ -220,7 +220,7 @@ fn handleToolCall(
         };
         try writeResult(writer, id, "explain completed — see stdout");
     } else if (std.mem.eql(u8, name, "gen")) {
-        var argv: std.ArrayList([]const u8) = .{};
+        var argv: std.ArrayList([]const u8) = .empty;
         defer argv.deinit(allocator);
         if (params) |p| {
             if (p == .object) {

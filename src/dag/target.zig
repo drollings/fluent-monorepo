@@ -327,7 +327,7 @@ test "Target depends and provides" {
 }
 
 test "Target GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {
@@ -605,7 +605,7 @@ test "Target: id is i64" {
 // ---------------------------------------------------------------------------
 
 test "TargetSchema: viewOf set/get essential via reflection" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -629,7 +629,7 @@ test "TargetSchema: viewOf set/get essential via reflection" {
 }
 
 test "TargetSchema: viewOf set/get depends via BitSetConstraint" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -668,7 +668,7 @@ test "TargetSchema: viewOf set/get depends via BitSetConstraint" {
 }
 
 test "TargetSchema: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

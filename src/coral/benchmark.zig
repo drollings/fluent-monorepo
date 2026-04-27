@@ -393,7 +393,7 @@ pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
 
 /// Executes the Zig benchmark test by calling the main function, which runs the benchmark suite.
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

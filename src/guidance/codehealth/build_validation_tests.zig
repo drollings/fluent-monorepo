@@ -118,7 +118,7 @@ test "build_validation: fixUncoveredTestFiles adds test target" {
 
     const build_zig_path = try std.fmt.allocPrint(allocator, "{s}/build.zig", .{workspace});
     defer allocator.free(build_zig_path);
-    const result = try std.fs.cwd().readFileAlloc(allocator, build_zig_path, 1024 * 1024);
+    const result = try std.Io.Dir.cwd().readFileAlloc(allocator, build_zig_path, 1024 * 1024);
     defer allocator.free(result);
 
     try std.testing.expect(std.mem.indexOf(u8, result, "src/testing/mock_vtable_tests.zig") != null);
@@ -187,7 +187,7 @@ test "build_validation: fixUncoveredTestFiles adds test target" {
 
     const build_zig_path = try std.fmt.allocPrint(allocator, "{s}/build.zig", .{workspace});
     defer allocator.free(build_zig_path);
-    const result = try std.fs.cwd().readFileAlloc(allocator, build_zig_path, 1024 * 1024);
+    const result = try std.Io.Dir.cwd().readFileAlloc(allocator, build_zig_path, 1024 * 1024);
     defer allocator.free(result);
 
     try std.testing.expect(std.mem.indexOf(u8, result, "src/testing/mock_vtable_tests.zig") != null);

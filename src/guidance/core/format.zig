@@ -54,7 +54,7 @@ fn formatCodeStages(allocator: std.mem.Allocator, writer: anytype, stages: []con
         try seen_code.put(aa, dedup_key, {});
         const lang = common.langFromPath(s.source);
         if (s.line) |ln| {
-            const trimmed_content = std.mem.trimRight(u8, s.content, " \t\n\r");
+            const trimmed_content = common.trimRight(u8, s.content, " \t\n\r");
             const end_ln = ln + std.mem.count(u8, trimmed_content, "\n");
             try writer.print("## Source location: `{s}:{d}-{d}`\n\n```{s}\n", .{ s.source, ln, end_ln, lang });
         } else {
@@ -222,9 +222,9 @@ pub fn formatStaged(
     summary: ?[]const u8,
     _: []const u8,
 ) ![]u8 {
-    var out: std.ArrayList(u8) = .empty;
-    defer out.deinit(allocator);
-    const w = out.writer(allocator);
+    var out_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer out_aw.deinit();
+    const w = &out_aw.writer;
 
     try w.print("# Explain: {s}\n\n", .{query});
     if (summary) |s| {
@@ -235,14 +235,14 @@ pub fn formatStaged(
     for (stages) |s| {
         if (s.kind != .not_found) continue;
         try w.print("{s}\n\n", .{std.mem.trim(u8, s.content, " \t\n\r")});
-        return out.toOwnedSlice(allocator);
+        return out_aw.toOwnedSlice();
     }
 
     try formatCodeStages(allocator, w, stages);
     try formatCapabilitySection(w, stages);
     try formatMetadataSection(allocator, w, query, stages);
 
-    return out.toOwnedSlice(allocator);
+    return out_aw.toOwnedSlice();
 }
 
 // =============================================================================
@@ -305,7 +305,10 @@ pub fn formatLegacy(
                 } else false;
                 if (is_term) continue;
                 if (kw_count > 0) try kw_buf.appendSlice(allocator, ", ");
-                try kw_buf.writer(allocator).print("`{s}`", .{mname});
+                var aw_kw: std.Io.Writer.Allocating = .init(allocator);
+                errdefer aw_kw.deinit();
+                try aw_kw.writer.print("`{s}`", .{mname});
+                try kw_buf.appendSlice(allocator, aw_kw.written());
                 kw_count += 1;
             }
         }
@@ -332,14 +335,20 @@ pub fn formatLegacy(
 
         for (top_used_by[0..@min(4, top_used_by.len)]) |ub| {
             if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{ub});
+            var aw_see: std.Io.Writer.Allocating = .init(allocator);
+            errdefer aw_see.deinit();
+            try aw_see.writer.print("`{s}`", .{ub});
+            try see_buf.appendSlice(allocator, aw_see.written());
             see_count += 1;
         }
         for (results[1..@min(results.len, 6)]) |r| {
             if (see_count >= 6) break;
             if (r.source.len == 0 or std.mem.eql(u8, r.source, results[0].source)) continue;
             if (see_count > 0) try see_buf.appendSlice(allocator, ", ");
-            try see_buf.writer(allocator).print("`{s}`", .{r.source});
+            var aw_see2: std.Io.Writer.Allocating = .init(allocator);
+            errdefer aw_see2.deinit();
+            try aw_see2.writer.print("`{s}`", .{r.source});
+            try see_buf.appendSlice(allocator, aw_see2.written());
             see_count += 1;
         }
         if (see_count > 0) try stdout.print("**See also**: {s}\n\n", .{see_buf.items});

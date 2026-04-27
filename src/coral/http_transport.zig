@@ -72,7 +72,7 @@ pub const HttpTransport = struct {
     running: bool = false,
     shutdown_requested: bool = false,
     ready_signal: ?*std.Thread.ResetEvent = null,
-    sse_connections: std.ArrayListUnmanaged(*SseConnection) = .{},
+    sse_connections: std.ArrayListUnmanaged(*SseConnection) = .empty,
     sse_heartbeat_ms: u32 = 30_000,
 
     /// Initialize HTTP transport with binding configuration.
@@ -331,7 +331,7 @@ pub const HttpTransport = struct {
     }
 
     fn sendMetrics(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) !void {
-        var buf: std.ArrayListUnmanaged(u8) = .{};
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
         defer buf.deinit(arena);
 
         // Add basic metrics

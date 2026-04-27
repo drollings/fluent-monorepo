@@ -61,13 +61,12 @@ pub fn cmdCheck(
     }
 
     if (use_snapshot and !ga.force) {
-        const cwd = std.process.getCwdAlloc(allocator) catch "";
+        const cwd = std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator) catch "";
         defer if (cwd.len > 0) allocator.free(cwd);
         var dir_buf: [4096]u8 = undefined;
         const guidance_dir = std.fmt.bufPrint(&dir_buf, "{s}/.guidance", .{cwd}) catch ".guidance";
 
-        const git_result = try std.process.Child.run(.{
-            .allocator = allocator,
+        const git_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
             .argv = &[_][]const u8{ "git", "rev-parse", "HEAD" },
         });
         defer {
@@ -90,7 +89,7 @@ pub fn cmdCheck(
     try gen_fn(allocator, ga, caps_sync_fn);
 
     if (run_structure and !ga.dry_run) {
-        const cwd = try std.process.getCwdAlloc(allocator);
+        const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
         defer allocator.free(cwd);
 
         var cfg = config_mod.loadConfig(allocator, cwd) catch
@@ -113,7 +112,7 @@ pub fn runPhaseCommand(
     argv_template: []const []const u8,
     file_path: []const u8,
 ) !bool {
-    var argv: std.ArrayList([]const u8) = .{};
+    var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
     for (argv_template) |tok| {
         try argv.append(allocator, if (std.mem.eql(u8, tok, "{file}")) file_path else tok);
@@ -126,19 +125,20 @@ pub fn collectFilesWithExts(
     dir_abs: []const u8,
     exts: []const []const u8,
 ) ![][]const u8 {
-    var results: std.ArrayList([]const u8) = .{};
+    var results: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (results.items) |p| allocator.free(p);
         results.deinit(allocator);
     }
 
-    var dir = std.fs.openDirAbsolute(dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
-    defer dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .file) continue;
         if (std.mem.endsWith(u8, entry.basename, "_tests.zig")) continue;
         const ext = std.fs.path.extension(entry.basename);

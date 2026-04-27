@@ -227,7 +227,7 @@ pub const DagExecutor = struct {
 const testing = std.testing;
 
 test "DagExecutor: init and run with no handlers (all skip)" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -243,7 +243,7 @@ test "DagExecutor: init and run with no handlers (all skip)" {
 }
 
 test "DagExecutor: collectDeps includes transitive deps" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -264,7 +264,7 @@ test "DagExecutor: collectDeps includes transitive deps" {
 }
 
 test "DagExecutor: essential handler failure propagates" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

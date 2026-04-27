@@ -190,7 +190,7 @@ pub const CommentCache = struct {
     }
 
     pub fn invalidateFile(self: *CommentCache, file_path: []const u8) void {
-        var to_remove: std.ArrayList([]const u8) = .{};
+        var to_remove: std.ArrayList([]const u8) = .empty;
         defer to_remove.deinit(self.allocator);
 
         var iter = self.map.keyIterator();

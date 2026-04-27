@@ -380,7 +380,7 @@ test "ContextNodeSchema: sql_bind_order has correct length" {
 }
 
 test "ContextNodeSchema: create and destroy" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -390,7 +390,7 @@ test "ContextNodeSchema: create and destroy" {
 }
 
 test "ContextNodeSchema: viewOf set and get" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -415,7 +415,7 @@ test "ContextNodeSchema: viewOf set and get" {
 }
 
 test "ContextNodeSchema: viewOf lod field access" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -437,7 +437,7 @@ test "ContextNodeSchema: viewOf lod field access" {
 }
 
 test "ContextNodeSchema: valid_to optional field" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -463,7 +463,7 @@ test "ContextNodeSchema: valid_to optional field" {
 }
 
 test "BinaryContextNode: round-trip serialization" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -491,7 +491,7 @@ test "BinaryContextNode: round-trip serialization" {
 }
 
 test "ContextNodeSchema: access denied on protected field" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -508,7 +508,7 @@ test "ContextNodeSchema: access denied on protected field" {
 }
 
 test "ContextNodeSchema: sql_type is correctly set on all accessors" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

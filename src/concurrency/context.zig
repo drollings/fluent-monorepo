@@ -200,7 +200,7 @@ test "Context: thread safety — cancel from two threads, first wins" {
 }
 
 test "Context: GPA no leaks — background, withTimeout, cancel" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
     _ = gpa.allocator();
 

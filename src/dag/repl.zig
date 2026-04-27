@@ -91,7 +91,7 @@ fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !boo
     }
 
     if (std.mem.eql(u8, cmd, ".graph")) {
-        var tgt_list: std.ArrayListUnmanaged([]const u8) = .{};
+        var tgt_list: std.ArrayListUnmanaged([]const u8) = .empty;
         defer tgt_list.deinit(self.allocator);
 
         while (tokens.next()) |tok| {
@@ -130,7 +130,7 @@ fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !boo
 
 /// Processes a Zig build command input and returns a compiled result.
 fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) !void {
-    var tgt_list: std.ArrayListUnmanaged([]const u8) = .{};
+    var tgt_list: std.ArrayListUnmanaged([]const u8) = .empty;
     defer tgt_list.deinit(self.allocator);
 
     var tokens = std.mem.tokenizeSequence(u8, input, " ");

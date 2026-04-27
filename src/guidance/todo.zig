@@ -19,18 +19,19 @@ const llm = @import("llm");
 
 /// Fetches the current work item from a directory, returning its slice of data.
 pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !?[]const u8 {
-    var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(io);
 
     // Collect candidate names (chronological order by name: YYYYMMDD_HHMMSS_...).
-    var names: std.ArrayList([]const u8) = .{};
+    var names: std.ArrayList([]const u8) = .empty;
     defer {
         for (names.items) |n| allocator.free(n);
         names.deinit(allocator);
     }
 
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .directory) continue;
         if (std.mem.eql(u8, entry.name, "archive")) continue;
         // Must start with digits (YYYYMMDD).
@@ -49,7 +50,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
     for (names.items) |name| {
         const committed = try std.fmt.allocPrint(allocator, "{s}/{s}/COMMITTED.md", .{ todo_dir, name });
         defer allocator.free(committed);
-        std.fs.accessAbsolute(committed, .{}) catch {
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed, .{}) catch {
             // COMMITTED.md not found — this is the current item.
             const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, name });
             return path;
@@ -60,7 +61,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
 
 /// Converts a byte slice to a slugified string by trimming spaces and converting to lowercase.
 fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     var prev_dash = true; // avoid leading dashes
     for (s) |c| {
         if (std.ascii.isAlphanumeric(c)) {
@@ -83,9 +84,10 @@ fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 
 /// Reads a file path into a Zig-safe slice, returning the contents or an error.
 fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
-    const f = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer f.close();
-    return f.readToEndAlloc(allocator, 1 * 1024 * 1024) catch null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
+    defer f.close(io);
+    return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(1 * 1024 * 1024)) catch null;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,13 +97,14 @@ fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
 /// Creates a new todo entry with the given description and todo directory.
 pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_dir: []const u8) !void {
     // Ensure todo directory exists.
-    std.fs.makeDirAbsolute(todo_dir) catch |e| switch (e) {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.createDirAbsolute(io, todo_dir, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
 
     // Build directory name: YYYYMMDD_HHMMSS_<slug>
-    const ts = std.time.timestamp();
+    const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s));
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
     const day = epoch.getDaySeconds();
     const year_day = epoch.getEpochDay().calculateYearDay();
@@ -124,7 +127,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     const item_dir = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, dir_name });
     defer allocator.free(item_dir);
 
-    try std.fs.makeDirAbsolute(item_dir);
+    try std.Io.Dir.createDirAbsolute(io, item_dir, .default_dir);
 
     // Write TODO.md template.
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
@@ -147,24 +150,33 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     , .{title});
     defer allocator.free(template);
 
-    const f = try std.fs.createFileAbsolute(todo_path, .{});
-    try f.writeAll(template);
-    f.close();
+    const f = try std.Io.Dir.createFileAbsolute(io, todo_path, .{});
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = f.writer(io, &wbuf);
+        try writer.interface.writeAll(template);
+        try writer.interface.flush();
+    }
+    f.close(io);
 
     std.debug.print("todo: created {s}\n", .{item_dir});
 
     // Open $EDITOR.
-    const cwd_val = try std.process.getCwdAlloc(allocator);
+    const cwd_val = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd_val);
 
-    const editor = std.process.getEnvVarOwned(allocator, "EDITOR") catch
-        std.process.getEnvVarOwned(allocator, "VISUAL") catch
-        try allocator.dupe(u8, "vi");
+    const editor = blk: {
+        if (std.c.getenv("EDITOR")) |e| {
+            break :blk try allocator.dupe(u8, std.mem.span(e));
+        }
+        if (std.c.getenv("VISUAL")) |e| {
+            break :blk try allocator.dupe(u8, std.mem.span(e));
+        }
+        break :blk try allocator.dupe(u8, "vi");
+    };
     defer allocator.free(editor);
 
-    var child = std.process.Child.init(&.{ editor, todo_path }, allocator);
-    child.cwd = cwd_val;
-    _ = child.spawnAndWait() catch {};
+    _ = try std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } });
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +185,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
 
 /// Processes a list of todo items using an allocator, returning a processed result.
 pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo triage: no current work item found in {s}\n", .{todo_dir});
         return;
@@ -240,18 +253,26 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
             \\
         , .{});
         defer allocator.free(stub);
-        const wf = try std.fs.createFileAbsolute(triage_path, .{});
-        defer wf.close();
-        try wf.writeAll(stub);
+        const wf = try std.Io.Dir.createFileAbsolute(io, triage_path, .{});
+        defer wf.close(io);
+        var wbuf: [4096]u8 = undefined;
+        var writer = wf.writer(io, &wbuf);
+        try writer.interface.writeAll(stub);
+        try writer.interface.flush();
         return;
     };
     defer allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
-    const wf = try std.fs.createFileAbsolute(triage_path, .{});
-    defer wf.close();
-    try wf.writeAll(stripped);
-    if (!std.mem.endsWith(u8, stripped, "\n")) try wf.writeAll("\n");
+    const wf = try std.Io.Dir.createFileAbsolute(io, triage_path, .{});
+    defer wf.close(io);
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = wf.writer(io, &wbuf);
+        try writer.interface.writeAll(stripped);
+        if (!std.mem.endsWith(u8, stripped, "\n")) try writer.interface.writeAll("\n");
+        try writer.interface.flush();
+    }
     std.debug.print("todo triage: wrote {s}\n", .{triage_path});
 }
 
@@ -261,6 +282,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
 
 /// Processes a todo list file by allocating memory and validating its contents.
 pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo checklist: no current work item found\n", .{});
         return;
@@ -319,18 +341,28 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
             \\- [ ] Run `make pre-commit`
             \\
         ;
-        const wf = try std.fs.createFileAbsolute(checklist_path, .{});
-        defer wf.close();
-        try wf.writeAll(stub);
+        const wf = try std.Io.Dir.createFileAbsolute(io, checklist_path, .{});
+        defer wf.close(io);
+        {
+            var wbuf: [4096]u8 = undefined;
+            var writer = wf.writer(io, &wbuf);
+            try writer.interface.writeAll(stub);
+            try writer.interface.flush();
+        }
         return;
     };
     defer allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
-    const wf = try std.fs.createFileAbsolute(checklist_path, .{});
-    defer wf.close();
-    try wf.writeAll(stripped);
-    if (!std.mem.endsWith(u8, stripped, "\n")) try wf.writeAll("\n");
+    const wf = try std.Io.Dir.createFileAbsolute(io, checklist_path, .{});
+    defer wf.close(io);
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = wf.writer(io, &wbuf);
+        try writer.interface.writeAll(stripped);
+        if (!std.mem.endsWith(u8, stripped, "\n")) try writer.interface.writeAll("\n");
+        try writer.interface.flush();
+    }
     std.debug.print("todo checklist: wrote {s}\n", .{checklist_path});
 }
 
@@ -340,20 +372,21 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
 
 /// Updates todo status based on allocation and directory data.
 pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
-    var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo status: no todo directory at {s}\n", .{todo_dir});
         return;
     };
-    defer dir.close();
+    defer dir.close(io);
 
-    var names: std.ArrayList([]const u8) = .{};
+    var names: std.ArrayList([]const u8) = .empty;
     defer {
         for (names.items) |n| allocator.free(n);
         names.deinit(allocator);
     }
 
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(io)) |entry| {
         if (entry.kind != .directory) continue;
         if (std.mem.eql(u8, entry.name, "archive")) continue;
         if (entry.name.len < 9 or !std.ascii.isDigit(entry.name[0])) continue;
@@ -376,7 +409,7 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
         defer allocator.free(committed_path);
 
-        const is_committed = if (std.fs.accessAbsolute(committed_path, .{})) |_| true else |_| false;
+        const is_committed = if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed_path, .{})) |_| true else |_| false;
         const is_current = if (current) |c| std.mem.eql(u8, c, item_path) else false;
 
         // Read CHECKLIST.md for completion %.
@@ -431,19 +464,20 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
 /// Processes a list of todo strings and returns a modified allocation.
 pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
-    var dir = std.fs.openDirAbsolute(todo_dir, .{ .iterate = true }) catch {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo list: no todo directory at {s}\n", .{todo_dir});
         return;
     };
-    defer dir.close();
+    defer dir.close(io);
 
-    var names: std.ArrayList([]const u8) = .{};
+    var names: std.ArrayList([]const u8) = .empty;
     defer {
         for (names.items) |n| allocator.free(n);
         names.deinit(allocator);
     }
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(io)) |entry| {
         if (entry.kind != .directory) continue;
         if (std.mem.eql(u8, entry.name, "archive")) continue;
         if (entry.name.len < 9 or !std.ascii.isDigit(entry.name[0])) continue;
@@ -461,7 +495,7 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
         defer allocator.free(committed_path);
-        const is_committed = if (std.fs.accessAbsolute(committed_path, .{})) |_| true else |_| false;
+        const is_committed = if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed_path, .{})) |_| true else |_| false;
 
         var title: []const u8 = name;
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
@@ -497,7 +531,8 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     const archive_dir = try std.fmt.allocPrint(allocator, "{s}/archive", .{todo_dir});
     defer allocator.free(archive_dir);
 
-    std.fs.makeDirAbsolute(archive_dir) catch |e| switch (e) {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.createDirAbsolute(io, archive_dir, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
@@ -507,7 +542,7 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     const dest = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ archive_dir, basename });
     defer allocator.free(dest);
 
-    try std.fs.renameAbsolute(item_dir, dest);
+    _ = try std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } });
     std.debug.print("todo abandon: moved {s} to archive/\n", .{basename});
 }
 
@@ -527,7 +562,8 @@ pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir
     defer allocator.free(diary_path);
 
     // Get HH:MM timestamp.
-    const ts = std.time.timestamp();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const ts = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s);
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
     const day = epoch.getDaySeconds();
     const hh = day.getHoursIntoDay();
@@ -537,21 +573,30 @@ pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir
     defer allocator.free(entry);
 
     // Create DIARY.md header if new, then append entry.
-    const diary_exists = if (std.fs.accessAbsolute(diary_path, .{})) |_| true else |_| false;
-    const df = std.fs.openFileAbsolute(diary_path, .{ .mode = .read_write }) catch
-        try std.fs.createFileAbsolute(diary_path, .{});
-    defer df.close();
+    const diary_exists = if (std.Io.Dir.accessAbsolute(io, diary_path, .{})) |_| true else |_| false;
+    const df = std.Io.Dir.openFileAbsolute(io, diary_path, .{ .mode = .read_write }) catch
+        try std.Io.Dir.createFileAbsolute(io, diary_path, .{});
+    defer df.close(io);
 
     if (!diary_exists) {
         const basename = std.fs.path.basename(item_dir);
         const header = try std.fmt.allocPrint(allocator, "# Diary: {s}\n\n", .{basename});
         defer allocator.free(header);
-        try df.writeAll(header);
+        var wbuf: [4096]u8 = undefined;
+        var writer = df.writer(io, &wbuf);
+        try writer.interface.writeAll(header);
+        try writer.interface.flush();
     } else {
-        try df.seekFromEnd(0);
+        const end_pos = try df.stat(io);
+        try df.seekTo(io, end_pos.size);
     }
 
-    try df.writeAll(entry);
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = df.writer(io, &wbuf);
+        try writer.interface.writeAll(entry);
+        try writer.interface.flush();
+    }
     std.debug.print("diary: {s}", .{entry});
 }
 
@@ -602,39 +647,48 @@ pub fn writeCommittedMd(
     summary: []const u8,
     changed_files: []const []const u8,
 ) !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
     const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_dir});
     defer allocator.free(committed_path);
 
-    const ts = std.time.timestamp();
+    const ts: i64 = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s);
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
     const day = epoch.getDaySeconds();
     const year_day = epoch.getEpochDay().calculateYearDay();
     const month_day = year_day.calculateMonthDay();
 
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
-    const w = buf.writer(allocator);
 
     const basename = std.fs.path.basename(item_dir);
-    try w.print("# Committed: {s}\n\n", .{basename});
-    try w.print("**Commit**: `{s}`\n", .{commit_hash});
-    try w.print("**Date**: {d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\n", .{
+    try buf.appendSlice(allocator, "# Committed: ");
+    try buf.appendSlice(allocator, basename);
+    try buf.appendSlice(allocator, "\n\n");
+    try buf.appendSlice(allocator, "**Commit**: `");
+    try buf.appendSlice(allocator, commit_hash);
+    try buf.appendSlice(allocator, "`\n");
+    try buf.appendSlice(allocator, "**Date**: ");
+    try buf.appendSlice(allocator, try std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\n", .{
         year_day.year,
         month_day.month.numeric(),
         month_day.day_index + 1,
         day.getHoursIntoDay(),
         day.getMinutesIntoHour(),
         day.getSecondsIntoMinute(),
-    });
-    try w.writeAll("\n## Summary\n\n");
-    try w.writeAll(summary);
-    if (!std.mem.endsWith(u8, summary, "\n")) try w.writeAll("\n");
-    try w.writeAll("\n## Files changed\n\n");
-    for (changed_files) |f| try w.print("- {s}\n", .{f});
+    }));
+    try buf.appendSlice(allocator, "\n## Summary\n\n");
+    try buf.appendSlice(allocator, summary);
+    if (!std.mem.endsWith(u8, summary, "\n")) try buf.append(allocator, '\n');
+    try buf.appendSlice(allocator, "\n## Files changed\n\n");
+    for (changed_files) |f| {
+        try buf.appendSlice(allocator, "- ");
+        try buf.appendSlice(allocator, f);
+        try buf.append(allocator, '\n');
+    }
 
-    const cf = try std.fs.createFileAbsolute(committed_path, .{});
-    defer cf.close();
-    try cf.writeAll(buf.items);
+    const cf = try std.Io.Dir.createFileAbsolute(io, committed_path, .{});
+    defer cf.close(io);
+    try cf.writeAll(io, buf.items);
 }
 
 // ---------------------------------------------------------------------------

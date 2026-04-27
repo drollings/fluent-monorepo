@@ -65,7 +65,7 @@ pub fn inferCapabilities(
     map: *const CodebaseMap,
     db: *GuidanceDb,
 ) ![]InferredCapability {
-    var caps: std.ArrayList(InferredCapability) = .{};
+    var caps: std.ArrayList(InferredCapability) = .empty;
     errdefer {
         for (caps.items) |cap| freeInferredCapability(allocator, cap);
         caps.deinit(allocator);
@@ -143,7 +143,7 @@ fn inferFromNaming(
 
         const gop = try groups.getOrPut(allocator, prefix);
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
+            gop.value_ptr.* = std.ArrayList([]const u8).empty;
         }
         try gop.value_ptr.append(allocator, entry.path);
     }
@@ -209,7 +209,7 @@ fn inferFromImportGraph(
             std.mem.indexOfScalar(u8, dir, '\\') == null) continue;
 
         const gop = try dir_groups.getOrPut(allocator, dir);
-        if (!gop.found_existing) gop.value_ptr.* = .{};
+        if (!gop.found_existing) gop.value_ptr.* = std.ArrayList([]const u8).empty;
         // Only add if not already present.
         var found = false;
         for (gop.value_ptr.items) |existing| {
@@ -326,7 +326,7 @@ fn inferFromFileGrouping(
         if (dir.len == 0 or std.mem.eql(u8, dir, ".")) continue;
 
         const gop = try dir_files.getOrPut(allocator, dir);
-        if (!gop.found_existing) gop.value_ptr.* = .{};
+        if (!gop.found_existing) gop.value_ptr.* = std.ArrayList([]const u8).empty;
         try gop.value_ptr.append(allocator, entry.path);
     }
 
@@ -376,7 +376,7 @@ fn deduplicateCapabilities(
     var seen: std.StringHashMapUnmanaged(usize) = .empty;
     defer seen.deinit(allocator);
 
-    var out: std.ArrayList(InferredCapability) = .{};
+    var out: std.ArrayList(InferredCapability) = .empty;
     errdefer {
         for (out.items) |cap| freeInferredCapability(allocator, cap);
         out.deinit(allocator);
@@ -406,7 +406,7 @@ fn deduplicateCapabilities(
 
 /// Converts a raw memory slice to a human-readable capability name using the allocator.
 fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
     for (raw, 0..) |c, i| {

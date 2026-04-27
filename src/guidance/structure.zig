@@ -83,7 +83,7 @@ pub const StructureGenerator = struct {
         }
 
         // Build the tree.
-        var entries: std.ArrayList(TreeEntry) = .{};
+        var entries: std.ArrayList(TreeEntry) = .empty;
         defer self.freeEntries(&entries);
 
         try entries.append(self.allocator, .{ .text = try self.allocator.dupe(u8, ".") });
@@ -116,11 +116,12 @@ pub const StructureGenerator = struct {
         dir_path: []const u8,
         prefix: []const u8,
     ) !void {
-        var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch return;
-        defer dir.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var dir = std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true }) catch return;
+        defer dir.close(io);
 
         // Collect children; filter gitignored and hidden entries.
-        var children: std.ArrayList(ChildEntry) = .{};
+        var children: std.ArrayList(ChildEntry) = .empty;
         defer {
             for (children.items) |c| {
                 self.allocator.free(c.name);
@@ -130,7 +131,7 @@ pub const StructureGenerator = struct {
         }
 
         var it = dir.iterate();
-        while (try it.next()) |entry| {
+        while (try it.next(io)) |entry| {
             if (entry.name[0] == '.') continue;
 
             const abs = try std.fs.path.join(self.allocator, &.{ dir_path, entry.name });
@@ -218,17 +219,13 @@ pub const StructureGenerator = struct {
     /// Scans from the top, skipping blank lines and normal `//` comment lines,
     /// and returns the first non-empty text from a doc-comment line.
     fn commentFromZigSource(self: *StructureGenerator, abs_path: []const u8) !?[]const u8 {
-        const file = std.fs.openFileAbsolute(abs_path, .{}) catch return null;
-        defer file.close();
-
-        // Read up to 4 KiB — enough to find the module header without loading large files.
-        var buf: [4096]u8 = undefined;
-        const n = file.read(&buf) catch return null;
-        const source = buf[0..n];
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const source = std.Io.Dir.cwd().readFileAlloc(io, abs_path, self.allocator, .limited(4096)) catch return null;
+        defer self.allocator.free(source);
 
         var lines = std.mem.splitScalar(u8, source, '\n');
         while (lines.next()) |raw_line| {
-            const line = std.mem.trimRight(u8, raw_line, "\r ");
+            const line = std.mem.trim(u8, raw_line, "\r ");
             if (line.len == 0) continue;
 
             // Accept `//! ` (module doc) and `/// ` (declaration doc used at file top).
@@ -293,10 +290,11 @@ pub const StructureGenerator = struct {
         const structure_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "STRUCTURE.md" });
         defer self.allocator.free(structure_path);
 
-        const file = std.fs.openFileAbsolute(structure_path, .{}) catch return comments;
-        defer file.close();
+        const file = std.Io.Dir.openFileAbsolute(std.Io.Threaded.global_single_threaded.io(), structure_path, .{}) catch return comments;
+        defer file.close(std.Io.Threaded.global_single_threaded.io());
 
-        const content = file.readToEndAlloc(self.allocator, 2 * 1024 * 1024) catch return comments;
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const content = std.Io.Dir.cwd().readFileAlloc(io, structure_path, self.allocator, .limited(2 * 1024 * 1024)) catch return comments;
         defer self.allocator.free(content);
 
         // Find the first fenced block (``` ... ```).
@@ -315,9 +313,9 @@ pub const StructureGenerator = struct {
             const hash_pos = std.mem.indexOf(u8, line, "  #") orelse continue;
 
             // Everything before the double-space is the tree+filename portion.
-            const before = std.mem.trimRight(u8, line[0..hash_pos], " ");
+            const before = std.mem.trimEnd(u8, line[0..hash_pos], " ");
             // Comment is after "  # ".
-            const after_hash = std.mem.trimLeft(u8, line[hash_pos + 3 ..], " ");
+            const after_hash = std.mem.trimStart(u8, line[hash_pos + 3 ..], " ");
             if (after_hash.len == 0) continue;
 
             // Extract just the filename: last path component after tree chars.
@@ -346,11 +344,12 @@ pub const StructureGenerator = struct {
         old_comments: std.StringHashMapUnmanaged([]const u8),
         comment_col: usize,
     ) !void {
-        const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
-        defer file.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const file = try std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
+        defer file.close(io);
 
         var buf: [16384]u8 = undefined;
-        var fw = file.writer(&buf);
+        var fw = file.writer(io, &buf);
         const w = &fw.interface;
 
         try w.writeAll(HEADER);
@@ -437,7 +436,7 @@ fn childLessThan(_: void, a: ChildEntry, b: ChildEntry) bool {
 fn extractFilename(line: []const u8) ?[]const u8 {
     // Walk from the end of the string backwards past any trailing spaces,
     // then find the start of the filename token.
-    const trimmed = std.mem.trimRight(u8, line, " \t");
+    const trimmed = std.mem.trimEnd(u8, line, " \t");
     if (trimmed.len == 0) return null;
 
     // The filename starts after the last space in the tree prefix.

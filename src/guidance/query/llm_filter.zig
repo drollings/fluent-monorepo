@@ -17,7 +17,7 @@ pub fn filterStages(
     query: []const u8,
     stages: []const types.Stage,
 ) ![]types.Stage {
-    var out: std.ArrayList(types.Stage) = .{};
+    var out: std.ArrayList(types.Stage) = .empty;
     errdefer {
         types.freeStages(allocator, out.items);
         out.deinit(allocator);
@@ -63,9 +63,9 @@ pub fn filterSeeAlso(
     }
 
     // Build context string: "path: keyword1, keyword2" for each entry
-    var context_buf: std.ArrayList(u8) = .{};
-    defer context_buf.deinit(allocator);
-    const cw = context_buf.writer(allocator);
+    var context_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer context_buf_aw.deinit();
+    const cw = &context_buf_aw.writer;
 
     for (entries, 0..) |e, i| {
         if (i > 0) try cw.writeAll("\n");
@@ -83,7 +83,7 @@ pub fn filterSeeAlso(
         \\Return ONLY the file paths, one per line, in order of relevance.
         \\Do not include explanations. If fewer than {d} are relevant, return fewer.
     ,
-        .{ query, context_buf.items, max_keep, max_keep },
+        .{ query, context_buf_aw.written(), max_keep, max_keep },
     );
     defer allocator.free(prompt);
 
@@ -94,7 +94,7 @@ pub fn filterSeeAlso(
     const stripped = llm.stripThinkBlock(response);
     var lines = std.mem.splitScalar(u8, stripped, '\n');
 
-    var kept: std.ArrayList([]const u8) = .{};
+    var kept: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (kept.items) |p| allocator.free(p);
         kept.deinit(allocator);

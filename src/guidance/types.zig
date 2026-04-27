@@ -253,7 +253,7 @@ pub fn stepPrint(comptime fmt: []const u8, args: anytype) void {
     var buf: [512]u8 = undefined;
     const msg = std.fmt.bufPrint(&buf, fmt, args) catch return;
     var out_buf: [4096]u8 = undefined;
-    var out_fw = std.fs.File.stdout().writer(&out_buf);
+    var out_fw = std.Io.File.stdout().writer(std.Io.Threaded.global_single_threaded.io(), &out_buf);
     const w = &out_fw.interface;
     w.writeAll(msg) catch {};
     w.flush() catch {};

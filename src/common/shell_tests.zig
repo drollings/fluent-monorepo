@@ -12,7 +12,7 @@ test "runCommand returns false for failing command" {
     try std.testing.expect(!result);
 }
 test "addUniquePath deduplicates paths" {
-    var list: std.ArrayList([]const u8) = .{};
+    var list: std.ArrayList([]const u8) = .empty;
     defer {
         for (list.items) |item| std.testing.allocator.free(item);
         list.deinit(std.testing.allocator);

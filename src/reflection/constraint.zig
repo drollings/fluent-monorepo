@@ -235,7 +235,7 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
             }
         },
         .array => |arr_info| {
-            var buf: std.ArrayListUnmanaged(u8) = .{};
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
             errdefer buf.deinit(allocator);
             try buf.append(allocator, '[');
             for (typed_ptr.*, 0..) |elem, i| {
@@ -248,7 +248,7 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
             return buf.toOwnedSlice(allocator);
         },
         .vector => |vec_info| {
-            var buf: std.ArrayListUnmanaged(u8) = .{};
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
             errdefer buf.deinit(allocator);
             try buf.append(allocator, '[');
             for (0..vec_info.len) |i| {

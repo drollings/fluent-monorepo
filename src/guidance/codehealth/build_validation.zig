@@ -98,7 +98,7 @@ pub fn validateBuildZig(
 
     // Read build.zig.
     const build_zig_path = try std.fmt.allocPrint(aa, "{s}/build.zig", .{workspace});
-    const src = std.fs.cwd().readFileAlloc(aa, build_zig_path, 5 * 1024 * 1024) catch |err| {
+    const src = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), build_zig_path, aa, .limited(5 * 1024 * 1024)) catch |err| {
         std.debug.print("[build_validation] cannot read build.zig: {s}\n", .{@errorName(err)});
         return allocator.alloc(BuildAnomaly, 0);
     };
@@ -113,8 +113,9 @@ pub fn validateBuildZig(
 
     for (refs) |ref| {
         const abs = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, ref.path });
+        const io = std.Io.Threaded.global_single_threaded.io();
         const exists = blk: {
-            std.fs.cwd().access(abs, .{}) catch {
+            std.Io.Dir.cwd().access(io, abs, .{}) catch {
                 break :blk false;
             };
             break :blk true;
@@ -252,7 +253,7 @@ fn addOneTestTarget(
         try std.fmt.allocPrint(allocator, "{s}.zig", .{stem});
     defer allocator.free(companion_rel);
 
-    const src = try std.fs.cwd().readFileAlloc(allocator, build_zig_path, 5 * 1024 * 1024);
+    const src = try std.Io.Dir.cwd().readFileAlloc(allocator, build_zig_path, 5 * 1024 * 1024);
     defer allocator.free(src);
 
     // Must not already be referenced by path.
@@ -264,7 +265,7 @@ fn addOneTestTarget(
     // Companion must exist on disk.
     const companion_abs = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ workspace, companion_rel });
     defer allocator.free(companion_abs);
-    std.fs.cwd().access(companion_abs, .{}) catch return false;
+    std.Io.Dir.cwd().access(companion_abs, .{}) catch return false;
 
     // Derive a Zig identifier for the variable name from the file stem.
     // e.g. "mock_vtable_tests.zig" → "mock_vtable_tests"
@@ -342,7 +343,7 @@ fn addOneTestTarget(
     try out.appendSlice(allocator, depend_line);
     try out.appendSlice(allocator, src[depend_insert..]);
 
-    try std.fs.cwd().writeFile(.{ .sub_path = build_zig_path, .data = out.items });
+    try std.Io.Dir.cwd().writeFile(.{ .sub_path = build_zig_path, .data = out.items });
     std.debug.print("[fix-build] added test target '{s}' for {s}\n", .{ var_name, tests_zig_rel });
     return true;
 }

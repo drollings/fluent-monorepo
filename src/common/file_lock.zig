@@ -14,13 +14,13 @@ pub const FileLock = struct {
         const lock_name = hash_buf[0..16];
 
         const lock_dir = ".guidance/locks";
-        std.fs.cwd().makePath(lock_dir) catch {};
+        std.Io.Dir.cwd().makePath(lock_dir) catch {};
 
         const lock_path = try std.fmt.allocPrint(allocator, "{s}/{s}.lock", .{ lock_dir, lock_name });
 
-        const f = std.fs.cwd().createFile(lock_path, .{ .exclusive = false }) catch |err| {
+        const f = std.Io.Dir.cwd().createFile(lock_path, .{ .exclusive = false }) catch |err| {
             if (err == error.PathDoesNotExist) {
-                var dir = std.fs.cwd().openDir(lock_dir, .{}) catch
+                var dir = std.Io.Dir.cwd().openDir(lock_dir, .{}) catch
                     return FileLock{ .lock_path = lock_path, .file = null, .acquired = false, .allocator = allocator };
                 const f2 = dir.createFile(lock_path[lock_dir.len + 1 ..], .{ .exclusive = true }) catch
                     return FileLock{ .lock_path = lock_path, .file = null, .acquired = false, .allocator = allocator };
@@ -44,7 +44,7 @@ pub const FileLock = struct {
             f.close();
             self.file = null;
         }
-        std.fs.cwd().deleteFile(self.lock_path) catch {};
+        std.Io.Dir.cwd().deleteFile(self.lock_path) catch {};
         self.allocator.free(self.lock_path);
         self.acquired = false;
     }

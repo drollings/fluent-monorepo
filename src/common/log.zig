@@ -56,7 +56,7 @@ pub const Logger = struct {
         };
 
         if (config.file_path) |path| {
-            const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
+            const file = try std.Io.Dir.cwd().createFile(path, .{ .truncate = false });
             try file.seekFromEnd(0);
             self.file = file;
         }

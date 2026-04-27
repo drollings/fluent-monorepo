@@ -90,13 +90,13 @@ fn isCapabilityName(
     const cap_path = try std.fs.path.join(allocator, &.{ capabilities_dir, normalized, "CAPABILITY.md" });
     defer allocator.free(cap_path);
 
-    std.fs.accessAbsolute(cap_path, .{}) catch return null;
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), cap_path, .{}) catch return null;
     return try allocator.dupe(u8, normalized);
 }
 
 /// Normalizes a string for capability matching: lowercase, spaces/hyphens/underscores → single dash.
 fn normalizeCapabilityName(allocator: std.mem.Allocator, input: []const u8) error{OutOfMemory}![]const u8 {
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
     var prev_was_dash = false;
     for (input) |c| {
@@ -169,19 +169,19 @@ fn findFilesByBasename(
     const json_dir = std.fs.path.join(allocator, &.{ guidance_dir, "src" }) catch return null;
     defer allocator.free(json_dir);
 
-    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(std.Io.Threaded.global_single_threaded.io(), json_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
     var walker = dir.walk(allocator) catch return null;
     defer walker.deinit();
 
-    var matches: std.ArrayList([]const u8) = .{};
+    var matches: std.ArrayList([]const u8) = .empty;
     defer {
         for (matches.items) |m| allocator.free(m);
         matches.deinit(allocator);
     }
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -219,11 +219,11 @@ fn checkFileExists(
     // Check source file
     const src_abs = std.fs.path.join(allocator, &.{ workspace, rel_path }) catch return null;
     defer allocator.free(src_abs);
-    std.fs.accessAbsolute(src_abs, .{}) catch {
+    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), src_abs, .{}) catch {
         // Check JSON file as fallback
         const json_path = srcToGuidanceJson(allocator, rel_path, guidance_dir) catch return null;
         defer allocator.free(json_path);
-        std.fs.accessAbsolute(json_path, .{}) catch return null;
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path, .{}) catch return null;
         return try allocator.dupe(u8, rel_path);
     };
     return try allocator.dupe(u8, rel_path);
@@ -263,13 +263,13 @@ fn isStructNameMatch(
     const json_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "src" });
     defer allocator.free(json_dir);
 
-    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(std.Io.Threaded.global_single_threaded.io(), json_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -291,7 +291,8 @@ fn findStructNameInJson(
     const full_path = std.fs.path.join(allocator, &.{ json_dir, rel_path }) catch return null;
     defer allocator.free(full_path);
 
-    const content = std.fs.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, full_path, allocator, .limited(2 * 1024 * 1024)) catch return null;
     defer allocator.free(content);
 
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
@@ -344,7 +345,8 @@ pub fn generateFileSkeleton(
     const json_path = srcToGuidanceJson(allocator, src_path, guidance_dir) catch return null;
     defer allocator.free(json_path);
 
-    const json_content = std.fs.cwd().readFileAlloc(allocator, json_path, 2 * 1024 * 1024) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const json_content = std.Io.Dir.cwd().readFileAlloc(io, json_path, allocator, .limited(2 * 1024 * 1024)) catch return null;
     defer allocator.free(json_content);
 
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch return null;
@@ -362,12 +364,12 @@ pub fn generateFileSkeleton(
     // Load source file for comment extraction
     const abs_src_path = std.fs.path.join(allocator, &.{ workspace, source_path.string }) catch return null;
     defer allocator.free(abs_src_path);
-    const source_content = std.fs.cwd().readFileAlloc(allocator, abs_src_path, 10 * 1024 * 1024) catch null;
+    const source_content = std.Io.Dir.cwd().readFileAlloc(io, abs_src_path, allocator, .limited(10 * 1024 * 1024)) catch null;
     defer if (source_content) |sc| allocator.free(sc);
 
-    var output: std.ArrayList(u8) = .{};
-    errdefer output.deinit(allocator);
-    const w = output.writer(allocator);
+    var output_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer output_aw.deinit();
+    const w = &output_aw.writer;
 
     // Module comment (from JSON for now, source extraction would be similar)
     if (root.get("comment")) |c| {
@@ -511,8 +513,8 @@ pub fn generateFileSkeleton(
         }
     }
 
-    if (output.items.len == 0) return null;
-    return output.toOwnedSlice(allocator) catch null;
+    if (output_aw.written().len == 0) return null;
+    return output_aw.toOwnedSlice() catch null;
 }
 
 /// Generates a struct skeleton: members with public visibility only.
@@ -524,13 +526,13 @@ pub fn generateStructSkeleton(
     const json_dir = std.fs.path.join(allocator, &.{ guidance_dir, "src" }) catch return null;
     defer allocator.free(json_dir);
 
-    var dir = std.fs.cwd().openDir(json_dir, .{ .iterate = true }) catch return null;
-    defer dir.close();
+    var dir = std.Io.Dir.cwd().openDir(std.Io.Threaded.global_single_threaded.io(), json_dir, .{ .iterate = true }) catch return null;
+    defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
     var walker = dir.walk(allocator) catch return null;
     defer walker.deinit();
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -551,7 +553,7 @@ fn findAndGenerateStructSkeleton(
     const full_path = std.fs.path.join(allocator, &.{ json_dir, rel_path }) catch return null;
     defer allocator.free(full_path);
 
-    const content = std.fs.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch return null;
+    const content = std.Io.Dir.cwd().readFileAlloc(allocator, full_path, 2 * 1024 * 1024) catch return null;
     defer allocator.free(content);
 
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, content, .{ .ignore_unknown_fields = true }) catch return null;
@@ -575,11 +577,11 @@ fn findAndGenerateStructSkeleton(
     var source_content: ?[]const u8 = null;
     defer if (source_content) |sc| allocator.free(sc);
     if (source_path) |sp| blk: {
-        const cwd = std.process.getCwdAlloc(allocator) catch break :blk;
+        const cwd = std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator) catch break :blk;
         defer allocator.free(cwd);
         const abs_src = std.fs.path.join(allocator, &.{ cwd, sp }) catch break :blk;
         defer allocator.free(abs_src);
-        source_content = std.fs.cwd().readFileAlloc(allocator, abs_src, 10 * 1024 * 1024) catch break :blk;
+        source_content = std.Io.Dir.cwd().readFileAlloc(allocator, abs_src, 10 * 1024 * 1024) catch break :blk;
     }
 
     for (members.array.items) |m| {
@@ -607,9 +609,9 @@ fn generateStructSkeletonFromJson(
     struct_name: []const u8,
     source_content: ?[]const u8,
 ) ?[]const u8 {
-    var output: std.ArrayList(u8) = .{};
-    errdefer output.deinit(allocator);
-    const w = output.writer(allocator);
+    var output_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer output_aw.deinit();
+    const w = &output_aw.writer;
 
     // Collect members with comments
     const members = obj.get("members") orelse return null;
@@ -620,7 +622,7 @@ fn generateStructSkeletonFromJson(
         signature: []const u8,
         comment: ?[]const u8,
     };
-    var fn_members: std.ArrayList(FnMember) = .{};
+    var fn_members: std.ArrayList(FnMember) = .empty;
     defer {
         for (fn_members.items) |item| {
             allocator.free(item.name);
@@ -727,7 +729,7 @@ fn generateStructSkeletonFromJson(
         }
     }
 
-    return output.toOwnedSlice(allocator) catch null;
+    return output_aw.toOwnedSlice() catch null;
 }
 
 /// Renders a capability document for display, with optional LLM summarization.
@@ -741,7 +743,7 @@ pub fn renderCapabilityDocument(
     const cap_path = try std.fs.path.join(allocator, &.{ capabilities_dir, cap_name, "CAPABILITY.md" });
     defer allocator.free(cap_path);
 
-    const content = std.fs.cwd().readFileAlloc(allocator, cap_path, 256 * 1024) catch return null;
+    const content = std.Io.Dir.cwd().readFileAlloc(allocator, cap_path, 256 * 1024) catch return null;
     defer allocator.free(content);
 
     // Parse frontmatter to get description
@@ -824,10 +826,10 @@ pub fn formatSkeletonOutput(
     allocator: std.mem.Allocator,
     skeleton: []const u8,
     config: SkeletonOutputConfig,
-) error{OutOfMemory}![]const u8 {
-    var output: std.ArrayList(u8) = .{};
-    errdefer output.deinit(allocator);
-    const w = output.writer(allocator);
+) ![]const u8 {
+    var output_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer output_aw.deinit();
+    const w = &output_aw.writer;
 
     const trimmed = std.mem.trim(u8, skeleton, " \t\n\r");
     const trimmed_title = std.mem.trim(u8, config.title, " \t\n\r");
@@ -848,5 +850,5 @@ pub fn formatSkeletonOutput(
 
     try w.writeAll("\n---\n\nRun `guidance explain \"<function-name>\"` to see specific function documentation.\n");
 
-    return output.toOwnedSlice(allocator);
+    return output_aw.toOwnedSlice();
 }

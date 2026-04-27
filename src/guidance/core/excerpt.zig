@@ -88,9 +88,8 @@ pub fn grepFile(
     terms: []const []const u8,
     max_results: usize,
 ) ![]usize {
-    const f = std.fs.openFileAbsolute(file_path, .{}) catch return &.{};
-    defer f.close();
-    const content = f.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return &.{};
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, file_path, allocator, .limited(10 * 1024 * 1024)) catch return &.{};
     defer allocator.free(content);
 
     var line_numbers: std.ArrayList(usize) = .empty;
@@ -100,7 +99,7 @@ pub fn grepFile(
     while (it.next()) |line| {
         line_no += 1;
         if (line_numbers.items.len >= max_results) break;
-        const trimmed = std.mem.trimLeft(u8, line, " \t");
+        const trimmed = common.trimLeft(u8, line, " \t");
         if (std.mem.startsWith(u8, trimmed, "//") or std.mem.startsWith(u8, trimmed, "#")) continue;
         const lower = try std.ascii.allocLowerString(allocator, line);
         defer allocator.free(lower);

@@ -5,6 +5,7 @@
 //!   - Replace an existing doc comment block above a declaration
 ///   - Compute line number adjustments after an insertion
 const std = @import("std");
+const common = @import("common");
 const types = @import("../types.zig");
 
 /// Tracks how a single declaration's line number changed after an insertion.
@@ -44,7 +45,7 @@ pub fn insertComment(
     if (formatted.len == 0) return emptyResult(allocator);
 
     // Split source into lines; insertion happens *before* `line` (1-based).
-    var lines: std.ArrayList([]const u8) = .{};
+    var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(allocator);
     var iter = std.mem.splitScalar(u8, source, '\n');
     while (iter.next()) |ln| try lines.append(allocator, ln);
@@ -52,7 +53,7 @@ pub fn insertComment(
     if (line > lines.items.len) return emptyResult(allocator);
 
     // Build output: everything before the target line, then comment, then rest.
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
     const insert_at = line - 1; // 0-based index
@@ -90,7 +91,7 @@ pub fn replaceComment(
 ) !InsertResult {
     if (line == 0) return emptyResult(allocator);
 
-    var lines: std.ArrayList([]const u8) = .{};
+    var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(allocator);
     var iter = std.mem.splitScalar(u8, source, '\n');
     while (iter.next()) |ln| try lines.append(allocator, ln);
@@ -101,7 +102,7 @@ pub fn replaceComment(
     const decl_idx = line - 1; // 0-based index of the declaration line
     var comment_start = decl_idx;
     while (comment_start > 0) {
-        const prev = std.mem.trimLeft(u8, lines.items[comment_start - 1], " \t");
+        const prev = common.trimLeft(u8, lines.items[comment_start - 1], " \t");
         if (std.mem.startsWith(u8, prev, "///")) {
             comment_start -= 1;
         } else {
@@ -119,7 +120,7 @@ pub fn replaceComment(
     const formatted = try formatDocComment(allocator, comment);
     defer allocator.free(formatted);
 
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
     for (lines.items[0..comment_start]) |ln| {
@@ -163,20 +164,20 @@ pub fn extractCommentAtLine(
 ) !?[]const u8 {
     if (line == 0) return null;
 
-    var lines: std.ArrayList([]const u8) = .{};
+    var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(allocator);
     var iter = std.mem.splitScalar(u8, source, '\n');
     while (iter.next()) |ln| try lines.append(allocator, ln);
 
     if (line > lines.items.len) return null;
 
-    var doc_lines: std.ArrayList([]const u8) = .{};
+    var doc_lines: std.ArrayList([]const u8) = .empty;
     defer doc_lines.deinit(allocator);
 
     var idx = line - 1; // 0-based
     while (idx > 0) {
         idx -= 1;
-        const prev = std.mem.trimLeft(u8, lines.items[idx], " \t");
+        const prev = std.mem.trim(u8, lines.items[idx], " \t");
         if (!std.mem.startsWith(u8, prev, "///")) break;
         try doc_lines.append(allocator, prev);
     }
@@ -186,7 +187,7 @@ pub fn extractCommentAtLine(
     // Tokens were collected closest-first; reverse for correct order.
     std.mem.reverse([]const u8, doc_lines.items);
 
-    var result: std.ArrayList(u8) = .{};
+    var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
     for (doc_lines.items, 0..) |dl, i| {
         const after = if (dl.len > 3) dl[3..] else "";
@@ -203,12 +204,12 @@ pub fn extractCommentAtLine(
 
 /// Converts a list of bytes into a formatted Zig comment slice.
 pub fn formatDocComment(allocator: std.mem.Allocator, comment: []const u8) ![]const u8 {
-    var out: std.ArrayList(u8) = .{};
+    var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(allocator);
 
     var iter = std.mem.splitScalar(u8, comment, '\n');
     while (iter.next()) |ln| {
-        const trimmed = std.mem.trimRight(u8, ln, " \t");
+        const trimmed = common.trimRight(u8, ln, " \t");
         if (trimmed.len == 0) {
             try out.appendSlice(allocator, "///\n");
         } else {

@@ -361,7 +361,7 @@ fn testOpenLib(allocator: std.mem.Allocator) !*db_mod.Library {
 }
 
 test "end-to-end: ingestSource on YAGO sample returns nodes and edges" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -397,7 +397,7 @@ test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     // Skip gracefully if file absent.
     std.fs.cwd().access(YAGO_TINY_PATH, .{}) catch return;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

@@ -122,7 +122,7 @@ pub const CodebaseMap = struct {
 
 /// Detects and returns the codebase structure map from the provided workspace.
 pub fn discoverStructure(allocator: std.mem.Allocator, workspace: []const u8) !CodebaseMap {
-    var tree: std.ArrayList(DirectoryEntry) = .{};
+    var tree: std.ArrayList(DirectoryEntry) = .empty;
     errdefer {
         for (tree.items) |e| allocator.free(e.path);
         tree.deinit(allocator);
@@ -195,7 +195,7 @@ fn detectBuildSystem(workspace: []const u8) BuildSystem {
     for (marker_names, marker_systems) |name, sys| {
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
         const path = std.fmt.bufPrintZ(&path_buf, "{s}/{s}", .{ workspace, name }) catch continue;
-        std.fs.accessAbsolute(path, .{}) catch continue;
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{}) catch continue;
         return sys;
     }
     return .unknown;
@@ -228,15 +228,17 @@ fn walkFilesystem(
     workspace: []const u8,
     tree: *std.ArrayList(DirectoryEntry),
 ) !void {
-    var dir = std.fs.openDirAbsolute(workspace, .{ .iterate = true }) catch return;
-    defer dir.close();
-    try walkDir(allocator, dir, "", tree, 0);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, workspace, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+    try walkDir(io, allocator, dir, "", tree, 0);
 }
 
 /// Traverses a directory structure recursively, handling allocators and depth tracking.
 fn walkDir(
+    io: std.Io,
     allocator: std.mem.Allocator,
-    dir: std.fs.Dir,
+    dir: std.Io.Dir,
     rel_prefix: []const u8,
     tree: *std.ArrayList(DirectoryEntry),
     depth: u32,
@@ -244,7 +246,7 @@ fn walkDir(
     if (depth > 8) return; // Max depth guard
 
     var it = dir.iterate();
-    while (try it.next()) |entry| {
+    while (try it.next(io)) |entry| {
         if (entry.name.len == 0) continue;
 
         const rel_path = if (rel_prefix.len == 0)
@@ -263,9 +265,9 @@ fn walkDir(
                     .kind = .dir,
                     .extension = null,
                 });
-                var sub = dir.openDir(entry.name, .{ .iterate = true }) catch continue;
-                defer sub.close();
-                try walkDir(allocator, sub, rel_path, tree, depth + 1);
+                var sub = dir.openDir(io, entry.name, .{ .iterate = true }) catch continue;
+                defer sub.close(io);
+                try walkDir(io, allocator, sub, rel_path, tree, depth + 1);
             },
             .file => {
                 const ext_raw = std.fs.path.extension(entry.name);
@@ -291,7 +293,7 @@ fn walkDir(
 fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) ![]LanguageCount {
     // Collect all extensions then sort and count — avoids StringHashMap growth panics
     // on large repos where the map resizes with borrowed-slice keys.
-    var exts: std.ArrayList([]const u8) = .{};
+    var exts: std.ArrayList([]const u8) = .empty;
     defer exts.deinit(allocator);
 
     for (tree) |e| {
@@ -306,7 +308,7 @@ fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) ![
         }
     }.lt);
 
-    var result: std.ArrayList(LanguageCount) = .{};
+    var result: std.ArrayList(LanguageCount) = .empty;
     errdefer {
         for (result.items) |lc| allocator.free(lc.extension);
         result.deinit(allocator);
@@ -373,7 +375,7 @@ fn detectEntryPoints(
     tree: []const DirectoryEntry,
     workspace: []const u8,
 ) ![]EntryPoint {
-    var entries: std.ArrayList(EntryPoint) = .{};
+    var entries: std.ArrayList(EntryPoint) = .empty;
     errdefer {
         for (entries.items) |ep| {
             allocator.free(ep.name);
@@ -402,7 +404,7 @@ fn detectEntryPoints(
         const guidance_path = try std.fs.path.join(allocator, &.{ workspace, ".guidance", "src", json_name });
         defer allocator.free(guidance_path);
 
-        const json_content = std.fs.cwd().readFileAlloc(allocator, guidance_path, 512 * 1024) catch continue;
+        const json_content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), guidance_path, allocator, .limited(512 * 1024)) catch continue;
         defer allocator.free(json_content);
 
         // Simple JSON scan: look for "name": "..." patterns
@@ -449,7 +451,7 @@ fn findCapabilityDirs(
     workspace: []const u8,
     tree: []const DirectoryEntry,
 ) ![][]const u8 {
-    var dirs: std.ArrayList([]const u8) = .{};
+    var dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (dirs.items) |d| allocator.free(d);
         dirs.deinit(allocator);
@@ -469,7 +471,7 @@ fn findCapabilityDirs(
     for (CAPABILITY_DIR_NAMES) |cn| {
         const abs = try std.fs.path.join(allocator, &.{ workspace, cn });
         defer allocator.free(abs);
-        std.fs.accessAbsolute(abs, .{}) catch continue;
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), abs, .{}) catch continue;
         // Check not already in list
         var found = false;
         for (dirs.items) |d| {
@@ -491,7 +493,7 @@ fn findSkillDirs(
     tree: []const DirectoryEntry,
 ) ![][]const u8 {
     _ = tree;
-    var dirs: std.ArrayList([]const u8) = .{};
+    var dirs: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (dirs.items) |d| allocator.free(d);
         dirs.deinit(allocator);
@@ -500,7 +502,7 @@ fn findSkillDirs(
     for (SKILL_DIR_NAMES) |sn| {
         const abs = try std.fs.path.join(allocator, &.{ workspace, sn });
         defer allocator.free(abs);
-        std.fs.accessAbsolute(abs, .{}) catch continue;
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), abs, .{}) catch continue;
         try dirs.append(allocator, try allocator.dupe(u8, sn));
     }
 
@@ -518,12 +520,12 @@ fn extractReadmeDescription(allocator: std.mem.Allocator, workspace: []const u8)
     for (readme_names) |rn| {
         const path = try std.fs.path.join(allocator, &.{ workspace, rn });
         defer allocator.free(path);
-        const content = std.fs.cwd().readFileAlloc(allocator, path, 64 * 1024) catch continue;
+        const content = std.Io.Dir.cwd().readFileAlloc(std.Io.Threaded.global_single_threaded.io(), path, allocator, .limited(64 * 1024)) catch continue;
         defer allocator.free(content);
 
         // Find first non-heading paragraph
         var lines = std.mem.splitScalar(u8, content, '\n');
-        var paragraph_buf: std.ArrayList(u8) = .{};
+        var paragraph_buf: std.ArrayList(u8) = .empty;
         defer paragraph_buf.deinit(allocator);
         var in_paragraph = false;
 

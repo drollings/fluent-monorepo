@@ -6,7 +6,7 @@ const pattern = common.pattern;
 
 /// Analyzes a Zig AST node to detect patterns using the provided allocator.
 pub fn detectPatterns(allocator: std.mem.Allocator, tree: *const std.zig.Ast, node: std.zig.Ast.Node.Index) ![]types.Pattern {
-    var patterns: std.ArrayList(types.Pattern) = .{};
+    var patterns: std.ArrayList(types.Pattern) = .empty;
     errdefer {
         for (patterns.items) |p| {
             allocator.free(p.name);
@@ -119,7 +119,7 @@ pub fn detectPatternNames(allocator: std.mem.Allocator, tree: *const std.zig.Ast
         allocator.free(full_patterns);
     }
 
-    var names: std.ArrayList([]const u8) = .{};
+    var names: std.ArrayList([]const u8) = .empty;
     for (full_patterns) |p| {
         try names.append(allocator, try allocator.dupe(u8, p.name));
     }

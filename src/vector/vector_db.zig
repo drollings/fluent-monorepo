@@ -97,7 +97,7 @@ pub const SemanticAliases = struct {
         allocator: std.mem.Allocator,
         tokens: []const []const u8,
     ) ![]const []const u8 {
-        var expanded: std.ArrayList([]const u8) = .{};
+        var expanded: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (expanded.items) |t| allocator.free(t);
             expanded.deinit(allocator);
@@ -149,10 +149,11 @@ pub const SemanticAliases = struct {
 
 /// Loads semantic aliases from a file path into a SemanticAliases struct.
 pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?SemanticAliases {
-    const file = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer file.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
+    defer file.close(io);
 
-    const content = file.readToEndAlloc(allocator, 64 * 1024) catch return null;
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(64 * 1024)) catch return null;
     defer allocator.free(content);
 
     const Value = std.json.Value;
@@ -163,7 +164,7 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
     const aliases_arr = parsed.value.object.get("aliases") orelse return null;
     if (aliases_arr != .array) return null;
 
-    var out: std.ArrayList(SemanticAlias) = .{};
+    var out: std.ArrayList(SemanticAlias) = .empty;
     errdefer {
         for (out.items) |a| {
             allocator.free(a.key);
@@ -179,7 +180,7 @@ pub fn loadSemanticAliases(allocator: std.mem.Allocator, path: []const u8) !?Sem
         const values_val = item.object.get("values") orelse continue;
         if (key_val != .string or values_val != .array) continue;
 
-        var vals: std.ArrayList([]const u8) = .{};
+        var vals: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (vals.items) |v| allocator.free(v);
             vals.deinit(allocator);
@@ -781,7 +782,7 @@ pub const GuidanceDb = struct {
         var synced: usize = 0;
         var skipped: usize = 0;
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.path, ".json")) continue;
 
@@ -855,7 +856,7 @@ pub const GuidanceDb = struct {
 
         var synced: usize = 0;
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.path, "CAPABILITY.md")) continue;
 
@@ -936,7 +937,7 @@ pub const GuidanceDb = struct {
         // The embedding represents *the kinds of NL queries* that should match this
         // capability, so that query → capability match → capability keywords → SQL search.
         // Format: description. NL question variants. AST-level search terms.
-        var emb_buf: std.ArrayList(u8) = .{};
+        var emb_buf: std.ArrayList(u8) = .empty;
         defer emb_buf.deinit(allocator);
 
         try emb_buf.appendSlice(allocator, description);
@@ -1064,7 +1065,7 @@ pub const GuidanceDb = struct {
         defer _ = c.sqlite3_finalize(cap_stmt);
 
         const ScoredCap = struct { name: []const u8, score: f32 };
-        var scored: std.ArrayList(ScoredCap) = .{};
+        var scored: std.ArrayList(ScoredCap) = .empty;
         errdefer {
             for (scored.items) |sc| allocator.free(sc.name);
             scored.deinit(allocator);
@@ -1110,7 +1111,7 @@ pub const GuidanceDb = struct {
             seen.deinit(allocator);
         }
 
-        var keywords: std.ArrayList([]const u8) = .{};
+        var keywords: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (keywords.items) |kw| allocator.free(kw);
             keywords.deinit(allocator);
@@ -1177,7 +1178,7 @@ pub const GuidanceDb = struct {
         defer _ = c.sqlite3_finalize(stmt);
 
         const ScoredCap = struct { name: []const u8, score: f32 };
-        var scored: std.ArrayList(ScoredCap) = .{};
+        var scored: std.ArrayList(ScoredCap) = .empty;
         defer {
             for (scored.items) |sc| allocator.free(sc.name);
             scored.deinit(allocator);
@@ -1213,7 +1214,7 @@ pub const GuidanceDb = struct {
         }.lessThan);
 
         const take = @min(max_capabilities, scored.items.len);
-        var names: std.ArrayList([]const u8) = .{};
+        var names: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (names.items) |n| allocator.free(n);
             names.deinit(allocator);
@@ -1279,7 +1280,7 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_text(stmt, 1, capability_name.ptr, @intCast(capability_name.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_double(stmt, 2, min_confidence);
 
-        var sources: std.ArrayList(CapabilitySource) = .{};
+        var sources: std.ArrayList(CapabilitySource) = .empty;
         errdefer {
             for (sources.items) |s| {
                 allocator.free(s.source_path);
@@ -1330,7 +1331,7 @@ pub const GuidanceDb = struct {
 
         _ = c.sqlite3_bind_text(stmt, 1, source_path.ptr, @intCast(source_path.len), SQLITE_STATIC);
 
-        var caps: std.ArrayList([]const u8) = .{};
+        var caps: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (caps.items) |cap_item| allocator.free(cap_item);
             caps.deinit(allocator);
@@ -1360,7 +1361,7 @@ pub const GuidanceDb = struct {
         }
         defer _ = c.sqlite3_finalize(stmt);
 
-        var entries: std.ArrayList(CapabilitySourceEntry) = .{};
+        var entries: std.ArrayList(CapabilitySourceEntry) = .empty;
         errdefer {
             for (entries.items) |e| {
                 allocator.free(e.source_path);
@@ -1410,7 +1411,7 @@ pub const GuidanceDb = struct {
         if (std.mem.eql(u8, model_name, "none")) return;
 
         // Collect embedding texts for all embeddable nodes.
-        var texts: std.ArrayList([]const u8) = .{};
+        var texts: std.ArrayList([]const u8) = .empty;
         defer {
             for (texts.items) |t| allocator.free(t);
             texts.deinit(allocator);
@@ -1458,7 +1459,7 @@ pub const GuidanceDb = struct {
         if (texts.items.len == 0) return;
 
         // Filter: only embed texts not already in cache.
-        var uncached: std.ArrayList([]const u8) = .{};
+        var uncached: std.ArrayList([]const u8) = .empty;
         defer uncached.deinit(allocator);
 
         for (texts.items) |txt| {
@@ -1484,7 +1485,7 @@ pub const GuidanceDb = struct {
             const batch = uncached.items[offset..end];
 
             // Build lowercase texts for embedding
-            var lower_batch: std.ArrayList([]const u8) = .{};
+            var lower_batch: std.ArrayList([]const u8) = .empty;
             defer {
                 for (lower_batch.items) |lb| allocator.free(lb);
                 lower_batch.deinit(allocator);
@@ -1646,7 +1647,7 @@ pub const GuidanceDb = struct {
         }
         defer _ = c.sqlite3_finalize(stmt);
 
-        var results: std.ArrayList(UnusedModule) = .{};
+        var results: std.ArrayList(UnusedModule) = .empty;
         errdefer {
             for (results.items) |r| allocator.free(r.source);
             results.deinit(allocator);
@@ -1690,7 +1691,7 @@ pub const GuidanceDb = struct {
         }
         defer _ = c.sqlite3_finalize(stmt);
 
-        var results: std.ArrayList(SimhashEntry) = .{};
+        var results: std.ArrayList(SimhashEntry) = .empty;
         errdefer {
             for (results.items) |r| {
                 allocator.free(r.name);
@@ -1785,7 +1786,7 @@ pub const GuidanceDb = struct {
         }
         defer _ = c.sqlite3_finalize(stmt);
 
-        var candidates: std.ArrayList(i64) = .{};
+        var candidates: std.ArrayList(i64) = .empty;
         errdefer candidates.deinit(allocator);
 
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
@@ -2163,7 +2164,7 @@ pub const GuidanceDb = struct {
         defer lines.deinit(allocator);
         var it = std.mem.splitScalar(u8, source, '\n');
         while (it.next()) |line| {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            const trimmed = common.trimLeft(u8, line, " \t");
             if (std.mem.startsWith(u8, trimmed, "//!")) {
                 const after = trimmed[3..];
                 const text = if (after.len > 0 and after[0] == ' ') after[1..] else after;
@@ -2202,7 +2203,7 @@ pub const GuidanceDb = struct {
         var idx = line - 1; // 0-based index of declaration
         while (idx > 0) {
             idx -= 1;
-            const prev = std.mem.trimLeft(u8, all_lines.items[idx], " \t");
+            const prev = common.trimLeft(u8, all_lines.items[idx], " \t");
             if (!std.mem.startsWith(u8, prev, "///")) break;
             const after = prev[3..];
             const text = if (after.len > 0 and after[0] == ' ') after[1..] else after;
@@ -2312,7 +2313,7 @@ pub const GuidanceDb = struct {
         // Sync keywords to keyword_index and keyword_modules tables
         if (doc.keywords.len > 0) {
             // Extract member names for direct-match filtering
-            var member_names: std.ArrayList([]const u8) = .{};
+            var member_names: std.ArrayList([]const u8) = .empty;
             defer member_names.deinit(allocator);
             for (doc.members) |m| {
                 try member_names.append(allocator, m.name);
@@ -2538,7 +2539,7 @@ pub const GuidanceDb = struct {
         if (trimmed.len == 0) return allocator.alloc(SearchResult, 0);
 
         // Phase 1: Embedding-based alias key matching (query steering)
-        var embedding_expansion: std.ArrayList([]const u8) = .{};
+        var embedding_expansion: std.ArrayList([]const u8) = .empty;
         defer {
             for (embedding_expansion.items) |t| allocator.free(t);
             embedding_expansion.deinit(allocator);
@@ -2681,7 +2682,7 @@ pub const GuidanceDb = struct {
             // Phase 1: Deterministic name match (case-sensitive AST lookup).
             // Use ORIGINAL query so expanded tokens don't pollute exact matching.
             const orig_trimmed = std.mem.trim(u8, original_query, " \t\n\r");
-            var query_tokens: std.ArrayList([]const u8) = .{};
+            var query_tokens: std.ArrayList([]const u8) = .empty;
             defer {
                 for (query_tokens.items) |t| allocator.free(t);
                 query_tokens.deinit(allocator);
@@ -2810,7 +2811,7 @@ pub const GuidanceDb = struct {
             return allocator.alloc(SearchResult, 0);
         defer _ = c.sqlite3_finalize(mod_stmt);
 
-        var extras: std.ArrayList(SearchResult) = .{};
+        var extras: std.ArrayList(SearchResult) = .empty;
         errdefer {
             for (extras.items) |r| GuidanceDb.freeSearchResult(allocator, r);
             extras.deinit(allocator);
@@ -2856,7 +2857,7 @@ pub const GuidanceDb = struct {
         _ = c.sqlite3_bind_text(stmt, 1, name.ptr, @intCast(name.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 2, @intCast(limit));
 
-        var results: std.ArrayList(SearchResult) = .{};
+        var results: std.ArrayList(SearchResult) = .empty;
         errdefer {
             for (results.items) |r| freeSearchResult(allocator, r);
             results.deinit(allocator);
@@ -2885,7 +2886,7 @@ pub const GuidanceDb = struct {
             id: i64,
             score: f32,
         };
-        var scored: std.ArrayList(ScoredRow) = .{};
+        var scored: std.ArrayList(ScoredRow) = .empty;
         defer scored.deinit(allocator);
 
         // ── SimHash pre-filter (fast path when index is populated) ──────────
@@ -3473,7 +3474,7 @@ pub const GuidanceDb = struct {
             score: f32,
         };
 
-        var scored: std.ArrayList(ScoredKey) = .{};
+        var scored: std.ArrayList(ScoredKey) = .empty;
         errdefer {
             for (scored.items) |sk| allocator.free(sk.key);
             scored.deinit(allocator);
@@ -3641,7 +3642,7 @@ pub const GuidanceDb = struct {
         if (c.sqlite3_prepare_v2(self.db, sql, -1, &stmt, null) != c.SQLITE_OK) return error.PrepareFailed;
         defer _ = c.sqlite3_finalize(stmt);
 
-        var scored: std.ArrayList(KeywordMatch) = .{};
+        var scored: std.ArrayList(KeywordMatch) = .empty;
         errdefer {
             for (scored.items) |s| allocator.free(s.keyword);
             scored.deinit(allocator);
@@ -3704,9 +3705,9 @@ pub const GuidanceDb = struct {
         if (keywords.len == 0) return &[_]ModuleMatch{};
 
         // Build IN clause
-        var in_clause: std.ArrayList(u8) = .{};
-        defer in_clause.deinit(allocator);
-        const w = in_clause.writer(allocator);
+        var in_clause_aw: std.Io.Writer.Allocating = .init(allocator);
+        errdefer in_clause_aw.deinit();
+        const w = &in_clause_aw.writer;
         for (keywords, 0..) |_, i| {
             if (i > 0) try w.writeAll(", ");
             try w.print("?", .{});
@@ -3714,7 +3715,7 @@ pub const GuidanceDb = struct {
 
         const sql_base = "SELECT DISTINCT module_id, SUM(relevance) as total_rel FROM keyword_modules WHERE keyword IN (";
         const sql_end = ") GROUP BY module_id ORDER BY total_rel DESC";
-        const sql = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ sql_base, in_clause.items, sql_end });
+        const sql = try std.fmt.allocPrint(allocator, "{s}{s}{s}", .{ sql_base, in_clause_aw.written(), sql_end });
         defer allocator.free(sql);
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -3725,7 +3726,7 @@ pub const GuidanceDb = struct {
             _ = c.sqlite3_bind_text(stmt, @intCast(i), kw.ptr, @intCast(kw.len), SQLITE_STATIC);
         }
 
-        var results: std.ArrayList(ModuleMatch) = .{};
+        var results: std.ArrayList(ModuleMatch) = .empty;
         errdefer results.deinit(allocator);
 
         while (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
@@ -3873,7 +3874,7 @@ pub const GuidanceDb = struct {
         if (kw_matches.len == 0) return allocator.alloc(SearchResult, 0);
 
         // 3. Extract keyword strings
-        var keywords: std.ArrayList([]const u8) = .{};
+        var keywords: std.ArrayList([]const u8) = .empty;
         defer keywords.deinit(allocator);
         for (kw_matches) |km| {
             try keywords.append(allocator, km.keyword);
@@ -3886,7 +3887,7 @@ pub const GuidanceDb = struct {
         if (module_matches.len == 0) return allocator.alloc(SearchResult, 0);
 
         // 5. Fetch module details
-        var results: std.ArrayList(SearchResult) = .{};
+        var results: std.ArrayList(SearchResult) = .empty;
         errdefer {
             for (results.items) |r| freeSearchResult(allocator, r);
             results.deinit(allocator);
@@ -3964,7 +3965,7 @@ pub const GuidanceDb = struct {
     pub const AstNodeEmbeddingEntry = struct { name: []const u8, node_type: []const u8, module: []const u8 };
 
     pub fn getAllAliasEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]AliasEmbeddingEntry {
-        var results: std.ArrayList(AliasEmbeddingEntry) = .{};
+        var results: std.ArrayList(AliasEmbeddingEntry) = .empty;
         errdefer results.deinit(allocator);
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -3989,7 +3990,7 @@ pub const GuidanceDb = struct {
     }
 
     pub fn getAllKeywordEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]KeywordEmbeddingEntry {
-        var results: std.ArrayList(KeywordEmbeddingEntry) = .{};
+        var results: std.ArrayList(KeywordEmbeddingEntry) = .empty;
         errdefer results.deinit(allocator);
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -4014,7 +4015,7 @@ pub const GuidanceDb = struct {
     }
 
     pub fn getAllEmbeddingCacheEntries(self: *Self, allocator: std.mem.Allocator) ![]EmbeddingCacheEntry {
-        var results: std.ArrayList(EmbeddingCacheEntry) = .{};
+        var results: std.ArrayList(EmbeddingCacheEntry) = .empty;
         errdefer results.deinit(allocator);
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -4039,7 +4040,7 @@ pub const GuidanceDb = struct {
     }
 
     pub fn getAllAstNodeEmbeddings(self: *Self, allocator: std.mem.Allocator) ![]AstNodeEmbeddingEntry {
-        var results: std.ArrayList(AstNodeEmbeddingEntry) = .{};
+        var results: std.ArrayList(AstNodeEmbeddingEntry) = .empty;
         errdefer results.deinit(allocator);
 
         var stmt: ?*c.sqlite3_stmt = null;
@@ -4107,7 +4108,7 @@ pub const GuidanceDb = struct {
         }
         _ = c.sqlite3_bind_int64(stmt.?, 1, @intCast(limit));
 
-        var results: std.ArrayList(TelemetryEntry) = .{};
+        var results: std.ArrayList(TelemetryEntry) = .empty;
         while (c.sqlite3_step(stmt.?) == c.SQLITE_ROW) {
             const qraw = c.sqlite3_column_text(stmt.?, 0);
             const qlen: usize = @intCast(c.sqlite3_column_bytes(stmt.?, 0));
@@ -4149,7 +4150,7 @@ pub const GuidanceDb = struct {
         }
         _ = c.sqlite3_bind_int64(stmt.?, 1, @intCast(limit));
 
-        var results: std.ArrayList(SearchResult) = .{};
+        var results: std.ArrayList(SearchResult) = .empty;
         errdefer {
             for (results.items) |r| freeSearchResult(allocator, r);
             results.deinit(allocator);
@@ -4332,7 +4333,7 @@ fn loadCapabilityKeywordsMap(
         if (entry.value_ptr.* != .array) continue;
         const arr = entry.value_ptr.*.array.items;
 
-        var kws: std.ArrayList([]const u8) = .{};
+        var kws: std.ArrayList([]const u8) = .empty;
         for (arr) |item| {
             if (item == .string) {
                 try kws.append(alloc, try alloc.dupe(u8, item.string));
@@ -4383,7 +4384,7 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
         break :blk dv.string;
     };
 
-    var keywords_list: std.ArrayList([]const u8) = .{};
+    var keywords_list: std.ArrayList([]const u8) = .empty;
     if (root.object.get("keywords")) |kwv| {
         if (kwv == .array) {
             for (kwv.array.items) |item| {
@@ -4392,7 +4393,7 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
         }
     }
 
-    var used_by_list: std.ArrayList([]const u8) = .{};
+    var used_by_list: std.ArrayList([]const u8) = .empty;
     if (root.object.get("used_by")) |ubv| {
         if (ubv == .array) {
             for (ubv.array.items) |item| {
@@ -4406,7 +4407,7 @@ fn parseGuidanceJson(arena: std.mem.Allocator, json_data: []const u8) !ParsedDoc
         break :blk v.string;
     };
 
-    var members_list: std.ArrayList(ParsedMember) = .{};
+    var members_list: std.ArrayList(ParsedMember) = .empty;
     const members_val = root.object.get("members") orelse {
         return .{
             .module = module,
@@ -4505,7 +4506,7 @@ fn parseMemberValue(item: std.json.Value) ParsedMember {
 
 /// Serializes a slice of allocated memory items into a compact byte array for storage.
 fn serializeUsedBy(allocator: std.mem.Allocator, items: []const []const u8) ![]u8 {
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
     try buf.append(allocator, '[');
     for (items, 0..) |item, i| {
@@ -4536,7 +4537,7 @@ fn parseUsedByCol(stmt: *c.sqlite3_stmt, col: c_int, allocator: std.mem.Allocato
     defer parsed.deinit();
 
     if (parsed.value != .array) return &.{};
-    var out: std.ArrayList([]const u8) = .{};
+    var out: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (out.items) |s| allocator.free(s);
         out.deinit(allocator);
@@ -4606,7 +4607,7 @@ pub const CodehealthDirective = union(enum) {
 pub fn parseCodehealthDirective(comment: []const u8) ?CodehealthDirective {
     const marker = "CODEHEALTH:";
     const idx = std.mem.indexOf(u8, comment, marker) orelse return null;
-    const rest = std.mem.trimLeft(u8, comment[idx + marker.len ..], " \t");
+    const rest = common.trimLeft(u8, comment[idx + marker.len ..], " \t");
 
     // Terminate at the first newline so multi-line comments don't bleed in.
     const line_end = std.mem.indexOfAny(u8, rest, "\n\r") orelse rest.len;

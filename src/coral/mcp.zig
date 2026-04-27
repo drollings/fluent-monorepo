@@ -194,7 +194,7 @@ pub const McpServer = struct {
                     return err;
                 };
                 // Trim \r\n
-                const line = std.mem.trimRight(u8, line_with_nl, "\r\n");
+                const line = common.trimRight(u8, line_with_nl, "\r\n");
                 if (line.len == 0) break; // blank line separates headers from body
 
                 const prefix = "Content-Length:";
@@ -268,9 +268,8 @@ pub const McpServer = struct {
 
     fn handleInitialize(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) ![]const u8 {
         _ = a;
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
 
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
@@ -278,13 +277,12 @@ pub const McpServer = struct {
         try w.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"serverInfo":{{"name":"{s}","version":"{s}"}}}}}}
         , .{ id_str, self.server_info.name, self.server_info.version });
-        return buf.toOwnedSlice(self.allocator);
+        return aw.toOwnedSlice();
     }
 
     fn handleToolsList(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) ![]const u8 {
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
 
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
@@ -314,7 +312,7 @@ pub const McpServer = struct {
         }
 
         try w.writeAll("]}}}");
-        return buf.toOwnedSlice(self.allocator);
+        return aw.toOwnedSlice();
     }
 
     fn handleToolsCall(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest) ![]const u8 {
@@ -367,9 +365,8 @@ pub const McpServer = struct {
         };
 
         // Serialize the routing result
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
 
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
@@ -379,7 +376,7 @@ pub const McpServer = struct {
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":{{"tier":"{s}","latency_ms":{d},"node_count":{d}}}}}]}}}}
         , .{ id_str, tier_name, routing_result.latency_ms, routing_result.nodes.len });
 
-        return buf.toOwnedSlice(self.allocator);
+        return aw.toOwnedSlice();
     }
 
     fn toolCoralInsertNode(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) ![]const u8 {
@@ -410,9 +407,8 @@ pub const McpServer = struct {
             return self.errorResponse(req.id, -32603, "Insert failed", err);
         };
 
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
 
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
@@ -421,7 +417,7 @@ pub const McpServer = struct {
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"inserted node {d}"}}]}}}}
         , .{ id_str, node_id });
 
-        return buf.toOwnedSlice(self.allocator);
+        return aw.toOwnedSlice();
     }
 
     fn toolCoralExplain(self: *McpServer, a: std.mem.Allocator, req: JsonRpcRequest, args: std.json.ObjectMap) ![]const u8 {
@@ -452,13 +448,12 @@ pub const McpServer = struct {
         defer self.allocator.free(id_str);
 
         if (maybe_id == null) {
-            var buf: std.ArrayList(u8) = .{};
-            defer buf.deinit(self.allocator);
-            const w = buf.writer(self.allocator);
+            var aw: std.Io.Writer.Allocating = .init(self.allocator);
+            errdefer aw.deinit();
             try w.print(
                 \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"node not found"}}]}}}}
             , .{id_str});
-            return buf.toOwnedSlice(self.allocator);
+            return aw.toOwnedSlice();
         }
 
         // Use ContextPacker for LOD-aware token-budget packing.
@@ -467,16 +462,15 @@ pub const McpServer = struct {
             return self.errorResponse(req.id, -32603, "ContextPacker failed", err);
         };
 
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
 
         try w.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"
         , .{id_str});
         try writeJsonEscaped(w, packed_text);
         try w.writeAll("\"}}]}}}");
-        return buf.toOwnedSlice(self.allocator);
+        return aw.toOwnedSlice();
     }
 
     // -----------------------------------------------------------------------
@@ -556,7 +550,7 @@ fn writeJsonEscaped(writer: anytype, s: []const u8) !void {
 const testing = std.testing;
 
 test "McpServer: handleRequest initialize" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -581,7 +575,7 @@ test "McpServer: handleRequest initialize" {
 }
 
 test "McpServer: handleRequest tools/list" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -607,7 +601,7 @@ test "McpServer: handleRequest tools/list" {
 }
 
 test "McpServer: tools/call coral_query routes to L5" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -634,7 +628,7 @@ test "McpServer: tools/call coral_query routes to L5" {
 }
 
 test "McpServer: unknown method returns error -32601" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -658,7 +652,7 @@ test "McpServer: unknown method returns error -32601" {
 }
 
 test "McpServer: missing required field returns error" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

@@ -24,7 +24,7 @@ pub fn getLifecycleState(allocator: std.mem.Allocator, work_dir: []const u8) ![]
         const state = LIFECYCLE[i];
         const state_path = try std.fmt.allocPrint(allocator, "{s}/{s}.md", .{ work_dir, state });
         defer allocator.free(state_path);
-        if (std.fs.accessAbsolute(state_path, .{})) {
+        if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), state_path, .{})) {
             return state;
         } else |_| {}
     }

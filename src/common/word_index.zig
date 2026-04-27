@@ -263,7 +263,7 @@ pub const WordIndex = struct {
     pub fn writeToDisk(self: *WordIndex, dir_path: []const u8, git_head: ?[]const u8) !void {
         var buf: [4096]u8 = undefined;
         const idx_path = try std.fmt.bufPrint(&buf, "{s}/word_index.bin", .{dir_path});
-        const f = try std.fs.cwd().createFile(idx_path, .{});
+        const f = try std.Io.Dir.cwd().createFile(idx_path, .{});
         defer f.close();
         var fw = f.writer(&buf);
         const w = &fw.interface;
@@ -299,7 +299,7 @@ pub const WordIndex = struct {
         var buf: [4096]u8 = undefined;
         const idx_path = try std.fmt.bufPrint(&buf, "{s}/word_index.bin", .{dir_path});
 
-        const content = std.fs.cwd().readFileAlloc(std.heap.page_allocator, idx_path, std.math.maxInt(usize)) catch return null;
+        const content = std.Io.Dir.cwd().readFileAlloc(std.heap.page_allocator, idx_path, std.math.maxInt(usize)) catch return null;
         defer std.heap.page_allocator.free(content);
 
         const hdr = index_header.read(content, MAGIC, VERSION) orelse return null;
@@ -387,9 +387,9 @@ test "WordIndex searchPrefix" {
 test "WordIndex writeToDisk and readFromDisk" {
     const tmp_path = ".test_tmp_word_index";
     defer {
-        std.fs.cwd().deleteTree(tmp_path) catch {};
+        std.Io.Dir.cwd().deleteTree(tmp_path) catch {};
     }
-    std.fs.cwd().makePath(tmp_path) catch {};
+    std.Io.Dir.cwd().makePath(tmp_path) catch {};
 
     {
         var wi = WordIndex.init(testing.allocator);

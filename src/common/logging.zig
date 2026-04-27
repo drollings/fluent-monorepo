@@ -230,7 +230,7 @@ test "callLogged: wraps error-returning function" {
 }
 
 test "LogContext: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
 
     // LogContext holds no allocated memory — just slices pointing elsewhere.

@@ -67,7 +67,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
 
     if (target_names.len == 0) {
         if (self.registry.get("default")) |default| {
-            var names: std.ArrayList([]const u8) = .{};
+            var names: std.ArrayList([]const u8) = .empty;
             defer names.deinit(self.allocator);
 
             var iter = default.depends.iterator(.{});
@@ -211,7 +211,7 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
         };
 
         switch (term) {
-            .Exited => |code| {
+            .exited => |code| {
                 if (code != 0) {
                     std.log.err("Command exited with code {d}: {s}", .{ code, cmd });
                     return false;
@@ -503,7 +503,7 @@ test "BuildContext: duration_ns is non-zero after a build" {
 }
 
 test "BuildContext: GPA no leaks across a multi-target build" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {

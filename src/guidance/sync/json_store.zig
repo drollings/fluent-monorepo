@@ -70,7 +70,7 @@ pub const JsonStore = struct {
         // Parse keywords (discovery terms for semantic search)
         if (root.object.get("keywords")) |kw_val| {
             if (kw_val == .array) {
-                var keywords: std.ArrayList([]const u8) = .{};
+                var keywords: std.ArrayList([]const u8) = .empty;
                 for (kw_val.array.items) |kw| {
                     if (kw == .string and kw.string.len > 0) {
                         try keywords.append(self.allocator, try self.allocator.dupe(u8, kw.string));
@@ -82,7 +82,7 @@ pub const JsonStore = struct {
 
         if (root.object.get("skills")) |skills_val| {
             if (skills_val == .array) {
-                var skills: std.ArrayList(types.Skill) = .{};
+                var skills: std.ArrayList(types.Skill) = .empty;
                 for (skills_val.array.items) |skill_val| {
                     if (skill_val == .object) {
                         const ref = skill_val.object.get("ref") orelse continue;
@@ -103,7 +103,7 @@ pub const JsonStore = struct {
 
         if (root.object.get("capabilities")) |cap_val| {
             if (cap_val == .array) {
-                var caps: std.ArrayList([]const u8) = .{};
+                var caps: std.ArrayList([]const u8) = .empty;
                 for (cap_val.array.items) |c_val| {
                     if (c_val == .string) {
                         try caps.append(self.allocator, try self.allocator.dupe(u8, c_val.string));
@@ -115,7 +115,7 @@ pub const JsonStore = struct {
 
         if (root.object.get("hashtags")) |tags_val| {
             if (tags_val == .array) {
-                var tags: std.ArrayList([]const u8) = .{};
+                var tags: std.ArrayList([]const u8) = .empty;
                 for (tags_val.array.items) |tag_val| {
                     if (tag_val == .string) {
                         try tags.append(self.allocator, try self.allocator.dupe(u8, tag_val.string));
@@ -127,7 +127,7 @@ pub const JsonStore = struct {
 
         if (root.object.get("used_by")) |used_val| {
             if (used_val == .array) {
-                var used: std.ArrayList([]const u8) = .{};
+                var used: std.ArrayList([]const u8) = .empty;
                 for (used_val.array.items) |u_val| {
                     if (u_val == .string) {
                         try used.append(self.allocator, try self.allocator.dupe(u8, u_val.string));
@@ -147,7 +147,7 @@ pub const JsonStore = struct {
     fn parseMembers(self: *JsonStore, members_val: std.json.Value) std.mem.Allocator.Error![]types.Member {
         if (members_val != .array) return &.{};
 
-        var members: std.ArrayList(types.Member) = .{};
+        var members: std.ArrayList(types.Member) = .empty;
         for (members_val.array.items) |member_val| {
             if (member_val == .object) {
                 if (try self.parseMember(member_val)) |member| {
@@ -239,7 +239,7 @@ pub const JsonStore = struct {
 
         if (member_val.object.get("tags")) |tags_val| {
             if (tags_val == .array) {
-                var tags: std.ArrayList([]const u8) = .{};
+                var tags: std.ArrayList([]const u8) = .empty;
                 for (tags_val.array.items) |tag_val| {
                     if (tag_val == .string) {
                         try tags.append(self.allocator, try self.allocator.dupe(u8, tag_val.string));
@@ -251,7 +251,7 @@ pub const JsonStore = struct {
 
         if (member_val.object.get("patterns")) |patterns_val| {
             if (patterns_val == .array) {
-                var patterns: std.ArrayList(types.Pattern) = .{};
+                var patterns: std.ArrayList(types.Pattern) = .empty;
                 for (patterns_val.array.items) |pat_val| {
                     if (pat_val == .object) {
                         const pat_name = pat_val.object.get("name") orelse continue;
@@ -292,10 +292,14 @@ pub const JsonStore = struct {
         const dir_path = std.fs.path.dirname(path) orelse return error.InvalidPath;
         try common.makePathAbsolute(dir_path);
 
-        const file = try std.fs.createFileAbsolute(path, .{ .truncate = true });
-        defer file.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const file = try std.Io.Dir.createFileAbsolute(io, path, .{ .truncate = true });
+        defer file.close(io);
 
-        try file.writeAll(json_str);
+        var wbuf: [4096]u8 = undefined;
+        var fw = file.writer(io, &wbuf);
+        try fw.interface.writeAll(json_str);
+        try fw.interface.flush();
     }
 
     /// Deep-copy a single Member; every string field is independently owned.
@@ -322,7 +326,7 @@ pub const JsonStore = struct {
         copy.equivalents = try self.dupeStrings(m.equivalents);
 
         // Recursively deep-copy nested members.
-        var nested: std.ArrayList(types.Member) = .{};
+        var nested: std.ArrayList(types.Member) = .empty;
         errdefer {
             for (nested.items) |nm| self.freeMember(nm);
             nested.deinit(self.allocator);
@@ -473,7 +477,7 @@ pub const JsonStore = struct {
 
     pub fn mergeMembers(self: *JsonStore, source: []const types.Member, existing: []const types.Member, preserve_existing_comments: bool) std.mem.Allocator.Error!MergeResult {
         var result: MergeResult = .{};
-        var merged: std.ArrayList(types.Member) = .{};
+        var merged: std.ArrayList(types.Member) = .empty;
         errdefer {
             for (merged.items) |m| self.freeMember(m);
             merged.deinit(self.allocator);

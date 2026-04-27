@@ -32,9 +32,8 @@ pub fn loadSkillExcerpt(
     for (paths) |sp| {
         const path = std.fs.path.join(allocator, &.{ sp.base, sp.rel, skill_name, "SKILL.md" }) catch continue;
         defer allocator.free(path);
-        const sf = std.fs.openFileAbsolute(path, .{}) catch continue;
-        defer sf.close();
-        const content = sf.readToEndAlloc(allocator, 512 * 1024) catch continue;
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(512 * 1024)) catch continue;
         defer allocator.free(content);
         if (parseSkillDocContent(allocator, content) catch null) |doc| return doc;
     }

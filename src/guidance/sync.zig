@@ -69,7 +69,7 @@ pub const SyncProcessor = struct {
 
         // Don't create the DB if it doesn't exist - let syncGuidanceDb handle creation.
         // Otherwise we create an empty DB which causes guidanceDbIsUpToDate to skip syncing.
-        std.fs.accessAbsolute(db_path, .{}) catch {
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), db_path, .{}) catch {
             if (self.debug) std.debug.print("[sync] db not found, skipping capabilities load\n", .{});
             return;
         };
@@ -139,7 +139,7 @@ pub const SyncProcessor = struct {
                 gop.value_ptr.* = caps;
             } else {
                 // Source already has capabilities - append new one
-                var caps_list: std.ArrayList([]const u8) = .{};
+                var caps_list: std.ArrayList([]const u8) = .empty;
                 for (gop.value_ptr.*) |existing_cap| {
                     caps_list.append(self.allocator, existing_cap) catch {};
                 }
@@ -185,12 +185,13 @@ pub const SyncProcessor = struct {
     pub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult {
         var result: types.SyncResult = .{ .filepath = filepath };
 
-        const file = std.fs.openFileAbsolute(filepath, .{}) catch {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const file = std.Io.Dir.openFileAbsolute(io, filepath, .{}) catch {
             return error.FileNotFound;
         };
-        defer file.close();
+        defer file.close(io);
 
-        const source = file.readToEndAllocOptions(self.allocator, 10 * 1024 * 1024, null, .@"1", 0) catch {
+        const source = std.Io.Dir.cwd().readFileAlloc(io, filepath, self.allocator, .limited(10 * 1024 * 1024)) catch {
             return error.ReadError;
         };
         defer self.allocator.free(source);
@@ -302,7 +303,7 @@ pub const SyncProcessor = struct {
                             }
                         },
                         .@"struct", .@"enum", .@"union" => {
-                            var method_sigs_list: std.ArrayList([]const u8) = .{};
+                            var method_sigs_list: std.ArrayList([]const u8) = .empty;
                             defer method_sigs_list.deinit(self.allocator);
                             for (m.members) |mm| {
                                 if (mm.signature) |msig| try method_sigs_list.append(self.allocator, msig);
@@ -439,7 +440,7 @@ pub const SyncProcessor = struct {
             };
             if (do_detail_llm) {
                 // Build member signatures for context
-                var member_sigs: std.ArrayList([]const u8) = .{};
+                var member_sigs: std.ArrayList([]const u8) = .empty;
                 defer {
                     for (member_sigs.items) |s| self.allocator.free(s);
                     member_sigs.deinit(self.allocator);
@@ -452,7 +453,7 @@ pub const SyncProcessor = struct {
 
                 // Build newline-joined skill ref string (passed as both
                 // capabilities and skills context to the thinking model).
-                var skills_buf: std.ArrayList(u8) = .{};
+                var skills_buf: std.ArrayList(u8) = .empty;
                 defer skills_buf.deinit(self.allocator);
                 for (skills) |s| {
                     if (skills_buf.items.len > 0) try skills_buf.append(self.allocator, '\n');
@@ -602,7 +603,7 @@ pub const SyncProcessor = struct {
     }
 
     pub fn processDirectory(self: *SyncProcessor, dir_path: []const u8, timeout_seconds: u64) !usize {
-        var dir = std.fs.openDirAbsolute(dir_path, .{ .iterate = true }) catch {
+        var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), dir_path, .{ .iterate = true }) catch {
             return error.DirectoryNotFound;
         };
         defer dir.close();
@@ -611,7 +612,7 @@ pub const SyncProcessor = struct {
         var walker = dir.walk(self.allocator) catch return 0;
         defer walker.deinit();
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind == .file and std.mem.endsWith(u8, entry.basename, ".zig")) {
                 const full_path = try std.fs.path.join(self.allocator, &.{ dir_path, entry.path });
                 defer self.allocator.free(full_path);
@@ -621,7 +622,7 @@ pub const SyncProcessor = struct {
                     const rel = relPath(full_path, self.project_root);
                     const json_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.output_dir, rel });
                     defer self.allocator.free(json_path);
-                    const exists = if (std.fs.openFileAbsolute(json_path, .{})) |f| blk: {
+                    const exists = if (std.Io.Dir.openFileAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path, .{})) |f| blk: {
                         f.close();
                         break :blk true;
                     } else |_| false;
@@ -643,7 +644,7 @@ pub const SyncProcessor = struct {
     }
 
     fn pathToModule(self: *SyncProcessor, rel_path: []const u8) ![]const u8 {
-        var result: std.ArrayList(u8) = .{};
+        var result: std.ArrayList(u8) = .empty;
         defer result.deinit(self.allocator);
 
         var parts = std.mem.splitScalar(u8, rel_path, std.fs.path.sep);
@@ -669,7 +670,7 @@ pub const SyncProcessor = struct {
 
         var structs: usize = 0;
         var functions: usize = 0;
-        var names: std.ArrayList([]const u8) = .{};
+        var names: std.ArrayList([]const u8) = .empty;
         defer names.deinit(self.allocator);
 
         for (members) |m| {
@@ -681,9 +682,9 @@ pub const SyncProcessor = struct {
             if (names.items.len < 5) try names.append(self.allocator, m.name);
         }
 
-        var buf: std.ArrayList(u8) = .{};
-        defer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         // Use the final path component (without extension) as the module name prefix.
         const basename = std.fs.path.basename(rel_path);
@@ -711,7 +712,7 @@ pub const SyncProcessor = struct {
             try w.writeByte(')');
         }
 
-        const owned = try buf.toOwnedSlice(self.allocator);
+        const owned = try aw.toOwnedSlice();
         return @as(?[]const u8, owned);
     }
 
@@ -740,7 +741,7 @@ pub const SyncProcessor = struct {
     /// add gof-patterns when GoF patterns are detected.
     /// Preserves any extra skills that were already in the existing guidance.
     fn buildSkills(self: *SyncProcessor, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) ![]const types.Skill {
-        var skills: std.ArrayList(types.Skill) = .{};
+        var skills: std.ArrayList(types.Skill) = .empty;
         errdefer {
             for (skills.items) |s| {
                 self.allocator.free(s.ref);
@@ -807,7 +808,7 @@ pub const SyncProcessor = struct {
             const c = comment orelse break :blk "";
             if (c.len > 0 and c[0] == '[') {
                 const close = std.mem.indexOfScalar(u8, c, ']') orelse break :blk c;
-                const after = std.mem.trimLeft(u8, c[close + 1 ..], " ");
+                const after = common.trimLeft(u8, c[close + 1 ..], " ");
                 break :blk after;
             }
             break :blk c;
@@ -824,9 +825,9 @@ pub const SyncProcessor = struct {
 
         // Extract skill names from refs like "skills/gof-patterns/SKILL.md"
         // or short refs like "zig-current".
-        var buf: std.ArrayList(u8) = .{};
-        errdefer buf.deinit(self.allocator);
-        const w = buf.writer(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         try w.writeByte('[');
         for (skills, 0..) |skill, i| {
@@ -837,13 +838,13 @@ pub const SyncProcessor = struct {
         try w.writeByte(' ');
         try w.writeAll(bare);
 
-        return try buf.toOwnedSlice(self.allocator);
+        return try aw.toOwnedSlice();
     }
 
     /// Merge new tags from the LLM into the existing tag slice, deduplicating.
     /// Returns a newly allocated slice owned by the caller.
     fn mergeTags(self: *SyncProcessor, existing: []const []const u8, new_tags: []const []const u8) ![]const []const u8 {
-        var merged: std.ArrayList([]const u8) = .{};
+        var merged: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (merged.items) |t| self.allocator.free(t);
             merged.deinit(self.allocator);
@@ -894,9 +895,8 @@ pub const SyncProcessor = struct {
             defer self.allocator.free(src_path);
 
             const src_preview: ?[]const u8 = blk: {
-                const sf = std.fs.openFileAbsolute(src_path, .{}) catch break :blk null;
-                defer sf.close();
-                const raw = sf.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch break :blk null;
+                const io = std.Io.Threaded.global_single_threaded.io();
+                const raw = std.Io.Dir.cwd().readFileAlloc(io, src_path, self.allocator, .limited(10 * 1024 * 1024)) catch break :blk null;
                 defer self.allocator.free(raw);
                 break :blk try self.allocator.dupe(u8, raw[0..@min(raw.len, 3000)]);
             };
@@ -1024,7 +1024,7 @@ pub const SyncProcessor = struct {
         if (self.enhancer == null) return 0;
         if (!self.enhancer.?.available()) return 0;
 
-        var dir = std.fs.openDirAbsolute(guidance_dir, .{ .iterate = true }) catch return 0;
+        var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), guidance_dir, .{ .iterate = true }) catch return 0;
         defer dir.close();
 
         var walker = dir.walk(self.allocator) catch return 0;
@@ -1032,7 +1032,7 @@ pub const SyncProcessor = struct {
 
         var changed: usize = 0;
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -1054,7 +1054,7 @@ pub const SyncProcessor = struct {
         const src_dir_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "src" });
         defer self.allocator.free(src_dir_path);
 
-        var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch return &.{};
+        var src_dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_dir_path, .{ .iterate = true }) catch return &.{};
         defer src_dir.close();
 
         // Derive the stem (filename without .zig) and @import pattern to search for.
@@ -1065,7 +1065,7 @@ pub const SyncProcessor = struct {
         const import_pattern = try std.fmt.allocPrint(self.allocator, "@import(\"{s}.zig\")", .{stem});
         defer self.allocator.free(import_pattern);
 
-        var found: std.ArrayList([]const u8) = .{};
+        var found: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (found.items) |s| self.allocator.free(s);
             found.deinit(self.allocator);
@@ -1074,7 +1074,7 @@ pub const SyncProcessor = struct {
         var walker = src_dir.walk(self.allocator) catch return &.{};
         defer walker.deinit();
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
 
@@ -1088,9 +1088,8 @@ pub const SyncProcessor = struct {
             if (std.mem.endsWith(u8, full_path, rel_path)) continue;
 
             const content = blk: {
-                const f = std.fs.openFileAbsolute(full_path, .{}) catch continue;
-                defer f.close();
-                break :blk f.readToEndAlloc(self.allocator, 1024 * 1024) catch continue;
+                const io = std.Io.Threaded.global_single_threaded.io();
+                break :blk std.Io.Dir.cwd().readFileAlloc(io, full_path, self.allocator, .limited(1024 * 1024)) catch continue;
             };
             defer self.allocator.free(content);
 
@@ -1120,7 +1119,7 @@ pub const SyncProcessor = struct {
     ///
     /// Returns an allocator-owned slice of relative paths (may be empty).
     pub fn findEquivalents(self: *SyncProcessor, rel_path: []const u8) ![]const []const u8 {
-        var found: std.ArrayList([]const u8) = .{};
+        var found: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (found.items) |p| self.allocator.free(p);
             found.deinit(self.allocator);
@@ -1143,7 +1142,7 @@ pub const SyncProcessor = struct {
             const candidate = try std.fmt.allocPrint(self.allocator, "{s}/{s}{s}", .{ dir, stem, ext });
             const abs = try std.fs.path.join(self.allocator, &.{ self.project_root, candidate });
             defer self.allocator.free(abs);
-            std.fs.accessAbsolute(abs, .{}) catch {
+            std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), abs, .{}) catch {
                 self.allocator.free(candidate);
                 continue;
             };
@@ -1164,7 +1163,7 @@ pub const SyncProcessor = struct {
                 const candidate = try std.fmt.allocPrint(self.allocator, "bin/{s}{s}", .{ src_stem, ext });
                 const abs = try std.fs.path.join(self.allocator, &.{ self.project_root, candidate });
                 defer self.allocator.free(abs);
-                std.fs.accessAbsolute(abs, .{}) catch {
+                std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), abs, .{}) catch {
                     self.allocator.free(candidate);
                     continue;
                 };

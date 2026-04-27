@@ -56,12 +56,13 @@ pub fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) bool {
     return src_mtime > json_mtime;
 }
 
-/// Converts a file timestamp string into a 128-bit integer value.
+/// Returns the mtime of a file in nanoseconds, or null if the file cannot be opened.
 pub fn fileMtime(path: []const u8) ?i128 {
-    const f = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer f.close();
-    const stat = f.stat() catch return null;
-    return stat.mtime;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
+    defer f.close(io);
+    const stat = f.stat(io) catch return null;
+    return @as(i128, stat.mtime.nanoseconds);
 }
 
 // ---------------------------------------------------------------------------
@@ -97,44 +98,48 @@ pub fn testsCanBeSkipped(marker_path: []const u8, src_files: []const []const u8)
     return true;
 }
 
-/// Validates a marker path slice and returns void, ensuring proper marker data integrity.
+/// Creates the test_passed marker file, touching it to set its mtime to now.
 pub fn touchTestMarker(marker_path: []const u8) !void {
     const parent = std.fs.path.dirname(marker_path) orelse return error.InvalidPath;
     try common.makePathAbsolute(parent);
-    const f = try std.fs.createFileAbsolute(marker_path, .{});
-    f.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = try std.Io.Dir.createFileAbsolute(io, marker_path, .{});
+    f.close(io);
 }
 
-/// Transfers a file path to a target location in Zig, updating the reference path.
+/// Sets target file's mtime to 1 second before ref_path's mtime (validated pattern).
 pub fn touchFileAfter(target_path: []const u8, ref_path: []const u8) !void {
     const ref_mtime = fileMtime(ref_path) orelse return error.FileNotFound;
-
-    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
-    defer target_file.close();
-
-    const stat = try target_file.stat();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var target_file = try std.Io.Dir.openFileAbsolute(io, target_path, .{ .mode = .read_write });
+    defer target_file.close(io);
     // Set mtime to 1 second BEFORE source mtime (not after)
     // This creates a recognizable pattern: validated files have mtime = src_mtime - 1
-    const new_mtime = ref_mtime - std.time.ns_per_s;
-    try target_file.updateTimes(stat.atime, new_mtime);
+    const new_mtime_ns: i96 = @intCast(ref_mtime - std.time.ns_per_s);
+    try target_file.setTimestamps(io, .{
+        .modify_timestamp = .{ .new = .{ .nanoseconds = new_mtime_ns } },
+    });
 }
 
-/// Processes a file path string and triggers an action on it.
+/// Sets target file's mtime to the current time.
 pub fn touchFileNow(target_path: []const u8) !void {
-    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
-    defer target_file.close();
-
-    const now = std.time.nanoTimestamp();
-    try target_file.updateTimes(now, now);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var target_file = try std.Io.Dir.openFileAbsolute(io, target_path, .{ .mode = .read_write });
+    defer target_file.close(io);
+    try target_file.setTimestamps(io, .{ .modify_timestamp = .now, .access_timestamp = .now });
 }
 
-/// Updates a file path to the next valid position after a touch event.
+/// Sets target file's mtime to current time plus one second.
 pub fn touchFileNowPlusOne(target_path: []const u8) !void {
-    var target_file = try std.fs.openFileAbsolute(target_path, .{ .mode = .read_write });
-    defer target_file.close();
-
-    const now = std.time.nanoTimestamp() + std.time.ns_per_s;
-    try target_file.updateTimes(now, now);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var target_file = try std.Io.Dir.openFileAbsolute(io, target_path, .{ .mode = .read_write });
+    defer target_file.close(io);
+    const now_ts = std.Io.Timestamp.now(io, .real);
+    const plus_one = now_ts.addDuration(.{ .nanoseconds = std.time.ns_per_s });
+    try target_file.setTimestamps(io, .{
+        .modify_timestamp = .{ .new = plus_one },
+        .access_timestamp = .{ .new = plus_one },
+    });
 }
 
 // ---------------------------------------------------------------------------

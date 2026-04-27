@@ -44,7 +44,7 @@ test "L1Cache: put and get" {
 }
 
 test "QueueReactor: L1 cache hit" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -71,7 +71,7 @@ test "QueueReactor: L1 cache hit" {
 }
 
 test "QueueReactor: L5 fallback" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -88,7 +88,7 @@ test "QueueReactor: L5 fallback" {
 }
 
 test "QueueReactorBuilder: builds with library" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -106,7 +106,7 @@ test "QueueReactorBuilder: builds with library" {
 }
 
 test "QueueReactorBuilder: error when library missing" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -116,7 +116,7 @@ test "QueueReactorBuilder: error when library missing" {
 }
 
 test "QueueReactor: work queue fields exist" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -133,7 +133,7 @@ test "QueueReactor: work queue fields exist" {
 }
 
 test "Library.findNodeByName: finds by lod4" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -154,7 +154,7 @@ test "Library.findNodeByName: finds by lod4" {
 }
 
 test "QueueReactor: L2 skipped when no wasm_tools" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -170,7 +170,7 @@ test "QueueReactor: L2 skipped when no wasm_tools" {
 }
 
 test "findWasmTool: returns null when all tools fail test_passed check" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -189,7 +189,7 @@ test "findWasmTool: returns null when all tools fail test_passed check" {
 }
 
 test "Library.traverseFrom: returns root node" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -210,7 +210,7 @@ test "Library.traverseFrom: returns root node" {
 }
 
 test "QueueReactor: submitAsync falls back to synchronous without thread pool" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -231,7 +231,7 @@ test "QueueReactor: submitAsync falls back to synchronous without thread pool" {
 }
 
 test "QueueReactorBuilder: threadCount initialises thread pool" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -247,7 +247,7 @@ test "QueueReactorBuilder: threadCount initialises thread pool" {
 }
 
 test "L1Cache: concurrent reads are safe" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -273,7 +273,7 @@ test "M5: concurrent writes via thread pool do not deadlock" {
     const NTHREADS = 4;
     const NODES_PER_THREAD = 10;
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -315,7 +315,7 @@ test "M5: concurrent writes via thread pool do not deadlock" {
 }
 
 test "ParallelRouter: routeBatch with empty input" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 

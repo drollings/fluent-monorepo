@@ -134,17 +134,17 @@ fn writeMember(writer: anytype, member: types.Member, indent: []const u8) !void 
 /// Returns null only on allocation failure; the ?[]u8 type is preserved for
 /// backward compatibility with the re-export in types.zig.
 pub fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) !?[]u8 {
-    var list: std.ArrayList(u8) = .{};
-    errdefer list.deinit(allocator);
-    const writer = list.writer(allocator);
+    var list_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer list_aw.deinit();
+    const writer = &list_aw.writer;
     try writeMember(writer, member, "");
-    return try list.toOwnedSlice(allocator);
+    return try list_aw.toOwnedSlice();
 }
 
 pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) ![]u8 {
-    var list: std.ArrayList(u8) = .{};
-    errdefer list.deinit(allocator);
-    const writer = list.writer(allocator);
+    var list_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer list_aw.deinit();
+    const writer = &list_aw.writer;
 
     // meta block (always present).
     try writer.writeAll("{\n  \"meta\": {\n    \"module\": \"");
@@ -163,7 +163,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) 
         doc.members.len > 0;
     if (!has_fields) {
         try writer.writeAll("\n}\n");
-        return list.toOwnedSlice(allocator);
+        return list_aw.toOwnedSlice();
     }
 
     // Close meta with comma; remaining fields use writeSep to separate each other.
@@ -235,5 +235,5 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) 
     }
 
     try writer.writeAll("\n}\n");
-    return list.toOwnedSlice(allocator);
+    return list_aw.toOwnedSlice();
 }

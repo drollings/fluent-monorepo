@@ -169,13 +169,13 @@ pub fn topoSort(allocator: std.mem.Allocator) ![]const []const u8 {
     }
 
     // Seed queue with zero-in-degree nodes.
-    var queue: std.ArrayListUnmanaged(usize) = .{};
+    var queue: std.ArrayListUnmanaged(usize) = .empty;
     defer queue.deinit(allocator);
     for (in_degree, 0..) |deg, i| {
         if (deg == 0) try queue.append(allocator, i);
     }
 
-    var result: std.ArrayListUnmanaged([]const u8) = .{};
+    var result: std.ArrayListUnmanaged([]const u8) = .empty;
     errdefer result.deinit(allocator);
 
     while (queue.items.len > 0) {

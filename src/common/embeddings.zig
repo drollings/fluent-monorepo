@@ -220,7 +220,7 @@ pub const OllamaEmbedding = struct {
         const url = try self_.buildUrl(allocator);
         defer allocator.free(url);
 
-        var client = std.http.Client{ .allocator = allocator };
+        var client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
         defer client.deinit();
 
         var aw: std.Io.Writer.Allocating = .init(allocator);
@@ -275,7 +275,7 @@ pub const OllamaEmbedding = struct {
         const url = try self_.buildUrl(allocator);
         defer allocator.free(url);
 
-        var client = std.http.Client{ .allocator = allocator };
+        var client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
         defer client.deinit();
 
         var aw: std.Io.Writer.Allocating = .init(allocator);
@@ -456,7 +456,7 @@ pub const OpenAiEmbedding = struct {
         };
         const path_start = std.mem.indexOfScalar(u8, after_scheme, '/') orelse 0;
         const path = after_scheme[path_start..];
-        const trimmed = std.mem.trimRight(u8, path, "/");
+        const trimmed = std.mem.trim(u8, path, "/");
         if (trimmed.len > 0 and !std.mem.eql(u8, trimmed, "/")) {
             return std.fmt.allocPrint(allocator, "{s}/embeddings", .{self.base_url});
         }
@@ -494,7 +494,7 @@ pub const OpenAiEmbedding = struct {
         const auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{self_.api_key});
         defer allocator.free(auth_header);
 
-        var client = std.http.Client{ .allocator = allocator };
+        var client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
         defer client.deinit();
 
         var aw: std.Io.Writer.Allocating = .init(allocator);
@@ -553,7 +553,7 @@ pub const OpenAiEmbedding = struct {
         const auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{self_.api_key});
         defer allocator.free(auth_header);
 
-        var client = std.http.Client{ .allocator = allocator };
+        var client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
         defer client.deinit();
 
         var aw: std.Io.Writer.Allocating = .init(allocator);

@@ -126,16 +126,16 @@ fn buildNotFoundStages(
         allocator.free(caps);
     }
     if (caps.len > 0) {
-        var buf: std.ArrayList(u8) = .empty;
-        defer buf.deinit(allocator);
-        const bw = buf.writer(allocator);
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        errdefer aw.deinit();
+        const bw = &aw.writer;
         try bw.writeAll("Related capabilities you might mean:\n");
         for (caps) |cap| {
             try bw.print("- `{s}`\n", .{cap});
         }
         try stages.append(allocator, .{
             .kind = .metadata,
-            .content = try buf.toOwnedSlice(allocator),
+            .content = try aw.toOwnedSlice(),
             .source = try allocator.dupe(u8, "guidance"),
         });
     }
@@ -382,7 +382,8 @@ fn collectCapabilityStages(
     const cap_index_path = std.fmt.allocPrint(allocator, "{s}/.guidance/capability-index.json", .{workspace}) catch null;
     defer if (cap_index_path) |p| allocator.free(p);
     if (cap_index_path) |index_path| {
-        if (std.fs.cwd().readFileAlloc(allocator, index_path, 2 * 1024 * 1024)) |index_content| {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        if (std.Io.Dir.cwd().readFileAlloc(io, index_path, allocator, .limited(2 * 1024 * 1024))) |index_content| {
             defer allocator.free(index_content);
             if (std.json.parseFromSlice(std.json.Value, allocator, index_content, .{ .ignore_unknown_fields = true })) |parsed| {
                 defer parsed.deinit();
@@ -427,7 +428,10 @@ fn collectCapabilityStages(
                                     const take = @min(4, cap_sources.len);
                                     for (cap_sources[0..take], 0..) |cs, j| {
                                         if (j > 0) try cbuf.appendSlice(allocator, ", ");
-                                        try cbuf.writer(allocator).print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                                var aw2: std.Io.Writer.Allocating = .init(allocator);
+                                                errdefer aw2.deinit();
+                                                try aw2.writer.print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                                try cbuf.appendSlice(allocator, aw2.written());
                                     }
                                     try cbuf.appendSlice(allocator, "\n");
                                 }
@@ -471,7 +475,8 @@ fn collectCapabilityStages(
             if (seen_sources.contains(cs.source_path)) continue;
             const json_path = std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ guidance_dir, cs.source_path }) catch continue;
             defer allocator.free(json_path);
-            const json_content = std.fs.cwd().readFileAllocOptions(allocator, json_path, 2 * 1024 * 1024, null, .@"1", 0) catch continue;
+                const io = std.Io.Threaded.global_single_threaded.io();
+                const json_content = std.Io.Dir.cwd().readFileAlloc(io, json_path, allocator, .limited(2 * 1024 * 1024)) catch continue;
             defer allocator.free(json_content);
             const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch continue;
             defer parsed.deinit();
@@ -803,12 +808,11 @@ pub fn loadSkillExcerpt(
     skills_dir: []const u8,
     skill_name: []const u8,
 ) !?[]const u8 {
-    const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
+                const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
     defer allocator.free(path);
 
-    const sf = std.fs.openFileAbsolute(path, .{}) catch return null;
-    defer sf.close();
-    const content = sf.readToEndAlloc(allocator, 512 * 1024) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(512 * 1024)) catch return null;
     defer allocator.free(content);
 
     return parseSkillDocContent(allocator, content);

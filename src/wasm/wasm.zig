@@ -928,7 +928,7 @@ pub const WasmToolCache = struct {
     /// Evict all entries older than ttl_seconds.
     pub fn evictExpired(self: *Self) !void {
         const now = std.time.timestamp();
-        var to_remove: std.ArrayListUnmanaged([]const u8) = .{};
+        var to_remove: std.ArrayListUnmanaged([]const u8) = .empty;
         defer to_remove.deinit(self.allocator);
 
         var it = self.tools.iterator();
@@ -1056,7 +1056,7 @@ test "ToolCompilerConfig: editable mixin is zero size" {
 }
 
 test "ToolCompilerConfig: reflective set and get for compiler path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -1208,7 +1208,7 @@ test "WasmToolCache: different inputs produce different hashes" {
 }
 
 test "WasmToolCache: GPA no leaks across put and deinit" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {

@@ -140,9 +140,9 @@ pub const CodebaseScanner = struct {
     /// Generate a confidence report as a formatted string.
     /// Caller owns the returned string.
     pub fn diagnose(self: *const CodebaseScanner, allocator: std.mem.Allocator) ![]u8 {
-        var buf: std.ArrayList(u8) = .{};
-        errdefer buf.deinit(allocator);
-        const w = buf.writer(allocator);
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
 
         try w.print("# Codebase Scanner — Self-Diagnosis\n\n", .{});
         try w.print("**Workspace**: {s}\n", .{self.workspace});
@@ -195,7 +195,7 @@ pub const CodebaseScanner = struct {
             try w.writeAll("Source: None — run `guidance gen` to build capability index\n");
         }
 
-        return buf.toOwnedSlice(allocator);
+        return aw.toOwnedSlice();
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ pub fn cmdScan(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const workspace = workspace_arg orelse cwd;

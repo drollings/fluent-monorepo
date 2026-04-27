@@ -28,7 +28,7 @@ pub const AstParser = struct {
     }
 
     pub fn extractMembers(self: *AstParser) ![]types.Member {
-        var members: std.ArrayList(types.Member) = .{};
+        var members: std.ArrayList(types.Member) = .empty;
         errdefer members.deinit(self.allocator);
 
         for (self.tree.rootDecls()) |node_idx| {
@@ -148,7 +148,7 @@ pub const AstParser = struct {
 
         // Collect public field names to include in the hash so that adding/removing
         // a field changes the match_hash and triggers re-enhancement.
-        var field_names: std.ArrayList([]const u8) = .{};
+        var field_names: std.ArrayList([]const u8) = .empty;
         defer field_names.deinit(self.allocator);
 
         var buf2: [2]std.zig.Ast.Node.Index = undefined;
@@ -166,7 +166,7 @@ pub const AstParser = struct {
         const match_hash = try hash.structHash(self.allocator, name, field_names.items);
         errdefer self.allocator.free(match_hash);
 
-        var nested_members: std.ArrayList(types.Member) = .{};
+        var nested_members: std.ArrayList(types.Member) = .empty;
         errdefer nested_members.deinit(self.allocator);
 
         var buf: [2]std.zig.Ast.Node.Index = undefined;
@@ -234,7 +234,7 @@ pub const AstParser = struct {
     }
 
     fn extractParams(self: *AstParser, full_proto: std.zig.Ast.full.FnProto) ![]types.Param {
-        var params: std.ArrayList(types.Param) = .{};
+        var params: std.ArrayList(types.Param) = .empty;
         errdefer params.deinit(self.allocator);
 
         var iter = full_proto.iterate(&self.tree);
@@ -271,28 +271,27 @@ pub const AstParser = struct {
     }
 
     fn buildSignature(allocator: std.mem.Allocator, name: []const u8, params: []types.Param, returns: ?[]const u8) ![]const u8 {
-        var sig: std.ArrayList(u8) = .{};
-        errdefer sig.deinit(allocator);
-        const writer = sig.writer(allocator);
+        var sig: std.ArrayList(u8) = .empty;
+        defer sig.deinit(allocator);
 
-        try writer.writeAll("fn ");
-        try writer.writeAll(name);
-        try writer.writeByte('(');
+        try sig.appendSlice(allocator, "fn ");
+        try sig.appendSlice(allocator, name);
+        try sig.append(allocator, '(');
 
         for (params, 0..) |param, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll(param.name);
+            if (i > 0) try sig.appendSlice(allocator, ", ");
+            try sig.appendSlice(allocator, param.name);
             if (param.type) |t| {
-                try writer.writeAll(": ");
-                try writer.writeAll(t);
+                try sig.appendSlice(allocator, ": ");
+                try sig.appendSlice(allocator, t);
             }
         }
 
-        try writer.writeByte(')');
+        try sig.append(allocator, ')');
 
         if (returns) |r| {
-            try writer.writeAll(" -> ");
-            try writer.writeAll(r);
+            try sig.appendSlice(allocator, " -> ");
+            try sig.appendSlice(allocator, r);
         }
 
         return sig.toOwnedSlice(allocator);
@@ -339,7 +338,7 @@ pub const AstParser = struct {
         const token_tags = self.tree.tokens.items(.tag);
 
         // Collect consecutive doc_comment tokens preceding this node.
-        var doc_toks: std.ArrayList(std.zig.Ast.TokenIndex) = .{};
+        var doc_toks: std.ArrayList(std.zig.Ast.TokenIndex) = .empty;
         defer doc_toks.deinit(self.allocator);
 
         var tok = first_token;
@@ -357,7 +356,7 @@ pub const AstParser = struct {
         // Tokens were collected closest-first; reverse to get top-to-bottom order.
         std.mem.reverse(std.zig.Ast.TokenIndex, doc_toks.items);
 
-        var result: std.ArrayList(u8) = .{};
+        var result: std.ArrayList(u8) = .empty;
         errdefer result.deinit(self.allocator);
 
         for (doc_toks.items, 0..) |t, i| {
@@ -384,7 +383,7 @@ pub const AstParser = struct {
     pub fn extractModuleDoc(self: *AstParser) !?[]const u8 {
         const token_tags = self.tree.tokens.items(.tag);
 
-        var doc_lines: std.ArrayList([]const u8) = .{};
+        var doc_lines: std.ArrayList([]const u8) = .empty;
         defer {
             for (doc_lines.items) |line| self.allocator.free(line);
             doc_lines.deinit(self.allocator);
@@ -402,7 +401,7 @@ pub const AstParser = struct {
 
         if (doc_lines.items.len == 0) return null;
 
-        var result: std.ArrayList(u8) = .{};
+        var result: std.ArrayList(u8) = .empty;
         for (doc_lines.items, 0..) |line, i| {
             if (i > 0) try result.append(self.allocator, '\n');
             try result.appendSlice(self.allocator, line);
@@ -414,7 +413,7 @@ pub const AstParser = struct {
     /// Walk the token stream for @import("...") string literals and return
     /// a slice of their string values (without surrounding quotes), owned by the caller.
     pub fn extractImports(self: *AstParser) ![][]const u8 {
-        var imports: std.ArrayList([]const u8) = .{};
+        var imports: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (imports.items) |s| self.allocator.free(s);
             imports.deinit(self.allocator);
@@ -449,10 +448,8 @@ pub const AstParser = struct {
 
 /// Converts a file path into an AstParser instance using the provided allocator.
 pub fn parseFile(allocator: std.mem.Allocator, path: []const u8) !AstParser {
-    const file = std.fs.openFileAbsolute(path, .{}) catch |err| return err;
-    defer file.close();
-
-    const source = file.readToEndAllocOptions(allocator, std.math.maxInt(usize), null, .@"1", 0) catch |err| return err;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const source = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(std.math.maxInt(usize))) catch |err| return err;
     defer allocator.free(source);
 
     return AstParser.init(allocator, source) catch |err| {

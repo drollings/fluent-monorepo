@@ -11,7 +11,7 @@ test "jsonStringifyAlloc basic struct" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"y\"") != null);
 }
 test "writeEscaped handles special chars" {
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(std.testing.allocator);
     try json_mod.writeEscaped(buf.writer(std.testing.allocator), "a\"b\\c\nd");
     try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd", buf.items);
@@ -30,9 +30,15 @@ test "parseJsonFile parses a valid object" {
     const json_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.json" });
     defer std.testing.allocator.free(json_path);
 
-    const f = try std.fs.createFileAbsolute(json_path, .{});
-    try f.writeAll("{\"key\":\"value\"}");
-    f.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const f = try std.Io.Dir.createFileAbsolute(io, json_path, .{});
+    {
+        var wbuf: [4096]u8 = undefined;
+        var writer = f.writer(io, &wbuf);
+        try writer.interface.writeAll("{\"key\":\"value\"}");
+        try writer.interface.flush();
+    }
+    f.close(io);
 
     var parsed = json_mod.parseJsonFile(std.testing.allocator, json_path, 1024).?;
     defer parsed.deinit();
@@ -40,7 +46,7 @@ test "parseJsonFile parses a valid object" {
     try std.testing.expect(parsed.value.object.get("key") != null);
 }
 test "appendEscaped handles control chars" {
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(std.testing.allocator);
     try json_mod.appendEscaped(&buf, std.testing.allocator, "\x01\x1f normal");
     try std.testing.expect(std.mem.indexOf(u8, buf.items, "\\u0001") != null);

@@ -177,6 +177,7 @@ pub fn findOrphanedFiles(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
+    const io = std.Io.Threaded.global_single_threaded.io();
 
     // ── 1. Discover all .zig files ────────────────────────────────────────────
     var all_files: std.ArrayList([]const u8) = .empty;
@@ -187,16 +188,16 @@ pub fn findOrphanedFiles(
     defer mtime_map.deinit();
 
     {
-        var base_dir = std.fs.cwd().openDir(workspace, .{ .iterate = true }) catch |err| {
+        var base_dir = std.Io.Dir.cwd().openDir(io, workspace, .{ .iterate = true }) catch |err| {
             std.debug.print("[orphan] cannot open workspace '{s}': {s}\n", .{ workspace, @errorName(err) });
             return allocator.alloc(OrphanedFile, 0);
         };
-        defer base_dir.close();
+        defer base_dir.close(io);
 
         var walker = try base_dir.walk(aa);
         defer walker.deinit();
 
-        while (try walker.next()) |entry| {
+        while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
             // Exclude generated/vendor directories.
@@ -207,17 +208,18 @@ pub fn findOrphanedFiles(
             try all_files.append(aa, rel_path);
 
             // Record mtime (best effort).
-            const stat = base_dir.statFile(rel_path) catch continue;
-            try mtime_map.put(rel_path, @intCast(@divTrunc(stat.mtime, std.time.ns_per_s)));
+            const stat = base_dir.statFile(io, rel_path, .{}) catch continue;
+            try mtime_map.put(rel_path, @intCast(@divTrunc(stat.mtime.nanoseconds, std.time.ns_per_s)));
         }
     }
 
     // ── 2. Load and parse build.zig roots ────────────────────────────────────
     var build_roots_paths: [][]const u8 = &.{};
-    const build_zig_src = std.fs.cwd().readFileAlloc(
-        aa,
+    const build_zig_src = std.Io.Dir.cwd().readFileAlloc(
+        io,
         try std.fmt.allocPrint(aa, "{s}/build.zig", .{workspace}),
-        5 * 1024 * 1024,
+        aa,
+        .limited(5 * 1024 * 1024),
     ) catch null;
     if (build_zig_src) |src| {
         build_roots_paths = extractBuildZigRoots(aa, src) catch &.{};
@@ -231,7 +233,7 @@ pub fn findOrphanedFiles(
 
     for (all_files.items) |rel_path| {
         const abs_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, rel_path });
-        const src_raw = std.fs.cwd().readFileAlloc(aa, abs_path, 5 * 1024 * 1024) catch continue;
+        const src_raw = std.Io.Dir.cwd().readFileAlloc(io, abs_path, aa, .limited(5 * 1024 * 1024)) catch continue;
         const src_z = try aa.dupeZ(u8, src_raw);
 
         const dir_of_file = std.fs.path.dirname(rel_path) orelse "";
@@ -272,7 +274,7 @@ pub fn findOrphanedFiles(
 
         // Read source for entry-point markers.
         const abs_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, rel_path });
-        const src_raw = std.fs.cwd().readFileAlloc(aa, abs_path, 5 * 1024 * 1024) catch continue;
+        const src_raw = std.Io.Dir.cwd().readFileAlloc(io, abs_path, aa, .limited(5 * 1024 * 1024)) catch continue;
 
         if (hasPubFnMain(src_raw)) continue;
         if (hasEntryPointMarker(src_raw)) continue;
@@ -322,14 +324,13 @@ fn resolveImportPath(
     defer allocator.free(joined);
 
     // Normalise (resolve "..") to get workspace-relative path.
-    // We do this manually since std.fs.path.resolve requires absolute paths.
-    const abs_workspace = try std.fs.cwd().realpathAlloc(allocator, workspace);
+    const abs_workspace = try std.fs.path.resolve(allocator, &.{workspace});
     defer allocator.free(abs_workspace);
 
     const abs_joined = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ abs_workspace, joined });
     defer allocator.free(abs_joined);
 
-    const abs_resolved = try std.fs.cwd().realpathAlloc(allocator, abs_joined);
+    const abs_resolved = try std.fs.path.resolve(allocator, &.{abs_joined});
     defer allocator.free(abs_resolved);
 
     // Strip workspace prefix to get workspace-relative path.

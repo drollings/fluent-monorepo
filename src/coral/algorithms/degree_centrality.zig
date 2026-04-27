@@ -34,7 +34,7 @@ pub const DegreeCentrality = struct {
 
         // Query out-degree per node.
         const DegreeRow = struct { node_id: i64, deg: u32 };
-        var rows: std.ArrayListUnmanaged(DegreeRow) = .{};
+        var rows: std.ArrayListUnmanaged(DegreeRow) = .empty;
 
         try library.iterateDegrees(arena, struct {
             list: *std.ArrayListUnmanaged(DegreeRow),

@@ -132,7 +132,7 @@ pub const TrigramIndex = struct {
     pub fn writeToDisk(self: *TrigramIndex, dir_path: []const u8, git_head: ?[]const u8) !void {
         var buf: [4096]u8 = undefined;
         const path = try std.fmt.bufPrint(&buf, "{s}/trigram_index.bin", .{dir_path});
-        const f = try std.fs.cwd().createFile(path, .{});
+        const f = try std.Io.Dir.cwd().createFile(path, .{});
         defer f.close();
 
         var out: std.ArrayList(u8) = .empty;
@@ -172,7 +172,7 @@ pub const TrigramIndex = struct {
     pub fn readFromDisk(dir_path: []const u8, allocator: std.mem.Allocator) !?TrigramIndex {
         var buf: [4096]u8 = undefined;
         const path = try std.fmt.bufPrint(&buf, "{s}/trigram_index.bin", .{dir_path});
-        const content = std.fs.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize)) catch return null;
+        const content = std.Io.Dir.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize)) catch return null;
         defer allocator.free(content);
 
         const hdr = index_header.read(content, MAGIC, VERSION) orelse return null;
@@ -232,7 +232,7 @@ pub const MmapTrigramIndex = struct {
     fd: ?std.fs.File,
 
     pub fn readFromMmap(path: []const u8) !?MmapTrigramIndex {
-        const f = std.fs.cwd().openFile(path, .{}) catch return null;
+        const f = std.Io.Dir.cwd().openFile(path, .{}) catch return null;
         errdefer f.close();
         const stat = f.stat() catch return null;
         const size: usize = @intCast(stat.size);

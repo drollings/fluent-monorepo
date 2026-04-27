@@ -43,7 +43,7 @@ pub fn parseDocContent(allocator: std.mem.Allocator, content: []const u8, verbos
             // Parse frontmatter fields
             var name: ?[]const u8 = null;
             var description: ?[]const u8 = null;
-            var anchors_list: std.ArrayList([]const u8) = .{};
+            var anchors_list: std.ArrayList([]const u8) = .empty;
             defer anchors_list.deinit(allocator);
 
             var in_anchors = false;

@@ -11,6 +11,7 @@
 //!   "section" — deeper / unrecognised headings
 
 const std = @import("std");
+const common = @import("common");
 const types = @import("../types.zig");
 const plugin_mod = @import("../plugin.zig");
 
@@ -42,9 +43,9 @@ fn parseMarkdown(
     const module = try deriveMarkdownModule(arena, file_path);
     const src_path = if (std.mem.startsWith(u8, file_path, "./")) file_path[2..] else file_path;
 
-    var members: std.ArrayList(types.Member) = .{};
+    var members: std.ArrayList(types.Member) = .empty;
 
-    var first_para_buf: std.ArrayList(u8) = .{};
+    var first_para_buf: std.ArrayList(u8) = .empty;
     var first_para_done = false;
     var in_code_block = false;
     var line_no: u32 = 0;
@@ -52,7 +53,7 @@ fn parseMarkdown(
     var lines = std.mem.splitScalar(u8, source, '\n');
     while (lines.next()) |raw_line| {
         line_no += 1;
-        const line = std.mem.trimRight(u8, raw_line, "\r");
+        const line = common.trimRight(u8, raw_line, "\r");
 
         // Track fenced code blocks so we don't parse their content.
         if (std.mem.startsWith(u8, line, "```") or std.mem.startsWith(u8, line, "~~~")) {
@@ -133,7 +134,7 @@ fn extractMarkdownLinks(
     arena: std.mem.Allocator,
     source: [:0]const u8,
 ) anyerror![]const []const u8 {
-    var links: std.ArrayList([]const u8) = .{};
+    var links: std.ArrayList([]const u8) = .empty;
     var in_code = false;
     var pos: usize = 0;
     const src = @as([]const u8, source);

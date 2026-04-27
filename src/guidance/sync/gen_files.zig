@@ -483,11 +483,12 @@ pub fn guidanceDbIsUpToDate(
     {
         const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return false;
         defer allocator.free(src_dir_path);
-        var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch return false;
-        defer src_dir.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var src_dir = std.Io.Dir.openDirAbsolute(io, src_dir_path, .{ .iterate = true }) catch return false;
+        defer src_dir.close(io);
         var walker = src_dir.walk(allocator) catch return false;
         defer walker.deinit();
-        while (walker.next() catch return false) |entry| {
+        while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch return false) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
             const full = std.fs.path.join(allocator, &.{ src_dir_path, entry.path }) catch continue;
@@ -499,12 +500,13 @@ pub fn guidanceDbIsUpToDate(
 
     // Walk capabilities_dir for newest mtime.
     {
-        std.fs.accessAbsolute(capabilities_dir, .{}) catch return true; // absent → skip
-        var cap_dir = std.fs.openDirAbsolute(capabilities_dir, .{ .iterate = true }) catch return true;
-        defer cap_dir.close();
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), capabilities_dir, .{}) catch return true; // absent → skip
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var cap_dir = std.Io.Dir.openDirAbsolute(io, capabilities_dir, .{ .iterate = true }) catch return true;
+        defer cap_dir.close(io);
         var walker = cap_dir.walk(allocator) catch return true;
         defer walker.deinit();
-        while (walker.next() catch return true) |entry| {
+        while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch return true) |entry| {
             if (entry.kind != .file) continue;
             const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
             defer allocator.free(full);
@@ -557,7 +559,7 @@ pub fn syncGuidanceDb(
 
     // cfg.capabilities_dir is now an absolute path (resolved in config loader).
     const cap_dir_abs: ?[]const u8 = blk: {
-        std.fs.accessAbsolute(cfg.capabilities_dir, .{}) catch break :blk null;
+        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), cfg.capabilities_dir, .{}) catch break :blk null;
         break :blk allocator.dupe(u8, cfg.capabilities_dir) catch break :blk null;
     };
     defer if (cap_dir_abs) |p| allocator.free(p);
@@ -626,7 +628,7 @@ pub fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) !void {
     const aliases_path = try std.fs.path.join(allocator, &.{ guidance_dir, "semantic-aliases.json" });
     defer allocator.free(aliases_path);
 
-    std.fs.cwd().access(aliases_path, .{}) catch |err| {
+    std.Io.Dir.cwd().access(aliases_path, .{}) catch |err| {
         if (err == error.FileNotFound) {
             if (verbose) std.debug.print("semantic-aliases: {s} not found, using default aliases\n", .{aliases_path});
             // Create a minimal default aliases file
@@ -653,7 +655,7 @@ pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8, caps_sync_
 
 /// Generates a Zig implementation for the sync engine using an allocator and provided generation arguments.
 pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?CapabilitiesSyncFn) !void {
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     var paths = try resolveGenPaths(allocator, ga, cwd);
@@ -700,12 +702,11 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         } else {
             const src_scan_dir = try std.fs.path.join(allocator, &.{ paths.workspace, "src" });
             defer allocator.free(src_scan_dir);
-            var dir = std.fs.openDirAbsolute(src_scan_dir, .{ .iterate = true }) catch null;
+            var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_scan_dir, .{ .iterate = true }) catch null;
             if (dir) |*d| {
-                defer d.close();
                 var walker = try d.walk(allocator);
                 defer walker.deinit();
-                while (try walker.next()) |entry| {
+                while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
                     if (entry.kind != .file) continue;
                     if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
                     const abs = try std.fs.path.join(allocator, &.{ src_scan_dir, entry.path });
@@ -798,7 +799,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         }
 
         // Collect stale files only.
-        var stale: std.ArrayList([]const u8) = .{};
+        var stale: std.ArrayList([]const u8) = .empty;
         defer stale.deinit(allocator);
         for (zig_files) |src_abs| {
             const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
@@ -837,7 +838,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     // registry (MarkdownPlugin) and processed via the external-provider path.
     const builtin_exts = [_][]const u8{".zig"};
     {
-        var all_builtin: std.ArrayList([]const u8) = .{};
+        var all_builtin: std.ArrayList([]const u8) = .empty;
         defer {
             for (all_builtin.items) |p| allocator.free(p);
             all_builtin.deinit(allocator);
@@ -852,7 +853,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         }
 
         // Filter to stale only.
-        var stale: std.ArrayList([]const u8) = .{};
+        var stale: std.ArrayList([]const u8) = .empty;
         defer stale.deinit(allocator);
         var missing_count: usize = 0;
         var newer_count: usize = 0;
@@ -869,7 +870,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
                 try stale.append(allocator, src_abs);
                 // Classify reason: missing JSON or source newer than JSON
                 if (!ga.force) {
-                    if (std.fs.accessAbsolute(json_path, .{})) {
+                    if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path, .{})) {
                         // JSON exists, so file is stale because source is newer
                         newer_count += 1;
                     } else |_| {
@@ -910,12 +911,13 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
             const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
             defer allocator.free(src_abs);
 
-            var dir = std.fs.openDirAbsolute(src_abs, .{ .iterate = true }) catch continue;
-            defer dir.close();
+            const io = std.Io.Threaded.global_single_threaded.io();
+            var dir = std.Io.Dir.openDirAbsolute(io, src_abs, .{ .iterate = true }) catch continue;
+            defer dir.close(io);
             var walker = try dir.walk(allocator);
             defer walker.deinit();
 
-            while (try walker.next()) |entry| {
+            while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
                 if (entry.kind != .file) continue;
                 const ext = std.fs.path.extension(entry.basename);
                 if (ext.len == 0) continue;
@@ -1025,8 +1027,9 @@ pub fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8,
     const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return;
     defer allocator.free(src_dir_path);
 
-    var src_dir = std.fs.openDirAbsolute(src_dir_path, .{ .iterate = true }) catch return;
-    defer src_dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var src_dir = std.Io.Dir.openDirAbsolute(io, src_dir_path, .{ .iterate = true }) catch return;
+    defer src_dir.close(io);
     var walker = src_dir.walk(allocator) catch return;
     defer walker.deinit();
 
@@ -1034,7 +1037,7 @@ pub fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8,
     var ok: usize = 0;
     var bad: usize = 0;
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -1073,8 +1076,9 @@ pub fn postProcessCommentSync(
     const json_src_dir = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return 0;
     defer allocator.free(json_src_dir);
 
-    var src_dir = std.fs.openDirAbsolute(json_src_dir, .{ .iterate = true }) catch return 0;
-    defer src_dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var src_dir = std.Io.Dir.openDirAbsolute(io, json_src_dir, .{ .iterate = true }) catch return 0;
+    defer src_dir.close(io);
     var walker = src_dir.walk(allocator) catch return 0;
     defer walker.deinit();
 
@@ -1084,7 +1088,7 @@ pub fn postProcessCommentSync(
     // Collect files that have generated comments.
     var modified_count: usize = 0;
 
-    while (walker.next() catch null) |entry| {
+    while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
 
@@ -1102,18 +1106,11 @@ pub fn postProcessCommentSync(
             continue;
         };
 
-        const source = std.fs.cwd().readFileAllocOptions(
-            allocator,
-            src_abs,
-            10 * 1024 * 1024,
-            null,
-            .@"1",
-            0,
-        ) catch |err| {
+        const source = std.Io.Dir.cwd().readFileAlloc(io, src_abs, allocator, .limited(10 * 1024 * 1024)) catch |err| {
             if (err == error.FileNotFound) {
                 // Source file was deleted — the JSON is an orphan.  Remove it so
                 // discover-capability-sources cannot emit stale AUTO-SOURCES entries.
-                std.fs.deleteFileAbsolute(json_path) catch {};
+                std.Io.Dir.deleteFileAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path) catch {};
                 if (verbose) std.debug.print(
                     "post-process: removed orphaned JSON for deleted source {s}\n",
                     .{src_abs},
@@ -1221,14 +1218,14 @@ pub fn postProcessCommentSync(
 
         if (source_changed) {
             // Write modified source.
-            const file = std.fs.createFileAbsolute(src_abs, .{ .truncate = true }) catch |err| {
+            const file = std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), src_abs, .{ .truncate = true }) catch |err| {
                 std.debug.print("post-process: WARN: cannot write {s}: {s}\n", .{ src_abs, @errorName(err) });
                 allocator.free(src_abs);
                 allocator.free(source);
                 store.freeGuidanceDoc(doc);
                 continue;
             };
-            defer file.close();
+            defer file.close(io);
             try file.writeAll(current_source);
             modified_count += 1;
 
@@ -1287,7 +1284,7 @@ pub fn runPhaseCommand(
     argv_template: []const []const u8,
     file_path: []const u8,
 ) !bool {
-    var argv: std.ArrayList([]const u8) = .{};
+    var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
     for (argv_template) |tok| {
         try argv.append(allocator, if (std.mem.eql(u8, tok, "{file}")) file_path else tok);
@@ -1301,19 +1298,20 @@ pub fn collectFilesWithExts(
     dir_abs: []const u8,
     exts: []const []const u8,
 ) ![][]const u8 {
-    var results: std.ArrayList([]const u8) = .{};
+    var results: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (results.items) |p| allocator.free(p);
         results.deinit(allocator);
     }
 
-    var dir = std.fs.openDirAbsolute(dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
-    defer dir.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.openDirAbsolute(io, dir_abs, .{ .iterate = true }) catch return results.toOwnedSlice(allocator);
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .file) continue;
         if (std.mem.endsWith(u8, entry.basename, "_tests.zig")) continue;
         const ext = std.fs.path.extension(entry.basename);

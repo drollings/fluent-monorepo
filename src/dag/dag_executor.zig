@@ -146,7 +146,7 @@ pub const DagExecutor = struct {
         defer pool.deinit();
 
         // Find all nodes with no dependencies (input set).
-        var ready: std.ArrayListUnmanaged(i64) = .{};
+        var ready: std.ArrayListUnmanaged(i64) = .empty;
         defer ready.deinit(self.allocator);
 
         {

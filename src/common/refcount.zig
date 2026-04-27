@@ -197,7 +197,7 @@ test "RefCounted: multiple clones maintain correct count" {
 }
 
 test "RefCounted: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
 
     var rc = try RefCounted([]const u8).init(gpa.allocator(), "hello");

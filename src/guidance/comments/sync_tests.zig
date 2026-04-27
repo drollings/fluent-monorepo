@@ -31,9 +31,10 @@ test "processFile_insertsCommentForMissingFn - plumbing with no enhancer" {
         \\pub fn myFunc() void {}
         \\
     ;
+    const io = std.Io.Threaded.global_single_threaded.io();
     const src_file = try tmp.dir.createFile("test_fn.zig", .{});
     try src_file.writeAll(source);
-    src_file.close();
+    src_file.close(io);
 
     // Resolve absolute path to the temp file.
     var buf: [std.fs.max_path_bytes]u8 = undefined;
@@ -66,8 +67,9 @@ test "processFile_skipsUpToDate - incremental mode" {
         \\
     ;
     {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const f = try tmp.dir.createFile("uptodate.zig", .{});
-        defer f.close();
+        defer f.close(io);
         try f.writeAll(source);
     }
 
@@ -79,8 +81,9 @@ test "processFile_skipsUpToDate - incremental mode" {
     // Create the guidance JSON with a newer mtime by writing it after the source.
     const json_path_rel = "uptodate.zig.json";
     {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const jf = try tmp.dir.createFile(json_path_rel, .{});
-        defer jf.close();
+        defer jf.close(io);
         try jf.writeAll("{\"meta\":{\"module\":\"uptodate\",\"source\":\"\"},\"members\":[]}");
     }
 
@@ -107,8 +110,9 @@ test "processFile_bottomUpOrder - higher line processed first" {
         \\
     ;
     {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const f = try tmp.dir.createFile("two_fns.zig", .{});
-        defer f.close();
+        defer f.close(io);
         try f.writeAll(source);
     }
 
@@ -136,8 +140,9 @@ test "processFile_skipsPrivateFns - no comment for private fn" {
         \\
     ;
     {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const f = try tmp.dir.createFile("private.zig", .{});
-        defer f.close();
+        defer f.close(io);
         try f.writeAll(source);
     }
 

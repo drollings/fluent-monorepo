@@ -53,7 +53,7 @@ pub fn synthesize(
     const is_long_query = word_count >= 5;
 
     // M8: Collect source file paths from stages for grounding
-    var sources: std.ArrayList([]const u8) = .{};
+    var sources: std.ArrayList([]const u8) = .empty;
     defer sources.deinit(allocator);
     {
         var seen_src: std.StringHashMapUnmanaged(void) = .empty;
@@ -67,19 +67,19 @@ pub fn synthesize(
     }
 
     // Collect detail content (from module documentation)
-    var detail_buf: std.ArrayList(u8) = .{};
-    defer detail_buf.deinit(allocator);
-    const dw = detail_buf.writer(allocator);
+    var detail_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer detail_buf_aw.deinit();
+    const dw = &detail_buf_aw.writer;
 
     // Collect prose content (from comments)
-    var prose_buf: std.ArrayList(u8) = .{};
-    defer prose_buf.deinit(allocator);
-    const pw = prose_buf.writer(allocator);
+    var prose_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer prose_buf_aw.deinit();
+    const pw = &prose_buf_aw.writer;
 
     // Collect code snippets
-    var code_buf: std.ArrayList(u8) = .{};
-    defer code_buf.deinit(allocator);
-    const cw = code_buf.writer(allocator);
+    var code_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer code_buf_aw.deinit();
+    const cw = &code_buf_aw.writer;
 
     var detail_count: usize = 0;
     var prose_count: usize = 0;
@@ -113,21 +113,20 @@ pub fn synthesize(
         }
     }
 
-    if (detail_buf.items.len == 0 and prose_buf.items.len == 0) {
+    if (detail_buf_aw.written().len == 0 and prose_buf_aw.written().len == 0) {
         // For long queries, still attempt synthesis with just the query text
         // and code snippets (if any). Don't bail out early.
-        if (!is_long_query and code_buf.items.len == 0) {
+        if (!is_long_query and code_buf_aw.written().len == 0) {
             return .{ .summary = null, .followup_keywords = null };
         }
     }
 
-    var full_prompt: std.ArrayList(u8) = .{};
-    defer full_prompt.deinit(allocator);
-    const fw = full_prompt.writer(allocator);
+    var full_prompt_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer full_prompt_aw.deinit();
 
     if (is_direct) {
         // ── Brief summary for direct lookup ─────────────────────────────────────
-        try fw.print(
+        try full_prompt_aw.writer.print(
             \\You are a code documentation assistant. Write a brief summary.
             \\
             \\Query: {s}
@@ -172,7 +171,7 @@ pub fn synthesize(
             const kw_text = trimmed[kw_pos + "KEYWORDS:".len ..];
             const kw_trimmed = std.mem.trim(u8, kw_text, " \t\n\r");
 
-            var kw_list: std.ArrayList([]const u8) = .{};
+            var kw_list: std.ArrayList([]const u8) = .empty;
             errdefer {
                 for (kw_list.items) |k| allocator.free(k);
                 kw_list.deinit(allocator);
@@ -206,15 +205,13 @@ pub fn synthesize(
     // is_long_query already computed at function start
 
     // M8: Build source list for grounding (prevents hallucination)
-    var sources_buf: std.ArrayList(u8) = .{};
-    defer sources_buf.deinit(allocator);
-    if (sources.items.len > 0) {
-        const sw = sources_buf.writer(allocator);
+    var sources_buf_aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer sources_buf_aw.deinit();
+        const sw = &sources_buf_aw.writer;
         try sw.writeAll("Source files referenced:\n");
         for (sources.items) |src| {
             try sw.print("- {s}\n", .{src});
         }
-    }
 
     if (is_long_query) {
         // Enhanced synthesis for long queries with structured sections + grounding
@@ -317,7 +314,7 @@ pub fn synthesize(
         const kw_text = trimmed[kw_pos + "KEYWORDS:".len ..];
         const kw_trimmed = std.mem.trim(u8, kw_text, " \t\n\r");
 
-        var kw_list: std.ArrayList([]const u8) = .{};
+        var kw_list: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (kw_list.items) |k| allocator.free(k);
             kw_list.deinit(allocator);
@@ -352,7 +349,7 @@ pub fn extractProseSources(
     allocator: std.mem.Allocator,
     stages: []const types.Stage,
 ) ![]const []const u8 {
-    var out: std.ArrayList([]const u8) = .{};
+    var out: std.ArrayList([]const u8) = .empty;
     errdefer out.deinit(allocator);
     for (stages) |s| {
         if (s.kind == .prose or s.kind == .insight) {
@@ -370,7 +367,7 @@ pub fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) ![]
         "does not exist", "nothing else", "none are", "none were",
     };
 
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
 
     var line_it = std.mem.splitScalar(u8, text, '\n');

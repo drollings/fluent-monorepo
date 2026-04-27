@@ -24,19 +24,24 @@ const todo_mod = @import("../todo.zig");
 
 /// Compares two directories, returning differences in a Zig slice.
 fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) ![]u8 {
+    const io = std.Io.Threaded.global_single_threaded.io();
     const argv: []const []const u8 = if (staged)
         &.{ "git", "diff", "--staged" }
     else
         &.{ "git", "diff" };
 
-    var child = std.process.Child.init(argv, allocator);
-    child.cwd = cwd;
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    const output = try child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
-    _ = try child.wait();
-    return output;
+    const result = try std.process.run(allocator, io, .{
+        .argv = argv,
+        .cwd = .{ .path = cwd },
+    });
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
+    if (result.term != .exited or result.term.exited != 0) {
+        return error.GitDiffFailed;
+    }
+    return result.stdout;
 }
 
 /// Splits a diff array into output slices using a specified allocator.
@@ -241,7 +246,6 @@ fn generateCommitMessage(
 
                 var combined: std.ArrayList(u8) = .empty;
                 defer combined.deinit(allocator);
-                const cw = combined.writer(allocator);
 
                 for (code_chunks.items) |chunk| {
                     if (combined.items.len >= TOTAL_CAP) break;
@@ -259,24 +263,41 @@ fn generateCommitMessage(
                         }
 
                         if (members.len > 0) {
-                            try cw.print("### Functions in {s}:\n", .{rel_path});
+                            try combined.appendSlice(allocator, "### Functions in ");
+                            try combined.appendSlice(allocator, rel_path);
+                            try combined.appendSlice(allocator, ":\n");
                             for (members) |m| {
                                 if (m.line) |ln| {
-                                    try cw.print("- {s} (line {d})", .{ m.name, ln });
+                                    try combined.appendSlice(allocator, "- ");
+                                    try combined.appendSlice(allocator, m.name);
+                                    try combined.appendSlice(allocator, " (line ");
+                                    try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 10) % 10 + '0')));
+                                    if (ln >= 10) {
+                                        try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 100) % 10 + '0')));
+                                        if (ln >= 100) {
+                                            try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 1000) % 10 + '0')));
+                                        }
+                                    }
+                                    try combined.appendSlice(allocator, ")\n");
                                 } else {
-                                    try cw.print("- {s}", .{m.name});
+                                    try combined.appendSlice(allocator, "- ");
+                                    try combined.appendSlice(allocator, m.name);
+                                    try combined.append(allocator, '\n');
                                 }
                                 if (m.comment.len > 0) {
                                     const end = std.mem.indexOfScalar(u8, m.comment, '.') orelse m.comment.len;
                                     const snippet = m.comment[0..@min(end + 1, @min(m.comment.len, 120))];
-                                    try cw.print(": {s}", .{snippet});
+                                    try combined.appendSlice(allocator, ": ");
+                                    try combined.appendSlice(allocator, snippet);
+                                    try combined.append(allocator, '\n');
                                 } else if (m.signature.len > 0) {
                                     const snippet = m.signature[0..@min(m.signature.len, 80)];
-                                    try cw.print(": `{s}`", .{snippet});
+                                    try combined.appendSlice(allocator, ": `");
+                                    try combined.appendSlice(allocator, snippet);
+                                    try combined.appendSlice(allocator, "`\n");
                                 }
-                                try cw.writeByte('\n');
                             }
-                            try cw.writeByte('\n');
+                            try combined.append(allocator, '\n');
                         }
                     }
 
@@ -341,7 +362,9 @@ fn generateCommitMessage(
                             try out.append(allocator, '\n');
                         }
                         if (guidance_json_count > 0) {
-                            try out.writer(allocator).print("* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+                            const line = try std.fmt.allocPrint(allocator, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+                            try out.appendSlice(allocator, line);
+                            allocator.free(line);
                         }
                         if (out.items.len > 0 and out.items[out.items.len - 1] == '\n')
                             out.items.len -= 1;
@@ -365,7 +388,9 @@ fn generateCommitMessage(
         any = true;
     }
     if (guidance_json_count > 0) {
-        try fallback.writer(allocator).print("* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+        const line = try std.fmt.allocPrint(allocator, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+        try fallback.appendSlice(allocator, line);
+        allocator.free(line);
         any = true;
     }
     if (any) {
@@ -378,12 +403,16 @@ fn generateCommitMessage(
 
 /// Writes a Zig message to a temporary buffer using the provided allocator.
 fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) ![]u8 {
-    const path = try std.fmt.allocPrint(allocator, "/tmp/explain_gen_commit_{d}.txt", .{std.time.timestamp()});
-    const file = try std.fs.createFileAbsolute(path, .{});
-    defer file.close();
-    try file.writeAll(msg);
-    try file.writeAll("\n\n# Lines starting with '#' will be ignored.\n");
-    try file.writeAll("# Edit the commit message above. Save and close to commit.\n");
+    const path = try std.fmt.allocPrint(allocator, "/tmp/explain_gen_commit_{d}.txt", .{@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s)});
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = try std.Io.Dir.createFileAbsolute(io, path, .{});
+    defer file.close(io);
+    var wbuf: [4096]u8 = undefined;
+    var fw = file.writer(io, &wbuf);
+    try fw.interface.writeAll(msg);
+    try fw.interface.writeAll("\n\n# Lines starting with '#' will be ignored.\n");
+    try fw.interface.writeAll("# Edit the commit message above. Save and close to commit.\n");
+    try fw.interface.flush();
     return path;
 }
 
@@ -430,7 +459,7 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const cwd = try std.process.getCwdAlloc(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
     defer allocator.free(cwd);
 
     const default_guidance_dir: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
@@ -514,35 +543,32 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const tmp_path = try writeTmpCommitMsg(allocator, commit_msg);
     defer {
-        std.fs.deleteFileAbsolute(tmp_path) catch {};
+        std.Io.Dir.deleteFileAbsolute(std.Io.Threaded.global_single_threaded.io(), tmp_path) catch {};
         allocator.free(tmp_path);
     }
 
+    const io = std.Io.Threaded.global_single_threaded.io();
     const mtime_before: i128 = blk: {
-        const f = std.fs.openFileAbsolute(tmp_path, .{}) catch break :blk 0;
-        defer f.close();
-        const stat = f.stat() catch break :blk 0;
-        break :blk stat.mtime;
+        const f = std.Io.Dir.openFileAbsolute(io, tmp_path, .{}) catch break :blk 0;
+        defer f.close(io);
+        const stat = f.stat(io) catch break :blk 0;
+        break :blk @as(i128, stat.mtime.nanoseconds);
     };
 
-    const editor = std.process.getEnvVarOwned(allocator, "EDITOR") catch
-        std.process.getEnvVarOwned(allocator, "VISUAL") catch
-        try allocator.dupe(u8, "vi");
+    const editor = blk: {
+        if (std.c.getenv("EDITOR")) |e| break :blk try allocator.dupe(u8, std.mem.span(e));
+        if (std.c.getenv("VISUAL")) |e| break :blk try allocator.dupe(u8, std.mem.span(e));
+        break :blk try allocator.dupe(u8, "vi");
+    };
     defer allocator.free(editor);
 
-    var editor_child = std.process.Child.init(&.{ editor, tmp_path }, allocator);
-    editor_child.cwd = cwd;
-    const editor_result = try editor_child.spawnAndWait();
-    if (editor_result != .Exited or editor_result.Exited != 0) {
-        std.debug.print("Editor exited with non-zero status. Aborting commit.\n", .{});
-        return;
-    }
+    _ = try std.process.run(allocator, io, .{ .argv = &.{ editor, tmp_path }, .cwd = .{ .path = cwd } });
 
     const mtime_after: i128 = blk: {
-        const f = std.fs.openFileAbsolute(tmp_path, .{}) catch break :blk 0;
-        defer f.close();
-        const stat = f.stat() catch break :blk 0;
-        break :blk stat.mtime;
+        const f = std.Io.Dir.openFileAbsolute(io, tmp_path, .{}) catch break :blk 0;
+        defer f.close(io);
+        const stat = f.stat(io) catch break :blk 0;
+        break :blk @as(i128, stat.mtime.nanoseconds);
     };
 
     if (mtime_after == mtime_before) {
@@ -550,9 +576,10 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    const edited = try std.fs.openFileAbsolute(tmp_path, .{});
-    defer edited.close();
-    const raw_msg = try edited.readToEndAlloc(allocator, 64 * 1024);
+    const raw_msg = std.Io.Dir.cwd().readFileAlloc(io, tmp_path, allocator, .limited(64 * 1024)) catch {
+        std.debug.print("Commit message is empty. Aborting.\n", .{});
+        return;
+    };
     defer allocator.free(raw_msg);
 
     var final_parts: std.ArrayList([]const u8) = .empty;
@@ -584,24 +611,26 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         );
     }
 
-    var commit_child = std.process.Child.init(&.{ "git", "commit", "-m", final_msg }, allocator);
-    commit_child.cwd = cwd;
-    const commit_result = try commit_child.spawnAndWait();
-    if (commit_result == .Exited and commit_result.Exited == 0) {
+    const commit_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
+        .argv = &.{ "git", "commit", "-m", final_msg },
+        .cwd = .{ .path = cwd },
+    });
+    if (commit_result.term == .exited and commit_result.term.exited == 0) {
         std.debug.print("Committed successfully.\n", .{});
 
         if (cl_status.item_dir) |item_dir| {
-            const hash: []const u8 = blk: {
-                var hash_child = std.process.Child.init(&.{ "git", "rev-parse", "HEAD" }, allocator);
-                hash_child.stdout_behavior = .Pipe;
-                hash_child.stderr_behavior = .Ignore;
-                hash_child.cwd = cwd;
-                hash_child.spawn() catch break :blk "";
-                const out = hash_child.stdout.?.readToEndAlloc(allocator, 256) catch break :blk "";
-                _ = hash_child.wait() catch {};
-                break :blk std.mem.trim(u8, out, " \t\r\n");
-            };
-            defer if (hash.len > 0) allocator.free(hash);
+            const hash_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
+                .argv = &.{ "git", "rev-parse", "HEAD" },
+                .cwd = .{ .path = cwd },
+            });
+            defer {
+                allocator.free(hash_result.stdout);
+                allocator.free(hash_result.stderr);
+            }
+            const hash = if (hash_result.term == .exited and hash_result.term.exited == 0)
+                std.mem.trim(u8, hash_result.stdout, " \t\r\n")
+            else
+                "";
 
             const summary = blk: {
                 const nl = std.mem.indexOfScalar(u8, final_msg, '\n') orelse final_msg.len;

@@ -57,7 +57,7 @@ pub fn hashFile(
     path: []const u8,
     algorithm: HashAlgorithm,
 ) ![]const u8 {
-    const file = try std.fs.cwd().openFile(path, .{});
+    const file = try std.Io.Dir.cwd().openFile(path, .{});
     defer file.close();
 
     var buf: [65536]u8 = undefined;

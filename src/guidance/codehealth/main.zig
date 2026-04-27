@@ -138,7 +138,7 @@ pub fn findRedundantPairs(
         allocator.free(entries);
     }
 
-    var pairs: std.ArrayList(RedundantPair) = .{};
+    var pairs: std.ArrayList(RedundantPair) = .empty;
     errdefer {
         for (pairs.items) |p| freeRedundantPair(allocator, p);
         pairs.deinit(allocator);
@@ -604,7 +604,8 @@ pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8)
 
     // Write output.
     var out_buf: [8192]u8 = undefined;
-    var out_fw = std.fs.File.stdout().writer(&out_buf);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var out_fw = std.Io.File.stdout().writer(io, &out_buf);
     const stdout = &out_fw.interface;
 
     switch (ch_args.format) {

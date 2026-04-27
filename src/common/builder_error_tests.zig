@@ -4,7 +4,7 @@ const std = @import("std");
 const builder_error_mod = @import("builder_error.zig");
 
 test "BuilderError: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();

@@ -10,7 +10,7 @@ test "RalphState: transitions in order" {
 }
 test "QueryRecord: can be appended to ArrayList" {
     const allocator = std.testing.allocator;
-    var history: std.ArrayList(ralph_mod.QueryRecord) = .{};
+    var history: std.ArrayList(ralph_mod.QueryRecord) = .empty;
     defer {
         for (history.items) |r| allocator.free(r.query);
         history.deinit(allocator);

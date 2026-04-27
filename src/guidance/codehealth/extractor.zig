@@ -100,7 +100,7 @@ pub const CallExtractor = struct {
     /// Extract all call sites from the file in a single pass over rootDecls.
     /// The caller owns the returned slice and each CallSite's string fields.
     pub fn extractAllCalls(self: *CallExtractor) ![]CallSite {
-        var calls: std.ArrayList(CallSite) = .{};
+        var calls: std.ArrayList(CallSite) = .empty;
         errdefer {
             for (calls.items) |cs| {
                 self.allocator.free(cs.caller_fn);
@@ -247,11 +247,12 @@ pub fn extractCallsFromWorkspace(
     db: *vector.GuidanceDb,
     workspace: []const u8,
 ) !void {
-    var dir = std.fs.cwd().openDir(workspace, .{ .iterate = true }) catch |err| {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var dir = std.Io.Dir.cwd().openDir(io, workspace, .{ .iterate = true }) catch |err| {
         std.debug.print("[call_extractor] cannot open workspace '{s}': {s}\n", .{ workspace, @errorName(err) });
         return err;
     };
-    defer dir.close();
+    defer dir.close(io);
 
     var walker = try dir.walk(allocator);
     defer walker.deinit();
@@ -259,7 +260,7 @@ pub fn extractCallsFromWorkspace(
     var files_processed: usize = 0;
     var call_sites_found: usize = 0;
 
-    while (try walker.next()) |entry| {
+    while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
         if (entry.kind != .file) continue;
         if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
         if (std.mem.endsWith(u8, entry.path, "_test.zig")) continue;
@@ -267,7 +268,7 @@ pub fn extractCallsFromWorkspace(
         const abs_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ workspace, entry.path });
         defer allocator.free(abs_path);
 
-        const source_raw = std.fs.cwd().readFileAlloc(allocator, abs_path, 5 * 1024 * 1024) catch continue;
+        const source_raw = std.Io.Dir.cwd().readFileAlloc(io, abs_path, allocator, .limited(5 * 1024 * 1024)) catch continue;
         defer allocator.free(source_raw);
 
         const source = try allocator.dupeZ(u8, source_raw);

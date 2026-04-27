@@ -117,7 +117,7 @@ pub const LlmClient = struct {
             }
         }
 
-        const http_client = std.http.Client{ .allocator = allocator };
+        const http_client = std.http.Client{ .allocator = allocator, .io = std.Io.Threaded.global_single_threaded.io() };
         return .{
             .allocator = allocator,
             .config = config,
@@ -141,43 +141,41 @@ pub const LlmClient = struct {
     }
 
     pub fn complete(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) LlmError!?[]const u8 {
-        var body: std.ArrayList(u8) = .{};
+        var body: std.ArrayList(u8) = .empty;
         defer body.deinit(self.allocator);
-        const writer = body.writer(self.allocator);
 
-        // Extract model name from provider:model format (e.g., "local:code:latest" -> "code:latest")
         const model_name = LlmConfig.extractModelName(self.config.model);
-        try writer.writeAll("{\"model\":\"");
-        try writer.writeAll(model_name);
-        try writer.writeAll("\",\"messages\":[");
+        try body.appendSlice(self.allocator, "{\"model\":\"");
+        try body.appendSlice(self.allocator, model_name);
+        try body.appendSlice(self.allocator, "\",\"messages\":[");
         if (system) |sys| {
-            try writer.writeAll("{\"role\":\"system\",\"content\":\"");
-            try common.jsonWriteEscaped(writer, sys);
-            try writer.writeAll("\"},");
+            try body.appendSlice(self.allocator, "{\"role\":\"system\",\"content\":\"");
+            try common.jsonAppendEscaped(&body, self.allocator, sys);
+            try body.appendSlice(self.allocator, "\"},");
         }
-        try writer.writeAll("{\"role\":\"user\",\"content\":\"");
-        try common.jsonWriteEscaped(writer, prompt);
-        try writer.writeAll("\"}]");
+        try body.appendSlice(self.allocator, "{\"role\":\"user\",\"content\":\"");
+        try common.jsonAppendEscaped(&body, self.allocator, prompt);
+        try body.appendSlice(self.allocator, "\"}]");
 
         var temp_buf: [32]u8 = undefined;
         const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
         if (self.config.think) |think_val| {
             if (think_val) {
-                try writer.writeAll(",\"think\":true");
-                try writer.writeAll(",\"max_completion_tokens\":");
-                try writer.print("{d}", .{max_tokens});
+                try body.appendSlice(self.allocator, ",\"think\":true");
+                try body.appendSlice(self.allocator, ",\"max_completion_tokens\":");
+                try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
             } else {
-                try writer.writeAll(",\"think\":false");
-                try writer.writeAll(",\"max_tokens\":");
-                try writer.print("{d}", .{max_tokens});
+                try body.appendSlice(self.allocator, ",\"think\":false");
+                try body.appendSlice(self.allocator, ",\"max_tokens\":");
+                try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
             }
         } else {
-            try writer.writeAll(",\"max_tokens\":");
-            try writer.print("{d}", .{max_tokens});
+            try body.appendSlice(self.allocator, ",\"max_tokens\":");
+            try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
         }
-        try writer.writeAll(",\"temperature\":");
-        try writer.writeAll(temp_str);
-        try writer.writeAll(",\"stream\":false}");
+        try body.appendSlice(self.allocator, ",\"temperature\":");
+        try body.appendSlice(self.allocator, temp_str);
+        try body.appendSlice(self.allocator, ",\"stream\":false}");
 
         const url = if (self.is_openai_format) self.config.api_url else self.chat_url;
         return self.postJson(url, body.items);
@@ -408,7 +406,7 @@ pub fn isMalformedResponse(text: []const u8) bool {
     if (trimmed.len == 0) return true;
     if (llmHasDanglingEnd(trimmed)) return true;
 
-    const rtrimmed = std.mem.trimRight(u8, trimmed, " \t");
+    const rtrimmed = common.trimRight(u8, trimmed, " \t");
     if (rtrimmed.len > 0 and rtrimmed[rtrimmed.len - 1] == '?') return true;
 
     if (llmIsGenericSelfRef(trimmed)) return true;
@@ -422,7 +420,7 @@ pub fn isMalformedResponse(text: []const u8) bool {
 
 /// Checks if a Zig code snippet ends with a null byte, indicating a dangling end.
 fn llmHasDanglingEnd(body: []const u8) bool {
-    const trimmed = std.mem.trimRight(u8, body, " \t.?");
+    const trimmed = common.trimRight(u8, body, " \t.?");
     if (trimmed.len == 0) return false;
     var i: usize = trimmed.len;
     while (i > 0 and trimmed[i - 1] != ' ') i -= 1;

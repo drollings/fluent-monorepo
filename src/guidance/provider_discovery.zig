@@ -77,7 +77,7 @@ pub fn invokeProviderFile(
     json_dir: []const u8,
     extra_args: []const []const u8,
 ) !bool {
-    var argv: std.ArrayList([]const u8) = .{};
+    var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
 
     try argv.append(allocator, provider.binary);
@@ -99,7 +99,7 @@ pub fn invokeProviderScan(
     json_dir: []const u8,
     extra_args: []const []const u8,
 ) !bool {
-    var argv: std.ArrayList([]const u8) = .{};
+    var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(allocator);
 
     try argv.append(allocator, provider.binary);
@@ -119,21 +119,18 @@ pub fn invokeProviderScan(
 
 /// Checks if a given path is a valid executable file format, returning true or false.
 fn isExecutable(path: []const u8) bool {
-    // std.fs.accessAbsolute with execute mode (.read_only is available; we
-    // check for file existence + non-directory as a best-effort approach,
-    // since Zig 0.15 access() mode flags may vary by platform).
-    std.fs.accessAbsolute(path, .{}) catch return false;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    std.Io.Dir.accessAbsolute(io, path, .{}) catch return false;
     // Confirm it is a regular file (not a directory).
-    const f = std.fs.openFileAbsolute(path, .{}) catch return false;
-    defer f.close();
-    const stat = f.stat() catch return false;
+    const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return false;
+    defer f.close(io);
+    const stat = f.stat(io) catch return false;
     return stat.kind == .file;
 }
 
 /// Search for a binary path in memory using an allocator and returns the matching slice.
 fn findInPath(allocator: std.mem.Allocator, binary_name: []const u8) !?[]const u8 {
-    const path_env = std.process.getEnvVarOwned(allocator, "PATH") catch return null;
-    defer allocator.free(path_env);
+    const path_env = if (std.c.getenv("PATH")) |p| std.mem.span(p) else return null;
 
     const sep: u8 = if (@import("builtin").os.tag == .windows) ';' else ':';
     var it = std.mem.splitScalar(u8, path_env, sep);

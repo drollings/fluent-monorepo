@@ -301,7 +301,7 @@ test "ErrorGroup: wait blocks until all units complete (including post-error)" {
 
 test "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail" {
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: all-success");
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = gpa.allocator(), .n_jobs = 2 });
@@ -317,7 +317,7 @@ test "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail" {
         _ = group.wait();
     }
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: one-fail");
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = gpa.allocator(), .n_jobs = 2 });
@@ -335,7 +335,7 @@ test "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail" {
         _ = group.wait();
     }
     {
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa: std.heap.DebugAllocator(.{}) = .init;
         defer if (gpa.deinit() == .leak) @panic("leak: all-fail");
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = gpa.allocator(), .n_jobs = 2 });

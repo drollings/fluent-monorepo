@@ -13,8 +13,9 @@ test "fileNeedsProcessing: absent JSON → stale" {
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig" });
     defer std.testing.allocator.free(src_abs);
     {
-        const f = try std.fs.createFileAbsolute(src_abs, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
+        defer f.close(io);
     }
     const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig.json" });
     defer std.testing.allocator.free(json_abs);
@@ -32,8 +33,9 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig" });
     defer std.testing.allocator.free(src_abs);
     {
-        const f = try std.fs.createFileAbsolute(src_abs, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
+        defer f.close(io);
     }
 
     const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig.json" });
@@ -41,8 +43,9 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
 
     // Create JSON after source so its mtime is >= source mtime.
     {
-        const f = try std.fs.createFileAbsolute(json_abs, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, json_abs, .{});
+        defer f.close(io);
     }
 
     try std.testing.expect(!marker_mod.fileNeedsProcessing(src_abs, json_abs));
@@ -58,17 +61,19 @@ test "fileNeedsProcessing: JSON mtime = now + 1s → validated (skip)" {
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "validated.zig" });
     defer std.testing.allocator.free(src_abs);
     {
-        const f = try std.fs.createFileAbsolute(src_abs, .{});
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
         try f.sync();
-        f.close();
+        defer f.close(io);
     }
 
     // Create JSON file
     const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "validated.zig.json" });
     defer std.testing.allocator.free(json_abs);
     {
-        const f = try std.fs.createFileAbsolute(json_abs, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, json_abs, .{});
+        defer f.close(io);
     }
 
     // Use touchFileNowPlusOne to set JSON mtime to "now + 1 second" (validated pattern)
@@ -89,9 +94,10 @@ test "fileNeedsProcessing: JSON older by >1s → needs processing" {
     const json_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "stale.zig.json" });
     defer std.testing.allocator.free(json_abs);
     {
-        const f = try std.fs.createFileAbsolute(json_abs, .{});
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, json_abs, .{});
         try f.sync();
-        f.close();
+        defer f.close(io);
     }
 
     // Sleep to ensure mtime difference > 1 second
@@ -101,9 +107,10 @@ test "fileNeedsProcessing: JSON older by >1s → needs processing" {
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "stale.zig" });
     defer std.testing.allocator.free(src_abs);
     {
-        const f = try std.fs.createFileAbsolute(src_abs, .{});
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
         try f.sync();
-        f.close();
+        defer f.close(io);
     }
 
     // JSON is older than source by >1 second → needs processing
@@ -122,8 +129,9 @@ test "testsCanBeSkipped: no marker → false" {
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
     defer std.testing.allocator.free(src);
     {
-        const f = try std.fs.createFileAbsolute(src, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src, .{});
+        defer f.close(io);
     }
 
     const files = [_][]const u8{src};
@@ -139,8 +147,9 @@ test "testsCanBeSkipped: marker newer than source → true" {
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
     defer std.testing.allocator.free(src);
     {
-        const f = try std.fs.createFileAbsolute(src, .{});
-        f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src, .{});
+        defer f.close(io);
     }
 
     const marker = try marker_mod.testMarkerPath(std.testing.allocator, tmp_path);
@@ -163,8 +172,9 @@ test "testsCanBeSkipped: source newer than marker → false" {
 
     // Ensure marker mtime is flushed to filesystem
     {
-        const mf = try std.fs.openFileAbsolute(marker, .{});
-        defer mf.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const mf = try std.Io.Dir.openFileAbsolute(io, marker, .{});
+        defer mf.close(io);
         try mf.sync();
     }
 
@@ -176,9 +186,10 @@ test "testsCanBeSkipped: source newer than marker → false" {
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
     defer std.testing.allocator.free(src);
     {
-        const f = try std.fs.createFileAbsolute(src, .{});
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.createFileAbsolute(io, src, .{});
         try f.sync(); // Ensure mtime is written
-        f.close();
+        defer f.close(io);
     }
 
     const files = [_][]const u8{src};

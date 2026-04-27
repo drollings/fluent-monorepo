@@ -156,7 +156,7 @@ const TestString = struct {
 };
 
 test "Editable: string field set and get" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
@@ -847,7 +847,7 @@ test "M5: nested struct: accessor names use dot-notation" {
 }
 
 test "M5: nested struct: set via dot-notation path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const alloc = gpa.allocator();
 
@@ -910,7 +910,7 @@ test "M6: Editable.set: custom_validate rejects invalid value" {
         }
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const alloc = gpa.allocator();
 
@@ -935,7 +935,7 @@ test "M6: Editable.set: enum_values rejects invalid value" {
         }
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const alloc = gpa.allocator();
 
@@ -961,7 +961,7 @@ test "M6: Editable.set: pattern rejects invalid value" {
         }
     };
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const alloc = gpa.allocator();
 

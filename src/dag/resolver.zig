@@ -124,7 +124,7 @@ fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Targ
     }
 
     // Use an ArrayList as a head-pointer queue to avoid O(n) orderedRemove(0).
-    var queue: std.ArrayListUnmanaged(usize) = .{};
+    var queue: std.ArrayListUnmanaged(usize) = .empty;
     defer queue.deinit(self.allocator);
 
     var degree_iter = in_degree.iterator();
@@ -136,7 +136,7 @@ fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Targ
 
     std.mem.sort(usize, queue.items, {}, std.sort.asc(usize));
 
-    var result: std.ArrayListUnmanaged(*Target) = .{};
+    var result: std.ArrayListUnmanaged(*Target) = .empty;
     errdefer result.deinit(self.allocator);
 
     var head: usize = 0;
@@ -330,7 +330,7 @@ pub fn visualizeGraph(
     target_names: []const []const u8,
     allocator: std.mem.Allocator,
 ) ![]u8 {
-    var output: std.ArrayListUnmanaged(u8) = .{};
+    var output: std.ArrayListUnmanaged(u8) = .empty;
     errdefer output.deinit(allocator);
     const writer = output.writer(allocator);
 
@@ -385,7 +385,7 @@ fn printTree(
     defer self.allocator.free(new_prefix);
 
     // Collect resolved dep targets in a single pass so we know the count up-front.
-    var deps: std.ArrayListUnmanaged(*Target) = .{};
+    var deps: std.ArrayListUnmanaged(*Target) = .empty;
     defer deps.deinit(self.allocator);
 
     var iter = target.depends.iterator(.{});
@@ -451,7 +451,7 @@ test "DependencyResolver basic resolution" {
 }
 
 test "DependencyResolver GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {
@@ -732,7 +732,7 @@ test "DependencyResolver: visualizeGraph revisited node shows already shown" {
 }
 
 test "DependencyResolver: GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {
@@ -775,7 +775,7 @@ test "DependencyResolver: GPA no leaks" {
 test "getLevels: diamond DAG produces two independent levels for middle nodes" {
     // Diamond: src <- obj_a, src <- obj_b, obj_a <- bin, obj_b <- bin
     // Expected levels: [src], [obj_a, obj_b], [bin]
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     {
         var interner = StringInterner.init(allocator);

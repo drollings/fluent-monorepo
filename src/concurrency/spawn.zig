@@ -120,7 +120,7 @@ test "spawn: cancelled unit completes without hanging" {
 }
 
 test "spawn: GPA no leaks after pool.deinit" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
 
     var pool: std.Thread.Pool = undefined;

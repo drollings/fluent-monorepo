@@ -141,7 +141,7 @@ pub fn bitSetToString(
     allocator: std.mem.Allocator,
     bs: *const std.bit_set.DynamicBitSetUnmanaged,
 ) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .{};
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
     errdefer buf.deinit(allocator);
     var first = true;
     var iter = bs.iterator(.{});
@@ -334,7 +334,7 @@ test "StringInterner internAndGetBitSet" {
 }
 
 test "StringInterner GPA no leaks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
 
     {
@@ -360,7 +360,7 @@ test "StringInterner GPA no leaks" {
 test "StringInterner: concurrent intern, 8 threads" {
     // spawn 8 threads, all trying to intern the same string "hello"
     // all must return the same index, 0 leaks
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
