@@ -19,26 +19,26 @@
           "name": "loading_snapshot",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "walking",
           "is_pub": false,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "indexing",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ready",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "toString",
           "match_hash": "8c0fc5a9a0ebbd606ebd3b65b6da97094cb3bef979f2f2fff8694079ded32890",
@@ -83,8 +83,8 @@
           "returns": "IdleWatchdog",
           "is_pub": true,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "recordActivity",
           "match_hash": "6267edab84983927d0649a76116b35b13fe5a470b9906b0b03eda4133d3b37e9",
@@ -92,8 +92,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "isIdle",
           "match_hash": "902f8711be38e68af8f9041d662f363e697b4b08b12897f97034a4eac36265f4",
@@ -101,8 +101,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "watchStdin",
           "match_hash": "114ae9d86c6ba2eeeb26362ef2b78b36f8bd31711330f26afce5db4b0a113867",

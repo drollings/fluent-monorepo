@@ -28,8 +28,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -37,8 +37,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 57
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "setEmbedResult",
           "match_hash": "858849ed14ebfdd6a231f708dd79acfdd1fd8df2fec41754800e40e4accb0d4e",
@@ -46,8 +46,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 69
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "setEmbedError",
           "match_hash": "2552b4fea61744d8289c62993771bbcf061ebd0c7b13470053ce9e49df3b71ef",
@@ -55,8 +55,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 77
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
@@ -64,8 +64,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 85
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDimensions",
           "match_hash": "830c732514f31488a60e54fc79b0e2ddda15ebf03d50c93cce944edf850dded8",
@@ -73,8 +73,8 @@
           "returns": "u32",
           "is_pub": false,
           "line": 89
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbed",
           "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
@@ -82,8 +82,8 @@
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 93
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDeinit",
           "match_hash": "0120cf9de52d5494eca06d24dce3c0282cfc77180bdf455c391064ca8cb007ba",
@@ -91,8 +91,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 118
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "provider",
           "match_hash": "5491b6646e04dd92074c4bd738fbcc95be92fe65fe10246d0ee518a8e9b45aeb",
@@ -100,8 +100,8 @@
           "returns": "EmbeddingHandle",
           "is_pub": true,
           "line": 135
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "assertCallCount",
           "match_hash": "44b411a30e89914b6771976ec4f0078b911ecc135b4b6ada3f4908de9f4549e2",
@@ -109,8 +109,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 145
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "assertCalledWith",
           "match_hash": "fc15104cf7e589b52d92b472790460af0b1ee093908efa9c392888573aea57d2",
@@ -118,8 +118,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 159
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "callCount",
           "match_hash": "79bfc08c6051ac3164c5749ec8ff3bd961c560912c80ed83d8f3cef37d59116f",
@@ -154,8 +154,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 202
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getDimensions",
           "match_hash": "5ca493191daafd4e34f49edd6b3a586e2b1ffed0a546973a18743755cfcb8f8b",
@@ -163,8 +163,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 206
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "embed",
           "match_hash": "767ca53adeaa147890e1aacdab0428ab6853d1a06a3adf06317e985fd77a28c3",
@@ -172,8 +172,8 @@
           "returns": "[]f32",
           "is_pub": true,
           "line": 210
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "65024f6b129feed21f8dcbc5bb4d9e16df32f3863a9ad07aac8da6ea2991a371",

@@ -74,7 +74,7 @@ pub fn init(
         .target_type = target_type,
         .depends = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, total_bits),
         .provides = try std.bit_set.DynamicBitSetUnmanaged.initEmpty(allocator, total_bits),
-        .commands = .{},
+        .commands = .empty,
     };
 }
 
@@ -176,7 +176,7 @@ pub fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBi
 pub fn format(
     self: *const Target,
     comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
+    options: std.fmt.Options,
     writer: anytype,
 ) !void {
     _ = fmt;
@@ -552,9 +552,9 @@ test "Target: format includes name and type tag" {
     defer target.deinit(testing.allocator);
 
     var buf: [128]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try target.format("", .{}, fbs.writer());
-    const written = fbs.getWritten();
+    var w = std.Io.Writer.fixed(&buf);
+    try target.format("", .{}, &w);
+    const written = w.buffered();
 
     try testing.expect(std.mem.indexOf(u8, written, "myname") != null);
     try testing.expect(std.mem.indexOf(u8, written, "command") != null);
@@ -569,9 +569,9 @@ test "Target: format includes [essential] for essential targets" {
     target.essential = true;
 
     var buf: [128]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try target.format("", .{}, fbs.writer());
-    const written = fbs.getWritten();
+    var w = std.Io.Writer.fixed(&buf);
+    try target.format("", .{}, &w);
+    const written = w.buffered();
 
     try testing.expect(std.mem.indexOf(u8, written, "essential") != null);
 }

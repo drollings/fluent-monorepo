@@ -21,8 +21,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "handle",
           "match_hash": "9a3fbb54fff8a2af73e60ae5bd06a7815deb55b856aac92b96cf4680634fd9ab",
@@ -30,8 +30,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 45
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleMemory",
           "match_hash": "053c8c3c80ff787f09df72b9cad2912d57a29648f54c7965263f332b9df2673e",
@@ -39,8 +39,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 66
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleTodo",
           "match_hash": "08b3b31c4b0b638012aff5ef286784c7f493c5c84de9a4cbfdcf1190616395bb",
@@ -48,8 +48,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 72
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleDelegate",
           "match_hash": "d9cd99e0d640d1bffec6ed0cc34037dcb1e6a0d74b85e46cae45fbe5da4ee6ad",
@@ -57,8 +57,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 78
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleClarify",
           "match_hash": "a93428d3970606c01bed4c8565cb93798e40b26846bfd0738d66fe84ce0c2d59",

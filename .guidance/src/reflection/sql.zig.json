@@ -21,8 +21,8 @@
           "returns": "SqlBinder",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindInt64",
           "match_hash": "f06e465a1712515815110ba8537cb8c1ec569c709512bc2058058a11b343fd2c",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindDouble",
           "match_hash": "18ac4aaff6102ab8603645f02cc7939c53922dca7fffd067e899835cf94c4296",
@@ -39,8 +39,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindText",
           "match_hash": "ef978df6308d93d9f3f1f773963099a358f1e4d7da5715a828946eeb1650483e",
@@ -48,8 +48,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 69
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindTextOwned",
           "match_hash": "dac772899688d10e3b4be94d22b6c434bf2593723e903a6de2fc7f821e236565",
@@ -57,8 +57,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 76
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindBlob",
           "match_hash": "d9fe8a184a6b1bfc6daf778e1c9aa14af0be0a16223bb780303e59491c202b09",
@@ -66,8 +66,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 83
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindBlobOwned",
           "match_hash": "9930654e76deb7d1402a6e814e8228851057481f4c72993c5ae8f7dca8fb665a",
@@ -75,8 +75,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 90
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindNull",
           "match_hash": "b38445e17d602f66793325d78842502ae81bde1577c74166c4b106d82d19a786",
@@ -84,8 +84,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 97
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "bindBool",
           "match_hash": "adfead17b735afbec8e52f239cd65f856fd761f67e1ee50f7a1227175a8ad419",
@@ -93,8 +93,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 104
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "reset",
           "match_hash": "bbc35fd94e9f4a37d6407819bb08a410706347e0cd02b33ca4009fb14cfa77a3",
@@ -102,8 +102,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 108
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "step",
           "match_hash": "fc7bdda924704f3742008a3be56cd4fe20e9146cbb4ad0f1eb5df7e17e8978e0",
@@ -111,8 +111,8 @@
           "returns": "anyerror!bool",
           "is_pub": true,
           "line": 114
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "exec",
           "match_hash": "f3e290d7adc17c03ee0a64922452784c924b1c89f2450a7bdd4a49351689743a",
@@ -120,8 +120,8 @@
           "returns": "anyerror!void",
           "is_pub": true,
           "line": 128
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "finalize",
           "match_hash": "89da052ffb77f9f5996742021e68f50983a5de536597d7b1d508747efc4f074d",
@@ -148,8 +148,8 @@
           "returns": "SqlHydrator",
           "is_pub": true,
           "line": 159
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "5b3c36109104e4836b19491d787fc07228910571e564190b82c32ebb7b84a5b0",
@@ -157,8 +157,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 167
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "reset",
           "match_hash": "6d866e9d279e849999f453a3465e610a24d5559177e1ef7009c2a5cf83fbbba4",
@@ -166,8 +166,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 171
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnInt64",
           "match_hash": "9d63322b3f34a3a652ec44d0c646c44daa7b2b82a437a0af69fa493881a3e97c",
@@ -175,8 +175,8 @@
           "returns": "i64",
           "is_pub": true,
           "line": 177
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnDouble",
           "match_hash": "ce9eac3851847f051c757482bcf77dffe5f04a28470a90ed05d2dd21039b7879",
@@ -184,8 +184,8 @@
           "returns": "f64",
           "is_pub": true,
           "line": 184
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnText",
           "match_hash": "43625ee980c9d00ba4e890dd0bdbe173a504dcc1a8add6b153573796ee04a863",
@@ -193,8 +193,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 191
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnTextOwned",
           "match_hash": "ed7a01bfd5432a16115cc1ed2d2fec9572a2fb41871cf810d3eaedc0e633e8e7",
@@ -202,8 +202,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 208
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnBlob",
           "match_hash": "64bb89eac766da9076938cc3af02e8ab1d7a70642134d13b5635feb5fa0dd4c4",
@@ -211,8 +211,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 225
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnBlobOwned",
           "match_hash": "bfa95307ec62ca43a22909a0fa40d3bfa1b9cea65ef05d1b377e6d8551316327",
@@ -220,8 +220,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 238
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnBool",
           "match_hash": "587a6bf879003c677535821793a2878f27d5c51be4e60f5333ff8319e4a6192f",
@@ -229,8 +229,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 254
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "columnType",
           "match_hash": "ca58781986a6d4b4a0c667b4e6fad9292ea0202b5ddfb89db9b679cdd5ec45e6",
@@ -238,8 +238,8 @@
           "returns": "c_int",
           "is_pub": true,
           "line": 258
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "peekType",
           "match_hash": "8bf866d749ce810cae986e9ca9a67744cc9c50f7038b3782a92f639206a9a37a",
@@ -247,8 +247,8 @@
           "returns": "c_int",
           "is_pub": true,
           "line": 264
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "peekCol",
           "match_hash": "b814536e9b58c1428936ae061bf6cfa96b731167db5cd94c9001d891920f4327",
@@ -319,8 +319,8 @@
           "returns": "TableSchema",
           "is_pub": true,
           "line": 521
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "f60ed316d25f56546517416483b35973874ca74c27f0c4edb1365fb9bb32728e",
@@ -328,8 +328,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 532
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "generateInsertSql",
           "match_hash": "27edb29984df1416ad1f5bc0091a37c59cfb330a696d2d276f4b25d970d97d2a",
@@ -337,8 +337,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 536
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "generateSelectSql",
           "match_hash": "bd3012b570d37cd30de54aa65954a7fd73db0c368a831beb7cece57d66f69f50",
@@ -346,8 +346,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 554
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "generateUpdateSql",
           "match_hash": "a76e5dfeb0a276294aa26420a63bde4bda8127214bcb9946f224df745057a0b5",
@@ -355,8 +355,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 570
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "generateCreateTableSql",
           "match_hash": "187a2bc8e41dfe92f34867c08d2bb86d0c1651bdd0845ead5413cdc27b293f53",
@@ -364,8 +364,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 583
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fromAccessors",
           "match_hash": "ae4fdf5861e6a463d98d4b506197270bc1017b1cefe33ee4ee9d7ac4a432c77a",

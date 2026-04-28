@@ -157,7 +157,7 @@ pub fn topoSort(allocator: std.mem.Allocator) ![]const []const u8 {
 
     // Build per-node lists of dependents and track in-degrees.
     var in_degree = [_]usize{0} ** N;
-    var adj: [N]std.ArrayListUnmanaged(usize) = [_]std.ArrayListUnmanaged(usize){.{}} ** N;
+    var adj: [N]std.ArrayList(usize) = [_]std.ArrayList(usize){.empty} ** N;
     defer for (&adj) |*list| list.deinit(allocator);
 
     for (INGEST_TARGET_DEFS, 0..) |def, j| {

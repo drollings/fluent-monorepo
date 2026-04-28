@@ -99,7 +99,7 @@ pub const Parser = struct {
             .prefix_map = std.StringHashMap([]const u8).init(allocator),
             .base = null,
             .blank_counter = 0,
-            .queue = .{},
+            .queue = .empty,
         };
     }
 
@@ -541,16 +541,12 @@ const YAGO_TINY_PATH = "data/yago-4.5.0.2-tiny/yago-tiny.ttl";
 const YAGO_VALIDATE_MAX: usize = 100;
 
 test "YAGO 4.5 tiny: first 100 triples parse without errors" {
-    const file = std.fs.cwd().openFile(YAGO_TINY_PATH, .{}) catch |err| {
-        if (err == error.FileNotFound) return;
+    const io = std.testing.io;
+    const source = std.Io.Dir.cwd().readFileAlloc(io, YAGO_TINY_PATH, testing.allocator, .limited(32 * 1024)) catch |err| {
+        if (err == error.FileNotFound or err == error.NotFound) return;
         return err;
     };
-    defer file.close();
-
-    // 32 KB is ample for 100 YAGO triples.
-    const buf = try testing.allocator.alloc(u8, 32 * 1024);
-    defer testing.allocator.free(buf);
-    const source = buf[0..try file.read(buf)];
+    defer testing.allocator.free(source);
 
     var p = try Parser.init(testing.allocator, source);
     defer p.deinit();

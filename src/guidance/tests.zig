@@ -115,7 +115,7 @@ test "loadChangedMembers returns empty for missing JSON file" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const members = try main.loadChangedMembersPub(allocator, tmp_path, "src/nonexistent.zig", &.{});
@@ -133,11 +133,11 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     // Create .guidance/src directory structure (matching what loadChangedMembers expects)
-    try tmp.dir.makePath(".guidance/src");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance/src");
     const json_content =
         \\{
         \\  "meta": {"module": "foo", "source": "src/foo.zig", "language": "zig"},
@@ -152,9 +152,7 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile(".guidance/src/foo.zig.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/src/foo.zig.json", .data = json_content });
 
     // guidance_root should be the .guidance directory
     const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
@@ -181,10 +179,10 @@ test "loadChangedMembers filters by hunk range with context window" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance/src");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance/src");
     const json_content =
         \\{
         \\  "meta": {"module": "bar", "source": "src/bar.zig", "language": "zig"},
@@ -199,9 +197,7 @@ test "loadChangedMembers filters by hunk range with context window" {
         \\  ]
         \\}
     ;
-    const f = try tmp.dir.createFile(".guidance/src/bar.zig.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/src/bar.zig.json", .data = json_content });
 
     const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
     defer allocator.free(guidance_root);
@@ -257,15 +253,13 @@ test "loadSkillsFromJson extracts skill refs from array" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const json_content =
         \\{"skills": ["zig-current", "gof-patterns"], "members": []}
     ;
-    const f = try tmp.dir.createFile("test.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test.json", .data = json_content });
 
     const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test.json" });
     defer allocator.free(json_path);
@@ -285,15 +279,13 @@ test "loadSkillsFromJson handles object format with ref field" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const json_content =
         \\{"skills": [{"ref": "zig-current", "context": "API changes"}], "members": []}
     ;
-    const f = try tmp.dir.createFile("test2.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test2.json", .data = json_content });
 
     const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test2.json" });
     defer allocator.free(json_path);
@@ -325,15 +317,13 @@ test "loadUsedByFromJson extracts used_by array" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const json_content =
         \\{"used_by": ["src/main.zig", "src/db.zig"], "members": []}
     ;
-    const f = try tmp.dir.createFile("test3.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test3.json", .data = json_content });
 
     const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test3.json" });
     defer allocator.free(json_path);
@@ -370,7 +360,7 @@ test "loadPublicMemberNames filters public non-test members" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const json_content =
@@ -380,9 +370,7 @@ test "loadPublicMemberNames filters public non-test members" {
         \\  {"type": "test_decl", "name": "testSomething", "is_pub": true, "line": 3}
         \\]}
     ;
-    const f = try tmp.dir.createFile("test4.json", .{});
-    try f.writeAll(json_content);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test4.json", .data = json_content });
 
     const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "test4.json" });
     defer allocator.free(json_path);
@@ -461,7 +449,7 @@ test "explainGrepFile finds matching lines" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const src =
@@ -472,9 +460,7 @@ test "explainGrepFile finds matching lines" {
         \\// Test line
         \\fn bar() void {}
     ;
-    const f = try tmp.dir.createFile("test.src", .{});
-    try f.writeAll(src);
-    f.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test.src", .data = src });
 
     const file_path = try std.fs.path.join(allocator, &.{ tmp_path, "test.src" });
     defer allocator.free(file_path);
@@ -532,7 +518,7 @@ test "loadSkillPara returns null for missing skill" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const result = main.loadSkillParaPub(allocator, tmp_path, tmp_path, "nonexistent-skill");
@@ -546,17 +532,15 @@ test "loadSkillPara extracts first paragraph from SKILL.md" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     // loadSkillPara looks for SKILL.md in {guidance_dir}/skills/{name}/SKILL.md
     // or {cwd}/doc/skills/{name}/SKILL.md
     // Create skills/test-skill/SKILL.md under the guidance_dir
-    try tmp.dir.makePath("skills/test-skill");
+    try tmp.dir.createDirPath(std.testing.io, "skills/test-skill");
     const skill_content = "This is the first paragraph.\n\nThis is the second paragraph.";
-    const skill_file = try tmp.dir.createFile("skills/test-skill/SKILL.md", .{});
-    try skill_file.writeAll(skill_content);
-    skill_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "skills/test-skill/SKILL.md", .data = skill_content });
 
     // The guidance_dir should be where skills/ is located (tmp_path itself in this case)
     const result = main.loadSkillParaPub(allocator, tmp_path, tmp_path, "test-skill");
@@ -1029,9 +1013,12 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
     , .{module});
     defer allocator.free(json);
 
-    const file = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), path, .{});
-    defer file.close();
-    try file.writeAll(json);
+    const file = try std.Io.Dir.createFileAbsolute(std.testing.io, path, .{});
+    defer file.close(std.testing.io);
+    var wbuf: [512]u8 = undefined;
+    var fw = file.writer(std.testing.io, &wbuf);
+    try fw.interface.writeAll(json);
+    try fw.interface.flush();
 
     return path;
 }
@@ -1041,10 +1028,10 @@ fn writeTempGuidance(allocator: std.mem.Allocator, dir_path: []const u8, filenam
 // ---------------------------------------------------------------------------
 
 /// Writes guidance JSON data to a file path, accepting directory, filename, comments, and a flag for member inclusion.
-fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8, has_member: bool) !void {
-    var buf: [2048]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const w = fbs.writer();
+fn writeGuidanceJson(dir: std.Io.Dir, filename: []const u8, comment: ?[]const u8, has_member: bool) !void {
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    const w = &aw.writer;
     try w.writeAll("{\"meta\":{\"module\":\"test\",\"source\":\"src/test.zig\"}");
     if (comment) |c| {
         try w.print(",\"comment\":\"{s}\"", .{c});
@@ -1055,10 +1042,7 @@ fn writeGuidanceJson(dir: std.fs.Dir, filename: []const u8, comment: ?[]const u8
         try w.writeAll(",\"members\":[]");
     }
     try w.writeByte('}');
-    const content = fbs.getWritten();
-    const f = try dir.createFile(filename, .{});
-    defer f.close();
-    try f.writeAll(content);
+    try dir.writeFile(std.testing.io, .{ .sub_path = filename, .data = aw.written() });
 }
 
 test "infillJsonFile returns false when no enhancer configured" {
@@ -1068,7 +1052,7 @@ test "infillJsonFile returns false when no enhancer configured" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         try writeGuidanceJson(tmp.dir, "a.zig.json", null, false);
@@ -1091,7 +1075,7 @@ test "infillJsonFile returns false when no enhancer" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         try writeGuidanceJson(tmp.dir, "b.zig.json", null, false);
@@ -1114,7 +1098,7 @@ test "infillJsonFile returns false for nonexistent path" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         const json_path = try std.fs.path.join(allocator, &.{ tmp_path, "does_not_exist.json" });
@@ -1136,7 +1120,7 @@ test "infillAllJson returns 0 when no enhancer configured" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         try writeGuidanceJson(tmp.dir, "c.zig.json", null, true);
@@ -1159,7 +1143,7 @@ test "infillAllJson skips files in skip_paths" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         try writeGuidanceJson(tmp.dir, "e.zig.json", null, true);
@@ -1186,13 +1170,11 @@ test "infillAllJson ignores non-json files" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
-        const f = try tmp.dir.createFile("README.md", .{});
-        f.close();
-        const g = try tmp.dir.createFile("notes.txt", .{});
-        g.close();
+        try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "README.md", .data = "" });
+        try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "notes.txt", .data = "" });
 
         var processor = sync_mod.SyncProcessor.init(allocator, tmp_path, tmp_path, false, false);
         defer processor.deinit();
@@ -1213,7 +1195,7 @@ test "infillAllJson processes .py.json files alongside .zig.json files" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         try writeGuidanceJson(tmp.dir, "module.zig.json", "existing", false);
@@ -1242,7 +1224,7 @@ test "loadConfig falls back to built-in defaults when no config file exists" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     // No config file in tmp_path — must use built-in defaults.
@@ -1289,7 +1271,7 @@ test "loadConfig deinit releases all memory (no leaks)" {
     {
         var tmp = std.testing.tmpDir(.{});
         defer tmp.cleanup();
-        const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+        const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
         defer allocator.free(tmp_path);
 
         var cfg = try config_mod.loadConfig(allocator, tmp_path);
@@ -1304,17 +1286,15 @@ test "loadConfig reads guidance_dir from project config JSON" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     // Write a config JSON with a custom guidance_dir.
-    try tmp.dir.makePath(".guidance");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
     const cfg_json =
         \\{"guidance_dir": "custom-guidance", "models": {}, "providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}}
     ;
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll(cfg_json);
-    cfg_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = cfg_json });
 
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
@@ -1331,16 +1311,14 @@ test "loadConfig reads src_dirs array from JSON" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
     const cfg_json =
         \\{"src_dirs": ["src", "lib", "tools"]}
     ;
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll(cfg_json);
-    cfg_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = cfg_json });
 
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
@@ -1358,16 +1336,14 @@ test "loadConfig reads models.fast for model_fast" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
     const cfg_json =
         \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:other:latest", "fast": "local:mymodel:v2"}}
     ;
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll(cfg_json);
-    cfg_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = cfg_json });
 
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
@@ -1383,16 +1359,14 @@ test "loadConfig falls back to models.default when fast absent" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
     const cfg_json =
         \\{"providers": {"local": {"base_url": "http://localhost:11434", "chat_endpoint": "/v1/chat/completions"}}, "models": {"default": "local:default-model:latest"}}
     ;
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll(cfg_json);
-    cfg_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = cfg_json });
 
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
@@ -1407,16 +1381,14 @@ test "loadConfig constructs providers with base_url and chat_endpoint" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance");
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
     const cfg_json =
         \\{"providers": {"myprovider": {"base_url": "http://myhost:9999", "chat_endpoint": "/v1/chat/completions"}}}
     ;
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll(cfg_json);
-    cfg_file.close();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = cfg_json });
 
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
     defer cfg.deinit();
@@ -1434,13 +1406,11 @@ test "loadConfig with invalid JSON falls back to defaults" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    try tmp.dir.makePath(".guidance");
-    const cfg_file = try tmp.dir.createFile(".guidance/guidance-config.json", .{});
-    try cfg_file.writeAll("not valid json {{{{");
-    cfg_file.close();
+    try tmp.dir.createDirPath(std.testing.io, ".guidance");
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/guidance-config.json", .data = "not valid json {{{{" });
 
     // Must not return an error — falls back to built-in defaults.
     var cfg = try config_mod.loadConfig(allocator, tmp_path);
@@ -1647,14 +1617,9 @@ test "reportCapabilityLifecycle: removed caps detected from previous index" {
     const prev_json =
         \\{"version":1,"capabilities":[{"name":"old-cap","anchors":["OldStruct"],"source":"old-cap/CAPABILITY.md"}]}
     ;
-    const idx_file = try tmp.dir.createFile("capability-index.json", .{});
-    defer idx_file.close();
-    var wbuf: [512]u8 = undefined;
-    var fw = idx_file.writer(&wbuf);
-    try fw.interface.writeAll(prev_json);
-    try fw.interface.flush();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "capability-index.json", .data = prev_json });
 
-    const idx_path = try tmp.dir.realpathAlloc(allocator, "capability-index.json");
+    const idx_path = try tmp.dir.realPathFileAlloc(std.testing.io, "capability-index.json", allocator);
     defer allocator.free(idx_path);
 
     // Current: "old-cap" gone, "new-cap" added
@@ -1685,14 +1650,9 @@ test "reportCapabilityLifecycle: updated cap detected when anchors change" {
     const prev_json =
         \\{"version":1,"capabilities":[{"name":"my-cap","anchors":["OldAnchor"],"source":"my-cap/CAPABILITY.md"}]}
     ;
-    const idx_file = try tmp.dir.createFile("capability-index.json", .{});
-    defer idx_file.close();
-    var wbuf: [512]u8 = undefined;
-    var fw = idx_file.writer(&wbuf);
-    try fw.interface.writeAll(prev_json);
-    try fw.interface.flush();
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "capability-index.json", .data = prev_json });
 
-    const idx_path = try tmp.dir.realpathAlloc(allocator, "capability-index.json");
+    const idx_path = try tmp.dir.realPathFileAlloc(std.testing.io, "capability-index.json", allocator);
     defer allocator.free(idx_path);
 
     // Same cap name but different anchors → UPDATED

@@ -22,8 +22,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -31,8 +31,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "extract",
           "match_hash": "80e5d089a5f5557a6eec765ac9ba5e8c3ff7f930072b4f4f4fec8b0719d9acf9",
@@ -40,8 +40,8 @@
           "returns": "[]Member",
           "is_pub": true,
           "line": 40
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "walkNode",
           "match_hash": "0ea5a4fe6665e4e87eeb418b7d28b25b8e2b8ab45bf7e896586735d52fea744b",
@@ -49,8 +49,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 46
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractMember",
           "match_hash": "19e16733c836f588704d5c89120f5169d29ab1cd9d2afefccd2d139453632534",
@@ -58,8 +58,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "getNodeType",
           "match_hash": "3d6bc025cbdb0e8d36ae4b3dde686d76bd80b7a0983813788b6cf8e23e1ac927",
@@ -67,8 +67,8 @@
           "returns": "?MemberType",
           "is_pub": false,
           "line": 115
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "getNodeName",
           "match_hash": "0ca1ce998cc38120e3574f40b2a68afc7fba402fdacb3696d073038e937c7f92",
@@ -76,8 +76,8 @@
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 172
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "getSignature",
           "match_hash": "0ab3e294b9b1d5b00fd3d5dd632b02ec31bdcfda33112eb7104ac51c8dfc919d",
@@ -85,8 +85,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 200
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractParams",
           "match_hash": "4d57e7862f03e3f3e9e6468b65fa13e2c6a0b5c96124469e77de65077ae0e229",
@@ -94,8 +94,8 @@
           "returns": "[]const Param",
           "is_pub": false,
           "line": 231
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractReturnType",
           "match_hash": "0223fb7ae5e4734b1e906fc0c947eea38f823ef86065cb7933162ddd46b198ba",
@@ -103,8 +103,8 @@
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 239
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isPublic",
           "match_hash": "7e3157898d50a7a517d4cc9db7f3aaa069f5d2b1be86a5d4559884fc490e307b",
@@ -112,8 +112,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 248
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "nodeToSlice",
           "match_hash": "4304c501fa782bf373080dce08d368333baafaac3e985beb6163ac6422ef1350",

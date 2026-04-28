@@ -27,14 +27,14 @@
           "name": "ai",
           "is_pub": false,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "human",
           "is_pub": false,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "json",
           "is_pub": false,
@@ -172,13 +172,13 @@
       "signature": "fn runCallExtraction(allocator: std.mem.Allocator, db: *vector.GuidanceDb, workspace: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 623
+      "line": 624
     },
     {
       "type": "test_decl",
       "name": "codehealth: isGenericName recognises common names",
       "is_pub": false,
-      "line": 639
+      "line": 640
     }
   ]
 }

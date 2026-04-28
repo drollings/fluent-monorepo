@@ -93,10 +93,11 @@ pub fn writeFrequencyTable(dir_path: []const u8, table: *const FrequencyTable) !
     var buf: [4096]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "{s}/pair_freq.bin", .{dir_path});
 
-    const f = try std.Io.Dir.cwd().createFile(path, .{});
-    defer f.close();
+    const _fio = std.Io.Threaded.global_single_threaded.io();
+    const f = try std.Io.Dir.cwd().createFile(_fio, path, .{});
+    defer f.close(_fio);
     var fw_buf: [4096]u8 = undefined;
-    var fw = f.writer(&fw_buf);
+    var fw = f.writer(_fio, &fw_buf);
     const w = &fw.interface;
 
     const MAGIC: u32 = 0x46524551;
@@ -113,7 +114,8 @@ pub fn readFrequencyTable(dir_path: []const u8) !?FrequencyTable {
     var buf: [4096]u8 = undefined;
     const path = try std.fmt.bufPrint(&buf, "{s}/pair_freq.bin", .{dir_path});
 
-    const content = std.Io.Dir.cwd().readFileAlloc(std.heap.page_allocator, path, std.math.maxInt(usize)) catch return null;
+    const _fio = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(_fio, path, std.heap.page_allocator, .unlimited) catch return null;
     defer std.heap.page_allocator.free(content);
 
     if (content.len < 8) return null;
@@ -168,9 +170,9 @@ test "setFrequencyTable and getFrequencyTable" {
 test "write and read frequency table" {
     const dir = ".test_tmp_freq";
     defer {
-        std.Io.Dir.cwd().deleteTree(dir) catch {};
+        std.Io.Dir.cwd().deleteTree(std.testing.io, dir) catch {};
     }
-    std.Io.Dir.cwd().makePath(dir) catch {};
+    std.Io.Dir.cwd().createDirPath(std.testing.io, dir) catch {};
 
     var table = buildFrequencyTable("hello world");
     try writeFrequencyTable(dir, &table);

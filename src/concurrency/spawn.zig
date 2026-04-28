@@ -1,35 +1,15 @@
-//! spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).
+//! spawn.zig — Fire-and-forget dispatch (M12).
 //!
-//! A thin wrapper that submits an `AnyWorkUnit` to a `std.Thread.Pool` via
-//! `spawnWg`.  All scheduling complexity lives in `std.Thread.Pool`; this file
-//! is intentionally minimal (~40 lines including comments).
+//! Executes an `AnyWorkUnit` synchronously.  Thread pools are not available in
+//! Zig 0.16.0; all work runs on the calling thread.
 //!
 //! For error-capturing dispatch, use `ErrorGroup.go()` (error_group.zig).
-//!
-//! ## Usage
-//!
-//!   var wg: std.Thread.WaitGroup = .{};
-//!   spawn(&pool, &wg, unit.toAny());
-//!   pool.waitAndWork(&wg);
-//!
-//! `pool.waitAndWork` is preferred over `wg.wait()` when the calling thread
-//! has no other work — it helps drain the queue, reducing latency for small
-//! batches while still blocking properly (no spin).
 
 const std = @import("std");
 const AnyWorkUnit = @import("any_work_unit.zig").AnyWorkUnit;
 
-/// Starts a new thread using the provided pool and waits for completion with the given wait group.
-pub fn spawn(
-    pool: *std.Thread.Pool,
-    wg: *std.Thread.WaitGroup,
-    unit: AnyWorkUnit,
-) void {
-    pool.spawnWg(wg, runUnit, .{unit});
-}
-
-/// Processes a unit input, executing logic and returning a result or error.
-fn runUnit(unit: AnyWorkUnit) void {
+/// Execute a work unit synchronously (ignoring cancellation errors).
+pub fn spawn(unit: AnyWorkUnit) void {
     unit.runFn(unit.ptr) catch |e| {
         if (e != error.Cancelled) {
             std.log.warn("work unit failed: {s}", .{@errorName(e)});
@@ -53,27 +33,17 @@ const TestHandler = struct {
     }
 };
 
-test "spawn: runs handler and signals wg" {
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = testing.allocator, .n_jobs = 2 });
-    defer pool.deinit();
-
+test "spawn: runs handler" {
     var executed = std.atomic.Value(bool).init(false);
     var ctx = Context.background();
 
-    var wg: std.Thread.WaitGroup = .{};
     const unit = try WorkUnit(TestHandler).init(testing.allocator, .{ .executed = &executed }, &ctx);
-    spawn(&pool, &wg, unit.toAny());
-    pool.waitAndWork(&wg);
+    spawn(unit.toAny());
 
     try testing.expect(executed.load(.acquire));
 }
 
-test "spawn: 20 units on 4-thread pool — all complete" {
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = testing.allocator, .n_jobs = 4 });
-    defer pool.deinit();
-
+test "spawn: 20 units — all complete" {
     var count = std.atomic.Value(usize).init(0);
     var ctx = Context.background();
 
@@ -87,51 +57,37 @@ test "spawn: 20 units on 4-thread pool — all complete" {
         }
     };
 
-    var wg: std.Thread.WaitGroup = .{};
     for (0..20) |_| {
         const unit = try WorkUnit(CountHandler).init(
             testing.allocator,
             .{ .counter = &count },
             &ctx,
         );
-        spawn(&pool, &wg, unit.toAny());
+        spawn(unit.toAny());
     }
-    pool.waitAndWork(&wg);
 
     try testing.expectEqual(@as(usize, 20), count.load(.acquire));
 }
 
-test "spawn: cancelled unit completes without hanging" {
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = testing.allocator, .n_jobs = 2 });
-    defer pool.deinit();
-
+test "spawn: cancelled unit does not execute handler" {
     var executed = std.atomic.Value(bool).init(false);
     var ctx = Context.background();
     ctx.cancel(error.Cancelled);
 
-    var wg: std.Thread.WaitGroup = .{};
     const unit = try WorkUnit(TestHandler).init(testing.allocator, .{ .executed = &executed }, &ctx);
-    spawn(&pool, &wg, unit.toAny());
-    pool.waitAndWork(&wg);
+    spawn(unit.toAny());
 
     // Handler should NOT have been called (cancelled before execute).
     try testing.expect(!executed.load(.acquire));
 }
 
-test "spawn: GPA no leaks after pool.deinit" {
+test "spawn: GPA no leaks" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("memory leak");
-
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = gpa.allocator(), .n_jobs = 2 });
-    defer pool.deinit();
 
     var executed = std.atomic.Value(bool).init(false);
     var ctx = Context.background();
 
-    var wg: std.Thread.WaitGroup = .{};
     const unit = try WorkUnit(TestHandler).init(gpa.allocator(), .{ .executed = &executed }, &ctx);
-    spawn(&pool, &wg, unit.toAny());
-    pool.waitAndWork(&wg);
+    spawn(unit.toAny());
 }

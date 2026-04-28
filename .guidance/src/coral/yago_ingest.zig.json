@@ -38,8 +38,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 89
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "ingestSource",
           "match_hash": "a200a0d80b6aa1237ccde914cfac686d585cb6cd94878777270ff8f2d68688fb",
@@ -47,8 +47,8 @@
           "returns": "IngestStats",
           "is_pub": true,
           "line": 99
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "ingestFile",
           "match_hash": "a11dcb26aaeac95df157bb620029eabb61789ccd7d16067877f46ca13d90df3a",
@@ -56,8 +56,8 @@
           "returns": "IngestStats",
           "is_pub": true,
           "line": 115
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "runIngest",
           "match_hash": "176ca5e0e6967c1fd81adce5a9c8950798c47aac010f24d802e1a56e31c82db3",
@@ -65,8 +65,8 @@
           "returns": "IngestStats",
           "is_pub": false,
           "line": 132
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "runDryRun",
           "match_hash": "c422116c96412fb4793564c29494c97ad4ecf340796219d0df7277f880225ff7",

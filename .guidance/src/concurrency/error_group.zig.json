@@ -4,72 +4,72 @@
     "source": "src/concurrency/error_group.zig",
     "language": "zig"
   },
-  "comment": " error_group.zig — Structured parallel dispatch with error capture (M14).\n\n `ErrorGroup` submits work units to a `std.Thread.Pool`, captures errors,\n and cancels the shared `Context` on the first failure.\n\n ## Usage\n\n   var ctx = Context.background();\n   var group = ErrorGroup.init(allocator, &pool, &ctx);\n   defer group.deinit();\n\n   for (inputs) |input| {\n       const unit = try WorkUnit(Handler).init(allocator, Handler{ .input = input }, &ctx);\n       group.go(unit.toAny());\n   }\n\n   if (group.wait()) |first_err| return first_err;\n\n ## Ownership\n\n - `go()` transfers ownership of the work unit to the pool closure.\n - `wait()` blocks until all submitted units complete (via `waitAndWork`).\n - `deinit()` is safe to call after `wait()`.\n - `go()` must only be called from the submitting thread (not thread-safe).\n - `wait()` and `waitAll()` must not be called concurrently.\n\n ## Cancellation\n\n When the first unit fails, `ErrorGroup` calls `ctx.cancel(err)`.  Subsequent\n units will observe `ctx.isCancelled() == true` and return `error.Cancelled`\n without doing real work — but they still complete (no orphaned goroutines).",
+  "comment": " error_group.zig — Structured parallel dispatch with error capture (M14).\n\n `ErrorGroup` submits work units for execution, captures errors,\n and cancels the shared `Context` on the first failure.\n\n ## Usage\n\n   var ctx = Context.background();\n   var group = ErrorGroup.init(allocator, &ctx);\n   defer group.deinit();\n\n   for (inputs) |input| {\n       const unit = try WorkUnit(Handler).init(allocator, Handler{ .input = input }, &ctx);\n       group.go(unit.toAny());\n   }\n\n   if (group.wait()) |first_err| return first_err;\n\n ## Ownership\n\n - `go()` executes the work unit synchronously and transfers ownership.\n - `wait()` returns the first recorded error if any.\n - `deinit()` is safe to call after `wait()`.",
   "used_by": ["src/concurrency/root.zig"],
   "members": [
     {
       "type": "struct",
       "name": "ErrorGroup",
-      "match_hash": "9b667b3ce7b5f63876d1d6e8428724c578266bb3521f188a9c1a40ed4df3fffc",
+      "match_hash": "a79cb5b68c584b66b18cf565866d9925b5bc8a60872ca1e377076123e9a177cc",
       "signature": "keyword_struct ErrorGroup { ... }",
       "is_pub": true,
       "members": [
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "1b83e274d9a184c38d808affc31de80841b4c62088667bfd9317b3cdd3891fdd",
-          "signature": "fn init(allocator: std.mem.Allocator, pool: *std.Thread.Pool, ctx: *Context) -> Self",
+          "match_hash": "8e1e13eb4eb880dc03481d9e90da190bc228177542b4b22d511e4e9a50108671",
+          "signature": "fn init(allocator: std.mem.Allocator, ctx: *Context) -> Self",
           "returns": "Self",
           "is_pub": true,
-          "line": 50
-        }
-    ,    {
+          "line": 39
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 67
-        }
-    ,    {
+          "line": 53
+        },
+        {
           "type": "fn_decl",
           "name": "go",
           "match_hash": "854c8a939096d2fe4ed3c37453e12c576985456b93550dc06670b227bbb4dc5a",
           "signature": "fn go(self: *Self, unit: AnyWorkUnit) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 75
-        }
-    ,    {
+          "line": 59
+        },
+        {
           "type": "fn_decl",
           "name": "wait",
           "match_hash": "b8f23e88d9f612602549471a07cf80739b291dd95022695f6ef911d72594cd02",
           "signature": "fn wait(self: *Self) -> ?anyerror",
           "returns": "?anyerror",
           "is_pub": true,
-          "line": 85
-        }
-    ,    {
+          "line": 66
+        },
+        {
           "type": "fn_decl",
           "name": "waitAll",
           "match_hash": "3472aff982aa8c8e5e3bb63b89e371a0f19bd7227f8cae462ad955e65dfb1836",
           "signature": "fn waitAll(self: *Self) -> []anyerror",
           "returns": "[]anyerror",
           "is_pub": true,
-          "line": 95
-        }
-    ,    {
+          "line": 72
+        },
+        {
           "type": "fn_private",
           "name": "recordError",
           "match_hash": "2d7330a957dfdb96f217c43b27a7f18f980cec699915ea2cccd069ee5a8d89d0",
           "signature": "fn recordError(self: *Self, e: anyerror) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 102
+          "line": 76
         }
       ],
-      "line": 37
+      "line": 29
     },
     {
       "type": "struct",
@@ -85,46 +85,46 @@
           "signature": "fn execute(self: *CountOrFailHandler, arena: std.mem.Allocator, ctx: *const Context) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 133
+          "line": 94
         }
       ],
-      "line": 129
+      "line": 90
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: wait returns null when all units succeed",
       "is_pub": false,
-      "line": 141
+      "line": 102
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: wait returns first error when one unit fails",
       "is_pub": false,
-      "line": 165
+      "line": 121
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: waitAll collects all errors",
       "is_pub": false,
-      "line": 196
+      "line": 148
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: first error cancels context; subsequent units observe cancellation",
       "is_pub": false,
-      "line": 222
+      "line": 170
     },
     {
       "type": "test_decl",
-      "name": "ErrorGroup: wait blocks until all units complete (including post-error)",
+      "name": "ErrorGroup: all submitted units run (synchronous mode)",
       "is_pub": false,
-      "line": 255
+      "line": 199
     },
     {
       "type": "test_decl",
       "name": "ErrorGroup: GPA no leaks — all-success, one-fail, all-fail",
       "is_pub": false,
-      "line": 302
+      "line": 238
     }
   ]
 }

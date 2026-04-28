@@ -22,8 +22,8 @@
           "returns": "SyncProcessor",
           "is_pub": true,
           "line": 39
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "720f21f21df52aee243bddbe27264b925b810d98219cfb91130477730625c7d2",
@@ -31,8 +31,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "loadCapabilitiesFromDb",
           "match_hash": "2b90fdae5561205488ef13c9ad50dc2ebdf4b4fbb68e603b0d181a82fce9dc72",
@@ -40,8 +40,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 66
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "findCapabilitiesForFile",
           "match_hash": "44d43f3cd5ea155346ef5e7f8aa4c06aa70832e0aa55e21a1f3f8e2b29bac032",
@@ -49,8 +49,8 @@
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 168
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "stripComments",
           "match_hash": "f0bf87b2eac05a16f5ecaec6ef8a2fb09ff30fd6873bea1bf823587051ea65da",
@@ -58,8 +58,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 177
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "processFile",
           "match_hash": "aefe1f5b97c7d901a05eada6986c41ab6b538a8a51341cd90ea44a99c30eb292",
@@ -67,132 +67,132 @@
           "returns": "types.SyncResult",
           "is_pub": true,
           "line": 185
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "processDirectory",
           "match_hash": "8867eb7f7faf90bb7a5760b802e87134bb1584d416ebdc64e2c15cb9a08b25a6",
           "signature": "fn processDirectory(self: *SyncProcessor, dir_path: []const u8, timeout_seconds: u64) -> usize",
           "returns": "usize",
           "is_pub": true,
-          "line": 604
-        }
-    ,    {
+          "line": 612
+        },
+        {
           "type": "fn_private",
           "name": "relPath",
           "match_hash": "98ba1e4cd511dedb236dbdd727e670f53a2547006564d56dd091443ea2851302",
           "signature": "fn relPath(abs: []const u8, root: []const u8) -> []const u8",
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 641
-        }
-    ,    {
+          "line": 649
+        },
+        {
           "type": "fn_private",
           "name": "pathToModule",
           "match_hash": "c689473d5418cbceb32d4a38d59c9a8d516ce6e693a5348a0b5f5a6c1dc08e5d",
           "signature": "fn pathToModule(self: *SyncProcessor, rel_path: []const u8) -> []const u8",
           "returns": "[]const u8",
           "is_pub": false,
-          "line": 645
-        }
-    ,    {
+          "line": 653
+        },
+        {
           "type": "fn_private",
           "name": "buildModuleCommentFallback",
           "match_hash": "d69bb57e07a6b4614878cc68c87cae5de8e58e1f889a634d36f6eeb705f0c8c1",
           "signature": "fn buildModuleCommentFallback(self: *SyncProcessor, rel_path: []const u8, members: []const types.Member) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 667
-        }
-    ,    {
+          "line": 675
+        },
+        {
           "type": "fn_private",
           "name": "hasGofPatterns",
           "match_hash": "24294e0e1269a3395b90cf65eff1a9c7cea426758b33456c9b9838b2e1c10512",
           "signature": "fn hasGofPatterns(members: []const types.Member) -> bool",
           "returns": "bool",
           "is_pub": false,
-          "line": 719
-        }
-    ,    {
+          "line": 727
+        },
+        {
           "type": "fn_private",
           "name": "hasDomainPatterns",
           "match_hash": "4e3397856a33418fa426c8024f9664501684fdf438ee3b7837fc4b609d4b64b8",
           "signature": "fn hasDomainPatterns(members: []const types.Member) -> bool",
           "returns": "bool",
           "is_pub": false,
-          "line": 729
-        }
-    ,    {
+          "line": 737
+        },
+        {
           "type": "fn_private",
           "name": "buildSkills",
           "match_hash": "0af0783715e7370bc6239f1b39ad444acd36de090043dbacf00f4331d018bc49",
           "signature": "fn buildSkills(self: *SyncProcessor, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) -> []const types.Skill",
           "returns": "[]const types.Skill",
           "is_pub": false,
-          "line": 742
-        }
-    ,    {
+          "line": 750
+        },
+        {
           "type": "fn_private",
           "name": "buildCommentWithSkills",
           "match_hash": "5a2c870423b86dca4fef3802ded11dc5854a62614607689b7b620e91e8025924",
           "signature": "fn buildCommentWithSkills(self: *SyncProcessor, comment: ?[]const u8, skills: []const types.Skill) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 800
-        }
-    ,    {
+          "line": 808
+        },
+        {
           "type": "fn_private",
           "name": "mergeTags",
           "match_hash": "4a9778132994297e70485c8566c5a75545e7462e86fa75ea0974cbf95c4783fa",
           "signature": "fn mergeTags(self: *SyncProcessor, existing: []const []const u8, new_tags: []const []const u8) -> []const []const u8",
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 845
-        }
-    ,    {
+          "line": 853
+        },
+        {
           "type": "fn_private",
           "name": "infillOneFile",
           "match_hash": "25e220e4ff73affb7e166971f518b7cf358ddc417a6f2f308b524ac718b77599",
           "signature": "fn infillOneFile(self: *SyncProcessor, json_path: []const u8) -> bool",
           "returns": "bool",
           "is_pub": false,
-          "line": 879
-        }
-    ,    {
+          "line": 887
+        },
+        {
           "type": "fn_decl",
           "name": "infillJsonFile",
           "match_hash": "902fd3be826d9d57776990bb31474e787ca8538e957cbe0a2b1fa540fd47507c",
           "signature": "fn infillJsonFile(self: *SyncProcessor, json_path: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 1008
-        }
-    ,    {
+          "line": 1015
+        },
+        {
           "type": "fn_decl",
           "name": "infillAllJson",
           "match_hash": "cc2b3ef26c1cfff79be1e2babe34ee05e968c33a08cefa1a78b448de1a25dc88",
           "signature": "fn infillAllJson(self: *SyncProcessor, guidance_dir: []const u8, skip_paths: *const std.StringHashMapUnmanaged(void)) -> usize",
           "returns": "usize",
           "is_pub": true,
-          "line": 1019
-        }
-    ,    {
+          "line": 1026
+        },
+        {
           "type": "fn_private",
           "name": "findReverseDeps",
           "match_hash": "838fd3c3ac5d058137b1310101287255b23388c5bc4e6b39c700265eeabcc8ac",
           "signature": "fn findReverseDeps(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
           "returns": "[]const []const u8",
           "is_pub": false,
-          "line": 1053
-        }
-    ,    {
+          "line": 1060
+        },
+        {
           "type": "fn_decl",
           "name": "findEquivalents",
           "match_hash": "dd373570de5dca32701802560e6d086a74c28faf406df3c3b82c8afa0ef5433d",
           "signature": "fn findEquivalents(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
           "returns": "[]const []const u8",
           "is_pub": true,
-          "line": 1122
+          "line": 1128
         }
       ],
       "line": 15

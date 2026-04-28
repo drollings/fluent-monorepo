@@ -21,8 +21,8 @@
           "returns": "DocRegistry",
           "is_pub": true,
           "line": 18
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "eea9f574dfdc97b3b51f5bc1c6a83e75472dd5ca661e41808db98c840b0aaead",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getOrCreate",
           "match_hash": "4448670f486e61d0e62e19a6cea376e365b430752275df9f04ac2ca0bad82447",
@@ -39,8 +39,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 40
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "pathForId",
           "match_hash": "152473c40a28f7615fa0b30f8a31708bd2317e9d55542d0298c5f4ec0c5f9353",
@@ -48,8 +48,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 56
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "count",
           "match_hash": "c79189362381c55b356c9a319c2a5c88c2a7095d330e94a928007f522d24a2b5",

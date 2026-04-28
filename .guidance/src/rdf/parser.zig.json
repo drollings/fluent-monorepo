@@ -18,14 +18,14 @@
           "name": "iri",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blank_node",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "literal",
           "is_pub": false,
@@ -106,8 +106,8 @@
           "returns": "Parser",
           "is_pub": true,
           "line": 94
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "bb82753be8d9bff5a117ecd3f8ad2cc2c2a8641798efe6956d1d624e8ecebe67",
@@ -115,8 +115,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 106
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "peekTok",
           "match_hash": "19cc30f38726d9bd912cc3f9baf18bc9a398ef5cc946ef875e7a6a48f72f6189",
@@ -124,8 +124,8 @@
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 122
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "consumeTok",
           "match_hash": "f3a62265654258afc00c3b4f4e7601a976be9ef2305073003fad0180a0af9cf3",
@@ -133,8 +133,8 @@
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 127
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "expectTok",
           "match_hash": "f946360c6ed080f51155eb40513b3b2bde44b2a85508fba965698ab8c02cf204",
@@ -142,8 +142,8 @@
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 135
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "next",
           "match_hash": "c3376c2e5fd149bbffc1d2cf70f3df930dacb2f6b06860d3c7d601dcf40e3701",
@@ -151,8 +151,8 @@
           "returns": "ParseError!?Triple",
           "is_pub": true,
           "line": 145
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parsePrefix",
           "match_hash": "d58fea3cd5f63446c6a3f277a68d548a72ca59c4259d6c8797a1fbb8df5a36d5",
@@ -160,8 +160,8 @@
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 180
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseBase",
           "match_hash": "2894b53e3c2c9b4aa89b6ad088af9f1785d3689c8bf61a2f5c32ff0a5976670c",
@@ -169,8 +169,8 @@
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 204
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseStatement",
           "match_hash": "72532149f672aa7dba9344b531206ca3d486c8c6a7f2ea917a906aac3a77495d",
@@ -178,8 +178,8 @@
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 216
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "collectPredicateObjectList",
           "match_hash": "31128bdd8d5c3aab73bf406c3de8e8f924fdbde3579164f8371b4c5fb7f897e7",
@@ -187,8 +187,8 @@
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 228
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseVerb",
           "match_hash": "07649ad5e66cfe38d6bac98f3e4d2b8a7caa08ddfde4b45390f75fc3a9a9a82b",
@@ -196,8 +196,8 @@
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 264
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseTerm",
           "match_hash": "2763d92db6c5ad0af0d8f1b611b6c379f248d955717b98a60822bacfbfa8a317",
@@ -205,8 +205,8 @@
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 274
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseLiteralTerm",
           "match_hash": "763e981e969e3c6ef90e84b21a445984111c22dfbcce6fa09d34085b76caece1",
@@ -214,8 +214,8 @@
           "returns": "ParseError!Term",
           "is_pub": false,
           "line": 312
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseInlineBlankNode",
           "match_hash": "ca3b5febc2a9a0959ef9d9183eb21b6f494426542b24d38330a4d551c9828cda",
@@ -223,8 +223,8 @@
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 354
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractIRI",
           "match_hash": "3ed99984dd88c05da661607361d90233bf23c591f494f3c4dd68f6e5084d286b",
@@ -232,8 +232,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 377
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "expandPrefixedName",
           "match_hash": "5ffff5c0efa83b00f1fbdf6d9dc7da34274fd7213d072769451d478a3a0f187e",
@@ -241,8 +241,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 384
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "cloneTerm",
           "match_hash": "007e6c100eac32358f9ddcb3dc1f30c4dc5dcf773667c600f01e6799c5483d4a",
@@ -250,8 +250,8 @@
           "returns": "Term",
           "is_pub": false,
           "line": 397
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractLiteralContent",
           "match_hash": "b5e8be2ff15c5690b926a9b01109e637e4da05e8ccd093ad7050b9c70661ab03",

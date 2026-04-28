@@ -30,8 +30,8 @@
           "returns": "ParsedFile",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "extractImports",
           "match_hash": "741dad85c3649a641dfbc59de68543e5e240ea0182740adaff5f41d89c0967f5",

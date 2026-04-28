@@ -37,8 +37,8 @@
           "returns": "anyerror!DagResult",
           "is_pub": true,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "onNodeStart",
           "match_hash": "b463fc14b05f9ea76490abbd04c0cd33cc901d36f19261d050105490ba96540f",
@@ -46,8 +46,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 68
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "onNodeComplete",
           "match_hash": "2560ae72312e72bb7cdcd47bfa15a0ea199eb1d249456f06293f2ed0b38953e2",
@@ -74,8 +74,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 100
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -83,8 +83,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 116
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "addNode",
           "match_hash": "4fe7efaa6758b39fe044bed687889a381090d7914f0ab7cd764c538140fbae8f",
@@ -92,8 +92,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 132
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "execute",
           "match_hash": "e893bd7296773b276a3384950b2f232d2df1aa7657386f19cd01be0edf436f3c",
@@ -101,8 +101,8 @@
           "returns": "[]DagResult",
           "is_pub": true,
           "line": 140
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "dispatchNode",
           "match_hash": "f5f99ca598628b4dd3f254780cac97d9c9c86c9e29e80ebe03b0c9449d5e96d0",
@@ -110,8 +110,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 218
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "runTask",
           "match_hash": "ed570ac212c9afa0a0ecd2495735139e8fc21bff5f4d19107257c99b4e7ac72c",

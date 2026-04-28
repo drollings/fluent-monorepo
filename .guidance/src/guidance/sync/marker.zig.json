@@ -32,7 +32,7 @@
       "signature": "fn touchTestMarker(marker_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 101
+      "line": 102
     },
     {
       "type": "fn_decl",
@@ -41,7 +41,7 @@
       "signature": "fn touchFileAfter(target_path: []const u8, ref_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 109
+      "line": 111
     },
     {
       "type": "fn_decl",
@@ -50,7 +50,7 @@
       "signature": "fn touchFileNow(target_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 123
+      "line": 125
     },
     {
       "type": "fn_decl",
@@ -59,7 +59,7 @@
       "signature": "fn touchFileNowPlusOne(target_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 132
+      "line": 133
     }
   ]
 }

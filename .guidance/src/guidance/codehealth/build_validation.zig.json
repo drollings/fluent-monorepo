@@ -40,7 +40,7 @@
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 139
+      "line": 140
     },
     {
       "type": "fn_decl",
@@ -49,7 +49,7 @@
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 161
+      "line": 162
     },
     {
       "type": "fn_decl",
@@ -58,7 +58,7 @@
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 171
+      "line": 172
     },
     {
       "type": "struct",
@@ -66,7 +66,7 @@
       "match_hash": "3ebb3eac1cf2330e18d2db6baca2e60d9d0dd2028a75bee24a187ed36b20e630",
       "signature": "keyword_struct FixBuildStats { ... }",
       "is_pub": true,
-      "line": 188
+      "line": 189
     },
     {
       "type": "fn_decl",
@@ -75,7 +75,7 @@
       "signature": "fn fixUncoveredTestFiles(allocator: std.mem.Allocator, workspace: []const u8, uncovered: []const []const u8, dry_run: bool) -> FixBuildStats",
       "returns": "FixBuildStats",
       "is_pub": true,
-      "line": 209
+      "line": 210
     },
     {
       "type": "fn_private",
@@ -84,13 +84,13 @@
       "signature": "fn addOneTestTarget(allocator: std.mem.Allocator, build_zig_path: []const u8, workspace: []const u8, tests_zig_rel: []const u8, dry_run: bool) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 236
+      "line": 237
     },
     {
       "type": "test_decl",
       "name": "build_validation: extractPathRefs finds .zig paths with line numbers",
       "is_pub": false,
-      "line": 354
+      "line": 355
     }
   ]
 }

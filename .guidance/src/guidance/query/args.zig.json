@@ -19,14 +19,14 @@
           "name": "auto",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "force",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "skip",
           "is_pub": false,

@@ -115,7 +115,7 @@ fn topoSort(self: *DependencyResolver, all_needed: *std.AutoHashMap(usize, *Targ
         var dep_iter = target.*.depends.iterator(.{});
         while (dep_iter.next()) |dep_idx| {
             if (all_needed.get(dep_idx)) |_| {
-                const gop = try graph.getOrPutValue(dep_idx, .{});
+                const gop = try graph.getOrPutValue(dep_idx, .empty);
                 try gop.value_ptr.append(self.allocator, target.*.bit_index);
                 const current = in_degree.get(target.*.bit_index).?;
                 try in_degree.put(target.*.bit_index, current + 1);
@@ -307,7 +307,7 @@ pub fn getLevels(
         for (buckets) |*b| b.deinit(self.allocator);
         self.allocator.free(buckets);
     }
-    for (buckets) |*b| b.* = .{};
+    for (buckets) |*b| b.* = .empty;
 
     for (targets) |t| {
         const lv = level_map.get(t.bit_index).?;
@@ -330,9 +330,9 @@ pub fn visualizeGraph(
     target_names: []const []const u8,
     allocator: std.mem.Allocator,
 ) ![]u8 {
-    var output: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer output.deinit(allocator);
-    const writer = output.writer(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    const writer = &aw.writer;
 
     try writer.writeAll("Dependency Graph:\n");
     try writer.writeAll("=" ** 50 ++ "\n");
@@ -347,7 +347,7 @@ pub fn visualizeGraph(
         }
     }
 
-    return output.toOwnedSlice(allocator);
+    return aw.toOwnedSlice();
 }
 
 /// Prints a tree structure of dependencies with prefix, tracking visited nodes.
@@ -357,7 +357,7 @@ fn printTree(
     visited: *std.AutoHashMap(usize, void),
     prefix: []const u8,
     is_last: bool,
-    writer: anytype,
+    writer: *std.Io.Writer,
 ) !void {
     if (visited.contains(target.bit_index)) {
         try writer.print("{s}{s}{s} (already shown)\n", .{

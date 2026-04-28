@@ -120,11 +120,13 @@ pub const FrozenSnapshot = struct {
         var buf: std.ArrayList(u8) = .empty;
         defer buf.deinit(allocator);
 
+        const _snap_io = std.Io.Threaded.global_single_threaded.io();
         for (paths, 0..) |path, i| {
             const content = std.Io.Dir.cwd().readFileAlloc(
-                allocator,
+                _snap_io,
                 path,
-                std.math.maxInt(usize),
+                allocator,
+                .unlimited,
             ) catch |err| switch (err) {
                 error.FileNotFound => continue,
                 else => return err,
@@ -170,10 +172,11 @@ test "load reads file content" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(.{ .sub_path = "ctx.txt", .data = "hello context" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "ctx.txt", .data = "hello context" });
 
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
-    defer testing.allocator.free(dir_path);
+    const dir_path_z = try tmp.dir.realPathFileAlloc(std.testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir_path_z);
+    const dir_path: []const u8 = dir_path_z;
 
     const file_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "ctx.txt" });
     defer testing.allocator.free(file_path);
@@ -197,11 +200,12 @@ test "load concatenates multiple files" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(.{ .sub_path = "a.txt", .data = "file_a" });
-    try tmp.dir.writeFile(.{ .sub_path = "b.txt", .data = "file_b" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "a.txt", .data = "file_a" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "b.txt", .data = "file_b" });
 
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
-    defer testing.allocator.free(dir_path);
+    const dir_path_z2 = try tmp.dir.realPathFileAlloc(std.testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir_path_z2);
+    const dir_path: []const u8 = dir_path_z2;
 
     const path_a = try std.fs.path.join(testing.allocator, &.{ dir_path, "a.txt" });
     defer testing.allocator.free(path_a);
@@ -220,12 +224,13 @@ test "formatForSystemPrompt includes section headers" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(.{ .sub_path = "mem.txt", .data = "memory content" });
-    try tmp.dir.writeFile(.{ .sub_path = "skill.txt", .data = "skill content" });
-    try tmp.dir.writeFile(.{ .sub_path = "ctx.txt", .data = "context content" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "mem.txt", .data = "memory content" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "skill.txt", .data = "skill content" });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "ctx.txt", .data = "context content" });
 
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
-    defer testing.allocator.free(dir_path);
+    const dir_path_z3 = try tmp.dir.realPathFileAlloc(std.testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir_path_z3);
+    const dir_path: []const u8 = dir_path_z3;
 
     const mem_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "mem.txt" });
     defer testing.allocator.free(mem_path);

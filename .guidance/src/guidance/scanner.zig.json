@@ -19,14 +19,14 @@
           "name": "high",
           "is_pub": false,
           "line": 46
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "medium",
           "is_pub": false,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "low",
           "is_pub": false,
@@ -50,8 +50,8 @@
           "returns": "CodebaseScanner",
           "is_pub": true,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "0a9722d8de3cc259e49397feb16f1e5d0e9f8079a8eabe401ca13e02260410be",
@@ -59,8 +59,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 77
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "scan",
           "match_hash": "a1be12a89b7f2f647bb833a5c09104e93e095d9b3afae6cfcda5a0f22d4364b8",
@@ -68,8 +68,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 89
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "scanWithDb",
           "match_hash": "35ae524cd77160fe79ebc167a3131148771d2556ff476e1052279bc1beef785b",
@@ -77,8 +77,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 101
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "explain",
           "match_hash": "c8b50532f3aaa6905c539a521a5de3f80bff46aa1ff6cbcb6d6d3683a7482760",
@@ -86,8 +86,8 @@
           "returns": "[]types.Stage",
           "is_pub": true,
           "line": 120
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "diagnose",
           "match_hash": "29dabcce4408ddf7a841720658f736b9076ac41bba91a185f3b382954779b752",
@@ -95,8 +95,8 @@
           "returns": "[]u8",
           "is_pub": true,
           "line": 142
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "hasCapabilityDocs",
           "match_hash": "f1de32ee8cebce046dcb344538001f720e61f08918b980c20c9607fbfcd64a2a",

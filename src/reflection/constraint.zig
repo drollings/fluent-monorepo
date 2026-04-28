@@ -202,12 +202,13 @@ pub fn constraintSet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
             const Child = vec_info.child;
             var iter = std.mem.splitScalar(u8, input, ',');
             var i: usize = 0;
+            const arr_ptr: *[vec_info.len]Child = @ptrCast(typed_ptr);
             while (iter.next()) |elem| : (i += 1) {
                 if (i >= vec_info.len) return error.VectorTooLong;
                 const trimmed = std.mem.trim(u8, elem, " \t\n\r");
                 var val: Child = undefined;
                 try constraintSet(Child, allocator, &val, trimmed);
-                typed_ptr[i] = val;
+                arr_ptr[i] = val;
             }
             if (i != vec_info.len) return error.VectorTooShort;
         },
@@ -248,12 +249,13 @@ pub fn constraintGet(comptime T: type, allocator: std.mem.Allocator, typed_ptr: 
             return buf.toOwnedSlice(allocator);
         },
         .vector => |vec_info| {
-            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(allocator);
             try buf.append(allocator, '[');
+            const arr_ptr: *const [vec_info.len]vec_info.child = @ptrCast(typed_ptr);
             for (0..vec_info.len) |i| {
                 if (i > 0) try buf.append(allocator, ',');
-                const elem = typed_ptr[i];
+                const elem = arr_ptr[i];
                 const s = try constraintGet(vec_info.child, allocator, &elem);
                 defer allocator.free(s);
                 try buf.appendSlice(allocator, s);

@@ -18,86 +18,86 @@
           "name": "iri",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "prefixed_name",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blank_node",
           "is_pub": false,
           "line": 23
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blank_node_open",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blank_node_close",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "literal",
           "is_pub": false,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "lang_tag",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "datatype_marker",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "keyword",
           "is_pub": false,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "dot",
           "is_pub": false,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "semicolon",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "comma",
           "is_pub": false,
           "line": 32
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "open_paren",
           "is_pub": false,
           "line": 33
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "close_paren",
           "is_pub": false,
           "line": 34
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "eof",
           "is_pub": false,
@@ -129,8 +129,8 @@
           "returns": "Lexer",
           "is_pub": true,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "skipWhitespaceAndComments",
           "match_hash": "9fdf2bafdfe692b5f97bcb41a1aa562e575426c4160f088e754837a43a432fa6",
@@ -138,8 +138,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "advance",
           "match_hash": "05955270d5af50c9d00745f3aff0861ec06842d835610daf49e9bae5d094ba80",
@@ -147,8 +147,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 92
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "nextToken",
           "match_hash": "e2147fbd61a1ecb6cab196f41c4df038d4f23f6d270770da8934789743de01a1",
@@ -156,8 +156,8 @@
           "returns": "LexError!Token",
           "is_pub": true,
           "line": 104
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexIRI",
           "match_hash": "a251b77a798b9cfb8a961c23334703adfe0046ba3331eed285d7d89f1358e220",
@@ -165,8 +165,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 207
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexLiteral",
           "match_hash": "3319c24e3fdf4671eb9af8293dc0dee9b2afade0844f25b9db1e2067cc0a0d19",
@@ -174,8 +174,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 232
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexNumericLiteral",
           "match_hash": "e4dc909596b707d8766a30ddbcc1cabe45e7613649edd4588edbcd61ab24cef7",
@@ -183,8 +183,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 290
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexBlankNode",
           "match_hash": "4d728a657e0229dc7bc7a0827e5ae4a8f82c36025f94b84cf5f7d72098706f3b",
@@ -192,8 +192,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 325
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexAtDirective",
           "match_hash": "cdb192d820c470328310ef32e8699466c897ee192077160804597ae6db512f0f",
@@ -201,8 +201,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 335
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "lexPrefixedName",
           "match_hash": "9f6db1a28b56c3509ec3429b0234dfb445fe859ff9c23cf34aeb92d8a56161fe",
@@ -210,8 +210,8 @@
           "returns": "LexError!Token",
           "is_pub": false,
           "line": 355
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isNameEndChar",
           "match_hash": "6d6f36f57350eaea5356cc4ec122f0f4a9dc70054090d5bd2b93472ceca2f0ec",
@@ -219,8 +219,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 387
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isPrefixStartChar",
           "match_hash": "16568417fb8d3a9d68b3b992fe8d9754da6fbe9f9ca897df0af55d9e9d5fa471",
@@ -228,8 +228,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 393
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isPrefixChar",
           "match_hash": "84c4f2b21577ee33694c1b6c0f547e2ed5b2c9fc3bbf821846b8357703ceb54f",
@@ -237,8 +237,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 397
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isLocalNameChar",
           "match_hash": "bc39b6f1336a944c09881d874f3be37e0a64cc64b1d2a8dadba21d0ecc86340a",
@@ -246,8 +246,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 401
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isNameChar",
           "match_hash": "f957b93ea55c74e0ea153496b134c2950a0b4734ac365a063f25ebb8553cc7d6",
@@ -255,8 +255,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 408
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "isLangChar",
           "match_hash": "f3e424e6ccfcf4ff5a4c57246e2296a618acc04521e6f558f318cab4c259e9be",

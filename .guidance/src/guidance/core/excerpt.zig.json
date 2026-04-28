@@ -49,7 +49,7 @@
       "signature": "fn memberTypeFromNodeType(node_type: []const u8) -> types_mod.MemberType",
       "returns": "types_mod.MemberType",
       "is_pub": false,
-      "line": 121
+      "line": 120
     }
   ]
 }

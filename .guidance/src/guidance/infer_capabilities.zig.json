@@ -19,20 +19,20 @@
           "name": "naming_convention",
           "is_pub": false,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "import_cluster",
           "is_pub": false,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "module_comment",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "file_grouping",
           "is_pub": false,

@@ -112,7 +112,7 @@
       "signature": "fn executeStagedWithAliasesOriginal(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 527
+      "line": 532
     },
     {
       "type": "fn_decl",
@@ -121,7 +121,7 @@
       "signature": "fn canSynthesize(stages: []const types.Stage) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 625
+      "line": 630
     },
     {
       "type": "fn_decl",
@@ -130,7 +130,7 @@
       "signature": "fn buildEscalationOutput(allocator: std.mem.Allocator, query: []const u8, reason: []const u8) -> []const types.Stage",
       "returns": "[]const types.Stage",
       "is_pub": true,
-      "line": 632
+      "line": 637
     },
     {
       "type": "fn_decl",
@@ -139,7 +139,7 @@
       "signature": "fn expandFollowUps(allocator: std.mem.Allocator, db_results_file_paths: []const []const u8, db_results_sources: []const []const u8, db_results_used_by: []const []const []const u8, workspace: []const u8, guidance_dir: []const u8, skills_dir: []const u8, existing_sources: []const []const u8, limit: usize) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 644
+      "line": 649
     },
     {
       "type": "fn_decl",
@@ -148,7 +148,7 @@
       "signature": "fn extractSourceExcerptVerified(allocator: std.mem.Allocator, workspace: []const u8, rel_source: []const u8, start_line: u32, node_type: []const u8, member_name: ?[]const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 740
+      "line": 745
     },
     {
       "type": "fn_decl",
@@ -157,7 +157,7 @@
       "signature": "fn extractSourceExcerpt(allocator: std.mem.Allocator, workspace: []const u8, rel_source: []const u8, start_line: u32, node_type: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 752
+      "line": 757
     },
     {
       "type": "fn_decl",
@@ -166,7 +166,7 @@
       "signature": "fn extractExcerptFromSource(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 763
+      "line": 768
     },
     {
       "type": "fn_private",
@@ -175,7 +175,7 @@
       "signature": "fn loadModuleComment(allocator: std.mem.Allocator, json_path: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 780
+      "line": 785
     },
     {
       "type": "fn_decl",
@@ -184,7 +184,7 @@
       "signature": "fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 794
+      "line": 799
     },
     {
       "type": "fn_decl",
@@ -193,13 +193,13 @@
       "signature": "fn loadSkillExcerpt(allocator: std.mem.Allocator, skills_dir: []const u8, skill_name: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 801
+      "line": 806
     },
     {
       "type": "test_decl",
       "name": "benchmark: zero-alloc token match — 100 tokens × 100 results",
       "is_pub": false,
-      "line": 825
+      "line": 829
     }
   ]
 }

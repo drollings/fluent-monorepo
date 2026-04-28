@@ -21,8 +21,8 @@
           "returns": "ErrorContext",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "simple",
           "match_hash": "9bafd4a1e118bcfc4bfc90726b879b49babf1c264cd5850c3baed89eb48eb224",
@@ -30,8 +30,8 @@
           "returns": "ErrorContext",
           "is_pub": true,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "format",
           "match_hash": "0864991a3ae56e386aa04afcdd8ba6aef6e5ef30791792e04a175d5288a9dc8d",
@@ -39,8 +39,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 76
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "toMessage",
           "match_hash": "fb101b739956364afbc8f91e82679915afb5ef19d67293e220c148b0df9e5840",
@@ -67,8 +67,8 @@
           "returns": "ArenaErrorContext",
           "is_pub": true,
           "line": 112
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "format",
           "match_hash": "291b88cd020fe7fb86c7fe5fd2d1de33d71343145bc2fc5e46b9977b8f59c860",

@@ -21,8 +21,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 37
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "find",
           "match_hash": "0d6d024d96c62bbf63c5df47b6540d85a27342d1997bcad2db082fb1ae2676df",
@@ -39,8 +39,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 44
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "@\"union\"",
           "match_hash": "2927e525eb9ab0e00a0cb98e06e19452d5bd9e31fb8092c393922a232d78fef6",
@@ -48,8 +48,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 56
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "connected",
           "match_hash": "2052e172efd11fa241e4ebd0a24448e2bebefc71d04b7d209932eb3276c4fc1b",

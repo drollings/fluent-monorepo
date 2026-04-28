@@ -22,8 +22,8 @@
           "returns": "AstParser",
           "is_pub": true,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "143ceb9d35b6f5036bcb896bf5eef721233c7da799e3f3b1b2c845f1868596f7",
@@ -31,8 +31,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "hasErrors",
           "match_hash": "32f0c9d47b1fdf910e9db122f238dbd46e2fe6be6d6d9b9bd9d8856b6b3cc4fc",
@@ -40,8 +40,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "extractMembers",
           "match_hash": "03a44a4269590985855402f81d87524ba024e51f332110e7e9edce9c56582f5d",
@@ -49,8 +49,8 @@
           "returns": "[]types.Member",
           "is_pub": true,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractMember",
           "match_hash": "c85d122b72bc67a2384e0f1ed950623401196b3da58d7115fdd50c417e36fff7",
@@ -58,8 +58,8 @@
           "returns": "?types.Member",
           "is_pub": false,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractFunction",
           "match_hash": "a4022ac7be4bf46b976d49654646dba0653cb1363856d8e5f7a23daaa1a34267",
@@ -67,8 +67,8 @@
           "returns": "?types.Member",
           "is_pub": false,
           "line": 60
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractVarDecl",
           "match_hash": "9968a83eeadba73bc33439acbbdf1270fdb2798a1717f17d0b4601f856ead2ad",
@@ -76,8 +76,8 @@
           "returns": "?types.Member",
           "is_pub": false,
           "line": 108
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractContainer",
           "match_hash": "d4ae11bd529192d77d8ec3c93e118ed6ee6948648d2e125dae1e07e90b4f3457",
@@ -85,8 +85,8 @@
           "returns": "?types.Member",
           "is_pub": false,
           "line": 132
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractTest",
           "match_hash": "02f77e82239c82da02e8299185e2ab295189acbeec413a258258fe26b60c06a2",
@@ -94,8 +94,8 @@
           "returns": "?types.Member",
           "is_pub": false,
           "line": 215
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractParams",
           "match_hash": "5aaa535a5cfefd3615f874101e90493613ad0129bab492c7fe1d5f3d048b8cf6",
@@ -103,8 +103,8 @@
           "returns": "[]types.Param",
           "is_pub": false,
           "line": 236
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "nodeToType",
           "match_hash": "724cdd083ca520c702a2588113edb05365aa5681533301af14f0b8120f74bb3b",
@@ -112,8 +112,8 @@
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 263
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "nodeToTypeFromIndex",
           "match_hash": "2384046500aac03d3d1552cb1f260fc4314a5d8511514d523a71e559afaff301",
@@ -121,8 +121,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 268
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "buildSignature",
           "match_hash": "523682f91db554a1dd41dfd4992d49666a7b793a1974c4c79b0c10a3a04b18ae",
@@ -130,60 +130,60 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 273
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "extractDocstring",
           "match_hash": "5fc0dbecf5e0c8360388b7c0f5b4364ecc94ad5b07216c2a6c1ef1772b6b87ae",
           "signature": "fn extractDocstring(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 301
-        }
-    ,    {
+          "line": 300
+        },
+        {
           "type": "fn_decl",
           "name": "extractFullDocstring",
           "match_hash": "040ca8f0c8f16760b75bc2cfe173707def1941fede5fe7d9a3a3a41ab9a2f3c9",
           "signature": "fn extractFullDocstring(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 337
-        }
-    ,    {
+          "line": 336
+        },
+        {
           "type": "fn_decl",
           "name": "extractFullModuleDoc",
           "match_hash": "b45395faf068e88a8767d079d6c8a3f9dc136cc27d2ef5e275a4dd03278dde2e",
           "signature": "fn extractFullModuleDoc(self: *AstParser) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 380
-        }
-    ,    {
+          "line": 379
+        },
+        {
           "type": "fn_decl",
           "name": "extractModuleDoc",
           "match_hash": "20888469e2bbc8fb6cfbe2029fe6abb589a90e7b2f409f49dfb56fd379c5fafe",
           "signature": "fn extractModuleDoc(self: *AstParser) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 384
-        }
-    ,    {
+          "line": 383
+        },
+        {
           "type": "fn_decl",
           "name": "extractImports",
           "match_hash": "a954ea9ceacbfbf688b94a1759a3bfbcbddf103b561dc7c04a902aefddbeb7ff",
           "signature": "fn extractImports(self: *AstParser) -> [][]const u8",
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 416
-        }
-    ,    {
+          "line": 415
+        },
+        {
           "type": "fn_decl",
           "name": "countTokens",
           "match_hash": "15a617e0c0b0b8b53d83031a4771259b39d1726dc9818394674b7e94df873d36",
           "signature": "fn countTokens(self: *const AstParser) -> usize",
           "returns": "usize",
           "is_pub": true,
-          "line": 445
+          "line": 444
         }
       ],
       "line": 8
@@ -195,7 +195,7 @@
       "signature": "fn parseFile(allocator: std.mem.Allocator, path: []const u8) -> AstParser",
       "returns": "AstParser",
       "is_pub": true,
-      "line": 451
+      "line": 450
     }
   ]
 }

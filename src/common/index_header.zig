@@ -119,7 +119,7 @@ const testing = std.testing;
 
 test "write/read round-trip: no git head" {
     var aw: std.Io.Writer.Allocating = .init(testing.allocator);
-    errdefer aw.deinit();
+    defer aw.deinit();
     const bw = &aw.writer;
 
     try write(bw, .{ .magic = 0xDEAD, .version = 1, .git_head = null });
@@ -134,7 +134,7 @@ test "write/read round-trip: no git head" {
 
 test "write/read round-trip: with git head" {
     var aw: std.Io.Writer.Allocating = .init(testing.allocator);
-    errdefer aw.deinit();
+    defer aw.deinit();
     const bw = &aw.writer;
 
     const sha = "aabbccddeeff00112233445566778899aabbccdd";
@@ -149,7 +149,7 @@ test "write/read round-trip: with git head" {
 
 test "read: wrong magic returns null" {
     var aw: std.Io.Writer.Allocating = .init(testing.allocator);
-    errdefer aw.deinit();
+    defer aw.deinit();
     const bw = &aw.writer;
     try write(bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
 
@@ -158,7 +158,7 @@ test "read: wrong magic returns null" {
 
 test "read: wrong version returns null" {
     var aw: std.Io.Writer.Allocating = .init(testing.allocator);
-    errdefer aw.deinit();
+    defer aw.deinit();
     const bw = &aw.writer;
     try write(bw, .{ .magic = 0x1234, .version = 1, .git_head = null });
 

@@ -18,74 +18,74 @@
           "name": "int",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "float",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bool",
           "is_pub": false,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "string_owned",
           "is_pub": false,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "string_borrowed",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "string_rc",
           "is_pub": false,
           "line": 32
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "@\"enum\"",
           "is_pub": false,
           "line": 33
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "optional",
           "is_pub": false,
           "line": 34
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "array",
           "is_pub": false,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "vector",
           "is_pub": false,
           "line": 36
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bitset",
           "is_pub": false,
           "line": 37
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "collection",
           "is_pub": false,
           "line": 38
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "unknown",
           "is_pub": false,
@@ -106,20 +106,20 @@
           "name": "value",
           "is_pub": false,
           "line": 45
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "owned",
           "is_pub": false,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "borrowed",
           "is_pub": false,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "rc",
           "is_pub": false,
@@ -140,26 +140,26 @@
           "name": "integer",
           "is_pub": false,
           "line": 58
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "real",
           "is_pub": false,
           "line": 59
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "text",
           "is_pub": false,
           "line": 60
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blob",
           "is_pub": false,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fromTypeTag",
           "match_hash": "3c808e335ddf27b2fdd30a034248cbd8d4ec0a53dcedcc95511db3e57f6cbb74",
@@ -167,8 +167,8 @@
           "returns": "SqlType",
           "is_pub": true,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "toString",
           "match_hash": "ff496a08fbd50a1675f351dc20d967790c2508d8f875ee8136843f1f1dd63755",
@@ -276,8 +276,8 @@
           "returns": "DynamicEditable",
           "is_pub": true,
           "line": 856
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "7e769d44cb8e82658b3388befeff470033ae86ca7f6a733531cdeec46df9da01",
@@ -285,8 +285,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 874
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "releaseAll",
           "match_hash": "7e913a64647eb61804335d133274c5f027f4c563e6320869c8903c135428af04",
@@ -294,8 +294,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 879
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "set",
           "match_hash": "c227b6629f1bd4c77acaca903164c2c2df6d0981a0485f3509e762d592ca27c8",
@@ -303,8 +303,8 @@
           "returns": "anyerror!void",
           "is_pub": true,
           "line": 889
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "6dcb2ee44137747884f5a739d0867c2fd8dc3ba519d3756d239c8729674b7c8f",
@@ -312,8 +312,8 @@
           "returns": "anyerror![]const u8",
           "is_pub": true,
           "line": 901
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "describeSchema",
           "match_hash": "efde8665034dff047a317ae01e54078d633297a3fb0933bb3370942e5d60cf45",
@@ -321,8 +321,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 913
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fieldNames",
           "match_hash": "caec772724e22998e5ce0c2652ae9e405c0bca2423a80ba15152f69781626ca2",
@@ -330,8 +330,8 @@
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 918
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getFieldMeta",
           "match_hash": "1a2cd8b19edc37dcc1ed8ee6aa5092403c9b003975f7d49cdb11fff9c85f80ca",

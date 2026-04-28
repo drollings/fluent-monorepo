@@ -21,50 +21,50 @@
           "name": "void",
           "is_pub": false,
           "line": 60
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "i32",
           "is_pub": false,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "i64",
           "is_pub": false,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "f32",
           "is_pub": false,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "f64",
           "is_pub": false,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "v128",
           "is_pub": false,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "funcref",
           "is_pub": false,
           "line": 66
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "externref",
           "is_pub": false,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ptr",
           "is_pub": false,
@@ -107,8 +107,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 227
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -116,8 +116,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 251
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "call",
           "match_hash": "6d1d7603b682b4e12f497a78c3cdd18927eb61084a3e3bde3b3a8ca501bd92b5",
@@ -125,8 +125,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 256
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "alloc",
           "match_hash": "c880cd389763309d0468d233abb013ed4345b2fd1b5b4487adb50743e0a19b7e",
@@ -134,8 +134,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 281
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "store",
           "match_hash": "3f6c3bcffbed3c86213457187765468e2f971ae7c0d25f6d11f6781db10d1622",
@@ -143,8 +143,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 285
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "load",
           "match_hash": "2157bbacb9cdffec7dcfdcb596d89293b0d67c468f892eeed83278c2a87f1d89",
@@ -152,8 +152,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 289
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "freePtr",
           "match_hash": "2816455bf852b7d73c7fcde3a5c539cdeae38a6c6ffbed7184df20e7af72edd7",
@@ -235,8 +235,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 476
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -244,8 +244,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 487
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "registerStandard",
           "match_hash": "84945f7dfd505db0bba41c8bf2b58d1910832724797abe9a70c6fdc073058078",
@@ -253,8 +253,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 495
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getFunctionArray",
           "match_hash": "c98789b1dd1581f74016a12e740a51dc5b017d844f3e718876763dd708991774",
@@ -344,32 +344,32 @@
           "name": "zig",
           "is_pub": false,
           "line": 711
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "rust",
           "is_pub": false,
           "line": 712
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "assemblyscript",
           "is_pub": false,
           "line": 713
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "c",
           "is_pub": false,
           "line": 714
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "go",
           "is_pub": false,
           "line": 715
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "extension",
           "match_hash": "4977c824f177b903920bd3c8a49a7aec8fff4d797ce48f27c0f176d7f2c2d1a0",
@@ -396,8 +396,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 736
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -405,8 +405,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 744
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "compileSource",
           "match_hash": "7a5c84e3e3992321cccabc1cdb0c1d5bb44d00f21f9048c7776862cfd79e8366",
@@ -414,42 +414,42 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 752
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "compileZig",
           "match_hash": "badb23e2345f3c80cdd2ef1d436b21ed2d9173630a5924832c20db3c51f86c2f",
           "signature": "fn compileZig(self: *Self, source: []const u8) -> []const u8",
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 775
-        }
-    ,    {
+          "line": 778
+        },
+        {
           "type": "fn_decl",
           "name": "compileAssemblyScript",
           "match_hash": "a80239e3063da5522201191a23ed84fd09876965f981bb247fd433f9c730c376",
           "signature": "fn compileAssemblyScript(self: *Self, source: []const u8) -> []const u8",
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 790
-        }
-    ,    {
+          "line": 793
+        },
+        {
           "type": "fn_decl",
           "name": "verifyTool",
           "match_hash": "5484fb29ff8c602308b9c1d25df308b247ed55540631962c76f3029d568eb983",
           "signature": "fn verifyTool(self: *Self, wasm_bytes: []const u8, test_input: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 808
-        }
-    ,    {
+          "line": 811
+        },
+        {
           "type": "fn_decl",
           "name": "generateFromLLM",
           "match_hash": "0e30bb30896b06f5530f903c4fbf68e971d99d830d255de6b0ed951f1b3a3884",
           "signature": "fn generateFromLLM(self: *Self, source: []const u8, language: WasmLanguage) -> []const u8",
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 820
+          "line": 823
         }
       ],
       "line": 729
@@ -461,7 +461,7 @@
       "signature": "fn verifyWithTests(allocator: std.mem.Allocator, wasm_bytes: []const u8, test_cases: []const ToolTestCase) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 838
+      "line": 841
     },
     {
       "type": "struct",
@@ -469,7 +469,7 @@
       "match_hash": "5c7fe87153593646dda57cf097ba4322187081dfc59d6855744cd85d93eab00b",
       "signature": "keyword_struct WasmToolCacheEntry { ... }",
       "is_pub": true,
-      "line": 856
+      "line": 859
     },
     {
       "type": "struct",
@@ -485,238 +485,238 @@
           "signature": "fn init(allocator: std.mem.Allocator) -> Self",
           "returns": "Self",
           "is_pub": true,
-          "line": 874
-        }
-    ,    {
+          "line": 877
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 883
-        }
-    ,    {
+          "line": 886
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "fc3acc44899ed83680e79b5fd1a6ef1012a9c92ec0dcc6a1e234823c91a90d42",
           "signature": "fn get(self: *Self, name: []const u8) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 893
-        }
-    ,    {
+          "line": 896
+        },
+        {
           "type": "fn_decl",
           "name": "put",
           "match_hash": "b01382733cac353567617870670d2da3bf9814316f8c5e279e88dddd2e0c7ccc",
           "signature": "fn put(self: *Self, name: []const u8, wasm_bytes: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 905
-        }
-    ,    {
+          "line": 908
+        },
+        {
           "type": "fn_decl",
           "name": "evictExpired",
           "match_hash": "d6b98bded448b5a698b1fb7894f07930684c6b6dd009e8d87b488f96de415326",
           "signature": "fn evictExpired(self: *Self) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 929
-        }
-    ,    {
+          "line": 932
+        },
+        {
           "type": "fn_decl",
           "name": "computeHash",
           "match_hash": "c57790af1efec4d9a5d52d58794985a7dbc78ebdbc5958694d556e22c19025dd",
           "signature": "fn computeHash(_: *const Self, bytes: []const u8) -> [32]u8",
           "returns": "[32]u8",
           "is_pub": true,
-          "line": 948
-        }
-    ,    {
+          "line": 951
+        },
+        {
           "type": "fn_private",
           "name": "evictOldest",
           "match_hash": "af05ab71891ce9558bfbe6e45fb9ac00b04f75ec5ea54e56c77fd88eb64d6e6c",
           "signature": "fn evictOldest(self: *Self) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 954
+          "line": 957
         }
       ],
-      "line": 864
+      "line": 867
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader validation",
       "is_pub": false,
-      "line": 980
+      "line": 983
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode serialization",
       "is_pub": false,
-      "line": 989
+      "line": 992
     },
     {
       "type": "test_decl",
       "name": "PayloadType enum values",
       "is_pub": false,
-      "line": 1003
+      "line": 1006
     },
     {
       "type": "test_decl",
       "name": "WasmManifest defaults",
       "is_pub": false,
-      "line": 1009
+      "line": 1012
     },
     {
       "type": "test_decl",
       "name": "WasmLanguage extension",
       "is_pub": false,
-      "line": 1016
+      "line": 1019
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache put and get",
       "is_pub": false,
-      "line": 1022
+      "line": 1025
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache hash computation",
       "is_pub": false,
-      "line": 1034
+      "line": 1037
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig defaults",
       "is_pub": false,
-      "line": 1047
+      "line": 1050
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: editable mixin is zero size",
       "is_pub": false,
-      "line": 1054
+      "line": 1057
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set and get for compiler path",
       "is_pub": false,
-      "line": 1058
+      "line": 1061
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: reflective set of bool field",
       "is_pub": false,
-      "line": 1075
+      "line": 1078
     },
     {
       "type": "test_decl",
       "name": "ToolCompilerConfig: field not found returns error",
       "is_pub": false,
-      "line": 1081
+      "line": 1084
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionRequest flag values",
       "is_pub": false,
-      "line": 1087
+      "line": 1090
     },
     {
       "type": "test_decl",
       "name": "BinaryExecutionResult provides words layout",
       "is_pub": false,
-      "line": 1093
+      "line": 1096
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: getLod returns correct slices",
       "is_pub": false,
-      "line": 1109
+      "line": 1112
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: id round-trip via getId",
       "is_pub": false,
-      "line": 1120
+      "line": 1123
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: empty strings produce zero lengths",
       "is_pub": false,
-      "line": 1128
+      "line": 1131
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong magic fails validate",
       "is_pub": false,
-      "line": 1140
+      "line": 1143
     },
     {
       "type": "test_decl",
       "name": "BinaryHeader: wrong version fails validate",
       "is_pub": false,
-      "line": 1146
+      "line": 1149
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put then get retrieves bytes",
       "is_pub": false,
-      "line": 1152
+      "line": 1155
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: put collision replaces old bytes",
       "is_pub": false,
-      "line": 1164
+      "line": 1167
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: get for unknown name returns null",
       "is_pub": false,
-      "line": 1179
+      "line": 1182
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: hash is 32 bytes and deterministic",
       "is_pub": false,
-      "line": 1186
+      "line": 1189
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: different inputs produce different hashes",
       "is_pub": false,
-      "line": 1198
+      "line": 1201
     },
     {
       "type": "test_decl",
       "name": "WasmToolCache: GPA no leaks across put and deinit",
       "is_pub": false,
-      "line": 1210
+      "line": 1213
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: all-empty LODs produce zero payload size beyond header",
       "is_pub": false,
-      "line": 1226
+      "line": 1229
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: large LOD0 round-trips without truncation",
       "is_pub": false,
-      "line": 1241
+      "line": 1244
     },
     {
       "type": "test_decl",
       "name": "BinaryContextNode: multiple non-empty LODs round-trip",
       "is_pub": false,
-      "line": 1257
+      "line": 1260
     },
     {
       "type": "test_decl",
       "name": "verifyWithTests: empty test cases returns true",
       "is_pub": false,
-      "line": 1272
+      "line": 1275
     }
   ]
 }

@@ -207,11 +207,11 @@ pub fn synthesize(
     // M8: Build source list for grounding (prevents hallucination)
     var sources_buf_aw: std.Io.Writer.Allocating = .init(allocator);
     errdefer sources_buf_aw.deinit();
-        const sw = &sources_buf_aw.writer;
-        try sw.writeAll("Source files referenced:\n");
-        for (sources.items) |src| {
-            try sw.print("- {s}\n", .{src});
-        }
+    const sw = &sources_buf_aw.writer;
+    try sw.writeAll("Source files referenced:\n");
+    for (sources.items) |src| {
+        try sw.print("- {s}\n", .{src});
+    }
 
     if (is_long_query) {
         // Enhanced synthesis for long queries with structured sections + grounding

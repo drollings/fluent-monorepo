@@ -31,7 +31,7 @@
       "signature": "fn extractProseSources(allocator: std.mem.Allocator, stages: []const types.Stage) -> []const []const u8",
       "returns": "[]const []const u8",
       "is_pub": true,
-      "line": 351
+      "line": 348
     },
     {
       "type": "fn_decl",
@@ -40,7 +40,7 @@
       "signature": "fn stripAbsenceSentences(allocator: std.mem.Allocator, text: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 366
+      "line": 363
     }
   ]
 }

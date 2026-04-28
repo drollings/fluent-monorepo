@@ -21,32 +21,32 @@
           "name": "context_node",
           "is_pub": false,
           "line": 14
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "execution_request",
           "is_pub": false,
           "line": 15
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "execution_result",
           "is_pub": false,
           "line": 16
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "error_response",
           "is_pub": false,
           "line": 17
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "host_function_call",
           "is_pub": false,
           "line": 18
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "host_function_result",
           "is_pub": false,
@@ -70,8 +70,8 @@
           "returns": "BinaryHeader",
           "is_pub": true,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "validate",
           "match_hash": "1b5250fd1e4856838a40e79ac8e62f73aaf498d2a3141a71adad2bcd3f99e7ef",
@@ -98,8 +98,8 @@
           "returns": "i64",
           "is_pub": true,
           "line": 57
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "init",
           "match_hash": "7778e8b22321d2adb8ad15b6c883501b0afa7726af33d8c1ff309a41eff21195",
@@ -107,8 +107,8 @@
           "returns": "BinaryContextNode",
           "is_pub": true,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getLod",
           "match_hash": "3ea5a02956d765ffb1172eb651b263d7d5cbed9c60da8539cc7ecd8ce04e7aac",
@@ -116,8 +116,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 80
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "writeToBuffer",
           "match_hash": "d134959d009bd7d055aaabab74b12c5eba8ed780861a721559413278b2bdbdd1",
@@ -125,8 +125,8 @@
           "returns": "usize",
           "is_pub": true,
           "line": 85
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "readFromBuffer",
           "match_hash": "b46b001e00b26ff7e6d241a32083d73ae4d6c69736ed480c77f3f966bc649c4d",
@@ -186,8 +186,8 @@
           ],
           "is_pub": true,
           "line": 228
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "destroy",
           "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
@@ -195,8 +195,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 349
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "viewOf",
           "match_hash": "9858cb9515735bee9fb8caac4ef7e199e9e8ac63dd2cb556d3b77ed311bb652d",
@@ -204,8 +204,8 @@
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
           "line": 353
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "binarySize",
           "match_hash": "91193fa3cfbdcd4825e8a8081ff235c4b1bf70aa929bb4192fd459c057fd633f",

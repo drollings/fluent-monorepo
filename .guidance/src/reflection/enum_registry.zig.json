@@ -21,8 +21,8 @@
           "returns": "EnumRegistry",
           "is_pub": true,
           "line": 10
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "0adfc97f36fa9742f94ca521ccb4b70f37ff1bb1fd0fc6f8bb118793e8dbd42d",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "registerEnum",
           "match_hash": "fdb5d78f69e6870824af4979e0401e45708804c4635115c7cddde909978203c3",
@@ -39,8 +39,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "nameToValue",
           "match_hash": "1b65db87674c01f9dd12c64f73e5d912866fa985ce4d5ffd18ab3e3506e4bab3",
@@ -48,8 +48,8 @@
           "returns": "?i64",
           "is_pub": true,
           "line": 44
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "valueToName",
           "match_hash": "e19f625a0fee5ea4fa3070eb63d25857be8a4935e6bc6967d3d8bb67d5cac33e",

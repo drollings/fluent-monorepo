@@ -36,44 +36,44 @@
           "name": "string",
           "is_pub": false,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "lang_string",
           "is_pub": false,
           "line": 49
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "integer",
           "is_pub": false,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "decimal",
           "is_pub": false,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "double",
           "is_pub": false,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "boolean",
           "is_pub": false,
           "line": 53
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "date_time",
           "is_pub": false,
           "line": 54
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "other",
           "is_pub": false,
@@ -123,8 +123,8 @@
           "returns": "BlankNodeScope",
           "is_pub": true,
           "line": 125
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "6d0dfb8993d5dcb20def820da0e2f7c04bb228c1bdf2a37d249693e303e837ca",
@@ -132,8 +132,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 133
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "resolve",
           "match_hash": "4ad607e6f6c3fc1d475d7e525729976df4340e2861d3e41e42270207eb7627cb",

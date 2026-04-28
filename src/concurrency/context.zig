@@ -22,6 +22,10 @@
 
 const std = @import("std");
 
+fn nanoNow() i96 {
+    return std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds;
+}
+
 /// Manages shared context across threads with ownership and lifecycle control; ensures safe access patterns.
 pub const Context = struct {
     /// Bit 0: cancelled flag.  Bits 1–16: u16 error code from `anyerror`.
@@ -43,7 +47,7 @@ pub const Context = struct {
     /// to child work units that should observe parent cancellation.
     pub fn withTimeout(duration_ns: u64) Context {
         // Add in i128 to avoid overflow, then truncate to i64 (safe for < ~292 year timeouts).
-        const deadline: i64 = @truncate(std.time.nanoTimestamp() + @as(i128, duration_ns));
+        const deadline: i64 = @truncate(nanoNow() + @as(i96, duration_ns));
         return .{
             .state = std.atomic.Value(u32).init(0),
             .deadline = deadline,
@@ -67,7 +71,7 @@ pub const Context = struct {
     /// Returns true only if the deadline has passed.  Does not check the flag.
     pub fn isExpired(self: *const Context) bool {
         const d = self.deadline orelse return false;
-        const now: i64 = @truncate(std.time.nanoTimestamp());
+        const now: i64 = @truncate(nanoNow());
         return now >= d;
     }
 
@@ -147,14 +151,14 @@ test "Context: withTimeout large deadline is not expired" {
 }
 
 test "Context: withDeadline past deadline is expired" {
-    const past: i64 = @truncate(std.time.nanoTimestamp() - 1_000_000);
+    const past: i64 = @truncate(nanoNow() - 1_000_000);
     const ctx = Context.withDeadline(past);
     try testing.expect(ctx.isExpired());
     try testing.expect(ctx.isCancelled());
 }
 
 test "Context: withDeadline future deadline is not expired" {
-    const future: i64 = @truncate(std.time.nanoTimestamp() + 60 * std.time.ns_per_s);
+    const future: i64 = @truncate(nanoNow() + 60 * std.time.ns_per_s);
     const ctx = Context.withDeadline(future);
     try testing.expect(!ctx.isExpired());
     try testing.expect(!ctx.isCancelled());

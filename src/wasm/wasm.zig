@@ -476,7 +476,7 @@ pub const HostFunctionRegistry = struct {
     pub fn init(allocator: std.mem.Allocator, library: *Library) Self {
         return .{
             .allocator = allocator,
-            .functions = .{},
+            .functions = .empty,
             .context = .{
                 .library = library,
                 .allocator = allocator,
@@ -760,15 +760,18 @@ pub const ToolGenerator = struct {
         const temp_path = try std.fs.path.join(arena, &[_][]const u8{ self.config.temp_dir, src_filename });
         const wasm_path = try std.fs.path.join(arena, &[_][]const u8{ self.config.temp_dir, "tool.wasm" });
 
-        try std.fs.cwd().makePath(self.config.temp_dir);
-        try std.fs.cwd().writeFile(.{ .sub_path = temp_path, .data = source });
+        const _wasm_io = std.Io.Threaded.global_single_threaded.io();
+        std.Io.Dir.cwd().createDirPath(_wasm_io, self.config.temp_dir) catch |e| switch (e) {
+            error.PathAlreadyExists => {},
+            else => return e,
+        };
+        try std.Io.Dir.cwd().writeFile(_wasm_io, .{ .sub_path = temp_path, .data = source });
 
-        var child = std.process.Child.init(compiler_argv, self.allocator);
-        _ = try child.spawnAndWait();
+        var child = try std.process.spawn(_wasm_io, .{ .argv = compiler_argv });
+        defer child.kill(_wasm_io);
+        _ = try child.wait(_wasm_io);
 
-        const wasm_file = try std.fs.cwd().openFile(wasm_path, .{});
-        defer wasm_file.close();
-        return wasm_file.readToEndAlloc(self.allocator, 1024 * 1024);
+        return std.Io.Dir.cwd().readFileAlloc(_wasm_io, wasm_path, self.allocator, .limited(1024 * 1024));
     }
 
     /// Compile Zig source to WASM (wasm32-freestanding, ReleaseSmal).
@@ -892,7 +895,7 @@ pub const WasmToolCache = struct {
     /// Get WASM bytes by name. Returns null if not found or expired.
     pub fn get(self: *Self, name: []const u8) ?[]const u8 {
         const entry = self.tools.getPtr(name) orelse return null;
-        const now = std.time.timestamp();
+        const now: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s));
         if (self.ttl_seconds > 0 and now - entry.created_at > @as(i64, @intCast(self.ttl_seconds))) {
             return null; // expired
         }
@@ -916,7 +919,7 @@ pub const WasmToolCache = struct {
         errdefer self.allocator.free(owned_key);
         const owned_bytes = try self.allocator.dupe(u8, wasm_bytes);
         errdefer self.allocator.free(owned_bytes);
-        const now = std.time.timestamp();
+        const now: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s));
         try self.tools.put(self.allocator, owned_key, .{
             .wasm_bytes = owned_bytes,
             .created_at = now,
@@ -927,7 +930,7 @@ pub const WasmToolCache = struct {
 
     /// Evict all entries older than ttl_seconds.
     pub fn evictExpired(self: *Self) !void {
-        const now = std.time.timestamp();
+        const now: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s));
         var to_remove: std.ArrayListUnmanaged([]const u8) = .empty;
         defer to_remove.deinit(self.allocator);
 

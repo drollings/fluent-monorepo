@@ -22,8 +22,8 @@
           "returns": "AtomicRefCount",
           "is_pub": false,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "inc",
           "match_hash": "bcd3554714d4fba18dd44f524bbca423d56e929b564a1821191d04788360d721",
@@ -31,8 +31,8 @@
           "returns": "usize",
           "is_pub": false,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "dec",
           "match_hash": "649836632eeb9982190e4f79354d8445b2cbabde9e05caaadf0cce84c1de015d",
@@ -40,8 +40,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "load",
           "match_hash": "ec29704be00b9b524755d17ef9e39e1141f444e4d1010b4c982eb8aa51ba29bc",

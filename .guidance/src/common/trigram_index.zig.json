@@ -51,8 +51,8 @@
           "returns": "TrigramIndex",
           "is_pub": true,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "4c22c093fc75ba0b4eadec9b9a75020cd0acb2db00dd62e6924fc164a836c4ce",
@@ -60,8 +60,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "buildFromContent",
           "match_hash": "dc31b6edf29ac17f76c1f5122fdc6d4074f260d6ca5e93a02ec7d6b84ad85ab7",
@@ -69,8 +69,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 53
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "search",
           "match_hash": "531ebc898e794bcc41f3ab8dd9123a0e0ba023457ce064027f6cf4dd634ca037",
@@ -78,8 +78,8 @@
           "returns": "[]const TrigramHit",
           "is_pub": true,
           "line": 72
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "searchTrigram",
           "match_hash": "15d770b6899cf7b4868512533da289e8f43bee4f2bda9f892d0fedf8853b8670",
@@ -87,8 +87,8 @@
           "returns": "[]const TrigramHit",
           "is_pub": true,
           "line": 80
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "candidates",
           "match_hash": "ca601d0a377b7e3a5ebfd41780def415d2aaad49ca25d20ffb8b4c4b83b7f54f",
@@ -96,8 +96,8 @@
           "returns": "[]u32",
           "is_pub": true,
           "line": 85
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "hitPath",
           "match_hash": "7cfe31531af44f348a0eab9262c0fc3328fbcc4256bfa9cc1c5c9a2ba776e5e8",
@@ -105,8 +105,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 125
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "writeToDisk",
           "match_hash": "97d46e3f08f1f93cd49e8a2909218b4271cdb6829c2c392188b7c97292a13340",
@@ -114,8 +114,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 132
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "readFromDisk",
           "match_hash": "1ed8d25ba210cdfc39dc4dccf2c9f7968e552a6829fd8fe73d14c2d8d7e51560",
@@ -123,8 +123,8 @@
           "returns": "?TrigramIndex",
           "is_pub": true,
           "line": 172
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "readGitHead",
           "match_hash": "3a46ecba786ac7ecbb793d31a671b42597883ee65aa74ed55800dcd3d87fe962",
@@ -151,8 +151,8 @@
           "returns": "?MmapTrigramIndex",
           "is_pub": true,
           "line": 234
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "f81ede4dfb4756327f073dc5b92442b8165201b40ebb9acfe3425d3c9266c244",
@@ -160,8 +160,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 249
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fileCount",
           "match_hash": "35c37fdff200683f28b47761c1952ffaebaccbe7bbc18a67c9c2c47beb3bd120",
@@ -169,8 +169,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 259
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "search",
           "match_hash": "74cacad2e0a889846cf5a165c181f5ade74f191e21505b39f0796c38cf5b774d",

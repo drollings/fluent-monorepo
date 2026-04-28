@@ -40,8 +40,8 @@
           "returns": "Table",
           "is_pub": true,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "withRows",
           "match_hash": "88c4e2a0b0dbabddb77750d44ae29562e5ef1053a9f6890c4b559ba59014a478",
@@ -49,8 +49,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "render",
           "match_hash": "33f8c751209c3bf01b2d5f21bd6a68bb8e11e2471d7429eb30a6bd13e7b11c6f",

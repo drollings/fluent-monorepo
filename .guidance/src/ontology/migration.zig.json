@@ -46,8 +46,8 @@
           "returns": "VersionRegistry",
           "is_pub": true,
           "line": 56
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "fd87ff75aa2d8deeb981e50dc5e46b3687087076bfa9e8896edd57ba725c749d",
@@ -55,8 +55,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "record",
           "match_hash": "ae70b04f9214d4ef7977bc1003eedd99eacae130cbe9a65b565bf0352870cec4",
@@ -64,8 +64,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 71
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "latest",
           "match_hash": "4ec18379e6505f5b73d8a883f44b56b48375a54f416ae3a1e55e87325af84225",

@@ -103,7 +103,7 @@ pub const QueueReactorBuilder = struct {
             logIfError(e);
             return e.cause;
         }
-        var reactor = QueueReactor{
+        const reactor = QueueReactor{
             .allocator = self.allocator,
             .library = self._library.?,
             .l1_cache = L1Cache.init(self.allocator),
@@ -114,12 +114,7 @@ pub const QueueReactorBuilder = struct {
             .decomposer_cfg = self._decomposer_cfg,
             .frontier_cfg = self._frontier_cfg,
         };
-        if (self._thread_count) |n| {
-            const pool = try self.allocator.create(std.Thread.Pool);
-            errdefer self.allocator.destroy(pool);
-            try pool.init(.{ .allocator = self.allocator, .n_jobs = n });
-            reactor.thread_pool = pool;
-        }
+        _ = self._thread_count; // thread pool not available in 0.16
         return reactor;
     }
 };
@@ -135,9 +130,6 @@ pub const QueueReactor = struct {
     l4_threshold: f32 = 0.85,
     l3_max_depth: u8 = 4,
     wasm_tools: []const WasmTool = &.{},
-    queue_mu: std.Thread.Mutex = .{},
-    queue_cond: std.Thread.Condition = .{},
-    thread_pool: ?*std.Thread.Pool = null,
     decomposer_cfg: ?DecomposerConfig = null,
     frontier_cfg: ?LlmConfig = null,
 
@@ -151,10 +143,6 @@ pub const QueueReactor = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        if (self.thread_pool) |pool| {
-            pool.deinit();
-            self.allocator.destroy(pool);
-        }
         self.l1_cache.deinit();
     }
 
@@ -190,13 +178,7 @@ pub const QueueReactor = struct {
         }
         task.query = try task.arena.allocator().dupe(u8, query);
 
-        if (self.thread_pool) |pool| {
-            var wg = std.Thread.WaitGroup{};
-            pool.spawnWg(&wg, routeTask, .{ self, task });
-            pool.waitAndWork(&wg);
-        } else {
-            routeTask(self, task);
-        }
+        routeTask(self, task);
         return task;
     }
 
@@ -215,17 +197,18 @@ pub const QueueReactor = struct {
     }
 
     pub fn route(self: *Self, query: []const u8) anyerror!RoutingResult {
-        const start_time = std.time.nanoTimestamp();
+        const _ts_io = std.Io.Threaded.global_single_threaded.io();
+        const start_time = std.Io.Timestamp.now(_ts_io, .real).nanoseconds;
 
         const hash = try self.hashQuery(query);
         defer self.allocator.free(hash);
         if (self.l1_cache.get(hash)) |cached| {
-            return .{ .nodes = cached.nodes, .tool_result = &[_]u8{}, .llm_response = &[_]u8{}, .tier_used = .l1_memory, .latency_ms = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000)) };
+            return .{ .nodes = cached.nodes, .tool_result = &[_]u8{}, .llm_response = &[_]u8{}, .tier_used = .l1_memory, .latency_ms = @intCast(@divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000)) };
         }
 
         if (self.wasm_tools.len > 0) {
             if (try self.routeL2Wasm(query)) |wasm_result| {
-                const elapsed = @divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000);
+                const elapsed = @divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000);
                 const result = RoutingResult{
                     .nodes = &[_]ContextNode{},
                     .tool_result = wasm_result,
@@ -239,7 +222,7 @@ pub const QueueReactor = struct {
         }
 
         if (try self.graphTraversal(query)) |nodes| {
-            const elapsed = @divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000);
+            const elapsed = @divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000);
             const result = RoutingResult{
                 .nodes = nodes,
                 .tool_result = &[_]u8{},
@@ -252,7 +235,7 @@ pub const QueueReactor = struct {
         }
 
         if (try self.semanticSearch(query)) |hits| {
-            const elapsed = @divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000);
+            const elapsed = @divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000);
             const result = RoutingResult{
                 .nodes = hits,
                 .tool_result = &[_]u8{},
@@ -266,7 +249,7 @@ pub const QueueReactor = struct {
 
         if (self.decomposer_cfg != null) {
             if (try self.localDecompose(query, 0)) |merged| {
-                const elapsed = @divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000);
+                const elapsed = @divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000);
                 const result = RoutingResult{
                     .nodes = merged,
                     .tool_result = &[_]u8{},
@@ -281,7 +264,7 @@ pub const QueueReactor = struct {
         }
 
         if (try self.routeL5Frontier(query)) |frontier_result| {
-            const elapsed = @divTrunc(std.time.nanoTimestamp() - start_time, 1_000_000);
+            const elapsed = @divTrunc(std.Io.Timestamp.now(_ts_io, .real).nanoseconds - start_time, 1_000_000);
             const result = RoutingResult{
                 .nodes = frontier_result.nodes,
                 .tool_result = frontier_result.tool_result,

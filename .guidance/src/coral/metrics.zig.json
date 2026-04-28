@@ -21,8 +21,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "l2Hits",
           "match_hash": "7871583ad308217e250e84cd6dad50b10378ba6fae405e80a5c06cd2ebba90a1",
@@ -30,8 +30,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 32
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "l3Hits",
           "match_hash": "0bd20dfe7fefc128cb49e860ebf7ec444e6880f9f70c28c75e786c423506ff7c",
@@ -39,8 +39,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "l4Hits",
           "match_hash": "e2654f2daadf44896cc2e4b3be133f78ff8036aad13f112cbb4ca6f3f2fc836e",
@@ -48,8 +48,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 38
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "l5Hits",
           "match_hash": "9131a86631b1dbc7e3097f0e92196a40fdd7034ab9f35fa88c1492bc021bb8a4",
@@ -57,8 +57,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 41
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "misses",
           "match_hash": "7a6b1125d9dbfc4772a80f32ef13c6c3cd331fb3a4d42197cb1591f1c4a4a975",
@@ -66,8 +66,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 44
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deterministicRate",
           "match_hash": "3a125e33fde646f63500f3dae059a03babaa626a96ed39484ad2eb5388789556",
@@ -75,8 +75,8 @@
           "returns": "f64",
           "is_pub": true,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "formatPrometheus",
           "match_hash": "c74a8827a1ce859256c63cc7a6060054fa229415aa6e7a7add8985746ee1e172",

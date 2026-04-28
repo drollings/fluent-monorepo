@@ -11,8 +11,8 @@ pub const EnumRegistry = struct {
         _ = allocator;
         return .{
             .name_to_index = .{},
-            .index_to_name = .{},
-            .index_to_value = .{},
+            .index_to_name = .empty,
+            .index_to_value = .empty,
         };
     }
 

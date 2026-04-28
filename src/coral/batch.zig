@@ -394,8 +394,9 @@ test "end-to-end: ingestSource on YAGO sample returns nodes and edges" {
 
 test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     const YAGO_TINY_PATH = "data/yago-4.5.0.2-tiny/yago-tiny.ttl";
+    const io = std.testing.io;
     // Skip gracefully if file absent.
-    std.fs.cwd().access(YAGO_TINY_PATH, .{}) catch return;
+    std.Io.Dir.cwd().access(io, YAGO_TINY_PATH, .{}) catch return;
 
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
@@ -404,13 +405,18 @@ test "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)" {
     const lib = try testOpenLib(allocator);
     defer lib.deinit();
 
-    // Read only enough bytes for a few hundred triples (YAGO header + early entities).
-    const file = try std.fs.cwd().openFile(YAGO_TINY_PATH, .{});
-    defer file.close();
-    const buf = try allocator.alloc(u8, 32 * 1024);
-    defer allocator.free(buf);
-    const n = try file.read(buf);
-    const source = buf[0..n];
+    // Read only the first 32KB for a few hundred triples (YAGO header + early entities).
+    const source = blk: {
+        const f = try std.Io.Dir.cwd().openFile(io, YAGO_TINY_PATH, .{});
+        defer f.close(io);
+        const buf = try allocator.alloc(u8, 32 * 1024);
+        errdefer allocator.free(buf);
+        var fbuf: [4096]u8 = undefined;
+        var fr = f.reader(io, &fbuf);
+        const n = try fr.interface.readSliceShort(buf);
+        break :blk buf[0..n];
+    };
+    defer allocator.free(source);
 
     var ingestor = BatchIngestor.init(allocator, .{
         .batch_size = 100,

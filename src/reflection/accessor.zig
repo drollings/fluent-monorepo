@@ -548,9 +548,9 @@ pub fn describeSchemaFromAccessors(
     type_name: []const u8,
     accessors_slice: []const Accessor,
 ) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer buf.deinit(allocator);
-    const writer = buf.writer(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    const writer = &aw.writer;
 
     // Open object
     try writer.writeAll("{\n");
@@ -603,7 +603,7 @@ pub fn describeSchemaFromAccessors(
     // Close object
     try writer.writeAll("}");
 
-    return buf.toOwnedSlice(allocator);
+    return aw.toOwnedSlice();
 }
 
 /// Converts a Zig field description into a JSON-formatted string using an accessor and indentation.

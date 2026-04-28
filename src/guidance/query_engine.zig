@@ -1764,7 +1764,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 \\Completeness: <0-10>
                 \\Navigation: <0-10>
                 \\Observation: <one sentence assessing subagent utility>
-                , .{ query_text, tq.rubric, results_buf_aw.written() });
+            , .{ query_text, tq.rubric, results_buf_aw.written() });
             defer allocator.free(eval_prompt);
 
             const response_opt = client.complete(eval_prompt, 400, 0.1, null) catch |err| blk: {

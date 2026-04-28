@@ -36,20 +36,20 @@
           "name": "sha256",
           "is_pub": false,
           "line": 41
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "sha512",
           "is_pub": false,
           "line": 42
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blake3",
           "is_pub": false,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "digestLength",
           "match_hash": "93a180c79da0c34235a63b27bd49fd8a1528fcf5a53c459a5107beb83a3e4ea0",
@@ -147,8 +147,8 @@
           "returns": "QueryCache",
           "is_pub": true,
           "line": 186
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "c9cbd31d6cd45413341e379d6d221cca70b8b6815ea6bd198e2fee27c5e02b14",
@@ -156,8 +156,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 194
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "bc10a0ab052db00cfc177c612cc78836ce2d520a025ff59f06e54386d56cab66",
@@ -165,8 +165,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 205
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "put",
           "match_hash": "8eb6e65829e19ff005940bbd5d13b13e8a4cfb018689b1bd2b12c56364835d61",
@@ -202,8 +202,8 @@
           "returns": "HashState",
           "is_pub": true,
           "line": 268
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "update",
           "match_hash": "c09ff821a044807e570cfe6999121541d1a9967e74f1fa5815c2429c8bf1a46a",
@@ -211,8 +211,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 276
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "final",
           "match_hash": "eae7c1e5ffb8e2789fe803a7574e06faf6a088e2c9d6bfcda121c598a81f1980",

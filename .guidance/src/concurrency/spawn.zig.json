@@ -4,50 +4,41 @@
     "source": "src/concurrency/spawn.zig",
     "language": "zig"
   },
-  "comment": " spawn.zig — Fire-and-forget dispatch over std.Thread.Pool (M12).\n\n A thin wrapper that submits an `AnyWorkUnit` to a `std.Thread.Pool` via\n `spawnWg`.  All scheduling complexity lives in `std.Thread.Pool`; this file\n is intentionally minimal (~40 lines including comments).\n\n For error-capturing dispatch, use `ErrorGroup.go()` (error_group.zig).\n\n ## Usage\n\n   var wg: std.Thread.WaitGroup = .{};\n   spawn(&pool, &wg, unit.toAny());\n   pool.waitAndWork(&wg);\n\n `pool.waitAndWork` is preferred over `wg.wait()` when the calling thread\n has no other work — it helps drain the queue, reducing latency for small\n batches while still blocking properly (no spin).",
+  "comment": " spawn.zig — Fire-and-forget dispatch (M12).\n\n Executes an `AnyWorkUnit` synchronously.  Thread pools are not available in\n Zig 0.16.0; all work runs on the calling thread.\n\n For error-capturing dispatch, use `ErrorGroup.go()` (error_group.zig).",
   "used_by": ["src/concurrency/root.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "spawn",
-      "match_hash": "b6250aa9aa819a9f1661df8ce2021517fd728b892c14123dd66e64f3fb843cda",
-      "signature": "fn spawn(pool: *std.Thread.Pool, wg: *std.Thread.WaitGroup, unit: AnyWorkUnit) -> void",
+      "match_hash": "3bc687a0069e44aacd1534fdbc2499172f9c086b5a2f91c6dabec3ae97c74117",
+      "signature": "fn spawn(unit: AnyWorkUnit) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 23
-    },
-    {
-      "type": "fn_private",
-      "name": "runUnit",
-      "match_hash": "0f2b8e26654f27d04856a0a1204c420c56b5fc8c1d7faf57f982a2710335c751",
-      "signature": "fn runUnit(unit: AnyWorkUnit) -> void",
-      "returns": "void",
-      "is_pub": false,
-      "line": 32
+      "line": 12
     },
     {
       "type": "test_decl",
-      "name": "spawn: runs handler and signals wg",
+      "name": "spawn: runs handler",
       "is_pub": false,
-      "line": 56
+      "line": 36
     },
     {
       "type": "test_decl",
-      "name": "spawn: 20 units on 4-thread pool — all complete",
+      "name": "spawn: 20 units — all complete",
+      "is_pub": false,
+      "line": 46
+    },
+    {
+      "type": "test_decl",
+      "name": "spawn: cancelled unit does not execute handler",
       "is_pub": false,
       "line": 72
     },
     {
       "type": "test_decl",
-      "name": "spawn: cancelled unit completes without hanging",
+      "name": "spawn: GPA no leaks",
       "is_pub": false,
-      "line": 104
-    },
-    {
-      "type": "test_decl",
-      "name": "spawn: GPA no leaks after pool.deinit",
-      "is_pub": false,
-      "line": 122
+      "line": 84
     }
   ]
 }

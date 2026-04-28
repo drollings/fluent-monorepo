@@ -87,7 +87,7 @@ pub const ContextNode = struct {
             .id = id,
             .content = content,
             .embedding = &[_]f32{},
-            .valid_from = @floatFromInt(std.time.timestamp()),
+            .valid_from = @floatFromInt(nowTimestamp()),
             .valid_to = null,
             .confidence = 0,
             .provenance_id = 0,
@@ -209,6 +209,15 @@ pub const WasmTool = struct {
 };
 
 // ---------------------------------------------------------------------------
+// Timestamp helper
+// ---------------------------------------------------------------------------
+
+fn nowTimestamp() i64 {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    return @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s));
+}
+
+// ---------------------------------------------------------------------------
 // §3.2 Library — SQLite database handle
 // ---------------------------------------------------------------------------
 
@@ -224,7 +233,7 @@ pub const Library = struct {
     allocator: std.mem.Allocator,
     db: ?*c.sqlite3,
     initialized: bool = false,
-    mu: std.Thread.Mutex = .{},
+    mu: std.Io.Mutex = .init,
 
     // ------------------------------------------------------------------
     // Lifecycle
@@ -359,8 +368,9 @@ pub const Library = struct {
     /// each module's @cImport creates distinct sqlite3_stmt types. Future work
     /// could extract sqlite3.c to a shared module for SqlBinder reuse.
     pub fn insertNode(self: *Self, node: ContextNode) !void {
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _mu_io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_mu_io);
+        defer self.mu.unlock(_mu_io);
         const sql =
             \\INSERT OR REPLACE INTO context_nodes
             \\    (id, lod0, lod1, lod2, lod3, lod4, lod5,
@@ -511,8 +521,9 @@ pub const Library = struct {
 
     /// Insert or replace a WasmTool record.
     pub fn insertWasmTool(self: *Self, tool: WasmTool) !void {
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _mu_io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_mu_io);
+        defer self.mu.unlock(_mu_io);
         const sql =
             \\INSERT OR REPLACE INTO wasm_tools
             \\    (id, target_id, wasm_b64, schema_hash, test_passed, created_at, expires_at, access_count)
@@ -579,13 +590,14 @@ pub const Library = struct {
     /// Delete WASM tools whose `expires_at` timestamp has passed.
     /// No-op for tools with null `expires_at`.
     pub fn cleanupExpiredTools(self: *Self) !void {
-        const now: f64 = @floatFromInt(std.time.timestamp());
+        const now: f64 = @floatFromInt(nowTimestamp());
         const sql =
             \\DELETE FROM wasm_tools
             \\WHERE expires_at IS NOT NULL AND expires_at < ?1
         ;
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _mu_io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_mu_io);
+        defer self.mu.unlock(_mu_io);
         const stmt = try self.prepare(sql);
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_double(stmt, 1, now);
@@ -614,8 +626,9 @@ pub const Library = struct {
         distance: f32,
         edge_type: EdgeType,
     ) !void {
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _mu_io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_mu_io);
+        defer self.mu.unlock(_mu_io);
         const sql =
             \\INSERT OR REPLACE INTO neighbor_of (from_id, to_id, distance, edge_type)
             \\VALUES (?1, ?2, ?3, ?4)
@@ -699,7 +712,7 @@ pub const Library = struct {
         _ = c.sqlite3_bind_blob(stmt, 1, data.ptr, @intCast(data.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 2, node_count);
         _ = c.sqlite3_bind_int64(stmt, 3, edge_count);
-        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(nowTimestamp()));
         if (predicate_filter) |pf| {
             _ = c.sqlite3_bind_text(stmt, 5, pf.ptr, @intCast(pf.len), SQLITE_STATIC);
         } else {
@@ -1298,7 +1311,7 @@ pub const Library = struct {
         defer _ = c.sqlite3_finalize(stmt);
         _ = c.sqlite3_bind_int64(stmt, 1, provenance_id);
         _ = c.sqlite3_bind_text(stmt, 2, source.ptr, @intCast(source.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_double(stmt, 3, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_double(stmt, 3, @floatFromInt(nowTimestamp()));
         _ = c.sqlite3_bind_text(stmt, 4, authority.ptr, @intCast(authority.len), SQLITE_STATIC);
         _ = try step(stmt);
     }
@@ -1331,7 +1344,7 @@ pub const Library = struct {
         _ = c.sqlite3_bind_int64(stmt, 1, node_id);
         _ = c.sqlite3_bind_text(stmt, 2, status.ptr, @intCast(status.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 3, reviewed_by.ptr, @intCast(reviewed_by.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_double(stmt, 4, @floatFromInt(nowTimestamp()));
         _ = c.sqlite3_bind_int64(stmt, 5, confidence_after);
         _ = try step(stmt);
     }
@@ -1353,7 +1366,7 @@ pub const Library = struct {
         _ = c.sqlite3_bind_text(stmt, 3, predicate.ptr, @intCast(predicate.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 4, value_a.ptr, @intCast(value_a.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 5, value_b.ptr, @intCast(value_b.len), SQLITE_STATIC);
-        _ = c.sqlite3_bind_double(stmt, 6, @floatFromInt(std.time.timestamp()));
+        _ = c.sqlite3_bind_double(stmt, 6, @floatFromInt(nowTimestamp()));
         _ = try step(stmt);
     }
 };

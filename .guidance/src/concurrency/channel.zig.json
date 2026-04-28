@@ -8,91 +8,100 @@
   "used_by": ["src/concurrency/channel_tests.zig", "src/concurrency/root.zig"],
   "members": [
     {
+      "type": "fn_private",
+      "name": "_io",
+      "match_hash": "6a0722d9140d9e648fce14479a85e64d8e12d358aeca4e02ce489e7916f08ea4",
+      "signature": "fn _io() -> std.Io",
+      "returns": "std.Io",
+      "is_pub": false,
+      "line": 26
+    },
+    {
       "type": "fn_decl",
       "name": "Channel",
       "match_hash": "c98f26087417e93e1f4c4f045a960cfd7a746817b54d890b8108b274ed16d286",
       "signature": "fn Channel(T: type) -> type",
       "returns": "type",
       "is_pub": true,
-      "line": 27
+      "line": 31
     },
     {
       "type": "test_decl",
       "name": "Channel: send then recv returns value",
       "is_pub": false,
-      "line": 165
+      "line": 176
     },
     {
       "type": "test_decl",
       "name": "Channel: send then recv preserves FIFO order",
       "is_pub": false,
-      "line": 174
+      "line": 185
     },
     {
       "type": "test_decl",
       "name": "Channel: recv on empty closed channel returns null",
       "is_pub": false,
-      "line": 186
+      "line": 197
     },
     {
       "type": "test_decl",
       "name": "Channel: send on closed channel returns ChannelClosed",
       "is_pub": false,
-      "line": 194
+      "line": 205
     },
     {
       "type": "test_decl",
       "name": "Channel: trySend returns ChannelFull when buffer full",
       "is_pub": false,
-      "line": 202
+      "line": 213
     },
     {
       "type": "test_decl",
       "name": "Channel: trySend returns ChannelClosed when closed",
       "is_pub": false,
-      "line": 211
+      "line": 222
     },
     {
       "type": "test_decl",
       "name": "Channel: drain-after-close pattern",
       "is_pub": false,
-      "line": 219
+      "line": 230
     },
     {
       "type": "test_decl",
       "name": "Channel: close is idempotent",
       "is_pub": false,
-      "line": 233
+      "line": 244
     },
     {
       "type": "test_decl",
       "name": "Channel: tryRecv returns null on empty channel",
       "is_pub": false,
-      "line": 242
+      "line": 253
     },
     {
       "type": "test_decl",
       "name": "Channel: len tracks item count",
       "is_pub": false,
-      "line": 249
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "Channel: N senders, 1 receiver — all values received exactly once",
       "is_pub": false,
-      "line": 260
+      "line": 271
     },
     {
       "type": "test_decl",
       "name": "Channel: 1 sender, N receivers — each value received exactly once",
       "is_pub": false,
-      "line": 294
+      "line": 305
     },
     {
       "type": "test_decl",
       "name": "Channel: blocking send unblocks when receiver consumes",
       "is_pub": false,
-      "line": 328
+      "line": 339
     }
   ]
 }

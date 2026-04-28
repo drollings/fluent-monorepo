@@ -84,8 +84,8 @@
           "returns": "ProgressBar",
           "is_pub": true,
           "line": 126
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "advance",
           "match_hash": "c9f12c3710ffa947ab621eb9e28fb587432484dc33305751d256f31c2235bc9e",
@@ -93,8 +93,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 135
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "set",
           "match_hash": "3a0b356d186a3b0a10c845e18b93c66427e83ee88e0f31fa7dd264860062dc87",
@@ -102,8 +102,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 142
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "render",
           "match_hash": "976ba0096a4cc2eb2c483824f123e9b0d5441219bc3c7278d60888a5c166a7e8",
@@ -111,8 +111,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 146
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "complete",
           "match_hash": "8713f9dc58a47ebc742757f15abd13926782707a9473379b42968cecf92ff151",
@@ -136,104 +136,104 @@
           "name": "reset",
           "is_pub": false,
           "line": 174
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "black",
           "is_pub": false,
           "line": 175
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "red",
           "is_pub": false,
           "line": 176
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "green",
           "is_pub": false,
           "line": 177
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "yellow",
           "is_pub": false,
           "line": 178
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blue",
           "is_pub": false,
           "line": 179
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "magenta",
           "is_pub": false,
           "line": 180
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "cyan",
           "is_pub": false,
           "line": 181
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "white",
           "is_pub": false,
           "line": 182
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_black",
           "is_pub": false,
           "line": 183
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_red",
           "is_pub": false,
           "line": 184
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_green",
           "is_pub": false,
           "line": 185
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_yellow",
           "is_pub": false,
           "line": 186
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_blue",
           "is_pub": false,
           "line": 187
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_magenta",
           "is_pub": false,
           "line": 188
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_cyan",
           "is_pub": false,
           "line": 189
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "bright_white",
           "is_pub": false,
           "line": 190
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "code",
           "match_hash": "57c0d1c8b6e1392a0046b19dfe08348daf6309f39daedf355be079029e69f58a",

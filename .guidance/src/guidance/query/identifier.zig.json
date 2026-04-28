@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " identifier_match.zig — Identifier pattern detection for TIER 0/1 query routing.\n\n Detects whether a query string is an exact identifier (function, struct, method,\n file, or module name) rather than natural language.  Identifier queries route to\n TIER 0 or TIER 1 — deterministic DB lookups — bypassing LLM synthesis entirely.\n\n Detection rules (in priority order):\n 1. Empty / whitespace-only → not an identifier.\n 2. Contains spaces → not an identifier (identifiers are single tokens).\n 3. File-path heuristic: contains '/' → .file kind.\n 4. Dotted path: `module.Member` → .method or .struct based on member case.\n    Three-segment: `a.b.c` → outer is module, inner is struct, last is method.\n 5. Single PascalCase word → .struct (or generic type).\n 6. Single snake_case / camelCase word → .function.\n\n §Performance: pure string scanning, no allocations, <1 µs.",
+  "used_by": ["src/guidance/query/strategy.zig"],
   "members": [
     {
       "type": "enum",
@@ -18,26 +19,26 @@
           "name": "function",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "method",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "@\"struct\"",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "file",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "module",
           "is_pub": false,

@@ -22,8 +22,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "isNewerThan",
           "match_hash": "b7d5ec51daa48c8870d9ba6a89b2621a5c019d61a4a27b16e7cb3aa986d3f53e",
@@ -31,8 +31,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 60
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "eql",
           "match_hash": "15b1b5087ea49b816e79d96bf2af6d6d8487a5dfda48e938b497695058b1598f",
@@ -40,8 +40,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 66
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "format",
           "match_hash": "5e8ce5fcb00bc1ecd38738b1eb8de7cba51692bf525cc4f620aa770e4d719f14",

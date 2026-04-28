@@ -45,10 +45,10 @@ pub const PendingNode = struct {
             .allocator = allocator,
             .id = id,
             .lod = undefined,
-            .types = .{},
+            .types = .empty,
         };
         for (&node.lod) |*arr| {
-            arr.* = .{};
+            arr.* = .empty;
         }
         return node;
     }
@@ -65,7 +65,7 @@ pub const PendingNode = struct {
         var node = ContextNode{
             .id = self.id,
             .embedding = &[_]f32{},
-            .valid_from = @floatFromInt(std.time.timestamp()),
+            .valid_from = @floatFromInt(@as(i64, @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s)))),
             .valid_to = null,
             .confidence = 0,
             .provenance_id = 0,
@@ -132,8 +132,8 @@ pub const TripleMapper = struct {
             .allocator = allocator,
             .config = config,
             .nodes = std.StringHashMap(PendingNode).init(allocator),
-            .edges = .{},
-            .contradictions = .{},
+            .edges = .empty,
+            .contradictions = .empty,
             .blank_scope = try normalize_mod.BlankNodeScope.init(allocator, config.scope),
         };
     }

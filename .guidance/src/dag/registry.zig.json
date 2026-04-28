@@ -138,8 +138,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 187
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "setError",
           "match_hash": "33ba833f0ef6bb8fef0828f7cc3c53e3401a5f62926be0171c46ae87f8abb22d",
@@ -147,8 +147,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 191
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "depends",
           "match_hash": "dabad4ae5f4c1dd9359a3bc97248a9ea54d9ddb891b186d88b851d6bf659f495",
@@ -156,8 +156,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 202
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "provides",
           "match_hash": "5b8360b2b6289472f374077a4fa78c6bdd1de4ac7080a7734b51626adee1ce9f",
@@ -165,8 +165,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 212
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "command",
           "match_hash": "12fdb8b079594bc127e5ac89bdf3992f5639eaedb7da2b0523ff2af6d73e40ab",
@@ -174,8 +174,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 222
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "essential",
           "match_hash": "36e5ee39fcdb5662d0c2da79ec6fc4e7324dbb442aa12e5f7108b09b195b2274",
@@ -183,8 +183,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 236
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "exists",
           "match_hash": "8f79094d1fe2212de63b62f47fd68b928800cfc992f2d3a0275034f6eb8b899a",
@@ -192,8 +192,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 242
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "id",
           "match_hash": "778289342dd52cd53645693b42a90c2ab8b93ca207a971b2ec7fa2ac33b0c0c9",
@@ -201,8 +201,8 @@
           "returns": "*TargetBuilder",
           "is_pub": true,
           "line": 254
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "register",
           "match_hash": "97e2f2f88d6b35c928cef0f26f4c422d2156ffbc2552efce9ba693f6b83121ab",

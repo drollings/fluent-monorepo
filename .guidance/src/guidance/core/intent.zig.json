@@ -18,38 +18,38 @@
           "name": "word_index",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "anchor_lookup",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "fts_keyword",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "rrf_merge",
           "is_pub": false,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "hybrid",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "vector_only",
           "is_pub": false,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "from",
           "match_hash": "0d278cfe3e97b3a455283d54c30657fc111859a3d4c977685c42f3206858a3c1",
@@ -73,32 +73,32 @@
           "name": "single_identifier",
           "is_pub": false,
           "line": 47
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "capability_keyword",
           "is_pub": false,
           "line": 49
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "file_path",
           "is_pub": false,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "how_to",
           "is_pub": false,
           "line": 53
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "conceptual",
           "is_pub": false,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "multi_keyword",
           "is_pub": false,

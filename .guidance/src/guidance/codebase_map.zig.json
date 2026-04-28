@@ -19,50 +19,50 @@
           "name": "zig_build",
           "is_pub": false,
           "line": 18
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "make",
           "is_pub": false,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "cargo",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "npm",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "gradle",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "cmake",
           "is_pub": false,
           "line": 23
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "poetry",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "unknown",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "buildCommand",
           "match_hash": "bef4d01ad547913e2260d7120c59d1f3e242e65cc2f38e0e75e6edc0ca0bc96a",
@@ -148,11 +148,11 @@
     {
       "type": "fn_private",
       "name": "walkDir",
-      "match_hash": "7978ba689bca3d1aebb9b82a23cc914a0afdb007b8c20172c8277bb1edcbee7e",
-      "signature": "fn walkDir(allocator: std.mem.Allocator, dir: std.fs.Dir, rel_prefix: []const u8, tree: *std.ArrayList(DirectoryEntry), depth: u32) -> void",
+      "match_hash": "09407103792fbaa8bf85229555259d6d37d6f71c6a989b965c3f7aaaac73c3d0",
+      "signature": "fn walkDir(io: std.Io, allocator: std.mem.Allocator, dir: std.Io.Dir, rel_prefix: []const u8, tree: *std.ArrayList(DirectoryEntry), depth: u32) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 237
+      "line": 238
     },
     {
       "type": "fn_private",
@@ -161,7 +161,7 @@
       "signature": "fn countLanguages(allocator: std.mem.Allocator, tree: []const DirectoryEntry) -> []LanguageCount",
       "returns": "[]LanguageCount",
       "is_pub": false,
-      "line": 291
+      "line": 293
     },
     {
       "type": "fn_private",
@@ -170,7 +170,7 @@
       "signature": "fn classifyEntryPoint(name: []const u8) -> @TypeOf(@as(EntryPoint, undefined).kind)",
       "returns": "@TypeOf(@as(EntryPoint, undefined).kind)",
       "is_pub": false,
-      "line": 346
+      "line": 348
     },
     {
       "type": "fn_private",
@@ -179,7 +179,7 @@
       "signature": "fn isEntryPointName(name: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 357
+      "line": 359
     },
     {
       "type": "fn_private",
@@ -188,7 +188,7 @@
       "signature": "fn detectEntryPoints(allocator: std.mem.Allocator, tree: []const DirectoryEntry, workspace: []const u8) -> []EntryPoint",
       "returns": "[]EntryPoint",
       "is_pub": false,
-      "line": 371
+      "line": 373
     },
     {
       "type": "fn_private",
@@ -197,7 +197,7 @@
       "signature": "fn findCapabilityDirs(allocator: std.mem.Allocator, workspace: []const u8, tree: []const DirectoryEntry) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 447
+      "line": 449
     },
     {
       "type": "fn_private",
@@ -206,7 +206,7 @@
       "signature": "fn findSkillDirs(allocator: std.mem.Allocator, workspace: []const u8, tree: []const DirectoryEntry) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 488
+      "line": 490
     },
     {
       "type": "fn_private",
@@ -215,19 +215,19 @@
       "signature": "fn extractReadmeDescription(allocator: std.mem.Allocator, workspace: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 515
+      "line": 517
     },
     {
       "type": "test_decl",
       "name": "detectBuildSystem: returns zig_build for this repo",
       "is_pub": false,
-      "line": 564
+      "line": 566
     },
     {
       "type": "test_decl",
       "name": "looksLikeIdentifier via ENTRY_EXACT: main is an entry point",
       "is_pub": false,
-      "line": 572
+      "line": 574
     }
   ]
 }

@@ -21,6 +21,7 @@
 //!   7. Update the tests.zig aggregator to include the new _tests.zig.
 
 const std = @import("std");
+const common = @import("common");
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -410,8 +411,7 @@ fn assembleTestsFile(
 // ---------------------------------------------------------------------------
 
 fn runZigFmt(allocator: std.mem.Allocator, path: []const u8) void {
-    const io = std.Io.Threaded.global_single_threaded.io();
-    _ = std.process.run(allocator, io, .{
+    _ = std.process.run(allocator, common.io.singleIo(), .{
         .argv = &[_][]const u8{ "zig", "fmt", path },
     }) catch return;
 }

@@ -38,44 +38,44 @@
           "name": "python",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "cpp",
           "is_pub": false,
           "line": 29
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "rust",
           "is_pub": false,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "go",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "typescript",
           "is_pub": false,
           "line": 32
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "tsx",
           "is_pub": false,
           "line": 33
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "php",
           "is_pub": false,
           "line": 34
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getDescriptor",
           "match_hash": "915baa2ad725793337ca1eb43fb2c0c0e5266333a2078a291c2d14822ff67a42",

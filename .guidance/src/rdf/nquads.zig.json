@@ -40,8 +40,8 @@
           "returns": "NQuadsParser",
           "is_pub": true,
           "line": 42
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "0d21398740cc568f3f319b41416ccfe438ab72d4cf6aa34ffc71cd100818e5bc",
@@ -49,8 +49,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 49
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "next",
           "match_hash": "377f04ab681bfb5ad80963488bb775b50b7193480c27efa5ec579703d85b033a",
@@ -58,8 +58,8 @@
           "returns": "NQuadsError!?Quad",
           "is_pub": true,
           "line": 54
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseLine",
           "match_hash": "77b81de2522d60a626d9f827f5e1f62ed8228f3e068006eef6eb0780b9520742",
@@ -67,8 +67,8 @@
           "returns": "NQuadsError!Quad",
           "is_pub": false,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "skipWs",
           "match_hash": "edc9ae84f0b0a5cf2710ba01949323aa4863d9f7bfa27dd4068360598e053e0c",
@@ -76,8 +76,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 92
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseTerm",
           "match_hash": "88cb6bfc18bc63849b045f380c4e5817baae78521e0c0a823ff560cc2a34f75b",
@@ -85,8 +85,8 @@
           "returns": "NQuadsError!Term",
           "is_pub": false,
           "line": 98
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseIRI",
           "match_hash": "508d355fec48ee4aebee87010e52d2c1b99c12f5f90402ea1b7833eba9593887",
@@ -94,8 +94,8 @@
           "returns": "NQuadsError!Term",
           "is_pub": false,
           "line": 109
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseBlankNode",
           "match_hash": "066fc4a6b60922e8a24a74e734962d720335a99f3ce672f2fffe76970dc03ed9",
@@ -103,8 +103,8 @@
           "returns": "NQuadsError!Term",
           "is_pub": false,
           "line": 119
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "parseLiteral",
           "match_hash": "f0e7840729e8a397c92766648bc89451f9d2393cb0f8bc25cc3c5430e9dc2fcf",

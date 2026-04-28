@@ -30,8 +30,8 @@
           "returns": "usize",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "estimateSliceTokens",
           "match_hash": "468d10528d96aae811b9695dde715249d6e88f47d8f7be32807b22ead2c057e7",
@@ -39,8 +39,8 @@
           "returns": "usize",
           "is_pub": true,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fits",
           "match_hash": "02beafaa6a96a55d94938e6f196c1be00f8ee470fb1955f8bae9fda9a3e4268b",
@@ -67,8 +67,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 79
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "communityTokens",
           "match_hash": "09dee3f868917935c6c4c7b681e9985a7c4145d6f4986e98dce5622fd536c24f",
@@ -76,8 +76,8 @@
           "returns": "usize",
           "is_pub": true,
           "line": 84
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "textTokens",
           "match_hash": "5f26199bb8d7ebafb5408204c120bcf5eef7b8eb77ea30defbe0c17d687e546f",
@@ -85,8 +85,8 @@
           "returns": "usize",
           "is_pub": true,
           "line": 88
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "entityTokens",
           "match_hash": "d8dfea313a3256ae25e67aaf24ccc59090eac04063430c9edde2ef7d7a36213a",

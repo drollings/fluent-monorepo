@@ -21,8 +21,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 42
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "markDirty",
           "match_hash": "60bd812ee58e167fbbc2b7f0c7da877f52b2975589eb4e1ffc4cd06beb83b303",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "computeDegrees",
           "match_hash": "2c56fb1d89eaee2f997cbf47168c73e387c1d04a204663dc33a7d7d45c38a82b",
@@ -39,8 +39,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "computePageRank",
           "match_hash": "baf4fc332d1631bf8e1e08af92813da5b7eddeb7e042e49d04b4ef8672b4af6d",
@@ -48,8 +48,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 71
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "computeCommunities",
           "match_hash": "e0b9a55dc8fab1a790e43a11e239e8c97271efa5b4740549f408b9a42cdf9533",
@@ -57,8 +57,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 80
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "serializeCSR",
           "match_hash": "37e0a0ba4fdbb8ae45c0d0f38ec1005a26664301fc5721f3605b111ebe8768b6",
@@ -66,8 +66,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 89
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getDegree",
           "match_hash": "a9b8fb98ace71ece2c191e1f3fb91e564f374e511cb9cfcf9b57097c29698022",
@@ -75,8 +75,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 99
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getPageRank",
           "match_hash": "6a2da8aca751879de07c2a6798e28df3eac8c14147d0ac0ca8c6422200426876",
@@ -84,8 +84,8 @@
           "returns": "f32",
           "is_pub": true,
           "line": 104
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getCommunity",
           "match_hash": "261d4a3ae8ca3b7b2680e5dfdf7737897744b6b84080f1c0d0adf3ef34a40667",

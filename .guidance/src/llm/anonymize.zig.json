@@ -18,74 +18,74 @@
           "name": "email",
           "is_pub": false,
           "line": 10
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "phone_us",
           "is_pub": false,
           "line": 11
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "phone_intl",
           "is_pub": false,
           "line": 12
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "credit_card",
           "is_pub": false,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ssn_us",
           "is_pub": false,
           "line": 14
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ssn_uk",
           "is_pub": false,
           "line": 15
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ssn_ca",
           "is_pub": false,
           "line": 16
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ipv4",
           "is_pub": false,
           "line": 17
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ipv6",
           "is_pub": false,
           "line": 18
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "api_key_bearer",
           "is_pub": false,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "api_key_aws",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "api_key_generic",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "placeholder",
           "match_hash": "4aea789f50a3c879ccfb34ff7d92675fc38b6f5875f40e33734e3b0032d4bd4e",

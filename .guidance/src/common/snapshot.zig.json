@@ -21,8 +21,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 14
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "loadSnapshot",
           "match_hash": "74e15f0071767ce826973de4453664a01ae6b66c9f961fd4bfa1551ff119d5d8",
@@ -30,8 +30,8 @@
           "returns": "?GuidanceSnapshot",
           "is_pub": true,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "readSnapshotGitHead",
           "match_hash": "fbbff370c01ce663d8cd972d16c139367900ee9000182761a473bd0d952a8cbc",
@@ -39,15 +39,15 @@
           "returns": "?[40]u8",
           "is_pub": true,
           "line": 93
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "isCurrent",
           "match_hash": "bbb68d93f8df617ae0e1dd60abb05104dc7b0df24a556287b5b008a61db7a01a",
           "signature": "fn isCurrent(dir_path: []const u8, current_head: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 116
+          "line": 117
         }
       ],
       "line": 5
@@ -56,13 +56,13 @@
       "type": "test_decl",
       "name": "GuidanceSnapshot write and load",
       "is_pub": false,
-      "line": 127
+      "line": 128
     },
     {
       "type": "test_decl",
       "name": "GuidanceSnapshot isCurrent",
       "is_pub": false,
-      "line": 151
+      "line": 152
     }
   ]
 }

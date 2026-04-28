@@ -19,44 +19,44 @@
           "name": "source",
           "is_pub": false,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "markdown",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "config",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "data",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "pdf",
           "is_pub": false,
           "line": 23
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "audio",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "unknown",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "fromExtension",
           "match_hash": "6f447af6c3fa7a291b29f33742dfd4c6450fe9893bc11a7f92c5b8d6d2eb651b",
@@ -64,8 +64,8 @@
           "returns": "FileType",
           "is_pub": true,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "toStr",
           "match_hash": "c096e2640d86a44aa2ad5650646b8de6b6c1e751e03ad85871504e2dc7db80ee",
@@ -89,56 +89,56 @@
           "name": "fn_decl",
           "is_pub": false,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "fn_private",
           "is_pub": false,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "@\"struct\"",
           "is_pub": false,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "@\"enum\"",
           "is_pub": false,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "@\"union\"",
           "is_pub": false,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "enum_field",
           "is_pub": false,
           "line": 66
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "test_decl",
           "is_pub": false,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "comptime_block",
           "is_pub": false,
           "line": 68
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "method",
           "is_pub": false,
           "line": 69
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "method_private",
           "is_pub": false,
@@ -223,38 +223,38 @@
           "name": "prose",
           "is_pub": false,
           "line": 200
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "code",
           "is_pub": false,
           "line": 202
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "metadata",
           "is_pub": false,
           "line": 204
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "insight",
           "is_pub": false,
           "line": 206
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "skill_doc",
           "is_pub": false,
           "line": 208
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "capability_doc",
           "is_pub": false,
           "line": 210
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "not_found",
           "is_pub": false,

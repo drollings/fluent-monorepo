@@ -21,8 +21,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 45
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "run",
           "match_hash": "0fea22cbaf5a74e5994d91abf94f8ee7789909139441a9a3543011842984f6ca",

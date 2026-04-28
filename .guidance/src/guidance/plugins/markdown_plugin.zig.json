@@ -14,7 +14,7 @@
       "signature": "fn plugin() -> LanguagePlugin",
       "returns": "LanguagePlugin",
       "is_pub": true,
-      "line": 23
+      "line": 24
     },
     {
       "type": "fn_private",
@@ -23,7 +23,7 @@
       "signature": "fn parseMarkdown(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
-      "line": 37
+      "line": 38
     },
     {
       "type": "fn_private",
@@ -32,7 +32,7 @@
       "signature": "fn extractMarkdownLinks(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
-      "line": 132
+      "line": 133
     },
     {
       "type": "fn_private",
@@ -41,7 +41,7 @@
       "signature": "fn deriveMarkdownModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 166
+      "line": 167
     }
   ]
 }

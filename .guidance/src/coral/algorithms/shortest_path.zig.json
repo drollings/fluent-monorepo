@@ -21,8 +21,8 @@
           "returns": "?[]u32",
           "is_pub": true,
           "line": 39
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "findAllReachable",
           "match_hash": "98027b695d1eee18cc7b0399e8d3574c64f8180725f35621707d1ae120c186e7",

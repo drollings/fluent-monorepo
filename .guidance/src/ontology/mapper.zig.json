@@ -21,8 +21,8 @@
           "returns": "PendingNode",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "ea78ccbc6df08f540a360d82f08855b77abfcbb89dabc620730cd84776d15d8c",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 56
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "toContextNode",
           "match_hash": "6c43ee1330847ca35ff152189085e3bcc9e8a64887087e0cc5abbd142e7201e5",
@@ -74,8 +74,8 @@
           "returns": "TripleMapper",
           "is_pub": true,
           "line": 130
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b943bf43593ecf4f264eb1c8ec99e4de0a62ef83c6d7d9ba1e0825b4bdc3b912",
@@ -83,8 +83,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 141
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "processTriple",
           "match_hash": "7c897d0dadaf8e925540c7d4ca2599e424a0129d3c3d42df33c1760941260d94",
@@ -92,8 +92,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 160
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "flush",
           "match_hash": "2b8c230c5ee4483de731c04110f19070e30e3a7cad9bd26c4b993523b2515408",
@@ -101,8 +101,8 @@
           "returns": "FlushResult",
           "is_pub": true,
           "line": 221
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "detectAndRecordContradiction",
           "match_hash": "8dc03945c4ab9e8e267771f79049a9573ccbcf41bc39cdca7ee44cdba1e7d13e",
@@ -110,8 +110,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 276
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "termKey",
           "match_hash": "973b7b2486005f11c79948b9703a4bfa86ab7fe0ab04eb33b79552be60473a07",
@@ -119,8 +119,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 307
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "termToId",
           "match_hash": "36cf94605a97c3daeaef83a8d94eaacc508148323eca06fd780a5ec3187f9e17",
@@ -128,8 +128,8 @@
           "returns": "i64",
           "is_pub": false,
           "line": 319
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "termToIRI",
           "match_hash": "7d3c7c8ebfe714ca47f092429dfde8e989a7e7cbf87eb9731dc0336673d7afbf",
@@ -137,8 +137,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 327
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "getOrCreateNode",
           "match_hash": "163d7522428149deaef5279731fcfca94710919db261b1cae229c9df8ac31b57",

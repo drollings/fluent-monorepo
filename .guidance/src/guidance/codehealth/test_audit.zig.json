@@ -58,7 +58,7 @@
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 252
+      "line": 253
     },
     {
       "type": "fn_decl",
@@ -67,7 +67,7 @@
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 280
+      "line": 281
     },
     {
       "type": "fn_decl",
@@ -76,7 +76,7 @@
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 292
+      "line": 293
     }
   ]
 }

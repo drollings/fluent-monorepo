@@ -39,8 +39,8 @@
           ],
           "is_pub": true,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "neighbors",
           "match_hash": "6c4d7f6cad77eea394756409623879d33392af2b7cf6c4a88598b9cc612165a9",
@@ -48,8 +48,8 @@
           "returns": "[]const u32",
           "is_pub": true,
           "line": 166
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "degree",
           "match_hash": "c450907a9d2c9b36a15bc9d396c9b2e67e186e06ebd6e2b7de5b48f43a56dba3",
@@ -57,8 +57,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 174
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "serialize",
           "match_hash": "9e5b8a1e312965d8d2435fa7f1e81d68b03e94fe19a3afbf6af14354683464ca",
@@ -66,8 +66,8 @@
           "returns": "[]u8",
           "is_pub": true,
           "line": 185
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deserialize",
           "match_hash": "9978cfd409955e718fa2117e3249117f5e8952713c99015c75e9fbf7f5631a94",

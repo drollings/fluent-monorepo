@@ -198,8 +198,9 @@ pub const SyncProcessor = struct {
 
         // Ensure null-terminated for AstParser
         const source: [:0]const u8 = if (source_slice[source_slice.len - 1] == 0)
-            source_slice[0..source_slice.len - 1 :0]
-        else try self.allocator.dupeZ(u8, source_slice);
+            source_slice[0 .. source_slice.len - 1 :0]
+        else
+            try self.allocator.dupeZ(u8, source_slice);
         defer if (!std.mem.eql(u8, source, source_slice)) self.allocator.free(source);
 
         var parser = ast_parser.AstParser.init(self.allocator, source) catch {
@@ -1031,7 +1032,7 @@ pub const SyncProcessor = struct {
         if (!self.enhancer.?.available()) return 0;
 
         var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), guidance_dir, .{ .iterate = true }) catch return 0;
-        defer dir.close();
+        defer dir.close(std.Io.Threaded.global_single_threaded.io());
 
         var walker = dir.walk(self.allocator) catch return 0;
         defer walker.deinit();

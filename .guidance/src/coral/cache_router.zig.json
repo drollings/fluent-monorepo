@@ -4,7 +4,7 @@
     "source": "src/coral/cache_router.zig",
     "language": "zig"
   },
-  "comment": " cache_router.zig — ParallelRouter for batched concurrent query routing.",
+  "comment": " cache_router.zig — ParallelRouter for batched query routing.\n Thread pool dispatch is not available in Zig 0.16.0; queries run sequentially.",
   "used_by": ["src/coral/cache.zig"],
   "members": [
     {
@@ -22,8 +22,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "routeBatch",
           "match_hash": "d4b4eecd6fa26696b7fc350674ebb49209ba305dcf378989e5a4c4b6b0f21d80",

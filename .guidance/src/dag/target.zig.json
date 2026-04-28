@@ -21,20 +21,20 @@
           "name": "abstract",
           "is_pub": false,
           "line": 8
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "file",
           "is_pub": false,
           "line": 9
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "command",
           "is_pub": false,
           "line": 10
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "phony",
           "is_pub": false,
@@ -146,8 +146,8 @@
     {
       "type": "fn_decl",
       "name": "format",
-      "match_hash": "e628fc77ce99f6a1dabd8ca16258514b549f8570b7c831a63b7dc6cc9bc13a6b",
-      "signature": "fn format(self: *const Target, fmt: []const u8, options: std.fmt.FormatOptions, writer) -> void",
+      "match_hash": "4760151d7487ef6ee0c8c876b70e9e8d28b623d17adad9ed112717bec02fb4cc",
+      "signature": "fn format(self: *const Target, fmt: []const u8, options: std.fmt.Options, writer) -> void",
       "returns": "void",
       "is_pub": true,
       "line": 176
@@ -173,8 +173,8 @@
           ],
           "is_pub": true,
           "line": 228
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "destroy",
           "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
@@ -182,8 +182,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 282
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "viewOf",
           "match_hash": "94f5fb83a93c6607ed56fbf404b8bb4df2c936f9f36545ebe97a70fcbd917814",

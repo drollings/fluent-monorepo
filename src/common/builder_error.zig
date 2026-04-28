@@ -198,12 +198,8 @@ test "BuilderError: format writes message" {
 
     const err = try BuilderError.init(alloc, .provides, "provides", "artifact", "required", error.NameTooLong);
 
-    var buf: [512]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try fbs.writer().writeAll(err.message);
-    const written = fbs.getWritten();
-    try testing.expect(std.mem.indexOf(u8, written, "provides") != null);
-    try testing.expect(std.mem.indexOf(u8, written, "artifact") != null);
+    try testing.expect(std.mem.indexOf(u8, err.message, "provides") != null);
+    try testing.expect(std.mem.indexOf(u8, err.message, "artifact") != null);
 }
 
 test "BuilderError: chain appends parent message" {

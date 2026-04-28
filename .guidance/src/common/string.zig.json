@@ -4,8 +4,26 @@
     "source": "src/common/string.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/entity.zig", "src/common/pattern.zig", "src/common/root.zig", "src/common/string_tests.zig"],
+  "used_by": ["src/common/entity.zig", "src/common/pattern.zig", "src/common/root.zig", "src/common/source.zig", "src/common/string_tests.zig"],
   "members": [
+    {
+      "type": "fn_decl",
+      "name": "trimRight",
+      "match_hash": "76557d62fe23a65111f3b5a3564a941457ab3774382cb5cf8e4fe572b17a8cfe",
+      "signature": "fn trimRight(T: type, slice: []const T, pattern: []const T) -> []const T",
+      "returns": "[]const T",
+      "is_pub": true,
+      "line": 8
+    },
+    {
+      "type": "fn_decl",
+      "name": "trimLeft",
+      "match_hash": "a0f789953b8151c9ac1e157469b6377ae88f8e7391ce9e83ada97af58f2d8010",
+      "signature": "fn trimLeft(T: type, slice: []const T, pattern: []const T) -> []const T",
+      "returns": "[]const T",
+      "is_pub": true,
+      "line": 14
+    },
     {
       "type": "fn_decl",
       "name": "containsIgnoreCase",
@@ -13,7 +31,7 @@
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 9
+      "line": 21
     },
     {
       "type": "fn_private",
@@ -22,7 +40,7 @@
       "signature": "fn isAlphanumericBoundary(c: u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 19
+      "line": 31
     },
     {
       "type": "fn_private",
@@ -31,7 +49,7 @@
       "signature": "fn isIdentBoundary(c: u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 23
+      "line": 35
     },
     {
       "type": "fn_private",
@@ -40,7 +58,7 @@
       "signature": "fn containsWordWithBoundary(haystack: []const u8, needle: []const u8, boundary_fn: *const fn (u8) bool) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 27
+      "line": 39
     },
     {
       "type": "fn_decl",
@@ -49,7 +67,7 @@
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 41
+      "line": 53
     },
     {
       "type": "fn_decl",
@@ -58,7 +76,7 @@
       "signature": "fn containsIdentWord(haystack: []const u8, needle: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 46
+      "line": 58
     },
     {
       "type": "fn_decl",
@@ -67,7 +85,7 @@
       "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 51
+      "line": 63
     },
     {
       "type": "fn_decl",
@@ -76,7 +94,7 @@
       "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 59
+      "line": 71
     },
     {
       "type": "fn_decl",
@@ -85,7 +103,7 @@
       "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 67
+      "line": 79
     },
     {
       "type": "fn_decl",
@@ -94,7 +112,7 @@
       "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 77
+      "line": 89
     },
     {
       "type": "fn_decl",
@@ -103,7 +121,7 @@
       "signature": "fn looksLikeIdentifier(token: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 83
+      "line": 95
     },
     {
       "type": "fn_decl",
@@ -112,7 +130,7 @@
       "signature": "fn isTestPath(rel_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 101
+      "line": 113
     },
     {
       "type": "fn_decl",
@@ -121,7 +139,7 @@
       "signature": "fn skillNameFromRef(ref: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 117
+      "line": 129
     },
     {
       "type": "fn_decl",
@@ -130,7 +148,7 @@
       "signature": "fn langFromPath(path: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 127
+      "line": 139
     },
     {
       "type": "fn_decl",
@@ -139,7 +157,7 @@
       "signature": "fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 137
+      "line": 149
     },
     {
       "type": "fn_decl",
@@ -148,7 +166,7 @@
       "signature": "fn dupeString(allocator: std.mem.Allocator, s: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 152
+      "line": 164
     },
     {
       "type": "fn_decl",
@@ -157,7 +175,7 @@
       "signature": "fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 158
+      "line": 170
     },
     {
       "type": "fn_decl",
@@ -166,7 +184,7 @@
       "signature": "fn stripBoilerplate(comment: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 183
+      "line": 195
     },
     {
       "type": "fn_decl",
@@ -175,7 +193,7 @@
       "signature": "fn isNoisyComment(comment: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 194
+      "line": 206
     },
     {
       "type": "fn_decl",
@@ -184,7 +202,7 @@
       "signature": "fn lowerInto(dst: []u8, src: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 244
+      "line": 256
     },
     {
       "type": "fn_decl",
@@ -193,7 +211,7 @@
       "signature": "fn stripNlPrefix(query: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 250
+      "line": 262
     },
     {
       "type": "fn_decl",
@@ -202,7 +220,7 @@
       "signature": "fn slugify(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 269
+      "line": 281
     },
     {
       "type": "fn_decl",
@@ -211,7 +229,7 @@
       "signature": "fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 296
+      "line": 308
     },
     {
       "type": "fn_decl",
@@ -220,7 +238,7 @@
       "signature": "fn firstCommentLine(comment: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 324
+      "line": 336
     }
   ]
 }

@@ -428,10 +428,10 @@ fn collectCapabilityStages(
                                     const take = @min(4, cap_sources.len);
                                     for (cap_sources[0..take], 0..) |cs, j| {
                                         if (j > 0) try cbuf.appendSlice(allocator, ", ");
-                                                var aw2: std.Io.Writer.Allocating = .init(allocator);
-                                                errdefer aw2.deinit();
-                                                try aw2.writer.print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
-                                                try cbuf.appendSlice(allocator, aw2.written());
+                                        var aw2: std.Io.Writer.Allocating = .init(allocator);
+                                        errdefer aw2.deinit();
+                                        try aw2.writer.print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
+                                        try cbuf.appendSlice(allocator, aw2.written());
                                     }
                                     try cbuf.appendSlice(allocator, "\n");
                                 }
@@ -475,8 +475,8 @@ fn collectCapabilityStages(
             if (seen_sources.contains(cs.source_path)) continue;
             const json_path = std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ guidance_dir, cs.source_path }) catch continue;
             defer allocator.free(json_path);
-                const io = std.Io.Threaded.global_single_threaded.io();
-                const json_content = std.Io.Dir.cwd().readFileAlloc(io, json_path, allocator, .limited(2 * 1024 * 1024)) catch continue;
+            const io = std.Io.Threaded.global_single_threaded.io();
+            const json_content = std.Io.Dir.cwd().readFileAlloc(io, json_path, allocator, .limited(2 * 1024 * 1024)) catch continue;
             defer allocator.free(json_content);
             const parsed = std.json.parseFromSlice(std.json.Value, allocator, json_content, .{ .ignore_unknown_fields = true }) catch continue;
             defer parsed.deinit();
@@ -808,7 +808,7 @@ pub fn loadSkillExcerpt(
     skills_dir: []const u8,
     skill_name: []const u8,
 ) !?[]const u8 {
-                const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
+    const path = try std.fs.path.join(allocator, &.{ skills_dir, skill_name, "SKILL.md" });
     defer allocator.free(path);
 
     const io = std.Io.Threaded.global_single_threaded.io();
@@ -839,7 +839,8 @@ test "benchmark: zero-alloc token match — 100 tokens × 100 results" {
     };
 
     var match_count: usize = 0;
-    const start = std.time.nanoTimestamp();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const start: i128 = @as(i128, std.Io.Timestamp.now(io, .real).nanoseconds);
     var iter: usize = 0;
     while (iter < 100) : (iter += 1) {
         for (tokens) |token| {
@@ -848,7 +849,7 @@ test "benchmark: zero-alloc token match — 100 tokens × 100 results" {
             }
         }
     }
-    const elapsed_ns = std.time.nanoTimestamp() - start;
+    const elapsed_ns: i128 = @as(i128, std.Io.Timestamp.now(io, .real).nanoseconds) - start;
     const elapsed_ms = @divTrunc(elapsed_ns, 1_000_000);
 
     try std.testing.expect(match_count > 0);

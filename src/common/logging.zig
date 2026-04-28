@@ -97,15 +97,19 @@ pub const LogContext = struct {
 /// Manages scope boundaries with fixed-size buffers; owned by the module; ensures safe initialization/deinit.
 pub const Scope = struct {
     name: []const u8,
-    start_ns: i128,
+    start_ns: i96,
     has_context: bool,
+
+    fn nanoNow() i96 {
+        return std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds;
+    }
 
     /// Begin a named scope.  Logs start if context is active.
     pub fn begin(name: []const u8) Scope {
         const ctx = LogContext.get();
         const s = Scope{
             .name = name,
-            .start_ns = std.time.nanoTimestamp(),
+            .start_ns = nanoNow(),
             .has_context = ctx != null,
         };
         if (ctx) |c| {
@@ -117,7 +121,7 @@ pub const Scope = struct {
     /// End the scope.  Logs duration (µs) if context was active at begin.
     pub fn end(self: Scope) void {
         if (!self.has_context) return;
-        const elapsed_us = @divTrunc(std.time.nanoTimestamp() - self.start_ns, 1000);
+        const elapsed_us = @divTrunc(nanoNow() - self.start_ns, 1000);
         const ctx = LogContext.get();
         if (ctx) |c| {
             std.log.debug("{s}: end duration={d}µs {f}", .{ self.name, elapsed_us, c });

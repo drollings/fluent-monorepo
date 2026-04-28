@@ -44,7 +44,7 @@ pub const L1Cache = struct {
     entries: std.StringHashMap(L1Entry),
     order: std.DoublyLinkedList = .{},
     max_entries: usize,
-    mu: std.Thread.Mutex = .{},
+    mu: std.Io.Mutex = .init,
 
     pub fn init(allocator: std.mem.Allocator) L1Cache {
         return initWithCapacity(allocator, L1_DEFAULT_MAX_ENTRIES);
@@ -70,8 +70,9 @@ pub const L1Cache = struct {
     }
 
     pub fn get(self: *L1Cache, query_hash: []const u8) ?RoutingResult {
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_io);
+        defer self.mu.unlock(_io);
         const entry = self.entries.getPtr(query_hash) orelse return null;
         self.order.remove(&entry.lru.list_node);
         self.order.prepend(&entry.lru.list_node);
@@ -87,8 +88,9 @@ pub const L1Cache = struct {
             freeRoutingResult(self.allocator, &r);
         }
 
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_io);
+        defer self.mu.unlock(_io);
 
         if (self.entries.getPtr(owned_key)) |existing| {
             freeRoutingResult(self.allocator, &existing.result);
@@ -175,7 +177,7 @@ pub const L1HashCache = struct {
     entries: std.AutoHashMap(u64, L1HashEntry),
     order: std.DoublyLinkedList = .{},
     max_entries: usize,
-    mu: std.Thread.RwLock = .{},
+    mu: std.Io.RwLock = .init,
 
     const Self = @This();
 
@@ -198,15 +200,17 @@ pub const L1HashCache = struct {
     }
 
     pub fn get(self: *Self, query_hash: u64) ?RoutingResult {
-        self.mu.lockShared();
-        defer self.mu.unlockShared();
+        const _io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockSharedUncancelable(_io);
+        defer self.mu.unlockShared(_io);
         const entry = self.entries.getPtr(query_hash) orelse return null;
         return entry.result;
     }
 
     pub fn getWithPromotion(self: *Self, query_hash: u64) ?RoutingResult {
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_io);
+        defer self.mu.unlock(_io);
         const entry = self.entries.getPtr(query_hash) orelse return null;
         self.order.remove(&entry.lru.list_node);
         self.order.prepend(&entry.lru.list_node);
@@ -220,8 +224,9 @@ pub const L1HashCache = struct {
             L1Cache.freeRoutingResult(self.allocator, &r);
         }
 
-        self.mu.lock();
-        defer self.mu.unlock();
+        const _io = std.Io.Threaded.global_single_threaded.io();
+        self.mu.lockUncancelable(_io);
+        defer self.mu.unlock(_io);
 
         if (self.entries.getPtr(query_hash)) |existing| {
             L1Cache.freeRoutingResult(self.allocator, &existing.result);

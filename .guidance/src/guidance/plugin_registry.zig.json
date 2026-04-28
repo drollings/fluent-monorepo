@@ -22,8 +22,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 30
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -31,8 +31,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "register",
           "match_hash": "d78862e92de5d2d10c9b946f3868181da086379cba68a6853c4791dec486e094",
@@ -40,8 +40,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 58
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getForExtension",
           "match_hash": "271c7cd9421f09de72cda3dcf7b55be13f60f8cf4c40f14f474f9624d3ee0b80",
@@ -49,8 +49,8 @@
           "returns": "?*const LanguagePlugin",
           "is_pub": true,
           "line": 68
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getForPath",
           "match_hash": "872b2971025031c58dcaa143cd89024333fe3a3834890bf57ef6f1f0d9bcef6a",
@@ -58,8 +58,8 @@
           "returns": "?*const LanguagePlugin",
           "is_pub": true,
           "line": 73
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "registeredLanguages",
           "match_hash": "8b375d9555bbd0dc3d8cca6fe7a2007954d9afce3dcd0e96005e41809bf8294e",

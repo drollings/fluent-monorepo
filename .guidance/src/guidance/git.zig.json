@@ -22,8 +22,8 @@
           "returns": "GitignoreFilter",
           "is_pub": true,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "1dd3aad6851a3bf0c7461b9f146cb510363dabf576fa1725db1ea98ad5e7d824",
@@ -31,8 +31,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "loadFromFile",
           "match_hash": "d1397fa7827e7bf18191f2433f4f286f377e77464c471b6dea80eb412d01ca0d",
@@ -40,8 +40,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 36
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "loadTrackedFiles",
           "match_hash": "bfac9a7754dca49fbc602d2e07dda3e6201a782c15c44ff6e8a22082870b2875",
@@ -49,24 +49,24 @@
           "returns": "void",
           "is_pub": true,
           "line": 74
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "isTracked",
           "match_hash": "f1f72be51d71effefa232d76fa27e01c89fe5cfd22bcbd4c1401ac75ba4c833c",
           "signature": "fn isTracked(self: *const GitignoreFilter, abs_path: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 116
-        }
-    ,    {
+          "line": 102
+        },
+        {
           "type": "fn_decl",
           "name": "shouldIgnore",
           "match_hash": "7bd802b1e54e6695d73ccbf4c5149c660a7c9a163e824a7c2ffa53189892aa57",
           "signature": "fn shouldIgnore(self: *const GitignoreFilter, filepath: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 123
+          "line": 109
         }
       ],
       "line": 5
@@ -78,7 +78,7 @@
       "signature": "fn matchesPattern(path: []const u8, pattern: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 154
+      "line": 140
     },
     {
       "type": "fn_private",
@@ -87,13 +87,13 @@
       "signature": "fn globMatch(text: []const u8, pattern: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 183
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "globMatch basic patterns",
       "is_pub": false,
-      "line": 213
+      "line": 199
     }
   ]
 }

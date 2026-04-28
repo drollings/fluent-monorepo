@@ -22,32 +22,32 @@
           "name": "read",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "ask",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "learn",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "plan",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "help",
           "is_pub": false,
           "line": 31
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "done",
           "is_pub": false,
@@ -90,8 +90,8 @@
           "returns": "*RalphContext",
           "is_pub": true,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "516d0cffe977de8df0c07777a785a1d1458388f879470b4f8876df3f2ecf5551",
@@ -182,7 +182,7 @@
       "signature": "fn formatHelpStages(allocator: std.mem.Allocator) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": false,
-      "line": 287
+      "line": 289
     },
     {
       "type": "fn_private",
@@ -191,7 +191,7 @@
       "signature": "fn classifyIntent(query: []const u8, matches: []const QueryMatch, db: *GuidanceDb) -> QueryIntent",
       "returns": "QueryIntent",
       "is_pub": false,
-      "line": 317
+      "line": 319
     },
     {
       "type": "fn_decl",
@@ -200,7 +200,7 @@
       "signature": "fn runQuery(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases) -> []types.Stage",
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 329
+      "line": 331
     }
   ]
 }

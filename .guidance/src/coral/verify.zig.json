@@ -18,26 +18,26 @@
           "name": "count_mismatch",
           "is_pub": false,
           "line": 14
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "orphan_node",
           "is_pub": false,
           "line": 15
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "invalid_iri",
           "is_pub": false,
           "line": 16
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "missing_label",
           "is_pub": false,
           "line": 17
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "dangling_blank_node",
           "is_pub": false,
@@ -58,14 +58,14 @@
           "name": "no_type",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "no_description",
           "is_pub": false,
           "line": 23
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "blank_node_heavy",
           "is_pub": false,
@@ -89,8 +89,8 @@
           "returns": "IngestionReport",
           "is_pub": true,
           "line": 46
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "6a21f4dca068ef78389e991f030e4e68dee764d3359fc041c60ec8bdc4b960d3",
@@ -98,8 +98,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 57
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "hasErrors",
           "match_hash": "69b720f43cbf3b486e5b1ed9146253d7e41794db44df0ea54cfdca821ab7c492",
@@ -134,8 +134,8 @@
           "returns": "Verifier",
           "is_pub": true,
           "line": 88
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "verifyMapper",
           "match_hash": "e130255f4a10fcedfb1c7fd3bb53b75cb946deff9d5733497e8ca3809f89ecfa",
@@ -143,8 +143,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 93
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "verifyStats",
           "match_hash": "9c5489405198a852450995b8f3315296f6e95e9baa1c0ca68626d3b07584e6bd",

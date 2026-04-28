@@ -9,8 +9,8 @@
     {
       "type": "fn_decl",
       "name": "main",
-      "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
-      "signature": "fn main() -> void",
+      "match_hash": "34188f5faac00b0c774daf23b1604d69cc527cc94dc5ce9c13e94a3e6a7321cc",
+      "signature": "fn main(init: std.process.Init.Minimal) -> void",
       "returns": "void",
       "is_pub": true,
       "line": 27
@@ -22,7 +22,7 @@
       "signature": "fn printHelp(writer) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 478
+      "line": 488
     }
   ]
 }

@@ -316,7 +316,7 @@ pub fn indexSolutionWithTool(
                                 .wasm_b64 = b64,
                                 .schema_hash = "",
                                 .test_passed = true,
-                                .created_at = @floatFromInt(std.time.timestamp()),
+                                .created_at = @floatFromInt(@as(i64, @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s)))),
                             });
                         }
                     } else |_| {} // compilation failure — fall through to text indexing

@@ -57,7 +57,7 @@ pub const HnswIndex = struct {
             .dimensions = dimensions,
             .max_elements = max_elements,
             .nodes = .{},
-            .rng = std.Random.DefaultPrng.init(@intCast(std.time.nanoTimestamp())),
+            .rng = std.Random.DefaultPrng.init(@truncate(@as(u96, @bitCast(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds)))),
         };
     }
 
@@ -114,7 +114,7 @@ pub const HnswIndex = struct {
         var node = Node{
             .id = id,
             .vector = owned_vector,
-            .connections = .{},
+            .connections = .empty,
             .max_layer = level,
         };
 
@@ -217,7 +217,7 @@ pub const HnswIndex = struct {
         const aa = arena.allocator();
 
         // Min-heap for candidates (closest first).
-        var candidates = std.PriorityQueue(Candidate, void, Candidate.lessThan).init(aa, {});
+        var candidates = std.PriorityQueue(Candidate, void, Candidate.lessThan).initContext({});
         // Sorted list of best ef candidates seen so far.
         var w: std.ArrayList(SearchResult) = .empty;
         var visited = std.AutoHashMap(i64, void).init(aa);
@@ -225,12 +225,12 @@ pub const HnswIndex = struct {
         // Seed with entry point.
         const ep_node = self.nodes.getPtr(entry_point) orelse return &[_]SearchResult{};
         const ep_dist = self.distance(query, ep_node.vector);
-        try candidates.add(.{ .id = entry_point, .distance = ep_dist });
+        try candidates.push(aa, .{ .id = entry_point, .distance = ep_dist });
         try visited.put(entry_point, {});
         try w.append(aa, .{ .id = entry_point, .distance = ep_dist });
 
         while (candidates.count() > 0) {
-            const c = candidates.remove();
+            const c = candidates.pop() orelse break;
 
             // Stopping condition: if c is farther than worst in w, we're done.
             if (w.items.len >= ef and c.distance > w.items[w.items.len - 1].distance) break;
@@ -246,7 +246,7 @@ pub const HnswIndex = struct {
                 const dist = self.distance(query, nb.vector);
 
                 if (w.items.len < ef or dist < w.items[w.items.len - 1].distance) {
-                    try candidates.add(.{ .id = neighbor_id, .distance = dist });
+                    try candidates.push(aa, .{ .id = neighbor_id, .distance = dist });
 
                     // Insert into w in sorted order.
                     const pos = blk: {
@@ -327,92 +327,93 @@ pub const HnswIndex = struct {
         return true;
     }
 
-    // Binary I/O helpers for save/load (avoids buffered-writer API churn).
-    fn writeU32(file: std.fs.File, v: u32) !void {
+    // Binary I/O helpers for save/load.
+    fn writeU32(w: *std.Io.Writer, v: u32) !void {
         var b: [4]u8 = undefined;
         std.mem.writeInt(u32, &b, v, .little);
-        try file.writeAll(&b);
+        try w.writeAll(&b);
     }
-    fn writeI64(file: std.fs.File, v: i64) !void {
+    fn writeI64(w: *std.Io.Writer, v: i64) !void {
         var b: [8]u8 = undefined;
         std.mem.writeInt(i64, &b, v, .little);
-        try file.writeAll(&b);
+        try w.writeAll(&b);
     }
-    fn writeU64(file: std.fs.File, v: u64) !void {
+    fn writeU64(w: *std.Io.Writer, v: u64) !void {
         var b: [8]u8 = undefined;
         std.mem.writeInt(u64, &b, v, .little);
-        try file.writeAll(&b);
+        try w.writeAll(&b);
     }
-    fn readExact(file: std.fs.File, buf: []u8) !void {
-        var total: usize = 0;
-        while (total < buf.len) {
-            const n = try file.read(buf[total..]);
-            if (n == 0) return error.EndOfStream;
-            total += n;
-        }
-    }
-    fn readU32(file: std.fs.File) !u32 {
+    fn readU32(r: *std.Io.Reader) !u32 {
         var b: [4]u8 = undefined;
-        try readExact(file, &b);
+        try r.readSliceAll(&b);
         return std.mem.readInt(u32, &b, .little);
     }
-    fn readI64(file: std.fs.File) !i64 {
+    fn readI64(r: *std.Io.Reader) !i64 {
         var b: [8]u8 = undefined;
-        try readExact(file, &b);
+        try r.readSliceAll(&b);
         return std.mem.readInt(i64, &b, .little);
     }
-    fn readU64(file: std.fs.File) !u64 {
+    fn readU64(r: *std.Io.Reader) !u64 {
         var b: [8]u8 = undefined;
-        try readExact(file, &b);
+        try r.readSliceAll(&b);
         return std.mem.readInt(u64, &b, .little);
     }
 
     /// Persist index to file.
     pub fn save(self: *const Self, path: []const u8) !void {
-        const file = try std.fs.cwd().createFile(path, .{});
-        defer file.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const file = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer file.close(io);
+        var buf: [4096]u8 = undefined;
+        var fw = std.Io.File.Writer.init(file, io, &buf);
+        const w = &fw.interface;
 
         // Header: magic, version, dimensions, node count.
-        try writeU32(file, 0x484E5357); // "HNSW"
-        try writeU32(file, 1); // version
-        try writeU64(file, @intCast(self.dimensions));
-        try writeU64(file, @intCast(self.count));
+        try writeU32(w, 0x484E5357); // "HNSW"
+        try writeU32(w, 1); // version
+        try writeU64(w, @intCast(self.dimensions));
+        try writeU64(w, @intCast(self.count));
 
         // Nodes.
         var it = self.nodes.iterator();
         while (it.next()) |entry| {
             const node = entry.value_ptr;
-            try writeI64(file, node.id);
-            try writeU64(file, @intCast(node.vector.len));
+            try writeI64(w, node.id);
+            try writeU64(w, @intCast(node.vector.len));
             for (node.vector) |v| {
-                try writeU32(file, @bitCast(v));
+                try writeU32(w, @bitCast(v));
             }
         }
+        try fw.flush();
     }
 
     /// Load index from file.
     pub fn load(self: *Self, path: []const u8) !void {
-        const file = try std.fs.cwd().openFile(path, .{});
-        defer file.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+        defer file.close(io);
+        var buf: [4096]u8 = undefined;
+        var fr = std.Io.File.Reader.init(file, io, &buf);
+        const r = &fr.interface;
 
-        const magic = try readU32(file);
+        const magic = try readU32(r);
         if (magic != 0x484E5357) return error.InvalidFile;
 
-        const version = try readU32(file);
+        const version = try readU32(r);
         if (version != 1) return error.UnsupportedVersion;
 
-        const dimensions = try readU64(file);
+        const dimensions = try readU64(r);
         _ = dimensions;
-        const node_count = try readU64(file);
+        const node_count = try readU64(r);
 
         for (0..node_count) |_| {
-            const id = try readI64(file);
-            const vec_len = try readU64(file);
+            const id = try readI64(r);
+            const vec_len = try readU64(r);
             const vector = try self.allocator.alloc(f32, vec_len);
             defer self.allocator.free(vector); // add() copies; free the temp buffer
             for (vector) |*v| {
                 var fb: [4]u8 = undefined;
-                try readExact(file, &fb);
+                try r.readSliceAll(&fb);
                 v.* = @bitCast(std.mem.readInt(u32, &fb, .little));
             }
             try self.add(id, vector);
@@ -684,8 +685,9 @@ test "HnswIndex: save and load preserves node count and search" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
-    defer testing.allocator.free(tmp_path);
+    const tmp_path_z = try tmp.dir.realPathFileAlloc(std.testing.io, ".", testing.allocator);
+    defer testing.allocator.free(tmp_path_z);
+    const tmp_path: []const u8 = tmp_path_z;
     const hnsw_path = try std.fs.path.join(testing.allocator, &.{ tmp_path, "hnsw_test.bin" });
     defer testing.allocator.free(hnsw_path);
 
@@ -865,7 +867,8 @@ test "HnswIndex: build time under 5s for 100 nodes" {
     defer index.deinit();
 
     var rng = std.Random.DefaultPrng.init(42);
-    var timer = try std.time.Timer.start();
+    const _timer_io = std.testing.io;
+    const start_ts = std.Io.Timestamp.now(_timer_io, .real).nanoseconds;
 
     for (0..N) |i| {
         const vec = [DIM]f32{
@@ -877,7 +880,8 @@ test "HnswIndex: build time under 5s for 100 nodes" {
         try index.add(@intCast(i), &vec);
     }
 
-    const elapsed_ms = timer.read() / 1_000_000;
+    const elapsed_ns = std.Io.Timestamp.now(_timer_io, .real).nanoseconds - start_ts;
+    const elapsed_ms: u64 = @intCast(@max(0, @divTrunc(elapsed_ns, 1_000_000)));
     try testing.expect(elapsed_ms < 5000);
 }
 

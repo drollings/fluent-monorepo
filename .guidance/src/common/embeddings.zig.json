@@ -25,8 +25,8 @@
           "returns": "[]f32",
           "is_pub": true,
           "line": 35
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "c4af9de290d5ea2d11c73f4eb0f23f8648560d9aef3b299a3b4de57430b40841",
@@ -59,8 +59,8 @@
           ],
           "is_pub": true,
           "line": 62
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getName",
           "match_hash": "838473841a2c48a0e9228f36440126f7f952f77e063057d4f048f15385f95657",
@@ -68,8 +68,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 71
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getDimensions",
           "match_hash": "e51c12fd4f727741faa13cecaf87c571fc884137f83f01d338b3daa437353b4b",
@@ -77,8 +77,8 @@
           "returns": "u32",
           "is_pub": true,
           "line": 75
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "embed",
           "match_hash": "7284091b5dfdcd07d48d7edad0315d6d32c7b5e0e055577ee304d242cfac5bad",
@@ -86,8 +86,8 @@
           "returns": "[]f32",
           "is_pub": true,
           "line": 83
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "embedBatch",
           "match_hash": "774bca816066d15948585cf60897846d8675721ddd01ee6e729d356ce28c16fe",
@@ -95,8 +95,8 @@
           "returns": "BatchEmbedding",
           "is_pub": true,
           "line": 90
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "9725b124a22f8c70559ec633e1d924bc2ef505457c692efef955f4e1a3aac1bf",
@@ -123,8 +123,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 110
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDimensions",
           "match_hash": "830c732514f31488a60e54fc79b0e2ddda15ebf03d50c93cce944edf850dded8",
@@ -132,8 +132,8 @@
           "returns": "u32",
           "is_pub": false,
           "line": 114
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbed",
           "match_hash": "5d8603ff383bcf92f1b7ea77dadd6dec8c935589d78bacc30992c9110d0d974a",
@@ -141,8 +141,8 @@
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 118
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbedBatch",
           "match_hash": "46975e87444b1e556a8a193f7135e35352425b68139094c3c10367b682301d30",
@@ -150,8 +150,8 @@
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 122
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
@@ -159,8 +159,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 126
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
@@ -187,8 +187,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 161
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinitSelf",
           "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
@@ -196,8 +196,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 185
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "buildUrl",
           "match_hash": "4828b1765b4c2c18871c4c0550a26bb8e3e4ece3a8c29714865446005671db1f",
@@ -205,8 +205,8 @@
           "returns": "[]u8",
           "is_pub": false,
           "line": 191
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
@@ -214,8 +214,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 195
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDimensions",
           "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
@@ -223,8 +223,8 @@
           "returns": "u32",
           "is_pub": false,
           "line": 199
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbed",
           "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
@@ -232,8 +232,8 @@
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 204
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbedBatch",
           "match_hash": "7759cdf3db2bdb545c83356b9d06197cc5a97a166a9b4eeb2351d65c58b1a06a",
@@ -241,8 +241,8 @@
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 249
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
@@ -250,8 +250,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 304
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",
@@ -296,8 +296,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 413
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinitSelf",
           "match_hash": "9eb860a1b706056f3a10a5ca356cb5a2eea98d15124d52df39ebcb458662c6c7",
@@ -305,8 +305,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 441
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "embeddingsUrl",
           "match_hash": "be0462ccd4878425a12848483f8a147713a870f024609fb8810366f93161f9cf",
@@ -314,8 +314,8 @@
           "returns": "[]u8",
           "is_pub": false,
           "line": 448
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implName",
           "match_hash": "061d8ca2cf4f6b5fc4055731fb6c3f0109c94100c074a90c809683250a15ceb9",
@@ -323,8 +323,8 @@
           "returns": "[]const u8",
           "is_pub": false,
           "line": 466
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDimensions",
           "match_hash": "b1e575b4fa352b61b9cf34670dead885c54594ac4ce00c9a2a2cfb24ef70cbe9",
@@ -332,8 +332,8 @@
           "returns": "u32",
           "is_pub": false,
           "line": 470
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbed",
           "match_hash": "f9aa644a9a4e61ad0e686d296eb104e79ca087829b60a75ba06ab52444a422bc",
@@ -341,8 +341,8 @@
           "returns": "anyerror![]f32",
           "is_pub": false,
           "line": 475
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implEmbedBatch",
           "match_hash": "7759cdf3db2bdb545c83356b9d06197cc5a97a166a9b4eeb2351d65c58b1a06a",
@@ -350,8 +350,8 @@
           "returns": "anyerror!BatchEmbedding",
           "is_pub": false,
           "line": 524
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "implDeinit",
           "match_hash": "c6dad4ac2bda8ee39ca0a0169fca515ed8a649b1ea58710160a01045eb0b7bb5",
@@ -359,8 +359,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 583
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "provider",
           "match_hash": "0461e30922286bd966690b1921b01b17e51dc83e00d88f736d45bb60deabf169",

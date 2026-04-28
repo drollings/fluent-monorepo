@@ -132,10 +132,10 @@ fn runDijkstra(
     @memset(visited, false);
     distances[source] = 0.0;
 
-    var pq = std.PriorityQueue(HeapEntry, void, HeapEntry.lessThan).init(arena, {});
-    try pq.add(.{ .node = source, .dist = 0.0 });
+    var pq = std.PriorityQueue(HeapEntry, void, HeapEntry.lessThan).initContext({});
+    try pq.push(arena, .{ .node = source, .dist = 0.0 });
 
-    while (pq.removeOrNull()) |entry| {
+    while (pq.pop()) |entry| {
         const u = entry.node;
         if (visited[u]) continue;
         visited[u] = true;
@@ -154,7 +154,7 @@ fn runDijkstra(
             if (new_dist < distances[v]) {
                 distances[v] = new_dist;
                 predecessors[v] = u;
-                try pq.add(.{ .node = v, .dist = new_dist });
+                try pq.push(arena, .{ .node = v, .dist = new_dist });
             }
         }
     }

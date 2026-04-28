@@ -40,8 +40,8 @@
           "returns": "[]Stage",
           "is_pub": true,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "packIndices",
           "match_hash": "0687750874cd4e667beb34fd4fab0089047950355825b20edfbdb454bcc69609",

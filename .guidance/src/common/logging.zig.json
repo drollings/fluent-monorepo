@@ -22,8 +22,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 53
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "1ac43d7e0964f77f3c5a762c032c385660e1e99fc85d5b7c07eaaa30222062f5",
@@ -31,8 +31,8 @@
           "returns": "?LogContext",
           "is_pub": true,
           "line": 58
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "clear",
           "match_hash": "c68856862f999e021e2751886c1e9b7c112177922971150d3b8c383ffb9194eb",
@@ -40,8 +40,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 63
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "format",
           "match_hash": "ae2d3dac206169875996d726dae1caca26de841fb2c8d5b1aa298d115d3c8729",
@@ -61,22 +61,31 @@
       "is_pub": true,
       "members": [
         {
+          "type": "fn_private",
+          "name": "nanoNow",
+          "match_hash": "40bedea2e9f3061526fefe52db2b22001036d4e1430a5086f74e8ef26ec686f4",
+          "signature": "fn nanoNow() -> i96",
+          "returns": "i96",
+          "is_pub": false,
+          "line": 103
+        },
+        {
           "type": "fn_decl",
           "name": "begin",
           "match_hash": "7fe067cd4dfb279e55f34b5c0bdb1e88c7aa8cbf3194b14ffffaf0bc297cdd6f",
           "signature": "fn begin(name: []const u8) -> Scope",
           "returns": "Scope",
           "is_pub": true,
-          "line": 104
-        }
-    ,    {
+          "line": 108
+        },
+        {
           "type": "fn_decl",
           "name": "end",
           "match_hash": "2f28e2f9865312619ad4a56e5546a068c04a4b6b7ac6ae147104cc530dcd9737",
           "signature": "fn end(self: Scope) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 118
+          "line": 122
         }
       ],
       "line": 98
@@ -88,61 +97,61 @@
       "signature": "fn callLogged(name: []const u8, func, args) -> @typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
       "returns": "@typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
       "is_pub": true,
-      "line": 133
+      "line": 137
     },
     {
       "type": "test_decl",
       "name": "LogContext: set and get",
       "is_pub": false,
-      "line": 147
+      "line": 151
     },
     {
       "type": "test_decl",
       "name": "LogContext: clear removes context",
       "is_pub": false,
-      "line": 157
+      "line": 161
     },
     {
       "type": "test_decl",
       "name": "LogContext: null by default (fresh thread)",
       "is_pub": false,
-      "line": 163
+      "line": 167
     },
     {
       "type": "test_decl",
       "name": "LogContext: format with all fields",
       "is_pub": false,
-      "line": 170
+      "line": 174
     },
     {
       "type": "test_decl",
       "name": "LogContext: format with partial fields",
       "is_pub": false,
-      "line": 185
+      "line": 189
     },
     {
       "type": "test_decl",
       "name": "LogContext: format with no fields",
       "is_pub": false,
-      "line": 193
+      "line": 197
     },
     {
       "type": "test_decl",
       "name": "callLogged: wraps plain function",
       "is_pub": false,
-      "line": 200
+      "line": 204
     },
     {
       "type": "test_decl",
       "name": "callLogged: wraps error-returning function",
       "is_pub": false,
-      "line": 214
+      "line": 218
     },
     {
       "type": "test_decl",
       "name": "LogContext: GPA no leaks",
       "is_pub": false,
-      "line": 232
+      "line": 236
     }
   ]
 }

@@ -17,91 +17,91 @@
           "type": "enum_field",
           "name": "fn_decl",
           "is_pub": false,
-          "line": 12
-        }
-    ,    {
+          "line": 13
+        },
+        {
           "type": "enum_field",
           "name": "fn_private",
           "is_pub": false,
-          "line": 13
-        }
-    ,    {
+          "line": 14
+        },
+        {
           "type": "enum_field",
           "name": "method",
           "is_pub": false,
-          "line": 14
-        }
-    ,    {
+          "line": 15
+        },
+        {
           "type": "enum_field",
           "name": "method_private",
           "is_pub": false,
-          "line": 15
-        }
-    ,    {
+          "line": 16
+        },
+        {
           "type": "enum_field",
           "name": "struct_decl",
           "is_pub": false,
-          "line": 16
-        }
-    ,    {
+          "line": 17
+        },
+        {
           "type": "enum_field",
           "name": "enum_decl",
           "is_pub": false,
-          "line": 17
-        }
-    ,    {
+          "line": 18
+        },
+        {
           "type": "enum_field",
           "name": "union_decl",
           "is_pub": false,
-          "line": 18
-        }
-    ,    {
+          "line": 19
+        },
+        {
           "type": "enum_field",
           "name": "test_decl",
           "is_pub": false,
-          "line": 19
-        }
-    ,    {
+          "line": 20
+        },
+        {
           "type": "enum_field",
           "name": "enum_field",
           "is_pub": false,
-          "line": 20
-        }
-    ,    {
+          "line": 21
+        },
+        {
           "type": "enum_field",
           "name": "other",
           "is_pub": false,
-          "line": 21
-        }
-    ,    {
+          "line": 22
+        },
+        {
           "type": "fn_decl",
           "name": "isFunction",
           "match_hash": "f8c49db20575b1ba7e2aa4071bd57997f31b28dcc7108cc319cdf4662c9e8746",
           "signature": "fn isFunction(self: NodeType) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 23
-        }
-    ,    {
+          "line": 24
+        },
+        {
           "type": "fn_decl",
           "name": "isContainer",
           "match_hash": "5ebc2c5787bf0eaa501868cd69ff280f2a7a0a12ec32eab90230e3f1ac7a664b",
           "signature": "fn isContainer(self: NodeType) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 28
-        }
-    ,    {
+          "line": 29
+        },
+        {
           "type": "fn_decl",
           "name": "fromString",
           "match_hash": "03a5e049160ec8042477c8e51548b799da682e2073138eba321eb824762a7ef1",
           "signature": "fn fromString(node_type: []const u8) -> NodeType",
           "returns": "NodeType",
           "is_pub": true,
-          "line": 32
+          "line": 33
         }
       ],
-      "line": 11
+      "line": 12
     },
     {
       "type": "fn_decl",
@@ -110,7 +110,7 @@
       "signature": "fn extractExcerpt(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: NodeType, max_lines: usize) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 47
+      "line": 48
     },
     {
       "type": "fn_decl",
@@ -119,7 +119,7 @@
       "signature": "fn extractSimpleExcerpt(allocator: std.mem.Allocator, src_content: []const u8, start_line: usize, max_lines: usize) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 160
+      "line": 161
     }
   ]
 }

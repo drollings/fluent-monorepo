@@ -191,7 +191,9 @@ pub const SessionDB = struct {
         } else {
             _ = c.sqlite3_bind_null(stmt, 3);
         }
-        const now: f64 = @floatFromInt(std.time.milliTimestamp());
+        const _sess_io = std.Io.Threaded.global_single_threaded.io();
+        const now_ms: i96 = @divTrunc(std.Io.Timestamp.now(_sess_io, .real).nanoseconds, std.time.ns_per_ms);
+        const now: f64 = @floatFromInt(now_ms);
         _ = c.sqlite3_bind_double(stmt, 4, now / 1000.0);
 
         _ = try step(stmt);
@@ -222,7 +224,9 @@ pub const SessionDB = struct {
         _ = c.sqlite3_bind_text(stmt, 2, role.ptr, @intCast(role.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_text(stmt, 3, content.ptr, @intCast(content.len), SQLITE_STATIC);
         _ = c.sqlite3_bind_int64(stmt, 4, tokens);
-        const now: f64 = @floatFromInt(std.time.milliTimestamp());
+        const _sess_io = std.Io.Threaded.global_single_threaded.io();
+        const _now_ms: i96 = @divTrunc(std.Io.Timestamp.now(_sess_io, .real).nanoseconds, std.time.ns_per_ms);
+        const now: f64 = @floatFromInt(_now_ms);
         _ = c.sqlite3_bind_double(stmt, 5, now / 1000.0);
 
         _ = try step(stmt);
@@ -383,8 +387,9 @@ test "SessionDB persists to tmpDir" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const dir_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
-    defer testing.allocator.free(dir_path);
+    const dir_path_z = try tmp.dir.realPathFileAlloc(std.testing.io, ".", testing.allocator);
+    defer testing.allocator.free(dir_path_z);
+    const dir_path: []const u8 = dir_path_z;
 
     const db_path = try std.fs.path.join(testing.allocator, &.{ dir_path, "session_test.db" });
     defer testing.allocator.free(db_path);

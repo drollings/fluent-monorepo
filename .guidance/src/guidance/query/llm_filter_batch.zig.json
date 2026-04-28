@@ -49,25 +49,25 @@
       "signature": "fn dupeStage(allocator: Allocator, s: types.Stage) -> types.Stage",
       "returns": "types.Stage",
       "is_pub": false,
-      "line": 206
+      "line": 205
     },
     {
       "type": "test_decl",
       "name": "estimateTokens: approximation",
       "is_pub": false,
-      "line": 221
+      "line": 220
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: code always kept",
       "is_pub": false,
-      "line": 227
+      "line": 226
     },
     {
       "type": "test_decl",
       "name": "preFilterByBudget: prose included when budget allows",
       "is_pub": false,
-      "line": 249
+      "line": 248
     }
   ]
 }

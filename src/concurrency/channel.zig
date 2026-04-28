@@ -23,6 +23,10 @@
 
 const std = @import("std");
 
+fn _io() std.Io {
+    return std.Io.Threaded.global_single_threaded.io();
+}
+
 /// Converts a generic type to a channel type, ensuring safe data flow between concurrent contexts.
 pub fn Channel(comptime T: type) type {
     return struct {
@@ -33,9 +37,9 @@ pub fn Channel(comptime T: type) type {
         tail: usize, // index of next slot to write
         count: usize, // number of items in the buffer
         closed: bool,
-        mu: std.Thread.Mutex,
-        not_full: std.Thread.Condition, // signalled when a slot is freed
-        not_empty: std.Thread.Condition, // signalled when an item is added
+        mu: std.Io.Mutex,
+        not_full: std.Io.Condition, // signalled when a slot is freed
+        not_empty: std.Io.Condition, // signalled when an item is added
         allocator: std.mem.Allocator,
 
         /// Allocate the channel and its ring buffer.  `capacity` must be > 0.
@@ -48,9 +52,9 @@ pub fn Channel(comptime T: type) type {
                 .tail = 0,
                 .count = 0,
                 .closed = false,
-                .mu = .{},
-                .not_full = .{},
-                .not_empty = .{},
+                .mu = .init,
+                .not_full = .init,
+                .not_empty = .init,
                 .allocator = allocator,
             };
             return self;
@@ -65,25 +69,27 @@ pub fn Channel(comptime T: type) type {
         /// Blocking send.  Waits if the buffer is full.
         /// Returns `error.ChannelClosed` if the channel is closed.
         pub fn send(self: *Self, value: T) !void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
 
             while (self.count == self.buf.len) {
                 if (self.closed) return error.ChannelClosed;
-                self.not_full.wait(&self.mu);
+                self.not_full.waitUncancelable(io, &self.mu);
             }
             if (self.closed) return error.ChannelClosed;
 
             self.buf[self.tail] = value;
             self.tail = (self.tail + 1) % self.buf.len;
             self.count += 1;
-            self.not_empty.signal();
+            self.not_empty.signal(io);
         }
 
         /// Non-blocking send.  Returns immediately with an error if full or closed.
         pub fn trySend(self: *Self, value: T) !void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
 
             if (self.closed) return error.ChannelClosed;
             if (self.count == self.buf.len) return error.ChannelFull;
@@ -91,7 +97,7 @@ pub fn Channel(comptime T: type) type {
             self.buf[self.tail] = value;
             self.tail = (self.tail + 1) % self.buf.len;
             self.count += 1;
-            self.not_empty.signal();
+            self.not_empty.signal(io);
         }
 
         /// Blocking receive.  Returns null only when the channel is closed AND empty.
@@ -99,18 +105,19 @@ pub fn Channel(comptime T: type) type {
         /// Drain-after-close pattern (equivalent to Go's `for v := range ch`):
         ///   while (ch.recv()) |value| { process(value); }
         pub fn recv(self: *Self) ?T {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
 
             while (self.count == 0) {
                 if (self.closed) return null;
-                self.not_empty.wait(&self.mu);
+                self.not_empty.waitUncancelable(io, &self.mu);
             }
 
             const value = self.buf[self.head];
             self.head = (self.head + 1) % self.buf.len;
             self.count -= 1;
-            self.not_full.signal();
+            self.not_full.signal(io);
             return value;
         }
 
@@ -118,15 +125,16 @@ pub fn Channel(comptime T: type) type {
         /// Check `isClosed()` separately if you need to distinguish empty-closed
         /// from empty-open.
         pub fn tryRecv(self: *Self) ?T {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
 
             if (self.count == 0) return null;
 
             const value = self.buf[self.head];
             self.head = (self.head + 1) % self.buf.len;
             self.count -= 1;
-            self.not_full.signal();
+            self.not_full.signal(io);
             return value;
         }
 
@@ -135,24 +143,27 @@ pub fn Channel(comptime T: type) type {
         /// In-flight `send` calls after `close` return `error.ChannelClosed`.
         /// Idempotent: closing an already-closed channel is a no-op.
         pub fn close(self: *Self) void {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
             self.closed = true;
-            self.not_empty.broadcast();
-            self.not_full.broadcast();
+            self.not_empty.broadcast(io);
+            self.not_full.broadcast(io);
         }
 
         /// Returns true if the channel has been closed.
         pub fn isClosed(self: *Self) bool {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
             return self.closed;
         }
 
         /// Returns the number of items currently in the buffer (snapshot).
         pub fn len(self: *Self) usize {
-            self.mu.lock();
-            defer self.mu.unlock();
+            const io = _io();
+            self.mu.lockUncancelable(io);
+            defer self.mu.unlock(io);
             return self.count;
         }
     };
@@ -331,7 +342,7 @@ test "Channel: blocking send unblocks when receiver consumes" {
 
     const T = struct {
         fn recvAfterDelay(c: *Channel(i32)) void {
-            std.Thread.sleep(1 * std.time.ns_per_ms);
+            std.Io.sleep(std.Io.Threaded.global_single_threaded.io(), std.Io.Duration.fromMilliseconds(1), .real) catch {};
             _ = c.recv();
         }
     };

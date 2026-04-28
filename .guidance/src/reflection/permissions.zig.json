@@ -18,32 +18,32 @@
           "name": "coder",
           "is_pub": false,
           "line": 10
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "creator",
           "is_pub": false,
           "line": 11
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "staff",
           "is_pub": false,
           "line": 12
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "world",
           "is_pub": false,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "tool",
           "is_pub": false,
           "line": 14
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "user",
           "is_pub": false,
@@ -67,8 +67,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 41
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "canWrite",
           "match_hash": "1241dc71e09080b867e8dbd49205c8fabe5cacb35f557d5b3d50ff19df6be353",
@@ -76,8 +76,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "canDerive",
           "match_hash": "47daf732b0a5e2601dda9634481234ca76b86b43ed6ec3c578e91f19ac34eeae",

@@ -85,37 +85,37 @@
       "signature": "fn readFrequencyTable(dir_path: []const u8) -> ?FrequencyTable",
       "returns": "?FrequencyTable",
       "is_pub": true,
-      "line": 112
+      "line": 113
     },
     {
       "type": "test_decl",
       "name": "buildFrequencyTable basic",
       "is_pub": false,
-      "line": 136
+      "line": 138
     },
     {
       "type": "test_decl",
       "name": "buildFrequencyTableFromMap",
       "is_pub": false,
-      "line": 144
+      "line": 146
     },
     {
       "type": "test_decl",
       "name": "pairWeight default",
       "is_pub": false,
-      "line": 155
+      "line": 157
     },
     {
       "type": "test_decl",
       "name": "setFrequencyTable and getFrequencyTable",
       "is_pub": false,
-      "line": 160
+      "line": 162
     },
     {
       "type": "test_decl",
       "name": "write and read frequency table",
       "is_pub": false,
-      "line": 168
+      "line": 170
     }
   ]
 }

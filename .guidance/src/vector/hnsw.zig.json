@@ -21,8 +21,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "withM",
           "match_hash": "fc228cf5dcd7a735c3f40799d49f7f98b6d28af107b5f58ffa9c37274d1016e8",
@@ -30,8 +30,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 65
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "withEfConstruction",
           "match_hash": "a8c4c17da872ab26d329b92df9a8ba50db3ed079fca2a4db5771e22861cf4799",
@@ -39,8 +39,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 70
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "withEfSearch",
           "match_hash": "c57c251f4e8cd46a8d0fa9c1d1f8a879575d7ac3381b553667a78304e4df9ad8",
@@ -48,8 +48,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 75
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -57,8 +57,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 81
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "add",
           "match_hash": "40996eddc0812cace7600a320d9a205717fd3db7c2cacd84b8f1921a45af90d9",
@@ -66,8 +66,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 101
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "searchLayer",
           "match_hash": "c09838d41e159d87f2448d3d1f6235db54a512f1cae02c1ea38db906172302cd",
@@ -75,8 +75,8 @@
           "returns": "[]SearchResult",
           "is_pub": false,
           "line": 214
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "connectBidirectional",
           "match_hash": "98611a7eba9c14e6b54b2c89be7d35f479be865bf3d071175655ec61345083ed",
@@ -84,8 +84,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 269
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "search",
           "match_hash": "1bfa8d94afa46446e2029d13423b35a6a988eeaa70b5cbf89ab001a8ed516ed5",
@@ -93,8 +93,8 @@
           "returns": "[]SearchResult",
           "is_pub": true,
           "line": 283
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "remove",
           "match_hash": "49f480b560014b3aca06f8019ea9bec44c3769357d66a5e461ac36297fb83bd6",
@@ -102,141 +102,132 @@
           "returns": "bool",
           "is_pub": true,
           "line": 312
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "writeU32",
-          "match_hash": "45965214684dfb9c33bbb0452e10ab76628f98e8a693579364c838a418249654",
-          "signature": "fn writeU32(file: std.fs.File, v: u32) -> void",
+          "match_hash": "cb3f56f2e00cc868c51a0272143e48750a1044159a37398570a1911aedfab4d9",
+          "signature": "fn writeU32(w: *std.Io.Writer, v: u32) -> void",
           "returns": "void",
           "is_pub": false,
           "line": 331
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "writeI64",
-          "match_hash": "618c2c5d8ec5e8add96dabd548dc62c03a5bd28f717a3855d2672b2cabc0d364",
-          "signature": "fn writeI64(file: std.fs.File, v: i64) -> void",
+          "match_hash": "b6cc2623be447e04cb625d8ee5c8d4a7cb7a3bbbc156af825ce326517ff44216",
+          "signature": "fn writeI64(w: *std.Io.Writer, v: i64) -> void",
           "returns": "void",
           "is_pub": false,
           "line": 336
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "writeU64",
-          "match_hash": "429e68c425700922284ecf49c8dc28cff507081206b5b9493aae728a85dfbd0b",
-          "signature": "fn writeU64(file: std.fs.File, v: u64) -> void",
+          "match_hash": "86cc38df4e11ba7cf07df55b483033097ba23e98928bb73f78309660152ab1c0",
+          "signature": "fn writeU64(w: *std.Io.Writer, v: u64) -> void",
           "returns": "void",
           "is_pub": false,
           "line": 341
-        }
-    ,    {
-          "type": "fn_private",
-          "name": "readExact",
-          "match_hash": "264f335d3391cdb9464c770a9d8cdea6ce59e9fc23c342f9f3ff067ed02662e2",
-          "signature": "fn readExact(file: std.fs.File, buf: []u8) -> void",
-          "returns": "void",
-          "is_pub": false,
-          "line": 346
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "readU32",
-          "match_hash": "d081691361c5cd0c198d4a5ddc2182b5908176b2c652ce27764e49b926942af7",
-          "signature": "fn readU32(file: std.fs.File) -> u32",
+          "match_hash": "c25da1c39d6beae8f0896437da728c8ff9dcc404ca076a8f6ab5fc6e7e61450c",
+          "signature": "fn readU32(r: *std.Io.Reader) -> u32",
           "returns": "u32",
           "is_pub": false,
-          "line": 354
-        }
-    ,    {
+          "line": 346
+        },
+        {
           "type": "fn_private",
           "name": "readI64",
-          "match_hash": "46aba62b2d0653552dac7fd0475e1017ab40754db4dd873729f4be007efd9df8",
-          "signature": "fn readI64(file: std.fs.File) -> i64",
+          "match_hash": "1cf54cfa18a869870016784bed6b42b12c9e87b704cd350dbda6c76fa9b0fe6d",
+          "signature": "fn readI64(r: *std.Io.Reader) -> i64",
           "returns": "i64",
           "is_pub": false,
-          "line": 359
-        }
-    ,    {
+          "line": 351
+        },
+        {
           "type": "fn_private",
           "name": "readU64",
-          "match_hash": "6857305a504556ce093034dc77fa2e583c5ac4e08178855a89887930d0ac8def",
-          "signature": "fn readU64(file: std.fs.File) -> u64",
+          "match_hash": "b461550a530ca1b169bd42d3c8a5b745f83ae090d3b1b8136aff5083d24288d6",
+          "signature": "fn readU64(r: *std.Io.Reader) -> u64",
           "returns": "u64",
           "is_pub": false,
-          "line": 364
-        }
-    ,    {
+          "line": 356
+        },
+        {
           "type": "fn_decl",
           "name": "save",
           "match_hash": "726ca8029472f3cb12cc9fb96f91bf235733cd937042b25ec87f1fc539068d96",
           "signature": "fn save(self: *const Self, path: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 371
-        }
-    ,    {
+          "line": 363
+        },
+        {
           "type": "fn_decl",
           "name": "load",
           "match_hash": "2a4f1550e42766bf519e2155d6a869d10bf0e716fdb702001f6c0da264b3a555",
           "signature": "fn load(self: *Self, path: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 394
-        }
-    ,    {
+          "line": 391
+        },
+        {
           "type": "fn_private",
           "name": "randomLevel",
           "match_hash": "b917a8e8f61ae8849bc761112fcec4a3a093abdf333139bf280027315d433085",
           "signature": "fn randomLevel(self: *Self) -> usize",
           "returns": "usize",
           "is_pub": false,
-          "line": 424
-        }
-    ,    {
+          "line": 425
+        },
+        {
           "type": "fn_private",
           "name": "distance",
           "match_hash": "36d8572ffef9f17adb6255657b3e248d23057d6f2cda71ecd859847f08901025",
           "signature": "fn distance(self: *const Self, a: []const f32, b: []const f32) -> f32",
           "returns": "f32",
           "is_pub": false,
-          "line": 432
-        }
-    ,    {
+          "line": 433
+        },
+        {
           "type": "fn_private",
           "name": "connect",
           "match_hash": "80b2e66268db148fd71169d3def6d2e15ec7abd381c3c0cb67426ad082cb666f",
           "signature": "fn connect(self: *Self, from: i64, to: i64, layer: usize) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 446
-        }
-    ,    {
+          "line": 447
+        },
+        {
           "type": "fn_private",
           "name": "pruneConnections",
           "match_hash": "266586b34be5e52f324c8fd3429ae35e98850d26adbd5e470c69aedd7d01e636",
           "signature": "fn pruneConnections(self: *Self, node_id: i64, layer: usize, max_conn: usize) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 462
-        }
-    ,    {
+          "line": 463
+        },
+        {
           "type": "fn_private",
           "name": "selectNeighborsHeuristic",
           "match_hash": "6016d5491dcdea326cb1be519f8aa66e87cc24c0fd14652e24c7a2850d62a1e8",
           "signature": "fn selectNeighborsHeuristic(self: *const Self, _: []const f32, candidates: []const SearchResult, m: usize) -> []SearchResult",
           "returns": "[]SearchResult",
           "is_pub": false,
-          "line": 504
-        }
-    ,    {
+          "line": 505
+        },
+        {
           "type": "fn_decl",
           "name": "verifyConnectivity",
           "match_hash": "3f8ce2e5af2c9cbdce543f3d94722ca6a79e3f3aee888d54e890acf3c18d6a8a",
           "signature": "fn verifyConnectivity(self: *const Self) -> struct { connected: usize, total: usize, percentage: f32 }",
           "returns": "struct { connected: usize, total: usize, percentage: f32 }",
           "is_pub": true,
-          "line": 580
+          "line": 581
         }
       ],
       "line": 15
@@ -245,67 +236,67 @@
       "type": "test_decl",
       "name": "HnswIndex: init and deinit",
       "is_pub": false,
-      "line": 630
+      "line": 631
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: add single node",
       "is_pub": false,
-      "line": 638
+      "line": 639
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: dimension mismatch returns error",
       "is_pub": false,
-      "line": 649
+      "line": 650
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: search returns nearest neighbors",
       "is_pub": false,
-      "line": 657
+      "line": 658
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: remove node",
       "is_pub": false,
-      "line": 673
+      "line": 674
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: save and load preserves node count and search",
       "is_pub": false,
-      "line": 683
+      "line": 684
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: recall validation (results validated)",
       "is_pub": false,
-      "line": 724
+      "line": 726
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: recall@10 > 80% vs linear scan",
       "is_pub": false,
-      "line": 784
+      "line": 786
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: build time under 5s for 100 nodes",
       "is_pub": false,
-      "line": 859
+      "line": 861
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: search returns results on small index",
       "is_pub": false,
-      "line": 884
+      "line": 888
     },
     {
       "type": "test_decl",
       "name": "HnswIndex: basic connectivity verification",
       "is_pub": false,
-      "line": 917
+      "line": 921
     }
   ]
 }

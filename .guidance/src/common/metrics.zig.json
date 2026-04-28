@@ -21,8 +21,8 @@
           "returns": "LatencyHistogram",
           "is_pub": true,
           "line": 36
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "observe",
           "match_hash": "71d81e2725e2360e172ccc59957c8162077eb9ba9fe91b6b83a7628a5370f92c",
@@ -30,8 +30,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "cumulativeBucket",
           "match_hash": "0d252a674e881e4280fd512fd812c6a71032efe9b44430b253a942f8861ab6ec",
@@ -39,8 +39,8 @@
           "returns": "u64",
           "is_pub": true,
           "line": 59
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "estimatePercentile",
           "match_hash": "db5ada9d3127e4e477482a1c6d80af96ff5726a28a1b70d79cd164e91d6f0f8f",

@@ -27,8 +27,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "hasError",
           "match_hash": "de405ebe7cff74ecfcda42fb4d488fd27cf4ce79bad096d95852a0c795e3f32f",
@@ -36,8 +36,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 50
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "setError",
           "match_hash": "5bd4a1e702ea9367f13dde307e0198d0a649f57021b60ef8e7abaa80c4c54806",
@@ -45,8 +45,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 54
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "targetId",
           "match_hash": "53af54688c13bac2a2accb1c277afa2bce9d3def39dd4d118657b7e572d383d3",
@@ -54,8 +54,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 67
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "input",
           "match_hash": "b728d08ea826796a36588c3cd60a519d451b1fce49e5731569aa3d214cb2fdcc",
@@ -63,8 +63,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 78
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "flag",
           "match_hash": "c44ead5911ba8fe422e4c64dcbb60f62766500e4817f9673b4231adba5fe4a9a",
@@ -72,8 +72,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 92
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "providesBitset",
           "match_hash": "cfd1bc5938787d80e2b65943fb5d47bdde0456f8f068bc253501c893ec3e10b6",
@@ -81,8 +81,8 @@
           "returns": "*Self",
           "is_pub": true,
           "line": 99
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "build",
           "match_hash": "0ea9a1c3174c18a2f82820e6e08f9a1d61941093fbc0f589e17041178fe2ade7",

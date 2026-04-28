@@ -68,7 +68,7 @@
       "signature": "fn resolveImportPath(allocator: std.mem.Allocator, workspace: []const u8, file_dir: []const u8, import_path: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 297
+      "line": 299
     }
   ]
 }

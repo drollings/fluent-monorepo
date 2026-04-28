@@ -131,7 +131,7 @@
       "signature": "fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabilities_dir: []const u8, structure_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 818
+      "line": 819
     },
     {
       "type": "fn_private",
@@ -140,7 +140,7 @@
       "signature": "fn summarizeCapabilityDescription(allocator: std.mem.Allocator, client: *llm.LlmClient, name: []const u8, description: []const u8, intended_len: u16) -> anyerror!?[]const u8",
       "returns": "anyerror!?[]const u8",
       "is_pub": false,
-      "line": 849
+      "line": 851
     },
     {
       "type": "fn_private",
@@ -149,7 +149,7 @@
       "signature": "fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capabilities_dir: []const u8, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 883
+      "line": 885
     },
     {
       "type": "fn_private",
@@ -158,7 +158,7 @@
       "signature": "fn showIndexIntro(allocator: std.mem.Allocator, _: []const u8, guidance_dir: []const u8, capabilities_dir: []const u8, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1002
+      "line": 1010
     },
     {
       "type": "fn_private",
@@ -167,7 +167,7 @@
       "signature": "fn handleCapabilityQuery(allocator: std.mem.Allocator, cap_name: []const u8, capabilities_dir: []const u8, query_text: []const u8, natural_lang: bool, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1032
+      "line": 1040
     },
     {
       "type": "fn_private",
@@ -176,7 +176,7 @@
       "signature": "fn handleFileSkeletonQuery(allocator: std.mem.Allocator, file_path: []const u8, workspace: []const u8, guidance_dir: []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1119
+      "line": 1127
     },
     {
       "type": "fn_private",
@@ -185,7 +185,7 @@
       "signature": "fn handleDisambiguationQuery(allocator: std.mem.Allocator, paths: []const []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1157
+      "line": 1165
     },
     {
       "type": "fn_private",
@@ -194,7 +194,7 @@
       "signature": "fn handleStructSkeletonQuery(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1178
+      "line": 1186
     },
     {
       "type": "fn_private",
@@ -203,7 +203,7 @@
       "signature": "fn findStructEndLine(src: []const u8, start_line: u32) -> u32",
       "returns": "u32",
       "is_pub": false,
-      "line": 1260
+      "line": 1268
     },
     {
       "type": "struct",
@@ -211,7 +211,7 @@
       "match_hash": "663e28f78b928ac316219cd29e7ed7efefd03917e9e1d304fc181c1374cf89cd",
       "signature": "keyword_struct StructInfo { ... }",
       "is_pub": false,
-      "line": 1289
+      "line": 1297
     },
     {
       "type": "fn_private",
@@ -220,7 +220,7 @@
       "signature": "fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) -> ?StructInfo",
       "returns": "?StructInfo",
       "is_pub": false,
-      "line": 1295
+      "line": 1303
     },
     {
       "type": "fn_decl",
@@ -229,15 +229,15 @@
       "signature": "fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1366
+      "line": 1375
     },
     {
       "type": "struct",
       "name": "TestQuery",
-      "match_hash": "6366c2d3606797ed4a945a5424dc1d7d70e8d2ee5bd63d6fc7f08670aaf9b061",
+      "match_hash": "70092d64ea89bc6e0cfeb48203c27ba78b9699e10bfb7566c88a67599c76a916",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 1482
+      "line": 1491
     },
     {
       "type": "struct",
@@ -245,7 +245,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 1490
+      "line": 1500
     },
     {
       "type": "fn_decl",
@@ -254,7 +254,7 @@
       "signature": "fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1499
+      "line": 1509
     },
     {
       "type": "fn_private",
@@ -263,7 +263,7 @@
       "signature": "fn parseScoreFromLine(line: []const u8) -> ?u8",
       "returns": "?u8",
       "is_pub": false,
-      "line": 1904
+      "line": 1918
     },
     {
       "type": "fn_private",
@@ -272,7 +272,7 @@
       "signature": "fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1918
+      "line": 1933
     },
     {
       "type": "fn_private",
@@ -281,7 +281,7 @@
       "signature": "fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1946
+      "line": 2004
     },
     {
       "type": "fn_decl",
@@ -290,7 +290,7 @@
       "signature": "fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2025
+      "line": 2085
     },
     {
       "type": "fn_decl",
@@ -299,7 +299,7 @@
       "signature": "fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2090
+      "line": 2150
     },
     {
       "type": "fn_decl",
@@ -308,7 +308,7 @@
       "signature": "fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2134
+      "line": 2194
     },
     {
       "type": "fn_decl",
@@ -317,55 +317,55 @@
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2144
+      "line": 2204
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2216
+      "line": 2276
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2221
+      "line": 2281
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2226
+      "line": 2286
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2231
+      "line": 2291
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2236
+      "line": 2296
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2241
+      "line": 2301
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2251
+      "line": 2311
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2257
+      "line": 2317
     }
   ]
 }

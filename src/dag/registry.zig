@@ -95,7 +95,7 @@ fn updateProviderMap(self: *TargetRegistry, tgt: *Target) void {
     while (iter.next()) |provides_idx| {
         const gop = self.provider_map.getOrPut(self.allocator, provides_idx) catch return;
         if (!gop.found_existing) {
-            gop.value_ptr.* = .{};
+            gop.value_ptr.* = .empty;
         }
         gop.value_ptr.append(self.allocator, tgt) catch return;
     }

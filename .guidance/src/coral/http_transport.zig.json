@@ -21,8 +21,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "8d51f14888d023682a48794099097104911040c4363c249f4d9420f16b4d34ed",
@@ -57,8 +57,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 79
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "listen",
           "match_hash": "c65b53c6dc3a5dc944286bc0533efc6454bfee11859ab10cff987ff3cbaca5a6",
@@ -66,8 +66,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 95
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "listenWithReady",
           "match_hash": "2e7ebfc537db5d5583551f4ab18eb6382056789d2b1d83844153630b5e3794f7",
@@ -75,8 +75,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 129
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "requestShutdown",
           "match_hash": "aefd311743a435d0ba585178164f9b56ab1b312f1d0a2c92a66f2ba70951334a",
@@ -84,8 +84,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 135
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleConnection",
           "match_hash": "f089c7451d699682eac4c2f0574ae98fe9d62b7d48cdf06a592daf0b7801e96a",
@@ -93,8 +93,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 139
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "getHeader",
           "match_hash": "d5124b0cc2bfcbf70dacc43677d7e79e5287a50f56139cf11f5bb181b7a0476e",
@@ -102,8 +102,8 @@
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 164
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleRequest",
           "match_hash": "514be28a29ae7529452b47695b7c98fa298db62bfe7605734b8ef45760531358",
@@ -111,8 +111,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 183
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleMcpRequest",
           "match_hash": "64cf3a0b59e22aad9d2c3a75b7740e073b05253ee49dd621dd64cfdf0970989a",
@@ -120,8 +120,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 225
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "handleMcpRequestSse",
           "match_hash": "99ff98956317e8591fd2cb0abdfa999f66fab114c3d73de48cdd6295ac5d173f",
@@ -129,8 +129,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 253
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendSseEvent",
           "match_hash": "59615c580060c727f56f8f52c215dc11304d2510cb48eac0c5e10527a93c409d",
@@ -138,8 +138,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 302
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendHealthCheck",
           "match_hash": "510685a812af0b10985cd8447791a117b11c99529b84216823e85dade51b75bb",
@@ -147,8 +147,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 322
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendMetrics",
           "match_hash": "9396e0dd08e9a30e017cc7d8e98e61c6b3265bbe17badcaebfbe10d476f95a44",
@@ -156,8 +156,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 333
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendCorsPreflight",
           "match_hash": "07c3c519353cf6c77a68b359d574290c0c7edb52e6ceebff9b83828d5a95ee90",
@@ -165,8 +165,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 351
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendJson",
           "match_hash": "fdc9610c6aec19ccf61ae4babc4ac4933057079c0ef0d9b06746c836d899b957",
@@ -174,8 +174,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 363
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendError",
           "match_hash": "3c879e1b626f857b3b1cdf75861c4d4f65bdba1fc58a0bed07338dbfad39c6b1",
@@ -183,8 +183,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 374
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "sendNotFound",
           "match_hash": "a020850961a23a738b69094d5c85d2ecff6bc2f064d4075714b49b4649f29eb1",
@@ -192,8 +192,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 384
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -232,8 +232,8 @@
           "returns": "anyerror![]const u8",
           "is_pub": false,
           "line": 453
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "deinit",
           "match_hash": "a35bba476da2212c402bb4a75af8dced3441d64f7f92e37705c3a8f3060b3b6e",
@@ -241,8 +241,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 460
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "initVTable",
           "match_hash": "3c10d26ec19f9fd0242ad153aa40d42a437bde32ebbdacc8f7495a4ff819b28c",

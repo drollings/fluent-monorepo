@@ -19,38 +19,38 @@
           "name": "depends",
           "is_pub": false,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "provides",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "command",
           "is_pub": false,
           "line": 21
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "registration",
           "is_pub": false,
           "line": 22
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "validation",
           "is_pub": false,
           "line": 23
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "initialization",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "label",
           "match_hash": "9995ba92067088073a046c000f2f19842335283d81944a50a9e1f828abf1d509",
@@ -77,8 +77,8 @@
           "returns": "*BuilderError",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "format",
           "match_hash": "1886bbc7342a44960a959d5be07eeff9505262df51c82a5456e0af39367edc74",
@@ -86,8 +86,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 88
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "chain",
           "match_hash": "f3d43ee4c9cd80f591818dcbd4b6ffc8398bcf37f03c6eb8189d24be211e0ed9",
@@ -145,25 +145,25 @@
       "type": "test_decl",
       "name": "BuilderError: chain appends parent message",
       "is_pub": false,
-      "line": 209
+      "line": 205
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: empty returns empty",
       "is_pub": false,
-      "line": 222
+      "line": 218
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: single name",
       "is_pub": false,
-      "line": 229
+      "line": 225
     },
     {
       "type": "test_decl",
       "name": "joinStringSlice: multiple names comma-separated",
       "is_pub": false,
-      "line": 236
+      "line": 232
     }
   ]
 }

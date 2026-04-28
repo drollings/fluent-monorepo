@@ -824,7 +824,7 @@ pub fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u
         var cap_obj = std.json.ObjectMap.init(fa, &[_][]const u8{}, &[_]std.json.Value{}) catch unreachable;
         try cap_obj.put(fa, "name", .{ .string = cap.name });
         if (cap.description) |d| {
-        try cap_obj.put(fa, "description", .{ .string = d });
+            try cap_obj.put(fa, "description", .{ .string = d });
         }
 
         var anchors_arr = std.json.Array.init(fa);
@@ -1179,8 +1179,8 @@ fn updateCapabilitySourcesSection(
     verbose: bool,
 ) !void {
     // Read existing content.
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const content = std.Io.Dir.cwd().readFileAlloc(io, cap_md_path, allocator, .limited(512 * 1024)) catch return;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, cap_md_path, allocator, .limited(512 * 1024)) catch return;
     defer allocator.free(content);
 
     const marker = "<!-- AUTO-SOURCES:";

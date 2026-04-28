@@ -468,43 +468,37 @@ test "TypedAccessorTable compile-time type checking" {
 
 test "BinaryFieldCodec encode/decode integer" {
     var buf: [8]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    const writer = stream.writer();
+    var w = std.Io.Writer.fixed(&buf);
 
-    try BinaryFieldCodec.encodeField(u32, 0x12345678, writer);
-    try testing.expectEqualSlices(u8, &[_]u8{ 0x78, 0x56, 0x34, 0x12 }, buf[0..4]);
+    try BinaryFieldCodec.encodeField(u32, 0x12345678, &w);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0x78, 0x56, 0x34, 0x12 }, w.buffered()[0..4]);
 
-    stream.reset();
-    const reader = stream.reader();
-    const decoded = try BinaryFieldCodec.decodeField(u32, reader, testing.allocator);
+    var r = std.Io.Reader.fixed(w.buffered()[0..4]);
+    const decoded = try BinaryFieldCodec.decodeField(u32, &r, testing.allocator);
     try testing.expectEqual(@as(u32, 0x12345678), decoded);
 }
 
 test "BinaryFieldCodec encode/decode bool" {
     var buf: [1]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    const writer = stream.writer();
+    var w = std.Io.Writer.fixed(&buf);
 
-    try BinaryFieldCodec.encodeField(bool, true, writer);
-    try testing.expectEqual(@as(u8, 1), buf[0]);
+    try BinaryFieldCodec.encodeField(bool, true, &w);
+    try testing.expectEqual(@as(u8, 1), w.buffered()[0]);
 
-    stream.reset();
-    const reader = stream.reader();
-    const decoded = try BinaryFieldCodec.decodeField(bool, reader, testing.allocator);
+    var r = std.Io.Reader.fixed(w.buffered());
+    const decoded = try BinaryFieldCodec.decodeField(bool, &r, testing.allocator);
     try testing.expect(decoded);
 }
 
 test "BinaryFieldCodec encode/decode enum" {
     const Priority = enum { low, medium, high };
     var buf: [4]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    const writer = stream.writer();
+    var w = std.Io.Writer.fixed(&buf);
 
-    try BinaryFieldCodec.encodeField(Priority, .high, writer);
+    try BinaryFieldCodec.encodeField(Priority, .high, &w);
 
-    stream.reset();
-    const reader = stream.reader();
-    const decoded = try BinaryFieldCodec.decodeField(Priority, reader, testing.allocator);
+    var r = std.Io.Reader.fixed(w.buffered());
+    const decoded = try BinaryFieldCodec.decodeField(Priority, &r, testing.allocator);
     try testing.expectEqual(Priority.high, decoded);
 }
 

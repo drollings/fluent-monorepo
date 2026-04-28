@@ -32,7 +32,7 @@
       "signature": "fn sourceHasModuleDoc(source: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 87
+      "line": 86
     }
   ]
 }

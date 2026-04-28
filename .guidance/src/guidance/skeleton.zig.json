@@ -113,7 +113,7 @@
       "signature": "fn looksLikeIdentifier(query: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 325
+      "line": 326
     },
     {
       "type": "fn_decl",
@@ -122,7 +122,7 @@
       "signature": "fn generateFileSkeleton(allocator: std.mem.Allocator, src_path: []const u8, workspace: []const u8, guidance_dir: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 337
+      "line": 338
     },
     {
       "type": "fn_decl",
@@ -131,7 +131,7 @@
       "signature": "fn generateStructSkeleton(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 519
+      "line": 521
     },
     {
       "type": "fn_private",
@@ -140,7 +140,7 @@
       "signature": "fn findAndGenerateStructSkeleton(allocator: std.mem.Allocator, struct_name: []const u8, json_dir: []const u8, rel_path: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 545
+      "line": 547
     },
     {
       "type": "fn_private",
@@ -149,7 +149,7 @@
       "signature": "fn generateStructSkeletonFromJson(allocator: std.mem.Allocator, obj: std.json.ObjectMap, struct_name: []const u8, source_content: ?[]const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 604
+      "line": 607
     },
     {
       "type": "fn_decl",
@@ -158,7 +158,7 @@
       "signature": "fn renderCapabilityDocument(allocator: std.mem.Allocator, cap_name: []const u8, capabilities_dir: []const u8, llm_client: ?*llm.LlmClient, natural_lang_query: bool) -> error{OutOfMemory}!?[]const u8",
       "returns": "error{OutOfMemory}!?[]const u8",
       "is_pub": true,
-      "line": 734
+      "line": 737
     },
     {
       "type": "fn_private",
@@ -167,7 +167,7 @@
       "signature": "fn parseCapabilityDescription(allocator: std.mem.Allocator, content: []const u8) -> error{OutOfMemory}!?[]const u8",
       "returns": "error{OutOfMemory}!?[]const u8",
       "is_pub": false,
-      "line": 797
+      "line": 800
     },
     {
       "type": "struct",
@@ -175,16 +175,16 @@
       "match_hash": "a3f181805dcad75e1b23b576bcfb034c3522105657dfcbc1a4333caba6967068",
       "signature": "keyword_struct SkeletonOutputConfig { ... }",
       "is_pub": true,
-      "line": 814
+      "line": 817
     },
     {
       "type": "fn_decl",
       "name": "formatSkeletonOutput",
-      "match_hash": "e092585e5eef8ee30e936a383d4691e927707369355e2672cd401ae02cb76ee0",
-      "signature": "fn formatSkeletonOutput(allocator: std.mem.Allocator, skeleton: []const u8, config: SkeletonOutputConfig) -> error{OutOfMemory}![]const u8",
-      "returns": "error{OutOfMemory}![]const u8",
+      "match_hash": "c154be91adbf15ad17baf6dc0ca8e9b59566620f315a83e3f01e26ad56fee490",
+      "signature": "fn formatSkeletonOutput(allocator: std.mem.Allocator, skeleton: []const u8, config: SkeletonOutputConfig) -> []const u8",
+      "returns": "[]const u8",
       "is_pub": true,
-      "line": 823
+      "line": 826
     }
   ]
 }

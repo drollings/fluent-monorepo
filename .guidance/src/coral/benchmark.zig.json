@@ -59,8 +59,8 @@
           "returns": "CoralBenchmarks",
           "is_pub": true,
           "line": 96
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "bc33f15810951bd2a5ceee0155fc69c10c8d9196a5148dab1e5c700e7fced4e9",
@@ -68,8 +68,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 103
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "runAll",
           "match_hash": "1ba49e85d446fc01db8615da0c56ce069fb3ae175ddc0bc8d00bbcbcb9e4e6f5",
@@ -77,8 +77,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 108
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "benchmarkL1Cache",
           "match_hash": "033d3e473030e2ccbe4cc866738e513cf4974628e24c62b52e1d51c4e666d751",
@@ -86,8 +86,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 117
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "benchmarkHnswBuild",
           "match_hash": "8833e889f40dfdd4aca372643996436a334b02f711cc67e40dbbd8bb1e9ede00",
@@ -95,8 +95,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 163
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "benchmarkHnswSearch",
           "match_hash": "074081a8ad514ec7f93b8bb51de0fe0c0f648dd199bc7f9dff33d0da0f4cfb10",
@@ -104,8 +104,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 219
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "benchmarkArenaOverhead",
           "match_hash": "cb71a6226475bff0b58c26ab6cd0684e49f1e43c566aaa6f06c7e1a91120ae1a",
@@ -113,8 +113,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 277
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "printResults",
           "match_hash": "058c83427fdfeb1201c117fe2a913433a38bac40d40885d1ad4a0abf70aac7cb",

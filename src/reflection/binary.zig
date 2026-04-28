@@ -2,14 +2,26 @@
 const std = @import("std");
 
 pub const BinaryFieldCodec = struct {
-    pub fn encodeField(comptime T: type, value: T, writer: anytype) !void {
+    pub fn encodeField(comptime T: type, value: T, writer: *std.Io.Writer) !void {
         switch (@typeInfo(T)) {
             .int => |i| {
                 switch (i.bits) {
                     8 => try writer.writeByte(@intCast(value)),
-                    16 => try writer.writeInt(u16, @intCast(value), .little),
-                    32 => try writer.writeInt(u32, @intCast(value), .little),
-                    64 => try writer.writeInt(u64, @intCast(value), .little),
+                    16 => {
+                        var b: [2]u8 = undefined;
+                        std.mem.writeInt(u16, &b, @intCast(value), .little);
+                        try writer.writeAll(&b);
+                    },
+                    32 => {
+                        var b: [4]u8 = undefined;
+                        std.mem.writeInt(u32, &b, @intCast(value), .little);
+                        try writer.writeAll(&b);
+                    },
+                    64 => {
+                        var b: [8]u8 = undefined;
+                        std.mem.writeInt(u64, &b, @intCast(value), .little);
+                        try writer.writeAll(&b);
+                    },
                     else => return error.UnsupportedIntSize,
                 }
             },
@@ -17,12 +29,16 @@ pub const BinaryFieldCodec = struct {
             .bool => try writer.writeByte(if (value) 1 else 0),
             .@"enum" => {
                 const int_val: u32 = @intCast(@intFromEnum(value));
-                try writer.writeInt(u32, int_val, .little);
+                var b: [4]u8 = undefined;
+                std.mem.writeInt(u32, &b, int_val, .little);
+                try writer.writeAll(&b);
             },
             .pointer => |p| {
                 if (p.size == .slice and p.child == u8) {
                     const slice: []const u8 = value;
-                    try writer.writeInt(u32, @intCast(slice.len), .little);
+                    var b: [4]u8 = undefined;
+                    std.mem.writeInt(u32, &b, @intCast(slice.len), .little);
+                    try writer.writeAll(&b);
                     try writer.writeAll(slice);
                 }
             },
@@ -30,32 +46,56 @@ pub const BinaryFieldCodec = struct {
         }
     }
 
-    pub fn decodeField(comptime T: type, reader: anytype, allocator: std.mem.Allocator) !T {
+    pub fn decodeField(comptime T: type, reader: *std.Io.Reader, allocator: std.mem.Allocator) !T {
         switch (@typeInfo(T)) {
             .int => |i| {
                 return switch (i.bits) {
-                    8 => @intCast(try reader.readByte()),
-                    16 => @intCast(try reader.readInt(u16, .little)),
-                    32 => @intCast(try reader.readInt(u32, .little)),
-                    64 => @intCast(try reader.readInt(u64, .little)),
+                    8 => blk: {
+                        var b: [1]u8 = undefined;
+                        try reader.readSliceAll(&b);
+                        break :blk @intCast(b[0]);
+                    },
+                    16 => blk: {
+                        var b: [2]u8 = undefined;
+                        try reader.readSliceAll(&b);
+                        break :blk @intCast(std.mem.readInt(u16, &b, .little));
+                    },
+                    32 => blk: {
+                        var b: [4]u8 = undefined;
+                        try reader.readSliceAll(&b);
+                        break :blk @intCast(std.mem.readInt(u32, &b, .little));
+                    },
+                    64 => blk: {
+                        var b: [8]u8 = undefined;
+                        try reader.readSliceAll(&b);
+                        break :blk @intCast(std.mem.readInt(u64, &b, .little));
+                    },
                     else => error.UnsupportedIntSize,
                 };
             },
             .float => {
                 var buf: [@sizeOf(T)]u8 = undefined;
-                try reader.readNoEof(&buf);
+                try reader.readSliceAll(&buf);
                 return @bitCast(buf);
             },
-            .bool => return (try reader.readByte()) != 0,
+            .bool => {
+                var b: [1]u8 = undefined;
+                try reader.readSliceAll(&b);
+                return b[0] != 0;
+            },
             .@"enum" => {
-                const int_val = try reader.readInt(u32, .little);
+                var b: [4]u8 = undefined;
+                try reader.readSliceAll(&b);
+                const int_val = std.mem.readInt(u32, &b, .little);
                 return @enumFromInt(int_val);
             },
             .pointer => |p| {
                 if (p.size == .slice and p.child == u8) {
-                    const len = try reader.readInt(u32, .little);
+                    var lb: [4]u8 = undefined;
+                    try reader.readSliceAll(&lb);
+                    const len = std.mem.readInt(u32, &lb, .little);
                     const slice = try allocator.alloc(u8, len);
-                    try reader.readNoEof(slice);
+                    try reader.readSliceAll(slice);
                     return slice;
                 }
                 return error.UnsupportedPointerType;

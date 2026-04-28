@@ -21,8 +21,8 @@
           "returns": "ContentNode",
           "is_pub": true,
           "line": 34
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getLod",
           "match_hash": "adf814e23cc0e95ea9cecce85cc30dc05847b5aec57a056f266686778ff18cac",
@@ -30,8 +30,8 @@
           "returns": "[]const u8",
           "is_pub": true,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "setLod",
           "match_hash": "f61146128a7b9a0f4c8364e2cd4d52a5ad97ca505d2034f08e0b9e820ed7ec4d",
@@ -39,8 +39,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 49
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "setSource",
           "match_hash": "fd41ea9a85da1b5675a4d477524a83360477b07bc4e31d98a4e6c2d27d49d56c",
@@ -48,8 +48,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 55
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "clone",
           "match_hash": "fba36856e813b14a2a66e3c6a1d1ef2c534ef64a302015b44f0bf1c7934b0c96",
@@ -57,8 +57,8 @@
           "returns": "ContentNode",
           "is_pub": true,
           "line": 64
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "free",
           "match_hash": "3c3baa46e6cf331f55a2e6e2ccde47e8d86cc230fa671898b0f2179ef1c744a1",

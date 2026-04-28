@@ -26,44 +26,44 @@
           "name": "iri",
           "is_pub": false,
           "line": 42
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "string",
           "is_pub": false,
           "line": 43
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "lang_string",
           "is_pub": false,
           "line": 44
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "integer",
           "is_pub": false,
           "line": 45
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "decimal",
           "is_pub": false,
           "line": 46
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "boolean",
           "is_pub": false,
           "line": 47
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "date_time",
           "is_pub": false,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "any",
           "is_pub": false,

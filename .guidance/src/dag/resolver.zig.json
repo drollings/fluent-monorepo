@@ -131,8 +131,8 @@
     {
       "type": "fn_private",
       "name": "printTree",
-      "match_hash": "518217695cd43030c42ae65d5c8685260737caee70ccfcaea5d21d76d8eeb27b",
-      "signature": "fn printTree(self: *DependencyResolver, target: *Target, visited: *std.AutoHashMap(usize, void), prefix: []const u8, is_last: bool, writer) -> void",
+      "match_hash": "1b70b65c0db4e64dca83b852b6cc4d0b562aa1091b9521c573d95ae725c48b45",
+      "signature": "fn printTree(self: *DependencyResolver, target: *Target, visited: *std.AutoHashMap(usize, void), prefix: []const u8, is_last: bool, writer: *std.Io.Writer) -> void",
       "returns": "void",
       "is_pub": false,
       "line": 354

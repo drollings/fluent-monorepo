@@ -18,20 +18,20 @@
           "name": "subclass_transitivity",
           "is_pub": false,
           "line": 24
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "subproperty_transitivity",
           "is_pub": false,
           "line": 25
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "domain_range",
           "is_pub": false,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "inverse_of",
           "is_pub": false,
@@ -55,8 +55,8 @@
           "returns": "InferenceEngine",
           "is_pub": true,
           "line": 41
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "6e01862860e17e50fbab022de1db04b8de55a29e6286329da51f2784bc207344",
@@ -64,8 +64,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 48
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "addRule",
           "match_hash": "28f5a4fed708ebc53fb288d662ecc8b2a0bfb6d066ac65f6b8659d24e3e89293",
@@ -73,8 +73,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 52
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "infer",
           "match_hash": "f6525e04e637218042a9b1d04dedd87223d810fb35c4ec04f61c2e5b627ca2b9",
@@ -82,8 +82,8 @@
           "returns": "[]Triple",
           "is_pub": true,
           "line": 61
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "materialize",
           "match_hash": "403fda6f04287968c4f1f9e34872e735e6e65997605e7c97f0b3bd433e032ace",
@@ -155,8 +155,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 236
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -164,8 +164,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 246
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "loadHierarchy",
           "match_hash": "6fc730dc0f16d3df029d8def8dc3e87dafbdf517f80ae3dd1a6f427dbd649189",
@@ -173,8 +173,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 261
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "addSubclassEdge",
           "match_hash": "804a7349b6384ed20b63727ce654f9db13c68f24983a69658f9fdcbd448e0ce9",
@@ -182,8 +182,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 294
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "registerCapability",
           "match_hash": "aff97f37c44462c147b9af009656825751fe1c4eacf9e0d60105a21db5a61b71",
@@ -191,8 +191,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 312
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "invalidate",
           "match_hash": "4312029d6ed449e9be88a2a6fcd56e51bfa9651208cd5906f0f4a72a2c1bc0f3",
@@ -200,8 +200,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 330
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "inferCapabilities",
           "match_hash": "97175fe4f73d96220bd248316d4f30398b25f49b3ebcff7298be8d4827051f3a",
@@ -209,8 +209,8 @@
           "returns": "*const CapabilitySet",
           "is_pub": true,
           "line": 341
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "collectAncestorCaps",
           "match_hash": "b956f28d0c3f640f963088c03eb8797c30564f48f265554455b167f7d1860399",
@@ -218,8 +218,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 364
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "duckType",
           "match_hash": "fefc817758c63769c63332ea7dab4a5bbb9e3044b3ff2ed550fb096811198a75",

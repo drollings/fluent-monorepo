@@ -37,8 +37,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 51
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "register",
           "match_hash": "a3ca50b017656d1933417acce7d55344dc9f0cb2ed814fe1fe4eebfa764ef128",
@@ -46,8 +46,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 57
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "getDefinitions",
           "match_hash": "7ee7ac8450b19f86be82703b331b033b145a42cc883ebcde4aaa6c94c66c55bc",
@@ -55,8 +55,8 @@
           "returns": "[]ToolDefinition",
           "is_pub": true,
           "line": 68
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "count",
           "match_hash": "4530c74400f9100048e974d022c090f26167ad4d851218c55ceb610c34d627ce",

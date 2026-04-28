@@ -274,7 +274,7 @@ pub const McpServer = struct {
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
 
-        try w.print(
+        try aw.writer.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"protocolVersion":"2024-11-05","capabilities":{{"tools":{{}}}},"serverInfo":{{"name":"{s}","version":"{s}"}}}}}}
         , .{ id_str, self.server_info.name, self.server_info.version });
         return aw.toOwnedSlice();
@@ -292,7 +292,7 @@ pub const McpServer = struct {
         const insert_schema = try reflection.Editable(InsertNodeParams).describeSchema(a);
         const explain_schema = try reflection.Editable(ExplainParams).describeSchema(a);
 
-        try w.print(
+        try aw.writer.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"tools":[
         , .{id_str});
 
@@ -303,15 +303,15 @@ pub const McpServer = struct {
         };
 
         for (tool_defs, 0..) |td, i| {
-            if (i > 0) try w.writeByte(',');
-            try w.print(
+            if (i > 0) try aw.writer.writeByte(',');
+            try aw.writer.print(
                 \\{{"name":"{s}","description":"{s}","inputSchema":
             , .{ td.name, td.description });
-            try w.writeAll(td.schema);
-            try w.writeByte('}');
+            try aw.writer.writeAll(td.schema);
+            try aw.writer.writeByte('}');
         }
 
-        try w.writeAll("]}}}");
+        try aw.writer.writeAll("]}}}");
         return aw.toOwnedSlice();
     }
 
@@ -328,10 +328,10 @@ pub const McpServer = struct {
             else => return self.errorResponse(req.id, -32602, "Invalid tool name", error.InvalidToolName),
         };
 
-        const args_val = params_obj.get("arguments") orelse std.json.Value{ .object = std.json.ObjectMap.init(a) };
+        const args_val = params_obj.get("arguments") orelse std.json.Value{ .object = .empty };
         const args_obj = switch (args_val) {
             .object => |o| o,
-            else => std.json.ObjectMap.init(a),
+            else => @as(std.json.ObjectMap, .empty),
         };
 
         if (std.mem.eql(u8, tool_name, "coral_query")) {
@@ -372,7 +372,7 @@ pub const McpServer = struct {
         defer self.allocator.free(id_str);
 
         const tier_name = @tagName(routing_result.tier_used);
-        try w.print(
+        try aw.writer.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":{{"tier":"{s}","latency_ms":{d},"node_count":{d}}}}}]}}}}
         , .{ id_str, tier_name, routing_result.latency_ms, routing_result.nodes.len });
 
@@ -397,7 +397,7 @@ pub const McpServer = struct {
         };
 
         // Use a timestamp-based id for simplicity
-        const node_id: i64 = std.time.timestamp();
+        const node_id: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds, std.time.ns_per_s));
         var node = ContextNode.init(node_id, name, description, self.allocator) catch |err| {
             return self.errorResponse(req.id, -32603, "Node init failed", err);
         };
@@ -413,7 +413,7 @@ pub const McpServer = struct {
         const id_str = try idToJson(self.allocator, req.id);
         defer self.allocator.free(id_str);
 
-        try w.print(
+        try aw.writer.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"inserted node {d}"}}]}}}}
         , .{ id_str, node_id });
 
@@ -450,7 +450,7 @@ pub const McpServer = struct {
         if (maybe_id == null) {
             var aw: std.Io.Writer.Allocating = .init(self.allocator);
             errdefer aw.deinit();
-            try w.print(
+            try aw.writer.print(
                 \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"node not found"}}]}}}}
             , .{id_str});
             return aw.toOwnedSlice();
@@ -465,11 +465,11 @@ pub const McpServer = struct {
         var aw: std.Io.Writer.Allocating = .init(self.allocator);
         errdefer aw.deinit();
 
-        try w.print(
+        try aw.writer.print(
             \\{{"jsonrpc":"2.0","id":{s},"result":{{"content":[{{"type":"text","text":"
         , .{id_str});
-        try writeJsonEscaped(w, packed_text);
-        try w.writeAll("\"}}]}}}");
+        try writeJsonEscaped(&aw.writer, packed_text);
+        try aw.writer.writeAll("\"}}]}}}");
         return aw.toOwnedSlice();
     }
 

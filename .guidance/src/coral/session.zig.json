@@ -35,8 +35,8 @@
           "returns": "Self",
           "is_pub": true,
           "line": 106
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
@@ -44,8 +44,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 124
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "exec",
           "match_hash": "4aab8bee3871c3413163c0219eaba37bf9b1917517436c1f03118fb6f60fa44c",
@@ -53,8 +53,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 135
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "prepare",
           "match_hash": "f1c5507e7959f8f926c5406a5458fb34a9853e8a7e6ee8ceb7df364f45ffb041",
@@ -62,8 +62,8 @@
           "returns": "*c.sqlite3_stmt",
           "is_pub": false,
           "line": 142
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "step",
           "match_hash": "98eff056c0071a63e927dba6fb274a0e7f9af13eea7f07d258fa3503fd62d848",
@@ -71,8 +71,8 @@
           "returns": "bool",
           "is_pub": false,
           "line": 149
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "initSchema",
           "match_hash": "299374d1092e4999ef42a1bf8554916404c43770f694917c7e9ce12711821690",
@@ -80,8 +80,8 @@
           "returns": "void",
           "is_pub": false,
           "line": 162
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "createSession",
           "match_hash": "ba90ee57c3a54136def34c4a02fbc60a2ce874dfa5eb6816ac1965f7f65d6056",
@@ -92,24 +92,24 @@
           ],
           "is_pub": true,
           "line": 174
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "addMessage",
           "match_hash": "30b8cf15836f38236dd7d1a0729a8d434878128bdf135e8689a09cc210c7e359",
           "signature": "fn addMessage(self: *Self, session_id: i64, role: []const u8, content: []const u8, tokens: i64) -> i64",
           "returns": "i64",
           "is_pub": true,
-          "line": 207
-        }
-    ,    {
+          "line": 209
+        },
+        {
           "type": "fn_decl",
           "name": "searchMessages",
           "match_hash": "a5098de9f006949f8c5d4a96525a340e92a3d8b4960ec98b26f1fd771d059604",
           "signature": "fn searchMessages(self: *Self, query: []const u8, limit: usize, allocator: std.mem.Allocator) -> []Message",
           "returns": "[]Message",
           "is_pub": true,
-          "line": 235
+          "line": 239
         }
       ],
       "line": 94
@@ -118,49 +118,49 @@
       "type": "test_decl",
       "name": "SessionDB init and deinit (in-memory)",
       "is_pub": false,
-      "line": 294
+      "line": 298
     },
     {
       "type": "test_decl",
       "name": "createSession returns valid id",
       "is_pub": false,
-      "line": 299
+      "line": 303
     },
     {
       "type": "test_decl",
       "name": "createSession with parent_session_id",
       "is_pub": false,
-      "line": 307
+      "line": 311
     },
     {
       "type": "test_decl",
       "name": "addMessage returns valid id",
       "is_pub": false,
-      "line": 316
+      "line": 320
     },
     {
       "type": "test_decl",
       "name": "searchMessages returns matching messages",
       "is_pub": false,
-      "line": 325
+      "line": 329
     },
     {
       "type": "test_decl",
       "name": "searchMessages limit is respected",
       "is_pub": false,
-      "line": 348
+      "line": 352
     },
     {
       "type": "test_decl",
       "name": "searchMessages no results for missing term",
       "is_pub": false,
-      "line": 369
+      "line": 373
     },
     {
       "type": "test_decl",
       "name": "SessionDB persists to tmpDir",
       "is_pub": false,
-      "line": 382
+      "line": 386
     }
   ]
 }

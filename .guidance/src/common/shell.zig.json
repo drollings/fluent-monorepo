@@ -13,7 +13,7 @@
       "signature": "fn runCommand(allocator: std.mem.Allocator, argv: []const []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 9
+      "line": 8
     },
     {
       "type": "fn_decl",
@@ -22,7 +22,7 @@
       "signature": "fn addUniquePath(allocator: std.mem.Allocator, list: *std.ArrayList([]const u8), path: []const u8, project_root: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 20
+      "line": 22
     }
   ]
 }

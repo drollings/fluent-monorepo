@@ -13,7 +13,7 @@
       "match_hash": "c5d8e4ec460dc721e39d68c78379f164761a79611ad940b45cd4923bb2c231a9",
       "signature": "keyword_struct TestBlock { ... }",
       "is_pub": true,
-      "line": 30
+      "line": 31
     },
     {
       "type": "struct",
@@ -21,7 +21,7 @@
       "match_hash": "e9e1c54a694cd341800ad2b26ca962ca910945e0b3f6115984555a16f11e9fc3",
       "signature": "keyword_struct FixStats { ... }",
       "is_pub": true,
-      "line": 49
+      "line": 50
     },
     {
       "type": "fn_private",
@@ -30,7 +30,7 @@
       "signature": "fn collectDeclInfo(aa: std.mem.Allocator, tree: *const std.zig.Ast, out_imports: *std.ArrayList(ImportAlias), out_pub: *std.StringHashMap(void), out_private: *std.StringHashMap(void)) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 77
+      "line": 78
     },
     {
       "type": "fn_private",
@@ -39,7 +39,7 @@
       "signature": "fn firstPrivateUsage(tree: *const std.zig.Ast, first_tok: std.zig.Ast.TokenIndex, last_tok: std.zig.Ast.TokenIndex, private_names: *const std.StringHashMap(void)) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 160
+      "line": 161
     },
     {
       "type": "fn_private",
@@ -48,7 +48,7 @@
       "signature": "fn classifyTests(aa: std.mem.Allocator, source: []const u8, tree: *const std.zig.Ast, private_names: *const std.StringHashMap(void), out_movable: *std.ArrayList(TestBlock), out_skipped: *std.ArrayList(SkippedTest)) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 178
+      "line": 179
     },
     {
       "type": "fn_decl",
@@ -57,7 +57,7 @@
       "signature": "fn qualifyPubRefs(allocator: std.mem.Allocator, test_text_z: [:0]const u8, pub_names: *const std.StringHashMap(void), mod_alias: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": true,
-      "line": 244
+      "line": 245
     },
     {
       "type": "fn_private",
@@ -66,7 +66,7 @@
       "signature": "fn usedImports(aa: std.mem.Allocator, imports: []const ImportAlias, blocks: []const TestBlock) -> []ImportAlias",
       "returns": "[]ImportAlias",
       "is_pub": false,
-      "line": 292
+      "line": 293
     },
     {
       "type": "fn_private",
@@ -75,7 +75,7 @@
       "signature": "fn removeBlocks(allocator: std.mem.Allocator, source: []const u8, blocks: []const TestBlock) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 315
+      "line": 316
     },
     {
       "type": "fn_private",
@@ -84,7 +84,7 @@
       "signature": "fn collapseBlankLines(allocator: std.mem.Allocator, src: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 332
+      "line": 333
     },
     {
       "type": "fn_private",
@@ -93,7 +93,7 @@
       "signature": "fn assembleTestsFile(allocator: std.mem.Allocator, source_basename: []const u8, mod_alias: []const u8, module_imports: []const ImportAlias, blocks: []const []const u8, existing_content: ?[]const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 362
+      "line": 363
     },
     {
       "type": "fn_private",
@@ -102,7 +102,7 @@
       "signature": "fn runZigFmt(allocator: std.mem.Allocator, path: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 412
+      "line": 413
     },
     {
       "type": "fn_decl",
@@ -111,7 +111,7 @@
       "signature": "fn addToTestsZig(allocator: std.mem.Allocator, tests_zig_path: []const u8, import_line: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 427
+      "line": 425
     },
     {
       "type": "fn_private",
@@ -120,7 +120,7 @@
       "signature": "fn stemOf(path: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 454
+      "line": 453
     },
     {
       "type": "fn_private",
@@ -129,7 +129,7 @@
       "signature": "fn modAlias(aa: std.mem.Allocator, basename: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 460
+      "line": 459
     },
     {
       "type": "fn_private",
@@ -138,7 +138,7 @@
       "signature": "fn relPath(allocator: std.mem.Allocator, from_dir: []const u8, target: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 466
+      "line": 465
     },
     {
       "type": "fn_decl",
@@ -147,7 +147,7 @@
       "signature": "fn fixAll(allocator: std.mem.Allocator, workspace: []const u8, dry_run: bool, tests_zig_rel: ?[]const u8) -> FixStats",
       "returns": "FixStats",
       "is_pub": true,
-      "line": 483
+      "line": 482
     },
     {
       "type": "test_decl",

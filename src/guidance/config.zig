@@ -288,7 +288,6 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
     // 2. User-global config (~/.config/guidance/guidance-config.json).
     if (std.c.getenv("HOME")) |home_ptr| {
         const home = std.mem.span(home_ptr);
-        defer allocator.free(home);
         const path = try std.fs.path.join(allocator, &.{ home, ".config", "guidance", CONFIG_FILENAME });
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {

@@ -21,20 +21,20 @@
           "name": "user",
           "is_pub": false,
           "line": 18
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "assistant",
           "is_pub": false,
           "line": 19
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "tool_call",
           "is_pub": false,
           "line": 20
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "tool_result",
           "is_pub": false,
@@ -75,8 +75,8 @@
           "returns": "[]Message",
           "is_pub": true,
           "line": 56
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "pruneToolResults",
           "match_hash": "c93e6e60ebbb60bbc53aae37cfb43160a203d5fa48aa56a52dc432c9e728ef59",
@@ -84,8 +84,8 @@
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
           "line": 90
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "enforceTokenBudget",
           "match_hash": "6410c4f30d47710b425265841350d985c24d709df8378fac46263f37632668b4",
@@ -93,8 +93,8 @@
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
           "line": 121
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "removeOrphanToolCalls",
           "match_hash": "0033695e418a10d10eb7a583d75edff63714700d37427b57789c43926dc78939",
@@ -102,8 +102,8 @@
           "returns": "std.ArrayList(usize)",
           "is_pub": false,
           "line": 158
-        }
-    ,    {
+        },
+        {
           "type": "fn_private",
           "name": "findNextToolResult",
           "match_hash": "577b22ccf1db19820066bef31fea42e225386574ec404b0cc59f699f504489bc",
