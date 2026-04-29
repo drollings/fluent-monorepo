@@ -35,6 +35,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // `coral_csr` — CSR graph module (csr_graph.zig). Standalone, no deps.
+    // Declared before common_module because common's root.zig imports it as a named module.
+    const coral_csr_module = b.createModule(.{
+        .root_source_file = b.path("src/common/csr_graph.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     // `common` — full umbrella: reflection, interner, registry, target, hash,
     // context, repl, json_parser, embeddings, etc.
     // All sub-modules are within src/common/ so relative imports are valid.
@@ -42,6 +50,8 @@ pub fn build(b: *std.Build) void {
     // DAG types are defined in src/dag/ and consumers should import from "dag" module directly.
     // SharedString is imported from the external zigsharedstring package.
     // Arc, Rc, and reference-counting primitives from the external zigrc package.
+    // csr_graph is imported as a named module to avoid Zig 0.16 file-ownership conflict
+    // (the same .zig file cannot belong to two modules).
     const common_module = b.createModule(.{
         .root_source_file = b.path("src/common/root.zig"),
         .target = target,
@@ -50,6 +60,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "reflection", .module = reflection_module },
             .{ .name = "zigsharedstring", .module = zigsharedstring.module("zigsharedstring") },
             .{ .name = "zigrc", .module = zigrc.module("zigrc") },
+            .{ .name = "csr_graph", .module = coral_csr_module },
         },
     });
 
@@ -115,13 +126,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ontology", .module = ontology_module },
             .{ .name = "coral_db", .module = coral_db_module },
         },
-    });
-
-    // `coral_csr` — CSR graph module (csr_graph.zig). Standalone, no deps.
-    const coral_csr_module = b.createModule(.{
-        .root_source_file = b.path("src/common/csr_graph.zig"),
-        .target = target,
-        .optimize = optimize,
     });
 
     // `coral_schema` — Binary IPC schema (BinaryContextNode, BinaryExecutionRequest, …).

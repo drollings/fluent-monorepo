@@ -159,19 +159,21 @@ pub const LlmClient = struct {
 
         var temp_buf: [32]u8 = undefined;
         const temp_str = std.fmt.bufPrint(&temp_buf, "{d:.2}", .{@as(f64, temperature)}) catch return LlmError.ParseError;
+        var max_buf: [32]u8 = undefined;
+        const max_str = std.fmt.bufPrint(&max_buf, "{d}", .{max_tokens}) catch return LlmError.ParseError;
         if (self.config.think) |think_val| {
             if (think_val) {
                 try body.appendSlice(self.allocator, ",\"think\":true");
                 try body.appendSlice(self.allocator, ",\"max_completion_tokens\":");
-                try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
+                try body.appendSlice(self.allocator, max_str);
             } else {
                 try body.appendSlice(self.allocator, ",\"think\":false");
                 try body.appendSlice(self.allocator, ",\"max_tokens\":");
-                try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
+                try body.appendSlice(self.allocator, max_str);
             }
         } else {
             try body.appendSlice(self.allocator, ",\"max_tokens\":");
-            try body.appendSlice(self.allocator, try std.fmt.allocPrint(self.allocator, "{d}", .{max_tokens}));
+            try body.appendSlice(self.allocator, max_str);
         }
         try body.appendSlice(self.allocator, ",\"temperature\":");
         try body.appendSlice(self.allocator, temp_str);

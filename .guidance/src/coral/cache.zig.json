@@ -47,55 +47,55 @@
       "type": "test_decl",
       "name": "Library.findNodeByName: finds by lod4",
       "is_pub": false,
-      "line": 135
+      "line": 133
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: L2 skipped when no wasm_tools",
       "is_pub": false,
-      "line": 156
+      "line": 154
     },
     {
       "type": "test_decl",
       "name": "findWasmTool: returns null when all tools fail test_passed check",
       "is_pub": false,
-      "line": 172
+      "line": 170
     },
     {
       "type": "test_decl",
       "name": "Library.traverseFrom: returns root node",
       "is_pub": false,
-      "line": 191
+      "line": 189
     },
     {
       "type": "test_decl",
       "name": "QueueReactor: submitAsync falls back to synchronous without thread pool",
       "is_pub": false,
-      "line": 212
+      "line": 210
     },
     {
       "type": "test_decl",
       "name": "QueueReactorBuilder: threadCount initialises thread pool",
       "is_pub": false,
-      "line": 233
+      "line": 231
     },
     {
       "type": "test_decl",
       "name": "L1Cache: concurrent reads are safe",
       "is_pub": false,
-      "line": 249
+      "line": 247
     },
     {
       "type": "test_decl",
       "name": "M5: concurrent writes via thread pool do not deadlock",
       "is_pub": false,
-      "line": 272
+      "line": 270
     },
     {
       "type": "test_decl",
       "name": "ParallelRouter: routeBatch with empty input",
       "is_pub": false,
-      "line": 317
+      "line": 310
     }
   ]
 }

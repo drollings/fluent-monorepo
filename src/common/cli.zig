@@ -14,7 +14,7 @@ pub const CliError = error{
 pub const Command = struct {
     name: []const u8,
     description: []const u8,
-    handler: *const fn (*std.process.ArgIterator, std.mem.Allocator) CliError!?i32,
+    handler: *const fn ([]const []const u8, std.mem.Allocator) CliError!?i32,
     usage: []const u8 = "",
     examples: []const u8 = "",
 };
@@ -25,7 +25,7 @@ pub const CommandRegistry = struct {
 
     pub fn init(allocator: std.mem.Allocator) CommandRegistry {
         return .{
-            .commands = .{},
+            .commands = .empty,
             .allocator = allocator,
         };
     }
@@ -148,12 +148,7 @@ pub const App = struct {
 
         const cmd_name = positional.items[0];
         if (self.registry.get(cmd_name)) |cmd| {
-            var iter = std.process.ArgIterator{};
-            _ = iter.skip();
-            for (positional.items[1..]) |_| {
-                _ = iter.skip();
-            }
-            return (cmd.handler(&iter, allocator) catch |err| {
+            return (cmd.handler(positional.items[1..], allocator) catch |err| {
                 switch (err) {
                     CliError.UnknownCommand => {
                         try stdout.print("Unknown command: {s}\n", .{cmd_name});

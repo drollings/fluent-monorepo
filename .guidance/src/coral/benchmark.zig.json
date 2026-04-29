@@ -4,6 +4,7 @@
     "source": "src/coral/benchmark.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -58,7 +59,7 @@
           "signature": "fn init(allocator: Allocator) -> CoralBenchmarks",
           "returns": "CoralBenchmarks",
           "is_pub": true,
-          "line": 96
+          "line": 97
         },
         {
           "type": "fn_decl",
@@ -67,7 +68,7 @@
           "signature": "fn deinit(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 103
+          "line": 104
         },
         {
           "type": "fn_decl",
@@ -76,7 +77,7 @@
           "signature": "fn runAll(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 108
+          "line": 109
         },
         {
           "type": "fn_private",
@@ -85,7 +86,7 @@
           "signature": "fn benchmarkL1Cache(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 117
+          "line": 118
         },
         {
           "type": "fn_private",
@@ -94,7 +95,7 @@
           "signature": "fn benchmarkHnswBuild(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 163
+          "line": 165
         },
         {
           "type": "fn_private",
@@ -103,7 +104,7 @@
           "signature": "fn benchmarkHnswSearch(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 219
+          "line": 222
         },
         {
           "type": "fn_private",
@@ -112,7 +113,7 @@
           "signature": "fn benchmarkArenaOverhead(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 277
+          "line": 281
         },
         {
           "type": "fn_private",
@@ -121,10 +122,10 @@
           "signature": "fn printResults(self: *CoralBenchmarks) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 325
+          "line": 330
         }
       ],
-      "line": 92
+      "line": 93
     },
     {
       "type": "fn_decl",
@@ -133,34 +134,34 @@
       "signature": "fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) -> u64",
       "returns": "u64",
       "is_pub": true,
-      "line": 369
+      "line": 375
     },
     {
       "type": "fn_decl",
       "name": "main",
-      "match_hash": "2a1f996d04d7b869f8b44664c3fd970c1b60631537e1cfa1d7f86d531a8b6278",
-      "signature": "fn main() -> void",
+      "match_hash": "34188f5faac00b0c774daf23b1604d69cc527cc94dc5ce9c13e94a3e6a7321cc",
+      "signature": "fn main(init: std.process.Init.Minimal) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 395
+      "line": 402
     },
     {
       "type": "test_decl",
       "name": "BenchmarkResult format",
       "is_pub": false,
-      "line": 412
+      "line": 420
     },
     {
       "type": "test_decl",
       "name": "Benchmark harness runs specified iterations",
       "is_pub": false,
-      "line": 433
+      "line": 441
     },
     {
       "type": "test_decl",
       "name": "Arena allocation overhead is reasonable",
       "is_pub": false,
-      "line": 450
+      "line": 458
     }
   ]
 }

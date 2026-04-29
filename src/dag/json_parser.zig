@@ -24,12 +24,8 @@ pub fn parseFile(
     registry: *TargetRegistry,
     interner: *StringInterner,
 ) !void {
-    const file = std.fs.cwd().openFile(path, .{}) catch {
-        return ParseError.IoError;
-    };
-    defer file.close();
-
-    const contents = file.readToEndAlloc(allocator, std.math.maxInt(usize)) catch |err| {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const contents = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(std.math.maxInt(usize))) catch |err| {
         std.log.warn("Failed to read file '{s}': {}", .{ path, err });
         return ParseError.IoError;
     };
@@ -180,13 +176,13 @@ fn determineTargetType(obj: std.json.ObjectMap) TargetType {
 }
 
 /// Writes a Zig example string to memory using the provided allocator.
-pub fn writeExample(allocator: std.mem.Allocator, path: []const u8) !void {
-    _ = allocator;
-    const file = std.fs.cwd().createFile(path, .{}) catch |err| {
+pub fn writeExample(path: []const u8) !void {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = std.Io.Dir.cwd().createFile(io, path, .{}) catch |err| {
         std.log.warn("Failed to create file '{s}': {}", .{ path, err });
         return ParseError.IoError;
     };
-    defer file.close();
+    defer file.close(io);
 
     const example =
         \\{
@@ -226,7 +222,10 @@ pub fn writeExample(allocator: std.mem.Allocator, path: []const u8) !void {
         \\}
     ;
 
-    try file.writeAll(example);
+    var wbuf: [4096]u8 = undefined;
+    var writer = file.writer(io, &wbuf);
+    try writer.interface.writeAll(example);
+    try writer.interface.flush();
 }
 
 const testing = std.testing;

@@ -3,7 +3,7 @@ const hash_mod = @import("hash.zig");
 
 pub const FileLock = struct {
     lock_path: []const u8,
-    file: ?std.fs.File,
+    file: ?std.Io.File,
     acquired: bool,
     allocator: std.mem.Allocator,
 
@@ -13,16 +13,17 @@ pub const FileLock = struct {
         @memcpy(&hash_buf, &hex);
         const lock_name = hash_buf[0..16];
 
+        const io = std.Io.Threaded.global_single_threaded.io();
         const lock_dir = ".guidance/locks";
-        std.Io.Dir.cwd().makePath(lock_dir) catch {};
+        std.Io.Dir.cwd().createDirPath(io, lock_dir) catch {};
 
         const lock_path = try std.fmt.allocPrint(allocator, "{s}/{s}.lock", .{ lock_dir, lock_name });
 
-        const f = std.Io.Dir.cwd().createFile(lock_path, .{ .exclusive = false }) catch |err| {
+        const f = std.Io.Dir.cwd().createFile(io, lock_path, .{ .exclusive = false }) catch |err| {
             if (err == error.PathDoesNotExist) {
-                var dir = std.Io.Dir.cwd().openDir(lock_dir, .{}) catch
+                var dir = std.Io.Dir.cwd().openDir(io, lock_dir, .{}) catch
                     return FileLock{ .lock_path = lock_path, .file = null, .acquired = false, .allocator = allocator };
-                const f2 = dir.createFile(lock_path[lock_dir.len + 1 ..], .{ .exclusive = true }) catch
+                const f2 = dir.createFile(io, lock_path[lock_dir.len + 1 ..], .{ .exclusive = true }) catch
                     return FileLock{ .lock_path = lock_path, .file = null, .acquired = false, .allocator = allocator };
                 return FileLock{ .lock_path = lock_path, .file = f2, .acquired = true, .allocator = allocator };
             }
@@ -31,7 +32,7 @@ pub const FileLock = struct {
 
         const locked = posixLock(f);
         if (!locked) {
-            f.close();
+            f.close(io);
             return FileLock{ .lock_path = lock_path, .file = null, .acquired = false, .allocator = allocator };
         }
 
@@ -39,22 +40,23 @@ pub const FileLock = struct {
     }
 
     pub fn release(self: *FileLock) void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         if (self.file) |f| {
             posixUnlock(f);
-            f.close();
+            f.close(io);
             self.file = null;
         }
-        std.Io.Dir.cwd().deleteFile(self.lock_path) catch {};
+        std.Io.Dir.cwd().deleteFile(io, self.lock_path) catch {};
         self.allocator.free(self.lock_path);
         self.acquired = false;
     }
 
-    fn posixLock(f: std.fs.File) bool {
+    fn posixLock(f: std.Io.File) bool {
         std.posix.flock(f.handle, std.posix.LOCK.EX | std.posix.LOCK.NB) catch return false;
         return true;
     }
 
-    fn posixUnlock(f: std.fs.File) void {
+    fn posixUnlock(f: std.Io.File) void {
         std.posix.flock(f.handle, std.posix.LOCK.UN) catch {};
     }
 };

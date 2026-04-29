@@ -4,6 +4,7 @@
     "source": "src/coral/yago_ingest.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig", "src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -85,49 +86,49 @@
       "signature": "fn buildBaselineHierarchy(ci: *CapabilityInference) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 185
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts YAGO subject",
       "is_pub": false,
-      "line": 199
+      "line": 198
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: rejects unknown subject",
       "is_pub": false,
-      "line": 209
+      "line": 208
     },
     {
       "type": "test_decl",
       "name": "yagoNamespaceFilter: accepts schema.org subject",
       "is_pub": false,
-      "line": 219
+      "line": 218
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Person is subclass of Entity",
       "is_pub": false,
-      "line": 229
+      "line": 228
     },
     {
       "type": "test_decl",
       "name": "buildBaselineHierarchy: Organization is subclass of Entity",
       "is_pub": false,
-      "line": 240
+      "line": 239
     },
     {
       "type": "test_decl",
       "name": "YagoConfig defaults",
       "is_pub": false,
-      "line": 250
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "IngestStats has triples_filtered field",
       "is_pub": false,
-      "line": 258
+      "line": 257
     }
   ]
 }

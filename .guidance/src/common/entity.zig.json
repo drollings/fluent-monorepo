@@ -26,20 +26,20 @@
           "name": "person",
           "is_pub": false,
           "line": 11
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "project",
           "is_pub": false,
           "line": 12
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "location",
           "is_pub": false,
           "line": 13
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "uncertain",
           "is_pub": false,

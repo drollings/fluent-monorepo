@@ -72,7 +72,7 @@ pub const HttpTransport = struct {
     running: bool = false,
     shutdown_requested: bool = false,
     ready_signal: ?*std.Thread.ResetEvent = null,
-    sse_connections: std.ArrayListUnmanaged(*SseConnection) = .empty,
+    sse_connections: std.ArrayList(*SseConnection) = .empty,
     sse_heartbeat_ms: u32 = 30_000,
 
     /// Initialize HTTP transport with binding configuration.
@@ -302,16 +302,14 @@ pub const HttpTransport = struct {
     fn sendSseEvent(self: *Self, request: *http.Server.Request, event: SseEvent) !void {
         _ = self;
         var buf: [4096]u8 = undefined;
-        var fbs = std.io.fixedBufferStream(&buf);
-        const writer = fbs.writer();
-
+        var len: usize = 0;
         if (event.id) |id| {
-            try writer.print("id: {s}\n", .{id});
+            len += try std.fmt.bufPrint(buf[len..], "id: {s}\n", .{id});
         }
-        try writer.print("event: {s}\n", .{event.event});
-        try writer.print("data: {s}\n\n", .{event.data});
+        len += try std.fmt.bufPrint(buf[len..], "event: {s}\n", .{event.event});
+        len += try std.fmt.bufPrint(buf[len..], "data: {s}\n\n", .{event.data});
 
-        try request.respond(fbs.getWritten(), .{
+        try request.respond(buf[0..len], .{
             .status = .ok,
             .extra_headers = &.{
                 .{ .name = "Content-Type", .value = "text/event-stream" },
@@ -331,15 +329,14 @@ pub const HttpTransport = struct {
     }
 
     fn sendMetrics(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) !void {
-        var buf: std.ArrayListUnmanaged(u8) = .empty;
-        defer buf.deinit(arena);
+        var aw: std.Io.Writer.Allocating = .init(arena);
+        defer aw.deinit();
 
-        // Add basic metrics
-        try buf.writer(arena).writeAll("# HELP coral_connections_active Number of active connections\n");
-        try buf.writer(arena).writeAll("# TYPE coral_connections_active gauge\n");
-        try buf.writer(arena).print("coral_connections_active {d}\n", .{self.sse_connections.items.len});
+        try aw.writer.writeAll("# HELP coral_connections_active Number of active connections\n");
+        try aw.writer.writeAll("# TYPE coral_connections_active gauge\n");
+        try aw.writer.print("coral_connections_active {d}\n", .{self.sse_connections.items.len});
 
-        try request.respond(buf.items, .{
+        try request.respond(aw.written(), .{
             .status = .ok,
             .extra_headers = &.{
                 .{ .name = "Content-Type", .value = "text/plain; version=0.0.4" },

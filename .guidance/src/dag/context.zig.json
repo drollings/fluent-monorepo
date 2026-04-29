@@ -4,6 +4,7 @@
     "source": "src/dag/context.zig",
     "language": "zig"
   },
+  "capabilities": ["target-registry"],
   "used_by": ["src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig", "src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {
@@ -50,7 +51,7 @@
       "signature": "fn isUpToDate(self: *BuildContext, target: *const Target) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 156
+      "line": 157
     },
     {
       "type": "fn_private",
@@ -59,7 +60,7 @@
       "signature": "fn executeTarget(self: *BuildContext, target: *const Target) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 182
+      "line": 184
     },
     {
       "type": "fn_decl",
@@ -68,7 +69,7 @@
       "signature": "fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 235
+      "line": 238
     },
     {
       "type": "fn_decl",
@@ -77,73 +78,73 @@
       "signature": "fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 275
+      "line": 278
     },
     {
       "type": "test_decl",
       "name": "BuildContext: empty target list with no default returns success",
       "is_pub": false,
-      "line": 288
+      "line": 291
     },
     {
       "type": "test_decl",
       "name": "BuildContext: empty target list dispatches to default target",
       "is_pub": false,
-      "line": 303
+      "line": 306
     },
     {
       "type": "test_decl",
       "name": "BuildContext: dry_run counts targets without executing",
       "is_pub": false,
-      "line": 327
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "BuildContext: abstract target is skipped (no commands, no exists)",
       "is_pub": false,
-      "line": 350
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "BuildContext: successful command target is counted",
       "is_pub": false,
-      "line": 371
+      "line": 374
     },
     {
       "type": "test_decl",
       "name": "BuildContext: dry_run non-essential failing command is counted without executing",
       "is_pub": false,
-      "line": 391
+      "line": 394
     },
     {
       "type": "test_decl",
       "name": "BuildContext: essential target — dry_run does not fail",
       "is_pub": false,
-      "line": 415
+      "line": 418
     },
     {
       "type": "test_decl",
       "name": "BuildContext: phony target with no commands succeeds and counts as built",
       "is_pub": false,
-      "line": 444
+      "line": 447
     },
     {
       "type": "test_decl",
       "name": "BuildContext: circular dependency is detected and build returns not-success",
       "is_pub": false,
-      "line": 463
+      "line": 466
     },
     {
       "type": "test_decl",
       "name": "BuildContext: duration_ns is non-zero after a build",
       "is_pub": false,
-      "line": 488
+      "line": 491
     },
     {
       "type": "test_decl",
       "name": "BuildContext: GPA no leaks across a multi-target build",
       "is_pub": false,
-      "line": 505
+      "line": 508
     }
   ]
 }

@@ -21,33 +21,33 @@
           "returns": "FileLock",
           "is_pub": true,
           "line": 10
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "release",
           "match_hash": "46fc075175fd5dcaddde5a9d37bd9109edaa0754f3ea82d9e281cbe47dc91b1d",
           "signature": "fn release(self: *FileLock) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 41
-        }
-    ,    {
+          "line": 42
+        },
+        {
           "type": "fn_private",
           "name": "posixLock",
-          "match_hash": "9d500d361309fc02ea1d08fc835767fd4c078a0fc5f6cfa5cc56ee5f5a83a291",
-          "signature": "fn posixLock(f: std.fs.File) -> bool",
+          "match_hash": "3b3547051112362092707f4c45b75f579c4c71b15a35649e387883d2515d7205",
+          "signature": "fn posixLock(f: std.Io.File) -> bool",
           "returns": "bool",
           "is_pub": false,
-          "line": 52
-        }
-    ,    {
+          "line": 54
+        },
+        {
           "type": "fn_private",
           "name": "posixUnlock",
-          "match_hash": "4f8cb0d6a4ec27215eea0f1f07c3af3979408109ab506bebd101aa971452c093",
-          "signature": "fn posixUnlock(f: std.fs.File) -> void",
+          "match_hash": "b26a72ac484d4a6efaf12324c24a68f869cff43b77c1e6749d22be746ac8b7ee",
+          "signature": "fn posixUnlock(f: std.Io.File) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 57
+          "line": 59
         }
       ],
       "line": 4
@@ -56,7 +56,7 @@
       "type": "test_decl",
       "name": "FileLock acquire and release",
       "is_pub": false,
-      "line": 64
+      "line": 66
     }
   ]
 }

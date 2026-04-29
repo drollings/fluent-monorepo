@@ -4,6 +4,7 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-mcp", "coral-ingestion", "coral-database", "coral-cache"],
   "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
   "members": [
     {
@@ -22,7 +23,7 @@
       "signature": "fn printHelp(writer) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 488
+      "line": 489
     }
   ]
 }

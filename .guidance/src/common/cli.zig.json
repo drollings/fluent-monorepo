@@ -29,8 +29,8 @@
           "returns": "CommandRegistry",
           "is_pub": true,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "6caf07263e3203a5000470f7b7f143e0b3d807c2a3b1bab3d96b4b3f55780b03",
@@ -38,8 +38,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 33
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "register",
           "match_hash": "a7effecdfc2dbb8f0027aa09901efd9c54adfedab0b69f66e444ea9e8c48a731",
@@ -47,8 +47,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 37
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "2e6ef2893d7cceaff456099a68eea49156434943c69ea7f440a6a32d106ed596",
@@ -56,8 +56,8 @@
           "returns": "?Command",
           "is_pub": true,
           "line": 41
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "names",
           "match_hash": "e64df58eca25c0a79e5821bddbdf15b800699c666991efc1c25b7fcba027c681",
@@ -84,8 +84,8 @@
           "returns": "App",
           "is_pub": true,
           "line": 68
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "60d8fe3bd5efac6ef3d834179ec0c27e38389acceaefd60ddef0d082bd624392",
@@ -93,8 +93,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 83
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "registerCommand",
           "match_hash": "31266cee5d533c2c0732a4b2e4ce9bf2462d1cc744a1b0f1912b376f087d91ce",
@@ -102,8 +102,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 87
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "printHelp",
           "match_hash": "d50993b507f768af3757f4e5fc81264daa9d56d4ab7668f2a72d1bdba52152ff",
@@ -111,8 +111,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 91
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "run",
           "match_hash": "c05f043b3719c1ebf7ecafb325fe45e95a178291e5451226205297b66d1f1213",

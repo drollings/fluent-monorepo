@@ -73,11 +73,11 @@
     {
       "type": "fn_private",
       "name": "hashFileGeneric",
-      "match_hash": "3d1f3941dfa1e4e429850d7d4d2f33bbc309e69f5eec0ef1449d6be4e2a5a2cd",
-      "signature": "fn hashFileGeneric(allocator: std.mem.Allocator, buf: *[65536]u8, file: std.fs.File, hasher) -> []const u8",
+      "match_hash": "a2a22c6834105bedb134d9a3f0d05cd0879ccc3753c49ebea8691cefd7a2e788",
+      "signature": "fn hashFileGeneric(allocator: std.mem.Allocator, io: std.Io, buf: *[65536]u8, file: std.Io.File, hasher) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 72
+      "line": 73
     },
     {
       "type": "struct",
@@ -85,7 +85,7 @@
       "match_hash": "cf64cfb3f02d2a51975bb70cb19680210a82df4724a5ce8633ca50243cf936dd",
       "signature": "keyword_struct BatchHashResult { ... }",
       "is_pub": true,
-      "line": 91
+      "line": 95
     },
     {
       "type": "fn_decl",
@@ -94,7 +94,7 @@
       "signature": "fn hashBatch(allocator: std.mem.Allocator, paths: []const []const u8, algorithm: HashAlgorithm, progress_callback: ?*const fn (usize, usize) void) -> []BatchHashResult",
       "returns": "[]BatchHashResult",
       "is_pub": true,
-      "line": 98
+      "line": 102
     },
     {
       "type": "fn_decl",
@@ -103,7 +103,7 @@
       "signature": "fn fnv1a64(input: []const u8) -> u64",
       "returns": "u64",
       "is_pub": true,
-      "line": 124
+      "line": 128
     },
     {
       "type": "fn_decl",
@@ -112,7 +112,7 @@
       "signature": "fn hashString(allocator: std.mem.Allocator, data: []const u8, algorithm: HashAlgorithm) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 136
+      "line": 140
     },
     {
       "type": "fn_private",
@@ -121,7 +121,7 @@
       "signature": "fn computeHashHex(allocator: std.mem.Allocator, data: []const u8, HashType: type) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 148
+      "line": 152
     },
     {
       "type": "fn_decl",
@@ -130,7 +130,7 @@
       "signature": "fn blake3Hash(data: []const u8) -> [32]u8",
       "returns": "[32]u8",
       "is_pub": true,
-      "line": 156
+      "line": 160
     },
     {
       "type": "struct",
@@ -146,7 +146,7 @@
           "signature": "fn init(allocator: std.mem.Allocator) -> QueryCache",
           "returns": "QueryCache",
           "is_pub": true,
-          "line": 186
+          "line": 190
         },
         {
           "type": "fn_decl",
@@ -155,7 +155,7 @@
           "signature": "fn deinit(self: *QueryCache) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 194
+          "line": 198
         },
         {
           "type": "fn_decl",
@@ -164,7 +164,7 @@
           "signature": "fn get(self: *QueryCache, query: []const u8) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": true,
-          "line": 205
+          "line": 209
         },
         {
           "type": "fn_decl",
@@ -173,10 +173,10 @@
           "signature": "fn put(self: *QueryCache, query: []const u8, summary: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 215
+          "line": 219
         }
       ],
-      "line": 173
+      "line": 177
     },
     {
       "type": "fn_decl",
@@ -185,7 +185,7 @@
       "signature": "fn blake3Hex(allocator: std.mem.Allocator, data: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 256
+      "line": 260
     },
     {
       "type": "struct",
@@ -201,7 +201,7 @@
           "signature": "fn init(algorithm: HashAlgorithm) -> HashState",
           "returns": "HashState",
           "is_pub": true,
-          "line": 268
+          "line": 272
         },
         {
           "type": "fn_decl",
@@ -210,7 +210,7 @@
           "signature": "fn update(self: *HashState, data: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 276
+          "line": 280
         },
         {
           "type": "fn_decl",
@@ -219,10 +219,10 @@
           "signature": "fn final(self: *HashState, allocator: std.mem.Allocator) -> []const u8",
           "returns": "[]const u8",
           "is_pub": true,
-          "line": 285
+          "line": 289
         }
       ],
-      "line": 262
+      "line": 266
     },
     {
       "type": "fn_private",
@@ -231,7 +231,7 @@
       "signature": "fn finalizeHashHex(allocator: std.mem.Allocator, hasher) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 294
+      "line": 298
     }
   ]
 }

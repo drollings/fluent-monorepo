@@ -21,8 +21,9 @@ pub const GuidanceSnapshot = struct {
     ) !void {
         var buf: [4096]u8 = undefined;
         const snap_path = try std.fmt.bufPrint(&buf, "{s}/guidance.snapshot", .{dir_path});
-        const f = try std.Io.Dir.cwd().createFile(snap_path, .{});
-        defer f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.cwd().createFile(io, snap_path, .{});
+        defer f.close(io);
 
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(allocator);
@@ -43,7 +44,12 @@ pub const GuidanceSnapshot = struct {
         }
 
         std.mem.writeInt(u32, try out.addManyAsArray(allocator, 4), file_count, .little);
-        try f.writeAll(out.items);
+        {
+            var wbuf: [4096]u8 = undefined;
+            var fw = f.writer(io, &wbuf);
+            try fw.interface.writeAll(out.items);
+            try fw.interface.flush();
+        }
 
         try wi.writeToDisk(dir_path, git_head orelse null);
         try tri.writeToDisk(dir_path, git_head orelse null);
@@ -55,7 +61,8 @@ pub const GuidanceSnapshot = struct {
     ) !?GuidanceSnapshot {
         var buf: [4096]u8 = undefined;
         const snap_path = try std.fmt.bufPrint(&buf, "{s}/guidance.snapshot", .{dir_path});
-        const content = std.Io.Dir.cwd().readFileAlloc(allocator, snap_path, std.math.maxInt(usize)) catch return null;
+        const _sio = std.Io.Threaded.global_single_threaded.io();
+        const content = std.Io.Dir.cwd().readFileAlloc(_sio, snap_path, allocator, .unlimited) catch return null;
         defer allocator.free(content);
 
         if (content.len < 10) return null;
@@ -128,9 +135,9 @@ const testing = std.testing;
 test "GuidanceSnapshot write and load" {
     const dir = ".test_tmp_snap";
     defer {
-        std.Io.Dir.cwd().deleteTree(dir) catch {};
+        std.Io.Dir.cwd().deleteTree(std.Io.Threaded.global_single_threaded.io(), dir) catch {};
     }
-    std.Io.Dir.cwd().makePath(dir) catch {};
+    std.Io.Dir.cwd().createDirPath(std.Io.Threaded.global_single_threaded.io(), dir) catch {};
 
     var wi = word_index.WordIndex.init(testing.allocator);
     defer wi.deinit();
@@ -152,9 +159,9 @@ test "GuidanceSnapshot write and load" {
 test "GuidanceSnapshot isCurrent" {
     const dir = ".test_tmp_snap_current";
     defer {
-        std.Io.Dir.cwd().deleteTree(dir) catch {};
+        std.Io.Dir.cwd().deleteTree(std.Io.Threaded.global_single_threaded.io(), dir) catch {};
     }
-    std.Io.Dir.cwd().makePath(dir) catch {};
+    std.Io.Dir.cwd().createDirPath(std.Io.Threaded.global_single_threaded.io(), dir) catch {};
 
     var wi = word_index.WordIndex.init(testing.allocator);
     defer wi.deinit();

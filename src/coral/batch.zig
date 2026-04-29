@@ -175,11 +175,10 @@ pub const BatchIngestor = struct {
         // Reject null bytes to prevent bypass via null-terminated string confusion.
         if (std.mem.indexOfScalar(u8, path, 0) != null) return error.PathTraversal;
 
-        const file = try std.fs.cwd().openFile(path, .{});
-        defer file.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
         // P1: 100 MB limit — was 4 GB (see src/common/constants.zig MAX_FILE_SIZE).
         const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
-        const source = try file.readToEndAlloc(self.allocator, MAX_FILE_SIZE);
+        const source = try std.Io.Dir.cwd().readFileAlloc(io, path, self.allocator, .limited(MAX_FILE_SIZE));
         defer self.allocator.free(source);
         return self.ingestSource(source, library);
     }

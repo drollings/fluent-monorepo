@@ -64,7 +64,7 @@ pub fn filterSeeAlso(
 
     // Build context string: "path: keyword1, keyword2" for each entry
     var context_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer context_buf_aw.deinit();
+    defer context_buf_aw.deinit();
     const cw = &context_buf_aw.writer;
 
     for (entries, 0..) |e, i| {

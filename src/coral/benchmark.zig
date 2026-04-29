@@ -53,6 +53,7 @@ pub const Benchmark = struct {
         measure: usize,
         comptime func: RunFn,
     ) !BenchmarkResult {
+        const io = std.Io.Threaded.global_single_threaded.io();
         // Warmup
         var i: usize = 0;
         while (i < warmup) : (i += 1) {
@@ -65,9 +66,9 @@ pub const Benchmark = struct {
 
         i = 0;
         while (i < measure) : (i += 1) {
-            const start = time.nanoTimestamp();
+            const start = std.Io.Timestamp.now(io, .real).nanoseconds;
             try func(allocator);
-            samples[i] = @intCast(time.nanoTimestamp() - start);
+            samples[i] = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
         }
 
         // Sort for percentiles
@@ -115,6 +116,7 @@ pub const CoralBenchmarks = struct {
 
     /// L1 Cache hit: < 1ms (hash lookup)
     fn benchmarkL1Cache(self: *CoralBenchmarks) !void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         var total_ns: u64 = 0;
         const iterations: usize = 100;
 
@@ -136,9 +138,9 @@ pub const CoralBenchmarks = struct {
             var cache = std.StringHashMap([]const u8).init(self.allocator);
             try cache.put("test_key", "test_value");
 
-            const start = time.nanoTimestamp();
+            const start = std.Io.Timestamp.now(io, .real).nanoseconds;
             const val = cache.get("test_key");
-            samples[i] = @intCast(time.nanoTimestamp() - start);
+            samples[i] = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
 
             if (val == null) return error.BenchmarkFailed;
             cache.deinit();
@@ -161,6 +163,7 @@ pub const CoralBenchmarks = struct {
 
     /// HNSW build: < 100ms for 10K nodes (release mode)
     fn benchmarkHnswBuild(self: *CoralBenchmarks) !void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const vector = @import("vector");
         const HnswIndex = vector.HnswIndex;
 
@@ -189,13 +192,13 @@ pub const CoralBenchmarks = struct {
             var index = HnswIndex.init(self.allocator, 4, 10_000);
             var rng = std.Random.DefaultPrng.init(42);
 
-            const start = time.nanoTimestamp();
+            const start = std.Io.Timestamp.now(io, .real).nanoseconds;
             var j: usize = 0;
             while (j < 10_000) : (j += 1) {
                 const vec = [4]f32{ rng.random().float(f32), rng.random().float(f32), rng.random().float(f32), rng.random().float(f32) };
                 try index.add(@intCast(j), &vec);
             }
-            samples[i] = @intCast(time.nanoTimestamp() - start);
+            samples[i] = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
             total_ns += samples[i];
 
             index.deinit();
@@ -217,6 +220,7 @@ pub const CoralBenchmarks = struct {
 
     /// HNSW search: < 1ms for 100 queries (release mode)
     fn benchmarkHnswSearch(self: *CoralBenchmarks) !void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         const vector = @import("vector");
         const HnswIndex = vector.HnswIndex;
 
@@ -248,14 +252,14 @@ pub const CoralBenchmarks = struct {
 
         while (i < iterations) : (i += 1) {
             var local_rng = std.Random.DefaultPrng.init(99);
-            const start = time.nanoTimestamp();
+            const start = std.Io.Timestamp.now(io, .real).nanoseconds;
             var q: usize = 0;
             while (q < 100) : (q += 1) {
                 const query = [4]f32{ local_rng.random().float(f32), local_rng.random().float(f32), local_rng.random().float(f32), local_rng.random().float(f32) };
                 const results = try index.search(&query, 10);
                 self.allocator.free(results);
             }
-            samples[i] = @intCast(time.nanoTimestamp() - start);
+            samples[i] = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
             total_ns += samples[i];
         }
 
@@ -275,6 +279,7 @@ pub const CoralBenchmarks = struct {
 
     /// Arena allocation overhead
     fn benchmarkArenaOverhead(self: *CoralBenchmarks) !void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         var total_ns: u64 = 0;
         const iterations: usize = 100;
 
@@ -295,7 +300,7 @@ pub const CoralBenchmarks = struct {
         defer self.allocator.free(samples);
 
         while (i < iterations) : (i += 1) {
-            const start = time.nanoTimestamp();
+            const start = std.Io.Timestamp.now(io, .real).nanoseconds;
             {
                 var arena = std.heap.ArenaAllocator.init(self.allocator);
                 defer arena.deinit();
@@ -304,7 +309,7 @@ pub const CoralBenchmarks = struct {
                 _ = try aa.alloc(u8, 2048);
                 _ = try aa.alloc(u8, 4096);
             }
-            samples[i] = @intCast(time.nanoTimestamp() - start);
+            samples[i] = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
             total_ns += samples[i];
         }
 
@@ -323,12 +328,13 @@ pub const CoralBenchmarks = struct {
     }
 
     fn printResults(self: *CoralBenchmarks) !void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         var ws: struct {
             buf: [4096]u8 = undefined,
-            fw: std.fs.File.Writer = undefined,
+            fw: std.Io.File.Writer = undefined,
 
-            fn init(s: *@This()) void {
-                s.fw = std.fs.File.stdout().writer(&s.buf);
+            fn init(s: *@This(), io_arg: std.Io) void {
+                s.fw = std.Io.File.stdout().writer(io_arg, &s.buf);
             }
 
             fn writer(s: *@This()) *std.Io.Writer {
@@ -339,7 +345,7 @@ pub const CoralBenchmarks = struct {
                 try s.fw.interface.flush();
             }
         } = .{};
-        ws.init();
+        ws.init(io);
         const stdout = ws.writer();
 
         try stdout.print("\n=== Coral Context Performance Benchmarks ===\n", .{});
@@ -367,11 +373,12 @@ pub const CoralBenchmarks = struct {
 
 /// Measures memory allocation overhead during benchmarking loops.
 pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
+    const io = std.Io.Threaded.global_single_threaded.io();
     var total_ns: u64 = 0;
     var i: usize = 0;
 
     while (i < iterations) : (i += 1) {
-        const start = time.nanoTimestamp();
+        const start = std.Io.Timestamp.now(io, .real).nanoseconds;
 
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -381,7 +388,7 @@ pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
         _ = try aa.alloc(u8, 2048);
         _ = try aa.alloc(u8, 4096);
 
-        total_ns += @intCast(time.nanoTimestamp() - start);
+        total_ns += @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
     }
 
     return total_ns / iterations;
@@ -392,7 +399,8 @@ pub fn benchmarkArenaOverhead(allocator: Allocator, iterations: usize) !u64 {
 // =============================================================================
 
 /// Executes the Zig benchmark test by calling the main function, which runs the benchmark suite.
-pub fn main() !void {
+pub fn main(init: std.process.Init.Minimal) !void {
+    _ = init;
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -410,9 +418,8 @@ pub fn main() !void {
 const testing = std.testing;
 
 test "BenchmarkResult format" {
-    var buf: [256]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const writer = fbs.writer();
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
 
     const result: BenchmarkResult = .{
         .name = "test_benchmark",
@@ -425,9 +432,10 @@ test "BenchmarkResult format" {
         .p99_ns = 18000,
     };
 
-    try result.format(writer);
-    try testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "test_benchmark") != null);
-    try testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "10.00µs") != null);
+    try result.format(&aw.writer);
+    const out = aw.written();
+    try testing.expect(std.mem.indexOf(u8, out, "test_benchmark") != null);
+    try testing.expect(std.mem.indexOf(u8, out, "10.00µs") != null);
 }
 
 test "Benchmark harness runs specified iterations" {

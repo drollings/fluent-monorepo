@@ -57,28 +57,32 @@ pub fn hashFile(
     path: []const u8,
     algorithm: HashAlgorithm,
 ) ![]const u8 {
-    const file = try std.Io.Dir.cwd().openFile(path, .{});
-    defer file.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
 
     var buf: [65536]u8 = undefined;
 
     return switch (algorithm) {
-        .sha256 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.sha2.Sha256.init(.{})),
-        .sha512 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.sha2.Sha512.init(.{})),
-        .blake3 => hashFileGeneric(allocator, &buf, file, std.crypto.hash.Blake3.init(.{})),
+        .sha256 => hashFileGeneric(allocator, io, &buf, file, std.crypto.hash.sha2.Sha256.init(.{})),
+        .sha512 => hashFileGeneric(allocator, io, &buf, file, std.crypto.hash.sha2.Sha512.init(.{})),
+        .blake3 => hashFileGeneric(allocator, io, &buf, file, std.crypto.hash.Blake3.init(.{})),
     };
 }
 
 fn hashFileGeneric(
     allocator: std.mem.Allocator,
+    io: std.Io,
     buf: *[65536]u8,
-    file: std.fs.File,
+    file: std.Io.File,
     hasher: anytype,
 ) ![]const u8 {
     const H = @TypeOf(hasher);
     var h = hasher;
+    var rbuf: [4096]u8 = undefined;
+    var fr = file.reader(io, &rbuf);
     while (true) {
-        const n = file.read(buf) catch break;
+        const n = fr.interface.read(buf) catch break;
         if (n == 0) break;
         h.update(buf[0..n]);
     }

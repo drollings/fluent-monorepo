@@ -45,25 +45,25 @@
       "type": "test_decl",
       "name": "write/read round-trip: no git head",
       "is_pub": false,
-      "line": 120
+      "line": 117
     },
     {
       "type": "test_decl",
       "name": "write/read round-trip: with git head",
       "is_pub": false,
-      "line": 135
+      "line": 132
     },
     {
       "type": "test_decl",
       "name": "read: wrong magic returns null",
       "is_pub": false,
-      "line": 150
+      "line": 147
     },
     {
       "type": "test_decl",
       "name": "read: wrong version returns null",
       "is_pub": false,
-      "line": 159
+      "line": 156
     }
   ]
 }

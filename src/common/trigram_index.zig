@@ -132,14 +132,17 @@ pub const TrigramIndex = struct {
     pub fn writeToDisk(self: *TrigramIndex, dir_path: []const u8, git_head: ?[]const u8) !void {
         var buf: [4096]u8 = undefined;
         const path = try std.fmt.bufPrint(&buf, "{s}/trigram_index.bin", .{dir_path});
-        const f = try std.Io.Dir.cwd().createFile(path, .{});
-        defer f.close();
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer f.close(io);
 
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(self.allocator);
 
-        var hdr_writer = out.writer(self.allocator);
-        try index_header.write(&hdr_writer, .{ .magic = MAGIC, .version = VERSION, .git_head = git_head });
+        var hdr_aw: std.Io.Writer.Allocating = .init(self.allocator);
+        defer hdr_aw.deinit();
+        try index_header.write(&hdr_aw.writer, .{ .magic = MAGIC, .version = VERSION, .git_head = git_head });
+        try out.appendSlice(self.allocator, hdr_aw.written());
 
         std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), self.registry.count(), .little);
 
@@ -166,13 +169,19 @@ pub const TrigramIndex = struct {
                 std.mem.writeInt(u32, try out.addManyAsArray(self.allocator, 4), hit.position, .little);
             }
         }
-        try f.writeAll(out.items);
+        {
+            var fbuf: [4096]u8 = undefined;
+            var fw = f.writer(io, &fbuf);
+            try fw.interface.writeAll(out.items);
+            try fw.interface.flush();
+        }
     }
 
     pub fn readFromDisk(dir_path: []const u8, allocator: std.mem.Allocator) !?TrigramIndex {
         var buf: [4096]u8 = undefined;
         const path = try std.fmt.bufPrint(&buf, "{s}/trigram_index.bin", .{dir_path});
-        const content = std.Io.Dir.cwd().readFileAlloc(allocator, path, std.math.maxInt(usize)) catch return null;
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .unlimited) catch return null;
         defer allocator.free(content);
 
         const hdr = index_header.read(content, MAGIC, VERSION) orelse return null;
@@ -229,12 +238,13 @@ pub const TrigramIndex = struct {
 pub const MmapTrigramIndex = struct {
     data: [*]const u8,
     len: usize,
-    fd: ?std.fs.File,
+    fd: ?std.Io.File,
 
     pub fn readFromMmap(path: []const u8) !?MmapTrigramIndex {
-        const f = std.Io.Dir.cwd().openFile(path, .{}) catch return null;
-        errdefer f.close();
-        const stat = f.stat() catch return null;
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const f = std.Io.Dir.cwd().openFile(io, path, .{}) catch return null;
+        errdefer f.close(io);
+        const stat = f.stat(io) catch return null;
         const size: usize = @intCast(stat.size);
         if (size < 16) return null;
 
@@ -247,10 +257,11 @@ pub const MmapTrigramIndex = struct {
     }
 
     pub fn deinit(self: *MmapTrigramIndex) void {
+        const io = std.Io.Threaded.global_single_threaded.io();
         if (self.data != null and self.len > 0) {
             std.posix.munmap(@constCast(self.data)[0..self.len]);
         }
-        if (self.fd) |f| f.close();
+        if (self.fd) |f| f.close(io);
         self.data = null;
         self.len = 0;
         self.fd = null;

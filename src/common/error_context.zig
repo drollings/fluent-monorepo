@@ -192,10 +192,10 @@ test "ErrorContext: simple operation" {
 
 test "ErrorContext: format with all fields" {
     const ctx = ErrorContext.init("parse", "port", "99999", error.Overflow);
-    var buf: [256]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try ctx.format("", .{}, fbs.writer());
-    const written = fbs.getWritten();
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+    try ctx.format("", .{}, &aw.writer);
+    const written = aw.written();
     try testing.expect(std.mem.indexOf(u8, written, "[parse]") != null);
     try testing.expect(std.mem.indexOf(u8, written, "port=99999") != null);
     try testing.expect(std.mem.indexOf(u8, written, "Overflow") != null);
@@ -203,10 +203,10 @@ test "ErrorContext: format with all fields" {
 
 test "ErrorContext: format without field" {
     const ctx = ErrorContext.simple("connect", error.Timeout);
-    var buf: [256]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try ctx.format("", .{}, fbs.writer());
-    const written = fbs.getWritten();
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+    try ctx.format("", .{}, &aw.writer);
+    const written = aw.written();
     try testing.expect(std.mem.indexOf(u8, written, "[connect]") != null);
     try testing.expect(std.mem.indexOf(u8, written, "Timeout") != null);
 }

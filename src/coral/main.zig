@@ -28,6 +28,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    const io = std.Io.Threaded.global_single_threaded.io();
 
     // Collect args into owned slice (replaces the removed std.process.argsAlloc)
     var raw_args_list: std.ArrayList([]const u8) = .empty;
@@ -82,10 +83,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
             try Library.init(allocator, .mem, "")
         else blk: {
             // Default db path: ~/.coral/context.db
-            const home = std.posix.getenv("HOME") orelse ".";
+            const home = init.environ.getPosix("HOME") orelse ".";
             const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
             defer allocator.free(db_dir);
-            std.fs.makeDirAbsolute(db_dir) catch |e| {
+            std.Io.Dir.createDirAbsolute(io, db_dir, .default_dir) catch |e| {
                 if (e != error.PathAlreadyExists) return e;
             };
             const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
@@ -123,10 +124,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
         };
 
         // Default db: ~/.coral/context.db
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
-        std.fs.makeDirAbsolute(db_dir) catch |e| {
+        std.Io.Dir.createDirAbsolute(io, db_dir, .default_dir) catch |e| {
             if (e != error.PathAlreadyExists) return e;
         };
         const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
@@ -161,10 +162,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
         const dry_run = args.dry_run;
 
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
-        std.fs.makeDirAbsolute(db_dir) catch |e| {
+        std.Io.Dir.createDirAbsolute(io, db_dir, .default_dir) catch |e| {
             if (e != error.PathAlreadyExists) return e;
         };
         const db_path = try std.fmt.allocPrint(allocator, "{s}/yago.db", .{db_dir});
@@ -199,9 +200,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
         }
         try stdout.flush();
 
-        const start_time = std.time.nanoTimestamp();
+        const start_time = std.Io.Timestamp.now(io, .real).nanoseconds;
         const stats = try ingestor.ingestFile(source_path, lib, null);
-        const elapsed_ns = std.time.nanoTimestamp() - start_time;
+        const elapsed_ns = std.Io.Timestamp.now(io, .real).nanoseconds - start_time;
         const elapsed_s = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
 
         if (dry_run) {
@@ -225,7 +226,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     // compute-degree subcommand: `coral compute-degree`
     const want_compute_degree = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-degree");
     if (want_compute_degree) {
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
         const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
@@ -237,9 +238,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
 
-        const start = std.time.nanoTimestamp();
+        const start = std.Io.Timestamp.now(io, .real).nanoseconds;
         try DegreeCentrality.compute(arena.allocator(), lib);
-        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+        const elapsed_ms = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .real).nanoseconds - start)) / 1_000_000.0;
 
         try stdout.print("Degree centrality computed in {d:.2}ms\n", .{elapsed_ms});
         try stdout.flush();
@@ -273,7 +274,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             }
         }
 
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
         const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
@@ -299,9 +300,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
             .tolerance = tolerance,
             .max_iterations = max_iter,
         });
-        const start = std.time.nanoTimestamp();
+        const start = std.Io.Timestamp.now(io, .real).nanoseconds;
         const scores = try pr.run(arena.allocator(), &graph);
-        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+        const elapsed_ms = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .real).nanoseconds - start)) / 1_000_000.0;
 
         // Persist scores
         const all_ids = try lib.allNodeIds(arena.allocator());
@@ -336,7 +337,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
             }
         }
 
-        const home = std.posix.getenv("HOME") orelse ".";
+        const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
         const db_path = try std.fmt.allocPrint(allocator, "{s}/context.db", .{db_dir});
@@ -361,9 +362,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
             .resolution = resolution,
             .max_iterations = max_iter,
         });
-        const start = std.time.nanoTimestamp();
+        const start = std.Io.Timestamp.now(io, .real).nanoseconds;
         const communities = try louvain.run(arena.allocator(), &graph);
-        const elapsed_ms = @as(f64, @floatFromInt(std.time.nanoTimestamp() - start)) / 1_000_000.0;
+        const elapsed_ms = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .real).nanoseconds - start)) / 1_000_000.0;
 
         // Persist communities
         const all_ids = try lib.allNodeIds(arena.allocator());
@@ -421,7 +422,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
         var found = false;
 
         for (default_paths) |path| {
-            std.fs.cwd().access(path, .{}) catch continue;
+            std.Io.Dir.cwd().access(io, path, .{}) catch continue;
             json_parser.parseFile(allocator, path, &registry, &interner) catch continue;
             if (args.verbose) {
                 std.log.info("Loaded config from '{s}'", .{path});
@@ -432,7 +433,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
 
         if (!found and args.show_list) {
             std.log.info("No config file found. Creating example coral.json...", .{});
-            json_parser.writeExample(allocator, "coral.json") catch |err| {
+            json_parser.writeExample("coral.json") catch |err| {
                 std.log.err("Failed to create example config: {}", .{err});
             };
         }

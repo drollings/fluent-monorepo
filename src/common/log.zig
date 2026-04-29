@@ -45,7 +45,7 @@ pub const LogConfig = struct {
 pub const Logger = struct {
     config: LogConfig,
     allocator: std.mem.Allocator,
-    file: ?std.fs.File = null,
+    file: ?std.Io.File = null,
 
     pub fn init(allocator: std.mem.Allocator, config: LogConfig) !*Logger {
         const self = try allocator.create(Logger);
@@ -56,8 +56,9 @@ pub const Logger = struct {
         };
 
         if (config.file_path) |path| {
-            const file = try std.Io.Dir.cwd().createFile(path, .{ .truncate = false });
-            try file.seekFromEnd(0);
+            const _lio = std.Io.Threaded.global_single_threaded.io();
+            const file = try std.Io.Dir.cwd().createFile(_lio, path, .{ .truncate = false });
+            try file.seekFromEnd(_lio, 0);
             self.file = file;
         }
 
@@ -65,7 +66,7 @@ pub const Logger = struct {
     }
 
     pub fn deinit(self: *Logger) void {
-        if (self.file) |f| f.close();
+        if (self.file) |f| f.close(std.Io.Threaded.global_single_threaded.io());
         self.allocator.destroy(self);
     }
 
@@ -76,16 +77,18 @@ pub const Logger = struct {
         ws.initStdout();
         const stderr = ws.writer();
 
-        var buf: [8192]u8 = undefined;
-        var fba = std.io.fixedBufferStream(&buf);
-        const writer = fba.writer();
+        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        defer aw.deinit();
+        const writer = &aw.writer;
 
         if (self.config.use_colors) {
             writer.writeAll(level.color()) catch {};
         }
 
         if (self.config.show_timestamp) {
-            const timestamp = std.time.timestamp();
+            const _lio = std.Io.Threaded.global_single_threaded.io();
+            const now_ns = std.Io.Timestamp.now(_lio, .real).nanoseconds;
+            const timestamp: i64 = @divTrunc(@as(i64, @intCast(now_ns)), std.time.ns_per_s);
             const epoch: std.time.epoch.EpochSeconds = .{ .secs = @intCast(timestamp) };
             const day_seconds = epoch.getDaySeconds();
             const year_day = epoch.getEpochDay();
@@ -114,12 +117,15 @@ pub const Logger = struct {
 
         writer.writeAll("\n") catch {};
 
-        const output = fba.getWritten();
+        const output = aw.written();
         stderr.writeAll(output) catch {};
 
         if (self.file) |f| {
-            const file_writer = f.writer();
-            file_writer.writeAll(output) catch {};
+            const _fio = std.Io.Threaded.global_single_threaded.io();
+            var fwbuf: [4096]u8 = undefined;
+            var fw = f.writer(_fio, &fwbuf);
+            fw.interface.writeAll(output) catch {};
+            fw.interface.flush() catch {};
         }
     }
 

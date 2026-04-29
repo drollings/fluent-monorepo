@@ -158,7 +158,7 @@ fn askRelevantBatch(
 ) ![]usize {
     // Build prompt listing all prose excerpts numbered 1..N.
     var prompt_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer prompt_buf_aw.deinit();
+    defer prompt_buf_aw.deinit();
 
     try w.print(
         "Query: \"{s}\"\n\n" ++

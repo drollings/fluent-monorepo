@@ -252,4 +252,4 @@ pub const frozen_snapshot = @import("frozen_snapshot.zig");
 /// Bitset-based transitive subclass / type-inference closure.
 pub const type_inference = @import("type_inference.zig");
 /// Compressed Sparse Row graph (adjacency + edge payloads).
-pub const csr_graph = @import("csr_graph.zig");
+pub const csr_graph = @import("csr_graph");

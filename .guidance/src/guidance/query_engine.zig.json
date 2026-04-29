@@ -281,7 +281,7 @@
       "signature": "fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 2004
+      "line": 2011
     },
     {
       "type": "fn_decl",
@@ -290,7 +290,7 @@
       "signature": "fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2085
+      "line": 2092
     },
     {
       "type": "fn_decl",
@@ -299,7 +299,7 @@
       "signature": "fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2150
+      "line": 2157
     },
     {
       "type": "fn_decl",
@@ -308,7 +308,7 @@
       "signature": "fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2194
+      "line": 2201
     },
     {
       "type": "fn_decl",
@@ -317,55 +317,55 @@
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2204
+      "line": 2211
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2276
+      "line": 2283
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2281
+      "line": 2288
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2286
+      "line": 2293
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2291
+      "line": 2298
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2296
+      "line": 2303
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2301
+      "line": 2308
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2311
+      "line": 2318
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2317
+      "line": 2324
     }
   ]
 }

@@ -4,6 +4,7 @@
     "source": "src/dag/json_parser.zig",
     "language": "zig"
   },
+  "capabilities": ["target-registry"],
   "used_by": ["src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {
@@ -22,7 +23,7 @@
       "signature": "fn parseJson(allocator: std.mem.Allocator, json_text: []const u8, registry: *TargetRegistry, interner: *StringInterner) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 42
+      "line": 38
     },
     {
       "type": "fn_private",
@@ -31,7 +32,7 @@
       "signature": "fn parseTarget(allocator: std.mem.Allocator, name: []const u8, value: std.json.Value, registry: *TargetRegistry, interner: *StringInterner) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 76
+      "line": 72
     },
     {
       "type": "fn_private",
@@ -40,94 +41,94 @@
       "signature": "fn determineTargetType(obj: std.json.ObjectMap) -> TargetType",
       "returns": "TargetType",
       "is_pub": false,
-      "line": 160
+      "line": 156
     },
     {
       "type": "fn_decl",
       "name": "writeExample",
-      "match_hash": "38788f3fd95504e6d9d60edae1a92a15eb97619dae2e7e7438d8732357799886",
-      "signature": "fn writeExample(allocator: std.mem.Allocator, path: []const u8) -> void",
+      "match_hash": "6a9d8d3a0fa5bc3c18b43782b3c43996e42ecadd3f79d20bc56390c5d9d7885f",
+      "signature": "fn writeExample(path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 183
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "JSON parsing",
       "is_pub": false,
-      "line": 234
+      "line": 233
     },
     {
       "type": "test_decl",
       "name": "JSON parsing GPA no leaks",
       "is_pub": false,
-      "line": 261
+      "line": 260
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: invalid JSON returns error",
       "is_pub": false,
-      "line": 301
+      "line": 300
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: non-object root returns error",
       "is_pub": false,
-      "line": 311
+      "line": 310
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: empty object produces zero targets",
       "is_pub": false,
-      "line": 321
+      "line": 320
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — phony",
       "is_pub": false,
-      "line": 331
+      "line": 330
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — file (exists key)",
       "is_pub": false,
-      "line": 347
+      "line": 346
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — command (commands key)",
       "is_pub": false,
-      "line": 364
+      "line": 363
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: target type detection — abstract (no distinguishing key)",
       "is_pub": false,
-      "line": 382
+      "line": 381
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: essential and check_mtime fields",
       "is_pub": false,
-      "line": 398
+      "line": 397
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: depends and provides are recorded",
       "is_pub": false,
-      "line": 421
+      "line": 420
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: multiple commands are all stored",
       "is_pub": false,
-      "line": 446
+      "line": 445
     },
     {
       "type": "test_decl",
       "name": "JSON parsing: parseFile returns IoError for missing file",
       "is_pub": false,
-      "line": 464
+      "line": 463
     }
   ]
 }

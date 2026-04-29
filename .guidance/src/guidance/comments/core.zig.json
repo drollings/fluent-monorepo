@@ -85,8 +85,8 @@
           "returns": "CommentCache",
           "is_pub": true,
           "line": 125
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "109474b26570e353340963be8aec74404577659de45afbcbc486b5e291482ef6",
@@ -94,8 +94,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 129
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "isValid",
           "match_hash": "24a4636e7116dc42648d2103d99cbe96b43ed5513f9fe39a5c96be8b88d6248d",
@@ -103,8 +103,8 @@
           "returns": "bool",
           "is_pub": true,
           "line": 139
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "get",
           "match_hash": "89f702c6cda31ee6821a7345fa644b2e0b87a1db0d4c350e455469361464dbfa",
@@ -112,8 +112,8 @@
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 151
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "put",
           "match_hash": "af3b0e45533c5ae513c70f5c3a06a6dafd9f3046a6c7e60e218559bc95fffbac",
@@ -121,8 +121,8 @@
           "returns": "void",
           "is_pub": true,
           "line": 164
-        }
-    ,    {
+        },
+        {
           "type": "fn_decl",
           "name": "invalidateFile",
           "match_hash": "29be69d87c7ae14e6aad8a7441216d107a72caf129c85cd308a2dba6216f1a4b",

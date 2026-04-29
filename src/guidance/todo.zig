@@ -660,14 +660,16 @@ pub fn writeCommittedMd(
     try buf.appendSlice(allocator, commit_hash);
     try buf.appendSlice(allocator, "`\n");
     try buf.appendSlice(allocator, "**Date**: ");
-    try buf.appendSlice(allocator, try std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\n", .{
+    var time_buf: [32]u8 = undefined;
+    const time_str = std.fmt.bufPrint(&time_buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\n", .{
         year_day.year,
         month_day.month.numeric(),
         month_day.day_index + 1,
         day.getHoursIntoDay(),
         day.getMinutesIntoHour(),
         day.getSecondsIntoMinute(),
-    }));
+    }) catch unreachable;
+    try buf.appendSlice(allocator, time_str);
     try buf.appendSlice(allocator, "\n## Summary\n\n");
     try buf.appendSlice(allocator, summary);
     if (!std.mem.endsWith(u8, summary, "\n")) try buf.append(allocator, '\n');

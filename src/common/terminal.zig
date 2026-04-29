@@ -9,7 +9,7 @@ pub const TerminalError = error{
 
 /// Retrieves the system's window size in Zig using the standard library.
 fn getWinsize() ?std.posix.winsize {
-    const stdout = std.fs.File.stdout();
+    const stdout = std.Io.File.stdout();
     if (!std.posix.isatty(stdout.handle)) return null;
     var wsz: std.posix.winsize = undefined;
     const err = std.posix.system.ioctl(stdout.handle, std.posix.T.IOCGWINSZ, @intFromPtr(&wsz));
@@ -31,7 +31,7 @@ pub fn getTerminalHeight() usize {
 
 /// Checks if the provided string is a valid terminal string, returning true or false.
 pub fn isTerminal() bool {
-    const stdout = std.fs.File.stdout();
+    const stdout = std.Io.File.stdout();
     return std.posix.isatty(stdout.handle);
 }
 

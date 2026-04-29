@@ -80,7 +80,10 @@ pub const PersistentQueryCache = struct {
     pub fn get(self: *PersistentQueryCache, query: []const u8) !?Entry {
         const db = try self.ensureDb();
         const key = queryKey(query);
-        const now_ms = std.time.milliTimestamp();
+        const now_ms = blk: {
+            const _qio = std.Io.Threaded.global_single_threaded.io();
+            break :blk @divTrunc(@as(i64, @intCast(std.Io.Timestamp.now(_qio, .real).nanoseconds)), std.time.ns_per_ms);
+        };
 
         var key_buf: [20]u8 = undefined;
         const key_str = try std.fmt.bufPrint(&key_buf, "{d}", .{@as(i64, @bitCast(key))});
@@ -132,7 +135,10 @@ pub const PersistentQueryCache = struct {
         const db = try self.ensureDb();
         const key = queryKey(query);
         const ttl = ttl_seconds orelse self.default_ttl_seconds;
-        const now_ms = @as(i64, @intCast(std.time.milliTimestamp()));
+        const now_ms = blk: {
+            const _qio = std.Io.Threaded.global_single_threaded.io();
+            break :blk @as(i64, @intCast(@divTrunc(std.Io.Timestamp.now(_qio, .real).nanoseconds, std.time.ns_per_ms)));
+        };
 
         var key_buf: [20]u8 = undefined;
         const key_str = try std.fmt.bufPrint(&key_buf, "{d}", .{@as(i64, @bitCast(key))});
@@ -182,7 +188,10 @@ pub const PersistentQueryCache = struct {
 
     pub fn expireStale(self: *PersistentQueryCache) !void {
         const db = try self.ensureDb();
-        const now_ms = @as(i64, @intCast(std.time.milliTimestamp()));
+        const now_ms = blk: {
+            const _qio = std.Io.Threaded.global_single_threaded.io();
+            break :blk @as(i64, @intCast(@divTrunc(std.Io.Timestamp.now(_qio, .real).nanoseconds, std.time.ns_per_ms)));
+        };
         const sql = "DELETE FROM query_cache WHERE (timestamp + ttl_seconds * 1000) < ?";
         var stmt: ?*c.sqlite3_stmt = null;
         const prep_rc = c.sqlite3_prepare_v2(db, sql, -1, &stmt, null);
@@ -194,7 +203,10 @@ pub const PersistentQueryCache = struct {
 
     pub fn stats(self: *PersistentQueryCache) !struct { total: usize, stale: usize, active: usize } {
         const db = try self.ensureDb();
-        const now_ms = @as(i64, @intCast(std.time.milliTimestamp()));
+        const now_ms = blk: {
+            const _qio = std.Io.Threaded.global_single_threaded.io();
+            break :blk @as(i64, @intCast(@divTrunc(std.Io.Timestamp.now(_qio, .real).nanoseconds, std.time.ns_per_ms)));
+        };
 
         var total: i64 = 0;
         var stale: i64 = 0;

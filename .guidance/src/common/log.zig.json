@@ -90,7 +90,7 @@
           "signature": "fn deinit(self: *Logger) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 67
+          "line": 68
         },
         {
           "type": "fn_decl",
@@ -99,7 +99,7 @@
           "signature": "fn log(self: *const Logger, level: Level, format: []const u8, args) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 72
+          "line": 73
         },
         {
           "type": "fn_decl",
@@ -108,7 +108,7 @@
           "signature": "fn debug(self: *const Logger, format: []const u8, args) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 126
+          "line": 132
         },
         {
           "type": "fn_decl",
@@ -117,7 +117,7 @@
           "signature": "fn info(self: *const Logger, format: []const u8, args) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 130
+          "line": 136
         },
         {
           "type": "fn_decl",
@@ -126,7 +126,7 @@
           "signature": "fn warn(self: *const Logger, format: []const u8, args) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 134
+          "line": 140
         },
         {
           "type": "fn_decl",
@@ -135,7 +135,7 @@
           "signature": "fn err(self: *const Logger, format: []const u8, args) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 138
+          "line": 144
         }
       ],
       "line": 45
@@ -147,7 +147,7 @@
       "signature": "fn setGlobal(logger: *Logger) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 146
+      "line": 152
     },
     {
       "type": "fn_decl",
@@ -156,7 +156,7 @@
       "signature": "fn getGlobal() -> ?*Logger",
       "returns": "?*Logger",
       "is_pub": true,
-      "line": 151
+      "line": 157
     },
     {
       "type": "fn_decl",
@@ -165,7 +165,7 @@
       "signature": "fn logGlobal(level: Level, format: []const u8, args) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 156
+      "line": 162
     },
     {
       "type": "fn_decl",
@@ -174,19 +174,19 @@
       "signature": "fn setupLogging(allocator: std.mem.Allocator, verbose: bool, quiet: bool, log_file: ?[]const u8, name: []const u8) -> *Logger",
       "returns": "*Logger",
       "is_pub": true,
-      "line": 163
+      "line": 169
     },
     {
       "type": "test_decl",
       "name": "Level: prefix and color",
       "is_pub": false,
-      "line": 188
+      "line": 194
     },
     {
       "type": "test_decl",
       "name": "Logger: init and deinit",
       "is_pub": false,
-      "line": 195
+      "line": 201
     }
   ]
 }

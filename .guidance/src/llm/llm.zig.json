@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " llm.zig — LLM client, response post-processing, and task decomposition.\n\n Single source of truth for all LLM-related types and functions:\n   LlmError, LlmConfig, LlmClient  — HTTP chat-completion client\n   stripThinkBlock, extractCommentTag, isMalformedResponse, stripPreamble\n   LocalDecomposer, DecomposerConfig  — query decomposition\n\n ## Memory Ownership\n\n   - LlmClient: Owns http_client (persistent, pooled connections) and chat_url (owned slice).\n     Call init() to create, deinit() to release. HTTP connections are reused when keep_alive=true.\n   - LlmClient.complete(): Returns owned slice on success; caller must free with allocator.free().\n     Returns null on non-200 response; returns LlmError on network failure.\n   - LlmClient.available(): No allocation (caches result internally).\n   - LlmConfig: Holds borrowed string slices (api_url, model) — valid only as long as the\n     source strings live. Does not own heap.\n   - LocalDecomposer: No heap ownership; holds config by value. The ephemeral LlmClient created\n     in decompose() is init/deinit within the function.\n   - stripPreamble(): Returns owned string; caller must free with allocator.free().\n   - All strip*/extract*/is* helper functions: Return borrowed slices or boolean values; no allocation.",
+  "capabilities": ["llm-client", "local-model-decomposition"],
   "used_by": ["src/llm/root.zig", "src/llm/root_tests.zig"],
   "members": [
     {
@@ -94,7 +95,7 @@
           "signature": "fn postJson(self: *LlmClient, url: []const u8, json_body: []const u8) -> LlmError!?[]const u8",
           "returns": "LlmError!?[]const u8",
           "is_pub": false,
-          "line": 185
+          "line": 187
         },
         {
           "type": "fn_private",
@@ -103,7 +104,7 @@
           "signature": "fn extractResponseText(self: *LlmClient, resp: []const u8) -> ?[]const u8",
           "returns": "?[]const u8",
           "is_pub": false,
-          "line": 219
+          "line": 221
         },
         {
           "type": "fn_decl",
@@ -112,7 +113,7 @@
           "signature": "fn available(self: *LlmClient) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 287
+          "line": 289
         }
       ],
       "line": 78
@@ -124,7 +125,7 @@
       "signature": "fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 327
+      "line": 329
     },
     {
       "type": "fn_decl",
@@ -133,7 +134,7 @@
       "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 342
+      "line": 344
     },
     {
       "type": "fn_decl",
@@ -142,7 +143,7 @@
       "signature": "fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 369
+      "line": 371
     },
     {
       "type": "fn_decl",
@@ -151,7 +152,7 @@
       "signature": "fn isMalformedResponse(text: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 404
+      "line": 406
     },
     {
       "type": "fn_private",
@@ -160,7 +161,7 @@
       "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 422
+      "line": 424
     },
     {
       "type": "fn_private",
@@ -169,7 +170,7 @@
       "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 436
+      "line": 438
     },
     {
       "type": "fn_private",
@@ -178,7 +179,7 @@
       "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 449
+      "line": 451
     },
     {
       "type": "fn_decl",
@@ -187,7 +188,7 @@
       "signature": "fn extractCommentTag(text: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": true,
-      "line": 464
+      "line": 466
     },
     {
       "type": "fn_decl",
@@ -196,7 +197,7 @@
       "signature": "fn isBlankOrPlausible(text: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 476
+      "line": 478
     },
     {
       "type": "struct",
@@ -204,7 +205,7 @@
       "match_hash": "65886122986a46e3edb305166f69bc3fe99e5ff578454776c53c8f465eb7f1b9",
       "signature": "keyword_struct DecomposerConfig { ... }",
       "is_pub": true,
-      "line": 488
+      "line": 490
     },
     {
       "type": "struct",
@@ -220,7 +221,7 @@
           "signature": "fn init(allocator: std.mem.Allocator, config: DecomposerConfig) -> LocalDecomposer",
           "returns": "LocalDecomposer",
           "is_pub": true,
-          "line": 506
+          "line": 508
         },
         {
           "type": "fn_decl",
@@ -229,7 +230,7 @@
           "signature": "fn decompose(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 515
+          "line": 517
         },
         {
           "type": "fn_private",
@@ -238,10 +239,10 @@
           "signature": "fn fallback(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
           "returns": "[][]const u8",
           "is_pub": false,
-          "line": 545
+          "line": 547
         }
       ],
-      "line": 502
+      "line": 504
     },
     {
       "type": "fn_private",
@@ -250,7 +251,7 @@
       "signature": "fn isMalformedJsonArray(text: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 554
+      "line": 556
     },
     {
       "type": "fn_private",
@@ -259,139 +260,139 @@
       "signature": "fn parseJsonArray(arena: std.mem.Allocator, text: []const u8, limit: usize) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": false,
-      "line": 563
+      "line": 565
     },
     {
       "type": "test_decl",
       "name": "isMalformedJsonArray: rejects non-arrays",
       "is_pub": false,
-      "line": 590
+      "line": 592
     },
     {
       "type": "test_decl",
       "name": "isMalformedJsonArray: accepts well-formed arrays",
       "is_pub": false,
-      "line": 597
+      "line": 599
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock: removes think tags",
       "is_pub": false,
-      "line": 602
+      "line": 604
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock: no think block passes through",
       "is_pub": false,
-      "line": 608
+      "line": 610
     },
     {
       "type": "test_decl",
       "name": "parseJsonArray: parses simple array",
       "is_pub": false,
-      "line": 613
+      "line": 615
     },
     {
       "type": "test_decl",
       "name": "parseJsonArray: respects limit",
       "is_pub": false,
-      "line": 623
+      "line": 625
     },
     {
       "type": "test_decl",
       "name": "LocalDecomposer.fallback returns single task",
       "is_pub": false,
-      "line": 631
+      "line": 633
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock removes think tags",
       "is_pub": false,
-      "line": 642
+      "line": 644
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles unclosed think tag",
       "is_pub": false,
-      "line": 653
+      "line": 655
     },
     {
       "type": "test_decl",
       "name": "stripThinkBlock handles [THINK] tags",
       "is_pub": false,
-      "line": 657
+      "line": 659
     },
     {
       "type": "test_decl",
       "name": "stripPreamble removes leading preamble line",
       "is_pub": false,
-      "line": 661
+      "line": 663
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: empty is malformed",
       "is_pub": false,
-      "line": 677
+      "line": 679
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: dangling preposition",
       "is_pub": false,
-      "line": 682
+      "line": 684
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: ends with question mark",
       "is_pub": false,
-      "line": 687
+      "line": 689
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: generic self-reference",
       "is_pub": false,
-      "line": 691
+      "line": 693
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: overly generic single word",
       "is_pub": false,
-      "line": 697
+      "line": 699
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: LLM preamble phrases",
       "is_pub": false,
-      "line": 703
+      "line": 705
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: valid responses are NOT malformed",
       "is_pub": false,
-      "line": 710
+      "line": 712
     },
     {
       "type": "test_decl",
       "name": "isMalformedResponse: reasoning-model chain-of-thought phrases",
       "is_pub": false,
-      "line": 716
+      "line": 718
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns tag content",
       "is_pub": false,
-      "line": 723
+      "line": 725
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null when no tag present",
       "is_pub": false,
-      "line": 730
+      "line": 732
     },
     {
       "type": "test_decl",
       "name": "extractCommentTag: returns null for empty tag",
       "is_pub": false,
-      "line": 735
+      "line": 737
     }
   ]
 }

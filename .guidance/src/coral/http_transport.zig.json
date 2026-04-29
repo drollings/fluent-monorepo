@@ -4,6 +4,7 @@
     "source": "src/coral/http_transport.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main_tests.zig"],
   "members": [
     {
@@ -146,7 +147,7 @@
           "signature": "fn sendHealthCheck(self: *Self, request: *http.Server.Request) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 322
+          "line": 320
         },
         {
           "type": "fn_private",
@@ -155,7 +156,7 @@
           "signature": "fn sendMetrics(self: *Self, request: *http.Server.Request, arena: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 333
+          "line": 331
         },
         {
           "type": "fn_private",
@@ -164,7 +165,7 @@
           "signature": "fn sendCorsPreflight(self: *Self, request: *http.Server.Request) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 351
+          "line": 348
         },
         {
           "type": "fn_private",
@@ -173,7 +174,7 @@
           "signature": "fn sendJson(self: *Self, request: *http.Server.Request, json: []const u8) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 363
+          "line": 360
         },
         {
           "type": "fn_private",
@@ -182,7 +183,7 @@
           "signature": "fn sendError(self: *Self, request: *http.Server.Request, code: u16, message: []const u8) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 374
+          "line": 371
         },
         {
           "type": "fn_private",
@@ -191,7 +192,7 @@
           "signature": "fn sendNotFound(self: *Self, request: *http.Server.Request) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 384
+          "line": 381
         },
         {
           "type": "fn_decl",
@@ -200,7 +201,7 @@
           "signature": "fn deinit(self: *Self) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 388
+          "line": 385
         }
       ],
       "line": 65
@@ -209,13 +210,13 @@
       "type": "test_decl",
       "name": "HttpTransport: init sets default values",
       "is_pub": false,
-      "line": 409
+      "line": 406
     },
     {
       "type": "test_decl",
       "name": "McpHandler VTable interface compiles",
       "is_pub": false,
-      "line": 438
+      "line": 435
     },
     {
       "type": "struct",
@@ -231,7 +232,7 @@
           "signature": "fn handleJsonRpc(ptr: *anyopaque, json: []const u8, allocator: std.mem.Allocator) -> anyerror![]const u8",
           "returns": "anyerror![]const u8",
           "is_pub": false,
-          "line": 453
+          "line": 450
         },
         {
           "type": "fn_private",
@@ -240,7 +241,7 @@
           "signature": "fn deinit(ptr: *anyopaque) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 460
+          "line": 457
         },
         {
           "type": "fn_private",
@@ -249,22 +250,22 @@
           "signature": "fn initVTable() -> McpHandler.VTable",
           "returns": "McpHandler.VTable",
           "is_pub": false,
-          "line": 464
+          "line": 461
         }
       ],
-      "line": 449
+      "line": 446
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: health check returns JSON",
       "is_pub": false,
-      "line": 472
+      "line": 469
     },
     {
       "type": "test_decl",
       "name": "HttpTransport: SSE event format",
       "is_pub": false,
-      "line": 488
+      "line": 485
     }
   ]
 }

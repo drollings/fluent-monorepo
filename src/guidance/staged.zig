@@ -429,7 +429,7 @@ fn collectCapabilityStages(
                                     for (cap_sources[0..take], 0..) |cs, j| {
                                         if (j > 0) try cbuf.appendSlice(allocator, ", ");
                                         var aw2: std.Io.Writer.Allocating = .init(allocator);
-                                        errdefer aw2.deinit();
+                                        defer aw2.deinit();
                                         try aw2.writer.print("{s} ({d:.1})", .{ cs.source_path, cs.confidence });
                                         try cbuf.appendSlice(allocator, aw2.written());
                                     }

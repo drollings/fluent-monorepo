@@ -4,6 +4,7 @@
     "source": "src/coral/batch.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cli.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -100,7 +101,7 @@
           "signature": "fn batchSize(self: *IngestBuilder, n: usize) -> *IngestBuilder",
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 202
+          "line": 201
         },
         {
           "type": "fn_decl",
@@ -109,7 +110,7 @@
           "signature": "fn skipErrors(self: *IngestBuilder, v: bool) -> *IngestBuilder",
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 208
+          "line": 207
         },
         {
           "type": "fn_decl",
@@ -118,7 +119,7 @@
           "signature": "fn maxTriples(self: *IngestBuilder, n: usize) -> *IngestBuilder",
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 214
+          "line": 213
         },
         {
           "type": "fn_decl",
@@ -127,7 +128,7 @@
           "signature": "fn filter(self: *IngestBuilder, f: FilterFn) -> *IngestBuilder",
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 220
+          "line": 219
         },
         {
           "type": "fn_decl",
@@ -136,7 +137,7 @@
           "signature": "fn onProgress(self: *IngestBuilder, cb: ProgressCallback) -> *IngestBuilder",
           "returns": "*IngestBuilder",
           "is_pub": true,
-          "line": 226
+          "line": 225
         },
         {
           "type": "fn_decl",
@@ -145,7 +146,7 @@
           "signature": "fn ingestSource(self: *IngestBuilder, source: []const u8) -> IngestStats",
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 232
+          "line": 231
         },
         {
           "type": "fn_decl",
@@ -154,58 +155,58 @@
           "signature": "fn ingestFile(self: *IngestBuilder, path: []const u8) -> IngestStats",
           "returns": "IngestStats",
           "is_pub": true,
-          "line": 238
+          "line": 237
         }
       ],
-      "line": 196
+      "line": 195
     },
     {
       "type": "test_decl",
       "name": "batch ingestor accumulates triples without flush",
       "is_pub": false,
-      "line": 250
+      "line": 249
     },
     {
       "type": "test_decl",
       "name": "batch boundary: small batch_size flushes multiple times",
       "is_pub": false,
-      "line": 274
+      "line": 273
     },
     {
       "type": "test_decl",
       "name": "progress callback invoked",
       "is_pub": false,
-      "line": 294
+      "line": 293
     },
     {
       "type": "test_decl",
       "name": "batch config defaults",
       "is_pub": false,
-      "line": 310
+      "line": 309
     },
     {
       "type": "test_decl",
       "name": "max_triples: stops after limit",
       "is_pub": false,
-      "line": 318
+      "line": 317
     },
     {
       "type": "test_decl",
       "name": "ingest stats zero on init",
       "is_pub": false,
-      "line": 346
+      "line": 345
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestSource on YAGO sample returns nodes and edges",
       "is_pub": false,
-      "line": 363
+      "line": 362
     },
     {
       "type": "test_decl",
       "name": "end-to-end: ingestFile on YAGO tiny succeeds (max 100 triples)",
       "is_pub": false,
-      "line": 395
+      "line": 394
     }
   ]
 }

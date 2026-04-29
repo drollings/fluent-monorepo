@@ -702,7 +702,7 @@ fn cmdExplainStaged(
             if (query_hash) |qh| {
                 // Compute signature_hash from stage file paths for future invalidation.
                 var sig_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-                errdefer sig_buf_aw.deinit();
+                defer sig_buf_aw.deinit();
                 const sig_writer = &sig_buf_aw.writer;
                 for (combined.items) |s| {
                     sig_writer.writeAll(s.source) catch {};
@@ -1720,7 +1720,7 @@ pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
         if (llm_client_opt) |*client| {
             // Build stages summary for LLM evaluation (mirrors actual explain output)
             var results_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-            errdefer results_buf_aw.deinit();
+            defer results_buf_aw.deinit();
             const rw = &results_buf_aw.writer;
             try rw.print("Query: \"{s}\"\n\n", .{query_text});
             if (stages.len > 0) {
@@ -1953,7 +1953,10 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
     var lines = std.mem.splitScalar(u8, content, '\n');
     var current_query: ?[]const u8 = null;
     var rubric_lines: std.ArrayList([]const u8) = .empty;
-    defer rubric_lines.deinit(allocator);
+    defer {
+        for (rubric_lines.items) |s| allocator.free(s);
+        rubric_lines.deinit(allocator);
+    }
 
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -1966,7 +1969,8 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
                     .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
                 });
                 current_query = null;
-                rubric_lines.shrinkAndFree(allocator, 0);
+                for (rubric_lines.items) |s| allocator.free(s);
+                rubric_lines.clearRetainingCapacity();
             }
             continue;
         }
@@ -1978,7 +1982,8 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
                     .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
                 });
                 current_query = null;
-                rubric_lines.shrinkAndFree(allocator, 0);
+                for (rubric_lines.items) |s| allocator.free(s);
+                rubric_lines.clearRetainingCapacity();
             }
             continue;
         }
@@ -1995,6 +2000,8 @@ fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) 
             .query = current_query.?,
             .rubric = try std.mem.join(allocator, "\n", rubric_lines.items),
         });
+        for (rubric_lines.items) |s| allocator.free(s);
+        rubric_lines.clearRetainingCapacity();
     }
 
     return queries.toOwnedSlice(allocator);

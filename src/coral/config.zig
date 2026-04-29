@@ -105,8 +105,8 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
     }
 
     // 2. User-global config (~/.config/ast-guidance/ast-guidance-config.json).
-    if (std.process.getEnvVarOwned(allocator, "HOME") catch null) |home| {
-        defer allocator.free(home);
+    if (std.posix.getenv("HOME")) |home_z| {
+        const home = std.mem.sliceTo(home_z, 0);
         const path = try std.fs.path.join(allocator, &.{ home, ".config", "ast-guidance", "ast-guidance-config.json" });
         defer allocator.free(path);
         if (tryLoadFile(allocator, cwd, path)) |cfg| return cfg else |err| {
@@ -126,10 +126,8 @@ pub fn loadConfig(allocator: std.mem.Allocator, cwd: []const u8) !ProjectConfig 
 
 /// Attempts to load a file into a project configuration, returning the loaded settings or an error.
 fn tryLoadFile(allocator: std.mem.Allocator, cwd: []const u8, path: []const u8) !ProjectConfig {
-    const file = try std.fs.openFileAbsolute(path, .{});
-    defer file.close();
-
-    const content = try file.readToEndAlloc(allocator, 64 * 1024);
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(64 * 1024));
     defer allocator.free(content);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, allocator, content, .{});

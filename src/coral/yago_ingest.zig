@@ -152,9 +152,8 @@ pub const YagoIngestor = struct {
         defer arena.deinit();
 
         const content: []const u8 = if (source) |src| src else blk: {
-            const file = try std.fs.cwd().openFile(path.?, .{});
-            defer file.close();
-            break :blk try file.readToEndAlloc(self.allocator, 100 * 1024 * 1024);
+            const io = std.Io.Threaded.global_single_threaded.io();
+            break :blk try std.Io.Dir.cwd().readFileAlloc(io, path.?, self.allocator, .limited(100 * 1024 * 1024));
         };
         defer if (path != null) self.allocator.free(content);
 

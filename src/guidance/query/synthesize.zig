@@ -68,17 +68,17 @@ pub fn synthesize(
 
     // Collect detail content (from module documentation)
     var detail_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer detail_buf_aw.deinit();
+    defer detail_buf_aw.deinit();
     const dw = &detail_buf_aw.writer;
 
     // Collect prose content (from comments)
     var prose_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer prose_buf_aw.deinit();
+    defer prose_buf_aw.deinit();
     const pw = &prose_buf_aw.writer;
 
     // Collect code snippets
     var code_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer code_buf_aw.deinit();
+    defer code_buf_aw.deinit();
     const cw = &code_buf_aw.writer;
 
     var detail_count: usize = 0;
@@ -122,7 +122,7 @@ pub fn synthesize(
     }
 
     var full_prompt_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer full_prompt_aw.deinit();
+    defer full_prompt_aw.deinit();
 
     if (is_direct) {
         // ── Brief summary for direct lookup ─────────────────────────────────────
@@ -206,7 +206,7 @@ pub fn synthesize(
 
     // M8: Build source list for grounding (prevents hallucination)
     var sources_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer sources_buf_aw.deinit();
+    defer sources_buf_aw.deinit();
     const sw = &sources_buf_aw.writer;
     try sw.writeAll("Source files referenced:\n");
     for (sources.items) |src| {

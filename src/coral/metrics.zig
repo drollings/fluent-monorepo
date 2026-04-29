@@ -135,10 +135,10 @@ test "CoralMetrics: formatPrometheus emits deterministic_rate line" {
     m.l1_hit.observe(5);
     m.l5_hit.observe(5);
 
-    var buf: [4096]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    try m.formatPrometheus(fbs.writer());
-    const out = fbs.getWritten();
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+    try m.formatPrometheus(&aw.writer);
+    const out = aw.written();
     try testing.expect(std.mem.indexOf(u8, out, "coral_deterministic_rate") != null);
     try testing.expect(std.mem.indexOf(u8, out, "coral_l1_hit_latency_bucket") != null);
 }

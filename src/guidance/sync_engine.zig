@@ -2035,7 +2035,7 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
         const parsed = config_mod.ProjectConfig.parseModelRef(cfg.model_thinking);
         if (parsed) |p| {
             if (cfg.getProvider(p.provider)) |provider| {
-                api_url = try allocator.dupe(u8, try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint }));
+                api_url = try std.fmt.allocPrint(allocator, "{s}{s}", .{ provider.base_url, provider.chat_endpoint });
             }
         }
         model_thinking = try allocator.dupe(u8, cfg.model_thinking);

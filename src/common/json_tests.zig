@@ -11,10 +11,10 @@ test "jsonStringifyAlloc basic struct" {
     try std.testing.expect(std.mem.indexOf(u8, out, "\"y\"") != null);
 }
 test "writeEscaped handles special chars" {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(std.testing.allocator);
-    try json_mod.writeEscaped(buf.writer(std.testing.allocator), "a\"b\\c\nd");
-    try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd", buf.items);
+    var aw: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer aw.deinit();
+    try json_mod.writeEscaped(&aw.writer, "a\"b\\c\nd");
+    try std.testing.expectEqualStrings("a\\\"b\\\\c\\nd", aw.written());
 }
 test "parseJsonFile returns null for missing file" {
     const result = json_mod.parseJsonFile(std.testing.allocator, "/nonexistent/file.json", 1024);

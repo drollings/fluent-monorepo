@@ -54,13 +54,14 @@ pub fn init(
 
 /// Converts a Zig source code string into a BuildResult indicating success or error.
 pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult {
-    const start = std.time.nanoTimestamp();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const start: i96 = std.Io.Timestamp.now(io, .real).nanoseconds;
 
     var result = BuildResult{
         .success = true,
         .targets_built = 0,
         .targets_failed = 0,
-        .failed_names = .{},
+        .failed_names = .empty,
         .duration_ns = 0,
     };
     errdefer result.deinit(self.allocator);
@@ -83,7 +84,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
         }
 
         std.log.info("No targets specified and no default target found", .{});
-        result.duration_ns = @intCast(std.time.nanoTimestamp() - start);
+        result.duration_ns = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
         return result;
     }
 
@@ -95,7 +96,7 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
             std.log.debug("Circular dependency detected", .{});
         }
         result.success = false;
-        result.duration_ns = @intCast(std.time.nanoTimestamp() - start);
+        result.duration_ns = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
         return result;
     };
     defer resolved.deinit();
@@ -148,27 +149,28 @@ pub fn build(self: *BuildContext, target_names: []const []const u8) !BuildResult
         }
     }
 
-    result.duration_ns = @intCast(std.time.nanoTimestamp() - start);
+    result.duration_ns = @intCast(std.Io.Timestamp.now(io, .real).nanoseconds - start);
     return result;
 }
 
 /// Checks if a BuildContext's target is up-to-date with Zig's version constraints.
 fn isUpToDate(self: *BuildContext, target: *const Target) bool {
+    const io = std.Io.Threaded.global_single_threaded.io();
     const exists_path = target.exists orelse return false;
 
-    std.fs.cwd().access(exists_path, .{}) catch return false;
+    std.Io.Dir.cwd().access(io, exists_path, .{}) catch return false;
 
     if (!target.check_mtime) return true;
 
-    const output_stat = std.fs.cwd().statFile(exists_path) catch return false;
-    const output_mtime = output_stat.mtime;
+    const output_stat = std.Io.Dir.cwd().statFile(io, exists_path, .{}) catch return false;
+    const output_mtime = output_stat.mtime.nanoseconds;
 
     var iter = target.depends.iterator(.{});
     while (iter.next()) |dep_idx| {
         if (self.registry.getByBitIndex(dep_idx)) |dep_target| {
             if (dep_target.exists) |dep_path| {
-                const dep_stat = std.fs.cwd().statFile(dep_path) catch continue;
-                if (dep_stat.mtime > output_mtime) {
+                const dep_stat = std.Io.Dir.cwd().statFile(io, dep_path, .{}) catch continue;
+                if (dep_stat.mtime.nanoseconds > output_mtime) {
                     return false;
                 }
             }
@@ -200,12 +202,13 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
             self.allocator.free(argv);
         }
 
-        var child = std.process.Child.init(argv, self.allocator);
-        child.stdout_behavior = .Inherit;
-        child.stderr_behavior = .Inherit;
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var child = std.process.spawn(io, .{ .argv = @as([]const []const u8, argv) }) catch |err| {
+            std.log.err("Failed to spawn command: {}", .{err});
+            return false;
+        };
 
-        try child.spawn();
-        const term = child.wait() catch |err| {
+        const term = child.wait(io) catch |err| {
             std.log.err("Failed to wait for command: {}", .{err});
             return false;
         };
@@ -217,11 +220,11 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
                     return false;
                 }
             },
-            .Signal => |sig| {
-                std.log.err("Command killed by signal {d}: {s}", .{ sig, cmd });
+            .signal => {
+                std.log.err("Command killed by signal: {s}", .{cmd});
                 return false;
             },
-            .Stopped, .Unknown => {
+            else => {
                 std.log.err("Command terminated abnormally: {s}", .{cmd});
                 return false;
             },

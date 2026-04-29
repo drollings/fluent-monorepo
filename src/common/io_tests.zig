@@ -4,25 +4,25 @@ const std = @import("std");
 const io_mod = @import("io.zig");
 
 test "WriterState writes to a pipe without emitting garbage" {
-    // Create a pipe so we can capture what WriterState actually writes.
+    const io = std.Io.Threaded.global_single_threaded.io();
     const pipe = try std.posix.pipe();
-    const read_fd = std.fs.File{ .handle = pipe[0] };
-    const write_fd = std.fs.File{ .handle = pipe[1] };
-    defer read_fd.close();
+    const read_fd = std.Io.File{ .handle = pipe[0] };
+    const write_fd = std.Io.File{ .handle = pipe[1] };
+    defer read_fd.close(io);
 
-    // Build a WriterState backed by the write end of the pipe.
     var ws: io_mod.WriterState = .{};
-    ws.fw = write_fd.writer(&ws.buf);
+    ws.fw = write_fd.writer(io, &ws.buf);
     const w = ws.writer();
 
     const msg = "hello io";
     try w.writeAll(msg);
     try ws.fw.interface.flush();
-    write_fd.close();
+    write_fd.close(io);
 
+    var rbuf_inner: [4096]u8 = undefined;
+    var fr = read_fd.reader(io, &rbuf_inner);
     var rbuf: [64]u8 = undefined;
-    const n = try read_fd.read(&rbuf);
-    // Must receive exactly the message — no leading garbage bytes.
+    const n = try fr.interface.read(&rbuf);
     try std.testing.expectEqualStrings(msg, rbuf[0..n]);
 }
 test "WriterState buf pointer stays valid after initStdout (no dangling)" {
@@ -40,6 +40,7 @@ test "WriterState buf pointer stays valid after initStdout (no dangling)" {
     _ = w; // writer() must compile and return without crash
 }
 test "makePathAbsolute creates nested directories" {
+    const io = std.Io.Threaded.global_single_threaded.io();
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
@@ -54,13 +55,13 @@ test "makePathAbsolute creates nested directories" {
     // Verify all levels exist
     const level_a = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "a" });
     defer std.testing.allocator.free(level_a);
-    var dir_a = try std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), level_a, .{});
-    dir_a.close();
+    var dir_a = try std.Io.Dir.openDirAbsolute(io, level_a, .{});
+    dir_a.close(io);
 
     const level_b = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "a", "b" });
     defer std.testing.allocator.free(level_b);
-    var dir_b = try std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), level_b, .{});
-    dir_b.close();
+    var dir_b = try std.Io.Dir.openDirAbsolute(io, level_b, .{});
+    dir_b.close(io);
 }
 test "makePathAbsolute is idempotent for existing paths" {
     var tmp = std.testing.tmpDir(.{});
@@ -91,8 +92,13 @@ test "readFileAlloc reads file content" {
     defer std.testing.allocator.free(file_path);
 
     const f = try std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), file_path, .{});
-    try f.writeAll("hello world");
-    f.close();
+    {
+        var wbuf: [4096]u8 = undefined;
+        var fw = f.writer(std.Io.Threaded.global_single_threaded.io(), &wbuf);
+        try fw.interface.writeAll("hello world");
+        try fw.interface.flush();
+    }
+    f.close(std.Io.Threaded.global_single_threaded.io());
 
     const content = io_mod.readFileAlloc(std.testing.allocator, file_path, 1024).?;
     defer std.testing.allocator.free(content);

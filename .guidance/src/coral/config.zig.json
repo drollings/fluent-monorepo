@@ -4,6 +4,7 @@
     "source": "src/coral/config.zig",
     "language": "zig"
   },
+  "capabilities": ["config-system", "coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig", "src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
@@ -50,7 +51,7 @@
       "signature": "fn buildDefault(allocator: std.mem.Allocator, cwd: []const u8) -> ProjectConfig",
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 207
+      "line": 205
     },
     {
       "type": "fn_private",
@@ -59,7 +60,7 @@
       "signature": "fn buildFromParts(allocator: std.mem.Allocator, cwd: []const u8, guidance_dir_rel: []const u8, src_dirs: []const []const u8, model: []const u8, api_url: []const u8) -> ProjectConfig",
       "returns": "ProjectConfig",
       "is_pub": false,
-      "line": 221
+      "line": 219
     }
   ]
 }

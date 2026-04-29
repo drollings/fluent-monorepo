@@ -19,20 +19,20 @@
           "name": "identifier_lookup",
           "is_pub": false,
           "line": 26
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "capability_query",
           "is_pub": false,
           "line": 27
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "concept_query",
           "is_pub": false,
           "line": 28
-        }
-    ,    {
+        },
+        {
           "type": "enum_field",
           "name": "general_search",
           "is_pub": false,

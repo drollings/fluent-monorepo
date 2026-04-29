@@ -94,11 +94,8 @@ pub fn readGitHeadFromFile(
     expected_magic: u32,
     expected_version: u32,
 ) ?[40]u8 {
-    const content = std.Io.Dir.cwd().readFileAlloc(
-        std.heap.page_allocator,
-        path,
-        std.math.maxInt(usize),
-    ) catch return null;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, std.heap.page_allocator, .unlimited) catch return null;
     defer std.heap.page_allocator.free(content);
 
     const hdr = read(content, expected_magic, expected_version) orelse return null;

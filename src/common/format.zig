@@ -127,10 +127,10 @@ fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) ![]const u8 
 
 /// Converts a JSON value into a formatted Zig array with indentation.
 pub fn formatJson(allocator: std.mem.Allocator, value: anytype, indent: usize) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer buf.deinit(allocator);
-    try stringify(value, indent, 0, buf.writer(allocator));
-    return buf.toOwnedSlice(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    try stringify(value, indent, 0, &aw.writer);
+    return try aw.toOwnedSlice();
 }
 
 /// Converts a value into a formatted string with specified indentation and level.
@@ -174,9 +174,9 @@ fn stringify(value: anytype, indent: usize, level: usize, writer: anytype) !void
 pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) ![]const u8 {
     if (rows.len == 0) return allocator.dupe(u8, "");
 
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    errdefer buf.deinit(allocator);
-    const writer = buf.writer(allocator);
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    const writer = &aw.writer;
 
     const fields = if (fieldnames) |f| f else blk: {
         if (rows[0] == .object) {
@@ -213,7 +213,7 @@ pub fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fie
         try writer.writeAll("\n");
     }
 
-    return buf.toOwnedSlice(allocator);
+    return try aw.toOwnedSlice();
 }
 
 /// Writes a CSV field as a byte slice to the writer, handling null-termination.
