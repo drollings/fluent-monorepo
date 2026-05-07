@@ -15,7 +15,28 @@
 /// Future: Thread pool for concurrent requests.
 const std = @import("std");
 const http = std.http;
-const net = std.net;
+const net = std.Io.net;
+
+/// One-shot ready signal replacing the removed std.Thread.ResetEvent.
+/// Call set() from the server thread; wait() blocks until set() is called.
+pub const ReadySignal = struct {
+    mutex: std.Thread.Mutex = .{},
+    cond: std.Thread.Condition = .{},
+    is_set: bool = false,
+
+    pub fn set(self: *@This()) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.is_set = true;
+        self.cond.signal();
+    }
+
+    pub fn wait(self: *@This()) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        while (!self.is_set) self.cond.wait(&self.mutex);
+    }
+};
 
 pub const McpHandler = struct {
     ptr: *anyopaque,
@@ -71,7 +92,7 @@ pub const HttpTransport = struct {
     mcp_handler: McpHandler,
     running: bool = false,
     shutdown_requested: bool = false,
-    ready_signal: ?*std.Thread.ResetEvent = null,
+    ready_signal: ?*ReadySignal = null,
     sse_connections: std.ArrayList(*SseConnection) = .empty,
     sse_heartbeat_ms: u32 = 30_000,
 
@@ -93,11 +114,12 @@ pub const HttpTransport = struct {
     /// Start the HTTP server and listen for connections.
     /// Blocks until shutdown is requested.
     pub fn listen(self: *Self) !void {
-        const addr = try net.Address.parseIp4(self.bind_address, self.port);
-        var server = try addr.listen(.{
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var addr = try net.IpAddress.parseIp4(self.bind_address, self.port);
+        var server = try addr.listen(io, .{
             .kernel_backlog = 128,
         });
-        defer server.deinit();
+        defer server.deinit(io);
 
         self.running = true;
         if (self.ready_signal) |signal| {
@@ -107,17 +129,17 @@ pub const HttpTransport = struct {
         var read_buf: [8192]u8 = undefined;
 
         while (!self.shutdown_requested) {
-            const conn = server.accept() catch |err| {
+            const conn = server.accept(io) catch |err| {
                 if (self.shutdown_requested) break;
                 std.log.err("accept error: {}", .{err});
                 continue;
             };
 
-            self.handleConnection(conn, &read_buf) catch |err| {
+            self.handleConnection(conn, io, &read_buf) catch |err| {
                 std.log.err("connection error: {}", .{err});
             };
 
-            conn.stream.close();
+            conn.close(io);
         }
 
         self.running = false;
@@ -126,7 +148,7 @@ pub const HttpTransport = struct {
     /// Start the HTTP server with a ready signal.
     /// Signal is set when the server is listening and ready to accept connections.
     /// Useful for integration tests that need to know when the server is up.
-    pub fn listenWithReady(self: *Self, ready_signal: *std.Thread.ResetEvent) !void {
+    pub fn listenWithReady(self: *Self, ready_signal: *ReadySignal) !void {
         self.ready_signal = ready_signal;
         return self.listen();
     }
@@ -136,14 +158,14 @@ pub const HttpTransport = struct {
         self.shutdown_requested = true;
     }
 
-    fn handleConnection(self: *Self, conn: net.Server.Connection, read_buf: []u8) !void {
+    fn handleConnection(self: *Self, conn: net.Stream, io: std.Io, read_buf: []u8) !void {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
         var send_buf: [4096]u8 = undefined;
-        var connection_reader = conn.stream.reader(read_buf);
-        var connection_writer = conn.stream.writer(&send_buf);
-        var server = http.Server.init(connection_reader.interface(), &connection_writer.interface);
+        var connection_reader = conn.reader(io, read_buf);
+        var connection_writer = conn.writer(io, &send_buf);
+        var server = http.Server.init(&connection_reader.interface, &connection_writer.interface);
 
         while (true) {
             var request = server.receiveHead() catch |err| {

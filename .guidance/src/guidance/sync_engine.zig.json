@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " sync_engine.zig — init, commit, gen, status, clean, pipeline, and utility commands.\n\n Extracted from main.zig (M1.6) to keep file sizes navigable.\n M2.1: gen/check/pipeline helpers extracted to sync/gen_files.zig and sync/ralph.zig.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdGen(): Delegates to gen_files.cmdGenImpl(); all allocations scoped to the command.\n   - cmdCheck(): Delegates to ralph.cmdCheck(); arena-backed for phase orchestration.\n   - cmdCommit(): Delegates to commit_mod.cmdCommit(); LlmClient is ephemeral.\n   - cmdSyncCapabilities() / cmdDiscoverCapabilitySources(): Own CapabilityEntry results;\n     freed with allocator.free() at end of function.\n   - cmdStatus() / cmdClean() / cmdInit(): Minimal allocation, all scoped.\n   - Delegation re-exports (GenArgs, cmdCommit, cmdCheck, etc.) delegate ownership\n     to their respective sub-modules (gen_files.zig, commit.zig, ralph.zig).",
-  "capabilities": ["coral-database", "config-system", "ast-indexing", "sync-pipeline"],
   "used_by": ["src/guidance/main.zig", "src/guidance/mcp.zig"],
   "members": [
     {

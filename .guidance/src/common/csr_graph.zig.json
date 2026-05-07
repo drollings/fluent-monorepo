@@ -8,7 +8,6 @@
   "skills": [
     { "ref": "skills/domain-patterns/SKILL.md", "context": "Domain patterns detected" }
   ],
-  "used_by": ["src/common/root.zig"],
   "members": [
     {
       "type": "struct",

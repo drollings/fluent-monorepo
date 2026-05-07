@@ -4,7 +4,6 @@
     "source": "src/dag/json_parser.zig",
     "language": "zig"
   },
-  "capabilities": ["target-registry"],
   "used_by": ["src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {

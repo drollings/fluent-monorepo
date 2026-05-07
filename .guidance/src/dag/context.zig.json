@@ -4,7 +4,6 @@
     "source": "src/dag/context.zig",
     "language": "zig"
   },
-  "capabilities": ["target-registry"],
   "used_by": ["src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig", "src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {

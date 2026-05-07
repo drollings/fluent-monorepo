@@ -63,7 +63,7 @@ test "GuidanceDb index and keyword search round-trip" {
         \\  ]
         \\}
     ;
-    try tmp.dir.writeFile(.{ .sub_path = "src/mymod.zig.json", .data = json });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "src/mymod.zig.json", .data = json });
 
     var noop: vector.NoopEmbedding = .{};
     var db = try vector_db_mod.GuidanceDb.init(allocator, db_path, noop.provider());
@@ -108,7 +108,7 @@ test "GuidanceDb search falls back to keyword when noop embedder" {
         \\  ]
         \\}
     ;
-    try tmp.dir.writeFile(.{ .sub_path = "src/alpha.zig.json", .data = json });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "src/alpha.zig.json", .data = json });
 
     var noop: vector.NoopEmbedding = .{};
     var db = try vector_db_mod.GuidanceDb.init(allocator, db_path, noop.provider());
@@ -146,7 +146,7 @@ test "GuidanceDb skips unchanged files" {
         \\  "members": []
         \\}
     ;
-    try tmp.dir.writeFile(.{ .sub_path = "src/beta.zig.json", .data = json });
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "src/beta.zig.json", .data = json });
 
     var noop: vector.NoopEmbedding = .{};
 

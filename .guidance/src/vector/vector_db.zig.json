@@ -368,12 +368,12 @@
           "line": 1820
         },
         {
-          "type": "fn_private",
+          "type": "fn_decl",
           "name": "moduleToProse",
           "match_hash": "f6f52c83281a30986edeb2d65971a4dc314b74635cd2df58c7d3d03ef508b9a6",
           "signature": "fn moduleToProse(allocator: std.mem.Allocator, module: []const u8) -> []u8",
           "returns": "[]u8",
-          "is_pub": false,
+          "is_pub": true,
           "line": 1858
         },
         {
@@ -386,21 +386,21 @@
           "line": 1884
         },
         {
-          "type": "fn_private",
+          "type": "fn_decl",
           "name": "extractParamNames",
           "match_hash": "3469d2f1a8724e3b6f1959798b3230fc40ca659ce55a79b0cdce8d5c059cd703",
           "signature": "fn extractParamNames(allocator: std.mem.Allocator, signature: []const u8) -> ?[]u8",
           "returns": "?[]u8",
-          "is_pub": false,
+          "is_pub": true,
           "line": 1900
         },
         {
-          "type": "fn_private",
+          "type": "fn_decl",
           "name": "buildEmbeddingText",
           "match_hash": "e9058fad5492ea36bc3743f76b936cdf5597d3add2a53f44b6fdf6e808d8595e",
           "signature": "fn buildEmbeddingText(allocator: std.mem.Allocator, module: []const u8, name: []const u8, node_type: []const u8, comment: ?[]const u8, signature: ?[]const u8, parent_comment: ?[]const u8) -> []const u8",
           "returns": "[]const u8",
-          "is_pub": false,
+          "is_pub": true,
           "line": 1955
         },
         {

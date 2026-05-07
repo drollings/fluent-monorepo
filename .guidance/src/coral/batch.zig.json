@@ -4,7 +4,6 @@
     "source": "src/coral/batch.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cli.zig", "src/coral/root.zig"],
   "members": [
     {

@@ -4,7 +4,6 @@
     "source": "src/coral/config.zig",
     "language": "zig"
   },
-  "capabilities": ["config-system", "coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig", "src/guidance/main.zig", "src/guidance/query_engine.zig", "src/guidance/scanner.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {

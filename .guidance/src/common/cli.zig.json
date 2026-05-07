@@ -128,13 +128,13 @@
       "type": "test_decl",
       "name": "CommandRegistry: register and get",
       "is_pub": false,
-      "line": 178
+      "line": 173
     },
     {
       "type": "test_decl",
       "name": "CommandRegistry: names returns sorted list",
       "is_pub": false,
-      "line": 194
+      "line": 189
     }
   ]
 }

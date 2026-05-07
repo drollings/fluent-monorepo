@@ -90,6 +90,18 @@ Then you you must read
 │   ├── testing
 │   ├── vector
 │   └── wasm
-└── vendor
-    └── sqlite3
+├── vendor
+│   └── sqlite3
+└── zig-crt
+    ├── libc.a
+    ├── libc.so.6
+    ├── libdl.a
+    ├── libm.a
+    ├── libm.so.6
+    ├── libpthread.a
+    ├── libpthread.so.0
+    ├── librt.a
+    ├── librt.so.1
+    ├── libutil.a
+    └── libutil.so.1
 ```

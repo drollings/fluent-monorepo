@@ -152,7 +152,7 @@ test "HttpTransport: signals ready when listenWithReady called" {
     var transport = HttpTransport.init(testing.allocator, mcp_handler, "127.0.0.1", 18092);
     _ = &mcp_handler;
 
-    var ready = std.Thread.ResetEvent{};
+    var ready = http_transport.ReadySignal{};
 
     // Verify the field can be set
     transport.ready_signal = &ready;

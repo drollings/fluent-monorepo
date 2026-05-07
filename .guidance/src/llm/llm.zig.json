@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " llm.zig — LLM client, response post-processing, and task decomposition.\n\n Single source of truth for all LLM-related types and functions:\n   LlmError, LlmConfig, LlmClient  — HTTP chat-completion client\n   stripThinkBlock, extractCommentTag, isMalformedResponse, stripPreamble\n   LocalDecomposer, DecomposerConfig  — query decomposition\n\n ## Memory Ownership\n\n   - LlmClient: Owns http_client (persistent, pooled connections) and chat_url (owned slice).\n     Call init() to create, deinit() to release. HTTP connections are reused when keep_alive=true.\n   - LlmClient.complete(): Returns owned slice on success; caller must free with allocator.free().\n     Returns null on non-200 response; returns LlmError on network failure.\n   - LlmClient.available(): No allocation (caches result internally).\n   - LlmConfig: Holds borrowed string slices (api_url, model) — valid only as long as the\n     source strings live. Does not own heap.\n   - LocalDecomposer: No heap ownership; holds config by value. The ephemeral LlmClient created\n     in decompose() is init/deinit within the function.\n   - stripPreamble(): Returns owned string; caller must free with allocator.free().\n   - All strip*/extract*/is* helper functions: Return borrowed slices or boolean values; no allocation.",
-  "capabilities": ["llm-client", "local-model-decomposition"],
   "used_by": ["src/llm/root.zig", "src/llm/root_tests.zig"],
   "members": [
     {

@@ -4,7 +4,6 @@
     "source": "src/coral/metrics.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/common/root.zig", "src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " TreeSitterExtractor — walks tree-sitter syntax trees and extracts guidance members.\n\n Provides language-specific extraction logic for converting tree-sitter nodes\n into guidance Member types.",
-  "used_by": ["src/guidance/plugins/treesitter_plugin.zig"],
+  "used_by": ["src/guidance/plugins/treesitter_extractor_tests.zig", "src/guidance/plugins/treesitter_plugin.zig"],
   "members": [
     {
       "type": "struct",
@@ -124,12 +124,6 @@
         }
       ],
       "line": 18
-    },
-    {
-      "type": "test_decl",
-      "name": "member extractor",
-      "is_pub": false,
-      "line": 286
     }
   ]
 }
