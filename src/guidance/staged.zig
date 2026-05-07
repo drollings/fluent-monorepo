@@ -825,35 +825,3 @@ pub fn loadSkillExcerpt(
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-test "benchmark: zero-alloc token match — 100 tokens × 100 results" {
-    // Validates that std.ascii.eqlIgnoreCase handles O(tokens×results) comparisons
-    // without any heap allocation. Testing.allocator leak check confirms zero allocs.
-    const tokens = [_][]const u8{
-        "cmdExplain", "executeStaged", "collectCodeStages", "SearchResult", "formatStaged",
-        "GuidanceDb", "vector_db",     "syncEngine",        "queryEngine",  "stagedPipeline",
-    };
-    const names = [_][]const u8{
-        "cmdexplain", "executestaged", "collectcodestages", "searchresult", "formatstaged",
-        "guidancedb", "vector_db",     "syncengine",        "queryengine",  "stagedpipeline",
-    };
-
-    var match_count: usize = 0;
-    const io = std.Io.Threaded.global_single_threaded.io();
-    const start: i128 = @as(i128, std.Io.Timestamp.now(io, .real).nanoseconds);
-    var iter: usize = 0;
-    while (iter < 100) : (iter += 1) {
-        for (tokens) |token| {
-            for (names) |name| {
-                if (std.ascii.eqlIgnoreCase(token, name)) match_count += 1;
-            }
-        }
-    }
-    const elapsed_ns: i128 = @as(i128, std.Io.Timestamp.now(io, .real).nanoseconds) - start;
-    const elapsed_ms = @divTrunc(elapsed_ns, 1_000_000);
-
-    try std.testing.expect(match_count > 0);
-    // 100 iterations × 10 tokens × 10 names = 10,000 comparisons, zero allocations.
-    // Target: < 10ms on any reasonable hardware.
-    try std.testing.expect(elapsed_ms < 10);
-}

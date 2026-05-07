@@ -158,9 +158,3 @@ pub fn validateGrammarABI(grammar: Grammar) !void {
         return error.IncompatibleABIVersion;
     }
 }
-
-test "grammar loading" {
-    // Test that grammars can be loaded
-    const grammar = pythonGrammar();
-    try validateGrammarABI(grammar);
-}

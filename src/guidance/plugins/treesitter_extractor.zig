@@ -282,23 +282,3 @@ pub const MemberExtractor = struct {
         return try self.allocator.dupe(u8, self.source[start_byte..end_byte]);
     }
 };
-
-test "member extractor" {
-    const allocator = std.testing.allocator;
-
-    // Test Python extraction
-    const py_source =
-        \\def foo():
-        \\    pass
-        \\
-        \\class Bar:
-        \\    pass
-        \\
-    ;
-
-    var extractor = MemberExtractor.init(allocator, "python", py_source);
-    defer extractor.deinit();
-
-    // Note: This test requires actual tree-sitter parser to be set up
-    // Full integration testing will be done in plugin_tests.zig
-}

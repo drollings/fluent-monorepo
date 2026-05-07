@@ -220,9 +220,15 @@ ZIG_SRC_FILES := $(shell find $(SRC_DIR) -name '*.zig' 2>/dev/null)
 
 # ── Binary ───────────────────────────────────────────────────────────────────
 
+# GCC 15 adds .sframe sections (R_X86_64_PC64) to crt1.o, which Zig's self-hosted
+# linker cannot process. zig-crt/ holds a stripped copy and symlinks to system libs.
+# See: zig-crt/crt1.o (objcopy --remove-section=.sframe /usr/lib/crt1.o)
+ZIG_LIBC_CONF := $(CURDIR)/libc.conf
+ZIG_BUILD_FLAGS := --libc $(ZIG_LIBC_CONF)
+
 $(TARGET_BIN): $(ZIG_SRC_FILES)
 	$(Q)echo "Building $@"
-	$(Q)zig build guidance --summary failures
+	$(Q)zig build guidance --summary failures $(ZIG_BUILD_FLAGS)
 	$(Q)echo "Build complete: $@"
 
 .PHONY: install

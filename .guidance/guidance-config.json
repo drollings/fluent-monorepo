@@ -27,7 +27,7 @@
     "cache_limit": 400
   },
   "test_commands": {
-    ".zig": ["zig", "build", "test", "--summary", "all"],
+    ".zig": ["zig", "build", "test", "--summary", "all", "--libc", "libc.conf"],
     ".py": ["python", "-m", "pytest", "-v"]
   },
   "lint_commands": {

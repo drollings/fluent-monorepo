@@ -994,6 +994,74 @@ pub fn build(b: *std.Build) void {
     // -------------------------------------------------------------------------
     // Wire all test runs
     // -------------------------------------------------------------------------
+
+    const main_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/coral/main_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "coral_db", .module = coral_db_module },
+                .{ .name = "coral_batch", .module = coral_batch_module },
+                .{ .name = "ontology", .module = ontology_module },
+                .{ .name = "rdf", .module = rdf_module },
+                .{ .name = "wasm", .module = wasm_module },
+                .{ .name = "coral_schema", .module = coral_schema_module },
+                .{ .name = "llm", .module = llm_module },
+            },
+        }),
+    });
+    main_tests.root_module.link_libc = true;
+    main_tests.root_module.linkSystemLibrary("sqlite3", .{});
+
+    const math_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vector/math_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const vector_db_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/vector/vector_db_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    vector_db_tests.root_module.link_libc = true;
+    vector_db_tests.root_module.linkSystemLibrary("sqlite3", .{});
+
+    const root_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/llm/root_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+
+    const embeddings_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/common/embeddings_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const channel_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/channel_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
@@ -1100,6 +1168,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(entity_tests).step);
+    test_step.dependOn(&b.addRunArtifact(main_tests).step);
+    test_step.dependOn(&b.addRunArtifact(math_tests).step);
+    test_step.dependOn(&b.addRunArtifact(vector_db_tests).step);
+    test_step.dependOn(&b.addRunArtifact(root_tests).step);
+    test_step.dependOn(&b.addRunArtifact(embeddings_tests).step);
+    test_step.dependOn(&b.addRunArtifact(channel_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

@@ -1855,7 +1855,7 @@ pub const GuidanceDb = struct {
     /// "src.guidance.db" → "guidance database"
     /// "src.guidance.vector.math" → "guidance vector math"
     /// Only includes the last 3 path components to keep text concise.
-    fn moduleToProse(allocator: std.mem.Allocator, module: []const u8) ![]u8 {
+    pub fn moduleToProse(allocator: std.mem.Allocator, module: []const u8) ![]u8 {
         // Collect path components, skipping "src" prefix
         var parts: [8][]const u8 = undefined;
         var n: usize = 0;
@@ -1897,7 +1897,7 @@ pub const GuidanceDb = struct {
     /// Extract parameter names from a signature string, stripping types.
     /// "fn foo(allocator: Allocator, x: u32) u32" → "allocator, x"
     /// Returns null when no params or parsing is too complex.
-    fn extractParamNames(allocator: std.mem.Allocator, signature: []const u8) !?[]u8 {
+    pub fn extractParamNames(allocator: std.mem.Allocator, signature: []const u8) !?[]u8 {
         // Find opening paren
         const open = std.mem.indexOfScalar(u8, signature, '(') orelse return null;
         const close = std.mem.lastIndexOfScalar(u8, signature, ')') orelse return null;
@@ -1952,7 +1952,7 @@ pub const GuidanceDb = struct {
     /// Format: descriptor-bag "name · module · type · comment_nouns · params · context"
     /// Uses `·` (U+00B7) as separator — rare in code, clear to sentence-transformers.
     /// Boilerplate prefixes are stripped from comments before embedding.
-    fn buildEmbeddingText(
+    pub fn buildEmbeddingText(
         allocator: std.mem.Allocator,
         module: []const u8,
         name: []const u8,

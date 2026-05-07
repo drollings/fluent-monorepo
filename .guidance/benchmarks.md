@@ -1,8 +1,6 @@
 # Benchmark queries for guidance test
 
-Each query is followed by `---` and a rubric that defines the expected answer.
-The rubric is a concise description of what a correct answer must contain.
-cmdTest uses the rubric to judge whether the LLM evaluation is accurate.
+## Each query is followed by `---` and a rubric that defines the expected answer.  The rubric is a concise description of what a correct answer must contain.  cmdTest uses the rubric to judge whether the LLM evaluation is accurate.
 
 ---
 
