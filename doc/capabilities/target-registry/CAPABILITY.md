@@ -78,7 +78,7 @@ These are static compile-time-known targets; `IngestTargetDefs` uses stack-alloc
 - `src/coral/targets.zig` — `IngestTargetDefs`, YAGO pipeline constants
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (8 files, auto-discovered)
+## Sources (9 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -90,4 +90,5 @@ These are static compile-time-known targets; `IngestTargetDefs` uses stack-alloc
 | `src/dag/root.zig` | 0.9 | used_by |
 | `src/dag/target.zig` | 0.7 | keyword_overlap |
 | `src/coral/targets.zig` | 0.4 | path_heuristic |
+| `src/dag/target_state.zig` | 0.4 | path_heuristic |
 

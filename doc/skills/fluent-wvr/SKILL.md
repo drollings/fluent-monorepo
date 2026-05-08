@@ -1205,7 +1205,7 @@ var lib = Library.init(arena.allocator(), ...);  // Library freed when arena dei
 
 Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators.
 
-### ❌ Single-implementation vtable
+### ❌ Single-implementation vtable without current or plausible future need for polymorphism
 
 ```zig
 // Wrong: exactly one implementation exists, but a vtable handle wraps it
@@ -1222,7 +1222,7 @@ pub fn build(...) !DocumentIndexer {
 
 **Why it's wrong:** The vtable adds two pointers of indirection and a layer of type-erased dispatch for zero runtime benefit. There is no branching, no swapping of implementations, no polymorphism — only overhead. When there is exactly one implementation, the vtable should be removed entirely.
 
-**Right:** Put the methods directly on the implementation struct. Return `*Implementation` to callers:
+**Right:** If this is the only plausible implementation, put the methods directly on the implementation struct. Return `*Implementation` to callers:
 
 ```zig
 pub const GuidanceJsonIndexerImpl = struct {

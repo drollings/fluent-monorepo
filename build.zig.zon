@@ -10,6 +10,9 @@
         .zigrc = .{
             .path = "../zigrc",
         },
+        .zio = .{
+            .path = "../zio",
+        },
     },
     .paths = .{
         "build.zig",

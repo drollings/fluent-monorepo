@@ -1,0 +1,207 @@
+{
+  "meta": {
+    "module": "src.concurrency.backend",
+    "source": "src/concurrency/backend.zig",
+    "language": "zig"
+  },
+  "comment": "[gof-patterns]  backend.zig — ExecutionBackend VTable + SyncBackend + ZioBackend.\n\n ## VTable justification\n Two concrete implementations exist today (SyncBackend, ZioBackend), so a\n VTable is warranted per the Fluent WVR decision tree.\n\n ## Usage — SyncBackend (tests / single-threaded callers)\n\n   var sync = SyncBackend{};\n   const backend = sync.backend();\n   try backend.submit(unit.toAny());\n   try backend.flush(); // no-op for SyncBackend; units run inline\n\n ## Usage — ZioBackend (production, inside a zio runtime)\n\n   const backend_obj = try ZioBackend.builder()\n       .withPermits(8)\n       .withFailFast(true)\n       .build(allocator);\n   defer backend_obj.deinit(); // must call flush() first\n\n   const backend = backend_obj.backend();\n   try backend.submit(unit.toAny()); // group.spawn() internally\n   try backend.flush();              // group.wait() + hasFailed() check\n   backend.deinit();\n\n ## Ownership rules\n\n submit() transfers ownership of the AnyWorkUnit.  If submit() returns an\n error the unit has already been cleaned up via deinitFn.\n flush() must be called before deinit() on ZioBackend.",
+  "skills": [
+    { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
+  ],
+  "used_by": ["src/concurrency/root.zig"],
+  "members": [
+    {
+      "type": "struct",
+      "name": "ExecutionBackend",
+      "match_hash": "af26c6b5dacdb9f7b9a00e01e656dc1207b95e1c6bd4a8933ca458ea5ae462cd",
+      "signature": "keyword_struct ExecutionBackend { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "submit",
+          "match_hash": "b81a77be248f0e871f59b5fc3b4af6588c7aeaf6164628b42e0818742ebf22b4",
+          "signature": "fn submit(self: ExecutionBackend, unit: AnyWorkUnit) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": true,
+          "line": 55
+        },
+        {
+          "type": "fn_decl",
+          "name": "flush",
+          "match_hash": "8c64ef5e8b84cd2d08a4a3e5e580d52f73c0cf22a371e96e08351375678387e1",
+          "signature": "fn flush(self: ExecutionBackend) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": true,
+          "line": 59
+        },
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "fcbcb467e1dd8edfced086fa4b0d639f073c20ff9d67edce552ee14b412b38bd",
+          "signature": "fn deinit(self: ExecutionBackend) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 63
+        }
+      ],
+      "line": 42
+    },
+    {
+      "type": "struct",
+      "name": "SyncBackend",
+      "match_hash": "f9fe87c9f596d11439c8f678230d3982d45485da70232c4880762067f9479dc5",
+      "signature": "keyword_struct SyncBackend { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "backend",
+          "match_hash": "e1b0c25142a7fc83209e52408b4066cdf2ffce57458acae17598f48cb2b42848",
+          "signature": "fn backend(self: *SyncBackend) -> ExecutionBackend",
+          "returns": "ExecutionBackend",
+          "is_pub": true,
+          "line": 81
+        },
+        {
+          "type": "fn_private",
+          "name": "submitFn",
+          "match_hash": "b626073dadb27dd9e782f5937b43c82a28a0a2a8d273ba4f95f86759352c2dad",
+          "signature": "fn submitFn(ptr: *anyopaque, unit: AnyWorkUnit) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": false,
+          "line": 85
+        },
+        {
+          "type": "fn_private",
+          "name": "flushFn",
+          "match_hash": "13a49be41b559be66f034d8fd40763deeb3db20d5f2d097f38c7f35948ffbc45",
+          "signature": "fn flushFn(ptr: *anyopaque) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": false,
+          "line": 94
+        },
+        {
+          "type": "fn_private",
+          "name": "deinitFn",
+          "match_hash": "dca95b104754aafa1756acf63fe904763dfb371eb12b4be33777c0538cee5415",
+          "signature": "fn deinitFn(_: *anyopaque) -> void",
+          "returns": "void",
+          "is_pub": false,
+          "line": 102
+        }
+      ],
+      "line": 72
+    },
+    {
+      "type": "struct",
+      "name": "ZioBackend",
+      "match_hash": "051d8836f404bd656cc668ebf39e9baf4ccb6c5ef6665309f27b0a8c4bdcc824",
+      "signature": "keyword_struct ZioBackend { ... }",
+      "patterns": [
+        { "name": "Builder (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#builder" }
+      ],
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "builder",
+          "match_hash": "7c3294bbd21c420ca413b8ce26574fe8072dce7aa62ddad9c481da2e85d0a1cc",
+          "signature": "fn builder() -> Builder",
+          "returns": "Builder",
+          "is_pub": true,
+          "line": 157
+        },
+        {
+          "type": "fn_decl",
+          "name": "backend",
+          "match_hash": "3208ccdfe3fada4fbd9caff1d383625fa1c8fbbad71c45432063b1ed5b7fa1ea",
+          "signature": "fn backend(self: *ZioBackend) -> ExecutionBackend",
+          "returns": "ExecutionBackend",
+          "is_pub": true,
+          "line": 163
+        },
+        {
+          "type": "fn_private",
+          "name": "submitFn",
+          "match_hash": "b626073dadb27dd9e782f5937b43c82a28a0a2a8d273ba4f95f86759352c2dad",
+          "signature": "fn submitFn(ptr: *anyopaque, unit: AnyWorkUnit) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": false,
+          "line": 167
+        },
+        {
+          "type": "fn_private",
+          "name": "flushFn",
+          "match_hash": "13a49be41b559be66f034d8fd40763deeb3db20d5f2d097f38c7f35948ffbc45",
+          "signature": "fn flushFn(ptr: *anyopaque) -> anyerror!void",
+          "returns": "anyerror!void",
+          "is_pub": false,
+          "line": 175
+        },
+        {
+          "type": "fn_private",
+          "name": "deinitFn",
+          "match_hash": "2eb2943cfc7a3e08aca9cb9fd1ea13de0e2383ed40449f4867380e135a781adb",
+          "signature": "fn deinitFn(ptr: *anyopaque) -> void",
+          "returns": "void",
+          "is_pub": false,
+          "line": 183
+        },
+        {
+          "type": "fn_private",
+          "name": "runUnit",
+          "match_hash": "9a8e103a90a55dd33e3abda705ac8e1f72acc49bb61326dfacd9e5c9b27cdd6b",
+          "signature": "fn runUnit(sem: *zio.Semaphore, unit: AnyWorkUnit) -> void",
+          "returns": "void",
+          "is_pub": false,
+          "line": 192
+        }
+      ],
+      "line": 116
+    },
+    {
+      "type": "struct",
+      "name": "CountHandler",
+      "match_hash": "6b1b163dce3ec599a3504647bef11bf20af2d945008898d6048db907001f3c56",
+      "signature": "keyword_struct CountHandler { ... }",
+      "is_pub": false,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "execute",
+          "match_hash": "780b98b3aaf703b1cf25dfdcc269e50c73c0590f8e87965ecc2b92f132cc3525",
+          "signature": "fn execute(self: *CountHandler, arena: std.mem.Allocator) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 211
+        }
+      ],
+      "line": 207
+    },
+    {
+      "type": "test_decl",
+      "name": "SyncBackend: submits and runs units inline",
+      "is_pub": false,
+      "line": 218
+    },
+    {
+      "type": "test_decl",
+      "name": "SyncBackend: flush returns last error, then clears it",
+      "is_pub": false,
+      "line": 232
+    },
+    {
+      "type": "test_decl",
+      "name": "SyncBackend: continues after first failure (no deadlock)",
+      "is_pub": false,
+      "line": 245
+    },
+    {
+      "type": "test_decl",
+      "name": "SyncBackend: GPA no leaks",
+      "is_pub": false,
+      "line": 259
+    }
+  ]
+}

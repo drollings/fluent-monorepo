@@ -24,6 +24,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const zio_dep = b.dependency("zio", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     // -------------------------------------------------------------------------
     // Core named modules
     // -------------------------------------------------------------------------
@@ -74,6 +79,16 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // `concurrency` — zio-backed work queue with Fluent WVR interface.
+    const concurrency_module = b.createModule(.{
+        .root_source_file = b.path("src/concurrency/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zio", .module = zio_dep.module("zio") },
+        },
+    });
+
     // `dag` — DAG execution engine (Target, Registry, Resolver, Executor).
     // Uses named module imports for common (interner, builder_error).
     const dag_module = b.createModule(.{
@@ -81,7 +96,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "common", .module = common_module }, .{ .name = "reflection", .module = reflection_module },
+            .{ .name = "common", .module = common_module },
+            .{ .name = "reflection", .module = reflection_module },
+            .{ .name = "concurrency", .module = concurrency_module },
         },
     });
 
@@ -166,13 +183,6 @@ pub fn build(b: *std.Build) void {
     const have_extism = b.option(bool, "extism", "Enable Extism WASM runtime (requires libextism)") orelse false;
     const wasm_options = b.addOptions();
     wasm_options.addOption(bool, "have_extism", have_extism);
-    const concurrency_module = b.createModule(.{
-        .root_source_file = b.path("src/concurrency/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{},
-    });
-    _ = concurrency_module;
 
     const wasm_module = b.createModule(.{
         .root_source_file = b.path("src/wasm/wasm.zig"),
@@ -791,50 +801,27 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // -- M11: Context — cancellation and deadline propagation --
-    const concurrency_context_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/context.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    // -- M11: AnyWorkUnit + WorkUnit(T) — type-erased work unit --
+    // -- M11: WorkUnit(T) — type-erased work unit (new zio-based module) --
     const concurrency_work_unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/any_work_unit.zig"),
+            .root_source_file = b.path("src/concurrency/work_unit.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    // -- M13: Channel(T) — bounded mutex-backed channel --
-    const concurrency_channel_tests = b.addTest(.{
+    // -- M11: ExecutionBackend / SyncBackend / ZioBackend --
+    const concurrency_backend_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/channel.zig"),
+            .root_source_file = b.path("src/concurrency/backend.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zio", .module = zio_dep.module("zio") },
+            },
         }),
     });
 
-    // -- M12: spawn — fire-and-forget dispatch over std.Thread.Pool --
-    const concurrency_spawn_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/spawn.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    // -- M14: ErrorGroup — structured parallel dispatch with error capture --
-    const concurrency_error_group_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/error_group.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
 
     // -- Coral BitSet DRIFT tests (P0.2) --
     const coral_drift_tests = b.addTest(.{
@@ -1055,13 +1042,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const channel_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/concurrency/channel_tests.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
@@ -1095,11 +1075,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(refcount_tests).step);
     test_step.dependOn(&b.addRunArtifact(wrapper_tests).step);
     test_step.dependOn(&b.addRunArtifact(mock_vtable_tests).step);
-    test_step.dependOn(&b.addRunArtifact(concurrency_context_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_work_unit_tests).step);
-    test_step.dependOn(&b.addRunArtifact(concurrency_channel_tests).step);
-    test_step.dependOn(&b.addRunArtifact(concurrency_spawn_tests).step);
-    test_step.dependOn(&b.addRunArtifact(concurrency_error_group_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_backend_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_drift_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_identifier_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_csr_tests).step);
@@ -1173,7 +1150,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(vector_db_tests).step);
     test_step.dependOn(&b.addRunArtifact(root_tests).step);
     test_step.dependOn(&b.addRunArtifact(embeddings_tests).step);
-    test_step.dependOn(&b.addRunArtifact(channel_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)
