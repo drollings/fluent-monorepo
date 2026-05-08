@@ -11,7 +11,6 @@
 //!       result_ch: *zio.Channel(DagResult),
 //!
 //!       pub fn execute(self: *TargetHandler, arena: std.mem.Allocator) !void {
-//!           try zio.checkCancel(); // honour cancellation inside ZioBackend
 //!           const result = try runTarget(self.target, arena);
 //!           try self.result_ch.send(result);
 //!       }
@@ -31,10 +30,15 @@
 //!
 //! ## Cancellation
 //!
-//! Call zio.checkCancel() inside execute() when running under ZioBackend.
+//! runFn calls zio.checkCancel() before execute() — a unit whose enclosing
+//! Group has been cancelled is silently skipped without entering the handler.
 //! checkCancel() is a no-op outside a zio runtime, so SyncBackend is safe.
+//!
+//! Handlers do NOT need to call zio.checkCancel() themselves unless they want
+//! mid-handler yield points (e.g. after a slow allocation step).
 
 const std = @import("std");
+const zio = @import("zio");
 
 /// Type-erased 3-pointer work handle.  Size invariant: exactly 3 pointers.
 pub const AnyWorkUnit = struct {
@@ -92,6 +96,10 @@ pub fn WorkUnit(comptime Handler: type) type {
                 self.arena.deinit();
                 parent.destroy(self);
             }
+            // Dead-on-arrival check: skip the handler if the enclosing Group
+            // was cancelled before this unit was dequeued.  Outside a zio
+            // runtime (e.g. SyncBackend) checkCancel() is a no-op.
+            try zio.checkCancel();
             try self.handler.execute(self.arena.allocator());
         }
 
@@ -171,6 +179,17 @@ test "WorkUnit: GPA no leaks — success / error / deinit paths" {
         const any = u.toAny();
         any.deinitFn(any.ptr);
     }
+}
+
+test "WorkUnit: checkCancel is a no-op outside zio runtime — handler still runs" {
+    // Outside a zio runtime checkCancel() returns immediately without error.
+    // This test runs in the standard test harness (no zio Runtime), so the
+    // pre-execution check must not prevent the handler from executing.
+    var ok = false;
+    const unit = try WorkUnit(BoolHandler).init(testing.allocator, .{ .executed = &ok });
+    const any = unit.toAny();
+    try any.runFn(any.ptr);
+    try testing.expect(ok);
 }
 
 test "WorkUnit: arena is freed — alloc inside execute does not leak" {

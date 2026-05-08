@@ -807,6 +807,21 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/concurrency/work_unit.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zio", .module = zio_dep.module("zio") },
+            },
+        }),
+    });
+
+    // -- M11: concurrency root — spawn convenience function --
+    const concurrency_root_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/root.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zio", .module = zio_dep.module("zio") },
+            },
         }),
     });
 
@@ -1076,6 +1091,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(wrapper_tests).step);
     test_step.dependOn(&b.addRunArtifact(mock_vtable_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_work_unit_tests).step);
+    test_step.dependOn(&b.addRunArtifact(concurrency_root_tests).step);
     test_step.dependOn(&b.addRunArtifact(concurrency_backend_tests).step);
     test_step.dependOn(&b.addRunArtifact(coral_drift_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_identifier_tests).step);
