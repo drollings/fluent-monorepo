@@ -4,7 +4,7 @@
     "source": "src/concurrency/work_unit.zig",
     "language": "zig"
   },
-  "comment": " work_unit.zig — Type-erased work unit with per-unit arena (WVR pattern).\n\n This is the Zig equivalent of a Go closure passed to a goroutine: the\n Handler struct is the captured state, and toAny() type-erases it for\n submission to any ExecutionBackend.\n\n ## Usage\n\n   const TargetHandler = struct {\n       target:    *const Target,\n       result_ch: *zio.Channel(DagResult),\n\n       pub fn execute(self: *TargetHandler, arena: std.mem.Allocator) !void {\n           try zio.checkCancel(); // honour cancellation inside ZioBackend\n           const result = try runTarget(self.target, arena);\n           try self.result_ch.send(result);\n       }\n   };\n\n   const unit = try WorkUnit(TargetHandler).init(allocator, .{\n       .target    = my_target,\n       .result_ch = &result_ch,\n   });\n   try backend.submit(unit.toAny());\n\n ## Ownership\n\n After toAny() the caller must not access the pointer.\n runFn and deinitFn both free the struct and deinit the per-unit arena\n on every exit path (success, error, cancellation).\n\n ## Cancellation\n\n Call zio.checkCancel() inside execute() when running under ZioBackend.\n checkCancel() is a no-op outside a zio runtime, so SyncBackend is safe.",
+  "comment": " work_unit.zig — Type-erased work unit with per-unit arena (WVR pattern).\n\n This is the Zig equivalent of a Go closure passed to a goroutine: the\n Handler struct is the captured state, and toAny() type-erases it for\n submission to any ExecutionBackend.\n\n ## Usage\n\n   const TargetHandler = struct {\n       target:    *const Target,\n       result_ch: *zio.Channel(DagResult),\n\n       pub fn execute(self: *TargetHandler, arena: std.mem.Allocator) !void {\n           const result = try runTarget(self.target, arena);\n           try self.result_ch.send(result);\n       }\n   };\n\n   const unit = try WorkUnit(TargetHandler).init(allocator, .{\n       .target    = my_target,\n       .result_ch = &result_ch,\n   });\n   try backend.submit(unit.toAny());\n\n ## Ownership\n\n After toAny() the caller must not access the pointer.\n runFn and deinitFn both free the struct and deinit the per-unit arena\n on every exit path (success, error, cancellation).\n\n ## Cancellation\n\n runFn calls zio.checkCancel() before execute() — a unit whose enclosing\n Group has been cancelled is silently skipped without entering the handler.\n checkCancel() is a no-op outside a zio runtime, so SyncBackend is safe.\n\n Handlers do NOT need to call zio.checkCancel() themselves unless they want\n mid-handler yield points (e.g. after a slow allocation step).",
   "used_by": ["src/concurrency/backend.zig", "src/concurrency/root.zig"],
   "members": [
     {
@@ -13,7 +13,7 @@
       "match_hash": "67403497f6caab9210ebaa3895756b5e425c64346b47b8a8598003614a2e29cf",
       "signature": "keyword_struct AnyWorkUnit { ... }",
       "is_pub": true,
-      "line": 40
+      "line": 44
     },
     {
       "type": "fn_decl",
@@ -22,7 +22,7 @@
       "signature": "fn WorkUnit(Handler: type) -> type",
       "returns": "type",
       "is_pub": true,
-      "line": 62
+      "line": 66
     },
     {
       "type": "struct",
@@ -38,40 +38,46 @@
           "signature": "fn execute(self: *BoolHandler, arena: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 115
+          "line": 123
         }
       ],
-      "line": 111
+      "line": 119
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: runFn executes handler",
       "is_pub": false,
-      "line": 122
+      "line": 130
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: runFn propagates handler error",
       "is_pub": false,
-      "line": 130
+      "line": 138
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: deinitFn cleans up without executing",
       "is_pub": false,
-      "line": 138
+      "line": 146
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: GPA no leaks — success / error / deinit paths",
       "is_pub": false,
-      "line": 146
+      "line": 154
+    },
+    {
+      "type": "test_decl",
+      "name": "WorkUnit: checkCancel is a no-op outside zio runtime — handler still runs",
+      "is_pub": false,
+      "line": 184
     },
     {
       "type": "test_decl",
       "name": "WorkUnit: arena is freed — alloc inside execute does not leak",
       "is_pub": false,
-      "line": 176
+      "line": 195
     }
   ]
 }

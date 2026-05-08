@@ -83,7 +83,6 @@ Then you you must read
 │   │   ├── plugins
 │   │   ├── query
 │   │   └── sync
-│   ├── legacy_concurrency
 │   ├── llm
 │   ├── ontology
 │   ├── rdf

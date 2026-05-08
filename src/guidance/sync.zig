@@ -201,7 +201,7 @@ pub const SyncProcessor = struct {
             source_slice[0 .. source_slice.len - 1 :0]
         else
             try self.allocator.dupeZ(u8, source_slice);
-        defer if (!std.mem.eql(u8, source, source_slice)) self.allocator.free(source);
+        defer if (source.ptr != source_slice.ptr) self.allocator.free(source);
 
         var parser = ast_parser.AstParser.init(self.allocator, source) catch {
             return error.ParseError;
