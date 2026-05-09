@@ -7,7 +7,7 @@
 //!
 //!   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at
 //!     function exit. Returns void; all output goes to stdout.
-//!   - cmdShow() / cmdTelemetry() / cmdCacheStats(): Return void; all output to stdout.
+//!   - cmdShow() / cmdTelemetry(): Return void; all output to stdout.
 //!   - LlmClient instances created within command functions are ephemeral — init/deinit
 //!     within the function scope. The Enhancer (when used) owns the LlmClient.
 //!   - ExplainArgs: Borrowed CLI string slices — no deinit needed.
@@ -2145,52 +2145,6 @@ pub fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) !voi
         }
     }
     try w.flush();
-}
-
-// =============================================================================
-// guidance cache-stats — LLM synthesis cache statistics
-// =============================================================================
-
-/// Processes cache statistics using an allocator and returns no value.
-/// Flags:
-///   --reset   Delete all LLM synthesis cache entries from the database.
-pub fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var do_reset = false;
-    for (args) |arg| {
-        if (std.mem.eql(u8, arg, "--reset")) do_reset = true;
-    }
-
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
-    defer allocator.free(cwd);
-    const cfg = config_mod.loadConfig(allocator, cwd) catch
-        try config_mod.loadConfig(allocator, cwd);
-    defer @constCast(&cfg).deinit();
-
-    const db_path = try common.resolvePath(allocator, cwd, cfg.db_path);
-    defer allocator.free(db_path);
-
-    std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), db_path, .{}) catch {
-        std.debug.print("No .guidance.db found at {s}\n", .{db_path});
-        return;
-    };
-
-    const embedder = try createEmbedderWithFallback(allocator, &cfg);
-    defer embedder.deinit();
-    var db = GuidanceDb.init(allocator, db_path, embedder) catch return;
-    defer db.deinit();
-
-    if (do_reset) {
-        const ok = db.clearCache();
-        if (ok) {
-            std.debug.print("LLM synthesis cache cleared.\n", .{});
-        } else {
-            std.debug.print("Failed to clear LLM synthesis cache.\n", .{});
-        }
-        return;
-    }
-
-    const stats = db.cacheStats();
-    std.debug.print("LLM synthesis cache: {d} entries, {d} bytes\n", .{ stats.entries, stats.bytes });
 }
 
 // =============================================================================

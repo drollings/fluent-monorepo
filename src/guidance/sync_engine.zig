@@ -30,7 +30,6 @@ const doc_parser_mod = @import("doc_parser.zig");
 const commit_mod = @import("sync/commit.zig");
 const agents_md_mod = @import("agents_md.zig");
 const gen_files_mod = @import("sync/gen_files.zig");
-const ralph_mod = @import("sync/ralph.zig");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const stepPrint = types.stepPrint;
 
@@ -2121,14 +2120,6 @@ pub fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
     };
 
     return todo_mod.cmdDiaryEntry(allocator, msg_buf.items, todo_dir, author);
-}
-
-// =============================================================================
-// check — delegates to sync/ralph.zig (M2.1 extraction)
-// =============================================================================
-
-pub fn cmdCheck(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    return ralph_mod.cmdCheck(allocator, args, gen_files_mod.cmdGenImpl, syncCapabilitiesIfStale);
 }
 
 // =============================================================================

@@ -1,9 +1,0 @@
-{
-    "name": "guidance/php-provider",
-    "description": "PHP AST to JSON guidance provider",
-    "type": "project",
-    "require": {
-        "php": ">=7.4",
-        "nikic/php-parser": "^4.15 || ^5.0"
-    }
-}

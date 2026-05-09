@@ -10,7 +10,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "3981d9b03150b2c240447279b91287c5b03fadaba80b197c283edfcbe244db32",
+      "match_hash": "b5f4f265713f33b11e9765d4bbb95ee6655c88b95f660e90938d80ad7c2f68b8",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -28,99 +28,75 @@
         },
         {
           "type": "enum_field",
-          "name": "status",
+          "name": "clean",
           "is_pub": false,
           "line": 56
         },
         {
           "type": "enum_field",
-          "name": "clean",
+          "name": "structure",
           "is_pub": false,
           "line": 57
         },
         {
           "type": "enum_field",
-          "name": "structure",
+          "name": "explain",
           "is_pub": false,
           "line": 58
         },
         {
           "type": "enum_field",
-          "name": "explain",
+          "name": "commit",
           "is_pub": false,
           "line": 59
         },
         {
           "type": "enum_field",
-          "name": "commit",
+          "name": "show",
           "is_pub": false,
           "line": 60
         },
         {
           "type": "enum_field",
-          "name": "check",
+          "name": "@\"test\"",
           "is_pub": false,
           "line": 61
         },
         {
           "type": "enum_field",
-          "name": "show",
+          "name": "todo",
           "is_pub": false,
           "line": 62
         },
         {
           "type": "enum_field",
-          "name": "@\"test\"",
+          "name": "diary",
           "is_pub": false,
           "line": 63
         },
         {
           "type": "enum_field",
-          "name": "todo",
+          "name": "telemetry",
           "is_pub": false,
           "line": 64
         },
         {
           "type": "enum_field",
-          "name": "diary",
+          "name": "serve",
           "is_pub": false,
           "line": 65
         },
         {
           "type": "enum_field",
-          "name": "telemetry",
+          "name": "ralph",
           "is_pub": false,
           "line": 66
         },
         {
           "type": "enum_field",
-          "name": "@\"cache-stats\"",
-          "is_pub": false,
-          "line": 67
-        },
-        {
-          "type": "enum_field",
-          "name": "serve",
-          "is_pub": false,
-          "line": 68
-        },
-        {
-          "type": "enum_field",
-          "name": "ralph",
-          "is_pub": false,
-          "line": 69
-        },
-        {
-          "type": "enum_field",
-          "name": "scan",
-          "is_pub": false,
-          "line": 70
-        },
-        {
-          "type": "enum_field",
           "name": "codehealth",
           "is_pub": false,
-          "line": 71
+          "line": 67
         }
       ],
       "line": 53
@@ -132,7 +108,7 @@
       "signature": "fn main(init: std.process.Init) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 75
+      "line": 71
     },
     {
       "type": "fn_private",
@@ -141,7 +117,7 @@
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 156
+      "line": 148
     },
     {
       "type": "fn_private",
@@ -150,7 +126,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 161
+      "line": 153
     },
     {
       "type": "fn_private",
@@ -159,7 +135,7 @@
       "signature": "fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 280
+      "line": 259
     }
   ]
 }

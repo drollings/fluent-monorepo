@@ -83,7 +83,12 @@ pub fn inferCapabilities(
     // Pass 4: File grouping by directory (confidence 0.5)
     try inferFromFileGrouping(allocator, map, &caps);
 
-    return deduplicateCapabilities(allocator, caps.items);
+    // deduplicateCapabilities takes ownership of all items (freeing duplicates,
+    // transferring unique ones into the returned slice).  The ArrayList backing
+    // buffer is not touched by that function, so we must free it here.
+    const result = try deduplicateCapabilities(allocator, caps.items);
+    caps.deinit(allocator);
+    return result;
 }
 
 // =============================================================================

@@ -19,6 +19,7 @@ comptime {
     _ = @import("doc_parser.zig");
     // M9: Pull in staged tests (formatStaged, capability_doc, See Also cap)
     _ = @import("staged.zig");
+    _ = @import("staged_tests.zig"); // executeStagedConfig integration tests
     // Phase 2 DRY: core/ modules
     _ = @import("core/intent.zig");
     _ = @import("core/ranking.zig");

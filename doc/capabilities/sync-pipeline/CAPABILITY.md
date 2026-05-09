@@ -57,7 +57,7 @@ guidance gen --infill           # fill missing LLM comments
 ```
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (16 files, auto-discovered)
+## Sources (15 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -73,7 +73,6 @@ guidance gen --infill           # fill missing LLM comments
 | `src/guidance/comments/sync.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/json_writer.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/commit.zig` | 0.4 | path_heuristic |
-| `src/guidance/sync/ralph.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/line_verify.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync/json_store.zig` | 0.4 | path_heuristic |
 | `src/guidance/sync_engine.zig` | 0.4 | path_heuristic |

@@ -240,12 +240,6 @@ fn handleToolCall(
             return;
         };
         try writeResult(writer, id, "gen completed");
-    } else if (std.mem.eql(u8, name, "check")) {
-        sync_engine_mod.cmdCheck(allocator, &.{}) catch |err| {
-            try writeError(writer, id, -32000, @errorName(err));
-            return;
-        };
-        try writeResult(writer, id, "check completed");
     } else if (std.mem.eql(u8, name, "status")) {
         sync_engine_mod.cmdStatus(allocator, &.{}) catch |err| {
             try writeError(writer, id, -32000, @errorName(err));

@@ -4,10 +4,11 @@
     "source": "src/guidance/query_engine.zig",
     "language": "zig"
   },
-  "comment": "[gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.\n\n Extracted from main.zig (M1.6) to keep individual file sizes navigable.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at\n     function exit. Returns void; all output goes to stdout.\n   - cmdShow() / cmdTelemetry() / cmdCacheStats(): Return void; all output to stdout.\n   - LlmClient instances created within command functions are ephemeral — init/deinit\n     within the function scope. The Enhancer (when used) owns the LlmClient.\n   - ExplainArgs: Borrowed CLI string slices — no deinit needed.\n   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.\n\n ## Hot Path Optimizations\n\n A session-scoped QueryCache (FNV-1a64 keyed) is initialised at the top of\n cmdExplainStaged and checked before the expensive search pipeline. Bypassed\n by --no-cache. See ROADMAP_20260420_QUALITY.md for rationale.",
+  "comment": "[gof-patterns]  query_engine.zig — explain, staged, show, test, check commands.\n\n Extracted from main.zig (M1.6) to keep individual file sizes navigable.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at\n     function exit. Returns void; all output goes to stdout.\n   - cmdShow() / cmdTelemetry(): Return void; all output to stdout.\n   - LlmClient instances created within command functions are ephemeral — init/deinit\n     within the function scope. The Enhancer (when used) owns the LlmClient.\n   - ExplainArgs: Borrowed CLI string slices — no deinit needed.\n   - QueryContext: Owns workspace, guidance_dir, db_path strings; call deinit() to release.\n\n ## Hot Path Optimizations\n\n A session-scoped QueryCache (FNV-1a64 keyed) is initialised at the top of\n cmdExplainStaged and checked before the expensive search pipeline. Bypassed\n by --no-cache. See ROADMAP_20260420_QUALITY.md for rationale.",
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
+  "capabilities": ["explain-query", "plugin-system", "coral-database", "config-system", "coral-mcp", "sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/main.zig", "src/guidance/mcp.zig"],
   "members": [
     {
@@ -294,21 +295,12 @@
     },
     {
       "type": "fn_decl",
-      "name": "cmdCacheStats",
-      "match_hash": "ed10effb6c1d052561e9e7010a01445d2f2fc29259b3dc765ccf4c6885efeaaf",
-      "signature": "fn cmdCacheStats(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 2157
-    },
-    {
-      "type": "fn_decl",
       "name": "cmdServe",
       "match_hash": "506ddbbf20ea0a46249545a8b06334038b527e9ad773db378841455fce64da53",
       "signature": "fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2201
+      "line": 2155
     },
     {
       "type": "fn_decl",
@@ -317,55 +309,55 @@
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2211
+      "line": 2165
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2283
+      "line": 2237
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2288
+      "line": 2242
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2293
+      "line": 2247
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2298
+      "line": 2252
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2303
+      "line": 2257
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2308
+      "line": 2262
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2318
+      "line": 2272
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2324
+      "line": 2278
     }
   ]
 }

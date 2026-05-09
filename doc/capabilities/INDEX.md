@@ -4,7 +4,8 @@
 
 A single keyword like `cmdExplain` triggers a deterministic search without LLM synthesis. Queries with spaces use the LLM for synthesis.
 
-**Example:**  
+**Example:**
+
 ```
 guidance explain "cmdExplain"
 ```

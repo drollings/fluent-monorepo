@@ -3,6 +3,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const common = @import("common");
+const vector_db_mod = @import("vector");
 const staged_mod = @import("staged.zig");
 
 test "formatStaged: empty stages output contains header" {
@@ -183,4 +184,63 @@ test "benchmark: zero-alloc token match — 100 tokens × 100 results" {
     // 100 iterations × 10 tokens × 10 names = 10,000 comparisons, zero allocations.
     // Target: < 10ms on any reasonable hardware.
     try std.testing.expect(elapsed_ms < 10);
+}
+
+// ---------------------------------------------------------------------------
+// executeStagedConfig integration tests (in-memory DB)
+//
+// These guard against regressions in the full stage-collection pipeline,
+// including the memory-ownership invariants that previously caused a segfault
+// when freeing stages returned from an empty or sparse database.
+// ---------------------------------------------------------------------------
+
+test "executeStagedConfig: multi-word query against empty db returns not_found stage" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var noop: vector_db_mod.NoopEmbedding = .{};
+    var db = try vector_db_mod.GuidanceDb.init(allocator, ":memory:", noop.provider());
+    defer db.deinit();
+
+    const stages = try staged_mod.executeStagedConfig(allocator, &db, .{
+        .query = "nonexistent query text",
+        .workspace = "/tmp",
+    });
+    defer {
+        types.freeStages(allocator, stages);
+        allocator.free(stages);
+    }
+
+    // Multi-word query with no DB results → anyResultIsRelevant returns false
+    // → buildNotFoundStages path → at least one not_found stage.
+    try std.testing.expect(stages.len > 0);
+    try std.testing.expectEqual(types.StageKind.not_found, stages[0].kind);
+}
+
+test "executeStagedConfig: single-word query against empty db completes without crash" {
+    // Regression test for the segfault that occurred in `guidance explain "cmdExplain"`
+    // after a clean build.  Single-word queries bypass the anyResultIsRelevant guard
+    // and proceed through all collect*Stages helpers with zero results; all returned
+    // slices must be freed correctly with no double-free or use-after-free.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var noop: vector_db_mod.NoopEmbedding = .{};
+    var db = try vector_db_mod.GuidanceDb.init(allocator, ":memory:", noop.provider());
+    defer db.deinit();
+
+    const stages = try staged_mod.executeStagedConfig(allocator, &db, .{
+        .query = "cmdExplain",
+        .workspace = "/tmp",
+    });
+    defer {
+        types.freeStages(allocator, stages);
+        allocator.free(stages);
+    }
+
+    // No crash and no leak is the primary invariant.
+    // An empty DB produces zero stages for a single-word query.
+    try std.testing.expect(stages.len == 0);
 }

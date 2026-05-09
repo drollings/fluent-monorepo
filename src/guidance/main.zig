@@ -53,21 +53,17 @@ pub const std_options: std.Options = .{
 const Command = enum {
     init,
     gen,
-    status,
     clean,
     structure,
     explain,
     commit,
-    check,
     show,
     @"test",
     todo,
     diary,
     telemetry,
-    @"cache-stats",
     serve,
     ralph,
-    scan,
     codehealth,
 };
 
@@ -129,21 +125,17 @@ pub fn main(init: std.process.Init) !void {
     const run_result = switch (subcmd) {
         .init => sync_engine_mod.cmdInit(allocator, args[2..]),
         .gen => sync_engine_mod.cmdGen(allocator, args[2..]),
-        .status => sync_engine_mod.cmdStatus(allocator, args[2..]),
         .clean => sync_engine_mod.cmdClean(allocator, args[2..]),
         .structure => cmdStructure(allocator, args[2..]),
         .explain => query_engine_mod.cmdExplain(allocator, args[2..]),
         .commit => sync_engine_mod.cmdCommit(allocator, args[2..]),
-        .check => sync_engine_mod.cmdCheck(allocator, args[2..]),
         .show => query_engine_mod.cmdShow(allocator, args[2..]),
         .@"test" => query_engine_mod.cmdTest(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
-        .@"cache-stats" => query_engine_mod.cmdCacheStats(allocator, args[2..]),
         .serve => query_engine_mod.cmdServe(allocator, args[2..]),
         .ralph => cmdRalph(allocator, args[2..]),
-        .scan => @import("scanner.zig").cmdScan(allocator, args[2..]),
         .codehealth => codehealth_mod.cmdCodehealth(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
@@ -175,11 +167,9 @@ fn printHelp() !void {
         \\Commands:
         \\  init       Create default configuration (AGENTS.md integration)
         \\  gen        Generate .guidance/ JSON mirror and .guidance.db
-        \\  status     Show generation status (synced, stale, missing)
         \\  clean      Remove .guidance/src and .guidance.db
         \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
-        \\  check           Run full RALPH loop (test → lint → fmt → guidance → structure)
         \\  commit          Generate AI commit message from staged diff + guidance
         \\  show            Show vector embeddings from .guidance.db (Markdown)
         \\  test            Benchmark explain queries against module-level comments
@@ -231,16 +221,6 @@ fn printHelp() !void {
         \\Deps options:
         \\  --src DIR             Source directory to scan (default: src)
         \\
-        \\Check options:
-        \\  --dry-run             Show what would change without writing (skips tests, structure)
-        \\  --skip-tests          Skip test suite phase
-        \\  --skip-lint           Skip lint phase
-        \\  --skip-fmt            Skip format phase
-        \\  --no-structure        Skip STRUCTURE.md generation
-        \\  --force               Re-process all files, ignoring freshness markers
-        \\  --verbose             Show LLM metadata (api calls, responses)
-        \\  --timeout N           Sleep N seconds after each file (default: 2, set to 0 to disable)
-        \\
         \\Examples:
         \\  guidance init
         \\  guidance gen
@@ -253,7 +233,6 @@ fn printHelp() !void {
         \\  guidance clean
         \\  guidance structure
         \\  guidance commit
-        \\  guidance check
         \\  guidance codehealth
         \\  guidance codehealth --min-age=90 --format=json
         \\  guidance codehealth --simhash-threshold=2
