@@ -181,6 +181,38 @@ pub fn auditTestFiles(
         }
     }
 
+    // ── Collect paths covered by one level of @import from each build.zig root ─
+    // A *_tests.zig file compiled via a shim (e.g. subdirectory_tests.zig that does
+    // `_ = @import("comments/core_tests.zig")`) is covered even though it is not
+    // directly listed as a root_source_file in build.zig.
+    var covered_paths = std.StringHashMap(void).init(aa);
+    defer covered_paths.deinit();
+
+    {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        var it = build_paths.keyIterator();
+        while (it.next()) |key| {
+            const root_rel = key.*;
+            if (!std.mem.endsWith(u8, root_rel, ".zig")) continue;
+            const root_abs = try std.fmt.allocPrint(aa, "{s}/{s}", .{ workspace, root_rel });
+            const root_src = std.Io.Dir.cwd().readFileAlloc(io, root_abs, aa, .limited(1 * 1024 * 1024)) catch continue;
+            const root_dir = std.fs.path.dirname(root_rel) orelse ".";
+            const import_needle = "@import(\"";
+            var pos: usize = 0;
+            while (pos < root_src.len) {
+                const found = std.mem.indexOfPos(u8, root_src, pos, import_needle) orelse break;
+                const start = found + import_needle.len;
+                const end = std.mem.indexOfScalarPos(u8, root_src, start, '"') orelse break;
+                const import_path = root_src[start..end];
+                pos = end + 1;
+                if (!std.mem.endsWith(u8, import_path, ".zig")) continue;
+                if (std.mem.startsWith(u8, import_path, "/")) continue; // skip absolute paths
+                const resolved = try std.fs.path.join(aa, &.{ root_dir, import_path });
+                try covered_paths.put(resolved, {});
+            }
+        }
+    }
+
     // ── Walk workspace for *_tests.zig files ─────────────────────────────────
     var anomalies: std.ArrayList(TestAnomaly) = .empty;
     errdefer {
@@ -230,8 +262,8 @@ pub fn auditTestFiles(
                 if (out_name) |n| allocator.free(n);
             }
 
-            // Check 2: is the file covered by a build.zig target?
-            if (!build_paths.contains(rel_path)) {
+            // Check 2: is the file covered by a build.zig target (directly or via shim import)?
+            if (!build_paths.contains(rel_path) and !covered_paths.contains(rel_path)) {
                 try anomalies.append(allocator, .{
                     .kind = .uncovered_test_file,
                     .source = try allocator.dupe(u8, rel_path),
