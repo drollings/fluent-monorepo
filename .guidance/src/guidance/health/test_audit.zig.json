@@ -80,7 +80,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 253
+      "line": 285
     },
     {
       "type": "fn_decl",
@@ -93,7 +93,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 281
+      "line": 313
     },
     {
       "type": "fn_decl",
@@ -106,7 +106,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 293
+      "line": 325
     }
   ]
 }

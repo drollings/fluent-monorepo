@@ -1,6 +1,12 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    // Use the local zig-crt/ directory (crt_dir in libc.conf) to avoid the
+    // R_X86_64_PC64 relocation in gcc-15's crt1.o .sframe section, which
+    // Zig 0.14–0.16's linker cannot handle.  Setting b.libc_file propagates
+    // --libc <path> to every compile step automatically.
+    b.libc_file = b.pathFromRoot("libc.conf");
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -28,6 +34,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    const clap_dep = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap_module = clap_dep.module("clap");
 
     // -------------------------------------------------------------------------
     // Core named modules
@@ -310,6 +322,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
+                .{ .name = "clap", .module = clap_module },
             },
         }),
     });
@@ -359,6 +372,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "csr_graph", .module = coral_csr_module },
+                .{ .name = "clap", .module = clap_module },
             },
         }),
     });
@@ -388,6 +402,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
+                .{ .name = "clap", .module = clap_module },
             },
         }),
     });
@@ -412,6 +427,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "common", .module = common_module },
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
+                .{ .name = "clap", .module = clap_module },
             },
         }),
     });
@@ -643,6 +659,8 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "llm", .module = llm_module },
+                .{ .name = "clap", .module = clap_module },
+                .{ .name = "csr_graph", .module = coral_csr_module },
             },
         }),
     });
@@ -1262,6 +1280,8 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wasm", .module = wasm_module },
                 .{ .name = "coral_schema", .module = coral_schema_module },
                 .{ .name = "llm", .module = llm_module },
+                .{ .name = "clap", .module = clap_module },
+                .{ .name = "csr_graph", .module = coral_csr_module },
             },
         }),
     });
@@ -1308,6 +1328,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+
+    const work_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/concurrency/work_unit_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zio", .module = zio_dep.module("zio") },
+            },
+        }),
+    });
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
@@ -1460,6 +1491,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_treesitter_loader_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_plugin_registry_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_subdirectory_tests).step);
+    test_step.dependOn(&b.addRunArtifact(work_unit_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

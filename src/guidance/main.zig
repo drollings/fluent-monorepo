@@ -5,10 +5,8 @@
 //!   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool
 //!
 //! Usage:
-//!   guidance gen      [options]   Generate JSON + compile .guidance.db
-//!   guidance status   [options]   Report generation status
-//!   guidance clean    [options]   Remove .guidance/ and .guidance.db
-//!   guidance structure [options]  Update STRUCTURE.md from guidance JSON
+//!   guidance <command> [options]
+//!   guidance --help | --version
 //!
 //! ## Memory Ownership
 //!
@@ -18,6 +16,7 @@
 //!   - stdout writes use buffered std.Io.Writer with explicit flush before return.
 
 const std = @import("std");
+const clap = @import("clap");
 const types = @import("types.zig");
 const structure_mod = @import("structure.zig");
 const config_mod = @import("config.zig");
@@ -65,74 +64,102 @@ const Command = enum {
     health,
 };
 
+const main_params = clap.parseParamsComptime(
+    \\-h, --help     Display this help and exit.
+    \\-v, --version  Show version and exit.
+    \\<str>
+    \\
+);
+
 /// Starts the Zig program execution by defining the entry point.
 pub fn main(init: std.process.Init) !void {
     // Inject the runtime-provided Io into the common io layer so that
-    // std.process.run / spawn work correctly (global_single_threaded.allocator
-    // is a failing allocator that cannot back process spawning).
+    // std.process.run / spawn work correctly.
     common.io.setGlobalIo(init.io);
 
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
-    // Collect args into owned slice (replaces the removed std.process.argsAlloc)
-    var args_list: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (args_list.items) |a| allocator.free(a);
-        args_list.deinit(allocator);
-    }
-    {
-        var iter = try init.minimal.args.iterateAllocator(allocator);
-        defer iter.deinit();
-        while (iter.next()) |arg| try args_list.append(allocator, try allocator.dupe(u8, arg));
-    }
-    const args = args_list.items;
+    var iter = try init.minimal.args.iterateAllocator(allocator);
+    defer iter.deinit();
+    _ = iter.next(); // skip exe name
 
-    for (args) |arg| {
-        if (std.mem.eql(u8, arg, "--verbose")) {
-            verbose_mode = true;
-        } else if (std.mem.eql(u8, arg, "--debug")) {
-            debug_mode = true;
-        }
-    }
+    var diag = clap.Diagnostic{};
+    var res = clap.parseEx(clap.Help, &main_params, clap.parsers.default, &iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+        .terminating_positional = 0,
+    }) catch |err| {
+        diag.reportToFile(init.io, .stderr(), err) catch {};
+        std.process.exit(1);
+    };
+    defer res.deinit();
 
-    if (args.len < 2) {
+    if (res.args.help != 0) {
         try printHelp();
         return;
     }
+    if (res.args.version != 0) {
+        var ws: common.WriterState = .{};
+        ws.initStdout();
+        const stdout = ws.writer();
+        try stdout.print("guidance v{s}\n", .{version});
+        try stdout.flush();
+        return;
+    }
 
-    if (std.mem.eql(u8, args[1], "-h") or std.mem.eql(u8, args[1], "--help")) {
+    const subcmd_str = res.positionals[0] orelse {
         try printHelp();
         return;
-    }
-    if (std.mem.eql(u8, args[1], "-v") or std.mem.eql(u8, args[1], "--version")) {
-        std.debug.print("guidance v{s}\n", .{version});
-        return;
-    }
-
-    const subcmd = std.meta.stringToEnum(Command, args[1]) orelse {
-        std.debug.print("Unknown subcommand: {s}\n\n", .{args[1]});
+    };
+    const command = std.meta.stringToEnum(Command, subcmd_str) orelse {
+        var ws: common.WriterState = .{};
+        ws.initStdout();
+        const stderr = ws.writer();
+        try stderr.print("Unknown subcommand: {s}\n\n", .{subcmd_str});
+        try stderr.flush();
         try printHelp();
         return;
     };
 
+    // Collect remaining args from the iterator, scanning for global flags.
+    var remaining: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (remaining.items) |a| allocator.free(a);
+        remaining.deinit(allocator);
+    }
+    while (iter.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--debug")) debug_mode = true;
+        if (std.mem.eql(u8, arg, "--verbose")) verbose_mode = true;
+        try remaining.append(allocator, try allocator.dupe(u8, arg));
+    }
+
+    // Check for --help in subcommand args before dispatching.
+    for (remaining.items) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try printSubcommandHelp(command);
+            return;
+        }
+    }
+
+    const subcmd_args = remaining.items;
+
     // Pipeline-failure errors (LintFailed, TestFailed) are expected failures
-    // that have already printed their diagnostics.  Propagating them through
-    // !void main produces a confusing stack trace; exit(1) is cleaner.
-    const run_result = switch (subcmd) {
-        .init => sync_engine_mod.cmdInit(allocator, args[2..]),
-        .gen => sync_engine_mod.cmdGen(allocator, args[2..]),
-        .clean => sync_engine_mod.cmdClean(allocator, args[2..]),
-        .explain => query_engine_mod.cmdExplain(allocator, args[2..]),
-        .commit => sync_engine_mod.cmdCommit(allocator, args[2..]),
-        .@"test" => query_engine_mod.cmdTest(allocator, args[2..]),
-        .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
-        .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
-        .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
-        .serve => query_engine_mod.cmdServe(allocator, args[2..]),
-        .ralph => cmdRalph(allocator, args[2..]),
-        .health => health_mod.cmdHealth(allocator, args[2..]),
+    // that have already printed their diagnostics. Exit(1) is cleaner than a stack trace.
+    const run_result = switch (command) {
+        .init => sync_engine_mod.cmdInit(allocator, subcmd_args),
+        .gen => sync_engine_mod.cmdGen(allocator, subcmd_args),
+        .clean => sync_engine_mod.cmdClean(allocator, subcmd_args),
+        .explain => query_engine_mod.cmdExplain(allocator, subcmd_args),
+        .commit => sync_engine_mod.cmdCommit(allocator, subcmd_args),
+        .@"test" => query_engine_mod.cmdTest(allocator, subcmd_args),
+        .todo => sync_engine_mod.cmdTodo(allocator, subcmd_args),
+        .diary => sync_engine_mod.cmdDiary(allocator, subcmd_args),
+        .telemetry => query_engine_mod.cmdTelemetry(allocator, subcmd_args),
+        .serve => query_engine_mod.cmdServe(allocator, subcmd_args),
+        .ralph => query_engine_mod.cmdRalph(allocator, subcmd_args),
+        .health => health_mod.cmdHealth(allocator, subcmd_args),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
@@ -140,21 +167,15 @@ pub fn main(init: std.process.Init) !void {
     };
 }
 
-/// Processes a Zig command string, validating arguments and preparing execution.
-fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    return query_engine_mod.cmdRalph(allocator, args);
-}
-
-/// Displays usage instructions for the Zig library's help system.
+/// Top-level help: overview of commands and examples only — no per-subcommand flags.
 fn printHelp() !void {
     var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
-
     try stdout.writeAll(
         \\guidance v0.1.0 — AST-guided SQLite vector search database generator
         \\
-        \\Produces .guidiance/src/**/*.json and .guidance.db for NullClaw.
+        \\Produces .guidance/src/**/*.json and .guidance.db for NullClaw.
         \\
         \\Usage:
         \\  guidance <command> [options]
@@ -164,84 +185,238 @@ fn printHelp() !void {
         \\  init       Create default configuration (AGENTS.md integration)
         \\  gen        Generate .guidance/ JSON mirror and .guidance.db
         \\  clean      Remove .guidance/src and .guidance.db
-        \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
+        \\  explain    Search codebase with optional LLM-synthesized summary
         \\  commit     Generate AI commit message from staged diff + guidance
-        \\  show       Show vector embeddings from .guidance.db (Markdown)
         \\  test       Benchmark explain queries against module-level comments
         \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary      Append a timestamped entry to the current work item DIARY.md
+        \\  ralph      Run the RALPH loop (build → test → lint → guidance → structure)
         \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
-        \\Init options:
-        \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
-        \\  -o, --db PATH            Database path (default: .guidance.db)
-        \\
-        \\Gen options:
-        \\  --file FILE           Process a single source file (incremental)
-        \\  --scan DIR            Process all source files under DIR
-        \\  -w, --workspace DIR   Source root directory (default: current directory)
-        \\  --guidance-dir DIR    Guidance directory (default: .guidance)
-        \\  -o, --db PATH         SQLite database path (default: .guidance.db)
-        \\  --no-db               Skip database compilation step
-        \\  --regen               LLM-regenerate all comments
-        \\  --timeout N           Sleep N seconds after each file (default: 20, set to 0 to disable)
-        \\  --dry-run             Show what would change without writing
-        \\  --verbose             Show LLM metadata (api calls, responses)
-        \\  --show-prompts        Show LLM prompts in output (separate from --verbose)
-        \\  --api-url URL         LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
-        \\  -m, --model NAME      Model name (default: code:latest)
-        \\
-        \\Explain options:
-        \\  <query>              Search query (required)
-        \\  -l, --limit N         Max results (default: 10)
-        \\  --json                Output JSON (query only)
-        \\  -o, --db PATH         Database path (default: .guidance.db)
-        \\  -w, --workspace DIR   Workspace root (default: current directory)
-        \\  --guidance-dir DIR    Guidance directory (default: .guidance)
-        \\  --no-llm              Skip LLM synthesis (explain only)
-        \\  --staged=false        Use legacy output format (rollback safety)
-        \\  --filter=auto|force|skip  LLM relevance filter mode (default: auto)
-        \\                          auto  = LLM filter only for long queries (5+ words)
-        \\                          force = always apply LLM filter
-        \\                          skip  = never apply LLM filter (fast path)
-        \\  --api-url URL         LLM endpoint
-        \\  -m, --model NAME      Model for synthesis
-        \\
-        \\Structure options:
-        \\  --guidance-dir DIR    Guidance JSON directory (default: .guidance)
-        \\  --no-llm               Skip AI infill pre-pass
-        \\  --api-url URL         LLM endpoint
-        \\  -m, --model NAME      Model for AI infill
-        \\
-        \\Deps options:
-        \\  --src DIR             Source directory to scan (default: src)
-        \\
         \\Examples:
-        \\  guidance init
         \\  guidance gen
         \\  guidance gen --file src/main.zig
-        \\  guidance gen --scan src
-        \\  guidance gen -o /tmp/project.guidance.db
-        \\  guidance query "hash function"
-        \\  guidance explain "how does the sync processor work" --limit 5
-        \\  guidance show --filter=keywords
-        \\  guidance clean
-        \\  guidance commit
+        \\  guidance explain "how does the sync processor work"
+        \\  guidance explain "filterStages" --no-llm
         \\  guidance health
-        \\  guidance health --min-age=90 --format=json
-        \\  guidance health --simhash-threshold=2
-        \\  guidance health --extract-calls
+        \\  guidance commit
         \\
-        \\Codehealth options:
-        \\  --min-age=N            Minimum days since modification (default: 30)
-        \\  --format=ai            AI-optimized markdown (default)
-        \\  --format=human         Human-readable summary
-        \\  --format=json          JSON for scripting
-        \\  --simhash-threshold=N  Max Hamming distance for redundancy (default: 3)
-        \\  --extract-calls        Enable Phase 2b call graph extraction (expensive)
-        \\  --db PATH              Database path (default: .guidance.db)
+        \\Run 'guidance <command> --help' for command-specific options.
         \\
     );
+    try stdout.flush();
+}
+
+/// Per-subcommand help printed when 'guidance <cmd> --help' is invoked.
+fn printSubcommandHelp(command: Command) !void {
+    var ws: common.WriterState = .{};
+    ws.initStdout();
+    const stdout = ws.writer();
+    switch (command) {
+        .init => try stdout.writeAll(
+            \\Usage: guidance init [options]
+            \\
+            \\Create default .guidance/guidance-config.json and update AGENTS.md.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\
+        ),
+        .gen => try stdout.writeAll(
+            \\Usage: guidance gen [options]
+            \\
+            \\Generate .guidance/src/**/*.json metadata mirrors and sync .guidance.db.
+            \\Only processes files stale since last run (use --force to regenerate all).
+            \\
+            \\Options:
+            \\  -h, --help              Show this help
+            \\  --file FILE             Process a single source file (incremental)
+            \\  --scan DIR              Process all source files under DIR
+            \\  -w, --workspace DIR     Source root directory (default: current directory)
+            \\  --guidance-dir DIR      Guidance directory (default: .guidance)
+            \\  -o, --db PATH           SQLite database path (default: .guidance.db)
+            \\  --no-db                 Skip database compilation step
+            \\  --all-languages         Process Zig and Python source files
+            \\  --regen                 LLM-regenerate all comments (implies --force)
+            \\  --force                 Bypass staleness checks, reprocess all files
+            \\  --timeout N             Sleep N seconds after each LLM call (default: 20)
+            \\  --dry-run               Show what would change without writing
+            \\  --debug                 Show LLM metadata (api calls, responses)
+            \\  --verbose               Alias for --debug
+            \\  --show-prompts          Show full LLM prompt text in output
+            \\  --api-url URL           LLM API endpoint
+            \\  -m, --model NAME        Model name (default: code:latest)
+            \\
+            \\Examples:
+            \\  guidance gen
+            \\  guidance gen --file src/guidance/main.zig
+            \\  guidance gen --scan src --no-db
+            \\  guidance gen --force --all-languages
+            \\
+        ),
+        .clean => try stdout.writeAll(
+            \\Usage: guidance clean [options]
+            \\
+            \\Remove .guidance/src/ JSON mirrors and .guidance.db.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\
+        ),
+        .explain => try stdout.writeAll(
+            \\Usage: guidance explain <query> [options]
+            \\
+            \\Search the codebase with keyword + vector hybrid search, optionally
+            \\synthesizing a summary via local LLM.
+            \\
+            \\Options:
+            \\  -h, --help                     Show this help
+            \\  -l, --limit N                  Max results (default: 10)
+            \\  -o, --db PATH                  Database path (default: .guidance.db)
+            \\  -w, --workspace DIR            Workspace root (default: current directory)
+            \\  --guidance-dir DIR             Guidance directory (default: .guidance)
+            \\  --no-llm                       Skip LLM synthesis (fast, raw results)
+            \\  --no-cache                     Bypass session query cache
+            \\  --staged=false                 Use legacy output format
+            \\  --filter=auto|force|skip       LLM relevance filter mode (default: auto)
+            \\  --output=json|compact|debug    Output format (default: markdown)
+            \\  --api-url URL                  LLM endpoint
+            \\  -m, --model NAME               Model for synthesis
+            \\
+            \\Examples:
+            \\  guidance explain "how does the sync processor work"
+            \\  guidance explain "filterStages" --no-llm
+            \\  guidance explain "cmdGen" --limit 5
+            \\  guidance explain "query pipeline" --output=json
+            \\
+        ),
+        .commit => try stdout.writeAll(
+            \\Usage: guidance commit [options]
+            \\
+            \\Generate an AI commit message from staged diff + guidance context.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\  --api-url URL            LLM endpoint
+            \\  -m, --model NAME         Model for synthesis
+            \\
+        ),
+        .@"test" => try stdout.writeAll(
+            \\Usage: guidance test [options]
+            \\
+            \\Benchmark explain queries against module-level comments.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\
+        ),
+        .todo => try stdout.writeAll(
+            \\Usage: guidance todo <action> [args]
+            \\
+            \\Work item lifecycle management stored in .guidance/todo/.
+            \\
+            \\Actions:
+            \\  new <description>   Create a new work item
+            \\  triage              AI-triage the current work item
+            \\  checklist           Generate AI checklist for current item
+            \\  status              Show current work item status
+            \\  list                List all work items
+            \\  abandon             Abandon the current work item
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\  --api-url URL            LLM endpoint
+            \\  -m, --model NAME         Model for AI actions
+            \\
+            \\Examples:
+            \\  guidance todo new "implement zig-clap integration"
+            \\  guidance todo status
+            \\  guidance todo list
+            \\
+        ),
+        .diary => try stdout.writeAll(
+            \\Usage: guidance diary <entry>
+            \\
+            \\Append a timestamped entry to the current work item DIARY.md.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\
+            \\Example:
+            \\  guidance diary "fixed the mtime comparison bug"
+            \\
+        ),
+        .telemetry => try stdout.writeAll(
+            \\Usage: guidance telemetry [options]
+            \\
+            \\Show query telemetry from .guidance.db.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\  --reset                  Clear cached LLM synthesis entries
+            \\
+        ),
+        .serve => try stdout.writeAll(
+            \\Usage: guidance serve [options]
+            \\
+            \\Start the guidance HTTP/MCP server.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --port N                 Port to listen on (default: 8080)
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\
+        ),
+        .ralph => try stdout.writeAll(
+            \\Usage: guidance ralph [options]
+            \\
+            \\Run the RALPH loop: build → test → lint → fmt → guidance gen → structure → db.
+            \\Skips phases whose marker files are current.
+            \\
+            \\Options:
+            \\  -h, --help               Show this help
+            \\  --force                  Re-run all phases regardless of markers
+            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
+            \\  -o, --db PATH            Database path (default: .guidance.db)
+            \\
+        ),
+        .health => try stdout.writeAll(
+            \\Usage: guidance health [options]
+            \\
+            \\Detect unused modules, redundant code, and dead code candidates.
+            \\Runs multiple analysis phases; use --phases to select specific ones.
+            \\
+            \\Options:
+            \\  -h, --help                    Show this help
+            \\  -w, --workspace DIR           Source root (default: current directory)
+            \\  --min-age=N                   Min days since last modification (default: 30)
+            \\  --format=ai|human|json        Output format (default: ai)
+            \\  --simhash-threshold=N         Max Hamming distance for redundancy (default: 3)
+            \\  --extract-calls               Enable Phase 2b call graph extraction (slow)
+            \\  --phases=N[,N...]             Phases to run: 0,1,1.5,2 (default: all)
+            \\  --fix                         Auto-move detached test files to proper locations
+            \\  --db PATH                     Database path (default: .guidance.db)
+            \\
+            \\Examples:
+            \\  guidance health
+            \\  guidance health --min-age=90 --format=json
+            \\  guidance health --simhash-threshold=2
+            \\  guidance health --extract-calls
+            \\  guidance health --phases=0,1 --format=human
+            \\
+        ),
+    }
     try stdout.flush();
 }
 

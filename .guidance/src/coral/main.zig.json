@@ -4,25 +4,31 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
+  "used_by": ["src/coral/main_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "main",
       "match_hash": "34188f5faac00b0c774daf23b1604d69cc527cc94dc5ce9c13e94a3e6a7321cc",
       "signature": "fn main(init: std.process.Init.Minimal) -> void",
+      "params": [
+        { "name": "init", "type": "std.process.Init.Minimal" }
+      ],
       "returns": "void",
       "is_pub": true,
-      "line": 27
+      "line": 49
     },
     {
       "type": "fn_private",
       "name": "printHelp",
       "match_hash": "7d8bab1e5fad33bd27b72b476652eb393c442c974629deac5917eb9fff389c2b",
       "signature": "fn printHelp(writer) -> void",
+      "params": [
+        { "name": "writer" }
+      ],
       "returns": "void",
       "is_pub": false,
-      "line": 489
+      "line": 653
     }
   ]
 }

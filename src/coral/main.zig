@@ -1,4 +1,5 @@
 const std = @import("std");
+const clap = @import("clap");
 const common = @import("common");
 const dag = @import("dag");
 const coral_db = @import("coral_db");
@@ -23,6 +24,27 @@ const Louvain = @import("algorithms/louvain.zig").Louvain;
 
 pub const version = "0.1.0";
 
+// Top-level flags shared across all modes.
+// The first positional terminates flag parsing so that subcommand-specific
+// options (e.g. --damping for compute-pagerank) are left in the iterator
+// and handled by each subcommand block.
+const main_params = clap.parseParamsComptime(
+    \\-h, --help             Display this help and exit.
+    \\-v, --version          Show version and exit.
+    \\-f, --file <str>       Load targets from JSON file.
+    \\-n, --dry-run          Show what would be done without executing.
+    \\    --force            Force rebuild all targets.
+    \\    --verbose          Enable verbose output.
+    \\-l, --list             List available targets.
+    \\    --graph            Show dependency graph.
+    \\    --repl             Enter interactive REPL mode.
+    \\    --llm-query <str>  Query the LLM for AI assistance.
+    \\    --api-url <str>    LLM API endpoint (default: http://localhost:11434/v1/chat/completions).
+    \\-m, --model <str>      LLM model name (default: fast:latest).
+    \\<str>
+    \\
+);
+
 /// Starts the Zig program execution by defining the entry point.
 pub fn main(init: std.process.Init.Minimal) !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
@@ -30,59 +52,76 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const allocator = gpa.allocator();
     const io = std.Io.Threaded.global_single_threaded.io();
 
-    // Collect args into owned slice (replaces the removed std.process.argsAlloc)
-    var raw_args_list: std.ArrayList([]const u8) = .empty;
-    defer {
-        for (raw_args_list.items) |a| allocator.free(a);
-        raw_args_list.deinit(allocator);
-    }
-    {
-        var iter = try init.args.iterateAllocator(allocator);
-        defer iter.deinit();
-        while (iter.next()) |arg| try raw_args_list.append(allocator, try allocator.dupe(u8, arg));
-    }
-    const raw_args = raw_args_list.items;
+    var iter = try init.args.iterateAllocator(allocator);
+    defer iter.deinit();
+    _ = iter.next(); // skip exe name
 
-    var positional: std.ArrayListUnmanaged([]const u8) = .empty;
-    defer positional.deinit(allocator);
-
-    const args = common.parseCommonArgs(raw_args[1..], &positional, allocator) catch |err| {
-        switch (err) {
-            error.MissingValue => {
-                std.log.err("Flag requires a value argument", .{});
-                std.process.exit(1);
-            },
-            else => return err,
-        }
+    var diag = clap.Diagnostic{};
+    var res = clap.parseEx(clap.Help, &main_params, clap.parsers.default, &iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+        .terminating_positional = 0,
+    }) catch |err| {
+        diag.reportToFile(io, .stderr(), err) catch {};
+        std.process.exit(1);
     };
+    defer res.deinit();
 
     var ws: common.WriterState = .{};
     ws.initStdout();
     const stdout = ws.writer();
 
-    if (args.show_help) {
+    if (res.args.help != 0) {
         try printHelp(stdout);
         try stdout.flush();
         return;
     }
 
-    if (args.show_version) {
+    if (res.args.version != 0) {
         try stdout.print("coral {s}\n", .{version});
         try stdout.flush();
         return;
     }
 
-    // MCP subcommand: `coral mcp` or `coral --mcp`
-    const want_mcp = blk: {
-        if (positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "mcp")) break :blk true;
-        break :blk false;
-    };
-    if (want_mcp) {
-        const use_memory = args.dry_run; // --dry-run doubles as --memory for MCP
+    // Collect remaining args from the iterator (subcommand options or extra targets).
+    var remaining: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (remaining.items) |a| allocator.free(a);
+        remaining.deinit(allocator);
+    }
+    while (iter.next()) |arg| {
+        try remaining.append(allocator, try allocator.dupe(u8, arg));
+    }
+
+    const first_positional: ?[]const u8 = res.positionals[0];
+
+    // Dispatch to subcommands based on first positional argument.
+    // Unknown first-positional falls through to the primary build mode.
+
+    // --- mcp subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "mcp")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral mcp
+                \\
+                \\Start the MCP server using STDIO transport.
+                \\Reads ~/.coral/context.db (created if absent).
+                \\
+                \\Options:
+                \\  -h, --help     Show this help
+                \\  --dry-run      Use an in-memory database instead of disk
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
+        const use_memory = res.args.@"dry-run" != 0;
         const lib = if (use_memory)
             try Library.init(allocator, .mem, "")
         else blk: {
-            // Default db path: ~/.coral/context.db
             const home = init.environ.getPosix("HOME") orelse ".";
             const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
             defer allocator.free(db_dir);
@@ -112,18 +151,49 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    // Ingest subcommand: `coral ingest --source <ttl-file>`
-    const want_ingest = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "ingest");
-    if (want_ingest) {
-        // Resolve source file from --file flag or second positional arg.
+    // --- ingest subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "ingest")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral ingest --file <path>
+                \\       coral ingest <path>
+                \\
+                \\Ingest a Turtle/N-Triples file into ~/.coral/context.db.
+                \\
+                \\Options:
+                \\  -h, --help          Show this help
+                \\  -f, --file <path>   Path to the Turtle/N-Triples source file
+                \\
+                \\Example:
+                \\  coral ingest --file yago.ttl
+                \\  coral ingest data/knowledge.ttl
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
+        // Resolve source file from --file flag or first remaining positional.
         const source_path: []const u8 = blk: {
-            if (args.config_file) |f| break :blk f;
-            if (positional.items.len > 1) break :blk positional.items[1];
+            if (res.args.file) |f| break :blk f;
+            if (remaining.items.len > 0 and !std.mem.startsWith(u8, remaining.items[0], "-"))
+                break :blk remaining.items[0];
+            // Also parse --file from remaining args
+            var i: usize = 0;
+            while (i < remaining.items.len) : (i += 1) {
+                if ((std.mem.eql(u8, remaining.items[i], "--file") or
+                    std.mem.eql(u8, remaining.items[i], "-f")) and
+                    i + 1 < remaining.items.len)
+                {
+                    break :blk remaining.items[i + 1];
+                }
+            }
             std.log.err("coral ingest: specify source with --file <path> or as second argument", .{});
             std.process.exit(1);
         };
 
-        // Default db: ~/.coral/context.db
         const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
@@ -150,17 +220,51 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    // yago-ingest subcommand: `coral yago-ingest <ttl-dir-or-file>`
-    const want_yago_ingest = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "yago-ingest");
-    if (want_yago_ingest) {
+    // --- yago-ingest subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "yago-ingest")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral yago-ingest --file <path>
+                \\       coral yago-ingest <path>
+                \\
+                \\Ingest a YAGO 4.5 Turtle directory or file into ~/.coral/yago.db.
+                \\Applies type whitelist filtering for a sparse, useful graph.
+                \\
+                \\Options:
+                \\  -h, --help          Show this help
+                \\  -f, --file <path>   Path to YAGO Turtle file or directory
+                \\  --dry-run           Scan without writing to database
+                \\  --verbose           Log progress every 10K triples
+                \\
+                \\Example:
+                \\  coral yago-ingest --file /data/yago4.5/
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
         const source_path: []const u8 = blk: {
-            if (args.config_file) |f| break :blk f;
-            if (positional.items.len > 1) break :blk positional.items[1];
+            if (res.args.file) |f| break :blk f;
+            if (remaining.items.len > 0 and !std.mem.startsWith(u8, remaining.items[0], "-"))
+                break :blk remaining.items[0];
+            var i: usize = 0;
+            while (i < remaining.items.len) : (i += 1) {
+                if ((std.mem.eql(u8, remaining.items[i], "--file") or
+                    std.mem.eql(u8, remaining.items[i], "-f")) and
+                    i + 1 < remaining.items.len)
+                {
+                    break :blk remaining.items[i + 1];
+                }
+            }
             std.log.err("coral yago-ingest: specify source with --file <path> or as second argument", .{});
             std.process.exit(1);
         };
 
-        const dry_run = args.dry_run;
+        const dry_run = res.args.@"dry-run" != 0;
+        const verbose = res.args.verbose != 0;
 
         const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
@@ -175,9 +279,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
         defer lib.deinit();
         try lib.initSchema();
 
-        // Progress callback for verbose mode - logs every batch (10K triples)
         const ProgressCb = yago_ingest_mod.ProgressCallback;
-        const progressCallback: ?ProgressCb = if (args.verbose) struct {
+        const progressCallback: ?ProgressCb = if (verbose) struct {
             fn callback(triples: usize, nodes: usize, edges: usize) void {
                 std.log.info("YAGO progress: {d} triples, {d} nodes, {d} edges", .{ triples, nodes, edges });
             }
@@ -223,9 +326,24 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    // compute-degree subcommand: `coral compute-degree`
-    const want_compute_degree = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-degree");
-    if (want_compute_degree) {
+    // --- compute-degree subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "compute-degree")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral compute-degree
+                \\
+                \\Compute degree centrality for all nodes and persist to database.
+                \\
+                \\Options:
+                \\  -h, --help   Show this help
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
         const home = init.environ.getPosix("HOME") orelse ".";
         const db_dir = try std.fmt.allocPrint(allocator, "{s}/.coral", .{home});
         defer allocator.free(db_dir);
@@ -247,30 +365,47 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    // compute-pagerank subcommand: `coral compute-pagerank [--damping D] [--tolerance T] [--max-iter N]`
-    const want_compute_pagerank = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-pagerank");
-    if (want_compute_pagerank) {
-        // Parse optional flags
+    // --- compute-pagerank subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "compute-pagerank")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral compute-pagerank [options]
+                \\
+                \\Compute PageRank scores for all nodes and persist to database.
+                \\
+                \\Options:
+                \\  -h, --help           Show this help
+                \\  --damping <f32>      Damping factor (default: 0.85)
+                \\  --tolerance <f32>    Convergence tolerance (default: 0.0001)
+                \\  --max-iter <u32>     Maximum iterations (default: 20)
+                \\
+                \\Example:
+                \\  coral compute-pagerank --damping 0.85 --max-iter 50
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
         var damping: f32 = 0.85;
         var tolerance: f32 = 0.0001;
         var max_iter: u32 = 20;
-        var i: usize = 1;
-        while (i < positional.items.len) : (i += 1) {
-            if (std.mem.eql(u8, positional.items[i], "--damping")) {
+        var i: usize = 0;
+        while (i < remaining.items.len) : (i += 1) {
+            if (std.mem.eql(u8, remaining.items[i], "--damping")) {
                 i += 1;
-                if (i < positional.items.len) {
-                    damping = std.fmt.parseFloat(f32, positional.items[i]) catch 0.85;
-                }
-            } else if (std.mem.eql(u8, positional.items[i], "--tolerance")) {
+                if (i < remaining.items.len)
+                    damping = std.fmt.parseFloat(f32, remaining.items[i]) catch 0.85;
+            } else if (std.mem.eql(u8, remaining.items[i], "--tolerance")) {
                 i += 1;
-                if (i < positional.items.len) {
-                    tolerance = std.fmt.parseFloat(f32, positional.items[i]) catch 0.0001;
-                }
-            } else if (std.mem.eql(u8, positional.items[i], "--max-iter")) {
+                if (i < remaining.items.len)
+                    tolerance = std.fmt.parseFloat(f32, remaining.items[i]) catch 0.0001;
+            } else if (std.mem.eql(u8, remaining.items[i], "--max-iter")) {
                 i += 1;
-                if (i < positional.items.len) {
-                    max_iter = std.fmt.parseInt(u32, positional.items[i], 10) catch 20;
-                }
+                if (i < remaining.items.len)
+                    max_iter = std.fmt.parseInt(u32, remaining.items[i], 10) catch 20;
             }
         }
 
@@ -286,7 +421,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
 
-        // Build CSR graph
         const graph = try CSRGraph.build(arena.allocator(), lib, null, false);
         if (graph.node_count == 0) {
             try stdout.print("No nodes in database. Run ingest first.\n", .{});
@@ -294,7 +428,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
             return;
         }
 
-        // Run PageRank
         const pr = PageRank.init(.{
             .damping = damping,
             .tolerance = tolerance,
@@ -304,12 +437,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
         const scores = try pr.run(arena.allocator(), &graph);
         const elapsed_ms = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .real).nanoseconds - start)) / 1_000_000.0;
 
-        // Persist scores
         const all_ids = try lib.allNodeIds(arena.allocator());
         for (all_ids, 0..) |node_id, idx| {
-            if (idx < scores.len) {
+            if (idx < scores.len)
                 try lib.updateNodePageRank(node_id, scores[idx]);
-            }
         }
 
         try stdout.print("PageRank computed for {d} nodes in {d:.2}ms\n", .{ graph.node_count, elapsed_ms });
@@ -317,23 +448,41 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    // compute-communities subcommand: `coral compute-communities [--resolution R] [--max-iter N]`
-    const want_compute_communities = positional.items.len > 0 and std.mem.eql(u8, positional.items[0], "compute-communities");
-    if (want_compute_communities) {
+    // --- compute-communities subcommand ---
+    if (first_positional != null and std.mem.eql(u8, first_positional.?, "compute-communities")) {
+        if (remaining.items.len > 0 and
+            (std.mem.eql(u8, remaining.items[0], "--help") or
+                std.mem.eql(u8, remaining.items[0], "-h")))
+        {
+            try stdout.writeAll(
+                \\Usage: coral compute-communities [options]
+                \\
+                \\Detect communities via Louvain and persist community IDs to database.
+                \\
+                \\Options:
+                \\  -h, --help           Show this help
+                \\  --resolution <f32>   Resolution parameter (default: 1.0)
+                \\  --max-iter <u32>     Maximum iterations (default: 10)
+                \\
+                \\Example:
+                \\  coral compute-communities --resolution 0.5
+                \\
+            );
+            try stdout.flush();
+            return;
+        }
         var resolution: f32 = 1.0;
         var max_iter: u32 = 10;
-        var i: usize = 1;
-        while (i < positional.items.len) : (i += 1) {
-            if (std.mem.eql(u8, positional.items[i], "--resolution")) {
+        var i: usize = 0;
+        while (i < remaining.items.len) : (i += 1) {
+            if (std.mem.eql(u8, remaining.items[i], "--resolution")) {
                 i += 1;
-                if (i < positional.items.len) {
-                    resolution = std.fmt.parseFloat(f32, positional.items[i]) catch 1.0;
-                }
-            } else if (std.mem.eql(u8, positional.items[i], "--max-iter")) {
+                if (i < remaining.items.len)
+                    resolution = std.fmt.parseFloat(f32, remaining.items[i]) catch 1.0;
+            } else if (std.mem.eql(u8, remaining.items[i], "--max-iter")) {
                 i += 1;
-                if (i < positional.items.len) {
-                    max_iter = std.fmt.parseInt(u32, positional.items[i], 10) catch 10;
-                }
+                if (i < remaining.items.len)
+                    max_iter = std.fmt.parseInt(u32, remaining.items[i], 10) catch 10;
             }
         }
 
@@ -349,7 +498,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
 
-        // Build CSR graph
         const graph = try CSRGraph.build(arena.allocator(), lib, null, true);
         if (graph.node_count == 0) {
             try stdout.print("No nodes in database. Run ingest first.\n", .{});
@@ -357,7 +505,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
             return;
         }
 
-        // Run Louvain
         const louvain = Louvain.init(.{
             .resolution = resolution,
             .max_iterations = max_iter,
@@ -366,12 +513,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
         const communities = try louvain.run(arena.allocator(), &graph);
         const elapsed_ms = @as(f64, @floatFromInt(std.Io.Timestamp.now(io, .real).nanoseconds - start)) / 1_000_000.0;
 
-        // Persist communities
         const all_ids = try lib.allNodeIds(arena.allocator());
         for (all_ids, 0..) |node_id, idx| {
-            if (idx < communities.len) {
+            if (idx < communities.len)
                 try lib.updateNodeCommunity(node_id, @intCast(communities[idx]), 0);
-            }
         }
 
         try stdout.print("Communities detected for {d} nodes in {d:.2}ms\n", .{ graph.node_count, elapsed_ms });
@@ -379,17 +524,21 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
-    if (args.llm_query) |query| {
+    // --- LLM query mode ---
+    if (res.args.@"llm-query") |query| {
+        const api_url = res.args.@"api-url" orelse "http://localhost:11434/v1/chat/completions";
+        const model_name = res.args.model orelse "fast:latest";
+        const verbose = res.args.verbose != 0;
         const config = llm.LlmConfig{
-            .api_url = args.api_url,
-            .model = args.model,
-            .debug = args.verbose,
+            .api_url = api_url,
+            .model = model_name,
+            .debug = verbose,
         };
         var client = try llm.LlmClient.init(allocator, config);
         defer client.deinit();
 
-        if (args.verbose) {
-            std.log.info("Querying LLM at {s} with model {s}", .{ args.api_url, args.model });
+        if (verbose) {
+            std.log.info("Querying LLM at {s} with model {s}", .{ api_url, model_name });
         }
 
         const system_prompt = "You are a helpful assistant for the Coral build system. Provide concise, practical advice.";
@@ -406,32 +555,41 @@ pub fn main(init: std.process.Init.Minimal) !void {
         return;
     }
 
+    // --- Primary build / REPL mode ---
     var interner = StringInterner.init(allocator);
     defer interner.deinit();
 
     var registry = TargetRegistry.init(allocator, &interner);
     defer registry.deinit();
 
-    if (args.config_file) |path| {
+    const config_file = res.args.file;
+    const verbose = res.args.verbose != 0;
+    const enter_repl = res.args.repl != 0;
+    const dry_run = res.args.@"dry-run" != 0;
+    const force = res.args.force != 0;
+    const show_list = res.args.list != 0;
+    const show_graph = res.args.graph != 0;
+
+    if (config_file) |path| {
         json_parser.parseFile(allocator, path, &registry, &interner) catch |err| {
             std.log.err("Failed to load config file '{s}': {}", .{ path, err });
             return err;
         };
-    } else if (!args.enter_repl) {
+    } else if (!enter_repl) {
         const default_paths = [_][]const u8{ "coral.json", "build.json", "targets.json" };
         var found = false;
 
         for (default_paths) |path| {
             std.Io.Dir.cwd().access(io, path, .{}) catch continue;
             json_parser.parseFile(allocator, path, &registry, &interner) catch continue;
-            if (args.verbose) {
+            if (verbose) {
                 std.log.info("Loaded config from '{s}'", .{path});
             }
             found = true;
             break;
         }
 
-        if (!found and args.show_list) {
+        if (!found and show_list) {
             std.log.info("No config file found. Creating example coral.json...", .{});
             json_parser.writeExample("coral.json") catch |err| {
                 std.log.err("Failed to create example config: {}", .{err});
@@ -440,37 +598,43 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
 
     var ctx = BuildContext.init(allocator, &registry, &interner);
-    ctx.dry_run = args.dry_run;
-    ctx.force = args.force;
-    ctx.verbose = args.verbose;
+    ctx.dry_run = dry_run;
+    ctx.force = force;
+    ctx.verbose = verbose;
 
-    if (args.enter_repl) {
+    if (enter_repl) {
         var repl = Repl.init(allocator, &ctx);
         defer repl.deinit();
         try repl.run();
         return;
     }
 
-    if (args.show_list) {
+    if (show_list) {
         try ctx.listTargets(stdout);
         try stdout.flush();
         return;
     }
 
-    if (args.show_graph) {
-        try ctx.showGraph(args.positional, stdout);
+    // Collect targets: first_positional (if not a subcommand) + remaining args.
+    var targets: std.ArrayList([]const u8) = .empty;
+    defer targets.deinit(allocator);
+    if (first_positional) |fp| try targets.append(allocator, fp);
+    for (remaining.items) |arg| try targets.append(allocator, arg);
+
+    if (show_graph) {
+        try ctx.showGraph(targets.items, stdout);
         try stdout.flush();
         return;
     }
 
-    var result = ctx.build(args.positional) catch |err| {
+    var result = ctx.build(targets.items) catch |err| {
         std.log.err("Build failed: {}", .{err});
         std.process.exit(1);
     };
     defer result.deinit(allocator);
 
     if (result.success) {
-        if (args.verbose or result.targets_built > 0) {
+        if (verbose or result.targets_built > 0) {
             std.log.info("Build completed: {d} targets in {d}ms", .{
                 result.targets_built,
                 result.duration_ns / 1_000_000,
@@ -485,49 +649,47 @@ pub fn main(init: std.process.Init.Minimal) !void {
     }
 }
 
-/// Prints help information using the provided writer object.
+/// Top-level help: subcommands and options overview, no per-subcommand flags.
 fn printHelp(writer: anytype) !void {
     try writer.writeAll(
-        \\coral - Yet Another Make, Zig edition
+        \\coral v0.1.0 — Yet Another Make, Zig edition
         \\
         \\Usage: coral [options] [targets...]
+        \\       coral <subcommand> [subcommand-options]
         \\
         \\Subcommands:
-        \\  coral mcp              Start MCP server (STDIO transport)
-        \\  coral ingest           Ingest a Turtle/N-Triples file into ~/.coral/context.db
-        \\  coral compute-degree   Compute degree centrality and persist to database
-        \\  coral compute-pagerank [--damping D] [--tolerance T] [--max-iter N]
-        \\                         Compute PageRank scores and persist to database
-        \\  coral compute-communities [--resolution R] [--max-iter N]
-        \\                         Detect communities via Louvain and persist to database
+        \\  mcp                  Start MCP server (STDIO transport)
+        \\  ingest               Ingest a Turtle/N-Triples file into ~/.coral/context.db
+        \\  yago-ingest          Ingest a YAGO 4.5 Turtle file into ~/.coral/yago.db
+        \\  compute-degree       Compute degree centrality and persist to database
+        \\  compute-pagerank     Compute PageRank scores and persist to database
+        \\  compute-communities  Detect communities via Louvain and persist to database
         \\
         \\Options:
-        \\  -h, --help          Show this help message
-        \\  -v, --version       Show version
-        \\  -f, --file <path>   Load targets from JSON file
-        \\  -n, --dry-run       Show what would be done without executing
-        \\  --force             Force rebuild all targets
-        \\  --verbose           Enable verbose output
-        \\  -l, --list          List available targets
-        \\  --graph             Show dependency graph
-        \\  --repl              Enter interactive REPL mode
+        \\  -h, --help            Show this help
+        \\  -v, --version         Show version
+        \\  -f, --file <path>     Load targets from JSON file
+        \\  -n, --dry-run         Show what would be done without executing
+        \\      --force           Force rebuild all targets
+        \\      --verbose         Enable verbose output
+        \\  -l, --list            List available targets
+        \\      --graph           Show dependency graph
+        \\      --repl            Enter interactive REPL mode
         \\
         \\LLM Options:
-        \\  --llm-query <text>  Query LLM for AI assistance
-        \\  --api-url <url>     LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
-        \\  -m, --model <name>  LLM model name (default: fast:latest)
+        \\  --llm-query <text>   Query LLM for AI assistance
+        \\  --api-url <url>      LLM API endpoint (default: http://localhost:11434/v1/chat/completions)
+        \\  -m, --model <name>   LLM model name (default: fast:latest)
         \\
         \\Examples:
         \\  coral                           Build default target from coral.json
         \\  coral build clean               Build 'build' then 'clean' targets
-        \\  coral -f custom.json mytarget   Use custom config file
         \\  coral --dry-run all             Show build plan without executing
-        \\  coral --repl                    Enter interactive mode
-        \\  coral --llm-query "how do I add a new target?"
         \\  coral mcp                       Start MCP server on STDIO
-        \\  coral ingest --file yago.ttl    Ingest YAGO 4.5 Turtle file (sparse, type-whitelisted)
+        \\  coral ingest --file yago.ttl    Ingest YAGO 4.5 Turtle file
         \\  coral compute-pagerank          Compute PageRank for all nodes
-        \\  coral compute-communities      Detect communities via Louvain
+        \\
+        \\Run 'coral <subcommand> --help' for subcommand-specific options.
         \\
     );
 }

@@ -4,7 +4,7 @@
     "source": "src/guidance/main.zig",
     "language": "zig"
   },
-  "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n\n ## Memory Ownership\n\n   - main() creates a DebugAllocator and passes the allocator to all subcommands.\n     All subcommand allocations are scoped to the command lifetime.\n   - No module-level state; all data flows through function parameters.\n   - stdout writes use buffered std.Io.Writer with explicit flush before return.",
+  "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance <command> [options]\n   guidance --help | --version\n\n ## Memory Ownership\n\n   - main() creates a DebugAllocator and passes the allocator to all subcommands.\n     All subcommand allocations are scoped to the command lifetime.\n   - No module-level state; all data flows through function parameters.\n   - stdout writes use buffered std.Io.Writer with explicit flush before return.",
   "used_by": ["src/coral/main_tests.zig"],
   "members": [
     {
@@ -18,76 +18,76 @@
           "type": "enum_field",
           "name": "init",
           "is_pub": false,
-          "line": 54
+          "line": 53
         },
         {
           "type": "enum_field",
           "name": "gen",
           "is_pub": false,
-          "line": 55
+          "line": 54
         },
         {
           "type": "enum_field",
           "name": "clean",
           "is_pub": false,
-          "line": 56
+          "line": 55
         },
         {
           "type": "enum_field",
           "name": "explain",
           "is_pub": false,
-          "line": 57
+          "line": 56
         },
         {
           "type": "enum_field",
           "name": "commit",
           "is_pub": false,
-          "line": 58
+          "line": 57
         },
         {
           "type": "enum_field",
           "name": "@\"test\"",
           "is_pub": false,
-          "line": 59
+          "line": 58
         },
         {
           "type": "enum_field",
           "name": "todo",
           "is_pub": false,
-          "line": 60
+          "line": 59
         },
         {
           "type": "enum_field",
           "name": "diary",
           "is_pub": false,
-          "line": 61
+          "line": 60
         },
         {
           "type": "enum_field",
           "name": "telemetry",
           "is_pub": false,
-          "line": 62
+          "line": 61
         },
         {
           "type": "enum_field",
           "name": "serve",
           "is_pub": false,
-          "line": 63
+          "line": 62
         },
         {
           "type": "enum_field",
           "name": "ralph",
           "is_pub": false,
-          "line": 64
+          "line": 63
         },
         {
           "type": "enum_field",
           "name": "health",
           "is_pub": false,
-          "line": 65
+          "line": 64
         }
       ],
-      "line": 53
+      "line": 52
     },
     {
       "type": "fn_decl",
@@ -99,20 +99,7 @@
       ],
       "returns": "void",
       "is_pub": true,
-      "line": 69
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdRalph",
-      "match_hash": "7495cf0a6ad6b22b3838b5ad4211c48ab06c3aa0183602baf6c1a51740097cf6",
-      "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
-      "returns": "void",
-      "is_pub": false,
-      "line": 144
+      "line": 75
     },
     {
       "type": "fn_private",
@@ -121,7 +108,19 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 149
+      "line": 171
+    },
+    {
+      "type": "fn_private",
+      "name": "printSubcommandHelp",
+      "match_hash": "ef79b2aca99eaf581f6a06be9dd34d6dffa35988fe7e57e589d9333c5db3d81c",
+      "signature": "fn printSubcommandHelp(command: Command) -> void",
+      "params": [
+        { "name": "command", "type": "Command" }
+      ],
+      "returns": "void",
+      "is_pub": false,
+      "line": 211
     }
   ]
 }

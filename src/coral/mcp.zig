@@ -207,9 +207,9 @@ pub const McpServer = struct {
             const len = content_length orelse continue;
 
             // P3: Reject requests larger than 10 MB (see common/constants.zig MAX_MCP_REQUEST_SIZE).
-            if (len > common.MAX_MCP_REQUEST_SIZE) {
+            if (len > common.constants.MAX_MCP_REQUEST_SIZE) {
                 // Drain remaining headers/body to keep the connection clean, then signal error.
-                std.log.warn("MCP request body too large: {d} bytes (max {d})", .{ len, common.MAX_MCP_REQUEST_SIZE });
+                std.log.warn("MCP request body too large: {d} bytes (max {d})", .{ len, common.constants.MAX_MCP_REQUEST_SIZE });
                 try writer.print("Content-Length: 0\r\n\r\n", .{});
                 try writer.flush();
                 _ = serve_arena.reset(.retain_capacity);
