@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.\n\n ## Memory Ownership\n\n   - GuidanceDoc: Owns members slice and module-level comment; call deinit() to release.\n   - Stage: Content and source strings are allocator-owned; free with freeStage() or\n     freeStages() (frees the entire []Stage slice and each stage's content/source).\n   - Member, Skill, Param, Meta: Contain borrowed string slices from their parent\n     GuidanceDoc or source JSON — do not free individually; valid until parent deinit.\n   - FileType, MemberType, StageKind, QueryResult, FileMatch, GuidanceInfo: Value types\n     (no heap allocation).\n   - jsonifyMember / jsonifyGuidanceDoc: Return owned ArrayList(u8); caller owns.",
-  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/comments/core.zig", "src/guidance/comments/core_tests.zig", "src/guidance/comments/header.zig", "src/guidance/comments/header_tests.zig", "src/guidance/comments/inserter.zig", "src/guidance/comments/sync.zig", "src/guidance/comments/sync_tests.zig", "src/guidance/core/excerpt.zig", "src/guidance/core/format.zig", "src/guidance/core/metadata.zig", "src/guidance/document_indexer.zig", "src/guidance/document_indexer_tests.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/plugins/markdown_plugin.zig", "src/guidance/plugins/markdown_plugin_tests.zig", "src/guidance/plugins/treesitter_extractor.zig", "src/guidance/plugins/treesitter_plugin.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query/llm_filter.zig", "src/guidance/query/llm_filter_batch.zig", "src/guidance/query/strategy.zig", "src/guidance/query/synthesize.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/schema_validator.zig", "src/guidance/skeleton.zig", "src/guidance/stage_builder.zig", "src/guidance/stage_builder_tests.zig", "src/guidance/staged.zig", "src/guidance/staged_tests.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig", "src/guidance/sync/json_store.zig", "src/guidance/sync/json_writer.zig", "src/guidance/sync/line_verify.zig", "src/guidance/sync/line_verify_tests.zig", "src/guidance/sync_engine.zig", "src/guidance/types_tests.zig"],
+  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/comments/core.zig", "src/guidance/comments/core_tests.zig", "src/guidance/comments/header.zig", "src/guidance/comments/header_tests.zig", "src/guidance/comments/inserter.zig", "src/guidance/comments/sync.zig", "src/guidance/comments/sync_tests.zig", "src/guidance/core/excerpt.zig", "src/guidance/core/format.zig", "src/guidance/core/metadata.zig", "src/guidance/document_indexer.zig", "src/guidance/document_indexer_tests.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/plugins/markdown_plugin.zig", "src/guidance/plugins/markdown_plugin_tests.zig", "src/guidance/plugins/treesitter_extractor.zig", "src/guidance/plugins/treesitter_plugin.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query/llm_filter.zig", "src/guidance/query/llm_filter_batch.zig", "src/guidance/query/strategy.zig", "src/guidance/query/synthesize.zig", "src/guidance/query_engine.zig", "src/guidance/schema_validator.zig", "src/guidance/skeleton.zig", "src/guidance/stage_builder.zig", "src/guidance/stage_builder_tests.zig", "src/guidance/staged.zig", "src/guidance/staged_tests.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig", "src/guidance/sync/json_store.zig", "src/guidance/sync/json_writer.zig", "src/guidance/sync/line_verify.zig", "src/guidance/sync/line_verify_tests.zig", "src/guidance/sync_engine.zig", "src/guidance/types_tests.zig"],
   "members": [
     {
       "type": "enum",
@@ -173,11 +173,19 @@
     },
     {
       "type": "struct",
+      "name": "CapabilityEval",
+      "match_hash": "d12ce0f40320374ce220330c566d4a1944c0e964fe15012c1d604186de047a08",
+      "signature": "keyword_struct CapabilityEval { ... }",
+      "is_pub": true,
+      "line": 130
+    },
+    {
+      "type": "struct",
       "name": "GuidanceDoc",
-      "match_hash": "e0488260244e5fd5850b36f7f1aba5df2a3c9b29928b436927a400e4f1bc763a",
+      "match_hash": "ce78da282ad4faefc70d5d01fadd071c192802e017a573f6ab2eb4e65045bc6a",
       "signature": "keyword_struct GuidanceDoc { ... }",
       "is_pub": true,
-      "line": 128
+      "line": 139
     },
     {
       "type": "struct",
@@ -185,7 +193,7 @@
       "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
       "signature": "keyword_struct FileMatch { ... }",
       "is_pub": true,
-      "line": 153
+      "line": 167
     },
     {
       "type": "struct",
@@ -193,7 +201,7 @@
       "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
       "signature": "keyword_struct GuidanceInfo { ... }",
       "is_pub": true,
-      "line": 160
+      "line": 174
     },
     {
       "type": "struct",
@@ -201,7 +209,7 @@
       "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
       "signature": "keyword_struct ASTAnalysis { ... }",
       "is_pub": true,
-      "line": 170
+      "line": 184
     },
     {
       "type": "struct",
@@ -209,7 +217,7 @@
       "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
       "signature": "keyword_struct QueryResult { ... }",
       "is_pub": true,
-      "line": 181
+      "line": 195
     },
     {
       "type": "enum",
@@ -222,46 +230,46 @@
           "type": "enum_field",
           "name": "prose",
           "is_pub": false,
-          "line": 200
+          "line": 214
         },
         {
           "type": "enum_field",
           "name": "code",
           "is_pub": false,
-          "line": 202
+          "line": 216
         },
         {
           "type": "enum_field",
           "name": "metadata",
           "is_pub": false,
-          "line": 204
+          "line": 218
         },
         {
           "type": "enum_field",
           "name": "insight",
           "is_pub": false,
-          "line": 206
+          "line": 220
         },
         {
           "type": "enum_field",
           "name": "skill_doc",
           "is_pub": false,
-          "line": 208
+          "line": 222
         },
         {
           "type": "enum_field",
           "name": "capability_doc",
           "is_pub": false,
-          "line": 210
+          "line": 224
         },
         {
           "type": "enum_field",
           "name": "not_found",
           "is_pub": false,
-          "line": 213
+          "line": 227
         }
       ],
-      "line": 198
+      "line": 212
     },
     {
       "type": "struct",
@@ -269,7 +277,7 @@
       "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
       "signature": "keyword_struct Stage { ... }",
       "is_pub": true,
-      "line": 217
+      "line": 231
     },
     {
       "type": "fn_decl",
@@ -278,7 +286,7 @@
       "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 228
+      "line": 242
     },
     {
       "type": "fn_decl",
@@ -287,7 +295,7 @@
       "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 234
+      "line": 248
     },
     {
       "type": "struct",
@@ -295,7 +303,7 @@
       "match_hash": "060cce40007a9a221e1f855b72c28790a64d8a0874e4d2b5978e8893aab8bc7b",
       "signature": "keyword_struct SyncResult { ... }",
       "is_pub": true,
-      "line": 239
+      "line": 253
     },
     {
       "type": "fn_decl",
@@ -304,7 +312,7 @@
       "signature": "fn stepPrint(fmt: []const u8, args) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 252
+      "line": 266
     }
   ]
 }

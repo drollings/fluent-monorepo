@@ -1041,6 +1041,14 @@ pub fn build(b: *std.Build) void {
     const guidance_sync_marker_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/marker_tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "common", .module = common_module } } }) });
     const guidance_sync_dep_graph_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/dep_graph_tests.zig"), .target = target, .optimize = optimize }) });
     const guidance_sync_fast_snapshot_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/fast_snapshot_tests.zig"), .target = target, .optimize = optimize }) });
+    const guidance_capability_eval_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/sync/capability_eval_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{ .{ .name = "llm", .module = llm_module } },
+        }),
+    });
 
     // -- src/llm: no named module imports --
     const llm_token_budget_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/llm/token_budget_tests.zig"), .target = target, .optimize = optimize }) });
@@ -1196,19 +1204,6 @@ pub fn build(b: *std.Build) void {
     // (health.zig imports ../config.zig which is outside standalone module path).
     // NOTE: guidance_query_strategy_tests compiled via guidance_tests_module
     // (strategy.zig imports ../types.zig which is outside standalone module path).
-
-    const guidance_ralph_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/guidance/ralph_tests.zig"),
-            .target = target, .optimize = optimize,
-            .imports = &.{
-                .{ .name = "common", .module = common_module },
-                .{ .name = "vector", .module = vector_module },
-            },
-        }),
-    });
-    guidance_ralph_tests.root_module.link_libc = true;
-    guidance_ralph_tests.root_module.linkSystemLibrary("sqlite3", .{});
 
     const guidance_staged_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -1471,6 +1466,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_sync_marker_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_sync_dep_graph_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_sync_fast_snapshot_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_capability_eval_tests).step);
     test_step.dependOn(&b.addRunArtifact(llm_token_budget_tests).step);
     test_step.dependOn(&b.addRunArtifact(rdf_lexer_tests).step);
     test_step.dependOn(&b.addRunArtifact(reflection_schema_version_tests).step);
@@ -1490,7 +1486,6 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_enhancer_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_todo_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_health_extractor_tests).step);
-    test_step.dependOn(&b.addRunArtifact(guidance_ralph_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_staged_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_treesitter_loader_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_plugin_registry_tests).step);

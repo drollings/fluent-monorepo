@@ -60,7 +60,6 @@ const Command = enum {
     diary,
     telemetry,
     serve,
-    ralph,
     health,
 };
 
@@ -158,7 +157,6 @@ pub fn main(init: std.process.Init) !void {
         .diary => sync_engine_mod.cmdDiary(allocator, subcmd_args),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, subcmd_args),
         .serve => query_engine_mod.cmdServe(allocator, subcmd_args),
-        .ralph => query_engine_mod.cmdRalph(allocator, subcmd_args),
         .health => health_mod.cmdHealth(allocator, subcmd_args),
     };
     run_result catch |err| switch (err) {
@@ -190,7 +188,6 @@ fn printHelp() !void {
         \\  test       Benchmark explain queries against module-level comments
         \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon)
         \\  diary      Append a timestamped entry to the current work item DIARY.md
-        \\  ralph      Run the RALPH loop (build → test → lint → guidance → structure)
         \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
         \\Examples:
@@ -375,19 +372,6 @@ fn printSubcommandHelp(command: Command) !void {
             \\Options:
             \\  -h, --help               Show this help
             \\  --port N                 Port to listen on (default: 8080)
-            \\  -o, --db PATH            Database path (default: .guidance.db)
-            \\
-        ),
-        .ralph => try stdout.writeAll(
-            \\Usage: guidance ralph [options]
-            \\
-            \\Run the RALPH loop: build → test → lint → fmt → guidance gen → structure → db.
-            \\Skips phases whose marker files are current.
-            \\
-            \\Options:
-            \\  -h, --help               Show this help
-            \\  --force                  Re-run all phases regardless of markers
-            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
             \\  -o, --db PATH            Database path (default: .guidance.db)
             \\
         ),

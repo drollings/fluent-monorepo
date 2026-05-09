@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " query_strategy.zig — Query routing by intent.\n\n Strategy priority (lower = tried first):\n   0  identifier lookup  — single-token camelCase/PascalCase/snake_case\n   2  capability query    — query matches a known capability/alias\n   4  concept query       — fallback: hybrid search + LLM synthesis\n\n Anti-pattern fixed: all three execute() implementations were identical.\n Replaced with QueryMatch (matches-only function pointer) + single executeQuery.",
-  "used_by": ["src/guidance/query/strategy_tests.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig"],
+  "used_by": ["src/guidance/query/strategy_tests.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "enum",

@@ -32,13 +32,22 @@ const fast_snapshot_mod = @import("fast_snapshot.zig");
 const llm = @import("llm");
 const query_engine_mod = @import("../query_engine.zig");
 const schema_validator_mod = @import("../schema_validator.zig");
+const cap_eval_mod = @import("capability_eval.zig");
 const GuidanceDb = vector_db_mod.GuidanceDb;
 const stepPrint = types.stepPrint;
 
 /// Callback type for synchronizing capabilities during gen.
 /// Avoids circular dependency: sync_engine.zig owns the actual implementation,
 /// gen_files.zig calls it via this function pointer when provided.
-pub const CapabilitiesSyncFn = *const fn (std.mem.Allocator, []const u8, []const u8, []const u8, bool) anyerror!void;
+/// The `newly_created` slice contains paths to CAPABILITY.md files created during this run.
+pub const CapabilitiesSyncFn = *const fn (
+    std.mem.Allocator,
+    []const u8, // json_dir
+    []const u8, // db_path
+    []const u8, // caps_dir
+    bool, // verbose
+    []const []const u8, // newly_created
+) anyerror!void;
 
 // =============================================================================
 // GenArgs — parsed CLI flags for the gen subcommand
@@ -735,6 +744,49 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         processor.loadCapabilitiesFromDb(paths.db_path);
     }
 
+    // ── Capability evaluator (thinking LLM) ──────────────────────────────────
+    // Only instantiated when LLM is enabled and a thinking model is configured.
+    // Returns null when capability-index.json is absent (first run).
+    var cap_evaluator_opt: ?cap_eval_mod.CapabilityEvaluator = null;
+    defer if (cap_evaluator_opt) |*ev| ev.deinit();
+
+    if (!ga.no_llm and !ga.dry_run) {
+        const thinking_model = cfg.thinkingModel();
+        if (thinking_model.len > 0) {
+            const index_path = std.fs.path.join(allocator, &.{ paths.json_dir, "capability-index.json" }) catch null;
+            if (index_path) |ip| {
+                defer allocator.free(ip);
+                const thinking_cfg = query_engine_mod.resolveLlmConfigForThinking(
+                    allocator,
+                    &cfg,
+                    thinking_model,
+                    if (ga.api_url_set) ga.api_url else null,
+                ) catch null;
+                if (thinking_cfg) |tc| {
+                    defer if (tc.resolved_url) |url| allocator.free(url);
+                    const llm_config: llm.LlmConfig = .{
+                        .api_url = tc.api_url,
+                        .model = tc.model,
+                        .think = true,
+                        .debug = ga.debug,
+                        .show_prompts = ga.show_prompts,
+                    };
+                    cap_evaluator_opt = cap_eval_mod.CapabilityEvaluator.init(allocator, llm_config, ip) catch null orelse null;
+                }
+            }
+        }
+    }
+    const cap_evaluator_ptr: ?*cap_eval_mod.CapabilityEvaluator =
+        if (cap_evaluator_opt != null) &cap_evaluator_opt.? else null;
+
+    // Accumulates paths of CAPABILITY.md files created during this run.
+    // Passed to syncCapabilitiesIfStale() to force re-run when non-empty.
+    var created_list: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (created_list.items) |p| allocator.free(p);
+        created_list.deinit(allocator);
+    }
+
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {
         const src_abs = try common.resolvePath(allocator, paths.workspace, file_arg);
@@ -758,6 +810,8 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
                     &processor,
                     src_abs,
                     ga,
+                    cap_evaluator_ptr,
+                    &created_list,
                 );
                 if (!ok) return error.LintFailed;
             } else if (ga.all_languages) {
@@ -810,7 +864,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         }
 
         if (stale.items.len > 0) {
-            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, zig_files, paths.json_dir, ga);
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, zig_files, paths.json_dir, ga, cap_evaluator_ptr, &created_list);
         } else {
             if (ga.verbose) std.debug.print("gen: all {d} built-in file(s) up to date\n", .{zig_files.len});
         }
@@ -920,7 +974,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
             else
                 "stale";
             stepPrint("gen: {d}/{d} zig files{s}\n", .{ stale.items.len, all_builtin.items.len, reason });
-            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga);
+            try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga, cap_evaluator_ptr, &created_list);
         } else {
             stepPrint("gen: all {d} zig files up to date\n", .{all_builtin.items.len});
         }
@@ -1050,7 +1104,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
         // M8.2: Auto-sync capabilities before DB sync so capability embeddings
         // and source mappings are always current.
         if (caps_sync_fn) |syncFn| {
-            syncFn(allocator, paths.json_dir, paths.db_path, cfg.capabilities_dir, ga.verbose) catch |err| {
+            syncFn(allocator, paths.json_dir, paths.db_path, cfg.capabilities_dir, ga.verbose, created_list.items) catch |err| {
                 std.debug.print("warning: capability sync failed: {s}\n", .{@errorName(err)});
             };
         }
@@ -1386,6 +1440,8 @@ pub fn runBuiltinFilePipeline(
     processor: *sync_mod.SyncProcessor,
     src_abs: []const u8,
     ga: GenArgs,
+    evaluator: ?*cap_eval_mod.CapabilityEvaluator,
+    created_list: *std.ArrayList([]const u8),
 ) !bool {
     const ext = std.fs.path.extension(src_abs);
 
@@ -1431,7 +1487,115 @@ pub fn runBuiltinFilePipeline(
         return true;
     };
 
+    // ── 4. Capability evaluation (thinking LLM) ───────────────────────────
+    // Only runs when: LLM is enabled, thinking model is configured, and
+    // capability-index.json exists (evaluator is non-null in all these cases).
+    if (evaluator) |ev| {
+        const json_path = guidanceJsonPath(
+            allocator,
+            processor.project_root,
+            processor.output_dir,
+            src_abs,
+        ) catch null;
+        if (json_path) |jp| {
+            defer allocator.free(jp);
+            const result = ev.evaluate(jp);
+            switch (result) {
+                .matched => |m| {
+                    defer cap_eval_mod.freeEvalResult(allocator, .{ .matched = m });
+                    recordCapabilityMatch(allocator, jp, m) catch |err| {
+                        std.debug.print("warning: capability match record failed for {s}: {s}\n", .{ jp, @errorName(err) });
+                    };
+                },
+                .novel => |n| {
+                    defer cap_eval_mod.freeEvalResult(allocator, .{ .novel = n });
+                    recordNovelCapability(allocator, jp, n, cfg.capabilities_dir, created_list) catch |err| {
+                        std.debug.print("warning: capability novel record failed for {s}: {s}\n", .{ jp, @errorName(err) });
+                    };
+                },
+                .skip => {},
+            }
+        }
+    }
+
     return true;
+}
+
+/// Merge a matched capability name into the `.guidance/src/**/*.json` `capabilities[]` field
+/// and update the `capability_eval` metadata.  No-op when `confidence < 0.75`.
+fn recordCapabilityMatch(
+    allocator: std.mem.Allocator,
+    json_path: []const u8,
+    match: cap_eval_mod.CapabilityMatch,
+) !void {
+    if (match.confidence < 0.75) return;
+
+    var store = json_store_mod.JsonStore.init(allocator);
+    var doc = (try store.loadGuidance(json_path)) orelse return;
+    defer store.freeGuidanceDoc(doc);
+
+    // Deduplicate: only append when not already present.
+    for (doc.capabilities) |existing| {
+        if (std.mem.eql(u8, existing, match.capability_name)) {
+            // Already recorded — only update capability_eval hash.
+            break;
+        }
+    } else {
+        // Append new capability name.
+        var caps: std.ArrayList([]const u8) = .empty;
+        defer {
+            // Free only the newly allocated strings; the existing slice items
+            // are owned by the doc and freed via freeGuidanceDoc.
+            caps.deinit(allocator);
+        }
+        for (doc.capabilities) |c| try caps.append(allocator, c);
+        try caps.append(allocator, try allocator.dupe(u8, match.capability_name));
+        // Replace the slice (old items are still referenced by the doc's existing array).
+        const old_caps = doc.capabilities;
+        doc.capabilities = try caps.toOwnedSlice(allocator);
+        // Free the old capabilities slice (but not the strings, still owned by doc).
+        allocator.free(old_caps);
+    }
+
+    // Compute representative hash from first member's match_hash.
+    const rep_hash: []const u8 = blk: {
+        if (doc.members.len > 0) {
+            if (doc.members[0].match_hash) |h| break :blk h;
+        }
+        break :blk "";
+    };
+
+    // Free old capability_eval if present before replacing.
+    if (doc.capability_eval) |old| {
+        allocator.free(old.capability_name);
+        allocator.free(old.evaluated_at_hash);
+    }
+    doc.capability_eval = .{
+        .capability_name = try allocator.dupe(u8, match.capability_name),
+        .confidence = match.confidence,
+        .evaluated_at_hash = try allocator.dupe(u8, rep_hash),
+    };
+
+    try store.saveGuidance(json_path, doc);
+}
+
+/// Write a new CAPABILITY.md and record the capability in the guidance JSON.
+fn recordNovelCapability(
+    allocator: std.mem.Allocator,
+    json_path: []const u8,
+    novel: cap_eval_mod.NovelCapability,
+    caps_dir: []const u8,
+    created_list: *std.ArrayList([]const u8),
+) !void {
+    const cap_path = try cap_eval_mod.writeCapabilityMd(allocator, caps_dir, novel);
+    errdefer allocator.free(cap_path);
+    try created_list.append(allocator, cap_path);
+
+    // Record in guidance JSON with confidence 1.0 (origin file).
+    try recordCapabilityMatch(allocator, json_path, .{
+        .capability_name = novel.name,
+        .confidence = 1.0,
+    });
 }
 
 /// Executes a built-in language pipeline using provided allocator, config, processor, and language data.
@@ -1444,6 +1608,8 @@ pub fn runBuiltinLanguagePipeline(
     all_files: []const []const u8,
     guidance_root: []const u8,
     ga: GenArgs,
+    evaluator: ?*cap_eval_mod.CapabilityEvaluator,
+    created_list: *std.ArrayList([]const u8),
 ) !void {
     if (stale_files.len == 0) return;
 
@@ -1493,7 +1659,7 @@ pub fn runBuiltinLanguagePipeline(
     // Process every stale file so all lint failures are reported before exiting.
     var any_lint_failed = false;
     for (stale_files) |src_abs| {
-        const ok = try runBuiltinFilePipeline(allocator, cfg, processor, src_abs, ga);
+        const ok = try runBuiltinFilePipeline(allocator, cfg, processor, src_abs, ga, evaluator, created_list);
         if (!ok) any_lint_failed = true;
     }
     if (any_lint_failed) return error.LintFailed;

@@ -48,7 +48,7 @@
           "signature": "fn parseMembers(self: *JsonStore, members_val: std.json.Value) -> std.mem.Allocator.Error![]types.Member",
           "returns": "std.mem.Allocator.Error![]types.Member",
           "is_pub": false,
-          "line": 147
+          "line": 170
         },
         {
           "type": "fn_private",
@@ -57,7 +57,7 @@
           "signature": "fn isLeakedPrompt(text: []const u8) -> bool",
           "returns": "bool",
           "is_pub": false,
-          "line": 164
+          "line": 187
         },
         {
           "type": "fn_private",
@@ -66,7 +66,7 @@
           "signature": "fn parseMember(self: *JsonStore, member_val: std.json.Value) -> std.mem.Allocator.Error!?types.Member",
           "returns": "std.mem.Allocator.Error!?types.Member",
           "is_pub": false,
-          "line": 184
+          "line": 207
         },
         {
           "type": "fn_decl",
@@ -75,7 +75,7 @@
           "signature": "fn saveGuidance(self: *JsonStore, path: []const u8, doc: types.GuidanceDoc) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 288
+          "line": 311
         },
         {
           "type": "fn_decl",
@@ -84,7 +84,7 @@
           "signature": "fn dupeMember(self: *JsonStore, m: types.Member) -> types.Member",
           "returns": "types.Member",
           "is_pub": true,
-          "line": 306
+          "line": 329
         },
         {
           "type": "fn_private",
@@ -93,7 +93,7 @@
           "signature": "fn dupeParams(self: *JsonStore, params: []const types.Param) -> []types.Param",
           "returns": "[]types.Param",
           "is_pub": false,
-          "line": 342
+          "line": 365
         },
         {
           "type": "fn_decl",
@@ -102,7 +102,7 @@
           "signature": "fn dupeStrings(self: *JsonStore, strs: []const []const u8) -> [][]const u8",
           "returns": "[][]const u8",
           "is_pub": true,
-          "line": 356
+          "line": 379
         },
         {
           "type": "fn_private",
@@ -111,7 +111,7 @@
           "signature": "fn dupePatterns(self: *JsonStore, patterns: []const types.Pattern) -> []types.Pattern",
           "returns": "[]types.Pattern",
           "is_pub": false,
-          "line": 360
+          "line": 383
         },
         {
           "type": "fn_decl",
@@ -120,7 +120,7 @@
           "signature": "fn dupeSkills(self: *JsonStore, skills: []const types.Skill) -> []types.Skill",
           "returns": "[]types.Skill",
           "is_pub": true,
-          "line": 373
+          "line": 396
         },
         {
           "type": "fn_decl",
@@ -129,7 +129,7 @@
           "signature": "fn freeMember(self: *JsonStore, member: types.Member) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 384
+          "line": 407
         },
         {
           "type": "fn_decl",
@@ -138,7 +138,7 @@
           "signature": "fn freeGuidanceDoc(self: *JsonStore, doc: types.GuidanceDoc) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 410
+          "line": 433
         },
         {
           "type": "fn_decl",
@@ -147,7 +147,7 @@
           "signature": "fn extractMemberCommentsFromSource(self: *JsonStore, doc: *types.GuidanceDoc, source: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 441
+          "line": 468
         },
         {
           "type": "fn_private",
@@ -156,7 +156,7 @@
           "signature": "fn extractCommentsForMemberRecursive(self: *JsonStore, source: []const u8, member: *types.Member) -> void",
           "returns": "void",
           "is_pub": false,
-          "line": 453
+          "line": 480
         },
         {
           "type": "fn_decl",
@@ -165,7 +165,7 @@
           "signature": "fn mergeMembers(self: *JsonStore, source: []const types.Member, existing: []const types.Member, preserve_existing_comments: bool) -> std.mem.Allocator.Error!MergeResult",
           "returns": "std.mem.Allocator.Error!MergeResult",
           "is_pub": true,
-          "line": 478
+          "line": 505
         },
         {
           "type": "fn_private",
@@ -174,7 +174,7 @@
           "signature": "fn mergeMember(self: *JsonStore, source: types.Member, existing: types.Member, result: *MergeResult, preserve_existing_comments: bool) -> types.Member",
           "returns": "types.Member",
           "is_pub": false,
-          "line": 521
+          "line": 548
         }
       ],
       "line": 10
@@ -185,109 +185,109 @@
       "match_hash": "3c4bca28980e95586db8bf1c9e494eda8e1380365c7911bf0a984cae3d1ab3f0",
       "signature": "keyword_struct MergeResult { ... }",
       "is_pub": true,
-      "line": 616
+      "line": 643
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to write' preamble",
       "is_pub": false,
-      "line": 631
+      "line": 658
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to look' preamble",
       "is_pub": false,
-      "line": 637
+      "line": 664
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'we need to read' preamble",
       "is_pub": false,
-      "line": 642
+      "line": 669
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'i need to write' preamble",
       "is_pub": false,
-      "line": 647
+      "line": 674
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let's write' preamble",
       "is_pub": false,
-      "line": 652
+      "line": 679
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'let me write' preamble",
       "is_pub": false,
-      "line": 657
+      "line": 684
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: detects 'write a one-sentence' preamble",
       "is_pub": false,
-      "line": 662
+      "line": 689
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: returns false for valid comments",
       "is_pub": false,
-      "line": 667
+      "line": 694
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: case-insensitive matching",
       "is_pub": false,
-      "line": 674
+      "line": 701
     },
     {
       "type": "test_decl",
       "name": "JsonStore.isLeakedPrompt: false for text starting with similar but different words",
       "is_pub": false,
-      "line": 680
+      "line": 707
     },
     {
       "type": "test_decl",
       "name": "JsonStore: init creates store with allocator",
       "is_pub": false,
-      "line": 686
+      "line": 713
     },
     {
       "type": "test_decl",
       "name": "JsonStore: loadGuidance returns null for non-existent file",
       "is_pub": false,
-      "line": 691
+      "line": 718
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for invalid JSON",
       "is_pub": false,
-      "line": 697
+      "line": 724
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing meta",
       "is_pub": false,
-      "line": 703
+      "line": 730
     },
     {
       "type": "test_decl",
       "name": "JsonStore: parseGuidance returns null for JSON missing module/source",
       "is_pub": false,
-      "line": 709
+      "line": 736
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeStrings deep copies strings",
       "is_pub": false,
-      "line": 717
+      "line": 744
     },
     {
       "type": "test_decl",
       "name": "JsonStore: dupeSkills deep copies skills",
       "is_pub": false,
-      "line": 730
+      "line": 757
     }
   ]
 }

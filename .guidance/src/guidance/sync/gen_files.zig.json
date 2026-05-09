@@ -21,10 +21,10 @@
           "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!GenArgs",
           "returns": "error{MissingValue}!GenArgs",
           "is_pub": true,
-          "line": 96
+          "line": 105
         }
       ],
-      "line": 47
+      "line": 56
     },
     {
       "type": "struct",
@@ -40,10 +40,10 @@
           "signature": "fn deinit(self: *@This(), allocator: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 193
+          "line": 202
         }
       ],
-      "line": 188
+      "line": 197
     },
     {
       "type": "fn_decl",
@@ -52,7 +52,7 @@
       "signature": "fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) -> ResolvedGenPaths",
       "returns": "ResolvedGenPaths",
       "is_pub": true,
-      "line": 201
+      "line": 210
     },
     {
       "type": "fn_decl",
@@ -61,7 +61,7 @@
       "signature": "fn setupCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 217
+      "line": 226
     },
     {
       "type": "fn_decl",
@@ -70,7 +70,7 @@
       "signature": "fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 274
+      "line": 283
     },
     {
       "type": "fn_decl",
@@ -79,7 +79,7 @@
       "signature": "fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 287
+      "line": 296
     },
     {
       "type": "fn_decl",
@@ -88,7 +88,7 @@
       "signature": "fn processFiles(allocator: std.mem.Allocator, processor: *sync_mod.SyncProcessor, ga: GenArgs, paths: ResolvedGenPaths) -> usize",
       "returns": "usize",
       "is_pub": true,
-      "line": 384
+      "line": 393
     },
     {
       "type": "fn_decl",
@@ -97,7 +97,7 @@
       "signature": "fn databaseHasTables(db_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 424
+      "line": 433
     },
     {
       "type": "fn_decl",
@@ -106,7 +106,7 @@
       "signature": "fn guidanceDbIsUpToDate(allocator: std.mem.Allocator, db_path: []const u8, json_dir: []const u8, capabilities_dir: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 459
+      "line": 468
     },
     {
       "type": "fn_decl",
@@ -115,7 +115,7 @@
       "signature": "fn syncGuidanceDb(allocator: std.mem.Allocator, json_dir: []const u8, guidance_db_path: []const u8, cfg: *const config_mod.ProjectConfig, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 527
+      "line": 536
     },
     {
       "type": "fn_decl",
@@ -124,7 +124,7 @@
       "signature": "fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 610
+      "line": 619
     },
     {
       "type": "fn_decl",
@@ -133,7 +133,7 @@
       "signature": "fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 623
+      "line": 632
     },
     {
       "type": "fn_decl",
@@ -142,7 +142,7 @@
       "signature": "fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 649
+      "line": 658
     },
     {
       "type": "fn_decl",
@@ -151,7 +151,7 @@
       "signature": "fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 658
+      "line": 667
     },
     {
       "type": "fn_decl",
@@ -160,7 +160,7 @@
       "signature": "fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1073
+      "line": 1127
     },
     {
       "type": "fn_decl",
@@ -169,7 +169,7 @@
       "signature": "fn postProcessCommentSync(allocator: std.mem.Allocator, json_dir: []const u8, workspace: []const u8, cfg: *const config_mod.ProjectConfig, dry_run: bool, verbose: bool) -> usize",
       "returns": "usize",
       "is_pub": true,
-      "line": 1115
+      "line": 1169
     },
     {
       "type": "fn_decl",
@@ -178,7 +178,7 @@
       "signature": "fn guidanceJsonPath(allocator: std.mem.Allocator, workspace: []const u8, json_dir: []const u8, src_abs: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 1314
+      "line": 1368
     },
     {
       "type": "fn_decl",
@@ -187,7 +187,7 @@
       "signature": "fn runPhaseCommand(allocator: std.mem.Allocator, argv_template: []const []const u8, file_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 1332
+      "line": 1386
     },
     {
       "type": "fn_decl",
@@ -196,25 +196,43 @@
       "signature": "fn collectFilesWithExts(allocator: std.mem.Allocator, dir_abs: []const u8, exts: []const []const u8) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 1346
+      "line": 1400
     },
     {
       "type": "fn_decl",
       "name": "runBuiltinFilePipeline",
-      "match_hash": "4d8823170377fc05afdff7252449f6b22058297f2ea84775ed525aa1bd4bf857",
-      "signature": "fn runBuiltinFilePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, src_abs: []const u8, ga: GenArgs) -> bool",
+      "match_hash": "9fa4f61426dec5d0f0badd830ecf53837f1d072362f19ca2cd793a734d1666be",
+      "signature": "fn runBuiltinFilePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, src_abs: []const u8, ga: GenArgs, evaluator: ?*cap_eval_mod.CapabilityEvaluator, created_list: *std.ArrayList([]const u8)) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 1383
+      "line": 1437
+    },
+    {
+      "type": "fn_private",
+      "name": "recordCapabilityMatch",
+      "match_hash": "9fc05470abbfc665458a2326af639d0b6b76adb859be62fcc00853b98e807dde",
+      "signature": "fn recordCapabilityMatch(allocator: std.mem.Allocator, json_path: []const u8, match: cap_eval_mod.CapabilityMatch) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 1526
+    },
+    {
+      "type": "fn_private",
+      "name": "recordNovelCapability",
+      "match_hash": "4f8f810a3ea8e7b18a2257e46bc0b8d5bc887e8d72ca90beba3726daf970c8a3",
+      "signature": "fn recordNovelCapability(allocator: std.mem.Allocator, json_path: []const u8, novel: cap_eval_mod.NovelCapability, caps_dir: []const u8, created_list: *std.ArrayList([]const u8)) -> void",
+      "returns": "void",
+      "is_pub": false,
+      "line": 1583
     },
     {
       "type": "fn_decl",
       "name": "runBuiltinLanguagePipeline",
-      "match_hash": "94ce4cdf2da00fe09bf4a11fab4a45d3e83a65d5e070e1e68be92d778da07f6c",
-      "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs) -> void",
+      "match_hash": "21cd19b0ccf873da4ebb46b9681390eb7fc81eb79b39d334f2804ff329b5c64b",
+      "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs, evaluator: ?*cap_eval_mod.CapabilityEvaluator, created_list: *std.ArrayList([]const u8)) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1438
+      "line": 1602
     }
   ]
 }

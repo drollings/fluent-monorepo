@@ -113,6 +113,29 @@ pub const JsonStore = struct {
             }
         }
 
+        if (root.object.get("capability_eval")) |eval_val| {
+            if (eval_val == .object) {
+                if (eval_val.object.get("capability_name")) |cap_name_v| {
+                    if (eval_val.object.get("confidence")) |confidence_v| {
+                        if (eval_val.object.get("evaluated_at_hash")) |hash_v| {
+                            if (cap_name_v == .string and hash_v == .string) {
+                                const conf: f32 = switch (confidence_v) {
+                                    .float => |f| @floatCast(f),
+                                    .integer => |n| @floatFromInt(n),
+                                    else => 0.0,
+                                };
+                                doc.capability_eval = .{
+                                    .capability_name = try self.allocator.dupe(u8, cap_name_v.string),
+                                    .confidence = conf,
+                                    .evaluated_at_hash = try self.allocator.dupe(u8, hash_v.string),
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (root.object.get("hashtags")) |tags_val| {
             if (tags_val == .array) {
                 var tags: std.ArrayList([]const u8) = .empty;
@@ -429,6 +452,10 @@ pub const JsonStore = struct {
         self.allocator.free(doc.equivalents);
         for (doc.members) |m| self.freeMember(m);
         self.allocator.free(doc.members);
+        if (doc.capability_eval) |ev| {
+            self.allocator.free(ev.capability_name);
+            self.allocator.free(ev.evaluated_at_hash);
+        }
     }
 
     /// Milestone 3.2: Extract member comments from source file.

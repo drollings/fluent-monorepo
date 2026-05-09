@@ -990,7 +990,7 @@ Scope an `ArenaAllocator` to the logical unit of work (a request, a batch, a pip
 
 Each batch cycle uses an arena reset rather than per-node frees:
 
-```zig
+```
 pub fn ingestSource(self: *BatchIngestor, source: []const u8) !void {
     var batch_arena = std.heap.ArenaAllocator.init(self.allocator);
     defer batch_arena.deinit();
@@ -1008,7 +1008,7 @@ pub fn ingestSource(self: *BatchIngestor, source: []const u8) !void {
 
 Each incoming JSON-RPC request gets its own arena. The response is the only thing that escapes:
 
-```zig
+```
 pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
     var req_arena = std.heap.ArenaAllocator.init(self.allocator);
     defer req_arena.deinit();
@@ -1064,13 +1064,13 @@ process_node(session_id)  # Accepted silently — crashes later
 
 ### In `src/coral/db.zig`
 
-```zig
+```
 pub const NodeId = i64;  // Matches SQLite INTEGER PRIMARY KEY
 ```
 
 The pattern is also used structurally throughout `db.zig` — functions taking `NodeId` cannot be accidentally called with a raw loop counter or session ID. For stricter enforcement, use the `enum` variant:
 
-```zig
+```
 pub const NodeId    = enum(i64) { _ };
 pub const SessionId = enum(i64) { _ };
 
@@ -1131,7 +1131,7 @@ The anti-patterns below are not hypothetical. They represent the most common way
 
 ### ❌ Applying Fluent Builder to a 3-parameter init
 
-```zig
+```
 // Wrong: Library.init() has 3 params and is already readable
 Library.init(allocator, db_path, timeout)  // Fine as-is
 ```
@@ -1140,7 +1140,7 @@ A builder for 3 params adds boilerplate with no readability benefit. The thresho
 
 ### ❌ Using Comptime Reflection in a hot loop
 
-```zig
+```
 // Wrong: string path allocates on every iteration
 for (items) |item| {
     try editable.set(allocator, "count", std.fmt.allocPrint(allocator, "{d}", .{item.count}));
@@ -1156,7 +1156,7 @@ The string path is for boundaries (data that arrives as strings from outside the
 
 ### ❌ Stack-allocating a vtable
 
-```zig
+```
 // Wrong: vtable will dangle when the function returns
 fn makeProvider() EmbeddingProvider {
     const vtable = ConstraintVTable{ .setFn = ..., .getFn = ... };  // STACK
@@ -1169,7 +1169,7 @@ const my_vtable = ConstraintVTable{ .setFn = ..., .getFn = ... };  // GLOBAL
 
 ### ❌ Stack-allocating a schema with internal vtable pointers
 
-```zig
+```
 // Wrong: TargetSchema stores vtables by value internally
 var schema = TargetSchema.init(allocator, interner);  // STACK
 var dyn = schema.createEditable(buffer);              // DANGLING: Accessor.constraint points into schema
@@ -1183,7 +1183,7 @@ This is the subtlest memory safety issue in the pattern. When a vtable is stored
 
 ### ❌ Wrapping a vtable-dispatched function
 
-```zig
+```
 // Wrong: wrapping after type erasure adds a call layer with no inlining
 const wrapped_vtable = wrap(provider.vtable.embed);  // Can't inline through vtable
 
@@ -1196,7 +1196,7 @@ Wrappers must be applied before type erasure, at the registration site.
 
 ### ❌ Arena for long-lived data
 
-```zig
+```
 // Wrong: Library should outlive all requests
 var arena = std.heap.ArenaAllocator.init(page_allocator);
 var lib = Library.init(arena.allocator(), ...);  // Library freed when arena deinits
@@ -1205,49 +1205,9 @@ var lib = Library.init(arena.allocator(), ...);  // Library freed when arena dei
 
 Arenas scope to operations, not to data structures with long lifetimes. The Library, TargetRegistry, and StringInterner use their own persistent allocators.
 
-### ❌ Single-implementation vtable without current or plausible future need for polymorphism
-
-```zig
-// Wrong: exactly one implementation exists, but a vtable handle wraps it
-pub const DocumentIndexer = struct {
-    ptr: *anyopaque,
-    vtable: *const VTable,
-    // ...
-};
-
-pub fn build(...) !DocumentIndexer {
-    return .{ .ptr = impl, .vtable = &the_only_vtable };
-}
-```
-
-**Why it's wrong:** The vtable adds two pointers of indirection and a layer of type-erased dispatch for zero runtime benefit. There is no branching, no swapping of implementations, no polymorphism — only overhead. When there is exactly one implementation, the vtable should be removed entirely.
-
-**Right:** If this is the only plausible implementation, put the methods directly on the implementation struct. Return `*Implementation` to callers:
-
-```zig
-pub const GuidanceJsonIndexerImpl = struct {
-    allocator: std.mem.Allocator,
-    doc: *const types.GuidanceDoc,
-
-    pub fn extractMetadata(self: *GuidanceJsonIndexerImpl, alloc: std.mem.Allocator) !DocumentMetadata { ... }
-    pub fn produceStages(self: *GuidanceJsonIndexerImpl, alloc: std.mem.Allocator, ...) ![]types.Stage { ... }
-    pub fn deinit(self: *GuidanceJsonIndexerImpl) void { self.allocator.destroy(self); }
-};
-
-pub fn createIndexer(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc) !*GuidanceJsonIndexerImpl {
-    const impl = try allocator.create(GuidanceJsonIndexerImpl);
-    impl.* = .{ .allocator = allocator, .doc = doc };
-    return impl;
-}
-```
-
-The caller holds `*Implementation` directly. No indirection, no vtable handle. If a second implementation is added later, introduce the vtable then — not before.
-
-**How to catch it:** Before adding a vtable, ask *"do I have two or more concrete implementations right now, or could I have them in the future?"* If the answer is "one today, maybe two later," use direct methods now and introduce the vtable when the second implementation arrives. Speculative vtable design before there are multiple implementations is a form of premature generalization.
-
 ### ❌ Cosmopolitan Polymorphism (identical execute body)
 
-```zig
+```
 // Wrong: three vtable entries that all call the same execute function
 fn identifierExecute(ptr: *anyopaque, ...) ![]types.Stage {
     _ = ptr;
@@ -1272,7 +1232,7 @@ const strategy_vtable: QueryStrategy.VTable = .{
 
 **Right:** Separate the predicate from the dispatch. A function-pointer array is sufficient:
 
-```zig
+```
 pub const QueryMatch = struct {
     matches: *const fn (query: []const u8, db: *GuidanceDb) bool,
     intent: QueryIntent,
@@ -1295,7 +1255,7 @@ pub fn executeQueryWithMatch(..., matches: []const QueryMatch) ![]types.Stage {
 
 ### ❌ Arena for long-lived data
 
-```zig
+```
 // Wrong: Library should outlive all requests
 var arena = std.heap.ArenaAllocator.init(page_allocator);
 var lib = Library.init(arena.allocator(), ...);  // Library freed when arena deinits
@@ -1310,7 +1270,7 @@ Arenas scope to operations, not to data structures with long lifetimes. The Libr
 
 ### ❌ Mixing typed and untyped access in DynamicEditable
 
-```zig
+```
 // DynamicEditable has no type information — don't try to add it
 var dyn = try DynamicEditable.init(allocator, buffer, accessors);
 // dyn has no idea what type "port" is — it works through ConstraintVTable only
@@ -1408,7 +1368,7 @@ forward- and backward-compatible schema evolution.
 
 ### SchemaVersion
 
-```zig
+```
 pub const SchemaVersion = struct {
     major: u16,
     minor: u16 = 0,
@@ -1429,7 +1389,7 @@ pub fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) !void;
 Each `Accessor` carries three optional versioning fields (all default to
 v1.0 / null — backward-compatible with pre-versioning code):
 
-```zig
+```
 pub const Accessor = struct {
     // ... existing fields ...
 
@@ -1449,7 +1409,7 @@ pub const Accessor = struct {
 **`migrate_from`** transforms the serialized string before passing it to
 `constraint.setFn`:
 
-```zig
+```
 if (accessor.migrate_from) |migrate| {
     const new_val = try migrate(raw_value, allocator);
     defer allocator.free(new_val);
@@ -1461,7 +1421,7 @@ if (accessor.migrate_from) |migrate| {
 
 ### Versioning Fields on ConstraintVTable
 
-```zig
+```
 pub const ConstraintVTable = struct {
     // ... existing vtable entries ...
 
@@ -1483,7 +1443,7 @@ pub const ConstraintVTable = struct {
 
 ### Re-exports from `reflection`
 
-```zig
+```
 const reflection = @import("reflection");
 reflection.SchemaVersion    // the struct
 reflection.SCHEMA_CURRENT   // v1.0 constant
@@ -1504,7 +1464,7 @@ arbitrary function's parameter types (generic functions cannot be cast to
 concrete function types).  The practical solution is **call helpers** that wrap
 a *call site* rather than a *function reference*:
 
-```zig
+```
 // Instead of:
 const result = try func(arg1, arg2);
 
@@ -1516,7 +1476,7 @@ const result = try retryCall(3, func, .{arg1, arg2});
 
 Selects between two functions of the *same* type at comptime:
 
-```zig
+```
 const handler = wrapIf(builtin.mode == .Debug, debugHandler, releaseHandler);
 ```
 
@@ -1524,7 +1484,7 @@ In release builds, `releaseHandler` is selected with zero overhead.
 
 ### retryCall
 
-```zig
+```
 const result = try retryCall(3, fetchData, .{url, allocator});
 ```
 
@@ -1535,7 +1495,7 @@ or the last error on exhaustion.
 
 Composes wrapper kinds around a call site:
 
-```zig
+```
 const result = try Pipeline.call(&.{.retry, .none}, fetchData, .{url, alloc});
 ```
 
@@ -1557,7 +1517,7 @@ When combining multiple wrappers, apply outer-to-inner:
 
 ### Re-exports from `common`
 
-```zig
+```
 common.wrapIf       // conditional function selector
 common.retryCall    // retry call helper
 common.WrapperKind  // enum for Pipeline
@@ -1572,7 +1532,7 @@ common.Pipeline     // call pipeline factory
 
 ### LogContext
 
-```zig
+```
 const LogContext = struct {
     request_id: ?[]const u8 = null,
     user_id:    ?[]const u8 = null,
@@ -1598,7 +1558,7 @@ const LogContext = struct {
 
 ### Scope
 
-```zig
+```
 pub const Scope = struct {
     pub fn begin(name: []const u8) Scope { ... }  // logs start if context active
     pub fn end(self: Scope) void { ... }           // logs duration in µs
@@ -1610,7 +1570,7 @@ no-ops — no allocation, no log call. Zero overhead in production.
 
 Usage:
 
-```zig
+```
 // Manual scope:
 const scope = Scope.begin("embed");
 defer scope.end();
@@ -1622,7 +1582,7 @@ const vec = try callLogged("embed", provider.embed, .{ allocator, text });
 
 ### callLogged
 
-```zig
+```
 pub inline fn callLogged(
     comptime name: []const u8,
     func: anytype,
@@ -1635,7 +1595,7 @@ callers use `try` as needed.
 
 ### Setting context at request boundaries
 
-```zig
+```
 pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
     LogContext.set(.{ .request_id = generateRequestId() });
     defer LogContext.clear();
@@ -1647,7 +1607,7 @@ pub fn handleRequest(self: *McpServer, raw_json: []const u8) ![]const u8 {
 
 ### Re-exports from `common`
 
-```zig
+```
 const common = @import("common");
 common.LogContext    // the struct
 common.LogScope      // alias for logging.Scope

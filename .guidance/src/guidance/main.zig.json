@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "82bd70cc08f9208377297d03b0e111a69baa1be3c4ac6770c0214c1916b8bc9e",
+      "match_hash": "d95bdad7d64e5dd7589e2d22fa1bb5df1248d54520b6110a0863c7c7fd9c6495",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -75,15 +75,9 @@
         },
         {
           "type": "enum_field",
-          "name": "ralph",
-          "is_pub": false,
-          "line": 63
-        },
-        {
-          "type": "enum_field",
           "name": "health",
           "is_pub": false,
-          "line": 64
+          "line": 63
         }
       ],
       "line": 52
@@ -95,7 +89,7 @@
       "signature": "fn main(init: std.process.Init) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 75
+      "line": 74
     },
     {
       "type": "fn_private",
@@ -104,7 +98,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 171
+      "line": 169
     },
     {
       "type": "fn_private",
@@ -113,7 +107,7 @@
       "signature": "fn printSubcommandHelp(command: Command) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 211
+      "line": 208
     }
   ]
 }

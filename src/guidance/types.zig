@@ -125,6 +125,17 @@ pub const Meta = struct {
 };
 
 /// Defines guidance documents with structured metadata; managed centrally, immutable once created.
+/// Persisted result of a per-file capability evaluation by the thinking LLM.
+/// Stored in `.guidance/src/**/*.json` as the `capability_eval` field.
+pub const CapabilityEval = struct {
+    /// Name of the matched or newly created capability (kebab-case).
+    capability_name: []const u8,
+    /// Confidence score 0.0–1.0.  1.0 for origin files of novel capabilities.
+    confidence: f32,
+    /// The `match_hash` value at evaluation time; used to skip re-evaluation.
+    evaluated_at_hash: []const u8,
+};
+
 pub const GuidanceDoc = struct {
     meta: Meta,
     /// Module-level one-line description.
@@ -148,6 +159,9 @@ pub const GuidanceDoc = struct {
     members: []const Member = &.{},
     /// Relative paths to equivalent files in other languages (e.g. foo.zig ↔ foo.py).
     equivalents: []const []const u8 = &.{},
+    /// Cached result of the per-file thinking LLM capability evaluation.
+    /// Absent when the file has not been evaluated yet or evaluation was skipped.
+    capability_eval: ?CapabilityEval = null,
 };
 
 pub const FileMatch = struct {

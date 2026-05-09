@@ -201,14 +201,25 @@ fn syncCapabilitiesIfStale(
     db_path: []const u8,
     capabilities_dir: []const u8,
     verbose: bool,
+    newly_created: []const []const u8,
 ) !void {
     const index_path = std.fs.path.join(allocator, &.{ json_dir, "capability-index.json" }) catch return;
     defer allocator.free(index_path);
 
     const index_mtime = marker_mod.fileMtime(index_path);
 
+    // Force re-run when new CAPABILITY.md files were just created this cycle.
+    if (newly_created.len > 0) {
+        if (verbose) {
+            for (newly_created) |path| {
+                std.debug.print("[sync] new capability created: {s}\n", .{path});
+            }
+        }
+        if (verbose) std.debug.print("[sync] capability-index.json forced stale ({d} new)\n", .{newly_created.len});
+    }
+
     // Check if any CAPABILITY.md is newer than the index.
-    var stale = index_mtime == null; // missing index → always stale
+    var stale = newly_created.len > 0 or index_mtime == null; // newly created or missing index → always stale
     if (!stale) {
         const idx_mtime = index_mtime.?;
         const io = std.Io.Threaded.global_single_threaded.io();

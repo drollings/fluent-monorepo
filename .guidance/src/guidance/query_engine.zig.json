@@ -293,61 +293,52 @@
       "line": 2038
     },
     {
-      "type": "fn_decl",
-      "name": "cmdRalph",
-      "match_hash": "69520e75fe2312b7da2d4c10e027c92aaa78a6365224f77511a01cf7810e5a4b",
-      "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 2048
-    },
-    {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2120
+      "line": 2045
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2125
+      "line": 2050
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2130
+      "line": 2055
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2135
+      "line": 2060
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2140
+      "line": 2065
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2145
+      "line": 2070
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2155
+      "line": 2080
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2161
+      "line": 2086
     }
   ]
 }

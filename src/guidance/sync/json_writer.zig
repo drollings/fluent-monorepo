@@ -160,7 +160,7 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) 
         doc.keywords.len > 0 or doc.skills.len > 0 or
         doc.capabilities.len > 0 or doc.hashtags.len > 0 or
         doc.used_by.len > 0 or doc.equivalents.len > 0 or
-        doc.members.len > 0;
+        doc.members.len > 0 or doc.capability_eval != null;
     if (!has_fields) {
         try writer.writeAll("\n}\n");
         return list_aw.toOwnedSlice();
@@ -232,6 +232,15 @@ pub fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) 
             try writer.writeByte('\n');
         }
         try writer.writeAll("  ]");
+    }
+    if (doc.capability_eval) |ev| {
+        try writeSep(writer, &need);
+        try writer.writeAll("  \"capability_eval\": {\n");
+        try writer.writeAll("    \"capability_name\": \"");
+        try writeEscaped(writer, ev.capability_name);
+        try writer.print("\",\n    \"confidence\": {d:.4},\n    \"evaluated_at_hash\": \"", .{ev.confidence});
+        try writeEscaped(writer, ev.evaluated_at_hash);
+        try writer.writeAll("\"\n  }");
     }
 
     try writer.writeAll("\n}\n");

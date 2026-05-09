@@ -34,7 +34,7 @@ Each member has a `match_hash` (SHA-256 of signature). On re-sync, only members 
 When searching for "how does X work", the `comment` field of the corresponding `fn_decl` or `struct` is the primary semantic signal. Members without comments still surface via name/signature matching.
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (43 files, auto-discovered)
+## Sources (42 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -66,7 +66,6 @@ When searching for "how does X work", the `comment` field of the corresponding `
 | `src/guidance/query/llm_filter_batch.zig` | 0.9 | used_by |
 | `src/guidance/query/strategy.zig` | 0.9 | used_by |
 | `src/guidance/query/synthesize.zig` | 0.9 | used_by |
-| `src/guidance/ralph.zig` | 0.9 | used_by |
 | `src/guidance/schema_validator.zig` | 0.9 | used_by |
 | `src/guidance/skeleton.zig` | 0.9 | used_by |
 | `src/guidance/stage_builder.zig` | 0.9 | used_by |

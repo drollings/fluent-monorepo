@@ -47,8 +47,8 @@
     {
       "type": "fn_private",
       "name": "syncCapabilitiesIfStale",
-      "match_hash": "380943c6ae94426050da8568efbfaeca3f783b4c53725b8a9f069e0b87b8e0d3",
-      "signature": "fn syncCapabilitiesIfStale(allocator: std.mem.Allocator, json_dir: []const u8, db_path: []const u8, capabilities_dir: []const u8, verbose: bool) -> void",
+      "match_hash": "d311291caec929d0a98cb140332dee98216289cbae5ffbbf0cd57d7ba115ff47",
+      "signature": "fn syncCapabilitiesIfStale(allocator: std.mem.Allocator, json_dir: []const u8, db_path: []const u8, capabilities_dir: []const u8, verbose: bool, newly_created: []const []const u8) -> void",
       "returns": "void",
       "is_pub": false,
       "line": 198
@@ -60,7 +60,7 @@
       "signature": "fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 266
+      "line": 277
     },
     {
       "type": "fn_decl",
@@ -69,7 +69,7 @@
       "signature": "fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 348
+      "line": 359
     },
     {
       "type": "fn_decl",
@@ -78,7 +78,7 @@
       "signature": "fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 396
+      "line": 407
     },
     {
       "type": "fn_private",
@@ -87,7 +87,7 @@
       "signature": "fn isStopword(tok: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 610
+      "line": 621
     },
     {
       "type": "fn_private",
@@ -96,7 +96,7 @@
       "signature": "fn isCapabilityKeywordToken(tok: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 618
+      "line": 629
     },
     {
       "type": "struct",
@@ -104,7 +104,7 @@
       "match_hash": "2210f615352782c2608bf5ab5db4b0ab08f528518e1965d0f0f4349e01398fa2",
       "signature": "keyword_struct CapabilityEntry { ... }",
       "is_pub": true,
-      "line": 643
+      "line": 654
     },
     {
       "type": "fn_decl",
@@ -113,7 +113,7 @@
       "signature": "fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 652
+      "line": 663
     },
     {
       "type": "fn_decl",
@@ -122,7 +122,7 @@
       "signature": "fn reportCapabilityLifecycle(allocator: std.mem.Allocator, prev_index_path: []const u8, current_caps: []const CapabilityEntry, verbose: bool) -> struct {\n    new_count: usize,\n    updated_count: usize,\n    removed_count: usize,\n    unchanged_count: usize,\n}",
       "returns": "struct {\n    new_count: usize,\n    updated_count: usize,\n    removed_count: usize,\n    unchanged_count: usize,\n}",
       "is_pub": true,
-      "line": 895
+      "line": 906
     },
     {
       "type": "struct",
@@ -130,7 +130,7 @@
       "match_hash": "a7de565789ea0a3785234936e87aee9fe08840dd0106e007afe7284cbe1b1934",
       "signature": "keyword_struct ParsedSourceRow { ... }",
       "is_pub": false,
-      "line": 1030
+      "line": 1041
     },
     {
       "type": "fn_private",
@@ -139,7 +139,7 @@
       "signature": "fn pruneCapabilitySources(allocator: std.mem.Allocator, json_dir: []const u8, capabilities_dir: []const u8, verbose: bool) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1038
+      "line": 1049
     },
     {
       "type": "fn_private",
@@ -148,7 +148,7 @@
       "signature": "fn pruneCapabilitySourcesDedup(allocator: std.mem.Allocator, rows: []const ParsedSourceRow) -> []const DiscoveredSource",
       "returns": "[]const DiscoveredSource",
       "is_pub": false,
-      "line": 1138
+      "line": 1149
     },
     {
       "type": "struct",
@@ -156,7 +156,7 @@
       "match_hash": "eec9e2de3754cb4bce2188e0c7731096dfc2538573fc3fe78537d6341359b1d9",
       "signature": "keyword_struct ConfidenceLevels { ... }",
       "is_pub": false,
-      "line": 1158
+      "line": 1169
     },
     {
       "type": "struct",
@@ -164,7 +164,7 @@
       "match_hash": "29d201554b48e88b23956cdfe71a68b7d05684135be686fefec8f8dc23c8e4eb",
       "signature": "keyword_struct DiscoveredSource { ... }",
       "is_pub": false,
-      "line": 1166
+      "line": 1177
     },
     {
       "type": "fn_private",
@@ -173,7 +173,7 @@
       "signature": "fn updateCapabilitySourcesSection(allocator: std.mem.Allocator, cap_md_path: []const u8, sources: []const DiscoveredSource, verbose: bool) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1174
+      "line": 1185
     },
     {
       "type": "fn_decl",
@@ -182,7 +182,7 @@
       "signature": "fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1237
+      "line": 1248
     },
     {
       "type": "fn_decl",
@@ -191,7 +191,7 @@
       "signature": "fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1684
+      "line": 1695
     },
     {
       "type": "fn_decl",
@@ -200,7 +200,7 @@
       "signature": "fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1856
+      "line": 1867
     },
     {
       "type": "fn_decl",
@@ -209,7 +209,7 @@
       "signature": "fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2018
+      "line": 2029
     },
     {
       "type": "fn_decl",
@@ -218,7 +218,7 @@
       "signature": "fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2081
+      "line": 2092
     }
   ]
 }
