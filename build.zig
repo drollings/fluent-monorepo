@@ -1039,12 +1039,35 @@ pub fn build(b: *std.Build) void {
     // -- src/vector: no named module imports --
     const vector_simhash_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/vector/simhash_tests.zig"), .target = target, .optimize = optimize }) });
 
+    // -- subdirectory tests (10 files) needing src/guidance/ as module root --
+    // These tests import ../types.zig which is outside their own subdirectory module root.
+    // A shim at src/guidance/ expands the module root to src/guidance/, making the relative
+    // imports resolve correctly. Deps are the union of all 10 tests' requirements:
+    // common + llm (sync→enhancer) + vector + sqlite3 (health/strategy) + treesitter (extractor).
+    const guidance_subdirectory_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/subdirectory_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
+                .{ .name = "vector", .module = vector_module },
+            },
+        }),
+    });
+    guidance_subdirectory_tests.root_module.link_libc = true;
+    guidance_subdirectory_tests.root_module.linkSystemLibrary("sqlite3", .{});
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_c);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_python);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_cpp);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_rust);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_go);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_typescript);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_tsx);
+    guidance_subdirectory_tests.root_module.linkLibrary(treesitter_php);
+    guidance_subdirectory_tests.root_module.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+
     // -- guidance tests needing @import("common") --
-    // NOTE: guidance_comments_core_tests, guidance_comments_header_tests
-    // are compiled via guidance_tests_module (tests.zig root) because they
-    // import ../types.zig or ../config.zig which is outside their standalone module path.
-    // Affected: comments/inserter_tests.zig, plugins/zig_plugin_tests.zig,
-    //   query/strategy_tests.zig, plugins/treesitter_extractor_tests.zig, health/health_tests.zig
     const guidance_document_indexer_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/guidance/document_indexer_tests.zig"),
@@ -1436,6 +1459,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_staged_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_treesitter_loader_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_plugin_registry_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_subdirectory_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)
