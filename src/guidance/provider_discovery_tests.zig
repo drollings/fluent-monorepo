@@ -17,15 +17,15 @@ test "discoverProvider: workspace-local bin takes priority" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     // Create bin/guidance-tst as a regular file (not actually executable on
     // all platforms, but isExecutable only checks existence + file kind in tests).
-    try tmp.dir.makeDir("bin");
+    try tmp.dir.createDir(std.testing.io, "bin", .default_dir);
     {
-        const f = try tmp.dir.createFile("bin/guidance-tst", .{});
-        f.close();
+        const f = try tmp.dir.createFile(std.testing.io, "bin/guidance-tst", .{});
+        f.close(std.testing.io);
     }
 
     // discoverProvider should find it.

@@ -28,13 +28,24 @@ comptime {
     _ = @import("core/metadata.zig");
     _ = @import("core/format.zig");
     _ = @import("core/drift.zig");
-    // Phase 0/1/1.5/2a/2b: codehealth and call_extractor tests
-    _ = @import("codehealth/main.zig");
-    _ = @import("codehealth/extractor.zig");
-    _ = @import("codehealth/orphan.zig");
-    _ = @import("codehealth/build_validation.zig");
-    _ = @import("codehealth/test_audit.zig");
-    _ = @import("codehealth/test_mover.zig");
+    // Phase 0/1/1.5/2a/2b: health and call_extractor tests
+    _ = @import("health/health.zig");
+    _ = @import("health/health_tests.zig");
+    _ = @import("health/extractor.zig");
+    _ = @import("health/orphan.zig");
+    _ = @import("health/build_validation.zig");
+    _ = @import("health/test_audit.zig");
+    _ = @import("health/test_mover.zig");
+    // Subdirectory test files compiled via parent root (module path constraint)
+    _ = @import("comments/core_tests.zig");
+    _ = @import("comments/header_tests.zig");
+    _ = @import("comments/inserter_tests.zig");
+    _ = @import("comments/sync_tests.zig");
+    _ = @import("plugins/markdown_plugin_tests.zig");
+    _ = @import("plugins/treesitter_extractor_tests.zig");
+    _ = @import("plugins/zig_plugin_tests.zig");
+    _ = @import("query/strategy_tests.zig");
+    _ = @import("sync/line_verify_tests.zig");
 }
 
 // ---------------------------------------------------------------------------

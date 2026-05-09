@@ -199,12 +199,12 @@ fn parseWithGrammar(
 
     // Set language
     const lang = grammar.getLanguage();
-    if (!c.ts_parser_set_language(parser, lang)) {
+    if (!c.ts_parser_set_language(parser, @ptrCast(lang))) {
         return error.LanguageNotSupported;
     }
 
     // Parse source
-    const tree = c.ts_parser_parse_string(parser, null, source.ptr, source.len) orelse {
+    const tree = c.ts_parser_parse_string(parser, null, source.ptr, @intCast(source.len)) orelse {
         return error.ParseFailed;
     };
     defer c.ts_tree_delete(tree);
@@ -214,7 +214,7 @@ fn parseWithGrammar(
     defer ext.deinit();
 
     const root = c.ts_tree_root_node(tree);
-    const members = try ext.extract(root);
+    const members = try ext.extract(@bitCast(root));
 
     // Derive module name from file path
     const module = try deriveModule(arena, file_path);

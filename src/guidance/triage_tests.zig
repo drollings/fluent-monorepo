@@ -26,13 +26,13 @@ test "findAffectedFiles detects backtick paths" {
 
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     // Create src/foo.zig in temp dir.
-    try tmp.dir.makePath("src");
-    const sf = try tmp.dir.createFile("src/foo.zig", .{});
-    sf.close();
+    try tmp.dir.createDirPath(std.testing.io, "src");
+    const sf = try tmp.dir.createFile(std.testing.io, "src/foo.zig", .{});
+    sf.close(std.testing.io);
 
     const content = "Update `src/foo.zig` to add logging support";
     const files = try triage_mod.findAffectedFiles(allocator, content, tmp_path);

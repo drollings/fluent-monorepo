@@ -5,9 +5,11 @@ const io_mod = @import("io.zig");
 
 test "WriterState writes to a pipe without emitting garbage" {
     const io = std.Io.Threaded.global_single_threaded.io();
-    const pipe = try std.posix.pipe();
-    const read_fd = std.Io.File{ .handle = pipe[0] };
-    const write_fd = std.Io.File{ .handle = pipe[1] };
+    var fds: [2]i32 = undefined;
+    const rc = std.os.linux.pipe2(&fds, .{ .CLOEXEC = true });
+    if (rc != 0) return error.PipeFailed;
+    const read_fd = std.Io.File{ .handle = fds[0], .flags = .{ .nonblocking = false } };
+    const write_fd = std.Io.File{ .handle = fds[1], .flags = .{ .nonblocking = false } };
     defer read_fd.close(io);
 
     var ws: io_mod.WriterState = .{};
@@ -22,7 +24,7 @@ test "WriterState writes to a pipe without emitting garbage" {
     var rbuf_inner: [4096]u8 = undefined;
     var fr = read_fd.reader(io, &rbuf_inner);
     var rbuf: [64]u8 = undefined;
-    const n = try fr.interface.read(&rbuf);
+    const n = try fr.interface.readSliceShort(&rbuf);
     try std.testing.expectEqualStrings(msg, rbuf[0..n]);
 }
 test "WriterState buf pointer stays valid after initStdout (no dangling)" {
@@ -44,7 +46,7 @@ test "makePathAbsolute creates nested directories" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const nested = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "a", "b", "c" });
@@ -67,7 +69,7 @@ test "makePathAbsolute is idempotent for existing paths" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const nested = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "x", "y" });
@@ -85,7 +87,7 @@ test "readFileAlloc reads file content" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const file_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.txt" });

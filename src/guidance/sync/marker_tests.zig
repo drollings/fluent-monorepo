@@ -7,7 +7,7 @@ test "fileNeedsProcessing: absent JSON → stale" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig" });
@@ -27,7 +27,7 @@ test "fileNeedsProcessing: JSON written after source → fresh" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "foo.zig" });
@@ -54,7 +54,7 @@ test "fileNeedsProcessing: JSON mtime = now + 1s → validated (skip)" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     // Create source file first
@@ -63,7 +63,7 @@ test "fileNeedsProcessing: JSON mtime = now + 1s → validated (skip)" {
     {
         const io = std.Io.Threaded.global_single_threaded.io();
         const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
-        try f.sync();
+        try f.sync(io);
         defer f.close(io);
     }
 
@@ -87,7 +87,7 @@ test "fileNeedsProcessing: JSON older by >1s → needs processing" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     // Create JSON first (older)
@@ -96,12 +96,12 @@ test "fileNeedsProcessing: JSON older by >1s → needs processing" {
     {
         const io = std.Io.Threaded.global_single_threaded.io();
         const f = try std.Io.Dir.createFileAbsolute(io, json_abs, .{});
-        try f.sync();
+        try f.sync(io);
         defer f.close(io);
     }
 
     // Sleep to ensure mtime difference > 1 second
-    std.Thread.sleep(1100_000_000); // 1.1 seconds
+    { const req = std.os.linux.timespec{ .sec = 1, .nsec = 100_000_000 }; _ = std.os.linux.nanosleep(&req, null); } // 1.1 seconds
 
     // Create source file (newer)
     const src_abs = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "stale.zig" });
@@ -109,7 +109,7 @@ test "fileNeedsProcessing: JSON older by >1s → needs processing" {
     {
         const io = std.Io.Threaded.global_single_threaded.io();
         const f = try std.Io.Dir.createFileAbsolute(io, src_abs, .{});
-        try f.sync();
+        try f.sync(io);
         defer f.close(io);
     }
 
@@ -120,7 +120,7 @@ test "testsCanBeSkipped: no marker → false" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const marker = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, ".marks", marker_mod.TEST_MARKER_NAME });
@@ -141,7 +141,7 @@ test "testsCanBeSkipped: marker newer than source → true" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
@@ -163,7 +163,7 @@ test "testsCanBeSkipped: source newer than marker → false" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const marker = try marker_mod.testMarkerPath(std.testing.allocator, tmp_path);
@@ -175,12 +175,12 @@ test "testsCanBeSkipped: source newer than marker → false" {
         const io = std.Io.Threaded.global_single_threaded.io();
         const mf = try std.Io.Dir.openFileAbsolute(io, marker, .{});
         defer mf.close(io);
-        try mf.sync();
+        try mf.sync(io);
     }
 
     // Sleep to ensure filesystem mtime resolution captures difference.
     // Many filesystems have 1-10ms mtime precision; use 50ms for reliability.
-    std.Thread.sleep(50_000_000);
+    { const req = std.os.linux.timespec{ .sec = 0, .nsec = 50_000_000 }; _ = std.os.linux.nanosleep(&req, null); }
 
     // Create source AFTER marker (simulate edit)
     const src = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.zig" });
@@ -188,7 +188,7 @@ test "testsCanBeSkipped: source newer than marker → false" {
     {
         const io = std.Io.Threaded.global_single_threaded.io();
         const f = try std.Io.Dir.createFileAbsolute(io, src, .{});
-        try f.sync(); // Ensure mtime is written
+        try f.sync(io); // Ensure mtime is written
         defer f.close(io);
     }
 

@@ -15,7 +15,7 @@ const c = @cImport({
 pub const Grammar = struct {
     name: []const u8,
     extensions: []const []const u8,
-    language_fn: *const fn () callconv(.C) *const c.TSLanguage,
+    language_fn: *const fn () callconv(.c) *const c.TSLanguage,
 
     /// Get the TSLanguage pointer
     pub fn getLanguage(self: *const Grammar) *const c.TSLanguage {

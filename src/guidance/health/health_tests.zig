@@ -3,7 +3,7 @@
 const std = @import("std");
 const vector = @import("vector");
 const common = @import("common");
-const main_mod = @import("main.zig");
+const main_mod = @import("health.zig");
 
 test "codehealth: parseCodehealthDirective re-export — ignore" {
     const dir = main_mod.parseCodehealthDirective("/// CODEHEALTH: ignore vtable-impl\n/// Invoked by reactor loop.").?;
@@ -42,7 +42,7 @@ test "codehealth: findRedundantPairs empty DB returns empty slice" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch.db", .{tmp_path});
@@ -61,7 +61,7 @@ test "codehealth: findUnusedModules empty DB returns empty slice" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.ch2.db", .{tmp_path});

@@ -993,6 +993,234 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // =========================================================================
+    // New *_tests.zig — individual focused test modules
+    // =========================================================================
+
+    // -- src/common: no named module imports --
+    const common_builder_error_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/builder_error_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_hash_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/hash_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_io_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/io_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_json_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/json_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_logging_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/logging_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_pattern_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/pattern_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_shell_parser_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/shell_parser_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_shell_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/shell_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_source_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/source_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_string_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/string_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_url_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/url_tests.zig"), .target = target, .optimize = optimize }) });
+    const common_wrapper_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/wrapper_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/guidance: no named module imports --
+    const guidance_doc_parser_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/doc_parser_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/guidance/health: no named module imports --
+    const guidance_health_build_validation_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/health/build_validation_tests.zig"), .target = target, .optimize = optimize }) });
+    const guidance_health_orphan_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/health/orphan_tests.zig"), .target = target, .optimize = optimize }) });
+    const guidance_health_test_audit_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/health/test_audit_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/guidance/sync: no named module imports --
+    const guidance_sync_marker_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/marker_tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "common", .module = common_module } } }) });
+
+    // -- src/llm: no named module imports --
+    const llm_token_budget_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/llm/token_budget_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/rdf: no named module imports --
+    const rdf_lexer_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/rdf/lexer_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/reflection: no named module imports --
+    const reflection_schema_version_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/reflection/schema_version_tests.zig"), .target = target, .optimize = optimize }) });
+    const reflection_sql_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/reflection/sql_tests.zig"), .target = target, .optimize = optimize }) });
+    const reflection_validate_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/reflection/validate_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/testing: no named module imports --
+    const testing_mock_vtable_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/testing/mock_vtable_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- src/vector: no named module imports --
+    const vector_simhash_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/vector/simhash_tests.zig"), .target = target, .optimize = optimize }) });
+
+    // -- guidance tests needing @import("common") --
+    // NOTE: guidance_comments_core_tests, guidance_comments_header_tests
+    // are compiled via guidance_tests_module (tests.zig root) because they
+    // import ../types.zig or ../config.zig which is outside their standalone module path.
+    // Affected: comments/inserter_tests.zig, plugins/zig_plugin_tests.zig,
+    //   query/strategy_tests.zig, plugins/treesitter_extractor_tests.zig, health/health_tests.zig
+    const guidance_document_indexer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/document_indexer_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    const guidance_git_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/git_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    const guidance_hash_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/hash_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    const guidance_health_test_mover_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/health/test_mover_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    const guidance_plugin_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/plugin_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    // NOTE: guidance_markdown_plugin_tests, guidance_zig_plugin_tests compiled
+    // via guidance_tests_module (imports ../types.zig outside standalone module path).
+    const guidance_provider_discovery_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/provider_discovery_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    guidance_provider_discovery_tests.root_module.link_libc = true;
+    const guidance_stage_builder_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/stage_builder_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    // NOTE: guidance_sync_line_verify_tests compiled via guidance_tests_module
+    // (imports ../types.zig which is outside standalone module path).
+    const guidance_triage_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/triage_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    const guidance_types_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/types_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+
+    // -- guidance tests needing common + llm --
+    // NOTE: guidance_comments_sync_tests compiled via guidance_tests_module
+    // (imports ../types.zig which is outside standalone module path).
+    const guidance_enhancer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/enhancer_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
+            },
+        }),
+    });
+
+    // -- guidance tests needing llm only --
+    const guidance_todo_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/todo_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "llm", .module = llm_module } },
+        }),
+    });
+
+    // -- guidance tests needing vector + sqlite3 --
+    const guidance_health_extractor_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/health/extractor_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "vector", .module = vector_module } },
+        }),
+    });
+    guidance_health_extractor_tests.root_module.link_libc = true;
+    guidance_health_extractor_tests.root_module.linkSystemLibrary("sqlite3", .{});
+
+    // -- guidance tests needing common + vector + sqlite3 --
+    // NOTE: guidance_health_tests compiled via guidance_tests_module
+    // (health.zig imports ../config.zig which is outside standalone module path).
+    // NOTE: guidance_query_strategy_tests compiled via guidance_tests_module
+    // (strategy.zig imports ../types.zig which is outside standalone module path).
+
+    const guidance_ralph_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/ralph_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "vector", .module = vector_module },
+            },
+        }),
+    });
+    guidance_ralph_tests.root_module.link_libc = true;
+    guidance_ralph_tests.root_module.linkSystemLibrary("sqlite3", .{});
+
+    const guidance_staged_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/staged_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
+                .{ .name = "vector", .module = vector_module },
+            },
+        }),
+    });
+    guidance_staged_tests.root_module.link_libc = true;
+    guidance_staged_tests.root_module.linkSystemLibrary("sqlite3", .{});
+
+    // -- guidance plugin tests needing treesitter C libraries --
+    // NOTE: guidance_treesitter_extractor_tests compiled via guidance_tests_module
+    // (treesitter_extractor.zig imports ../types.zig outside standalone module path).
+
+    const guidance_treesitter_loader_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/plugins/treesitter_loader_tests.zig"),
+            .target = target, .optimize = optimize,
+        }),
+    });
+    guidance_treesitter_loader_tests.root_module.link_libc = true;
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_c);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_python);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_cpp);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_rust);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_go);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_typescript);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_tsx);
+    guidance_treesitter_loader_tests.root_module.linkLibrary(treesitter_php);
+    guidance_treesitter_loader_tests.root_module.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+
+    // -- plugin registry tests needing common + treesitter (via treesitter_plugin.zig) --
+    const guidance_plugin_registry_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/guidance/plugin_registry_tests.zig"),
+            .target = target, .optimize = optimize,
+            .imports = &.{ .{ .name = "common", .module = common_module } },
+        }),
+    });
+    guidance_plugin_registry_tests.root_module.link_libc = true;
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_c);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_python);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_cpp);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_rust);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_go);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_typescript);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_tsx);
+    guidance_plugin_registry_tests.root_module.linkLibrary(treesitter_php);
+    guidance_plugin_registry_tests.root_module.addIncludePath(.{ .cwd_relative = ts_root ++ "/tree-sitter/lib/include" });
+
     // -------------------------------------------------------------------------
     // Wire all test runs
     // -------------------------------------------------------------------------
@@ -1166,6 +1394,48 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(vector_db_tests).step);
     test_step.dependOn(&b.addRunArtifact(root_tests).step);
     test_step.dependOn(&b.addRunArtifact(embeddings_tests).step);
+
+    // -- new *_tests.zig individual modules --
+    test_step.dependOn(&b.addRunArtifact(common_builder_error_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_hash_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_io_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_json_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_logging_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_pattern_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_shell_parser_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_shell_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_source_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_string_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_url_tests).step);
+    test_step.dependOn(&b.addRunArtifact(common_wrapper_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_doc_parser_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_health_build_validation_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_health_orphan_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_health_test_audit_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_sync_marker_tests).step);
+    test_step.dependOn(&b.addRunArtifact(llm_token_budget_tests).step);
+    test_step.dependOn(&b.addRunArtifact(rdf_lexer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(reflection_schema_version_tests).step);
+    test_step.dependOn(&b.addRunArtifact(reflection_sql_tests).step);
+    test_step.dependOn(&b.addRunArtifact(reflection_validate_tests).step);
+    test_step.dependOn(&b.addRunArtifact(testing_mock_vtable_tests).step);
+    test_step.dependOn(&b.addRunArtifact(vector_simhash_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_document_indexer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_git_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_hash_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_health_test_mover_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_plugin_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_provider_discovery_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_stage_builder_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_triage_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_types_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_enhancer_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_todo_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_health_extractor_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_ralph_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_staged_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_treesitter_loader_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_plugin_registry_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

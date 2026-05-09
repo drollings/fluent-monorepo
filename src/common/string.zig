@@ -182,13 +182,13 @@ pub fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) !?[]const u
 /// remaining domain nouns and action verbs cluster more tightly in the
 /// embedding space than generic management/ownership language.
 const STRIP_PREFIXES = [_][]const u8{
-    "Returns the ",     "Return the ",     "Returns a ",   "Returns an ",
-    "Initializes the ", "Initialize the ", "Initialize ",  "Creates a ",
-    "Create a ",        "Creates an ",     "Create an ",   "Checks if ",
-    "Check if ",        "Verifies that ",  "Verify that ", "Ensures that ",
-    "Ensure that ",     "Manages ",        "Represents ",  "Defines ",
-    "Caller must ",     "Caller should ",  "The caller ",  "Not thread-safe",
-    "Thread-safe",
+    "Returns the ",    "Return the ",      "Returns a ",      "Returns an ",
+    "Initializes ",    "Initializes the ", "Initialize the ", "Initialize ",
+    "Creates a ",      "Create a ",        "Creates an ",     "Create an ",
+    "Checks if ",      "Check if ",        "Verifies that ",  "Verify that ",
+    "Ensures that ",   "Ensure that ",     "Manages ",        "Represents ",
+    "Defines ",        "Caller must ",     "Caller should ",  "The caller ",
+    "Not thread-safe", "Thread-safe",
 };
 
 /// Removes unnecessary comment bytes from a Zig source file.
@@ -345,7 +345,7 @@ pub fn firstCommentLine(comment: []const u8) []const u8 {
     // Strip /// or //! prefix
     if (start + 3 <= comment.len) {
         if ((comment[start] == '/' and comment[start + 1] == '/' and comment[start + 2] == '/') or
-            (comment[start] == '/' and comment[start + 1] == '!' and comment[start + 2] == '/'))
+            (comment[start] == '/' and comment[start + 1] == '/' and comment[start + 2] == '!'))
         {
             start += 3;
             // Skip space after ///

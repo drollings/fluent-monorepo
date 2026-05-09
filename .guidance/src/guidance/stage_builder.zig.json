@@ -22,6 +22,11 @@
           "name": "init",
           "match_hash": "f627782987c40ed7d3dd428c89830d36ec3cc65756add56d5d31763d5ec04cc3",
           "signature": "fn init(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc, workspace: []const u8) -> GuidanceJsonStageBuilderImpl",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "doc", "type": "*const types.GuidanceDoc" },
+            { "name": "workspace", "type": "[]const u8" }
+          ],
           "returns": "GuidanceJsonStageBuilderImpl",
           "is_pub": true,
           "line": 18
@@ -31,6 +36,9 @@
           "name": "stageCount",
           "match_hash": "17f874b166fee198774c372e36df61c6ffbb6c8b0573925d078a9f951f661b37",
           "signature": "fn stageCount(self: *const GuidanceJsonStageBuilderImpl) -> usize",
+          "params": [
+            { "name": "self", "type": "*const GuidanceJsonStageBuilderImpl" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 22
@@ -40,6 +48,11 @@
           "name": "fillStages",
           "match_hash": "2885fbc5d0ae7fc043c55996a2dba7c4f05baf0a5477f95009f0d567c8ecaf0d",
           "signature": "fn fillStages(self: *GuidanceJsonStageBuilderImpl, alloc: std.mem.Allocator, out: []types.Stage) -> usize",
+          "params": [
+            { "name": "self", "type": "*GuidanceJsonStageBuilderImpl" },
+            { "name": "alloc", "type": "std.mem.Allocator" },
+            { "name": "out", "type": "[]types.Stage" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 31
@@ -49,27 +62,38 @@
           "name": "isRelevant",
           "match_hash": "602772c4089afc4be0ada28e2ade564c010179d29b5e64879b447965ce81c7cf",
           "signature": "fn isRelevant(self: *const GuidanceJsonStageBuilderImpl, query_tokens: []const []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const GuidanceJsonStageBuilderImpl" },
+            { "name": "query_tokens", "type": "[]const []const u8" }
+          ],
           "returns": "bool",
           "is_pub": true,
-          "line": 92
+          "line": 93
         },
         {
           "type": "fn_decl",
           "name": "buildStages",
           "match_hash": "5706bb7a4ae9bcb19063164715ce16e4fb2bbc2d67843bd48f0c7fdd988e566d",
           "signature": "fn buildStages(self: *GuidanceJsonStageBuilderImpl, allocator: std.mem.Allocator) -> []types.Stage",
+          "params": [
+            { "name": "self", "type": "*GuidanceJsonStageBuilderImpl" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "[]types.Stage",
           "is_pub": true,
-          "line": 105
+          "line": 106
         },
         {
           "type": "fn_decl",
           "name": "deinit",
           "match_hash": "27c89a501770fee29bb4ebbe0e115091712ac8180f098e00ebf34635b776357a",
           "signature": "fn deinit(self: *GuidanceJsonStageBuilderImpl) -> void",
+          "params": [
+            { "name": "self", "type": "*GuidanceJsonStageBuilderImpl" }
+          ],
           "returns": "void",
           "is_pub": true,
-          "line": 113
+          "line": 114
         }
       ],
       "line": 13
@@ -79,39 +103,50 @@
       "name": "createStageBuilder",
       "match_hash": "8a841bf12ffdb19ca84f43b6524715bdde33615f5e4857eb30577b2679bb1669",
       "signature": "fn createStageBuilder(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc, workspace: []const u8) -> *GuidanceJsonStageBuilderImpl",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "doc", "type": "*const types.GuidanceDoc" },
+        { "name": "workspace", "type": "[]const u8" }
+      ],
       "returns": "*GuidanceJsonStageBuilderImpl",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
       ],
       "is_pub": true,
-      "line": 118
+      "line": 119
     },
     {
       "type": "fn_decl",
       "name": "collectRelevantStages",
       "match_hash": "5a601793f4d2f7dcb6e1e0d2b6a49ba1f6595d3d9eba579e9014ba4e05cdfb1f",
       "signature": "fn collectRelevantStages(allocator: std.mem.Allocator, builders: []const *GuidanceJsonStageBuilderImpl, query_tokens: []const []const u8, max_stages: usize) -> []types.Stage",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "builders", "type": "[]const *GuidanceJsonStageBuilderImpl" },
+        { "name": "query_tokens", "type": "[]const []const u8" },
+        { "name": "max_stages", "type": "usize" }
+      ],
       "returns": "[]types.Stage",
       "is_pub": true,
-      "line": 128
+      "line": 129
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail",
       "is_pub": false,
-      "line": 165
+      "line": 166
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: buildStages produces prose stage from detail",
       "is_pub": false,
-      "line": 178
+      "line": 179
     },
     {
       "type": "test_decl",
       "name": "GuidanceJsonStageBuilder: isRelevant matches source path token",
       "is_pub": false,
-      "line": 198
+      "line": 199
     }
   ]
 }

@@ -74,6 +74,11 @@
       "name": "parsePython",
       "match_hash": "2e2e43432770bbd875bb88a5970240635be69722bcb4791142009be912d83a05",
       "signature": "fn parsePython(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 119
@@ -83,6 +88,11 @@
       "name": "parseCpp",
       "match_hash": "3c87e82e404ea7fa6c28ee6bd0d46b5a4326cc2d3b1c79835df2955168dd1942",
       "signature": "fn parseCpp(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 128
@@ -92,6 +102,11 @@
       "name": "parseRust",
       "match_hash": "1d9a18aa94f64c90fc39066337ff01ef4d4367daaea4c02b38dff9f2507c39a6",
       "signature": "fn parseRust(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 137
@@ -101,6 +116,11 @@
       "name": "parseGo",
       "match_hash": "295a9c986832201bc675a339fff6c9db54c6baefcfcd66ce79e75b94f3744edb",
       "signature": "fn parseGo(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 146
@@ -110,6 +130,11 @@
       "name": "parseTypeScript",
       "match_hash": "57932f14f75e5bbf9c9055c046ecc96f340dddb48e38a7033fafd7ae78ba0e4d",
       "signature": "fn parseTypeScript(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 155
@@ -119,6 +144,11 @@
       "name": "parseTsx",
       "match_hash": "62023c5b49f2ab741dec573aa0e7be452a67ea4b2946a2aa795be3a535f86ff0",
       "signature": "fn parseTsx(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 164
@@ -128,6 +158,11 @@
       "name": "parsePhp",
       "match_hash": "cfc2883a62ddc138689ffc96baabc5935b03011d689dd72b96aefa1ba2db08c8",
       "signature": "fn parsePhp(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 173
@@ -137,6 +172,13 @@
       "name": "parseWithGrammar",
       "match_hash": "7d56402af82947480d9ba84ae2341838cd4ccefd920f983ef673a68481fcea15",
       "signature": "fn parseWithGrammar(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8, lang_name: []const u8, grammar: loader.Grammar) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" },
+        { "name": "lang_name", "type": "[]const u8" },
+        { "name": "grammar", "type": "loader.Grammar" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 186
@@ -146,6 +188,10 @@
       "name": "deriveModule",
       "match_hash": "dde488651bb94a70bdce05fde1db577df1ecc6c45e1a3e63c81a0ad6543d08ac",
       "signature": "fn deriveModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 238
@@ -155,6 +201,10 @@
       "name": "extractPythonImports",
       "match_hash": "6dca20a51c336e69fdd50a3e2d76b94bf88876ee8cba4ce0827873a6a8ec45ce",
       "signature": "fn extractPythonImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 261
@@ -164,6 +214,10 @@
       "name": "extractCppImports",
       "match_hash": "55fd9221701b6f25182fb7f078987da5bb00f3dd1da87e0ea70ef50eaf2d74e4",
       "signature": "fn extractCppImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 271
@@ -173,6 +227,10 @@
       "name": "extractRustImports",
       "match_hash": "7aa286cd91437471a9819e5f27ee9893082677a772a77f08120f22ddf622d0e1",
       "signature": "fn extractRustImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 281
@@ -182,6 +240,10 @@
       "name": "extractGoImports",
       "match_hash": "81393457e8a8a99d55f2a332d6b299853fcbcf42696cb9b4e9d45217a39a6683",
       "signature": "fn extractGoImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 291
@@ -191,6 +253,10 @@
       "name": "extractTypeScriptImports",
       "match_hash": "5afb42964bc61580302ecd0c0ec74c2a6e52085047662686ff61c94a6135ace0",
       "signature": "fn extractTypeScriptImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 301
@@ -200,6 +266,10 @@
       "name": "extractTsxImports",
       "match_hash": "7e62cc6856216e294e549728a419cb1102f93217badaa54c258ebf09e0dfde5f",
       "signature": "fn extractTsxImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 311
@@ -209,6 +279,10 @@
       "name": "extractPhpImports",
       "match_hash": "64f1edfbe66ac7469ffcd112e5d892cbe5b3390e22234a11ed371f95880a77c8",
       "signature": "fn extractPhpImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 321

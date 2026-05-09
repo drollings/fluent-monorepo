@@ -19,6 +19,9 @@
           "name": "getLanguage",
           "match_hash": "a0b55df9f2d581cdeec61af523c7c074a8849ae40d7a6e57f37587940a9ead8a",
           "signature": "fn getLanguage(self: *const Grammar) -> *const c.TSLanguage",
+          "params": [
+            { "name": "self", "type": "*const Grammar" }
+          ],
           "returns": "*const c.TSLanguage",
           "is_pub": true,
           "line": 21
@@ -80,6 +83,9 @@
           "name": "getDescriptor",
           "match_hash": "915baa2ad725793337ca1eb43fb2c0c0e5266333a2078a291c2d14822ff67a42",
           "signature": "fn getDescriptor(self: GrammarList) -> Grammar",
+          "params": [
+            { "name": "self", "type": "GrammarList" }
+          ],
           "returns": "Grammar",
           "is_pub": true,
           "line": 37
@@ -155,6 +161,9 @@
       "name": "findGrammarByExtension",
       "match_hash": "8366a60ebbe00653d6cea84256733894837dd7a22471f681c4cdddd6b0884db9",
       "signature": "fn findGrammarByExtension(ext: []const u8) -> ?Grammar",
+      "params": [
+        { "name": "ext", "type": "[]const u8" }
+      ],
       "returns": "?Grammar",
       "is_pub": true,
       "line": 128
@@ -164,6 +173,9 @@
       "name": "validateGrammarABI",
       "match_hash": "5d9238369ac581d22dc062419f82ee007c0fddca3d5473b2f25fffc4a7d72dfa",
       "signature": "fn validateGrammarABI(grammar: Grammar) -> void",
+      "params": [
+        { "name": "grammar", "type": "Grammar" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 150

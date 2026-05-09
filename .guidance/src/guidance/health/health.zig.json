@@ -1,11 +1,11 @@
 {
   "meta": {
-    "module": "src.guidance.codehealth.main",
-    "source": "src/guidance/codehealth/main.zig",
+    "module": "src.guidance.health.health",
+    "source": "src/guidance/health/health.zig",
     "language": "zig"
   },
   "comment": " codehealth — detect unused modules, redundant code, and dead code candidates.\n\n Usage:\n   guidance codehealth [options]\n\n Phase 0:  Orphaned file detection (files not imported anywhere).\n Phase 1:  Module-level detection (zero-importer files from DB).\n Phase 1.5: build.zig validation (references to missing files).\n Phase 2a: Redundancy detection via SimHash Hamming distance.\n Phase 2b: Symbol-level call graph analysis (--extract-calls).\n Phase 2:  Test organisation enforcement.\n\n This command is expensive and meant for periodic audits, not the RALPH loop.",
-  "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
+  "used_by": ["src/guidance/health/health_tests.zig"],
   "members": [
     {
       "type": "struct",
@@ -64,6 +64,9 @@
       "name": "parsePhases",
       "match_hash": "83a170495b8449f5476e2e23d852a8987303d7ef2c39b26e823800f1afd97184",
       "signature": "fn parsePhases(spec: []const u8) -> PhaseSet",
+      "params": [
+        { "name": "spec", "type": "[]const u8" }
+      ],
       "returns": "PhaseSet",
       "is_pub": false,
       "line": 83
@@ -73,6 +76,9 @@
       "name": "isGenericName",
       "match_hash": "4c5eb79ecb75a2a434d3f764ae0a584f7a88ad296251eb97b16fcae38d81a17b",
       "signature": "fn isGenericName(name: []const u8) -> bool",
+      "params": [
+        { "name": "name", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 115
@@ -82,6 +88,11 @@
       "name": "findRedundantPairs",
       "match_hash": "cbfffed6bacbcd6972d69af568deb45117f3404023f0b46cece21a7204b82321",
       "signature": "fn findRedundantPairs(allocator: std.mem.Allocator, db: *vector.GuidanceDb, threshold: u6) -> []RedundantPair",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*vector.GuidanceDb" },
+        { "name": "threshold", "type": "u6" }
+      ],
       "returns": "[]RedundantPair",
       "is_pub": true,
       "line": 125
@@ -91,6 +102,10 @@
       "name": "freeRedundantPair",
       "match_hash": "cc066524440bbb96d44ddc07461d758e0324438b993228c00dbfa8e77850ce6f",
       "signature": "fn freeRedundantPair(allocator: std.mem.Allocator, p: RedundantPair) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "p", "type": "RedundantPair" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 186
@@ -116,6 +131,10 @@
       "name": "findUnusedSymbols",
       "match_hash": "568a11b64c961f71fe4ba8ab12eaca94a99718d61b2c28cac5802de8dd77c245",
       "signature": "fn findUnusedSymbols(allocator: std.mem.Allocator, db: *vector.GuidanceDb) -> []UnusedSymbol",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*vector.GuidanceDb" }
+      ],
       "returns": "[]UnusedSymbol",
       "is_pub": true,
       "line": 220
@@ -125,6 +144,9 @@
       "name": "daysSince",
       "match_hash": "745bf95107068a3828c63eaf3efa5f5f3060dac09caf0edcc718957762f0dc08",
       "signature": "fn daysSince(last_modified: i64) -> u32",
+      "params": [
+        { "name": "last_modified", "type": "i64" }
+      ],
       "returns": "u32",
       "is_pub": false,
       "line": 235
@@ -134,6 +156,15 @@
       "name": "writeAiOutput",
       "match_hash": "c0a88189c3c99479ea6e9534b8910fb3639389cf21d8ceae4acc1514fa650a65",
       "signature": "fn writeAiOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly, min_age_days: u32) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
+        { "name": "unused", "type": "[]const UnusedModule" },
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
+        { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" },
+        { "name": "min_age_days", "type": "u32" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 243
@@ -143,6 +174,15 @@
       "name": "writeHumanOutput",
       "match_hash": "b349e68280a34bae2ef99136e94d1afa28748808ccc81b88bda57b5ed5d3ff34",
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly, min_age_days: u32) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
+        { "name": "unused", "type": "[]const UnusedModule" },
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
+        { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" },
+        { "name": "min_age_days", "type": "u32" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 350
@@ -152,15 +192,27 @@
       "name": "writeJsonOutput",
       "match_hash": "ede23d57ba5b9dee84d0b31c3653daedf9533ee2fb6cead6e031b12f8794eeef",
       "signature": "fn writeJsonOutput(w: *std.Io.Writer, orphans: []const orphan_mod.OrphanedFile, unused: []const UnusedModule, build_anomalies: []const build_val_mod.BuildAnomaly, pairs: []const RedundantPair, test_anomalies: []const test_audit_mod.TestAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "orphans", "type": "[]const orphan_mod.OrphanedFile" },
+        { "name": "unused", "type": "[]const UnusedModule" },
+        { "name": "build_anomalies", "type": "[]const build_val_mod.BuildAnomaly" },
+        { "name": "pairs", "type": "[]const RedundantPair" },
+        { "name": "test_anomalies", "type": "[]const test_audit_mod.TestAnomaly" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 389
     },
     {
       "type": "fn_decl",
-      "name": "cmdCodehealth",
-      "match_hash": "b67de6c8c8a34072e1162016eed0097afaa8f10fa153e16c20e19a0cd934bfe9",
-      "signature": "fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8) -> void",
+      "name": "cmdHealth",
+      "match_hash": "e0fc851500c8e6bcc3662e96dc1edc6b48fa87143a1a3eafd9f55d89d8390ac2",
+      "signature": "fn cmdHealth(allocator: std.mem.Allocator, args_raw: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args_raw", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 430
@@ -170,6 +222,11 @@
       "name": "runCallExtraction",
       "match_hash": "023e71f215731d5283ba56b5fbc75d4380ef98887ea8e0948e9ae13d1d572fbc",
       "signature": "fn runCallExtraction(allocator: std.mem.Allocator, db: *vector.GuidanceDb, workspace: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*vector.GuidanceDb" },
+        { "name": "workspace", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 624

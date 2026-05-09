@@ -46,7 +46,7 @@ pub const MemberExtractor = struct {
     fn walkNode(self: *Self, node: c.TSNode, depth: usize) !void {
         if (c.ts_node_is_error(node)) return;
 
-        const kind = c.ts_node_kind(node);
+        const kind = c.ts_node_type(node);
         const kind_str = std.mem.sliceTo(kind, 0);
 
         // Try to extract as member
@@ -100,11 +100,8 @@ pub const MemberExtractor = struct {
             .members = &.{},
             .patterns = &.{},
             .tags = &.{},
-            .skills = &.{},
-            .capabilities = &.{},
             .equivalents = &.{},
             .comment_generated = false,
-            .is_anchor = false,
         };
 
         try self.members.append(self.allocator, member);
@@ -187,7 +184,7 @@ pub const MemberExtractor = struct {
         var i: u32 = 0;
         while (i < child_count) : (i += 1) {
             const child = c.ts_node_named_child(node, i);
-            const child_kind = std.mem.sliceTo(c.ts_node_kind(child), 0);
+            const child_kind = std.mem.sliceTo(c.ts_node_type(child), 0);
             if (std.mem.eql(u8, child_kind, "identifier")) {
                 return try self.nodeToSlice(child);
             }
@@ -255,7 +252,7 @@ pub const MemberExtractor = struct {
             var i: u32 = 0;
             while (i < child_count) : (i += 1) {
                 const child = c.ts_node_child(node, i);
-                const child_kind = std.mem.sliceTo(c.ts_node_kind(child), 0);
+                const child_kind = std.mem.sliceTo(c.ts_node_type(child), 0);
                 if (std.mem.eql(u8, child_kind, "visibility_modifier")) {
                     const start = c.ts_node_start_byte(child);
                     const end = c.ts_node_end_byte(child);

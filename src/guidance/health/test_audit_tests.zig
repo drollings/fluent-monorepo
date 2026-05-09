@@ -61,11 +61,11 @@ test "test_audit: auditTestFiles detects non-test decl" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
     // Write a *_tests.zig with a non-test declaration.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "foo_tests.zig",
         .data =
         \\const std = @import("std");
@@ -95,10 +95,10 @@ test "test_audit: auditTestFiles clean test file has no non-test-decl anomaly" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "pure_tests.zig",
         .data =
         \\const std = @import("std");

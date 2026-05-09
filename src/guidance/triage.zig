@@ -65,7 +65,7 @@ pub fn findAffectedFiles(
     content: []const u8,
     project_root: []const u8,
 ) ![][]const u8 {
-    var found = std.ArrayList([]const u8){};
+    var found: std.ArrayList([]const u8) = .empty;
     errdefer {
         for (found.items) |s| allocator.free(s);
         found.deinit(allocator);

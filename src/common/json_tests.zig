@@ -24,7 +24,7 @@ test "parseJsonFile parses a valid object" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(tmp_path);
 
     const json_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_path, "test.json" });

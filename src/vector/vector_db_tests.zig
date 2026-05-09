@@ -9,7 +9,7 @@ test "GuidanceDb init and schema" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try dirAbsPath(allocator, tmp.dir);
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.guidance.db", .{tmp_path});
@@ -32,7 +32,7 @@ test "GuidanceDb index and keyword search round-trip" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try dirAbsPath(allocator, tmp.dir);
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.guidance.db", .{tmp_path});
@@ -81,7 +81,7 @@ test "GuidanceDb search falls back to keyword when noop embedder" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try dirAbsPath(allocator, tmp.dir);
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.guidance.db", .{tmp_path});
@@ -121,7 +121,7 @@ test "GuidanceDb skips unchanged files" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const tmp_path = try dirAbsPath(allocator, tmp.dir);
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
     const db_path = try std.fmt.allocPrint(allocator, "{s}/test.guidance.db", .{tmp_path});

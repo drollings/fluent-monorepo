@@ -1,11 +1,11 @@
 {
   "meta": {
-    "module": "src.guidance.codehealth.build_validation",
-    "source": "src/guidance/codehealth/build_validation.zig",
+    "module": "src.guidance.health.build_validation",
+    "source": "src/guidance/health/build_validation.zig",
     "language": "zig"
   },
   "comment": " build_validation.zig — Phase 1.5: build.zig consistency validation.\n\n Parses build.zig for `b.addTest` / `b.addExecutable` targets and checks:\n   1. Orphaned test targets: root_source_file references a file that does not exist.\n   2. Stale references: file was deleted but the build target was not removed.\n\n This is a text-based scanner (not full AST) to remain simple and fast.\n It looks for the pattern:\n   .root_source_file = b.path(\"src/foo.zig\"),\n and verifies that `src/foo.zig` exists relative to `workspace`.",
-  "used_by": ["src/guidance/codehealth/build_validation_tests.zig", "src/guidance/codehealth/main.zig"],
+  "used_by": ["src/guidance/health/build_validation_tests.zig", "src/guidance/health/health.zig"],
   "members": [
     {
       "type": "struct",
@@ -20,6 +20,10 @@
       "name": "extractPathRefs",
       "match_hash": "591e3800d09cb85003331348da4b592459e63b3c85418ae0661a88feb6dcaa7c",
       "signature": "fn extractPathRefs(allocator: std.mem.Allocator, src: []const u8) -> []PathRef",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "src", "type": "[]const u8" }
+      ],
       "returns": "[]PathRef",
       "is_pub": false,
       "line": 43
@@ -29,6 +33,10 @@
       "name": "validateBuildZig",
       "match_hash": "54959a4c2c154ebbcc5325d46a149f302a35cde0e1cda66a411309c311d6e340",
       "signature": "fn validateBuildZig(allocator: std.mem.Allocator, workspace: []const u8) -> []BuildAnomaly",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" }
+      ],
       "returns": "[]BuildAnomaly",
       "is_pub": true,
       "line": 91
@@ -38,6 +46,10 @@
       "name": "writeAiOutput",
       "match_hash": "af53f17afca799d70692bf43645760e9db3d07106bdbb83c69fbba1f3d683383",
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 140
@@ -47,6 +59,10 @@
       "name": "writeHumanOutput",
       "match_hash": "590642ac0e2b87e91c00df57d8f80f2df350fbcbed1c6f8022a84e4507eabd15",
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 162
@@ -56,6 +72,10 @@
       "name": "writeJsonFragment",
       "match_hash": "c00faddbbfe0990c99b48dd271ac42b0996826a8f17b1089752911f577c66639",
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const BuildAnomaly) -> void",
+      "params": [
+        { "name": "w", "type": "*std.Io.Writer" },
+        { "name": "anomalies", "type": "[]const BuildAnomaly" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 172
@@ -73,6 +93,12 @@
       "name": "fixUncoveredTestFiles",
       "match_hash": "422f17162e9aee9fbf032a1b5ae1411aa90fd8b93fa4304b2e69b3ee79d43365",
       "signature": "fn fixUncoveredTestFiles(allocator: std.mem.Allocator, workspace: []const u8, uncovered: []const []const u8, dry_run: bool) -> FixBuildStats",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "uncovered", "type": "[]const []const u8" },
+        { "name": "dry_run", "type": "bool" }
+      ],
       "returns": "FixBuildStats",
       "is_pub": true,
       "line": 210
@@ -82,6 +108,13 @@
       "name": "addOneTestTarget",
       "match_hash": "e98bbdec08eea28e9b15bb740644891e277d02acd3b364bc22b43581e15fe1b7",
       "signature": "fn addOneTestTarget(allocator: std.mem.Allocator, build_zig_path: []const u8, workspace: []const u8, tests_zig_rel: []const u8, dry_run: bool) -> bool",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "build_zig_path", "type": "[]const u8" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "tests_zig_rel", "type": "[]const u8" },
+        { "name": "dry_run", "type": "bool" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 237

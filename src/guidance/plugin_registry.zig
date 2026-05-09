@@ -18,9 +18,9 @@ const LanguagePlugin = plugin_mod.LanguagePlugin;
 
 pub const PluginRegistry = struct {
     allocator: std.mem.Allocator,
-    /// Maps file extension (e.g. ".zig") → plugin descriptor.
-    /// Values point into plugin storage below; no additional allocation needed.
-    map: std.StringHashMapUnmanaged(*const LanguagePlugin),
+    /// Maps file extension (e.g. ".zig") → index into `plugins` slice.
+    /// Indices are stable after all registrations; no dangling-pointer risk.
+    map: std.StringHashMapUnmanaged(usize),
     /// Owned plugin storage (avoids dangling pointers on register).
     plugins: std.ArrayList(LanguagePlugin),
 
@@ -31,7 +31,7 @@ pub const PluginRegistry = struct {
         var self = Self{
             .allocator = allocator,
             .map = .{},
-            .plugins = .{},
+            .plugins = .empty,
         };
         // Register built-in plugins (ignore errors — only fails on OOM).
         self.register(allocator, zig_plugin.plugin()) catch {};
@@ -57,16 +57,17 @@ pub const PluginRegistry = struct {
     /// extension.  The plugin descriptor is copied into owned storage.
     pub fn register(self: *Self, allocator: std.mem.Allocator, p: LanguagePlugin) !void {
         try self.plugins.append(allocator, p);
-        const stored: *const LanguagePlugin = &self.plugins.items[self.plugins.items.len - 1];
+        const idx = self.plugins.items.len - 1;
         for (p.extensions) |ext| {
-            try self.map.put(allocator, ext, stored);
+            try self.map.put(allocator, ext, idx);
         }
     }
 
     /// Look up a plugin by file extension (including the leading dot).
     /// Returns null if no plugin is registered for the extension.
     pub fn getForExtension(self: *const Self, ext: []const u8) ?*const LanguagePlugin {
-        return self.map.get(ext);
+        const idx = self.map.get(ext) orelse return null;
+        return &self.plugins.items[idx];
     }
 
     /// Look up a plugin by source file path (extracts the extension automatically).

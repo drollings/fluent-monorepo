@@ -278,7 +278,7 @@ pub const Enhancer = struct {
     }
 
     /// Extract #hashtags from a "Tags: #a #b" line at the end of the response.
-    fn extractTags(self: *Enhancer, text: []const u8) ![]const []const u8 {
+    pub fn extractTags(self: *Enhancer, text: []const u8) ![]const []const u8 {
         var tags: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (tags.items) |t| self.allocator.free(t);
@@ -309,7 +309,7 @@ pub const Enhancer = struct {
     }
 
     /// Remove the trailing "Tags: #a #b" line from text.
-    fn stripTagsLine(self: *Enhancer, text: []const u8) !?[]const u8 {
+    pub fn stripTagsLine(self: *Enhancer, text: []const u8) !?[]const u8 {
         const lower = try std.ascii.allocLowerString(self.allocator, text);
         defer self.allocator.free(lower);
 
@@ -755,7 +755,7 @@ pub const Enhancer = struct {
 
     /// Parse the LLM response for phrases.
     /// Handles both comma-separated and newline-separated formats.
-    fn parsePhrasesResponse(self: *Enhancer, tagged: []const u8) !SemanticPhrasesResult {
+    pub fn parsePhrasesResponse(self: *Enhancer, tagged: []const u8) !SemanticPhrasesResult {
         var phrases: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (phrases.items) |p| self.allocator.free(p);
@@ -792,7 +792,7 @@ pub const Enhancer = struct {
 
     /// Fallback: extract phrases locally without LLM.
     /// Uses simple heuristics to identify compound terms and identifiers.
-    fn fallbackPhrases(self: *Enhancer, comment: []const u8) !SemanticPhrasesResult {
+    pub fn fallbackPhrases(self: *Enhancer, comment: []const u8) !SemanticPhrasesResult {
         var phrases: std.ArrayList([]const u8) = .empty;
         errdefer {
             for (phrases.items) |p| self.allocator.free(p);

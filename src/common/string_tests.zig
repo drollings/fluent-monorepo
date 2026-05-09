@@ -167,7 +167,7 @@ test "STOP_WORDS contains expected words" {
 }
 test "dupeString produces independent copy" {
     const original = "hello world";
-    const copy = try string_mod.dupeString(std.testing.allocator, original);
+    const copy = (try string_mod.dupeString(std.testing.allocator, original)).?;
     defer std.testing.allocator.free(copy);
     try std.testing.expectEqualStrings(original, copy);
     try std.testing.expect(copy.ptr != original.ptr);

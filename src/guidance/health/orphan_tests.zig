@@ -75,21 +75,21 @@ test "orphan: findOrphanedFiles detects unimported file" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
     // Create a file that imports nothing and is imported by nothing.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "orphaned.zig",
         .data = "pub fn unused() void {}\n",
     });
     // Create a file that is imported by another — not orphaned.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "imported.zig",
         .data = "pub fn helper() void {}\n",
     });
     // The importer references imported.zig.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "main.zig",
         .data = "const h = @import(\"imported.zig\");\npub fn main() void {}\n",
     });
@@ -109,21 +109,21 @@ test "orphan: findOrphanedFiles skips entry points" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
     // Entry point via pub fn main.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "main.zig",
         .data = "pub fn main() void {}\n",
     });
     // Entry point via CODEHEALTH marker.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "special.zig",
         .data = "// CODEHEALTH: entry-point\npub fn entry() void {}\n",
     });
     // Test file — skipped by naming convention.
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "foo_test.zig",
         .data = "test \"foo\" {}\n",
     });

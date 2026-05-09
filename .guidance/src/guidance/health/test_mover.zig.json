@@ -1,11 +1,11 @@
 {
   "meta": {
-    "module": "src.guidance.codehealth.test_mover",
-    "source": "src/guidance/codehealth/test_mover.zig",
+    "module": "src.guidance.health.test_mover",
+    "source": "src/guidance/health/test_mover.zig",
     "language": "zig"
   },
   "comment": " test_mover.zig — Move inline tests from source .zig files to <name>_tests.zig.\n\n Used by `guidance codehealth --fix [--dry-run]`.\n\n Algorithm per source file:\n   1. Parse with std.zig.Ast to collect top-level names:\n      - module_imports: const X = @import(\"Y\")  (always accessible via build system)\n      - pub_names: explicitly pub fn/const/var names  (accessible after move)\n      - private_names: non-pub, non-import names     (inaccessible after move)\n   2. Classify each test_decl:\n      - movable:   body does not reference any private_name\n      - unmovable: body references at least one private_name\n   3. For movable tests: apply pub-symbol qualification (replace bare `sym` → `mod.sym`)\n      because usingnamespace was removed in Zig 0.15.\n   4. Build <name>_tests.zig:\n      - Header: const std, module imports used by moved tests,\n                const <stem>_mod = @import(\"<stem>.zig\")\n      - Body: qualified test blocks\n   5. Rewrite source with movable test blocks removed.\n   6. Run `zig fmt` on both files.\n   7. Update the tests.zig aggregator to include the new _tests.zig.",
-  "used_by": ["src/guidance/codehealth/main.zig"],
+  "used_by": ["src/guidance/health/health.zig"],
   "members": [
     {
       "type": "struct",
@@ -28,6 +28,13 @@
       "name": "collectDeclInfo",
       "match_hash": "24af091842504918807638d75f42604349ca4c6aa0c3968d10343326d71a3928",
       "signature": "fn collectDeclInfo(aa: std.mem.Allocator, tree: *const std.zig.Ast, out_imports: *std.ArrayList(ImportAlias), out_pub: *std.StringHashMap(void), out_private: *std.StringHashMap(void)) -> void",
+      "params": [
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "out_imports", "type": "*std.ArrayList(ImportAlias)" },
+        { "name": "out_pub", "type": "*std.StringHashMap(void)" },
+        { "name": "out_private", "type": "*std.StringHashMap(void)" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 78
@@ -37,6 +44,12 @@
       "name": "firstPrivateUsage",
       "match_hash": "854659ed2098beb2440a861a0ea81d94306962502a4222c5f87e01312c61aad7",
       "signature": "fn firstPrivateUsage(tree: *const std.zig.Ast, first_tok: std.zig.Ast.TokenIndex, last_tok: std.zig.Ast.TokenIndex, private_names: *const std.StringHashMap(void)) -> ?[]const u8",
+      "params": [
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "first_tok", "type": "std.zig.Ast.TokenIndex" },
+        { "name": "last_tok", "type": "std.zig.Ast.TokenIndex" },
+        { "name": "private_names", "type": "*const std.StringHashMap(void)" }
+      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 161
@@ -46,6 +59,14 @@
       "name": "classifyTests",
       "match_hash": "a57bece726a38abdca9697b8e871fa67b8b0fdde166c644b7113b983a17c25e3",
       "signature": "fn classifyTests(aa: std.mem.Allocator, source: []const u8, tree: *const std.zig.Ast, private_names: *const std.StringHashMap(void), out_movable: *std.ArrayList(TestBlock), out_skipped: *std.ArrayList(SkippedTest)) -> void",
+      "params": [
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "tree", "type": "*const std.zig.Ast" },
+        { "name": "private_names", "type": "*const std.StringHashMap(void)" },
+        { "name": "out_movable", "type": "*std.ArrayList(TestBlock)" },
+        { "name": "out_skipped", "type": "*std.ArrayList(SkippedTest)" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 179
@@ -55,6 +76,12 @@
       "name": "qualifyPubRefs",
       "match_hash": "a17a8ee1c63255954209ee6154f123b333ef49a987b572d8c39eb0f42654e779",
       "signature": "fn qualifyPubRefs(allocator: std.mem.Allocator, test_text_z: [:0]const u8, pub_names: *const std.StringHashMap(void), mod_alias: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "test_text_z", "type": "[:0]const u8" },
+        { "name": "pub_names", "type": "*const std.StringHashMap(void)" },
+        { "name": "mod_alias", "type": "[]const u8" }
+      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 245
@@ -64,6 +91,11 @@
       "name": "usedImports",
       "match_hash": "da4914796fb2ee25255665cb447b3b09cefa769519bc331c2fd198d8c5536fd4",
       "signature": "fn usedImports(aa: std.mem.Allocator, imports: []const ImportAlias, blocks: []const TestBlock) -> []ImportAlias",
+      "params": [
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "imports", "type": "[]const ImportAlias" },
+        { "name": "blocks", "type": "[]const TestBlock" }
+      ],
       "returns": "[]ImportAlias",
       "is_pub": false,
       "line": 293
@@ -73,6 +105,11 @@
       "name": "removeBlocks",
       "match_hash": "3fe0be6820fcc763f73e87df1f5efcce7fbb3c75bf759d8975bfed28f81be9a9",
       "signature": "fn removeBlocks(allocator: std.mem.Allocator, source: []const u8, blocks: []const TestBlock) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[]const u8" },
+        { "name": "blocks", "type": "[]const TestBlock" }
+      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 316
@@ -82,6 +119,10 @@
       "name": "collapseBlankLines",
       "match_hash": "fb4fcfdc5100137c8ee4b6d9d9f591ef60076762e169f17303a8549d77541f62",
       "signature": "fn collapseBlankLines(allocator: std.mem.Allocator, src: []const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "src", "type": "[]const u8" }
+      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 333
@@ -91,6 +132,14 @@
       "name": "assembleTestsFile",
       "match_hash": "91eed2704c39ad4c004b5ab61166d6f04c1f004d1cc44a0260cc5078a2e704f8",
       "signature": "fn assembleTestsFile(allocator: std.mem.Allocator, source_basename: []const u8, mod_alias: []const u8, module_imports: []const ImportAlias, blocks: []const []const u8, existing_content: ?[]const u8) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "source_basename", "type": "[]const u8" },
+        { "name": "mod_alias", "type": "[]const u8" },
+        { "name": "module_imports", "type": "[]const ImportAlias" },
+        { "name": "blocks", "type": "[]const []const u8" },
+        { "name": "existing_content", "type": "?[]const u8" }
+      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 363
@@ -100,6 +149,10 @@
       "name": "runZigFmt",
       "match_hash": "b526e1ebc7719004602e67db9d351613a769143e8264a30dd8eca65d4693f8e0",
       "signature": "fn runZigFmt(allocator: std.mem.Allocator, path: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 413
@@ -109,6 +162,11 @@
       "name": "addToTestsZig",
       "match_hash": "ebea376e3ebc25e9f2ddd2b7bf7f6d9f0b3c5f03531b958bdb360c1cc8cd7099",
       "signature": "fn addToTestsZig(allocator: std.mem.Allocator, tests_zig_path: []const u8, import_line: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "tests_zig_path", "type": "[]const u8" },
+        { "name": "import_line", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 425
@@ -118,6 +176,9 @@
       "name": "stemOf",
       "match_hash": "1e027ac5c90d76562ad4f0be98e9d1ec940a921c22cb3e3771522ad772c81694",
       "signature": "fn stemOf(path: []const u8) -> []const u8",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 453
@@ -127,6 +188,10 @@
       "name": "modAlias",
       "match_hash": "50d4aa3b1bee951b39106477e1b3260dca255cc28a2abe09164c28f40e04f5aa",
       "signature": "fn modAlias(aa: std.mem.Allocator, basename: []const u8) -> []u8",
+      "params": [
+        { "name": "aa", "type": "std.mem.Allocator" },
+        { "name": "basename", "type": "[]const u8" }
+      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 459
@@ -136,6 +201,11 @@
       "name": "relPath",
       "match_hash": "fbac4f9a491199f681edfed4f0ce0a978a5d714a06418c1872a23c2d0e4a11e5",
       "signature": "fn relPath(allocator: std.mem.Allocator, from_dir: []const u8, target: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "from_dir", "type": "[]const u8" },
+        { "name": "target", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 465
@@ -145,6 +215,12 @@
       "name": "fixAll",
       "match_hash": "ea7fb605cffe3229d04abe5d251320a4a5fe78428037e3e6d38a3d1db458b203",
       "signature": "fn fixAll(allocator: std.mem.Allocator, workspace: []const u8, dry_run: bool, tests_zig_rel: ?[]const u8) -> FixStats",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "workspace", "type": "[]const u8" },
+        { "name": "dry_run", "type": "bool" },
+        { "name": "tests_zig_rel", "type": "?[]const u8" }
+      ],
       "returns": "FixStats",
       "is_pub": true,
       "line": 482

@@ -44,10 +44,10 @@ test "test_mover: fixAll moves tests from temp workspace" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "widget.zig",
         .data =
         \\const std = @import("std");
@@ -71,13 +71,13 @@ test "test_mover: fixAll moves tests from temp workspace" {
     try std.testing.expectEqual(@as(usize, 1), stats.tests_skipped);
     try std.testing.expectEqual(@as(usize, 1), stats.files_created);
 
-    const tests_content = try tmp.dir.readFileAlloc(allocator, "widget_tests.zig", 64 * 1024);
+    const tests_content = try tmp.dir.readFileAlloc(std.testing.io, "widget_tests.zig", allocator, .limited(64 * 1024));
     defer allocator.free(tests_content);
     // Moved test should be present, qualified.
     try std.testing.expect(std.mem.indexOf(u8, tests_content, "pubCreate returns 42") != null);
     try std.testing.expect(std.mem.indexOf(u8, tests_content, "widget_mod") != null);
 
-    const src_content = try tmp.dir.readFileAlloc(allocator, "widget.zig", 64 * 1024);
+    const src_content = try tmp.dir.readFileAlloc(std.testing.io, "widget.zig", allocator, .limited(64 * 1024));
     defer allocator.free(src_content);
     // Moved test must be gone from source.
     try std.testing.expect(std.mem.indexOf(u8, src_content, "pubCreate returns 42") == null);
@@ -89,10 +89,10 @@ test "test_mover: dry_run does not write files" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    const workspace = try tmp.dir.realpathAlloc(allocator, ".");
+    const workspace = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(workspace);
 
-    try tmp.dir.writeFile(.{
+    try tmp.dir.writeFile(std.testing.io, .{
         .sub_path = "thing.zig",
         .data =
         \\const std = @import("std");
@@ -104,6 +104,6 @@ test "test_mover: dry_run does not write files" {
 
     _ = try test_mover_mod.fixAll(allocator, workspace, true, null);
 
-    const result = tmp.dir.access("thing_tests.zig", .{});
+    const result = tmp.dir.access(std.testing.io, "thing_tests.zig", .{});
     try std.testing.expectError(error.FileNotFound, result);
 }

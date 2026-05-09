@@ -5,12 +5,12 @@
     "language": "zig"
   },
   "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance gen      [options]   Generate JSON + compile .guidance.db\n   guidance status   [options]   Report generation status\n   guidance clean    [options]   Remove .guidance/ and .guidance.db\n   guidance structure [options]  Update STRUCTURE.md from guidance JSON\n\n ## Memory Ownership\n\n   - main() creates a DebugAllocator and passes the allocator to all subcommands.\n     All subcommand allocations are scoped to the command lifetime.\n   - No module-level state; all data flows through function parameters.\n   - stdout writes use buffered std.Io.Writer with explicit flush before return.",
-  "used_by": ["src/coral/main_tests.zig", "src/guidance/codehealth/main_tests.zig"],
+  "used_by": ["src/coral/main_tests.zig"],
   "members": [
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "b5f4f265713f33b11e9765d4bbb95ee6655c88b95f660e90938d80ad7c2f68b8",
+      "match_hash": "82bd70cc08f9208377297d03b0e111a69baa1be3c4ac6770c0214c1916b8bc9e",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -34,69 +34,57 @@
         },
         {
           "type": "enum_field",
-          "name": "structure",
+          "name": "explain",
           "is_pub": false,
           "line": 57
         },
         {
           "type": "enum_field",
-          "name": "explain",
+          "name": "commit",
           "is_pub": false,
           "line": 58
         },
         {
           "type": "enum_field",
-          "name": "commit",
+          "name": "@\"test\"",
           "is_pub": false,
           "line": 59
         },
         {
           "type": "enum_field",
-          "name": "show",
+          "name": "todo",
           "is_pub": false,
           "line": 60
         },
         {
           "type": "enum_field",
-          "name": "@\"test\"",
+          "name": "diary",
           "is_pub": false,
           "line": 61
         },
         {
           "type": "enum_field",
-          "name": "todo",
+          "name": "telemetry",
           "is_pub": false,
           "line": 62
         },
         {
           "type": "enum_field",
-          "name": "diary",
+          "name": "serve",
           "is_pub": false,
           "line": 63
         },
         {
           "type": "enum_field",
-          "name": "telemetry",
+          "name": "ralph",
           "is_pub": false,
           "line": 64
         },
         {
           "type": "enum_field",
-          "name": "serve",
+          "name": "health",
           "is_pub": false,
           "line": 65
-        },
-        {
-          "type": "enum_field",
-          "name": "ralph",
-          "is_pub": false,
-          "line": 66
-        },
-        {
-          "type": "enum_field",
-          "name": "codehealth",
-          "is_pub": false,
-          "line": 67
         }
       ],
       "line": 53
@@ -106,18 +94,25 @@
       "name": "main",
       "match_hash": "d315a32364f10cb28f1568ec582968e253ddb80b5157c42471128a1abe9e2200",
       "signature": "fn main(init: std.process.Init) -> void",
+      "params": [
+        { "name": "init", "type": "std.process.Init" }
+      ],
       "returns": "void",
       "is_pub": true,
-      "line": 71
+      "line": 69
     },
     {
       "type": "fn_private",
       "name": "cmdRalph",
       "match_hash": "7495cf0a6ad6b22b3838b5ad4211c48ab06c3aa0183602baf6c1a51740097cf6",
       "signature": "fn cmdRalph(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
-      "line": 148
+      "line": 144
     },
     {
       "type": "fn_private",
@@ -126,16 +121,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 153
-    },
-    {
-      "type": "fn_private",
-      "name": "cmdStructure",
-      "match_hash": "365c31948bb590f64739040f33bae9cf97759257d419d376cac44a3ec8a03e2d",
-      "signature": "fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "returns": "void",
-      "is_pub": false,
-      "line": 259
+      "line": 149
     }
   ]
 }

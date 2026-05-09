@@ -1,11 +1,11 @@
 {
   "meta": {
-    "module": "src.guidance.codehealth.extractor",
-    "source": "src/guidance/codehealth/extractor.zig",
+    "module": "src.guidance.health.extractor",
+    "source": "src/guidance/health/extractor.zig",
     "language": "zig"
   },
   "comment": " call_extractor.zig — AST-based call site extraction for codehealth Phase 2b.\n\n Extracts call sites from Zig source files and populates the `called_by` table.\n Only run when `guidance codehealth --extract-calls` is invoked; not part of\n the normal RALPH loop.\n\n Confidence levels:\n   high   — same-file direct call or qualified import call (mod.fn())\n   medium — method call on self (self.method())\n   low    — unresolved / dynamic dispatch / chained call",
-  "used_by": ["src/guidance/codehealth/extractor_tests.zig", "src/guidance/codehealth/main.zig"],
+  "used_by": ["src/guidance/health/extractor_tests.zig", "src/guidance/health/health.zig"],
   "members": [
     {
       "type": "struct",
@@ -27,6 +27,11 @@
           "name": "init",
           "match_hash": "63c5eca7925ada5a6ac6d4adc59fdc2115e883a7cc3a6d3122046982314d1feb",
           "signature": "fn init(allocator: std.mem.Allocator, file_path: []const u8, source: [:0]const u8) -> CallExtractor",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "source", "type": "[:0]const u8" }
+          ],
           "returns": "CallExtractor",
           "is_pub": true,
           "line": 35
@@ -36,6 +41,9 @@
           "name": "deinit",
           "match_hash": "f983ebb5e7218bb3b2faa01e74f102955bea365f60f4afa7b8ad27a9d80d9cc0",
           "signature": "fn deinit(self: *CallExtractor) -> void",
+          "params": [
+            { "name": "self", "type": "*CallExtractor" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 48
@@ -45,6 +53,9 @@
           "name": "buildImportMap",
           "match_hash": "8a42aff2ee0cba5eca0f2fde83f6ce69236fe8654c59d6692364b970a0a220a5",
           "signature": "fn buildImportMap(self: *CallExtractor) -> void",
+          "params": [
+            { "name": "self", "type": "*CallExtractor" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 59
@@ -54,6 +65,9 @@
           "name": "extractAllCalls",
           "match_hash": "d319ad7387f4df26d43fb11edaac544dc9ee59ec9a1896604f11b7c04d03976d",
           "signature": "fn extractAllCalls(self: *CallExtractor) -> []CallSite",
+          "params": [
+            { "name": "self", "type": "*CallExtractor" }
+          ],
           "returns": "[]CallSite",
           "is_pub": true,
           "line": 102
@@ -63,6 +77,11 @@
           "name": "extractFromFnDecl",
           "match_hash": "e607b09d03c5f70d3b3c0e5c332a47f650ec13e1b6cf37a104ec75e5b449da03",
           "signature": "fn extractFromFnDecl(self: *CallExtractor, fn_node: std.zig.Ast.Node.Index, calls: *std.ArrayList(CallSite)) -> void",
+          "params": [
+            { "name": "self", "type": "*CallExtractor" },
+            { "name": "fn_node", "type": "std.zig.Ast.Node.Index" },
+            { "name": "calls", "type": "*std.ArrayList(CallSite)" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 122
@@ -72,6 +91,13 @@
           "name": "recordCallSite",
           "match_hash": "4ac41c5bc498c4d866b7ec27b7ddd189601aefd9084e1edebc2a57693d0a72bf",
           "signature": "fn recordCallSite(self: *CallExtractor, call_node: std.zig.Ast.Node.Index, fn_expr: std.zig.Ast.Node.Index, current_fn: []const u8, calls: *std.ArrayList(CallSite)) -> void",
+          "params": [
+            { "name": "self", "type": "*CallExtractor" },
+            { "name": "call_node", "type": "std.zig.Ast.Node.Index" },
+            { "name": "fn_expr", "type": "std.zig.Ast.Node.Index" },
+            { "name": "current_fn", "type": "[]const u8" },
+            { "name": "calls", "type": "*std.ArrayList(CallSite)" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 171
@@ -84,6 +110,11 @@
       "name": "extractCallsFromWorkspace",
       "match_hash": "965d67bfede8f255e47e7b426156f3ba00188ed0ee06b0f7905658468d3f04b4",
       "signature": "fn extractCallsFromWorkspace(allocator: std.mem.Allocator, db: *vector.GuidanceDb, workspace: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "db", "type": "*vector.GuidanceDb" },
+        { "name": "workspace", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 245

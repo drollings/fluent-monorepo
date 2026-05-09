@@ -31,19 +31,18 @@ test "processFile_insertsCommentForMissingFn - plumbing with no enhancer" {
         \\pub fn myFunc() void {}
         \\
     ;
-    const io = std.Io.Threaded.global_single_threaded.io();
-    const src_file = try tmp.dir.createFile("test_fn.zig", .{});
-    try src_file.writeAll(source);
-    src_file.close(io);
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "test_fn.zig", .data = source });
 
     // Resolve absolute path to the temp file.
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try tmp.dir.realpath("test_fn.zig", &buf);
+    const abs_len = try tmp.dir.realPathFile(std.testing.io, "test_fn.zig", &buf);
+    const abs_path = buf[0..abs_len];
 
     // Also resolve the tmp dir itself as both workspace and output_dir so
     // that the guidance JSON path is constructed under the same tmp dir.
     var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+    const ws_len = try tmp.dir.realPathFile(std.testing.io, ".", &ws_buf);
+    const ws_path = ws_buf[0..ws_len];
 
     var csp = sync_mod.CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run = true
     // No enhancer assigned — generateMemberComment will return null.
@@ -66,26 +65,20 @@ test "processFile_skipsUpToDate - incremental mode" {
         \\pub fn anotherFunc() void {}
         \\
     ;
-    {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const f = try tmp.dir.createFile("uptodate.zig", .{});
-        defer f.close(io);
-        try f.writeAll(source);
-    }
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "uptodate.zig", .data = source });
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try tmp.dir.realpath("uptodate.zig", &buf);
+    const abs_len = try tmp.dir.realPathFile(std.testing.io, "uptodate.zig", &buf);
+    const abs_path = buf[0..abs_len];
     var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+    const ws_len = try tmp.dir.realPathFile(std.testing.io, ".", &ws_buf);
+    const ws_path = ws_buf[0..ws_len];
 
     // Create the guidance JSON with a newer mtime by writing it after the source.
-    const json_path_rel = "uptodate.zig.json";
-    {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const jf = try tmp.dir.createFile(json_path_rel, .{});
-        defer jf.close(io);
-        try jf.writeAll("{\"meta\":{\"module\":\"uptodate\",\"source\":\"\"},\"members\":[]}");
-    }
+    try tmp.dir.writeFile(std.testing.io, .{
+        .sub_path = "uptodate.zig.json",
+        .data = "{\"meta\":{\"module\":\"uptodate\",\"source\":\"\"},\"members\":[]}",
+    });
 
     var csp = sync_mod.CommentSyncProcessor.init(allocator, ws_path, ws_path, false, false);
     csp.incremental = true;
@@ -109,17 +102,14 @@ test "processFile_bottomUpOrder - higher line processed first" {
         \\pub fn beta() void {}
         \\
     ;
-    {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const f = try tmp.dir.createFile("two_fns.zig", .{});
-        defer f.close(io);
-        try f.writeAll(source);
-    }
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "two_fns.zig", .data = source });
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try tmp.dir.realpath("two_fns.zig", &buf);
+    const abs_len = try tmp.dir.realPathFile(std.testing.io, "two_fns.zig", &buf);
+    const abs_path = buf[0..abs_len];
     var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+    const ws_len = try tmp.dir.realPathFile(std.testing.io, ".", &ws_buf);
+    const ws_path = ws_buf[0..ws_len];
 
     var csp = sync_mod.CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run
     const result = try csp.processFile(abs_path);
@@ -139,17 +129,14 @@ test "processFile_skipsPrivateFns - no comment for private fn" {
         \\fn privateHelper() void {}
         \\
     ;
-    {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const f = try tmp.dir.createFile("private.zig", .{});
-        defer f.close(io);
-        try f.writeAll(source);
-    }
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "private.zig", .data = source });
 
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try tmp.dir.realpath("private.zig", &buf);
+    const abs_len = try tmp.dir.realPathFile(std.testing.io, "private.zig", &buf);
+    const abs_path = buf[0..abs_len];
     var ws_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const ws_path = try tmp.dir.realpath(".", &ws_buf);
+    const ws_len = try tmp.dir.realPathFile(std.testing.io, ".", &ws_buf);
+    const ws_path = ws_buf[0..ws_len];
 
     var csp = sync_mod.CommentSyncProcessor.init(allocator, ws_path, ws_path, false, true); // dry_run
     const result = try csp.processFile(abs_path);

@@ -57,6 +57,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
         if ((doc.keywords.len > 0 or doc.capabilities.len > 0) and i < out.len) {
             var meta_buf_aw: std.Io.Writer.Allocating = .init(alloc);
             errdefer meta_buf_aw.deinit();
+            const mw = &meta_buf_aw.writer;
 
             if (doc.keywords.len > 0) {
                 mw.writeAll("Keywords: ") catch return i;
@@ -76,7 +77,7 @@ pub const GuidanceJsonStageBuilderImpl = struct {
                 mw.writeByte('\n') catch {};
             }
 
-            if (meta_buf.items.len > 0) {
+            if (meta_buf_aw.written().len > 0) {
                 out[i] = .{
                     .kind = .metadata,
                     .content = meta_buf_aw.toOwnedSlice() catch return i,

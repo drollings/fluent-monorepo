@@ -113,6 +113,16 @@ pub fn executeQueryWithMatch(
     return staged_mod.executeStagedConfig(allocator, db, config);
 }
 
+/// Returns true if the query looks like a single code identifier
+/// (camelCase, PascalCase, snake_case, or _prefixed), not a multi-word query.
+pub fn looksLikeIdentifier(query: []const u8) bool {
+    if (query.len < 2 or query.len > 64) return false;
+    for (query) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_') return false;
+    }
+    return std.ascii.isAlphabetic(query[0]) or query[0] == '_';
+}
+
 pub fn buildDefaultStrategies() [3]QueryMatch {
     return .{
         queryMatch(identifierMatches, .identifier_lookup, 0),

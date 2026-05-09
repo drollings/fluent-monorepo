@@ -534,37 +534,37 @@ pub const TableSchema = struct {
     }
 
     pub fn generateInsertSql(self: *TableSchema, allocator: std.mem.Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        errdefer buf.deinit();
-        const writer = buf.writer();
-        try writer.print("INSERT INTO {s} (", .{self.name});
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
+        try w.print("INSERT INTO {s} (", .{self.name});
         for (self.columns, 0..) |col, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll(col.name);
+            if (i > 0) try w.writeAll(", ");
+            try w.writeAll(col.name);
         }
-        try writer.writeAll(") VALUES (");
+        try w.writeAll(") VALUES (");
         for (self.columns, 0..) |_, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll("?");
+            if (i > 0) try w.writeAll(", ");
+            try w.writeAll("?");
         }
-        try writer.writeAll(")");
-        return buf.toOwnedSlice();
+        try w.writeAll(")");
+        return aw.toOwnedSlice();
     }
 
     pub fn generateSelectSql(self: *TableSchema, allocator: std.mem.Allocator, where_clause: ?[]const u8) ![]const u8 {
-        var buf = std.ArrayList(u8).init(allocator);
-        errdefer buf.deinit();
-        const writer = buf.writer();
-        try writer.print("SELECT ", .{});
+        var aw: std.Io.Writer.Allocating = .init(allocator);
+        errdefer aw.deinit();
+        const w = &aw.writer;
+        try w.print("SELECT ", .{});
         for (self.columns, 0..) |col, i| {
-            if (i > 0) try writer.writeAll(", ");
-            try writer.writeAll(col.name);
+            if (i > 0) try w.writeAll(", ");
+            try w.writeAll(col.name);
         }
-        try writer.print(" FROM {s}", .{self.name});
+        try w.print(" FROM {s}", .{self.name});
         if (where_clause) |wc| {
-            try writer.print(" WHERE {s}", .{wc});
+            try w.print(" WHERE {s}", .{wc});
         }
-        return buf.toOwnedSlice();
+        return aw.toOwnedSlice();
     }
 
     pub fn generateUpdateSql(self: *TableSchema, allocator: std.mem.Allocator, where_clause: []const u8) ![]const u8 {

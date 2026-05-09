@@ -11,6 +11,11 @@
       "name": "trimRight",
       "match_hash": "76557d62fe23a65111f3b5a3564a941457ab3774382cb5cf8e4fe572b17a8cfe",
       "signature": "fn trimRight(T: type, slice: []const T, pattern: []const T) -> []const T",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "slice", "type": "[]const T" },
+        { "name": "pattern", "type": "[]const T" }
+      ],
       "returns": "[]const T",
       "is_pub": true,
       "line": 8
@@ -20,6 +25,11 @@
       "name": "trimLeft",
       "match_hash": "a0f789953b8151c9ac1e157469b6377ae88f8e7391ce9e83ada97af58f2d8010",
       "signature": "fn trimLeft(T: type, slice: []const T, pattern: []const T) -> []const T",
+      "params": [
+        { "name": "T", "type": "type" },
+        { "name": "slice", "type": "[]const T" },
+        { "name": "pattern", "type": "[]const T" }
+      ],
       "returns": "[]const T",
       "is_pub": true,
       "line": 14
@@ -29,6 +39,10 @@
       "name": "containsIgnoreCase",
       "match_hash": "2f8da225c4258338c0751d613bfff67297f7d117e2e155ac2f04a084d52290de",
       "signature": "fn containsIgnoreCase(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 21
@@ -38,6 +52,9 @@
       "name": "isAlphanumericBoundary",
       "match_hash": "39fd9ed2227a43dc77adc9421678ab41621edb466480d95f8a891ec56f11380e",
       "signature": "fn isAlphanumericBoundary(c: u8) -> bool",
+      "params": [
+        { "name": "c", "type": "u8" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 31
@@ -47,6 +64,9 @@
       "name": "isIdentBoundary",
       "match_hash": "6a18ca407537456d33e96a0383da80818928b6f296a92da37710c49c803f1c7a",
       "signature": "fn isIdentBoundary(c: u8) -> bool",
+      "params": [
+        { "name": "c", "type": "u8" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 35
@@ -56,6 +76,11 @@
       "name": "containsWordWithBoundary",
       "match_hash": "910cca228c9841db0df7e44a05c08dca16d630ae174163f17f8b915821fda643",
       "signature": "fn containsWordWithBoundary(haystack: []const u8, needle: []const u8, boundary_fn: *const fn (u8) bool) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" },
+        { "name": "boundary_fn", "type": "*const fn (u8) bool" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 39
@@ -65,6 +90,10 @@
       "name": "containsWord",
       "match_hash": "a0cdfadf25975eb70dd14a14be95a57f74c542ac17c494f31cae6c2ea6baee6e",
       "signature": "fn containsWord(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 53
@@ -74,6 +103,10 @@
       "name": "containsIdentWord",
       "match_hash": "d5a6868ca5776e5f65e7d238dfac41bd373cdb5fa9de93cbb70de0c5600f0774",
       "signature": "fn containsIdentWord(haystack: []const u8, needle: []const u8) -> bool",
+      "params": [
+        { "name": "haystack", "type": "[]const u8" },
+        { "name": "needle", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 58
@@ -83,6 +116,10 @@
       "name": "containsAny",
       "match_hash": "f4772f6f3713b0c809affe85172e37f4d82db56700fc5bea89d4af5fd55517ce",
       "signature": "fn containsAny(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 63
@@ -92,6 +129,10 @@
       "name": "containsAnyWord",
       "match_hash": "ba8f56c6749bf1581266909dfd074cbe3e68b36efd23093bedcdd1ea3a25cfc2",
       "signature": "fn containsAnyWord(source: []const u8, keywords: []const []const u8) -> bool",
+      "params": [
+        { "name": "source", "type": "[]const u8" },
+        { "name": "keywords", "type": "[]const []const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 71
@@ -101,6 +142,10 @@
       "name": "hasExtension",
       "match_hash": "67214f2a30390f2260026fc7455d417021f59f586a66b3e97c73fcdfae83a070",
       "signature": "fn hasExtension(s: []const u8, extensions: []const []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" },
+        { "name": "extensions", "type": "[]const []const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 79
@@ -110,6 +155,10 @@
       "name": "isPathToken",
       "match_hash": "29ca08119803dc0c18bd9aa975ab9cd548267e288131e7a59aea55bac07ee33e",
       "signature": "fn isPathToken(s: []const u8, extensions: []const []const u8) -> bool",
+      "params": [
+        { "name": "s", "type": "[]const u8" },
+        { "name": "extensions", "type": "[]const []const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 89
@@ -119,6 +168,9 @@
       "name": "looksLikeIdentifier",
       "match_hash": "e83302f980d853ea7c01ccd648c9f5f8bfd64c7d7f3cf11bd30f055ff71f22e0",
       "signature": "fn looksLikeIdentifier(token: []const u8) -> bool",
+      "params": [
+        { "name": "token", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 95
@@ -128,6 +180,9 @@
       "name": "isTestPath",
       "match_hash": "5f085f475423eb0a8b0dd595f513ebe75164a3ae7b0a8499cac049709f8695b2",
       "signature": "fn isTestPath(rel_path: []const u8) -> bool",
+      "params": [
+        { "name": "rel_path", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 113
@@ -137,6 +192,9 @@
       "name": "skillNameFromRef",
       "match_hash": "f6fc702df2201a7cf70fda3f21fb1d8a29f5ef4a9dcbec425c1245a03fcff73f",
       "signature": "fn skillNameFromRef(ref: []const u8) -> []const u8",
+      "params": [
+        { "name": "ref", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 129
@@ -146,6 +204,9 @@
       "name": "langFromPath",
       "match_hash": "bad2ce8f34135954f00db94e5af60010e132d90f1cae1af4581ed216fa02fbb2",
       "signature": "fn langFromPath(path: []const u8) -> []const u8",
+      "params": [
+        { "name": "path", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 139
@@ -155,6 +216,10 @@
       "name": "dupeStrings",
       "match_hash": "dc915ca1f604bc1cfa756da90fec70ff4171bfbfc10e9cf939c6803b18c5a268",
       "signature": "fn dupeStrings(allocator: std.mem.Allocator, strs: []const []const u8) -> [][]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "strs", "type": "[]const []const u8" }
+      ],
       "returns": "[][]const u8",
       "is_pub": true,
       "line": 149
@@ -164,6 +229,10 @@
       "name": "dupeString",
       "match_hash": "fbcd7c48901bed48afd278b7b125b2f62b99966a0ee80616a149f614d3d77cea",
       "signature": "fn dupeString(allocator: std.mem.Allocator, s: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 164
@@ -173,6 +242,10 @@
       "name": "dupeStringOpt",
       "match_hash": "1b451b4770dd4d7b4fb37136499817118b39887f4223e65f84cfad1a2aa0cb7f",
       "signature": "fn dupeStringOpt(allocator: std.mem.Allocator, opt: ?[]const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "opt", "type": "?[]const u8" }
+      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 170
@@ -182,6 +255,9 @@
       "name": "stripBoilerplate",
       "match_hash": "c56921142090f8e4dd08c2b113fff2ce2b6316f5ca933156ab39987847a4c2aa",
       "signature": "fn stripBoilerplate(comment: []const u8) -> []const u8",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 195
@@ -191,6 +267,9 @@
       "name": "isNoisyComment",
       "match_hash": "67ab0a765e7b6c378e3394e80948062139a6358d9d30df638456c4f3ef8354c5",
       "signature": "fn isNoisyComment(comment: []const u8) -> bool",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 206
@@ -200,6 +279,10 @@
       "name": "lowerInto",
       "match_hash": "f58ff9b8d97a038c2eaceb6f12726184ee842de7b2bdeb4ee5b18f10f1450f07",
       "signature": "fn lowerInto(dst: []u8, src: []const u8) -> []u8",
+      "params": [
+        { "name": "dst", "type": "[]u8" },
+        { "name": "src", "type": "[]const u8" }
+      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 256
@@ -209,6 +292,9 @@
       "name": "stripNlPrefix",
       "match_hash": "e7161a7902fa22b05c3f595d5137f5c5b5d32f5fe96b1ad4dff84ee7762ca773",
       "signature": "fn stripNlPrefix(query: []const u8) -> []const u8",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 262
@@ -218,6 +304,10 @@
       "name": "slugify",
       "match_hash": "828aca300e0dea36f99a766e5072f29e19d911f3bae8e2224bdc47e3351917ea",
       "signature": "fn slugify(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 281
@@ -227,6 +317,11 @@
       "name": "truncateAtSentence",
       "match_hash": "e2e1e81a2bab26886517a4fddde7e4ff8bddf5c8e7afdda758426da6e4d54dda",
       "signature": "fn truncateAtSentence(allocator: std.mem.Allocator, text: []const u8, max_chars: usize) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "text", "type": "[]const u8" },
+        { "name": "max_chars", "type": "usize" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 308
@@ -236,6 +331,9 @@
       "name": "firstCommentLine",
       "match_hash": "b3933860203326d5b2a89a858e02df3262341820663f95b89b9550272b643186",
       "signature": "fn firstCommentLine(comment: []const u8) -> []const u8",
+      "params": [
+        { "name": "comment", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 336
