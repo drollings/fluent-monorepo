@@ -23,7 +23,7 @@ const structure_mod = @import("structure.zig");
 const config_mod = @import("config.zig");
 const sync_engine_mod = @import("sync_engine.zig");
 const query_engine_mod = @import("query_engine.zig");
-const codehealth_mod = @import("codehealth/main.zig");
+const health_mod = @import("health/health.zig");
 const core_intent_mod = @import("core/intent.zig");
 const core_ranking_mod = @import("core/ranking.zig");
 const core_excerpt_mod = @import("core/excerpt.zig");
@@ -54,17 +54,15 @@ const Command = enum {
     init,
     gen,
     clean,
-    structure,
     explain,
     commit,
-    show,
     @"test",
     todo,
     diary,
     telemetry,
     serve,
     ralph,
-    codehealth,
+    health,
 };
 
 /// Starts the Zig program execution by defining the entry point.
@@ -126,17 +124,15 @@ pub fn main(init: std.process.Init) !void {
         .init => sync_engine_mod.cmdInit(allocator, args[2..]),
         .gen => sync_engine_mod.cmdGen(allocator, args[2..]),
         .clean => sync_engine_mod.cmdClean(allocator, args[2..]),
-        .structure => cmdStructure(allocator, args[2..]),
         .explain => query_engine_mod.cmdExplain(allocator, args[2..]),
         .commit => sync_engine_mod.cmdCommit(allocator, args[2..]),
-        .show => query_engine_mod.cmdShow(allocator, args[2..]),
         .@"test" => query_engine_mod.cmdTest(allocator, args[2..]),
         .todo => sync_engine_mod.cmdTodo(allocator, args[2..]),
         .diary => sync_engine_mod.cmdDiary(allocator, args[2..]),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, args[2..]),
         .serve => query_engine_mod.cmdServe(allocator, args[2..]),
         .ralph => cmdRalph(allocator, args[2..]),
-        .codehealth => codehealth_mod.cmdCodehealth(allocator, args[2..]),
+        .health => health_mod.cmdHealth(allocator, args[2..]),
     };
     run_result catch |err| switch (err) {
         error.LintFailed, error.TestFailed => std.process.exit(1),
@@ -168,14 +164,13 @@ fn printHelp() !void {
         \\  init       Create default configuration (AGENTS.md integration)
         \\  gen        Generate .guidance/ JSON mirror and .guidance.db
         \\  clean      Remove .guidance/src and .guidance.db
-        \\  structure  Regenerate STRUCTURE.md from guidance JSON
         \\  explain    Search with LLM-synthesized summary (use --no-llm for raw results)
-        \\  commit          Generate AI commit message from staged diff + guidance
-        \\  show            Show vector embeddings from .guidance.db (Markdown)
-        \\  test            Benchmark explain queries against module-level comments
-        \\  todo             Work item lifecycle (new|triage|checklist|status|list|abandon)
-        \\  diary            Append a timestamped entry to the current work item DIARY.md
-        \\  codehealth       Detect unused modules, redundant code, and dead code candidates
+        \\  commit     Generate AI commit message from staged diff + guidance
+        \\  show       Show vector embeddings from .guidance.db (Markdown)
+        \\  test       Benchmark explain queries against module-level comments
+        \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon)
+        \\  diary      Append a timestamped entry to the current work item DIARY.md
+        \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
         \\Init options:
         \\  -g, --guidance-dir DIR   Guidance directory (default: .guidance)
@@ -231,12 +226,11 @@ fn printHelp() !void {
         \\  guidance explain "how does the sync processor work" --limit 5
         \\  guidance show --filter=keywords
         \\  guidance clean
-        \\  guidance structure
         \\  guidance commit
-        \\  guidance codehealth
-        \\  guidance codehealth --min-age=90 --format=json
-        \\  guidance codehealth --simhash-threshold=2
-        \\  guidance codehealth --extract-calls
+        \\  guidance health
+        \\  guidance health --min-age=90 --format=json
+        \\  guidance health --simhash-threshold=2
+        \\  guidance health --extract-calls
         \\
         \\Codehealth options:
         \\  --min-age=N            Minimum days since modification (default: 30)
@@ -249,39 +243,6 @@ fn printHelp() !void {
         \\
     );
     try stdout.flush();
-}
-
-// =============================================================================
-// structure — thin wrapper (delegates to structure_mod)
-// =============================================================================
-
-/// Transforms a C string into a Zig-safe structure using an allocator.
-fn cmdStructure(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var json_dir_arg: ?[]const u8 = null;
-    var no_llm: bool = false;
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "--json-dir") or std.mem.eql(u8, arg, "--guidance")) {
-            i += 1;
-            if (i >= args.len) return;
-            json_dir_arg = args[i];
-        } else if (std.mem.eql(u8, arg, "--no-llm")) {
-            no_llm = true;
-        }
-    }
-    const _no_llm = no_llm;
-    _ = _no_llm;
-
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
-    defer allocator.free(cwd);
-
-    const json_dir = try common.resolvePath(allocator, cwd, json_dir_arg orelse config_mod.DEFAULT_GUIDANCE_DIR);
-    defer allocator.free(json_dir);
-
-    var gen = structure_mod.StructureGenerator.init(allocator, cwd, json_dir, false);
-    defer gen.deinit();
-    try gen.generate();
 }
 
 // =============================================================================

@@ -427,7 +427,7 @@ fn writeJsonOutput(
 // ---------------------------------------------------------------------------
 
 /// Run the codehealth audit against the guidance database.
-pub fn cmdCodehealth(allocator: std.mem.Allocator, args_raw: []const []const u8) !void {
+pub fn cmdHealth(allocator: std.mem.Allocator, args_raw: []const []const u8) !void {
     var ch_args = CodehealthArgs{};
     var i: usize = 0;
     while (i < args_raw.len) : (i += 1) {

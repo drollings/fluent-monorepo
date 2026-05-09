@@ -4,18 +4,6 @@ const std = @import("std");
 const vector = @import("root.zig");
 const vector_db_mod = @import("vector_db.zig");
 
-/// Get the absolute path of an Io.Dir handle via /proc/self/fd (Linux).
-/// Caller owns the returned slice.
-fn dirAbsPath(allocator: std.mem.Allocator, dir: std.Io.Dir) ![]u8 {
-    var proc_buf: [32]u8 = undefined;
-    const proc_path = try std.fmt.bufPrintZ(&proc_buf, "/proc/self/fd/{d}", .{dir.handle});
-    var path_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const result = std.os.linux.readlink(proc_path, &path_buf, path_buf.len);
-    const n = @as(isize, @bitCast(result));
-    if (n <= 0) return error.FailedToResolveDirPath;
-    return allocator.dupe(u8, path_buf[0..@intCast(n)]);
-}
-
 test "GuidanceDb init and schema" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});

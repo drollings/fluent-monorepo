@@ -7,7 +7,6 @@
 //!
 //!   - cmdExplain(): Creates short-lived LlmClient for the explain pipeline; deinit at
 //!     function exit. Returns void; all output goes to stdout.
-//!   - cmdShow() / cmdTelemetry(): Return void; all output to stdout.
 //!   - LlmClient instances created within command functions are ephemeral — init/deinit
 //!     within the function scope. The Enhancer (when used) owns the LlmClient.
 //!   - ExplainArgs: Borrowed CLI string slices — no deinit needed.
@@ -1365,122 +1364,6 @@ fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidanc
     }
 
     return null;
-}
-
-// =============================================================================
-// show command
-// =============================================================================
-
-/// Displays a specified query result using the allocator and argument list.
-pub fn cmdShow(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    var db_path_arg: ?[]const u8 = null;
-    var filter: ?[]const u8 = null;
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
-        const arg = args[i];
-        if (std.mem.eql(u8, arg, "-o") or std.mem.eql(u8, arg, "--db")) {
-            i += 1;
-            if (i >= args.len) return;
-            db_path_arg = args[i];
-        } else if (std.mem.eql(u8, arg, "--filter")) {
-            i += 1;
-            if (i >= args.len) return;
-            filter = args[i];
-        } else if (std.mem.startsWith(u8, arg, "--filter=")) {
-            filter = arg["--filter=".len..];
-        }
-    }
-
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
-    defer allocator.free(cwd);
-
-    const db_path = try common.resolvePath(allocator, cwd, db_path_arg orelse config_mod.DEFAULT_GUIDANCE_DB_PATH);
-    defer allocator.free(db_path);
-
-    var ws: common.WriterState = .{};
-    ws.initStdout();
-    const stdout = ws.writer();
-
-    var noop: vector_mod.NoopEmbedding = .{};
-    var db = GuidanceDb.init(allocator, db_path, noop.provider()) catch |err| {
-        try stdout.print("Error: could not open db {s}: {any}\n", .{ db_path, err });
-        try stdout.flush();
-        return;
-    };
-    defer db.deinit();
-
-    const do_alias = filter == null or std.mem.eql(u8, filter.?, "alias") or std.mem.eql(u8, filter.?, "all");
-    const do_keywords = filter == null or std.mem.eql(u8, filter.?, "keywords") or std.mem.eql(u8, filter.?, "all");
-    const do_ast = filter == null or std.mem.eql(u8, filter.?, "ast") or std.mem.eql(u8, filter.?, "all");
-
-    try stdout.print("# Vector Embeddings in {s}\n\n", .{db_path});
-
-    if (do_alias) {
-        const aliases = db.getAllAliasEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading alias embeddings: {any}\n", .{err});
-            try stdout.flush();
-            return;
-        };
-        defer {
-            for (aliases) |a| {
-                allocator.free(a.key);
-                allocator.free(a.model);
-            }
-            allocator.free(aliases);
-        }
-        try stdout.print("## Alias Embeddings ({d})\n\n", .{aliases.len});
-        try stdout.print("| Key | Model |\n|-----|-------|\n", .{});
-        for (aliases) |a| {
-            try stdout.print("| `{s}` | {s} |\n", .{ a.key, a.model });
-        }
-        try stdout.print("\n", .{});
-    }
-
-    if (do_keywords) {
-        const keywords = db.getAllKeywordEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading keyword embeddings: {any}\n", .{err});
-            try stdout.flush();
-            return;
-        };
-        defer {
-            for (keywords) |k| {
-                allocator.free(k.keyword);
-                allocator.free(k.model);
-            }
-            allocator.free(keywords);
-        }
-        try stdout.print("## Keyword Embeddings ({d})\n\n", .{keywords.len});
-        try stdout.print("| Keyword | Model |\n|---------|-------|\n", .{});
-        for (keywords) |k| {
-            try stdout.print("| `{s}` | {s} |\n", .{ k.keyword, k.model });
-        }
-        try stdout.print("\n", .{});
-    }
-
-    if (do_ast) {
-        const ast = db.getAllAstNodeEmbeddings(allocator) catch |err| {
-            try stdout.print("Error reading AST node embeddings: {any}\n", .{err});
-            try stdout.flush();
-            return;
-        };
-        defer {
-            for (ast) |a| {
-                allocator.free(a.name);
-                allocator.free(a.node_type);
-                allocator.free(a.module);
-            }
-            allocator.free(ast);
-        }
-        try stdout.print("## AST Node Embeddings ({d})\n\n", .{ast.len});
-        try stdout.print("| Module | Name | Type |\n|--------|------|------|\n", .{});
-        for (ast) |a| {
-            try stdout.print("| {s} | `{s}` | {s} |\n", .{ a.module, a.name, a.node_type });
-        }
-        try stdout.print("\n", .{});
-    }
-
-    try stdout.print("---\n*Use `--filter=alias|keywords|ast|all` to show specific groups*\n", .{});
-    try stdout.flush();
 }
 
 // =============================================================================
