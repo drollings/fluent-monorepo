@@ -1,27 +1,14 @@
 //! Hash utilities for guidance — computes stable hashes for API signatures and struct members.
 const std = @import("std");
-const types = @import("types.zig");
 const common = @import("common");
 
 const sha256Hex = common.sha256Hex;
 
-/// Computes a hash from allocator, name, and parameters, returning a slice of hash values.
-pub fn apiHash(allocator: std.mem.Allocator, name: []const u8, params: []const types.Param, returns: ?[]const u8) ![]const u8 {
-    var sig_buf: std.ArrayList(u8) = .empty;
-    defer sig_buf.deinit(allocator);
-
-    try sig_buf.appendSlice(allocator, name);
-    try sig_buf.append(allocator, '(');
-    for (params, 0..) |param, i| {
-        if (i > 0) try sig_buf.append(allocator, ',');
-        try sig_buf.appendSlice(allocator, param.name);
-        try sig_buf.append(allocator, ':');
-        try sig_buf.appendSlice(allocator, param.type orelse "anytype");
-    }
-    try sig_buf.appendSlice(allocator, ")->");
-    try sig_buf.appendSlice(allocator, normalizeType(returns orelse "void"));
-
-    return sha256Hex(allocator, sig_buf.items);
+/// Computes a stable match_hash from the member's signature string.
+/// Using the signature directly avoids redundant structured params in JSON —
+/// signature is the canonical human-readable form and is already stored.
+pub fn signatureHash(allocator: std.mem.Allocator, signature: []const u8) ![]const u8 {
+    return sha256Hex(allocator, signature);
 }
 
 /// Generates a hash for a given Zig struct using its allocator and base data.

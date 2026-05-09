@@ -76,11 +76,8 @@
         {
           "type": "fn_decl",
           "name": "isFunction",
-          "match_hash": "f8c49db20575b1ba7e2aa4071bd57997f31b28dcc7108cc319cdf4662c9e8746",
+          "match_hash": "2ea919b661d0efcef20c0f7796acc652dcc74bee6beb1691217cf67f182f10b8",
           "signature": "fn isFunction(self: NodeType) -> bool",
-          "params": [
-            { "name": "self", "type": "NodeType" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 24
@@ -88,11 +85,8 @@
         {
           "type": "fn_decl",
           "name": "isContainer",
-          "match_hash": "5ebc2c5787bf0eaa501868cd69ff280f2a7a0a12ec32eab90230e3f1ac7a664b",
+          "match_hash": "1df88fd3840bb2f62c8863df5a47664e1997b5b7db7a7fdef995e722742a544b",
           "signature": "fn isContainer(self: NodeType) -> bool",
-          "params": [
-            { "name": "self", "type": "NodeType" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 29
@@ -100,11 +94,8 @@
         {
           "type": "fn_decl",
           "name": "fromString",
-          "match_hash": "03a5e049160ec8042477c8e51548b799da682e2073138eba321eb824762a7ef1",
+          "match_hash": "eb3919b17589443b41d50ba663c786f919880b3145bfbb018035284dc1c118e9",
           "signature": "fn fromString(node_type: []const u8) -> NodeType",
-          "params": [
-            { "name": "node_type", "type": "[]const u8" }
-          ],
           "returns": "NodeType",
           "is_pub": true,
           "line": 33
@@ -115,15 +106,8 @@
     {
       "type": "fn_decl",
       "name": "extractExcerpt",
-      "match_hash": "b517c74facf564425b90b444aa746e1b47007e54843537e13dc7427f915f97b3",
+      "match_hash": "e40c6c9874ab4afde13a8ae1acadd7997c25f84a40bcf56ad7b77adfc0d296b9",
       "signature": "fn extractExcerpt(allocator: std.mem.Allocator, src: []const u8, start_line: u32, node_type: NodeType, max_lines: usize) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "src", "type": "[]const u8" },
-        { "name": "start_line", "type": "u32" },
-        { "name": "node_type", "type": "NodeType" },
-        { "name": "max_lines", "type": "usize" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 48
@@ -131,14 +115,8 @@
     {
       "type": "fn_decl",
       "name": "extractSimpleExcerpt",
-      "match_hash": "01c0e54a4e1516be376ec903fad6db92a4b0a9dd52e918a3b6372c2b4645e86a",
+      "match_hash": "ac6d57af68557606de42199b10e67bd6901c81c9522e00b43502618fb8505826",
       "signature": "fn extractSimpleExcerpt(allocator: std.mem.Allocator, src_content: []const u8, start_line: usize, max_lines: usize) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "src_content", "type": "[]const u8" },
-        { "name": "start_line", "type": "usize" },
-        { "name": "max_lines", "type": "usize" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 161

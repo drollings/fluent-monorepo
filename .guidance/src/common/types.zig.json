@@ -4,7 +4,6 @@
     "source": "src/common/types.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-database"],
   "used_by": ["src/common/content_node.zig", "src/common/root.zig"],
   "members": [
     {
@@ -58,11 +57,8 @@
     {
       "type": "fn_decl",
       "name": "nodeIdFromInt",
-      "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
+      "match_hash": "9c1758c25cb51457a3785d45ede30c8274c212420135c60419bca6cbc41620d0",
       "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
-      "params": [
-        { "name": "i", "type": "i64" }
-      ],
       "returns": "NodeId",
       "is_pub": true,
       "line": 17
@@ -70,11 +66,8 @@
     {
       "type": "fn_decl",
       "name": "intFromNodeId",
-      "match_hash": "2ce2dd243b59899c2e03589e9c3c13a5b7c179e63ab07cddabf927366a571ecf",
+      "match_hash": "d5ef1a77b20f15d3083e20fbb65d74391465a6ec6e2b0c4d4f168bbd3af06577",
       "signature": "fn intFromNodeId(id: NodeId) -> i64",
-      "params": [
-        { "name": "id", "type": "NodeId" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 22
@@ -82,11 +75,8 @@
     {
       "type": "fn_decl",
       "name": "sessionIdFromInt",
-      "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
+      "match_hash": "e2d495e65533dcdf8028197ad79ccb8cde0f74a68b00a9380fa32f81f9602732",
       "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
-      "params": [
-        { "name": "i", "type": "i64" }
-      ],
       "returns": "SessionId",
       "is_pub": true,
       "line": 27
@@ -94,11 +84,8 @@
     {
       "type": "fn_decl",
       "name": "intFromSessionId",
-      "match_hash": "96e79a9b2013cc135d9df264c468d6fd4d1cafe26c3ac99265fd3d91df3cc84c",
+      "match_hash": "81ab1e47e26fa3b8d1808674b56c8cb33eb96fe595636c0164ab9ceb7bcbb1b9",
       "signature": "fn intFromSessionId(id: SessionId) -> i64",
-      "params": [
-        { "name": "id", "type": "SessionId" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 32
@@ -106,11 +93,8 @@
     {
       "type": "fn_decl",
       "name": "targetIdFromInt",
-      "match_hash": "45457661b9c35ca6a7d4a821da6a0417391ff2df7b283830693c21776dcbbf29",
+      "match_hash": "92391b82e9e3ab32444723c0b0c35679c382d114483be3e0d3e5b62b98a589f7",
       "signature": "fn targetIdFromInt(i: i64) -> TargetId",
-      "params": [
-        { "name": "i", "type": "i64" }
-      ],
       "returns": "TargetId",
       "is_pub": true,
       "line": 37
@@ -118,11 +102,8 @@
     {
       "type": "fn_decl",
       "name": "intFromTargetId",
-      "match_hash": "5fb4af2f92867f0f56a38f1c327bb990e1ae6b948c629d376a33166610e60283",
+      "match_hash": "0c2f737eff2875e54238f84527c4845badb3c0450202d0e1baeac0567a37571f",
       "signature": "fn intFromTargetId(id: TargetId) -> i64",
-      "params": [
-        { "name": "id", "type": "TargetId" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 42

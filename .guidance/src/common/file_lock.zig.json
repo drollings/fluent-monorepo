@@ -16,12 +16,8 @@
         {
           "type": "fn_decl",
           "name": "acquire",
-          "match_hash": "fb1d072ba08c6f5ffb60e82daadf4ffb12ca449a08e4be49d611d7a44747c796",
+          "match_hash": "d3dd20e867a18abf42fac9db5c1279849228f609f61e5f3eb55c9c270150aed3",
           "signature": "fn acquire(source_file: []const u8, allocator: std.mem.Allocator) -> FileLock",
-          "params": [
-            { "name": "source_file", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "FileLock",
           "is_pub": true,
           "line": 10
@@ -29,11 +25,8 @@
         {
           "type": "fn_decl",
           "name": "release",
-          "match_hash": "46fc075175fd5dcaddde5a9d37bd9109edaa0754f3ea82d9e281cbe47dc91b1d",
+          "match_hash": "3c0bf287817e6188754af799ae6ae329d04bcf28637fee82a8a6b98f1f147d4f",
           "signature": "fn release(self: *FileLock) -> void",
-          "params": [
-            { "name": "self", "type": "*FileLock" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 42
@@ -41,11 +34,8 @@
         {
           "type": "fn_private",
           "name": "posixLock",
-          "match_hash": "3b3547051112362092707f4c45b75f579c4c71b15a35649e387883d2515d7205",
+          "match_hash": "074b3a936f792c8b8e755cea541e6ef9fe2eaceb5e6e784516f86729c646b13d",
           "signature": "fn posixLock(f: std.Io.File) -> bool",
-          "params": [
-            { "name": "f", "type": "std.Io.File" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 54
@@ -53,11 +43,8 @@
         {
           "type": "fn_private",
           "name": "posixUnlock",
-          "match_hash": "b26a72ac484d4a6efaf12324c24a68f869cff43b77c1e6749d22be746ac8b7ee",
+          "match_hash": "ac0a872543ad1654605b3f277bf9f80547619ef1d8ffbf7c4c0f53d346efe95d",
           "signature": "fn posixUnlock(f: std.Io.File) -> void",
-          "params": [
-            { "name": "f", "type": "std.Io.File" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 59

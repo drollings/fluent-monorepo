@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " TreeSitterExtractor — walks tree-sitter syntax trees and extracts guidance members.\n\n Provides language-specific extraction logic for converting tree-sitter nodes\n into guidance Member types.",
-  "capabilities": ["ast-indexing", "plugin-system"],
   "used_by": ["src/guidance/plugins/treesitter_extractor_tests.zig", "src/guidance/plugins/treesitter_plugin.zig"],
   "members": [
     {
@@ -18,13 +17,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "e2c9b3c99a35dd7147f8311a8beabc67ecda708a27c003b3786356c8ae1ef81f",
+          "match_hash": "2dd01bc36bb20937975cab7d6d9852ce153e0e306b0c0563ee327d08a75f12dc",
           "signature": "fn init(allocator: std.mem.Allocator, lang_name: []const u8, source: [:0]const u8) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "lang_name", "type": "[]const u8" },
-            { "name": "source", "type": "[:0]const u8" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 26
@@ -32,11 +26,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 35
@@ -44,12 +35,8 @@
         {
           "type": "fn_decl",
           "name": "extract",
-          "match_hash": "80e5d089a5f5557a6eec765ac9ba5e8c3ff7f930072b4f4f4fec8b0719d9acf9",
+          "match_hash": "faf4faafe74b1a872fb30929139e85aa89444b35c8e81f9fe9f63592860def60",
           "signature": "fn extract(self: *Self, root: c.TSNode) -> []Member",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "root", "type": "c.TSNode" }
-          ],
           "returns": "[]Member",
           "is_pub": true,
           "line": 40
@@ -57,13 +44,8 @@
         {
           "type": "fn_private",
           "name": "walkNode",
-          "match_hash": "0ea5a4fe6665e4e87eeb418b7d28b25b8e2b8ab45bf7e896586735d52fea744b",
+          "match_hash": "98e67c8ae52cd7cb622185abb818203b405cf7aeff3a3a86063ffd932c08114a",
           "signature": "fn walkNode(self: *Self, node: c.TSNode, depth: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "depth", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 46
@@ -71,14 +53,8 @@
         {
           "type": "fn_private",
           "name": "extractMember",
-          "match_hash": "19e16733c836f588704d5c89120f5169d29ab1cd9d2afefccd2d139453632534",
+          "match_hash": "34d2f15aa9c5e7e4e31bf34296e8535d9e7d36713b87aef71ac2b2f57021e840",
           "signature": "fn extractMember(self: *Self, node: c.TSNode, kind: []const u8, depth: usize) -> bool",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" },
-            { "name": "depth", "type": "usize" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 67
@@ -86,12 +62,8 @@
         {
           "type": "fn_private",
           "name": "getNodeType",
-          "match_hash": "3d6bc025cbdb0e8d36ae4b3dde686d76bd80b7a0983813788b6cf8e23e1ac927",
+          "match_hash": "99ff4361dfaf402678f0e68f15ce95ed640a3c66995a2114f0e0faf7677eee44",
           "signature": "fn getNodeType(self: *const Self, kind: []const u8) -> ?MemberType",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "kind", "type": "[]const u8" }
-          ],
           "returns": "?MemberType",
           "is_pub": false,
           "line": 112
@@ -99,13 +71,8 @@
         {
           "type": "fn_private",
           "name": "getNodeName",
-          "match_hash": "0ca1ce998cc38120e3574f40b2a68afc7fba402fdacb3696d073038e937c7f92",
+          "match_hash": "3238dbdd5dcb570effcb919c8f9bf09ec51081882d77d0c4940178d222d0c119",
           "signature": "fn getNodeName(self: *const Self, node: c.TSNode, kind: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 169
@@ -113,14 +80,8 @@
         {
           "type": "fn_private",
           "name": "getSignature",
-          "match_hash": "0ab3e294b9b1d5b00fd3d5dd632b02ec31bdcfda33112eb7104ac51c8dfc919d",
+          "match_hash": "da33b5124c59bc8520b87a4e857e90c279ac5bc5e69038145c9f819ae4db6823",
           "signature": "fn getSignature(self: *const Self, node: c.TSNode, kind: []const u8, mtype: MemberType) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" },
-            { "name": "mtype", "type": "MemberType" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 197
@@ -128,13 +89,8 @@
         {
           "type": "fn_private",
           "name": "extractParams",
-          "match_hash": "4d57e7862f03e3f3e9e6468b65fa13e2c6a0b5c96124469e77de65077ae0e229",
+          "match_hash": "68af1532b1734f8072b05c2d585c349c9151f7f14174983346e5686175b23cf6",
           "signature": "fn extractParams(self: *const Self, node: c.TSNode, kind: []const u8) -> []const Param",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" }
-          ],
           "returns": "[]const Param",
           "is_pub": false,
           "line": 228
@@ -142,13 +98,8 @@
         {
           "type": "fn_private",
           "name": "extractReturnType",
-          "match_hash": "0223fb7ae5e4734b1e906fc0c947eea38f823ef86065cb7933162ddd46b198ba",
+          "match_hash": "08c240f03e0896d28a18ee24abb88ceead9f2e332d72f70aab6cb4017da9f0fb",
           "signature": "fn extractReturnType(self: *const Self, node: c.TSNode, kind: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 236
@@ -156,13 +107,8 @@
         {
           "type": "fn_private",
           "name": "isPublic",
-          "match_hash": "7e3157898d50a7a517d4cc9db7f3aaa069f5d2b1be86a5d4559884fc490e307b",
+          "match_hash": "0de72ff9f878ab8e0385549c90f3fc80d89f77ef0400a099734f67b3d6843559",
           "signature": "fn isPublic(self: *const Self, node: c.TSNode, kind: []const u8) -> bool",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" },
-            { "name": "kind", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 245
@@ -170,12 +116,8 @@
         {
           "type": "fn_private",
           "name": "nodeToSlice",
-          "match_hash": "4304c501fa782bf373080dce08d368333baafaac3e985beb6163ac6422ef1350",
+          "match_hash": "efc88a66b19f8001a2a5d1b0b1d9704da2508c755cd467209708db69dca50e3a",
           "signature": "fn nodeToSlice(self: *const Self, node: c.TSNode) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "node", "type": "c.TSNode" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 276

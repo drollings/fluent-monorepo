@@ -18,11 +18,8 @@
     {
       "type": "fn_decl",
       "name": "WorkUnit",
-      "match_hash": "b860208ee6013840bdb8a59ca55fc477281500d16dc72e23fbf5d9911ae046d4",
+      "match_hash": "cac8d6a515e966a7acdecf96f8abde05abf4f4ef7da279d56ee65ff48b4b4466",
       "signature": "fn WorkUnit(Handler: type) -> type",
-      "params": [
-        { "name": "Handler", "type": "type" }
-      ],
       "returns": "type",
       "is_pub": true,
       "line": 66

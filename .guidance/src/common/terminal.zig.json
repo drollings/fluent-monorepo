@@ -9,7 +9,7 @@
     {
       "type": "fn_private",
       "name": "getWinsize",
-      "match_hash": "1ed424902364e690941072c6156ddc04a4951c1cfefeb67493115cc7c2f0d474",
+      "match_hash": "57e28a6e7fa3260210038db5a87be8dd397a806c13313ecf224c83d9441e6a69",
       "signature": "fn getWinsize() -> ?std.posix.winsize",
       "returns": "?std.posix.winsize",
       "is_pub": false,
@@ -18,7 +18,7 @@
     {
       "type": "fn_decl",
       "name": "getTerminalWidth",
-      "match_hash": "6c5ad37f2ac0c5a6e0ff25be3f928c420c00348840b24ba116f3fb89af371977",
+      "match_hash": "942fa4d16db2c4df17093c9bfc5fce27e78cade73d0cfab3601ed365dd4e4d7c",
       "signature": "fn getTerminalWidth() -> usize",
       "returns": "usize",
       "is_pub": true,
@@ -27,7 +27,7 @@
     {
       "type": "fn_decl",
       "name": "getTerminalHeight",
-      "match_hash": "93b9650729632a318c2aff501fc84f8e20927f0e23ed0329fac0e875b74a5c66",
+      "match_hash": "dd1f8768d15f713d32697489a11bc013670797d77306d24258502e1f964d0edf",
       "signature": "fn getTerminalHeight() -> usize",
       "returns": "usize",
       "is_pub": true,
@@ -36,7 +36,7 @@
     {
       "type": "fn_decl",
       "name": "isTerminal",
-      "match_hash": "612dd0302de5cec5e599347ee95241db8c60672f3ebd7bf582cf8276dff2428e",
+      "match_hash": "8621b4b4506a7060132ef351462b94268988ac813374893b743366c01a0b4e71",
       "signature": "fn isTerminal() -> bool",
       "returns": "bool",
       "is_pub": true,
@@ -45,12 +45,8 @@
     {
       "type": "fn_decl",
       "name": "confirm",
-      "match_hash": "7530f403d5322eb0be8ff6ca41c8588cb2062d609c88dec616b59be26662f10a",
+      "match_hash": "32c40c6b4088078aaf426f5440301272dbcec93fb8dfbcc15c25c5ad56dd7e44",
       "signature": "fn confirm(question: []const u8, default: bool) -> bool",
-      "params": [
-        { "name": "question", "type": "[]const u8" },
-        { "name": "default", "type": "bool" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 39
@@ -58,13 +54,8 @@
     {
       "type": "fn_decl",
       "name": "ask",
-      "match_hash": "4bbfe7963f7193c6aef54558a8781270ad73958cb0dc6ea58d12e3dd00d9ef38",
+      "match_hash": "5c1bddf3c045667d6de54406347a1d113c515234b94a59b786637de332956cea",
       "signature": "fn ask(allocator: std.mem.Allocator, question: []const u8, default: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "question", "type": "[]const u8" },
-        { "name": "default", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 65
@@ -72,13 +63,8 @@
     {
       "type": "fn_decl",
       "name": "askInt",
-      "match_hash": "bf4f873c75a0d147542c69320d4a26d6edc042e42682e390371c86014bc49f69",
+      "match_hash": "36a323a5f391ef74f5dbf8ab5954065f7e4820e5dbd8418c790f2218dcfa006f",
       "signature": "fn askInt(allocator: std.mem.Allocator, question: []const u8, default: ?i64) -> i64",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "question", "type": "[]const u8" },
-        { "name": "default", "type": "?i64" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 91
@@ -93,12 +79,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "4d08c8c36dad427221cb8dc0bde04f1d0a07d8afb1114006bc3dc6e85e2a1713",
+          "match_hash": "c3c45436546ebe628f4f3a1b2631599b1d01cb3ffd024267da07c00f1eed7b29",
           "signature": "fn init(description: []const u8, total: usize) -> ProgressBar",
-          "params": [
-            { "name": "description", "type": "[]const u8" },
-            { "name": "total", "type": "usize" }
-          ],
           "returns": "ProgressBar",
           "is_pub": true,
           "line": 126
@@ -106,12 +88,8 @@
         {
           "type": "fn_decl",
           "name": "advance",
-          "match_hash": "c9f12c3710ffa947ab621eb9e28fb587432484dc33305751d256f31c2235bc9e",
+          "match_hash": "7234c0009b1424fa8fcbf6324c9336b8ba3328ccc4c06205bcc8faeb7c2b0b11",
           "signature": "fn advance(self: *ProgressBar, amount: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*ProgressBar" },
-            { "name": "amount", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 135
@@ -119,12 +97,8 @@
         {
           "type": "fn_decl",
           "name": "set",
-          "match_hash": "3a0b356d186a3b0a10c845e18b93c66427e83ee88e0f31fa7dd264860062dc87",
+          "match_hash": "53976dc014365f60712cc9e9e855fe47fa0fbbfd03f26b964bf082ee06bd59fe",
           "signature": "fn set(self: *ProgressBar, value: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*ProgressBar" },
-            { "name": "value", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 142
@@ -132,12 +106,8 @@
         {
           "type": "fn_decl",
           "name": "render",
-          "match_hash": "976ba0096a4cc2eb2c483824f123e9b0d5441219bc3c7278d60888a5c166a7e8",
+          "match_hash": "917eb82046aea58d3d2b3b170de366384b38412ad47f908fd4a5618a4c2b6472",
           "signature": "fn render(self: *const ProgressBar, writer) -> void",
-          "params": [
-            { "name": "self", "type": "*const ProgressBar" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 146
@@ -145,12 +115,8 @@
         {
           "type": "fn_decl",
           "name": "complete",
-          "match_hash": "8713f9dc58a47ebc742757f15abd13926782707a9473379b42968cecf92ff151",
+          "match_hash": "3365a050f986c079010388740be63c03277777a7af640dc7e761caba627f067f",
           "signature": "fn complete(self: *const ProgressBar, writer) -> void",
-          "params": [
-            { "name": "self", "type": "*const ProgressBar" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 166
@@ -270,11 +236,8 @@
         {
           "type": "fn_decl",
           "name": "code",
-          "match_hash": "57c0d1c8b6e1392a0046b19dfe08348daf6309f39daedf355be079029e69f58a",
+          "match_hash": "7341e39837e8056ac47a70440340c07375f67205f42e9f93966f785bc5d20b3f",
           "signature": "fn code(self: Color) -> []const u8",
-          "params": [
-            { "name": "self", "type": "Color" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 192
@@ -285,13 +248,8 @@
     {
       "type": "fn_decl",
       "name": "colorPrint",
-      "match_hash": "412db495c624a2a083e7cb1c50b1e156f5b66532e2c56de52e0ebd2629b040d5",
+      "match_hash": "8806b7a833e4053247abf2504c6a1bed73dbb0a478ff8779cd6583713ff95683",
       "signature": "fn colorPrint(writer, color: Color, text: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "color", "type": "Color" },
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 216

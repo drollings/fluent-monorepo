@@ -4,18 +4,13 @@
     "source": "src/vector/simhash.zig",
     "language": "zig"
   },
-  "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig", "src/vector/simhash_tests.zig", "src/vector/vector_db.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "hammingDistance",
-      "match_hash": "ab79fe9c5a257fc37a6db7ee2ff23f5ec4389a5fe08187f76a6e534099b13f0c",
+      "match_hash": "5e97dc16298a4705ae40926461711e2b258b39a8e7ed249ddae5906c0b055f86",
       "signature": "fn hammingDistance(a: u64, b: u64) -> u7",
-      "params": [
-        { "name": "a", "type": "u64" },
-        { "name": "b", "type": "u64" }
-      ],
       "returns": "u7",
       "is_pub": true,
       "line": 52
@@ -23,13 +18,8 @@
     {
       "type": "fn_decl",
       "name": "similar",
-      "match_hash": "89311663cbbe274010d3629ad1b01a058051e4ba960f28fada404d29cd565ce4",
+      "match_hash": "a45ea3ebdedcc9e31a4a1d4a416909d80602b9f9a55a5bf306a0e404e6a44c3b",
       "signature": "fn similar(a: u64, b: u64, threshold: u7) -> bool",
-      "params": [
-        { "name": "a", "type": "u64" },
-        { "name": "b", "type": "u64" },
-        { "name": "threshold", "type": "u7" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 57
@@ -37,11 +27,8 @@
     {
       "type": "fn_decl",
       "name": "embeddingHash",
-      "match_hash": "2b95d9941238cfafd0a58b5bba811479f98f187cf91956aee68021f9e3a16459",
+      "match_hash": "13d01f3fbb8de2467b15615f43ea1957d04264b4f32a60ca9380c032cb9c959a",
       "signature": "fn embeddingHash(embedding: []const f32) -> u64",
-      "params": [
-        { "name": "embedding", "type": "[]const f32" }
-      ],
       "returns": "u64",
       "is_pub": true,
       "line": 68
@@ -49,11 +36,8 @@
     {
       "type": "fn_decl",
       "name": "maxHamming",
-      "match_hash": "0bc27977902f5362aa54698e501725e9588233bb30ef6acfd75186e754f07980",
+      "match_hash": "6ff6a5df7580b55464f6170ae179853e2a7dd200c0b2f6893accb599e7e81b36",
       "signature": "fn maxHamming(cosine_threshold: f32) -> u7",
-      "params": [
-        { "name": "cosine_threshold", "type": "f32" }
-      ],
       "returns": "u7",
       "is_pub": true,
       "line": 83

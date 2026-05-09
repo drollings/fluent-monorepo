@@ -4,7 +4,6 @@
     "source": "src/reflection/root.zig",
     "language": "zig"
   },
-  "capabilities": ["reflection"],
   "members": [
     {
       "type": "struct",
@@ -160,11 +159,8 @@
         {
           "type": "fn_decl",
           "name": "describeField",
-          "match_hash": "cbc9e8d816917833ee7e1100796852365ab59a72ab048b3e073d17f7ce1aba65",
+          "match_hash": "db282708da746d3c98528cf871f5db23f42d79569d4f8ff7f14e6eaa2a4de08d",
           "signature": "fn describeField(name: []const u8) -> FieldMeta",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "FieldMeta",
           "is_pub": true,
           "line": 330

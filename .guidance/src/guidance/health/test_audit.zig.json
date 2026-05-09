@@ -10,12 +10,8 @@
     {
       "type": "fn_decl",
       "name": "auditTestFiles",
-      "match_hash": "042ff7acd0f1e2bf1f4df8d7c53e864dc599f43b85726b7a6fc7afac8e16fa92",
+      "match_hash": "e61a2a327856c9cc108112f919a270fa83a4c64aa3b322f96c8a23aeee284312",
       "signature": "fn auditTestFiles(allocator: std.mem.Allocator, workspace: []const u8) -> []TestAnomaly",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
       "returns": "[]TestAnomaly",
       "is_pub": true,
       "line": 29
@@ -23,12 +19,8 @@
     {
       "type": "fn_decl",
       "name": "writeAiOutput",
-      "match_hash": "a325c7ad055b8a3392d708faf6b6af096a113c551cd1b6b7af0f7cd8157af367",
+      "match_hash": "fafdcf2b3a9522757ba919925db5aada4cf3f0ee6ede208d8962e03702fa0fca",
       "signature": "fn writeAiOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 137
@@ -36,12 +28,8 @@
     {
       "type": "fn_decl",
       "name": "writeHumanOutput",
-      "match_hash": "4a670c6631f3a1b44ddccd0f4b30e52765b4746f9226f4d310bb2a0b1ba9ea50",
+      "match_hash": "60fddfe9da96c22ac996a7cccce4d074ba8f456b8ab6d3adc73816befd9cb6f6",
       "signature": "fn writeHumanOutput(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 156
@@ -49,12 +37,8 @@
     {
       "type": "fn_decl",
       "name": "writeJsonFragment",
-      "match_hash": "f5b1ad311986b1f2c5ab929f5a4e986e5cd81937b0e8eb6d42c96878bfd29deb",
+      "match_hash": "254c16d2851516590432cd7bea841aaeb281b4745bcedc2b3e09cb26c4993663",
       "signature": "fn writeJsonFragment(w: *std.Io.Writer, anomalies: []const TestAnomaly) -> void",
-      "params": [
-        { "name": "w", "type": "*std.Io.Writer" },
-        { "name": "anomalies", "type": "[]const TestAnomaly" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 167

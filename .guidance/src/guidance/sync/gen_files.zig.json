@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " sync/gen_files.zig — Gen command, file pipeline, and DB sync logic.\n\n Extracted from sync_engine.zig (M2.1) to keep file sizes navigable.\n Public API: GenArgs, cmdGen, cmdGenImpl, and all internal helpers used by them.\n\n ## Memory Ownership\n\n   - GenArgs: Holds borrowed CLI string slices (no deinit needed); parsed from argv.\n   - ResolvedGenPaths: Owns resolved absolute-path strings; free with deinit().\n   - cmdGen()/cmdGenImpl(): Orchestrates file processing; creates an Enhancer internally\n     (which owns the LlmClient) and tears it down at function exit.\n   - processFiles(): Allocates per-file results; arena-backed for batch processing.\n   - setupEnhancer()/teardownCspEnhancer(): Create/destroy an LlmClient-based Enhancer;\n     caller owns the returned Enhancer and must call teardownCspEnhancer() to deinit.\n   - CapabilitiesSyncFn: Function pointer to avoid circular imports; ownership of\n     capability sync is delegated to sync_engine.zig.",
-  "capabilities": ["plugin-system", "explain-query", "config-system", "sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/sync_engine.zig"],
   "members": [
     {
@@ -18,11 +17,8 @@
         {
           "type": "fn_decl",
           "name": "parse",
-          "match_hash": "d3bd8e7e6231c7f37529384eba17fbdd0dfafa921f50cae98a53b64cd80bbba9",
+          "match_hash": "719da71b0505605a9d159e42472f4dbe106ec822837d73481e27e3d20673ef11",
           "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!GenArgs",
-          "params": [
-            { "name": "args", "type": "[]const []const u8" }
-          ],
           "returns": "error{MissingValue}!GenArgs",
           "is_pub": true,
           "line": 96
@@ -40,12 +36,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "00d86dcf040811f35ee0676da48d09faaec24c07f240d4dc3dc5b32488650415",
+          "match_hash": "068bda79ce3b0bb31bdd35380c3a031460aaf9cbfaf08af06f584caeb5818f76",
           "signature": "fn deinit(self: *@This(), allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 193
@@ -56,13 +48,8 @@
     {
       "type": "fn_decl",
       "name": "resolveGenPaths",
-      "match_hash": "07080788f25090bfa7cba50c49b249ceebba213020b0cef61a51dfbc91570f35",
+      "match_hash": "2a0fee8b60acc7a34321f1d876897c245a37f96aa05ad69e361af53a0442b254",
       "signature": "fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) -> ResolvedGenPaths",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cwd", "type": "[]const u8" }
-      ],
       "returns": "ResolvedGenPaths",
       "is_pub": true,
       "line": 201
@@ -70,14 +57,8 @@
     {
       "type": "fn_decl",
       "name": "setupCspEnhancer",
-      "match_hash": "77a90e9d49568bd6f4c7e158653e8e7e0fca8d6cfabc1831fc07bacf62648d03",
+      "match_hash": "2a8999ffcca9d06adbdf4ba52d25be367371fddf6cbd521369dd13137d2c813a",
       "signature": "fn setupCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 217
@@ -85,12 +66,8 @@
     {
       "type": "fn_decl",
       "name": "teardownCspEnhancer",
-      "match_hash": "acc3b7d93489a19c0c0354a3f963992aec7230dd0a62252d0446e5282fef44eb",
+      "match_hash": "82c9969dd60f854c9daf98317d72399726d5302ba704cb92948b955c63f05d6e",
       "signature": "fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "csp", "type": "*comment_sync_mod.CommentSyncProcessor" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 274
@@ -98,14 +75,8 @@
     {
       "type": "fn_decl",
       "name": "setupEnhancer",
-      "match_hash": "120ad3213ee0ca15377ce81747328459437122858694d62791cca8a7866d982d",
+      "match_hash": "2f3cc9d002f0f0a23b63fcdd3dfd18bf825871c7e28c200d19bf02a931be5bbf",
       "signature": "fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 287
@@ -113,14 +84,8 @@
     {
       "type": "fn_decl",
       "name": "processFiles",
-      "match_hash": "f4dbcc455e29a45fe550b21d46362125c1a10c0c3d16929b9e6fceddca225baf",
+      "match_hash": "0fd6602bdada3ba33aaacf514e24e58aae4d63349591e1e6636362c5640d81fd",
       "signature": "fn processFiles(allocator: std.mem.Allocator, processor: *sync_mod.SyncProcessor, ga: GenArgs, paths: ResolvedGenPaths) -> usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "paths", "type": "ResolvedGenPaths" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 384
@@ -128,11 +93,8 @@
     {
       "type": "fn_decl",
       "name": "databaseHasTables",
-      "match_hash": "da4307bc0319d5dd703c0534e6aa3060a72044938fd1eb5e9d5084baf9f56e85",
+      "match_hash": "95a9857861cd04786eff146600c6cee7714f3e6ee6054c6b76ab6f3051b40c2b",
       "signature": "fn databaseHasTables(db_path: []const u8) -> bool",
-      "params": [
-        { "name": "db_path", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 424
@@ -140,14 +102,8 @@
     {
       "type": "fn_decl",
       "name": "guidanceDbIsUpToDate",
-      "match_hash": "6c9bfc592617668bbbfeb142627b2e5b5bfec4d77f3be197f2f6cfb9978f22ea",
+      "match_hash": "b4ece04e660c2f3d11f33f54b1f1ac5aced1e948382e32798f2105c1f4115867",
       "signature": "fn guidanceDbIsUpToDate(allocator: std.mem.Allocator, db_path: []const u8, json_dir: []const u8, capabilities_dir: []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db_path", "type": "[]const u8" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "capabilities_dir", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 459
@@ -155,15 +111,8 @@
     {
       "type": "fn_decl",
       "name": "syncGuidanceDb",
-      "match_hash": "f1b738d56a790ce7de0fdeb5f569cb70b434980a82875ab67f9541a56fd4aa6d",
+      "match_hash": "f1341e64c0dd4e9aaba9fa8e30088d5afa8429bf216719e7ee6fcb22d9b75efd",
       "signature": "fn syncGuidanceDb(allocator: std.mem.Allocator, json_dir: []const u8, guidance_db_path: []const u8, cfg: *const config_mod.ProjectConfig, verbose: bool) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "guidance_db_path", "type": "[]const u8" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "verbose", "type": "bool" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 527
@@ -171,12 +120,8 @@
     {
       "type": "fn_decl",
       "name": "clearSynthesisCacheAt",
-      "match_hash": "365c51ffba6ce4594aa284d6bdd6baa45c6c701ff57dbe620450c2623314192b",
+      "match_hash": "c2f3316f469a2d8775f1735a50bc4172028ce90d74fe7637d3ab9241d22e0e75",
       "signature": "fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 610
@@ -184,12 +129,8 @@
     {
       "type": "fn_decl",
       "name": "generateSemanticAliases",
-      "match_hash": "cb6ff7c1ef8d3db0c34ab64b2be64c601e8633258b3f369f885d29ccaee8b83e",
+      "match_hash": "05551cb22fd0ff2b587cafc66754fa037fdc916917141e464e141db6f34c2e45",
       "signature": "fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) -> void",
-      "params": [
-        { "name": "guidance_dir", "type": "[]const u8" },
-        { "name": "verbose", "type": "bool" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 623
@@ -197,13 +138,8 @@
     {
       "type": "fn_decl",
       "name": "cmdGen",
-      "match_hash": "91ae1a04e8c5430548081aee8e81d5dc10daabcca4f5dfe7f186e41872f23f8c",
+      "match_hash": "c56b8907825f42ae77b912a6d1b2e6128299c51d4dc5c5f7ebd4a3de559614ad",
       "signature": "fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" },
-        { "name": "caps_sync_fn", "type": "?CapabilitiesSyncFn" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 649
@@ -211,13 +147,8 @@
     {
       "type": "fn_decl",
       "name": "cmdGenImpl",
-      "match_hash": "3ded804682617c3c6e51fc041fb4d9f77b90a0e8bc72e7923fa479b9f98ae3c2",
+      "match_hash": "fd8891f825c5fc4a6dd77ac5a15a09ec80f498875a5d5f30d9833ca671bf2bc0",
       "signature": "fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ga", "type": "GenArgs" },
-        { "name": "caps_sync_fn", "type": "?CapabilitiesSyncFn" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 658
@@ -225,13 +156,8 @@
     {
       "type": "fn_decl",
       "name": "validateAllJsonSchema",
-      "match_hash": "a63760e00b02ba6bd7b28d000ef69702fe3c3af1fab05e92ec6313478ece4cc9",
+      "match_hash": "b69b441cf3764777090c56fda69b6033784162e120cf16caad14cdca63b44895",
       "signature": "fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "verbose", "type": "bool" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 1073
@@ -239,16 +165,8 @@
     {
       "type": "fn_decl",
       "name": "postProcessCommentSync",
-      "match_hash": "33cb4d71a72ead3dbbea80c1307cf202a8268b48b1e4114c5780fcd974f3288f",
+      "match_hash": "d3f7adfb07f908e17fdbd5332ae01d8171af8cf4a6fe9f3a97f514784c0dd91f",
       "signature": "fn postProcessCommentSync(allocator: std.mem.Allocator, json_dir: []const u8, workspace: []const u8, cfg: *const config_mod.ProjectConfig, dry_run: bool, verbose: bool) -> usize",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "dry_run", "type": "bool" },
-        { "name": "verbose", "type": "bool" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 1115
@@ -256,14 +174,8 @@
     {
       "type": "fn_decl",
       "name": "guidanceJsonPath",
-      "match_hash": "85ae11a26a82032d655505e79d23b140b3967ba263b2efafe7e9458277e96ba7",
+      "match_hash": "a50e90ce27b88d3a078a4f4491cdf7794689340ef8425664af6cdf9f5f1a2982",
       "signature": "fn guidanceJsonPath(allocator: std.mem.Allocator, workspace: []const u8, json_dir: []const u8, src_abs: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "json_dir", "type": "[]const u8" },
-        { "name": "src_abs", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 1314
@@ -271,13 +183,8 @@
     {
       "type": "fn_decl",
       "name": "runPhaseCommand",
-      "match_hash": "db25d3eed9e616d739efcbb121c4b8dc3e99101aad2233f95e7093f40aa76778",
+      "match_hash": "b0e8ea24cbc0f21b388210db37c0089e9fc828819905cf4fda371be6350bb7e4",
       "signature": "fn runPhaseCommand(allocator: std.mem.Allocator, argv_template: []const []const u8, file_path: []const u8) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "argv_template", "type": "[]const []const u8" },
-        { "name": "file_path", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 1332
@@ -285,13 +192,8 @@
     {
       "type": "fn_decl",
       "name": "collectFilesWithExts",
-      "match_hash": "f3c9cbed1e148f37491c740fa237689ae1175cff9b9073fa8e05ffea9601bbc3",
+      "match_hash": "d9c3bf2424e3ec3bf0b2bdfaacce95920a80d8e4772112b0f6b0a672b49fdc17",
       "signature": "fn collectFilesWithExts(allocator: std.mem.Allocator, dir_abs: []const u8, exts: []const []const u8) -> [][]const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "dir_abs", "type": "[]const u8" },
-        { "name": "exts", "type": "[]const []const u8" }
-      ],
       "returns": "[][]const u8",
       "is_pub": true,
       "line": 1346
@@ -299,15 +201,8 @@
     {
       "type": "fn_decl",
       "name": "runBuiltinFilePipeline",
-      "match_hash": "a008481a47162108616256bb51946e1d84f0ceaee2381965b7ae8e56a570ca04",
+      "match_hash": "4d8823170377fc05afdff7252449f6b22058297f2ea84775ed525aa1bd4bf857",
       "signature": "fn runBuiltinFilePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, src_abs: []const u8, ga: GenArgs) -> bool",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "src_abs", "type": "[]const u8" },
-        { "name": "ga", "type": "GenArgs" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 1383
@@ -315,18 +210,8 @@
     {
       "type": "fn_decl",
       "name": "runBuiltinLanguagePipeline",
-      "match_hash": "2b7a0cd08ab8917871e6dabef9af13c3fb0f6d9875ae96fd5cd38a1710af2b70",
+      "match_hash": "94ce4cdf2da00fe09bf4a11fab4a45d3e83a65d5e070e1e68be92d778da07f6c",
       "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cfg", "type": "*const config_mod.ProjectConfig" },
-        { "name": "processor", "type": "*sync_mod.SyncProcessor" },
-        { "name": "language", "type": "[]const u8" },
-        { "name": "stale_files", "type": "[]const []const u8" },
-        { "name": "all_files", "type": "[]const []const u8" },
-        { "name": "guidance_root", "type": "[]const u8" },
-        { "name": "ga", "type": "GenArgs" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 1438

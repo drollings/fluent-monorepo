@@ -71,29 +71,6 @@ fn writeMember(writer: anytype, member: types.Member, indent: []const u8) !void 
         try writer.print("{s}", .{fi});
         try writeStrField(writer, "signature", s);
     }
-    if (member.params.len > 0) {
-        try writeSep(writer, &need);
-        try writer.print("{s}\"params\": [\n", .{fi});
-        for (member.params, 0..) |param, i| {
-            try writer.print("{s}  {{ \"name\": \"", .{fi});
-            try writeEscaped(writer, param.name);
-            try writer.writeByte('"');
-            if (param.type) |t| {
-                try writer.writeAll(", \"type\": \"");
-                try writeEscaped(writer, t);
-                try writer.writeByte('"');
-            }
-            if (param.default) |d| {
-                try writer.writeAll(", \"default\": \"");
-                try writeEscaped(writer, d);
-                try writer.writeByte('"');
-            }
-            try writer.writeAll(" }");
-            if (i < member.params.len - 1) try writer.writeByte(',');
-            try writer.writeByte('\n');
-        }
-        try writer.print("{s}]", .{fi});
-    }
     if (member.returns) |r| {
         try writeSep(writer, &need);
         try writer.print("{s}", .{fi});

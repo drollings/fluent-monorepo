@@ -73,8 +73,8 @@ pub const MemberExtractor = struct {
         const line = c.ts_node_start_point(node).row + 1; // 1-based
         const signature = try self.getSignature(node, kind, member_type.?);
 
-        // Compute match_hash
-        const match_hash = try hash.apiHash(self.allocator, name, &.{}, null);
+        // Compute match_hash from the signature string (same source as JSON's "signature" field).
+        const match_hash = try hash.signatureHash(self.allocator, signature);
 
         // Extract parameters and return type for functions
         var params: []const Param = &.{};

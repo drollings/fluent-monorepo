@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " line_verify.zig — Declaration-level line number verification for guidance.\n\n Detects stale line numbers stored in JSON by checking whether a member's\n declaration actually appears at its recorded position, and searching the\n file for the current location when it does not.",
-  "capabilities": ["ast-indexing", "sync-pipeline"],
   "used_by": ["src/guidance/core/excerpt.zig", "src/guidance/staged.zig", "src/guidance/sync/json_store.zig", "src/guidance/sync/line_verify_tests.zig"],
   "members": [
     {
@@ -18,12 +17,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "e7398e381182d688314972bc4837b27153a1021176a409d68995226bc9407a05",
+          "match_hash": "93e311554ef7a57691fad8f377b045ddbe35c690b6391bc2c0c9ec429c2c14f9",
           "signature": "fn deinit(self: VerificationResult, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "VerificationResult" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 19
@@ -34,13 +29,8 @@
     {
       "type": "fn_decl",
       "name": "verifyMemberLine",
-      "match_hash": "149f5be67ecbb2ace4b467a95b137f5ddd1a733444a3f0b1719897de883c7bfd",
+      "match_hash": "b3c1fe8fd78f029627fbfa6e4b7a2d7fe266c88ef51abc32ad0c101d877eac25",
       "signature": "fn verifyMemberLine(allocator: std.mem.Allocator, source: []const u8, member: types.Member) -> VerificationResult",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "source", "type": "[]const u8" },
-        { "name": "member", "type": "types.Member" }
-      ],
       "returns": "VerificationResult",
       "is_pub": true,
       "line": 25
@@ -48,14 +38,8 @@
     {
       "type": "fn_private",
       "name": "lineMatchesDecl",
-      "match_hash": "cde5ecf2ac3035e4c314d3076c95b958a68e24359f740d4875d3da2b54910df3",
+      "match_hash": "a057a7bf6afde9534737020bfcb1087a81542657ec952f02f7db5bbcbd1e3b6d",
       "signature": "fn lineMatchesDecl(source: []const u8, line_no: u32, name: []const u8, member_type: types.MemberType) -> bool",
-      "params": [
-        { "name": "source", "type": "[]const u8" },
-        { "name": "line_no", "type": "u32" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "member_type", "type": "types.MemberType" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 49
@@ -63,13 +47,8 @@
     {
       "type": "fn_private",
       "name": "declPatternInLine",
-      "match_hash": "7096c975c9540a791972f4db7c4057b2eb6e2a29306600d53968b4cb7f153150",
+      "match_hash": "a7bd940986046f1130825f6a07cb47637d928dc1711f6580beab2004b3dbef00",
       "signature": "fn declPatternInLine(line: []const u8, name: []const u8, member_type: types.MemberType) -> bool",
-      "params": [
-        { "name": "line", "type": "[]const u8" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "member_type", "type": "types.MemberType" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 60
@@ -77,14 +56,8 @@
     {
       "type": "fn_private",
       "name": "searchForDecl",
-      "match_hash": "774590af55f235c36c9f51ebc15490a883263be75402b43dc9709e8c50a0a436",
+      "match_hash": "f7be563d23f2dce86c484ff40e477ba3cbf3825e394a898dd135f174ca311d34",
       "signature": "fn searchForDecl(allocator: std.mem.Allocator, source: []const u8, name: []const u8, member_type: types.MemberType) -> ?VerificationResult",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "source", "type": "[]const u8" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "member_type", "type": "types.MemberType" }
-      ],
       "returns": "?VerificationResult",
       "is_pub": false,
       "line": 100

@@ -16,7 +16,7 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "6e5a0260d97c4f2219e22ccd129c365ccc6d80e790199f9375c9213a76fe39a6",
+          "match_hash": "baa3e7bd5fda181bc057a977ce16d0dfde0429f2cbb29cce84bcf7a5be897797",
           "signature": "fn init() -> LatencyHistogram",
           "returns": "LatencyHistogram",
           "is_pub": true,
@@ -25,12 +25,8 @@
         {
           "type": "fn_decl",
           "name": "observe",
-          "match_hash": "71d81e2725e2360e172ccc59957c8162077eb9ba9fe91b6b83a7628a5370f92c",
+          "match_hash": "86dd207879aa7b37c239a35b497d3a52af7b0d0a147b1c042462474384fe1764",
           "signature": "fn observe(self: *LatencyHistogram, latency_ms: u64) -> void",
-          "params": [
-            { "name": "self", "type": "*LatencyHistogram" },
-            { "name": "latency_ms", "type": "u64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 43
@@ -38,12 +34,8 @@
         {
           "type": "fn_decl",
           "name": "cumulativeBucket",
-          "match_hash": "0d252a674e881e4280fd512fd812c6a71032efe9b44430b253a942f8861ab6ec",
+          "match_hash": "00ed31107b3996ffd55f002b29a38cfbfb2ea291cd4e2a2ec3696f0de564adb5",
           "signature": "fn cumulativeBucket(self: *const LatencyHistogram, idx: usize) -> u64",
-          "params": [
-            { "name": "self", "type": "*const LatencyHistogram" },
-            { "name": "idx", "type": "usize" }
-          ],
           "returns": "u64",
           "is_pub": true,
           "line": 59
@@ -51,12 +43,8 @@
         {
           "type": "fn_decl",
           "name": "estimatePercentile",
-          "match_hash": "db5ada9d3127e4e477482a1c6d80af96ff5726a28a1b70d79cd164e91d6f0f8f",
+          "match_hash": "6b58cc0d95571d8d5881c02f1158ef6d9865b82e8ec238f618b06fc2a6544d66",
           "signature": "fn estimatePercentile(self: *const LatencyHistogram, p: f64) -> u64",
-          "params": [
-            { "name": "self", "type": "*const LatencyHistogram" },
-            { "name": "p", "type": "f64" }
-          ],
           "returns": "u64",
           "is_pub": true,
           "line": 71

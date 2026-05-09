@@ -1,28 +1,22 @@
 //! Tests for hash.zig.
 //! Moved by `guidance codehealth --fix`. Edit as needed.
 const std = @import("std");
-const types = @import("types.zig");
 const hash_mod = @import("hash.zig");
 
-test "apiHash is deterministic" {
-    const params1 = [_]types.Param{
-        .{ .name = "x", .type = "f64" },
-        .{ .name = "y", .type = "f64" },
-    };
-    const hash1 = try hash_mod.apiHash(std.testing.allocator, "add", &params1, "f64");
+test "signatureHash is deterministic" {
+    const hash1 = try hash_mod.signatureHash(std.testing.allocator, "fn add(x: f64, y: f64) -> f64");
     defer std.testing.allocator.free(hash1);
 
-    const hash2 = try hash_mod.apiHash(std.testing.allocator, "add", &params1, "f64");
+    const hash2 = try hash_mod.signatureHash(std.testing.allocator, "fn add(x: f64, y: f64) -> f64");
     defer std.testing.allocator.free(hash2);
 
     try std.testing.expectEqualSlices(u8, hash1, hash2);
 }
-test "apiHash differs for different names" {
-    const params = [_]types.Param{};
-    const hash1 = try hash_mod.apiHash(std.testing.allocator, "foo", &params, null);
+test "signatureHash differs for different signatures" {
+    const hash1 = try hash_mod.signatureHash(std.testing.allocator, "fn foo()");
     defer std.testing.allocator.free(hash1);
 
-    const hash2 = try hash_mod.apiHash(std.testing.allocator, "bar", &params, null);
+    const hash2 = try hash_mod.signatureHash(std.testing.allocator, "fn bar()");
     defer std.testing.allocator.free(hash2);
 
     try std.testing.expect(!std.mem.eql(u8, hash1, hash2));

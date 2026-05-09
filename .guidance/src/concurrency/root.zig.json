@@ -9,11 +9,8 @@
     {
       "type": "fn_decl",
       "name": "spawn",
-      "match_hash": "3bc687a0069e44aacd1534fdbc2499172f9c086b5a2f91c6dabec3ae97c74117",
+      "match_hash": "62906c49440a0da8ee1d7b8c89fb9680547233e294413047f01934bba7e939d5",
       "signature": "fn spawn(unit: AnyWorkUnit) -> void",
-      "params": [
-        { "name": "unit", "type": "AnyWorkUnit" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 83
@@ -28,12 +25,8 @@
         {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "681856adf8fcf0354904c508222ff964ae4bb7f572483337505fd72b7b45cfdf",
+          "match_hash": "b4589f7b21db8eaf67f7c212584768163025cce847b14e0c6e63e0277cca403e",
           "signature": "fn execute(self: *SpawnCountHandler, arena: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*SpawnCountHandler" },
-            { "name": "arena", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 99

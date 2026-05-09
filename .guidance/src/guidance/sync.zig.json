@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " Sync engine for guidance — processes source files and generates JSON metadata.",
-  "capabilities": ["sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/query_engine.zig", "src/guidance/sync/gen_files.zig"],
   "members": [
     {
@@ -18,15 +17,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "3ad1c77f63e42fd1d5609880c8e7a0683a178c20db36d86c3a076ef2d6d13088",
+          "match_hash": "1cc9f7b67718f744f34b8e452b9f8a9a055c6035392c4d1eeab72def63509213",
           "signature": "fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) -> SyncProcessor",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "project_root", "type": "[]const u8" },
-            { "name": "output_dir", "type": "[]const u8" },
-            { "name": "dry_run", "type": "bool" },
-            { "name": "debug", "type": "bool" }
-          ],
           "returns": "SyncProcessor",
           "is_pub": true,
           "line": 45
@@ -34,11 +26,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "720f21f21df52aee243bddbe27264b925b810d98219cfb91130477730625c7d2",
+          "match_hash": "145cafd4885513dbc38cfd09dee2cc1de3f07e3fa3a724a866dce9f9032f456b",
           "signature": "fn deinit(self: *SyncProcessor) -> void",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 56
@@ -46,12 +35,8 @@
         {
           "type": "fn_decl",
           "name": "loadCapabilitiesFromDb",
-          "match_hash": "2b90fdae5561205488ef13c9ad50dc2ebdf4b4fbb68e603b0d181a82fce9dc72",
+          "match_hash": "b318b6a146719513a569d31149e60e0cb3fa1727f749c93e92fea0867d15023c",
           "signature": "fn loadCapabilitiesFromDb(self: *SyncProcessor, db_path: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "db_path", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 73
@@ -59,12 +44,8 @@
         {
           "type": "fn_decl",
           "name": "findCapabilitiesForFile",
-          "match_hash": "44d43f3cd5ea155346ef5e7f8aa4c06aa70832e0aa55e21a1f3f8e2b29bac032",
+          "match_hash": "cef56fe2bfbe28c8a0653297b49cec8188fa81e93fd4c3fa2c9af70f9fa55b0f",
           "signature": "fn findCapabilitiesForFile(self: *const SyncProcessor, rel_path: []const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*const SyncProcessor" },
-            { "name": "rel_path", "type": "[]const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 175
@@ -72,12 +53,8 @@
         {
           "type": "fn_private",
           "name": "stripComments",
-          "match_hash": "f0bf87b2eac05a16f5ecaec6ef8a2fb09ff30fd6873bea1bf823587051ea65da",
+          "match_hash": "e35be34dae3c9caf3812a7065b3b0df9c6027fc6f45c31fecb54d7e05531b1fa",
           "signature": "fn stripComments(self: *SyncProcessor, members: []types.Member) -> void",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "members", "type": "[]types.Member" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 184
@@ -85,13 +62,8 @@
         {
           "type": "fn_decl",
           "name": "processFile",
-          "match_hash": "aefe1f5b97c7d901a05eada6986c41ab6b538a8a51341cd90ea44a99c30eb292",
+          "match_hash": "1c63b547983c2c4e8527b962c1458759f1d4f606bf1692abf233a33b30f38251",
           "signature": "fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) -> types.SyncResult",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "filepath", "type": "[]const u8" },
-            { "name": "timeout_seconds", "type": "u64" }
-          ],
           "returns": "types.SyncResult",
           "is_pub": true,
           "line": 192
@@ -99,13 +71,8 @@
         {
           "type": "fn_decl",
           "name": "processDirectory",
-          "match_hash": "8867eb7f7faf90bb7a5760b802e87134bb1584d416ebdc64e2c15cb9a08b25a6",
+          "match_hash": "aebe17776fca6085b5de805f9b05066d19dfefee42dd8d1c1d6c134a78825f1a",
           "signature": "fn processDirectory(self: *SyncProcessor, dir_path: []const u8, timeout_seconds: u64) -> usize",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "timeout_seconds", "type": "u64" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 624
@@ -113,12 +80,8 @@
         {
           "type": "fn_private",
           "name": "relPath",
-          "match_hash": "98ba1e4cd511dedb236dbdd727e670f53a2547006564d56dd091443ea2851302",
+          "match_hash": "8aaf819bbeb90a1905607cb6dc2e3122bda74798ec3f64c8067d294144f50b6b",
           "signature": "fn relPath(abs: []const u8, root: []const u8) -> []const u8",
-          "params": [
-            { "name": "abs", "type": "[]const u8" },
-            { "name": "root", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 661
@@ -126,12 +89,8 @@
         {
           "type": "fn_private",
           "name": "pathToModule",
-          "match_hash": "c689473d5418cbceb32d4a38d59c9a8d516ce6e693a5348a0b5f5a6c1dc08e5d",
+          "match_hash": "c00757d4620c13476839bde0ff9cf1a7a7260bcd4772e690a59007bac30a0a6d",
           "signature": "fn pathToModule(self: *SyncProcessor, rel_path: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "rel_path", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 665
@@ -139,13 +98,8 @@
         {
           "type": "fn_private",
           "name": "buildModuleCommentFallback",
-          "match_hash": "d69bb57e07a6b4614878cc68c87cae5de8e58e1f889a634d36f6eeb705f0c8c1",
+          "match_hash": "c951193bb071546ecbbb0101e603e7a4ee2ea73464335c6c70a7c2e1306b0a3c",
           "signature": "fn buildModuleCommentFallback(self: *SyncProcessor, rel_path: []const u8, members: []const types.Member) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "rel_path", "type": "[]const u8" },
-            { "name": "members", "type": "[]const types.Member" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 687
@@ -153,11 +107,8 @@
         {
           "type": "fn_private",
           "name": "hasGofPatterns",
-          "match_hash": "24294e0e1269a3395b90cf65eff1a9c7cea426758b33456c9b9838b2e1c10512",
+          "match_hash": "77ed19466eb89e6309e3ca44ceaf90937a472621935cde2b7f49a96cde1d68fd",
           "signature": "fn hasGofPatterns(members: []const types.Member) -> bool",
-          "params": [
-            { "name": "members", "type": "[]const types.Member" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 739
@@ -165,11 +116,8 @@
         {
           "type": "fn_private",
           "name": "hasDomainPatterns",
-          "match_hash": "4e3397856a33418fa426c8024f9664501684fdf438ee3b7837fc4b609d4b64b8",
+          "match_hash": "dcb015958a78c9a25673f9ceedf20cddfcca82502da3128c3fa2266bc32f5965",
           "signature": "fn hasDomainPatterns(members: []const types.Member) -> bool",
-          "params": [
-            { "name": "members", "type": "[]const types.Member" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 749
@@ -177,14 +125,8 @@
         {
           "type": "fn_private",
           "name": "buildSkills",
-          "match_hash": "0af0783715e7370bc6239f1b39ad444acd36de090043dbacf00f4331d018bc49",
+          "match_hash": "f03e033f480adddaf54e76b8c153c4448ec6e26addec586f0f6e9e864bceff58",
           "signature": "fn buildSkills(self: *SyncProcessor, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) -> []const types.Skill",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "existing_doc", "type": "?types.GuidanceDoc" },
-            { "name": "has_gof", "type": "bool" },
-            { "name": "has_domain", "type": "bool" }
-          ],
           "returns": "[]const types.Skill",
           "is_pub": false,
           "line": 762
@@ -192,13 +134,8 @@
         {
           "type": "fn_private",
           "name": "buildCommentWithSkills",
-          "match_hash": "5a2c870423b86dca4fef3802ded11dc5854a62614607689b7b620e91e8025924",
+          "match_hash": "f8bca6e39efb0b393f6416f72e568a8b79821d6373ff3c5dcb5e392bb6a8123b",
           "signature": "fn buildCommentWithSkills(self: *SyncProcessor, comment: ?[]const u8, skills: []const types.Skill) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "comment", "type": "?[]const u8" },
-            { "name": "skills", "type": "[]const types.Skill" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 820
@@ -206,13 +143,8 @@
         {
           "type": "fn_private",
           "name": "mergeTags",
-          "match_hash": "4a9778132994297e70485c8566c5a75545e7462e86fa75ea0974cbf95c4783fa",
+          "match_hash": "e719a8bfb34e663f31cb123b8fc7c57937cda8858d7cd4620c9bc111b6f6c0fc",
           "signature": "fn mergeTags(self: *SyncProcessor, existing: []const []const u8, new_tags: []const []const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "existing", "type": "[]const []const u8" },
-            { "name": "new_tags", "type": "[]const []const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": false,
           "line": 865
@@ -220,12 +152,8 @@
         {
           "type": "fn_private",
           "name": "infillOneFile",
-          "match_hash": "25e220e4ff73affb7e166971f518b7cf358ddc417a6f2f308b524ac718b77599",
+          "match_hash": "99aee1d19945789ba42501610ba3ee52d610fbe6c4381cc0a2a4788daa55f124",
           "signature": "fn infillOneFile(self: *SyncProcessor, json_path: []const u8) -> bool",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "json_path", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 899
@@ -233,12 +161,8 @@
         {
           "type": "fn_decl",
           "name": "infillJsonFile",
-          "match_hash": "902fd3be826d9d57776990bb31474e787ca8538e957cbe0a2b1fa540fd47507c",
+          "match_hash": "711c77a59ac45f24950d38aa4f195f15f379ab0b347f687a9a31de02ff590286",
           "signature": "fn infillJsonFile(self: *SyncProcessor, json_path: []const u8) -> bool",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "json_path", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 1027
@@ -246,13 +170,8 @@
         {
           "type": "fn_decl",
           "name": "infillAllJson",
-          "match_hash": "cc2b3ef26c1cfff79be1e2babe34ee05e968c33a08cefa1a78b448de1a25dc88",
+          "match_hash": "ecd6e9335f6dc1e51ef7eeed54f210905ddd6c4c9c1b39b1cdaae796c35ebea9",
           "signature": "fn infillAllJson(self: *SyncProcessor, guidance_dir: []const u8, skip_paths: *const std.StringHashMapUnmanaged(void)) -> usize",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "guidance_dir", "type": "[]const u8" },
-            { "name": "skip_paths", "type": "*const std.StringHashMapUnmanaged(void)" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 1038
@@ -260,12 +179,8 @@
         {
           "type": "fn_private",
           "name": "findReverseDeps",
-          "match_hash": "838fd3c3ac5d058137b1310101287255b23388c5bc4e6b39c700265eeabcc8ac",
+          "match_hash": "325618b031fe114e6ea80125c45a8ac8aa23c7805f614562754826d71bd941ae",
           "signature": "fn findReverseDeps(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "rel_path", "type": "[]const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": false,
           "line": 1078
@@ -273,14 +188,8 @@
         {
           "type": "fn_private",
           "name": "fileImportsTarget",
-          "match_hash": "78d800101a46b8efbe6e171c8e14536e0901e932a18a6e04a73beb8069693aed",
+          "match_hash": "55edd1e973b8c0181b237a7d964799bf09f5e4bd2371bb15fc6e350e1db02552",
           "signature": "fn fileImportsTarget(allocator: std.mem.Allocator, content: []const u8, importer_dir: []const u8, target_abs: []const u8) -> bool",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "content", "type": "[]const u8" },
-            { "name": "importer_dir", "type": "[]const u8" },
-            { "name": "target_abs", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 1138
@@ -288,11 +197,8 @@
         {
           "type": "fn_decl",
           "name": "buildDepGraph",
-          "match_hash": "1bafae445e01a55ab1e08144b340eacefef55ddc3c55e5482a2e5189f79c4515",
+          "match_hash": "5222e7618cbe00fd24e9150ccda9a9c1acf85ca343181f5307361c11793423a9",
           "signature": "fn buildDepGraph(self: *SyncProcessor) -> dep_graph_mod.DepGraph",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" }
-          ],
           "returns": "dep_graph_mod.DepGraph",
           "is_pub": true,
           "line": 1174
@@ -300,12 +206,8 @@
         {
           "type": "fn_decl",
           "name": "findEquivalents",
-          "match_hash": "dd373570de5dca32701802560e6d086a74c28faf406df3c3b82c8afa0ef5433d",
+          "match_hash": "1ea2867c01469b478f6b33880ffc29fd0a21131e2e3e0232b0b77f3383dab8c8",
           "signature": "fn findEquivalents(self: *SyncProcessor, rel_path: []const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*SyncProcessor" },
-            { "name": "rel_path", "type": "[]const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 1270

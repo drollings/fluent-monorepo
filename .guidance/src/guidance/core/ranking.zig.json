@@ -18,12 +18,8 @@
     {
       "type": "fn_decl",
       "name": "rankResults",
-      "match_hash": "676c331f1e53b0062019ab9d23252254f82a2d7fef2573d41131bb66df685736",
+      "match_hash": "dcf106497a5dae39784452daa39f1415c702a959c73cf98916e00b74f3af3df4",
       "signature": "fn rankResults(results: []SearchResult, params: RankParams) -> void",
-      "params": [
-        { "name": "results", "type": "[]SearchResult" },
-        { "name": "params", "type": "RankParams" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 30
@@ -31,12 +27,8 @@
     {
       "type": "fn_decl",
       "name": "isExactNameMatch",
-      "match_hash": "eb28e3747669297948649ee1c1c572666ff84a63cb67d32ad021da3298a7a7a2",
+      "match_hash": "9983e9d430e9e20a5901d0b268c14b89a2f5d44e6909610d870727233e687d9e",
       "signature": "fn isExactNameMatch(name: []const u8, terms: []const []const u8) -> bool",
-      "params": [
-        { "name": "name", "type": "[]const u8" },
-        { "name": "terms", "type": "[]const []const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 60

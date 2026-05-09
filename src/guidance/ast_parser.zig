@@ -82,7 +82,7 @@ pub const AstParser = struct {
 
         const signature = try buildSignature(self.allocator, name, params, return_type);
 
-        const match_hash = try hash.apiHash(self.allocator, name, params, return_type);
+        const match_hash = try hash.signatureHash(self.allocator, signature);
         errdefer self.allocator.free(match_hash);
 
         const comment = try self.extractFullDocstring(node_idx);

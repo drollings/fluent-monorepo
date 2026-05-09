@@ -17,12 +17,8 @@
     {
       "type": "fn_decl",
       "name": "write",
-      "match_hash": "d35662ac04807c495b743a6d6505241f61da121fb5245e5e61ed659a19c3d515",
+      "match_hash": "d212394e855e7921650743920813f0174edc6de8adc9284fe7397f2a28470e88",
       "signature": "fn write(w, h: Header) -> void",
-      "params": [
-        { "name": "w" },
-        { "name": "h", "type": "Header" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 38
@@ -30,13 +26,8 @@
     {
       "type": "fn_decl",
       "name": "read",
-      "match_hash": "7ba9acc47f1f8d1bae0a3a2b8b963b8a2f5c1333a1720f173ff84348fb802a63",
+      "match_hash": "86c416a8a8ccdef0980c80b88a11a72ff6653268cb12bcf3e7c2f677e509e589",
       "signature": "fn read(content: []const u8, expected_magic: u32, expected_version: u32) -> ?ReadResult",
-      "params": [
-        { "name": "content", "type": "[]const u8" },
-        { "name": "expected_magic", "type": "u32" },
-        { "name": "expected_version", "type": "u32" }
-      ],
       "returns": "?ReadResult",
       "is_pub": true,
       "line": 56
@@ -44,13 +35,8 @@
     {
       "type": "fn_decl",
       "name": "readGitHeadFromFile",
-      "match_hash": "bf3bd13dc17bab86fbf0d28e7255d0f76031ea12ad5f102819312c6f662ce9f2",
+      "match_hash": "834f6edf75314434d657d8f765f8f8debba49bc36de3bf5894c1a6cbc61d4d78",
       "signature": "fn readGitHeadFromFile(path: []const u8, expected_magic: u32, expected_version: u32) -> ?[40]u8",
-      "params": [
-        { "name": "path", "type": "[]const u8" },
-        { "name": "expected_magic", "type": "u32" },
-        { "name": "expected_version", "type": "u32" }
-      ],
       "returns": "?[40]u8",
       "is_pub": true,
       "line": 92

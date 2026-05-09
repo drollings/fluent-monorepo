@@ -25,13 +25,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "63c5eca7925ada5a6ac6d4adc59fdc2115e883a7cc3a6d3122046982314d1feb",
+          "match_hash": "16d0efc670eaab3ef0ce636dff37729c257622f92755d08330dd7d4b7549d165",
           "signature": "fn init(allocator: std.mem.Allocator, file_path: []const u8, source: [:0]const u8) -> CallExtractor",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "file_path", "type": "[]const u8" },
-            { "name": "source", "type": "[:0]const u8" }
-          ],
           "returns": "CallExtractor",
           "is_pub": true,
           "line": 35
@@ -39,11 +34,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "f983ebb5e7218bb3b2faa01e74f102955bea365f60f4afa7b8ad27a9d80d9cc0",
+          "match_hash": "f8efd3e9ac92a09d4538fa3af398a179f2b03b8f821e1c0947571c299c5a8d20",
           "signature": "fn deinit(self: *CallExtractor) -> void",
-          "params": [
-            { "name": "self", "type": "*CallExtractor" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 48
@@ -51,11 +43,8 @@
         {
           "type": "fn_private",
           "name": "buildImportMap",
-          "match_hash": "8a42aff2ee0cba5eca0f2fde83f6ce69236fe8654c59d6692364b970a0a220a5",
+          "match_hash": "39411e95d8f82554c10e152e7b09d3ec35eb1ef873171d65e260d2ee11870da0",
           "signature": "fn buildImportMap(self: *CallExtractor) -> void",
-          "params": [
-            { "name": "self", "type": "*CallExtractor" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 59
@@ -63,11 +52,8 @@
         {
           "type": "fn_decl",
           "name": "extractAllCalls",
-          "match_hash": "d319ad7387f4df26d43fb11edaac544dc9ee59ec9a1896604f11b7c04d03976d",
+          "match_hash": "943c3692a74dfc1ca0daca71fe7643b72127a6dce1ce6e59d66e34590a0ceb72",
           "signature": "fn extractAllCalls(self: *CallExtractor) -> []CallSite",
-          "params": [
-            { "name": "self", "type": "*CallExtractor" }
-          ],
           "returns": "[]CallSite",
           "is_pub": true,
           "line": 102
@@ -75,13 +61,8 @@
         {
           "type": "fn_private",
           "name": "extractFromFnDecl",
-          "match_hash": "e607b09d03c5f70d3b3c0e5c332a47f650ec13e1b6cf37a104ec75e5b449da03",
+          "match_hash": "ec7c3d993a23194abc5f8290ae4fd64422db26f073918b00826eb329e72dcdd1",
           "signature": "fn extractFromFnDecl(self: *CallExtractor, fn_node: std.zig.Ast.Node.Index, calls: *std.ArrayList(CallSite)) -> void",
-          "params": [
-            { "name": "self", "type": "*CallExtractor" },
-            { "name": "fn_node", "type": "std.zig.Ast.Node.Index" },
-            { "name": "calls", "type": "*std.ArrayList(CallSite)" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 122
@@ -89,15 +70,8 @@
         {
           "type": "fn_private",
           "name": "recordCallSite",
-          "match_hash": "4ac41c5bc498c4d866b7ec27b7ddd189601aefd9084e1edebc2a57693d0a72bf",
+          "match_hash": "117d9b46c300fce3e6c410ff54bb1d56713de4b044bc9c334d827574221a5acb",
           "signature": "fn recordCallSite(self: *CallExtractor, call_node: std.zig.Ast.Node.Index, fn_expr: std.zig.Ast.Node.Index, current_fn: []const u8, calls: *std.ArrayList(CallSite)) -> void",
-          "params": [
-            { "name": "self", "type": "*CallExtractor" },
-            { "name": "call_node", "type": "std.zig.Ast.Node.Index" },
-            { "name": "fn_expr", "type": "std.zig.Ast.Node.Index" },
-            { "name": "current_fn", "type": "[]const u8" },
-            { "name": "calls", "type": "*std.ArrayList(CallSite)" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 171
@@ -108,13 +82,8 @@
     {
       "type": "fn_decl",
       "name": "extractCallsFromWorkspace",
-      "match_hash": "965d67bfede8f255e47e7b426156f3ba00188ed0ee06b0f7905658468d3f04b4",
+      "match_hash": "4bd4dd29061276eadb5af08dd80354dbf1af840a3164090c7c958ecc9e1302f1",
       "signature": "fn extractCallsFromWorkspace(allocator: std.mem.Allocator, db: *vector.GuidanceDb, workspace: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*vector.GuidanceDb" },
-        { "name": "workspace", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 245

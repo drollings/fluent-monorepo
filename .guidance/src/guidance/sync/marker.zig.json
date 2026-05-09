@@ -5,18 +5,13 @@
     "language": "zig"
   },
   "comment": " Mtime-based change detection for guidance's incremental RALPH loop.\n\n ## Design\n\n The guidance JSON file's mtime IS the per-file marker.  When a provider\n (Zig built-in, guidance-py, or any future language tool) finishes its\n full test→lint→fmt→guidance cycle for a source file, it writes the JSON,\n advancing its mtime.  guidance then uses a simple mtime comparison to\n decide whether re-processing is needed:\n\n   - JSON absent → stale, needs processing\n   - JSON mtime == src_mtime - 1 second → validated, no changes, skip\n   - JSON mtime > src_mtime → needs processing (e.g., imported JSON)\n   - JSON mtime < src_mtime (but not src_mtime - 1) → stale, needs processing\n\n ## Validated Pattern\n\n When a file is processed and no meaningful changes are needed (members match,\n comments in sync), we set JSON mtime to src_mtime - 1 second. This creates\n a recognizable pattern that `fileNeedsProcessing` can identify to skip\n reprocessing on subsequent runs.\n\n ## Test marker\n\n A separate marker file `.guidance/.marks/test_passed` records the last\n successful test run.  If no source file is newer than this marker, tests\n can be skipped.  This enables fast incremental runs of lint→fmt→guidance\n without re-running the full test suite.\n\n ## Provider contract\n\n Each provider (built-in or external) must:\n   1. Run the language test suite (once, whole suite).\n   2. Run lint on the file.\n   3. Run the formatter on the file (must precede AST parse so line numbers\n      in the JSON reflect the final formatted source).\n   4. Generate or update the guidance JSON.\n\n The Zig provider implements steps 1-4 inside guidance itself.\n External providers (e.g. guidance-py) honour the same contract in their\n own implementation.",
-  "capabilities": ["sync-pipeline"],
   "used_by": ["src/guidance/comments/sync.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig", "src/guidance/sync/marker_tests.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "fileNeedsProcessing",
-      "match_hash": "b526235a30c8c21f2653a5630d8aed4adad1cb4edc7e3316e18431ff71f919e7",
+      "match_hash": "7e6166a5afad74a4c6a0228803e85f2d44f602cbfbbee70d9ffbdd4dec713b92",
       "signature": "fn fileNeedsProcessing(src_abs: []const u8, json_abs: []const u8) -> bool",
-      "params": [
-        { "name": "src_abs", "type": "[]const u8" },
-        { "name": "json_abs", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 51
@@ -24,11 +19,8 @@
     {
       "type": "fn_decl",
       "name": "fileMtime",
-      "match_hash": "cc7b532687c5ba2e7739740fe9e69621e2b34b09b18db587033c52e004805a95",
+      "match_hash": "6a96c017ecaee1f240d701f5340bcc91d1e831eefc6aaca871fa3188357a996b",
       "signature": "fn fileMtime(path: []const u8) -> ?i128",
-      "params": [
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "?i128",
       "is_pub": true,
       "line": 60
@@ -36,11 +28,8 @@
     {
       "type": "fn_decl",
       "name": "touchTestMarker",
-      "match_hash": "bb2145b4d939f413c260fea37d699671045554089dd092a32a5098bc0398555c",
+      "match_hash": "da36838b29faaf8ffa3263f3df722533dd32d981b230cca0d919975e709d1201",
       "signature": "fn touchTestMarker(marker_path: []const u8) -> void",
-      "params": [
-        { "name": "marker_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 102
@@ -48,12 +37,8 @@
     {
       "type": "fn_decl",
       "name": "touchFileAfter",
-      "match_hash": "05c519a4d7d5e3e624410207eccc611466c64fff97b9522b546987a8b11253cb",
+      "match_hash": "5d8aded822ae048c6c9216d8b8b3bca656c79f5b3f4d8cdacf5db2fc4faa65e4",
       "signature": "fn touchFileAfter(target_path: []const u8, ref_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" },
-        { "name": "ref_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 111
@@ -61,11 +46,8 @@
     {
       "type": "fn_decl",
       "name": "touchFileNow",
-      "match_hash": "ed8a2859edaa3a8a5fae56d6144a5b1b5f647c83a7f7a4e68c7bccfe9587db27",
+      "match_hash": "29c81411552c5a7f2fef483b1ed9af1794242dd1f9918c573f0cc6a0a5c8f9cf",
       "signature": "fn touchFileNow(target_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 125
@@ -73,11 +55,8 @@
     {
       "type": "fn_decl",
       "name": "touchFileNowPlusOne",
-      "match_hash": "3f57dff9c746a84ee181f61767a40d2e7ccd3ffbf29916047431be6a298df9fd",
+      "match_hash": "28d0d659390d36433f144ee08cae891f002d8315399d289d7abe0629d0e56410",
       "signature": "fn touchFileNowPlusOne(target_path: []const u8) -> void",
-      "params": [
-        { "name": "target_path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 133
@@ -85,12 +64,8 @@
     {
       "type": "fn_decl",
       "name": "contentHash",
-      "match_hash": "7eba3a480b08f205407680a9ba44c9bdc0f87cad8a5ed6548888f96d2ef7afb8",
+      "match_hash": "5d6e9f78ec56ac7cf1ad1c12c2156df3edd127ed0c5907bdf126c24dd861128a",
       "signature": "fn contentHash(path: []const u8, max_bytes: usize) -> ?u64",
-      "params": [
-        { "name": "path", "type": "[]const u8" },
-        { "name": "max_bytes", "type": "usize" }
-      ],
       "returns": "?u64",
       "is_pub": true,
       "line": 151
@@ -98,11 +73,8 @@
     {
       "type": "fn_decl",
       "name": "fileRecord",
-      "match_hash": "44c388fe77a7d3cd07f29529af447be908e7334ba807946ff6e8cc959eca6594",
+      "match_hash": "85c81ade7ca3219b582df9a2ab9db1b19bb811b2384e315927d59d9e0e2db034",
       "signature": "fn fileRecord(path: []const u8) -> ?FileRecord",
-      "params": [
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "?FileRecord",
       "is_pub": true,
       "line": 166
@@ -110,13 +82,8 @@
     {
       "type": "fn_decl",
       "name": "fileNeedsProcessingHash",
-      "match_hash": "a71de7c28d7bc60282226c1e3e29c4fb53737424872d03d9ef97242afeaffbba",
+      "match_hash": "b4ea17a1923aa9a175d2805cbc572928cd40892a12a9d015e2e07fc6ddc44a4c",
       "signature": "fn fileNeedsProcessingHash(src_abs: []const u8, json_abs: []const u8, stored_hash: u64) -> bool",
-      "params": [
-        { "name": "src_abs", "type": "[]const u8" },
-        { "name": "json_abs", "type": "[]const u8" },
-        { "name": "stored_hash", "type": "u64" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 178

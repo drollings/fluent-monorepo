@@ -17,7 +17,7 @@
         {
           "type": "fn_private",
           "name": "init",
-          "match_hash": "19152065f27efdd4707fe6a2cdbf4ff64d48850f54b621de5fbf6bfa98896d12",
+          "match_hash": "bbd5e129269e6df4b33dca2c60f8031afc7eaf163d3ef959d936bc0c50d76ee5",
           "signature": "fn init() -> AtomicRefCount",
           "returns": "AtomicRefCount",
           "is_pub": false,
@@ -26,11 +26,8 @@
         {
           "type": "fn_private",
           "name": "inc",
-          "match_hash": "bcd3554714d4fba18dd44f524bbca423d56e929b564a1821191d04788360d721",
+          "match_hash": "20fc85ef3f8d9e8e3727e3d33a9601fb37b33c6ccc61100c9ecfafb81c7b5c62",
           "signature": "fn inc(self: *AtomicRefCount) -> usize",
-          "params": [
-            { "name": "self", "type": "*AtomicRefCount" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 55
@@ -38,11 +35,8 @@
         {
           "type": "fn_private",
           "name": "dec",
-          "match_hash": "649836632eeb9982190e4f79354d8445b2cbabde9e05caaadf0cce84c1de015d",
+          "match_hash": "fb034da557281d5333d695e557f383d32abd19dde37db66e766b02feef2a6a2e",
           "signature": "fn dec(self: *AtomicRefCount) -> bool",
-          "params": [
-            { "name": "self", "type": "*AtomicRefCount" }
-          ],
           "returns": "bool",
           "is_pub": false,
           "line": 61
@@ -50,11 +44,8 @@
         {
           "type": "fn_private",
           "name": "load",
-          "match_hash": "ec29704be00b9b524755d17ef9e39e1141f444e4d1010b4c982eb8aa51ba29bc",
+          "match_hash": "bea14be0e1907536b79d7a3c31bb6c8034a4f13a32019cd111dd59660dbe5862",
           "signature": "fn load(self: *const AtomicRefCount) -> usize",
-          "params": [
-            { "name": "self", "type": "*const AtomicRefCount" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 66
@@ -65,11 +56,8 @@
     {
       "type": "fn_decl",
       "name": "RefCounted",
-      "match_hash": "0b08d7947d7d2eec4df288ea621a5c768c852a7f28ca5ff76926df3aedbc79ba",
+      "match_hash": "189f2da4bfe35f0b7e64d615498ae2452871faf4e8c4c9ca6e6a37bb65a13331",
       "signature": "fn RefCounted(T: type) -> type",
-      "params": [
-        { "name": "T", "type": "type" }
-      ],
       "returns": "type",
       "is_pub": true,
       "line": 74

@@ -16,16 +16,8 @@
         {
           "type": "fn_decl",
           "name": "writeSnapshot",
-          "match_hash": "778a4236b5d0bb99dd9e2589f1a042b6e4fc4975a70684fc91c438eb2f26650c",
+          "match_hash": "bd20a5750731617ac1c3785c584ded0e855c8adf32b28342ac946f86d086a781",
           "signature": "fn writeSnapshot(allocator: std.mem.Allocator, dir_path: []const u8, git_head: ?[]const u8, wi: *word_index.WordIndex, tri: *trigram_index.TrigramIndex, file_count: u32) -> void",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "git_head", "type": "?[]const u8" },
-            { "name": "wi", "type": "*word_index.WordIndex" },
-            { "name": "tri", "type": "*trigram_index.TrigramIndex" },
-            { "name": "file_count", "type": "u32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 14
@@ -33,12 +25,8 @@
         {
           "type": "fn_decl",
           "name": "loadSnapshot",
-          "match_hash": "74e15f0071767ce826973de4453664a01ae6b66c9f961fd4bfa1551ff119d5d8",
+          "match_hash": "5136bf2537baa198a00ace4d0c0ce07c2197b1df2c5d35a848275a8c85a79ce0",
           "signature": "fn loadSnapshot(allocator: std.mem.Allocator, dir_path: []const u8) -> ?GuidanceSnapshot",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "dir_path", "type": "[]const u8" }
-          ],
           "returns": "?GuidanceSnapshot",
           "is_pub": true,
           "line": 58
@@ -46,11 +34,8 @@
         {
           "type": "fn_decl",
           "name": "readSnapshotGitHead",
-          "match_hash": "fbbff370c01ce663d8cd972d16c139367900ee9000182761a473bd0d952a8cbc",
+          "match_hash": "a1ff9cf153562efb4642c7c0c221c1b6456b4971495301d5110e6d11e043b774",
           "signature": "fn readSnapshotGitHead(dir_path: []const u8) -> ?[40]u8",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" }
-          ],
           "returns": "?[40]u8",
           "is_pub": true,
           "line": 100
@@ -58,12 +43,8 @@
         {
           "type": "fn_decl",
           "name": "isCurrent",
-          "match_hash": "bbb68d93f8df617ae0e1dd60abb05104dc7b0df24a556287b5b008a61db7a01a",
+          "match_hash": "0c68d103bfccbdf8f924c67752815c3876f38887cb4dd8248d61702441d6402e",
           "signature": "fn isCurrent(dir_path: []const u8, current_head: []const u8) -> bool",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "current_head", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 124

@@ -7,16 +7,12 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "fn_private",
       "name": "makeTestLib",
-      "match_hash": "b8156ac26d8e267f16bc64e59ee56b75772794acc0e4ed45e26094215b35d76d",
+      "match_hash": "3c53ebb64bbef29cbc8a2cc614d38ed4b00591a2afbf212b83b0a869a4b24573",
       "signature": "fn makeTestLib(allocator: std.mem.Allocator) -> *Library",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "*Library",
       "patterns": [
         { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }

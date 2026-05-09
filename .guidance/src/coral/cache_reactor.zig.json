@@ -23,11 +23,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "8120441e6919fdf170458a88d2b4188a99e0269468f2338fd46f805674b028c5",
+          "match_hash": "d18d96df4077f837425f08ec046687ecf67ef58bc9294ee1b4699a40acfd74d1",
           "signature": "fn init(allocator: std.mem.Allocator) -> QueueReactorBuilder",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "QueueReactorBuilder",
           "is_pub": true,
           "line": 45
@@ -35,15 +32,8 @@
         {
           "type": "fn_private",
           "name": "setError",
-          "match_hash": "da794fb18c1ff491dd509fde1adf172894239433a0400f106469b58a42b92490",
+          "match_hash": "e7b653598a5e489412216e5ad5dd8cd38ad197d05b089fa3fc8adbd9f9e71d02",
           "signature": "fn setError(self: *@This(), phase: BuilderPhase, field: []const u8, constraint: []const u8, cause: anyerror) -> void",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "phase", "type": "BuilderPhase" },
-            { "name": "field", "type": "[]const u8" },
-            { "name": "constraint", "type": "[]const u8" },
-            { "name": "cause", "type": "anyerror" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 52
@@ -51,12 +41,8 @@
         {
           "type": "fn_decl",
           "name": "library",
-          "match_hash": "42f93eddcbc57e4bf614c5e8aa87ea8e5c75bbe64e695bcd27f78d104edbb302",
+          "match_hash": "fcb63d7c5ca442a9dbe68a849ed93e377db44d692089470434fe720575f77ca4",
           "signature": "fn library(self: *@This(), lib: *Library) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "lib", "type": "*Library" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 57
@@ -64,12 +50,8 @@
         {
           "type": "fn_decl",
           "name": "embedder",
-          "match_hash": "1a693cf1bbf9c9249f8a63259e64637fa5b748d91164aa27ec2b976476e30fc1",
+          "match_hash": "d529b91c0faf9bf4b4b949f73e8d4f908dcb257a7b8789887c9a70147ccbce7d",
           "signature": "fn embedder(self: *@This(), emb: EmbeddingProvider) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "emb", "type": "EmbeddingProvider" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 62
@@ -77,12 +59,8 @@
         {
           "type": "fn_decl",
           "name": "knnK",
-          "match_hash": "16650a623e4fbb58c3e979c8587e55d52585176609e9d57092aacccb50d05c7b",
+          "match_hash": "893f04e434295c94bef902a7ee1972f3c84c36fcf62e9985f8b4922bf043a9c2",
           "signature": "fn knnK(self: *@This(), k: usize) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "k", "type": "usize" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 67
@@ -90,12 +68,8 @@
         {
           "type": "fn_decl",
           "name": "l4Threshold",
-          "match_hash": "1dd9f1b79f12a74bdfafd7490396da1aa4b90cd30ca7ad355927200ebacb1fa0",
+          "match_hash": "d76eaeefce8ea99c9bc0f437b49c6b58e1c7e0a7c0eb2f01100a8fafd2dddadb",
           "signature": "fn l4Threshold(self: *@This(), t: f32) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "t", "type": "f32" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 72
@@ -103,12 +77,8 @@
         {
           "type": "fn_decl",
           "name": "l3MaxDepth",
-          "match_hash": "9ebbbd3667c65afbb84ad1da17847ade74b9c5c337410581c6eb111f5d4023dc",
+          "match_hash": "333c57a85ae53ea356366e63cff7e36e2ffeef26bde17845deae3f2d5af68f63",
           "signature": "fn l3MaxDepth(self: *@This(), d: u8) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "d", "type": "u8" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 77
@@ -116,12 +86,8 @@
         {
           "type": "fn_decl",
           "name": "decomposerConfig",
-          "match_hash": "3cbdb0ac0f898447a4c0c63142b54dca74fded46b664a4071c85e0b3b663c857",
+          "match_hash": "6c4c9cf4302a56ea1eee53d7060bbb81f8459190427c259b9bd7f87ba8f296e3",
           "signature": "fn decomposerConfig(self: *@This(), cfg: DecomposerConfig) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "cfg", "type": "DecomposerConfig" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 82
@@ -129,12 +95,8 @@
         {
           "type": "fn_decl",
           "name": "threadCount",
-          "match_hash": "6bb97113c22f23210dbc20fa7dd78a3afc6a28a99aad757eb4c1246be536a422",
+          "match_hash": "e8514dd2ac4cbc91637d249c2b875ba3d39c52835818205a33727f56ccd78157",
           "signature": "fn threadCount(self: *@This(), n: u32) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "n", "type": "u32" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 87
@@ -142,12 +104,8 @@
         {
           "type": "fn_decl",
           "name": "frontierCfg",
-          "match_hash": "1072f68a92d550ee255d46d369b793094d14d3711ac32bd6ba704f801fd8ccad",
+          "match_hash": "0bc1d485270041aabec385000af95b1e0f419b049577cfc1f8c780cfd454745d",
           "signature": "fn frontierCfg(self: *@This(), cfg: LlmConfig) -> *@This()",
-          "params": [
-            { "name": "self", "type": "*@This()" },
-            { "name": "cfg", "type": "LlmConfig" }
-          ],
           "returns": "*@This()",
           "is_pub": true,
           "line": 92
@@ -155,11 +113,8 @@
         {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "d8ffd0dc5072bdc8e05f6dac42eab3d235f9f7046d7b29cf4b624b050a93f8cb",
+          "match_hash": "c0f3321c9afea3743cbcbce8a9d5412dde9b67440b8f031e194cb286195cd2c0",
           "signature": "fn build(self: *@This()) -> QueueReactor",
-          "params": [
-            { "name": "self", "type": "*@This()" }
-          ],
           "returns": "QueueReactor",
           "is_pub": true,
           "line": 97
@@ -177,13 +132,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "41154cabc00f73c013c61430c008f9a17e1a38408a24c30df4d5aafe9f994da8",
+          "match_hash": "8fa31b26376cbad94a4b74941e59fd3a19884502ae4eeadda2a33ee93886db8c",
           "signature": "fn init(allocator: std.mem.Allocator, library: *Library, max_knn_k: usize) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "library", "type": "*Library" },
-            { "name": "max_knn_k", "type": "usize" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 136
@@ -191,11 +141,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 145
@@ -203,12 +150,8 @@
         {
           "type": "fn_decl",
           "name": "submitAsync",
-          "match_hash": "eb4ccc807ac61c1352156978cc47748a13641cde005b2a58ed1c5bb7a279c734",
+          "match_hash": "4f9b78fa224864b670474346e6a5fbdf2237764727473b028593f0463810b64e",
           "signature": "fn submitAsync(self: *Self, query: []const u8) -> *Task",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "*Task",
           "is_pub": true,
           "line": 163
@@ -216,12 +159,8 @@
         {
           "type": "fn_private",
           "name": "routeTask",
-          "match_hash": "423459b6cd2a2aa9e5442e91dce0991794cc12103a8b24e1c9e13e35dbd551ca",
+          "match_hash": "6a511459cc9879473323fdefbaa24508857daab63a2e3f3319248dde9772a1e9",
           "signature": "fn routeTask(self: *Self, task: *Task) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "task", "type": "*Task" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 185
@@ -229,12 +168,8 @@
         {
           "type": "fn_decl",
           "name": "route",
-          "match_hash": "54d4af0d5b5597e3ad51410039c6be97c3a56e99980d57064d7e195c41da37ef",
+          "match_hash": "c59be04b07d9da92a210a397d4998130dad3a15e1be314003d213159b0ed4c65",
           "signature": "fn route(self: *Self, query: []const u8) -> anyerror!RoutingResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "anyerror!RoutingResult",
           "is_pub": true,
           "line": 199
@@ -242,12 +177,8 @@
         {
           "type": "fn_decl",
           "name": "findWasmTool",
-          "match_hash": "d465ed2b162593f9aea19577420011e8884b84990d35f4bf9c2b68997cb1cfee",
+          "match_hash": "ff45ffd9d1b1c38e8bbb78cd778d0deec3989be96fabee4e3e0f45d6bcc715ba",
           "signature": "fn findWasmTool(self: *Self, query: []const u8) -> ?WasmTool",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?WasmTool",
           "is_pub": true,
           "line": 282
@@ -255,12 +186,8 @@
         {
           "type": "fn_private",
           "name": "routeL2Wasm",
-          "match_hash": "d03a4fc55c392577ac59b2c073d57c67c05d78ed65263872e2e9baba0bdb33f0",
+          "match_hash": "052053e5c0d623baba70089144c957a60cd4acb4f658935ba50f811d3be0e256",
           "signature": "fn routeL2Wasm(self: *Self, query: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 290
@@ -268,12 +195,8 @@
         {
           "type": "fn_private",
           "name": "graphTraversal",
-          "match_hash": "986e5d026464af52eb70a39ef885d0f73157762a2d3b924f3069569e0303b5b3",
+          "match_hash": "0d0db6d8544e642cf6e3e292ad8768f24d874d0f52ebcfb0d73c345b8fa5df61",
           "signature": "fn graphTraversal(self: *Self, query: []const u8) -> ?[]ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?[]ContextNode",
           "is_pub": false,
           "line": 313
@@ -281,12 +204,8 @@
         {
           "type": "fn_private",
           "name": "semanticSearch",
-          "match_hash": "3b6c3b310235ea92de2b2a2d93a3a936912a4cd4bada0b244743030e4edf1ef4",
+          "match_hash": "05547ab8140cba0a8b3245e3c03095f7b3b70d90675e34d99da578c627e5e5d1",
           "signature": "fn semanticSearch(self: *Self, query: []const u8) -> ?[]ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?[]ContextNode",
           "is_pub": false,
           "line": 331
@@ -294,12 +213,8 @@
         {
           "type": "fn_private",
           "name": "llmFallback",
-          "match_hash": "21843ee9dccd9910494602a749a6c5df504f3003b9bbd70bcd9a72402f349ead",
+          "match_hash": "9ed2cf5c30bcc6b35b9d2025d905ddca25f256609bda8ca23f75d03a79e9a3b6",
           "signature": "fn llmFallback(self: *Self, query: []const u8) -> RoutingResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "RoutingResult",
           "is_pub": false,
           "line": 364
@@ -307,12 +222,8 @@
         {
           "type": "fn_private",
           "name": "routeL5Frontier",
-          "match_hash": "886b6d23c2ee9ae59a6f7ec45945c6ffdeb4b8d921fb7126c0fb0d96492d7e32",
+          "match_hash": "b2cfe50301cd3bf80c27f395ad565eb28876e9603da8f92cd31cff6b15bc6640",
           "signature": "fn routeL5Frontier(self: *Self, query: []const u8) -> ?RoutingResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?RoutingResult",
           "is_pub": false,
           "line": 376
@@ -320,13 +231,8 @@
         {
           "type": "fn_private",
           "name": "callFrontierLlm",
-          "match_hash": "9f4107d9f3efe19436c0910f2e59c149f06aa38f0133709cd1beeae1e02df65c",
+          "match_hash": "5b7322d2f9880e52629e4bf1150208c534a22924a3c4794ef7541858f304c7a6",
           "signature": "fn callFrontierLlm(self: *Self, cfg: LlmConfig, prompt: []const u8) -> ?RoutingResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "cfg", "type": "LlmConfig" },
-            { "name": "prompt", "type": "[]const u8" }
-          ],
           "returns": "?RoutingResult",
           "is_pub": false,
           "line": 408
@@ -334,13 +240,8 @@
         {
           "type": "fn_private",
           "name": "localDecompose",
-          "match_hash": "4fec0bed821990e9b59d676602dc8efd1c08b0bf82cbfa4b7af5e18baa24042e",
+          "match_hash": "0c4d30063e18a80ee939bd4053aa45b1989081b6323582cac67d29e5fb293d19",
           "signature": "fn localDecompose(self: *Self, query: []const u8, depth: u8) -> ?[]ContextNode",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "depth", "type": "u8" }
-          ],
           "returns": "?[]ContextNode",
           "is_pub": false,
           "line": 429
@@ -348,13 +249,8 @@
         {
           "type": "fn_decl",
           "name": "cacheResult",
-          "match_hash": "3f5d74030e2f609e9ec7b7166ab53ca0f1b2103d23e4c21a3764673b60a5359d",
+          "match_hash": "7d819b35e553a272ef8efbeb2c567d7bcb23262a4edeb4b1ab9a0a896e635cbd",
           "signature": "fn cacheResult(self: *Self, query: []const u8, result: RoutingResult) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "result", "type": "RoutingResult" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 467
@@ -362,12 +258,8 @@
         {
           "type": "fn_private",
           "name": "hashQuery",
-          "match_hash": "5f86215e43f930a0b34b7a1b29d2543a43a725910132eb00991a95efdc03f028",
+          "match_hash": "a0e208f5cb0e3e7039f77dca92e0bcb5c2aeb99843ad17471012cc0be5057686",
           "signature": "fn hashQuery(self: *Self, query: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 473
@@ -375,13 +267,8 @@
         {
           "type": "fn_private",
           "name": "persistSolution",
-          "match_hash": "0012fa4d0b04622e4c86c3d337e4f702450c215ff740405cbf03a1925a0344c9",
+          "match_hash": "b3178ad0385c8a8c3b08bea4be914ba0917aeb48b32ff0140e75727ef3abb299",
           "signature": "fn persistSolution(self: *Self, query: []const u8, result: RoutingResult) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "result", "type": "RoutingResult" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 477

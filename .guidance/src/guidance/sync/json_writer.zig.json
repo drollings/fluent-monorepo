@@ -5,18 +5,13 @@
     "language": "zig"
   },
   "comment": " sync/json_writer.zig — JSON serialization for guidance documents.\n\n Moved from types.zig to keep type definitions separate from serialization logic.",
-  "capabilities": ["ast-indexing", "sync-pipeline"],
   "used_by": ["src/guidance/sync/json_store.zig", "src/guidance/types.zig"],
   "members": [
     {
       "type": "fn_private",
       "name": "writeEscaped",
-      "match_hash": "077026ee3d033679836a5ee4f29beaeb161343ad76d626164363457720d62cce",
+      "match_hash": "13ae1b62f368d7ab863ea922c74eab7826fb13065df19e5f0321c3d7cc3f5aec",
       "signature": "fn writeEscaped(writer, value: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 12
@@ -24,13 +19,8 @@
     {
       "type": "fn_private",
       "name": "writeStrField",
-      "match_hash": "ef4d3d1d51ba6286746bf23a253ca802e827409a5b687691bfe00b45280023b5",
+      "match_hash": "0d28cd1897be4a05dfcef73b98fd4cd8f0013e883c5a084d49b5c56cc41d254a",
       "signature": "fn writeStrField(writer, key: []const u8, value: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "key", "type": "[]const u8" },
-        { "name": "value", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 17
@@ -38,12 +28,8 @@
     {
       "type": "fn_private",
       "name": "writeSep",
-      "match_hash": "3683c290b956bc93358c62c7f46d4c5ee2810d971fa8a8f197c8b34235fb30b5",
+      "match_hash": "91c92042c18105bfe9867037eda424cd8e1c72410f1155622465555da403ed14",
       "signature": "fn writeSep(writer, need: *bool) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "need", "type": "*bool" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 25
@@ -51,13 +37,8 @@
     {
       "type": "fn_private",
       "name": "writeStringArray",
-      "match_hash": "9cf4c0c11279ac6c51a4bc408c32190a6d05099c666f6512155b63b87f93266f",
+      "match_hash": "6c398a3f369aeaf4f186fc56c3a7e4398120fb1efa344404e3c897c73bf451bf",
       "signature": "fn writeStringArray(writer, key: []const u8, items: []const []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "key", "type": "[]const u8" },
-        { "name": "items", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 31
@@ -65,13 +46,8 @@
     {
       "type": "fn_private",
       "name": "writeMember",
-      "match_hash": "2f3431173912515626795e45899759f79da73d6cd078e0104948368f2ac3837d",
+      "match_hash": "edb6188bd24ff95565d7333212aca279cec0bea12c4f2c67fd880cdee6a7fdfd",
       "signature": "fn writeMember(writer, member: types.Member, indent: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "member", "type": "types.Member" },
-        { "name": "indent", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 49
@@ -79,28 +55,20 @@
     {
       "type": "fn_decl",
       "name": "jsonifyMember",
-      "match_hash": "a9d6cb387eb599dd94736838eb5aedc168ebba925d50a40a15a7ba2999347d9a",
+      "match_hash": "cb6525b92503dbf4ae1bf039f36e9d3933f40777a6ae702854440647a5a324b9",
       "signature": "fn jsonifyMember(allocator: std.mem.Allocator, member: types.Member) -> ?[]u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "member", "type": "types.Member" }
-      ],
       "returns": "?[]u8",
       "is_pub": true,
-      "line": 159
+      "line": 136
     },
     {
       "type": "fn_decl",
       "name": "jsonifyGuidanceDoc",
-      "match_hash": "811d24b667ec86876f2261b01155d5c5a8ef49b4cb220b64c4975b7e54c367ca",
+      "match_hash": "0c2534aa51c204da24de822d25e1a6b6ce3ac3c2d8de32c0af90b411794d1a5a",
       "signature": "fn jsonifyGuidanceDoc(allocator: std.mem.Allocator, doc: types.GuidanceDoc) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "doc", "type": "types.GuidanceDoc" }
-      ],
       "returns": "[]u8",
       "is_pub": true,
-      "line": 167
+      "line": 144
     }
   ]
 }

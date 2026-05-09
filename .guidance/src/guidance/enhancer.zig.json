@@ -17,12 +17,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "7c54d8c8f6a654eb2d3c280a2250bec795a0867378fa55aeae3c72ef93cc765e",
+          "match_hash": "e6d90b39ca32d0fc96233670e55a13fbd6310644f3ab9b4a08a89d4c10ba50dd",
           "signature": "fn deinit(self: EnrichmentResult, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "EnrichmentResult" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 54
@@ -40,12 +36,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "ed7557f03f41d120780b85e3a66007a960df17b10f04914ab4a0a657aebda4f2",
+          "match_hash": "f105ca351b40b33ce0928fd4825737b18015262e991f9974efb17e594afbcca8",
           "signature": "fn init(allocator: std.mem.Allocator, config: llm.LlmConfig) -> Enhancer",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "llm.LlmConfig" }
-          ],
           "returns": "Enhancer",
           "is_pub": true,
           "line": 86
@@ -53,11 +45,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "bcca5dc1a4dc8fcb13c9f86323f8af90030d9c2493ea27fdd46008d7a1c83d88",
+          "match_hash": "dd2141799adac538632b7ed1b16f96e7564b99f47f9673e8ccce32d55f641ad8",
           "signature": "fn deinit(self: *Enhancer) -> void",
-          "params": [
-            { "name": "self", "type": "*Enhancer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 104
@@ -65,11 +54,8 @@
         {
           "type": "fn_decl",
           "name": "available",
-          "match_hash": "6a752e81522546c16599eab26e28d899b5a05235b2bfeda1253e066a0fb63e15",
+          "match_hash": "602b8d5bf5b0efaa3a5f8e1d934819df9c6cf64441af3e6e616614508054d23f",
           "signature": "fn available(self: *Enhancer) -> bool",
-          "params": [
-            { "name": "self", "type": "*Enhancer" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 112
@@ -77,12 +63,8 @@
         {
           "type": "fn_private",
           "name": "maxTokens",
-          "match_hash": "b657d325a114f6d3cc4a2eb85aa8d18bb759be7bf58ba17cba3dca0a2af82f6a",
+          "match_hash": "ec3cc4a25b4764031b40f8333394198a8fa0877321966c147aad9fec687eda68",
           "signature": "fn maxTokens(self: Enhancer, base_tokens: usize) -> usize",
-          "params": [
-            { "name": "self", "type": "Enhancer" },
-            { "name": "base_tokens", "type": "usize" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 118
@@ -90,15 +72,8 @@
         {
           "type": "fn_decl",
           "name": "enhanceFunction",
-          "match_hash": "c56db3a4ade80abb28f65b1df73248f28751f9901f9214727e3695154239039c",
+          "match_hash": "79f1eb822ed63a94cdc71dd052b96fa8c627c64a368320e9595e4c669a3b08dd",
           "signature": "fn enhanceFunction(self: *Enhancer, name: []const u8, signature: []const u8, existing_doc: ?[]const u8, module_context: []const u8) -> EnrichmentResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "signature", "type": "[]const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "EnrichmentResult",
           "is_pub": true,
           "line": 134
@@ -106,16 +81,8 @@
         {
           "type": "fn_decl",
           "name": "enhanceStruct",
-          "match_hash": "d04e95fcf51ab1a05b3b88fb1295194da9c0086b7e2f6a4a28bdf47bd712cc05",
+          "match_hash": "6d486db6f1468c66eecc3b1336ecfffb42ca7479afb67e6a83be8df3fa285249",
           "signature": "fn enhanceStruct(self: *Enhancer, name: []const u8, signature: []const u8, method_sigs: []const []const u8, existing_doc: ?[]const u8, module_context: []const u8) -> EnrichmentResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "signature", "type": "[]const u8" },
-            { "name": "method_sigs", "type": "[]const []const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "EnrichmentResult",
           "is_pub": true,
           "line": 148
@@ -123,14 +90,8 @@
         {
           "type": "fn_decl",
           "name": "enhanceFile",
-          "match_hash": "e817ec7f61397968c2424a2b74748940da16c30fa01705b3c6b0294ceaf8ac2d",
+          "match_hash": "67eebb8d442344ae2e9ec548216b38c09eb7beb1dfc2c79a280d3e0fb541cf21",
           "signature": "fn enhanceFile(self: *Enhancer, rel_path: []const u8, existing_doc: ?[]const u8, source_preview: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "rel_path", "type": "[]const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "source_preview", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 163
@@ -138,11 +99,8 @@
         {
           "type": "fn_decl",
           "name": "scoreDocstring",
-          "match_hash": "af714a1a6f9595122062b19a64a87f21934d2078b706135d3a2540822cf10f60",
+          "match_hash": "0abf8e74e1cd433a503503e627cf7c3a2a2300744f00d92408cf4556faa6009d",
           "signature": "fn scoreDocstring(text: []const u8) -> u32",
-          "params": [
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 211
@@ -150,14 +108,8 @@
         {
           "type": "fn_private",
           "name": "runEnhancement",
-          "match_hash": "405123f15982b1dcafb239d1f28cbf78c00228a365ae5dbdaddd3cef8b930f82",
+          "match_hash": "b486477ea297e843acb0c0c071582616e96a5abc55ad4714fe38f3532fecbd16",
           "signature": "fn runEnhancement(self: *Enhancer, name: []const u8, prompt: []const u8, existing_doc: ?[]const u8) -> EnrichmentResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "prompt", "type": "[]const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" }
-          ],
           "returns": "EnrichmentResult",
           "is_pub": false,
           "line": 236
@@ -165,12 +117,8 @@
         {
           "type": "fn_private",
           "name": "fallback",
-          "match_hash": "ef90ade4641c351648dc7f7a98e93ba44ab4abb25e3c2ef3f3169dd23f4b39f3",
+          "match_hash": "dac2c634429e686b20ac104628aab518679fe60e2718b16ec442b0ce9f244679",
           "signature": "fn fallback(self: *Enhancer, existing_doc: ?[]const u8) -> EnrichmentResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "existing_doc", "type": "?[]const u8" }
-          ],
           "returns": "EnrichmentResult",
           "is_pub": false,
           "line": 274
@@ -178,12 +126,8 @@
         {
           "type": "fn_decl",
           "name": "extractTags",
-          "match_hash": "43d7b6a21cd223248be8657bc4d58d2fcd5d6a48f9232b2cb3613dfc7ada59d2",
+          "match_hash": "21d18693c3d8c79613a55cde93be496ae8ca5b32d49e270a48da939819e44ba0",
           "signature": "fn extractTags(self: *Enhancer, text: []const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 281
@@ -191,12 +135,8 @@
         {
           "type": "fn_decl",
           "name": "stripTagsLine",
-          "match_hash": "5fde72d3f365b07f63dd85803cc0e19a6bcb89f5f3bbad7a13197c7b7afe5c7a",
+          "match_hash": "044d6757196e9990afe2d36262791f67e1dbfbbdfba44821d5a9be5fc35bc7f9",
           "signature": "fn stripTagsLine(self: *Enhancer, text: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "text", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 312
@@ -204,15 +144,8 @@
         {
           "type": "fn_private",
           "name": "buildFunctionPrompt",
-          "match_hash": "1229536842626c7c9b6409178c3b810c3bad556e1df649189a6d2e7e54e959fd",
+          "match_hash": "c2ae2777ba15f7674468e96625aa017f8f00eba60baa6369a3b4354841db468d",
           "signature": "fn buildFunctionPrompt(self: *Enhancer, name: []const u8, signature: []const u8, existing_doc: ?[]const u8, module_context: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "signature", "type": "[]const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 337
@@ -220,16 +153,8 @@
         {
           "type": "fn_private",
           "name": "buildStructPrompt",
-          "match_hash": "567f8f2cf90910795180266026973b0cd78b5d5f09e953eec145dcfd91041dd4",
+          "match_hash": "5c2f4868619d582e92c0d47a451699469733d40ed2101f47c25579ba3b08d718",
           "signature": "fn buildStructPrompt(self: *Enhancer, name: []const u8, signature: []const u8, method_sigs: []const []const u8, existing_doc: ?[]const u8, module_context: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "signature", "type": "[]const u8" },
-            { "name": "method_sigs", "type": "[]const []const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 380
@@ -237,14 +162,8 @@
         {
           "type": "fn_private",
           "name": "buildFilePrompt",
-          "match_hash": "283cd34b2710b61c242382150e88d642fd0457f19e67b75f8827dca0be498ad6",
+          "match_hash": "2122c1e333a5a0c807924cc339cac57c92446f2e07972918dd9fe55456b227a6",
           "signature": "fn buildFilePrompt(self: *Enhancer, rel_path: []const u8, existing_doc: ?[]const u8, source_preview: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "rel_path", "type": "[]const u8" },
-            { "name": "existing_doc", "type": "?[]const u8" },
-            { "name": "source_preview", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 428
@@ -252,17 +171,8 @@
         {
           "type": "fn_decl",
           "name": "enhanceModuleDetail",
-          "match_hash": "4252aab6b6f3e6b721a1a5ff9e3786d6ec2f02b2f524a67d59185556aab608bf",
+          "match_hash": "e7ad55a857cea5ddc85f47d24174372ba597c446ebb1a0508766873505552b18",
           "signature": "fn enhanceModuleDetail(self: *Enhancer, module_name: []const u8, source_content: []const u8, member_signatures: []const []const u8, capabilities: []const u8, skills: []const u8, existing_comment: ?[]const u8) -> ModuleDetailResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "module_name", "type": "[]const u8" },
-            { "name": "source_content", "type": "[]const u8" },
-            { "name": "member_signatures", "type": "[]const []const u8" },
-            { "name": "capabilities", "type": "[]const u8" },
-            { "name": "skills", "type": "[]const u8" },
-            { "name": "existing_comment", "type": "?[]const u8" }
-          ],
           "returns": "ModuleDetailResult",
           "is_pub": true,
           "line": 493
@@ -270,17 +180,8 @@
         {
           "type": "fn_private",
           "name": "buildModuleDetailPrompt",
-          "match_hash": "f9cb91d1c2e1a6a0aae99b673a1abae390ad7b3212284e231ccb5a1d763b0a6a",
+          "match_hash": "dfe96636e1e2d2511a422108d7d00be39947e1702f6118f6d598ccc63dd4ffb7",
           "signature": "fn buildModuleDetailPrompt(self: *Enhancer, module_name: []const u8, source_content: []const u8, member_signatures: []const []const u8, capabilities: []const u8, skills: []const u8, existing_comment: ?[]const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "module_name", "type": "[]const u8" },
-            { "name": "source_content", "type": "[]const u8" },
-            { "name": "member_signatures", "type": "[]const []const u8" },
-            { "name": "capabilities", "type": "[]const u8" },
-            { "name": "skills", "type": "[]const u8" },
-            { "name": "existing_comment", "type": "?[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 521
@@ -288,13 +189,8 @@
         {
           "type": "fn_private",
           "name": "parseModuleDetailResponse",
-          "match_hash": "aca6c5e660493e6aa7dd1ca2c156c3484f3c8cb559fd102678a28ba6386eaa5b",
+          "match_hash": "c9d8d472bfd2c104e6b085a5e96eaaa7b8f4a01ef14dcea6d8be9ef182e04f01",
           "signature": "fn parseModuleDetailResponse(self: *Enhancer, response: []const u8, existing_comment: ?[]const u8) -> ModuleDetailResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "response", "type": "[]const u8" },
-            { "name": "existing_comment", "type": "?[]const u8" }
-          ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
           "line": 590
@@ -302,12 +198,8 @@
         {
           "type": "fn_private",
           "name": "fallbackModuleDetail",
-          "match_hash": "b782666aaac5cb5c99030c52d084d1cf4f5e9b23f88b4d212a934cf6e3309281",
+          "match_hash": "e98a00906b0131041cd1b1530d794ae95075b3bbd67710d3b719e417b010a78f",
           "signature": "fn fallbackModuleDetail(self: *Enhancer, existing_comment: ?[]const u8) -> ModuleDetailResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "existing_comment", "type": "?[]const u8" }
-          ],
           "returns": "ModuleDetailResult",
           "is_pub": false,
           "line": 649
@@ -315,15 +207,8 @@
         {
           "type": "fn_decl",
           "name": "extractSemanticPhrases",
-          "match_hash": "2fa781cf2227412ed59d8acf19906a145fe17efe80cb513dedf49d80b8c91674",
+          "match_hash": "5b55d450e7005dcfc24086f5927cf816bbdae63c1294d01d0feaec45a9ed848f",
           "signature": "fn extractSemanticPhrases(self: *Enhancer, name: []const u8, node_type: []const u8, comment: []const u8, module_context: []const u8) -> SemanticPhrasesResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "node_type", "type": "[]const u8" },
-            { "name": "comment", "type": "[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "SemanticPhrasesResult",
           "is_pub": true,
           "line": 674
@@ -331,15 +216,8 @@
         {
           "type": "fn_private",
           "name": "buildPhrasesPrompt",
-          "match_hash": "7b1ccf10d0f6ff665a1f29c3b5d3ccbe664a0763421415e7e7918c089da52498",
+          "match_hash": "83acc67d343d85588730b6267fc5e6b80d2a721f51c9efba251049d7b123f05f",
           "signature": "fn buildPhrasesPrompt(self: *Enhancer, name: []const u8, node_type: []const u8, comment: []const u8, module_context: []const u8) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "node_type", "type": "[]const u8" },
-            { "name": "comment", "type": "[]const u8" },
-            { "name": "module_context", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 723
@@ -347,12 +225,8 @@
         {
           "type": "fn_decl",
           "name": "parsePhrasesResponse",
-          "match_hash": "81d41ed314bd982cc0f684611cbfd8711ee2798ea65bc72888209f0f993fd049",
+          "match_hash": "efa61659954fdcd694fd0a4d0c35f4d95f113e15b8c76018f1d6352af4d7df88",
           "signature": "fn parsePhrasesResponse(self: *Enhancer, tagged: []const u8) -> SemanticPhrasesResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "tagged", "type": "[]const u8" }
-          ],
           "returns": "SemanticPhrasesResult",
           "is_pub": true,
           "line": 758
@@ -360,12 +234,8 @@
         {
           "type": "fn_decl",
           "name": "fallbackPhrases",
-          "match_hash": "f462edfcda55a041b67f6470b6b98e581dca7b058b3541d8a54c796e493cee77",
+          "match_hash": "23a17b002b4e0c416eab095fd34f7f38aca59acb6fd85785571f3698a4c41a51",
           "signature": "fn fallbackPhrases(self: *Enhancer, comment: []const u8) -> SemanticPhrasesResult",
-          "params": [
-            { "name": "self", "type": "*Enhancer" },
-            { "name": "comment", "type": "[]const u8" }
-          ],
           "returns": "SemanticPhrasesResult",
           "is_pub": true,
           "line": 795
@@ -376,11 +246,8 @@
     {
       "type": "fn_private",
       "name": "extractPhrasesTag",
-      "match_hash": "a247432ba1386555ebe80fb1a84f6c51e15b28288434aa19db1023a047f1dc27",
+      "match_hash": "3dfe11a0453897e62ebbdbb038242dc3467b4d370dff146756dfbb5104b8d664",
       "signature": "fn extractPhrasesTag(text: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 850
@@ -388,12 +255,8 @@
     {
       "type": "fn_private",
       "name": "lastIndexOf",
-      "match_hash": "e034ac47220d4324dd8aeaf1bb4fddc91420524877a9e232e1a18026cb2a90fe",
+      "match_hash": "3b8e073b5dfbd9b1dcba0b5a83d20869605c75f70bc8147f8ba51100848014e8",
       "signature": "fn lastIndexOf(haystack: []const u8, needle: []const u8) -> ?usize",
-      "params": [
-        { "name": "haystack", "type": "[]const u8" },
-        { "name": "needle", "type": "[]const u8" }
-      ],
       "returns": "?usize",
       "is_pub": false,
       "line": 863

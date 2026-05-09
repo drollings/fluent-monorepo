@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " AST parser for Zig source files — extracts declarations and comments.",
-  "capabilities": ["ast-indexing"],
   "used_by": ["src/guidance/comments/sync.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
   "members": [
     {
@@ -18,12 +17,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "c0f6da02c842415e8c58375baf43aac8d65ef2029eb19dc967103e551f3471eb",
+          "match_hash": "d3281e389c59d0fa552f53eb4af6b41ca6b5249cb86b3bb6a47fb5d7375a6d6f",
           "signature": "fn init(allocator: std.mem.Allocator, source: [:0]const u8) -> AstParser",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "source", "type": "[:0]const u8" }
-          ],
           "returns": "AstParser",
           "is_pub": true,
           "line": 13
@@ -31,11 +26,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "143ceb9d35b6f5036bcb896bf5eef721233c7da799e3f3b1b2c845f1868596f7",
+          "match_hash": "e2b18636110a8c037d5920ab164e72fe3fe11b5e6dca8f0ff3023a5ace12e4c0",
           "signature": "fn deinit(self: *AstParser) -> void",
-          "params": [
-            { "name": "self", "type": "*AstParser" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 22
@@ -43,11 +35,8 @@
         {
           "type": "fn_decl",
           "name": "hasErrors",
-          "match_hash": "32f0c9d47b1fdf910e9db122f238dbd46e2fe6be6d6d9b9bd9d8856b6b3cc4fc",
+          "match_hash": "e02789283233274cd2c3842956939f7a621dddc2ab88ef16c0bade36a0cc0320",
           "signature": "fn hasErrors(self: *const AstParser) -> bool",
-          "params": [
-            { "name": "self", "type": "*const AstParser" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 26
@@ -55,11 +44,8 @@
         {
           "type": "fn_decl",
           "name": "extractMembers",
-          "match_hash": "03a44a4269590985855402f81d87524ba024e51f332110e7e9edce9c56582f5d",
+          "match_hash": "755fe07789ce4db32658fe9d843ac23d991baa753248ddb7c961534dd4601106",
           "signature": "fn extractMembers(self: *AstParser) -> []types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" }
-          ],
           "returns": "[]types.Member",
           "is_pub": true,
           "line": 30
@@ -67,12 +53,8 @@
         {
           "type": "fn_private",
           "name": "extractMember",
-          "match_hash": "c85d122b72bc67a2384e0f1ed950623401196b3da58d7115fdd50c417e36fff7",
+          "match_hash": "48b661ae2e3979db3e7c0643837f12731f1e0ade9cdfa0e47fdc314ecc96aa1d",
           "signature": "fn extractMember(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?types.Member",
           "is_pub": false,
           "line": 43
@@ -80,12 +62,8 @@
         {
           "type": "fn_private",
           "name": "extractFunction",
-          "match_hash": "a4022ac7be4bf46b976d49654646dba0653cb1363856d8e5f7a23daaa1a34267",
+          "match_hash": "9b429f1f1a1fee6510dd63a6059fbe567256b02714b4d4926fcfd4345b562dda",
           "signature": "fn extractFunction(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?types.Member",
           "is_pub": false,
           "line": 60
@@ -93,12 +71,8 @@
         {
           "type": "fn_private",
           "name": "extractVarDecl",
-          "match_hash": "9968a83eeadba73bc33439acbbdf1270fdb2798a1717f17d0b4601f856ead2ad",
+          "match_hash": "47927b2b180bd481a8d73ff590f1f19ee195e2632c0c71bf52827a856ad2a131",
           "signature": "fn extractVarDecl(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?types.Member",
           "is_pub": false,
           "line": 108
@@ -106,15 +80,8 @@
         {
           "type": "fn_private",
           "name": "extractContainer",
-          "match_hash": "d4ae11bd529192d77d8ec3c93e118ed6ee6948648d2e125dae1e07e90b4f3457",
+          "match_hash": "060ccb507a3b953fadcb6f4f108cd7581ecc6c3c0bc12c02fc8c6197d536bf8f",
           "signature": "fn extractContainer(self: *AstParser, name_token: std.zig.Ast.TokenIndex, init_node: std.zig.Ast.Node.Index, var_decl_node: std.zig.Ast.Node.Index, is_pub: bool) -> ?types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "name_token", "type": "std.zig.Ast.TokenIndex" },
-            { "name": "init_node", "type": "std.zig.Ast.Node.Index" },
-            { "name": "var_decl_node", "type": "std.zig.Ast.Node.Index" },
-            { "name": "is_pub", "type": "bool" }
-          ],
           "returns": "?types.Member",
           "is_pub": false,
           "line": 132
@@ -122,12 +89,8 @@
         {
           "type": "fn_private",
           "name": "extractTest",
-          "match_hash": "02f77e82239c82da02e8299185e2ab295189acbeec413a258258fe26b60c06a2",
+          "match_hash": "4918d183b0de9d6aee20793a87c5d31a7360e1deab420002c69e1aa9d3a64fb8",
           "signature": "fn extractTest(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?types.Member",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?types.Member",
           "is_pub": false,
           "line": 215
@@ -135,12 +98,8 @@
         {
           "type": "fn_private",
           "name": "extractParams",
-          "match_hash": "5aaa535a5cfefd3615f874101e90493613ad0129bab492c7fe1d5f3d048b8cf6",
+          "match_hash": "65e0cf5953909c8ddf8c90c844e2ff1775063b231eedbc21b7a9e5c5cf003098",
           "signature": "fn extractParams(self: *AstParser, full_proto: std.zig.Ast.full.FnProto) -> []types.Param",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "full_proto", "type": "std.zig.Ast.full.FnProto" }
-          ],
           "returns": "[]types.Param",
           "is_pub": false,
           "line": 236
@@ -148,12 +107,8 @@
         {
           "type": "fn_private",
           "name": "nodeToType",
-          "match_hash": "724cdd083ca520c702a2588113edb05365aa5681533301af14f0b8120f74bb3b",
+          "match_hash": "149faf8666e5d1359e862b2c5ef6d30522f53799a212a033f652b24ff20753a4",
           "signature": "fn nodeToType(self: *AstParser, node: std.zig.Ast.Node.OptionalIndex) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node", "type": "std.zig.Ast.Node.OptionalIndex" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 263
@@ -161,12 +116,8 @@
         {
           "type": "fn_private",
           "name": "nodeToTypeFromIndex",
-          "match_hash": "2384046500aac03d3d1552cb1f260fc4314a5d8511514d523a71e559afaff301",
+          "match_hash": "847cf0b1f11902a55160676caf2d11f89daf20f9aeddb3690b9fd54511700ce6",
           "signature": "fn nodeToTypeFromIndex(self: *AstParser, idx: std.zig.Ast.Node.Index) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 268
@@ -174,14 +125,8 @@
         {
           "type": "fn_private",
           "name": "buildSignature",
-          "match_hash": "523682f91db554a1dd41dfd4992d49666a7b793a1974c4c79b0c10a3a04b18ae",
+          "match_hash": "da852f5902dbd85ea3940b2da2edb4d3d2f57ac14f515253f2edfb1fd1be3b04",
           "signature": "fn buildSignature(allocator: std.mem.Allocator, name: []const u8, params: []types.Param, returns: ?[]const u8) -> []const u8",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "name", "type": "[]const u8" },
-            { "name": "params", "type": "[]types.Param" },
-            { "name": "returns", "type": "?[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 273
@@ -189,12 +134,8 @@
         {
           "type": "fn_private",
           "name": "extractDocstring",
-          "match_hash": "5fc0dbecf5e0c8360388b7c0f5b4364ecc94ad5b07216c2a6c1ef1772b6b87ae",
+          "match_hash": "43b25251d54865ec44702a4a010e1856f5908a5210b2a019a915cbf72aba2419",
           "signature": "fn extractDocstring(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 300
@@ -202,12 +143,8 @@
         {
           "type": "fn_decl",
           "name": "extractFullDocstring",
-          "match_hash": "040ca8f0c8f16760b75bc2cfe173707def1941fede5fe7d9a3a3a41ab9a2f3c9",
+          "match_hash": "569f0153388df257ceb28e87dfb3d5f36786f1ce28d8208990053aa775d88e68",
           "signature": "fn extractFullDocstring(self: *AstParser, node_idx: std.zig.Ast.Node.Index) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" },
-            { "name": "node_idx", "type": "std.zig.Ast.Node.Index" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 336
@@ -215,11 +152,8 @@
         {
           "type": "fn_decl",
           "name": "extractFullModuleDoc",
-          "match_hash": "b45395faf068e88a8767d079d6c8a3f9dc136cc27d2ef5e275a4dd03278dde2e",
+          "match_hash": "1b3c4d53d6ab5f90a0dfd3ad2098fe7a2ade552fb80fc1aef2dc13c901d095bb",
           "signature": "fn extractFullModuleDoc(self: *AstParser) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 379
@@ -227,11 +161,8 @@
         {
           "type": "fn_decl",
           "name": "extractModuleDoc",
-          "match_hash": "20888469e2bbc8fb6cfbe2029fe6abb589a90e7b2f409f49dfb56fd379c5fafe",
+          "match_hash": "3ac33cd5df12133c935d0d0b3b30a6bfbbf3a5af29592a148cce41fc92229116",
           "signature": "fn extractModuleDoc(self: *AstParser) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 383
@@ -239,11 +170,8 @@
         {
           "type": "fn_decl",
           "name": "extractImports",
-          "match_hash": "a954ea9ceacbfbf688b94a1759a3bfbcbddf103b561dc7c04a902aefddbeb7ff",
+          "match_hash": "f1aa8da6de86188d0260c8064d548221ff09847fc7b7944bfffb24de1912d863",
           "signature": "fn extractImports(self: *AstParser) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*AstParser" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 415
@@ -251,11 +179,8 @@
         {
           "type": "fn_decl",
           "name": "countTokens",
-          "match_hash": "15a617e0c0b0b8b53d83031a4771259b39d1726dc9818394674b7e94df873d36",
+          "match_hash": "052bd1ad12d5154e655f63ca61a1dd44e4670fc92a0aaed36cfd754e7397c7bd",
           "signature": "fn countTokens(self: *const AstParser) -> usize",
-          "params": [
-            { "name": "self", "type": "*const AstParser" }
-          ],
           "returns": "usize",
           "is_pub": true,
           "line": 444
@@ -266,12 +191,8 @@
     {
       "type": "fn_decl",
       "name": "parseFile",
-      "match_hash": "bdf0da4ec97645b10662adf88963d082fe79067ad9276f3b4548dbff4215e2b9",
+      "match_hash": "02d2ffdfef63486e65375a860f644cc756da48b2f7f44e49ea0ede8e0ff449b1",
       "signature": "fn parseFile(allocator: std.mem.Allocator, path: []const u8) -> AstParser",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "AstParser",
       "is_pub": true,
       "line": 450

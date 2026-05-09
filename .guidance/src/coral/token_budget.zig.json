@@ -4,17 +4,13 @@
     "source": "src/coral/token_budget.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "estimateEmbeddingTokens",
-      "match_hash": "68f113986f6851d01f64ec34ee824729eba9edffd48b7ba7c5288797aeca1012",
+      "match_hash": "2037b19da140dd47b9c6d7e1fbef6d4172de170658ecfae3b03dea2ec12d810c",
       "signature": "fn estimateEmbeddingTokens(node: *const ContextNode) -> usize",
-      "params": [
-        { "name": "node", "type": "*const ContextNode" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 29

@@ -111,24 +111,21 @@ test "jsonifyMember: with line field included" {
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
     defer parsed.deinit();
 }
-test "jsonifyMember: with params" {
+test "jsonifyMember: with params — signature carries param info, no params array in JSON" {
     const allocator = std.testing.allocator;
-    const params = [_]types_mod.Param{
-        .{ .name = "alloc", .type = "std.mem.Allocator" },
-        .{ .name = "val", .type = "u32", .default = "0" },
-    };
     const member = types_mod.Member{
         .type = .fn_decl,
         .name = "withParams",
         .is_pub = true,
-        .params = &params,
+        .signature = "fn withParams(alloc: std.mem.Allocator, val: u32) void",
     };
     const json = try types_mod.jsonifyMember(allocator, member);
     defer if (json) |j| allocator.free(j);
     try std.testing.expect(json != null);
     const j = json.?;
-    try std.testing.expect(std.mem.indexOf(u8, j, "\"params\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, j, "\"alloc\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"params\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "\"signature\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, j, "alloc") != null);
     // Validate as JSON
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, j, .{});
     defer parsed.deinit();

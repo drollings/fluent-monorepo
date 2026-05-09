@@ -4,7 +4,6 @@
     "source": "src/ontology/yago.zig",
     "language": "zig"
   },
-  "capabilities": ["ontology"],
   "used_by": ["src/ontology/mapper.zig", "src/ontology/migration.zig", "src/ontology/root.zig"],
   "members": [
     {
@@ -84,11 +83,8 @@
     {
       "type": "fn_decl",
       "name": "whitelistIRIs",
-      "match_hash": "b4f2d47ff1c50c7bea97846dbbb0c9ffe61b657a4d27b516ab50b82bbd926246",
+      "match_hash": "3d99126014bca171e9ae20f3a6ec70eaf3890646108b14d425667119f53503be",
       "signature": "fn whitelistIRIs(out: [][]const u8) -> usize",
-      "params": [
-        { "name": "out", "type": "[][]const u8" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 147
@@ -96,11 +92,8 @@
     {
       "type": "fn_decl",
       "name": "lookupClass",
-      "match_hash": "71069eb59d32b3d652013448109c1b8db2102d12a9dda4fb84eae3ed67c7b8f2",
+      "match_hash": "f226c2c3bbb40611606acc786f9863feab81fe78dc62ccbeb777705c221296b9",
       "signature": "fn lookupClass(iri: []const u8) -> ?*const OntologyClass",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "?*const OntologyClass",
       "is_pub": true,
       "line": 158
@@ -108,12 +101,8 @@
     {
       "type": "fn_decl",
       "name": "superclassChain",
-      "match_hash": "382f298c8058e74358030efd3363006d377a5b62679357e1b492102025137a4f",
+      "match_hash": "6cd037c047b6dffdfb13e9ef4a9dd29346e0ee0f529f389e68c69519053413f4",
       "signature": "fn superclassChain(iri: []const u8, out: [][]const u8) -> usize",
-      "params": [
-        { "name": "iri", "type": "[]const u8" },
-        { "name": "out", "type": "[][]const u8" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 166
@@ -121,12 +110,8 @@
     {
       "type": "fn_decl",
       "name": "isSubclassOf",
-      "match_hash": "92cb617957ab94fa85802858db2276ad7904ff774bd6d8fb393a10fcb018d88f",
+      "match_hash": "2625365083e6ffd807dc6cfaa725f996ad2d3ecbf2ac714962585d862c69d69e",
       "signature": "fn isSubclassOf(child_iri: []const u8, parent_iri: []const u8) -> bool",
-      "params": [
-        { "name": "child_iri", "type": "[]const u8" },
-        { "name": "parent_iri", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 180
@@ -134,11 +119,8 @@
     {
       "type": "fn_decl",
       "name": "lookupProperty",
-      "match_hash": "0013ab4f5493995d4512ebebc38ee9ef58de99edd375e1b43d9b7d3bfe195dae",
+      "match_hash": "eae4b32d3c4d64c43268771e51b639efe67ec45ecf200e0300ef73a0a3d694a8",
       "signature": "fn lookupProperty(iri: []const u8) -> ?*const OntologyProperty",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "?*const OntologyProperty",
       "is_pub": true,
       "line": 321

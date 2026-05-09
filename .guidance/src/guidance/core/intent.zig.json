@@ -53,11 +53,8 @@
         {
           "type": "fn_decl",
           "name": "from",
-          "match_hash": "0d278cfe3e97b3a455283d54c30657fc111859a3d4c977685c42f3206858a3c1",
+          "match_hash": "9ae1841099387fa26e53a05714c2b7d4a92f18078f92ed8ffe4c4420ae9c7853",
           "signature": "fn from(intent: QueryIntent) -> QueryTier",
-          "params": [
-            { "name": "intent", "type": "QueryIntent" }
-          ],
           "returns": "QueryTier",
           "is_pub": true,
           "line": 33
@@ -122,12 +119,8 @@
     {
       "type": "fn_decl",
       "name": "classifyIntent",
-      "match_hash": "03bf6dba305ddc045d1601d9faf2dc7562c3b09f5f517fb2bdb5e8f399d345e1",
+      "match_hash": "ac01d56c84af9b9635150b62372d0bb8934e10dc20ff615b292936e9a65e6c8f",
       "signature": "fn classifyIntent(arena: *std.heap.ArenaAllocator, query: []const u8) -> Classification",
-      "params": [
-        { "name": "arena", "type": "*std.heap.ArenaAllocator" },
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "Classification",
       "is_pub": true,
       "line": 77
@@ -135,11 +128,8 @@
     {
       "type": "fn_decl",
       "name": "isShortQuery",
-      "match_hash": "738288e22354c1741e7a41d591883375f3c73f0c3102bfad0920f76af4b2fc41",
+      "match_hash": "4ea87523ca5c44778a2cc476784e0464c6e2073f4b6638ce4424decbb08065bf",
       "signature": "fn isShortQuery(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 154
@@ -147,11 +137,8 @@
     {
       "type": "fn_decl",
       "name": "isNaturalLanguageQuery",
-      "match_hash": "b3bcc3f2e6f391a7c890d5f7ddfacca0433ee728e48f709253f286b0501bf7dc",
+      "match_hash": "c0b3cc356aeebdc2e26e25b3e635a7efc4a27ea3b85332f85f111d7d1b805992",
       "signature": "fn isNaturalLanguageQuery(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 186

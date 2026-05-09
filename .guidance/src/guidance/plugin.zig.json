@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " LanguagePlugin — interface for language-specific AST providers.\n\n Each plugin handles a set of file extensions and knows how to:\n   - parse source into structured members\n   - extract imports/dependencies\n   - extract module-level documentation\n\n The Zig native parser is implemented as a plugin wrapping ast_parser.zig.\n External language providers (Python, Rust, …) can be wired in via the\n ExternalPlugin wrapper which forks a subprocess.",
-  "capabilities": ["plugin-system", "ast-indexing"],
   "used_by": ["src/guidance/plugin_registry.zig", "src/guidance/plugin_registry_tests.zig", "src/guidance/plugin_tests.zig", "src/guidance/plugins/markdown_plugin.zig", "src/guidance/plugins/treesitter_plugin.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
@@ -26,14 +25,8 @@
         {
           "type": "fn_decl",
           "name": "parse",
-          "match_hash": "f3d2853baae5b8241c343459db8bbf9d93f6169387492216a5e65544ea96c041",
+          "match_hash": "40333911a2bcae300a75a276ca7ae070aff3f4ab25b8b3f631298b39764ea1d4",
           "signature": "fn parse(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> ParsedFile",
-          "params": [
-            { "name": "self", "type": "*const LanguagePlugin" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "source", "type": "[:0]const u8" },
-            { "name": "file_path", "type": "[]const u8" }
-          ],
           "returns": "ParsedFile",
           "is_pub": true,
           "line": 51
@@ -41,13 +34,8 @@
         {
           "type": "fn_decl",
           "name": "extractImports",
-          "match_hash": "741dad85c3649a641dfbc59de68543e5e240ea0182740adaff5f41d89c0967f5",
+          "match_hash": "9a36f164ac67a68ab6dc837ebb87224b13bf1fa5891709c90c6da6381d04d862",
           "signature": "fn extractImports(self: *const LanguagePlugin, arena: std.mem.Allocator, source: [:0]const u8) -> []const []const u8",
-          "params": [
-            { "name": "self", "type": "*const LanguagePlugin" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "source", "type": "[:0]const u8" }
-          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 61

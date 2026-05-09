@@ -4,7 +4,6 @@
     "source": "src/coral/frontier.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cache_reactor.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -17,11 +16,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b180d10dbb7a830417871bebdc081e4537c3c3691966390c41348af40b746225",
+          "match_hash": "718c8966b9cb1218bfd74a24d7dd6ed93741d9fd8523e6f8ae23c92cd3e1716c",
           "signature": "fn deinit(self: *MinimizedContext) -> void",
-          "params": [
-            { "name": "self", "type": "*MinimizedContext" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 36
@@ -32,15 +28,8 @@
     {
       "type": "fn_decl",
       "name": "minimizeContext",
-      "match_hash": "d3612f78e4ada4e2adacb5302083cca2ea8f590e7a42e71268de2bb0550a27c7",
+      "match_hash": "86262838ba43f2c8c607b07e28311aef74121fba868266ba99c32d1c11445070",
       "signature": "fn minimizeContext(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, focal_id: i64, token_budget: usize) -> MinimizedContext",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "library", "type": "*coral_db.Library" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "focal_id", "type": "i64" },
-        { "name": "token_budget", "type": "usize" }
-      ],
       "returns": "MinimizedContext",
       "is_pub": true,
       "line": 43
@@ -48,12 +37,8 @@
     {
       "type": "fn_decl",
       "name": "buildPrompt",
-      "match_hash": "9ec359327a100852d98626f1ab1c2869117cae64575f4832317ee6b187db22a8",
+      "match_hash": "9f679767bc881339288180b65049b4d6737cf981643d2f3cb32650a2083381e1",
       "signature": "fn buildPrompt(allocator: std.mem.Allocator, ctx: MinimizedContext) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "MinimizedContext" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 79
@@ -61,11 +46,8 @@
     {
       "type": "fn_decl",
       "name": "validateSolution",
-      "match_hash": "9ac003cf747af09298bf0e78b6c3b7f00eb3fe8406aa2d728c080997a0808689",
+      "match_hash": "c11919f77f75ac34c34af19c801aeae102aad0b00d30bd8d3118f3153257171a",
       "signature": "fn validateSolution(solution: []const u8) -> ValidationResult",
-      "params": [
-        { "name": "solution", "type": "[]const u8" }
-      ],
       "returns": "ValidationResult",
       "is_pub": true,
       "line": 102
@@ -103,14 +85,8 @@
     {
       "type": "fn_decl",
       "name": "indexSolution",
-      "match_hash": "60f7206da0827e91d3cb29b81d874a635ee6105236341c4fd82a368c14c01902",
+      "match_hash": "ecdba9c743870985902c614852ce544061119250765d1cafbc7d9ec4de0b39cd",
       "signature": "fn indexSolution(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "library", "type": "*coral_db.Library" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "response", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 184
@@ -130,15 +106,8 @@
     {
       "type": "fn_decl",
       "name": "indexSolutionWithTool",
-      "match_hash": "67e6bc67baac4dd582d098c9eb620b6b40529cf09bb0c719afe3e3f3ed279fbe",
+      "match_hash": "6828d81f3b81f478c6d9d4ee94f4c367a64b20f5d35632ce66e5ab524c1420cc",
       "signature": "fn indexSolutionWithTool(allocator: std.mem.Allocator, library: *coral_db.Library, query: []const u8, response: []const u8, generator: ?*wasm_mod.ToolGenerator) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "library", "type": "*coral_db.Library" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "response", "type": "[]const u8" },
-        { "name": "generator", "type": "?*wasm_mod.ToolGenerator" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 270

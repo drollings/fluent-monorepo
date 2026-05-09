@@ -4,17 +4,13 @@
     "source": "src/rdf/normalize.zig",
     "language": "zig"
   },
-  "capabilities": ["rdf-parsing"],
   "used_by": ["src/rdf/root.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "hashIRI",
-      "match_hash": "3bd11917f4a916c532d18e551371516cf47532f50d137a6ed5d0119c2886bf87",
+      "match_hash": "2c44d97f15ec247b4be11b631838caa8a2ee5fada1686695d17e7e83c06d7df2",
       "signature": "fn hashIRI(iri: []const u8) -> i64",
-      "params": [
-        { "name": "iri", "type": "[]const u8" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 20
@@ -22,12 +18,8 @@
     {
       "type": "fn_decl",
       "name": "hashBlankNode",
-      "match_hash": "d2b95131a34ddee8b3e71dde6abfca0e467972c76911003821b38c428c77c19b",
+      "match_hash": "e927ff90f31c189f97f67b08975d3d702fc32ec4712fdb102947f93a4a9705a3",
       "signature": "fn hashBlankNode(scope: []const u8, id: []const u8) -> i64",
-      "params": [
-        { "name": "scope", "type": "[]const u8" },
-        { "name": "id", "type": "[]const u8" }
-      ],
       "returns": "i64",
       "is_pub": true,
       "line": 28
@@ -101,11 +93,8 @@
     {
       "type": "fn_decl",
       "name": "detectXsdType",
-      "match_hash": "c1e63cb442ec667365d71614b8ebd76fead6a1c619752762660ab2e6114db3f4",
+      "match_hash": "b78751cdc7c11df969382e3cae228b91fa78acf38dc7fd233a06ba6bfe73b861",
       "signature": "fn detectXsdType(datatype: ?[]const u8) -> XsdType",
-      "params": [
-        { "name": "datatype", "type": "?[]const u8" }
-      ],
       "returns": "XsdType",
       "is_pub": true,
       "line": 72
@@ -113,13 +102,8 @@
     {
       "type": "fn_decl",
       "name": "normalizeLiteral",
-      "match_hash": "805837019a562f646269d42aa7ff7ce573afc0d02aed02c1ee34baf7c0b9f1fa",
+      "match_hash": "8fb116102c5333dd384605052ff1f899ac9a63052771b0febfbc09e8646f7af9",
       "signature": "fn normalizeLiteral(value: []const u8, lang: ?[]const u8, datatype: ?[]const u8) -> TypedValue",
-      "params": [
-        { "name": "value", "type": "[]const u8" },
-        { "name": "lang", "type": "?[]const u8" },
-        { "name": "datatype", "type": "?[]const u8" }
-      ],
       "returns": "TypedValue",
       "is_pub": true,
       "line": 89
@@ -134,12 +118,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "5f263b9f4b18157fbf3ec32f8ad84c629e08b6f5a37d4d2a4d47afc08ba38cc5",
+          "match_hash": "cc14c5b24c3099b7c423c1394b11226484da0a4d92c5bd3743d703a8e706bafc",
           "signature": "fn init(allocator: std.mem.Allocator, scope_id: []const u8) -> BlankNodeScope",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "scope_id", "type": "[]const u8" }
-          ],
           "returns": "BlankNodeScope",
           "is_pub": true,
           "line": 125
@@ -147,11 +127,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "6d0dfb8993d5dcb20def820da0e2f7c04bb228c1bdf2a37d249693e303e837ca",
+          "match_hash": "1b23f38abbfb878b299eee7c67877a6e4df67ec63297a3bbb8519056ffd8a75c",
           "signature": "fn deinit(self: *BlankNodeScope) -> void",
-          "params": [
-            { "name": "self", "type": "*BlankNodeScope" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 133
@@ -159,12 +136,8 @@
         {
           "type": "fn_decl",
           "name": "resolve",
-          "match_hash": "4ad607e6f6c3fc1d475d7e525729976df4340e2861d3e41e42270207eb7627cb",
+          "match_hash": "a04cf9d86f3c49ff6f7ece8ef219e524976af89758aae76444639d4b41cb8117",
           "signature": "fn resolve(self: *BlankNodeScope, id: []const u8) -> i64",
-          "params": [
-            { "name": "self", "type": "*BlankNodeScope" },
-            { "name": "id", "type": "[]const u8" }
-          ],
           "returns": "i64",
           "is_pub": true,
           "line": 140

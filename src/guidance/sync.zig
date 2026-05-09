@@ -305,9 +305,9 @@ pub const SyncProcessor = struct {
                                     result.has_changes = true;
                                     result.comments_generated = true;
                                     // Comment is inserted into source by comment_sync module.
-                                    // Keep match_hash as code-only (apiHash) for consistency.
+                                    // Keep match_hash as signature-only (no comment) for consistency.
                                     if (m.match_hash) |old_hash| self.allocator.free(old_hash);
-                                    m.match_hash = try hash.apiHash(self.allocator, m.name, m.params, m.returns);
+                                    m.match_hash = try hash.signatureHash(self.allocator, m.signature orelse m.name);
                                 }
                             }
                             if (er.tags.len > 0) {

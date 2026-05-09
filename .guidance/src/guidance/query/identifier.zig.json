@@ -58,11 +58,8 @@
     {
       "type": "fn_decl",
       "name": "detectIdentifierPattern",
-      "match_hash": "809a63d310b48829bac0db0c7b76dcd05655b07ccf83e8cf2b88b4eabef3c719",
+      "match_hash": "40e0bf54bc1f634d894e59700e69c680ab9f6d1e09d3ba1097e05ca57f8c21a1",
       "signature": "fn detectIdentifierPattern(query: []const u8) -> ?IdentifierMatch",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "?IdentifierMatch",
       "is_pub": true,
       "line": 40
@@ -70,11 +67,8 @@
     {
       "type": "fn_decl",
       "name": "isPascalCase",
-      "match_hash": "ee13e6822b929b781c3365d1ae8cd2642a10f4389fc90c90c5e6db52d9b9d533",
+      "match_hash": "39a4cd4670ca38972c72a8b63efb4c775dcafaa3ff27c818fe51b9320f5a6d69",
       "signature": "fn isPascalCase(s: []const u8) -> bool",
-      "params": [
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 93
@@ -82,12 +76,8 @@
     {
       "type": "fn_decl",
       "name": "shouldSkipLLMSynthesis",
-      "match_hash": "edb19eb02c82cb0a4dd606ac2535696bdbde212136bea4199940d1060af7d95c",
+      "match_hash": "5e585eeb737a39c1e1ff8d0ea56ebb1c164f3455c52dff3c3d641cf3de386b76",
       "signature": "fn shouldSkipLLMSynthesis(query: []const u8, exact_match: bool) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "exact_match", "type": "bool" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 98

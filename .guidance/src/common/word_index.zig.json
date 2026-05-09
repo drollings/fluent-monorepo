@@ -16,11 +16,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "a27d2f8ac407fe1ee5eee220b73b817925899c5c8d635e3b5d4ba7396aef8efb",
+          "match_hash": "dd6c12762335916d8cba78855074c6f06ddb1b83a90f44367a1bb9d4e3a754c2",
           "signature": "fn init(allocator: std.mem.Allocator) -> WordIndex",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "WordIndex",
           "is_pub": true,
           "line": 19
@@ -28,11 +25,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "d1046823ec4bc72aea92ac41f77d1a225f565f0fe5e4646c462712e2accef416",
+          "match_hash": "735fde146212dc8b21268370a81bd4e553d8844ae30432e143dcd8600ef2b00d",
           "signature": "fn deinit(self: *WordIndex) -> void",
-          "params": [
-            { "name": "self", "type": "*WordIndex" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 28
@@ -40,12 +34,8 @@
         {
           "type": "fn_decl",
           "name": "hitPath",
-          "match_hash": "881ac8f20354b41924bfda3ff4ad83f7943d8d548e091f853dd216fd8f200753",
+          "match_hash": "0c9029bd54d369f54f7a164e3d5339b544e3cf12f624586bfe513d95253022f3",
           "signature": "fn hitPath(self: *const WordIndex, hit: WordHit) -> []const u8",
-          "params": [
-            { "name": "self", "type": "*const WordIndex" },
-            { "name": "hit", "type": "WordHit" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 46
@@ -53,15 +43,8 @@
         {
           "type": "fn_private",
           "name": "indexOneToken",
-          "match_hash": "b641a0180d2a110ad354dfdffb6e27e4b420deb2027fa0f45633a71830e50090",
+          "match_hash": "19d7c4a669f083c1f093f91ac30db6dc55c93b0230563d606b1148de2dafb925",
           "signature": "fn indexOneToken(self: *WordIndex, token: []const u8, doc_id: u32, line_num: u32, words_set: *std.StringHashMap(void)) -> void",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "token", "type": "[]const u8" },
-            { "name": "doc_id", "type": "u32" },
-            { "name": "line_num", "type": "u32" },
-            { "name": "words_set", "type": "*std.StringHashMap(void)" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 50
@@ -69,13 +52,8 @@
         {
           "type": "fn_decl",
           "name": "indexFile",
-          "match_hash": "7b1a7233d3c6f25f3f25f5ee533b8cafa6bdeda24fb10e282f33d1afecaab1b5",
+          "match_hash": "d3595c7aa3f8f5dc3eb56d8dade7a2e0416aef7132c75471de73f970ba14f794",
           "signature": "fn indexFile(self: *WordIndex, path: []const u8, content: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "path", "type": "[]const u8" },
-            { "name": "content", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 79
@@ -83,12 +61,8 @@
         {
           "type": "fn_decl",
           "name": "removeFile",
-          "match_hash": "7df6e33e0d8680d2c16f9d5b06cfa44999fcd864a538a226f4bfaa855bfd6f86",
+          "match_hash": "29ab80608fbfe72081d1b8a8369d3b2433cec89c7562a69b9078d03a54913ca2",
           "signature": "fn removeFile(self: *WordIndex, path: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 147
@@ -96,12 +70,8 @@
         {
           "type": "fn_decl",
           "name": "search",
-          "match_hash": "285aa4e4749e70feeba60ebac4de0373dd7618652cbd9ddaca2d31e7661acbf2",
+          "match_hash": "e129c979544974c8651c52b26738323235305eba714da36d3ab068a421e6de78",
           "signature": "fn search(self: *WordIndex, word: []const u8) -> []const WordHit",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "word", "type": "[]const u8" }
-          ],
           "returns": "[]const WordHit",
           "is_pub": true,
           "line": 188
@@ -109,13 +79,8 @@
         {
           "type": "fn_decl",
           "name": "searchDeduped",
-          "match_hash": "7b7eb2049d6e7ced55bc17626d819ce25accd9d1b2b1d97ca8358e7475d34be5",
+          "match_hash": "d3f1933b19ad1c6517a2f53a335d8784c3dcd87d22b5745910e6653c13e21ff8",
           "signature": "fn searchDeduped(self: *WordIndex, word: []const u8, allocator: std.mem.Allocator) -> []const WordHit",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "word", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[]const WordHit",
           "is_pub": true,
           "line": 198
@@ -123,14 +88,8 @@
         {
           "type": "fn_decl",
           "name": "searchPrefix",
-          "match_hash": "510346c2fe7da2ee7ab5cc8f4e72a4b7d0fd9911914d2bffc5b8f3ee71b7d028",
+          "match_hash": "3cb9d2cb4e6c155a882c6a9667ff3f80c18ed360821ad3520ce812835c12ffd2",
           "signature": "fn searchPrefix(self: *WordIndex, prefix_raw: []const u8, allocator: std.mem.Allocator, max_results: usize) -> []const WordHit",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "prefix_raw", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "max_results", "type": "usize" }
-          ],
           "returns": "[]const WordHit",
           "is_pub": true,
           "line": 226
@@ -138,13 +97,8 @@
         {
           "type": "fn_decl",
           "name": "writeToDisk",
-          "match_hash": "3bc56fe2f7523840fbe8f65d022ddee059945da2fc1510688e613c0c21800d29",
+          "match_hash": "70aec0f463fe020cf05ab252fa6ab8ef5ef0b1cb274c90b9aaedc4c851055d26",
           "signature": "fn writeToDisk(self: *WordIndex, dir_path: []const u8, git_head: ?[]const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*WordIndex" },
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "git_head", "type": "?[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 263
@@ -152,12 +106,8 @@
         {
           "type": "fn_decl",
           "name": "readFromDisk",
-          "match_hash": "46c76d5c0ef6418c2fb193a4155363c6f94bfc2272743c27858fba1159492016",
+          "match_hash": "730f1dba232a66fc8e18dd00c2828d8be93718adc12eda9e1a124c20c8dfe455",
           "signature": "fn readFromDisk(dir_path: []const u8, allocator: std.mem.Allocator) -> ?WordIndex",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "?WordIndex",
           "is_pub": true,
           "line": 299
@@ -165,11 +115,8 @@
         {
           "type": "fn_decl",
           "name": "readGitHead",
-          "match_hash": "3a46ecba786ac7ecbb793d31a671b42597883ee65aa74ed55800dcd3d87fe962",
+          "match_hash": "5867ee8139578a6db8bbe74b47d04a0a07f0b1ba096acd8ff7a71e952fc7695b",
           "signature": "fn readGitHead(dir_path: []const u8) -> ?[40]u8",
-          "params": [
-            { "name": "dir_path", "type": "[]const u8" }
-          ],
           "returns": "?[40]u8",
           "is_pub": true,
           "line": 342

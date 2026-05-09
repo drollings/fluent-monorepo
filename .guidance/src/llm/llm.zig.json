@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " llm.zig — LLM client, response post-processing, and task decomposition.\n\n Single source of truth for all LLM-related types and functions:\n   LlmError, LlmConfig, LlmClient  — HTTP chat-completion client\n   stripThinkBlock, extractCommentTag, isMalformedResponse, stripPreamble\n   LocalDecomposer, DecomposerConfig  — query decomposition\n\n ## Memory Ownership\n\n   - LlmClient: Owns http_client (persistent, pooled connections) and chat_url (owned slice).\n     Call init() to create, deinit() to release. HTTP connections are reused when keep_alive=true.\n   - LlmClient.complete(): Returns owned slice on success; caller must free with allocator.free().\n     Returns null on non-200 response; returns LlmError on network failure.\n   - LlmClient.available(): No allocation (caches result internally).\n   - LlmConfig: Holds borrowed string slices (api_url, model) — valid only as long as the\n     source strings live. Does not own heap.\n   - LocalDecomposer: No heap ownership; holds config by value. The ephemeral LlmClient created\n     in decompose() is init/deinit within the function.\n   - stripPreamble(): Returns owned string; caller must free with allocator.free().\n   - All strip*/extract*/is* helper functions: Return borrowed slices or boolean values; no allocation.",
-  "capabilities": ["llm-client", "local-model-decomposition"],
   "used_by": ["src/llm/root.zig", "src/llm/root_tests.zig"],
   "members": [
     {
@@ -18,11 +17,8 @@
         {
           "type": "fn_decl",
           "name": "isThinkingModel",
-          "match_hash": "5f4216c6e084ac4618e9225d8eec28135556235aad72f28c48062ee8d26a8226",
+          "match_hash": "f9c813f827ad7c3b5ca2828525b6d757f012f5bf8be6326519b3894cb275f9cc",
           "signature": "fn isThinkingModel(self: LlmConfig) -> bool",
-          "params": [
-            { "name": "self", "type": "LlmConfig" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 57
@@ -30,11 +26,8 @@
         {
           "type": "fn_decl",
           "name": "extractModelName",
-          "match_hash": "d14499651af4525fa2299c9e9bfb88f20ed8ecbca8b513fd256436ce3724b4d2",
+          "match_hash": "836a720aee2ff28d686ee16b8366d367178cad5eb9f42ee518e46aad6b5733f9",
           "signature": "fn extractModelName(model_ref: []const u8) -> []const u8",
-          "params": [
-            { "name": "model_ref", "type": "[]const u8" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 63
@@ -42,11 +35,8 @@
         {
           "type": "fn_decl",
           "name": "isOllamaEndpoint",
-          "match_hash": "05374981ace68833b632fa55494f854c4ee96e542e38c1d2d0cda1e76e9db758",
+          "match_hash": "6d7dffc99c0d7bc4311b838c6724be0a82c9e65f874222b172761900ac7518f0",
           "signature": "fn isOllamaEndpoint(api_url: []const u8) -> bool",
-          "params": [
-            { "name": "api_url", "type": "[]const u8" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 71
@@ -64,12 +54,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "86770a48dea19db1e756108f830de238c821ba3a49992b24a3bf93091a66ee58",
+          "match_hash": "50b064aa690ebc713aae91acd41ea8243a048963dbeb293dd666fac0428f1173",
           "signature": "fn init(allocator: std.mem.Allocator, config: LlmConfig) -> LlmClient",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "LlmConfig" }
-          ],
           "returns": "LlmClient",
           "is_pub": true,
           "line": 104
@@ -77,11 +63,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "3fff429679ebb90c3397aab7f9ac6b3d37f09f28334516de0df50900c164869f",
+          "match_hash": "b9ddd874146541aad16d706628204be79499d5f9ed22efdd3767926fb88dbbbf",
           "signature": "fn deinit(self: *LlmClient) -> void",
-          "params": [
-            { "name": "self", "type": "*LlmClient" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 131
@@ -89,15 +72,8 @@
         {
           "type": "fn_decl",
           "name": "completeOrNull",
-          "match_hash": "ada7dbd05e76313d4f708a72fd694e48d3e9bb0108ef40258ec8b9132762d881",
+          "match_hash": "8a5fe535fb767600b518ad19ebac9af10af31a6ce1f6ef92042b03597952735e",
           "signature": "fn completeOrNull(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "prompt", "type": "[]const u8" },
-            { "name": "max_tokens", "type": "usize" },
-            { "name": "temperature", "type": "f32" },
-            { "name": "system", "type": "?[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 139
@@ -105,15 +81,8 @@
         {
           "type": "fn_decl",
           "name": "complete",
-          "match_hash": "1cf7f5e31460382df73465ae778017ca959945c0b5e1013ec38ce8d90adb4e7e",
+          "match_hash": "e5bf43706413ea95bb5adb69597a8af3e4ef55414a45c9d75be019ede1623d1a",
           "signature": "fn complete(self: *LlmClient, prompt: []const u8, max_tokens: usize, temperature: f32, system: ?[]const u8) -> LlmError!?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "prompt", "type": "[]const u8" },
-            { "name": "max_tokens", "type": "usize" },
-            { "name": "temperature", "type": "f32" },
-            { "name": "system", "type": "?[]const u8" }
-          ],
           "returns": "LlmError!?[]const u8",
           "is_pub": true,
           "line": 143
@@ -121,13 +90,8 @@
         {
           "type": "fn_private",
           "name": "postJson",
-          "match_hash": "8002e0830a2abdf11bdbe8b89bf710d92c2a4fb209dc5485485cd712b16394ec",
+          "match_hash": "4df76d91f7f05bf88a2bb193e19833d0157e779d4d2d6388f70c6b5c1ce0c74c",
           "signature": "fn postJson(self: *LlmClient, url: []const u8, json_body: []const u8) -> LlmError!?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "url", "type": "[]const u8" },
-            { "name": "json_body", "type": "[]const u8" }
-          ],
           "returns": "LlmError!?[]const u8",
           "is_pub": false,
           "line": 187
@@ -135,12 +99,8 @@
         {
           "type": "fn_private",
           "name": "extractResponseText",
-          "match_hash": "977ffc3a0e9436f21393f6c9c0c4d36063d1ed03f3e8445772d5d48ac8dec389",
+          "match_hash": "7c8c4d79dbe288b560168c2cf83516076a297f08011c292c83a10a6490cf6635",
           "signature": "fn extractResponseText(self: *LlmClient, resp: []const u8) -> ?[]const u8",
-          "params": [
-            { "name": "self", "type": "*LlmClient" },
-            { "name": "resp", "type": "[]const u8" }
-          ],
           "returns": "?[]const u8",
           "is_pub": false,
           "line": 221
@@ -148,11 +108,8 @@
         {
           "type": "fn_decl",
           "name": "available",
-          "match_hash": "3d0c45d8023d0880c75881bce9cfc57df32f4800fce94b5de9ac0fc1744317c5",
+          "match_hash": "f9642b798da2fd036e095c6b264fa3925e7c63cde734438beaece97175f6f532",
           "signature": "fn available(self: *LlmClient) -> bool",
-          "params": [
-            { "name": "self", "type": "*LlmClient" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 289
@@ -163,13 +120,8 @@
     {
       "type": "fn_private",
       "name": "stripTagBlock",
-      "match_hash": "3e57dd9f7bb11d845bb2dd7293d6f7c8416d8db7f55d5b0797886249fd4589bb",
+      "match_hash": "091151526d007d8030ad735afabf4088b5c86d193b8dc44b36d7ec742b913ae5",
       "signature": "fn stripTagBlock(text: []const u8, open: []const u8, close: []const u8) -> []const u8",
-      "params": [
-        { "name": "text", "type": "[]const u8" },
-        { "name": "open", "type": "[]const u8" },
-        { "name": "close", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 329
@@ -177,11 +129,8 @@
     {
       "type": "fn_decl",
       "name": "stripThinkBlock",
-      "match_hash": "95c3b4915ceed297ceb2683ca261b7b201bd6e0717c5b83f76be630db83fb69c",
+      "match_hash": "c94d91c585c33e2e92a6c29bfaf20585056a67b043bf31a17ae0a37faaa5b6d6",
       "signature": "fn stripThinkBlock(text: []const u8) -> []const u8",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 344
@@ -189,12 +138,8 @@
     {
       "type": "fn_decl",
       "name": "stripPreamble",
-      "match_hash": "7ecbcc31133f66a082623d0aeb90d6ae87b149b08ddccec4172c0d5a89c6c46e",
+      "match_hash": "4100621f1125e03bd2c0c5a3118035972f1afef04d01991564e99660630e975b",
       "signature": "fn stripPreamble(allocator: std.mem.Allocator, text: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 371
@@ -202,11 +147,8 @@
     {
       "type": "fn_decl",
       "name": "isMalformedResponse",
-      "match_hash": "d2b67f6b51085730ec0c330ee3ea585383f76dd4f94abde904fb029e25c0415e",
+      "match_hash": "3b84e5486b56596dcb479a83a35d341da26a9c9e2187594e5629ee662d8d316b",
       "signature": "fn isMalformedResponse(text: []const u8) -> bool",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 406
@@ -214,11 +156,8 @@
     {
       "type": "fn_private",
       "name": "llmHasDanglingEnd",
-      "match_hash": "92d37f5c26c6a53f32c388786ae72e68df648da5d2f890d4623e8b891ef2126b",
+      "match_hash": "dcc77f1db038e65416b835d8a75a6309121645c8d081d83714e8751d3aa13a8a",
       "signature": "fn llmHasDanglingEnd(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 424
@@ -226,11 +165,8 @@
     {
       "type": "fn_private",
       "name": "llmIsGenericSelfRef",
-      "match_hash": "6dd32d83420206cc0ee18bd436409d4d01264670b0e53017c573ad5866a152db",
+      "match_hash": "b3122882fa16346656793cc743a5a3717905f406950344ef63e45354c66d7cdb",
       "signature": "fn llmIsGenericSelfRef(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 438
@@ -238,11 +174,8 @@
     {
       "type": "fn_private",
       "name": "llmIsOverlyGeneric",
-      "match_hash": "a8f6a14a4e9d45bf6ad4af01f523b34d4891d593d9c36b681cf8495d69ecea3f",
+      "match_hash": "b3dcf1f99c82e398efb12cf9b31c4f71f653bed43818f05b0ae9332c085c80f1",
       "signature": "fn llmIsOverlyGeneric(body: []const u8) -> bool",
-      "params": [
-        { "name": "body", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 451
@@ -250,11 +183,8 @@
     {
       "type": "fn_decl",
       "name": "extractCommentTag",
-      "match_hash": "508f67edd5f7a3d015ed377c4883688cc9ec03e5c0329acc7ee0de9fb6e703ca",
+      "match_hash": "0ff4ac4d5ce398698228e37bcbf20bd53ddfd029a3324b37ec0b61cfcaff9f25",
       "signature": "fn extractCommentTag(text: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 466
@@ -262,11 +192,8 @@
     {
       "type": "fn_decl",
       "name": "isBlankOrPlausible",
-      "match_hash": "a2c2a569206bcefa8109d55df6b76c3024648f2bcb41315ac874b16ebf29a68c",
+      "match_hash": "c5e5b8a04c1071b1ed73c4a97aeeb4a20b13a5b7d2ce2fcc5132759402edb4ed",
       "signature": "fn isBlankOrPlausible(text: []const u8) -> bool",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 478
@@ -289,12 +216,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "b00cb8083b8c9720328eaedcc0d42bef8873af5a4e894d2d24befbac983145e2",
+          "match_hash": "421a39c81ff25c2f6ea8578f93ed0f859d01e60e97b359fcbc8262970d900418",
           "signature": "fn init(allocator: std.mem.Allocator, config: DecomposerConfig) -> LocalDecomposer",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "DecomposerConfig" }
-          ],
           "returns": "LocalDecomposer",
           "is_pub": true,
           "line": 508
@@ -302,13 +225,8 @@
         {
           "type": "fn_decl",
           "name": "decompose",
-          "match_hash": "1d3ea74925354942524aa317342dde8a76a94d191b398442218d7d21b9b731ab",
+          "match_hash": "b0b6917ccbddbc991388f9192becdc2bad57ae777fae66179251ef190c495015",
           "signature": "fn decompose(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*LocalDecomposer" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "task", "type": "[]const u8" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 517
@@ -316,13 +234,8 @@
         {
           "type": "fn_private",
           "name": "fallback",
-          "match_hash": "1a3cd18f9992e884fe0bc6271164f431243a349cbab60fda3a648341833fda69",
+          "match_hash": "5d14a401562265d4e96f3dfa0c95534f1b8670b5d77121151a5e74dc04930057",
           "signature": "fn fallback(self: *LocalDecomposer, arena: std.mem.Allocator, task: []const u8) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*LocalDecomposer" },
-            { "name": "arena", "type": "std.mem.Allocator" },
-            { "name": "task", "type": "[]const u8" }
-          ],
           "returns": "[][]const u8",
           "is_pub": false,
           "line": 547
@@ -333,11 +246,8 @@
     {
       "type": "fn_private",
       "name": "isMalformedJsonArray",
-      "match_hash": "6759176124dc7a99d5f681c7450d393b79c7daa1cecf345c6caf2f7b3b7c91cb",
+      "match_hash": "b3475ff84e4a33831e3c35c81640c8eac13d5c4c713937ac877c079f6a995f6f",
       "signature": "fn isMalformedJsonArray(text: []const u8) -> bool",
-      "params": [
-        { "name": "text", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 556
@@ -345,13 +255,8 @@
     {
       "type": "fn_private",
       "name": "parseJsonArray",
-      "match_hash": "5918c0f7c8139afba3b2438505090d219514e94312d9b060ff5af4226d708b1a",
+      "match_hash": "36674900eff055254ace3708a6dafd9040aacca6dd4b575b69ae293fa16053f8",
       "signature": "fn parseJsonArray(arena: std.mem.Allocator, text: []const u8, limit: usize) -> [][]const u8",
-      "params": [
-        { "name": "arena", "type": "std.mem.Allocator" },
-        { "name": "text", "type": "[]const u8" },
-        { "name": "limit", "type": "usize" }
-      ],
       "returns": "[][]const u8",
       "is_pub": false,
       "line": 565

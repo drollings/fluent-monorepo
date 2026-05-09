@@ -16,13 +16,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "c5efc0682a9ba9ac70262bca1b56c75010f1494fc0d820f05652fef5796e61ae",
+          "match_hash": "cc1c22a5229f7c22f9344df3b09f5f0fcbadcc81be825e006243f4272f609810",
           "signature": "fn init(allocator: std.mem.Allocator, db_path: []const u8, default_ttl_seconds: u64) -> PersistentQueryCache",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "db_path", "type": "[]const u8" },
-            { "name": "default_ttl_seconds", "type": "u64" }
-          ],
           "returns": "PersistentQueryCache",
           "is_pub": true,
           "line": 22
@@ -30,11 +25,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "21ebc2e26431bc3e2a7e75eb74973732e4d03964f6f03f2c477eb97bb7adf633",
+          "match_hash": "77b26688f40cca591a0a850616df51bfa17ab988094dd5c48582619557b0a829",
           "signature": "fn deinit(self: *PersistentQueryCache) -> void",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 32
@@ -42,11 +34,8 @@
         {
           "type": "fn_private",
           "name": "ensureDb",
-          "match_hash": "9f375546f4bb1cb86b992606a86b5e94fd9c5919715b425555bcee0a63be132c",
+          "match_hash": "1566764b28d5ac85b16671ba31ebc4f265717efea1684ea13038e0083f8efd13",
           "signature": "fn ensureDb(self: *PersistentQueryCache) -> *c.sqlite3",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" }
-          ],
           "returns": "*c.sqlite3",
           "is_pub": false,
           "line": 39
@@ -54,11 +43,8 @@
         {
           "type": "fn_private",
           "name": "queryKey",
-          "match_hash": "5ed81af834a707a43066caf2b7b91a2abc08815c68c0aa9aad01f935fd846b9e",
+          "match_hash": "d084bb5fc12c75fab0bda2a4870f2f7aaafbe8f43f75139253074cc819f989e4",
           "signature": "fn queryKey(query: []const u8) -> u64",
-          "params": [
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "u64",
           "is_pub": false,
           "line": 73
@@ -66,12 +52,8 @@
         {
           "type": "fn_decl",
           "name": "get",
-          "match_hash": "f2b49c9e7fea63efe7aa8b3c36553939cb473fd79436f3999a0bc06c56b57309",
+          "match_hash": "1b378d074602eb1b56d7d49d442bceaa31f58d1eaad95de230afcfc7e5ad860c",
           "signature": "fn get(self: *PersistentQueryCache, query: []const u8) -> ?Entry",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" },
-            { "name": "query", "type": "[]const u8" }
-          ],
           "returns": "?Entry",
           "is_pub": true,
           "line": 80
@@ -79,14 +61,8 @@
         {
           "type": "fn_decl",
           "name": "put",
-          "match_hash": "325e9488583a89cb380abea31ee091877f270ddc909adf152ecb11e6b88f3120",
+          "match_hash": "fe81f6b269451e86f1bad1fb10d7f8dfa583d9144414bba0d5efd15bb6be5abc",
           "signature": "fn put(self: *PersistentQueryCache, query: []const u8, result_summary: []const u8, ttl_seconds: ?u64) -> void",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" },
-            { "name": "query", "type": "[]const u8" },
-            { "name": "result_summary", "type": "[]const u8" },
-            { "name": "ttl_seconds", "type": "?u64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 134
@@ -94,12 +70,8 @@
         {
           "type": "fn_private",
           "name": "evictIfNeeded",
-          "match_hash": "06b3c20caa92a52637acab2527cda848afd9b31134550ea7b37c19cc30fce27e",
+          "match_hash": "f31e7d3b63496b6521baf5a43a9bf7712d4652d803385533f662aabc971efc26",
           "signature": "fn evictIfNeeded(self: *PersistentQueryCache, db: *c.sqlite3) -> void",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" },
-            { "name": "db", "type": "*c.sqlite3" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 163
@@ -107,11 +79,8 @@
         {
           "type": "fn_decl",
           "name": "clear",
-          "match_hash": "02258140d3406aecc4e23d82594bd55f992d42a27703ea4107b62b5d91598e52",
+          "match_hash": "0f197c2832b9afd4d69dd2788ecf13e3166e5519ece3097fc12a4254ba86e8d8",
           "signature": "fn clear(self: *PersistentQueryCache) -> void",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 181
@@ -119,11 +88,8 @@
         {
           "type": "fn_decl",
           "name": "expireStale",
-          "match_hash": "d8390c5b9fb838b2b6817a41aaee045919d0900cec9417490483f2e771871a78",
+          "match_hash": "f41dbcf41e3d8d49cb1247d95170d6e613bc26e5d391001bdc2c4115fb5d17f3",
           "signature": "fn expireStale(self: *PersistentQueryCache) -> void",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 189
@@ -131,11 +97,8 @@
         {
           "type": "fn_decl",
           "name": "stats",
-          "match_hash": "369baabff5856af24204408574628ddf45c3ea52c58a4dd76426c5d15aeae6e9",
+          "match_hash": "32c0947d508b1bd207f42485396c3c1264a03596de3269c98fcd9cb95380f877",
           "signature": "fn stats(self: *PersistentQueryCache) -> struct { total: usize, stale: usize, active: usize }",
-          "params": [
-            { "name": "self", "type": "*PersistentQueryCache" }
-          ],
           "returns": "struct { total: usize, stale: usize, active: usize }",
           "is_pub": true,
           "line": 204

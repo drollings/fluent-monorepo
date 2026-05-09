@@ -51,12 +51,8 @@
     {
       "type": "fn_decl",
       "name": "candidateEntityWords",
-      "match_hash": "e2c12efafe886dc4df4123f89f4244b1da73b5b71efca56ab003addfe19e78d5",
+      "match_hash": "9c2a6b67c898ace7bb9368e9799b08e7b3f6d86a316211238feba1609c142523",
       "signature": "fn candidateEntityWords(text: []const u8, allocator: std.mem.Allocator) -> []const []const u8",
-      "params": [
-        { "name": "text", "type": "[]const u8" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "[]const []const u8",
       "is_pub": true,
       "line": 30
@@ -64,11 +60,8 @@
     {
       "type": "fn_private",
       "name": "isEntityWordChar",
-      "match_hash": "4e5809a1b45265f02e05cdb383b6d95406baf1e4c868de6408c7b1632d5b345a",
+      "match_hash": "0343bd27a231701823bc5483c2f1955fab44f98302437eb4c5d380248293e78a",
       "signature": "fn isEntityWordChar(c: u8) -> bool",
-      "params": [
-        { "name": "c", "type": "u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 61
@@ -76,11 +69,8 @@
     {
       "type": "fn_private",
       "name": "isCapitalized",
-      "match_hash": "51ec5a0d58c759921495a1efb315116d79f616d7852b02f8a354358ac0ca5ec2",
+      "match_hash": "6946d7bf9368656bceb3c23643948a710a4d5e41db876d3555d075d3b41c6dd2",
       "signature": "fn isCapitalized(word: []const u8) -> bool",
-      "params": [
-        { "name": "word", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 65
@@ -88,13 +78,8 @@
     {
       "type": "fn_decl",
       "name": "extractEntities",
-      "match_hash": "7570187849d51618829d9de60edc062633601140c697c39b4b0243f78a37fd70",
+      "match_hash": "39baecf1603f11401cde781239ec3bee7b55017fc0005da6c0e0efdf1562dfcc",
       "signature": "fn extractEntities(content: []const u8, allocator: std.mem.Allocator, min_frequency: usize) -> []EntityFreq",
-      "params": [
-        { "name": "content", "type": "[]const u8" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "min_frequency", "type": "usize" }
-      ],
       "returns": "[]EntityFreq",
       "is_pub": true,
       "line": 70

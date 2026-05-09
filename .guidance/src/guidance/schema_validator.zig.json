@@ -5,18 +5,13 @@
     "language": "zig"
   },
   "comment": " schema_validator.zig — GuidanceDoc field validation.\n\n Validates that a GuidanceDoc produced by the Zig AST parser or the Python\n provider meets the schema defined in VISION.md. This catches issues early\n (before the doc is written to disk or synced to the DB) and enforces parity\n between the Zig and Python providers.\n\n §Rules enforced:\n   - meta.module, meta.source, meta.language must be non-empty\n   - Every member must have a non-empty name\n   - language must be a known tag (zig, python, markdown, config, unknown)\n\n The validator is deliberately lenient about optional fields (comment, detail,\n keywords, skills, capabilities) — those may be empty during initial sync.",
-  "capabilities": ["ast-indexing"],
   "used_by": ["src/guidance/sync/gen_files.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "validateGuidanceDoc",
-      "match_hash": "dd3e46a25af384c944e93b65420a3571719832fbb5aacd04365466a76c5e03c5",
+      "match_hash": "0e3d1e2783406ef13ba68768b1dfb3495bbf767c1df1b6d0420e45d50388ef51",
       "signature": "fn validateGuidanceDoc(allocator: std.mem.Allocator, doc: *const types.GuidanceDoc) -> ValidationError!void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "doc", "type": "*const types.GuidanceDoc" }
-      ],
       "returns": "ValidationError!void",
       "is_pub": true,
       "line": 35
@@ -24,12 +19,8 @@
     {
       "type": "fn_decl",
       "name": "writeJsonSchemaFile",
-      "match_hash": "49caf0f89602b0aca4798a949ae31a85a59f456211d75d98c346091b6c1b086f",
+      "match_hash": "1403fc35e906f0618b9e67e06feb4e82e1d182938eaf41625477795cef67bdc0",
       "signature": "fn writeJsonSchemaFile(allocator: std.mem.Allocator, path: []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 59

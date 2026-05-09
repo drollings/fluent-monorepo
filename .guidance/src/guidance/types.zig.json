@@ -5,8 +5,7 @@
     "language": "zig"
   },
   "comment": " Shared types for guidance — FileType, MemberType, Member, Stage, QueryResult, etc.\n\n ## Memory Ownership\n\n   - GuidanceDoc: Owns members slice and module-level comment; call deinit() to release.\n   - Stage: Content and source strings are allocator-owned; free with freeStage() or\n     freeStages() (frees the entire []Stage slice and each stage's content/source).\n   - Member, Skill, Param, Meta: Contain borrowed string slices from their parent\n     GuidanceDoc or source JSON — do not free individually; valid until parent deinit.\n   - FileType, MemberType, StageKind, QueryResult, FileMatch, GuidanceInfo: Value types\n     (no heap allocation).\n   - jsonifyMember / jsonifyGuidanceDoc: Return owned ArrayList(u8); caller owns.",
-  "capabilities": ["ast-indexing"],
-  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/comments/core.zig", "src/guidance/comments/core_tests.zig", "src/guidance/comments/header.zig", "src/guidance/comments/header_tests.zig", "src/guidance/comments/inserter.zig", "src/guidance/comments/sync.zig", "src/guidance/comments/sync_tests.zig", "src/guidance/core/excerpt.zig", "src/guidance/core/format.zig", "src/guidance/core/metadata.zig", "src/guidance/document_indexer.zig", "src/guidance/document_indexer_tests.zig", "src/guidance/hash.zig", "src/guidance/hash_tests.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/plugins/markdown_plugin.zig", "src/guidance/plugins/markdown_plugin_tests.zig", "src/guidance/plugins/treesitter_extractor.zig", "src/guidance/plugins/treesitter_plugin.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query/llm_filter.zig", "src/guidance/query/llm_filter_batch.zig", "src/guidance/query/strategy.zig", "src/guidance/query/synthesize.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/schema_validator.zig", "src/guidance/skeleton.zig", "src/guidance/stage_builder.zig", "src/guidance/stage_builder_tests.zig", "src/guidance/staged.zig", "src/guidance/staged_tests.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig", "src/guidance/sync/json_store.zig", "src/guidance/sync/json_writer.zig", "src/guidance/sync/line_verify.zig", "src/guidance/sync/line_verify_tests.zig", "src/guidance/sync_engine.zig", "src/guidance/types_tests.zig"],
+  "used_by": ["src/guidance/ast_parser.zig", "src/guidance/comments/core.zig", "src/guidance/comments/core_tests.zig", "src/guidance/comments/header.zig", "src/guidance/comments/header_tests.zig", "src/guidance/comments/inserter.zig", "src/guidance/comments/sync.zig", "src/guidance/comments/sync_tests.zig", "src/guidance/core/excerpt.zig", "src/guidance/core/format.zig", "src/guidance/core/metadata.zig", "src/guidance/document_indexer.zig", "src/guidance/document_indexer_tests.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/plugins/markdown_plugin.zig", "src/guidance/plugins/markdown_plugin_tests.zig", "src/guidance/plugins/treesitter_extractor.zig", "src/guidance/plugins/treesitter_plugin.zig", "src/guidance/plugins/zig_plugin.zig", "src/guidance/query/llm_filter.zig", "src/guidance/query/llm_filter_batch.zig", "src/guidance/query/strategy.zig", "src/guidance/query/synthesize.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/schema_validator.zig", "src/guidance/skeleton.zig", "src/guidance/stage_builder.zig", "src/guidance/stage_builder_tests.zig", "src/guidance/staged.zig", "src/guidance/staged_tests.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig", "src/guidance/sync/json_store.zig", "src/guidance/sync/json_writer.zig", "src/guidance/sync/line_verify.zig", "src/guidance/sync/line_verify_tests.zig", "src/guidance/sync_engine.zig", "src/guidance/types_tests.zig"],
   "members": [
     {
       "type": "enum",
@@ -60,11 +59,8 @@
         {
           "type": "fn_decl",
           "name": "fromExtension",
-          "match_hash": "6f447af6c3fa7a291b29f33742dfd4c6450fe9893bc11a7f92c5b8d6d2eb651b",
+          "match_hash": "77cee22bf6058de5509b72181ea29a97a12836fb1c00c588d13caefb90bac7b9",
           "signature": "fn fromExtension(ext: []const u8) -> FileType",
-          "params": [
-            { "name": "ext", "type": "[]const u8" }
-          ],
           "returns": "FileType",
           "is_pub": true,
           "line": 28
@@ -72,11 +68,8 @@
         {
           "type": "fn_decl",
           "name": "toStr",
-          "match_hash": "c096e2640d86a44aa2ad5650646b8de6b6c1e751e03ad85871504e2dc7db80ee",
+          "match_hash": "ff34dc3eebb01eb7c70be6ceb0d975106f163d0228f211a19aed4a5a76204e9e",
           "signature": "fn toStr(self: FileType) -> []const u8",
-          "params": [
-            { "name": "self", "type": "FileType" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 46
@@ -281,12 +274,8 @@
     {
       "type": "fn_decl",
       "name": "freeStage",
-      "match_hash": "9f2aee87a48630684efef7ee99c3c969ce8d889340e1d03519eaec3031f08a41",
+      "match_hash": "599777ee20b1b2ea04c3ef41d63f2f8703bf9c2ed7b3fa31bc1a4a867126e055",
       "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "s", "type": "Stage" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 228
@@ -294,12 +283,8 @@
     {
       "type": "fn_decl",
       "name": "freeStages",
-      "match_hash": "6b08128aa825462aa313132148b4892e55db1ae9e5834757b4a6625b607d58d4",
+      "match_hash": "12e6b2d4412aa7dfb5cbe98442c2efc4686fd67b2b0c5c6d887f772477ffdf8f",
       "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "stages", "type": "[]const Stage" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 234
@@ -315,12 +300,8 @@
     {
       "type": "fn_decl",
       "name": "stepPrint",
-      "match_hash": "57b5a35bdde4fc3d956262379dc8fc4730808f5aaddcaa8b4cc1dc67b3d2b3bc",
+      "match_hash": "b9722ac8517c8fec284470844081a5c337737d630b5cbe0669dadbb3892c18db",
       "signature": "fn stepPrint(fmt: []const u8, args) -> void",
-      "params": [
-        { "name": "fmt", "type": "[]const u8" },
-        { "name": "args" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 252

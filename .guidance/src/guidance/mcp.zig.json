@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " mcp.zig — guidance MCP server (STDIO transport, JSON-RPC 2.0).\n\n Implements the Model Context Protocol server for guidance, allowing AI\n agents to use guidance tools (explain, gen, check, status) via MCP.\n\n Transport: STDIO (stdin → request, stdout → response)\n Protocol:  JSON-RPC 2.0\n\n Tools exposed:\n   explain — AST-guided code search (maps to cmdExplain)\n   gen     — regenerate guidance JSON + .guidance.db\n   check   — run the full RALPH loop (test → lint → fmt → guidance)\n   status  — report generation status",
-  "capabilities": ["explain-query"],
   "used_by": ["src/guidance/query_engine.zig"],
   "members": [
     {
@@ -42,11 +41,8 @@
         {
           "type": "fn_decl",
           "name": "toString",
-          "match_hash": "8c0fc5a9a0ebbd606ebd3b65b6da97094cb3bef979f2f2fff8694079ded32890",
+          "match_hash": "b5077a8ee6a4a54461f01c22466fcf7e700c1be2392a22db21f4a0c7a8929d12",
           "signature": "fn toString(self: ScanState) -> []const u8",
-          "params": [
-            { "name": "self", "type": "ScanState" }
-          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 30
@@ -57,11 +53,8 @@
     {
       "type": "fn_decl",
       "name": "setScanState",
-      "match_hash": "2bc563f8533d4c2cd364e5d31ff7c7700b7f5eb3280ec606f46fe27ccb4213d8",
+      "match_hash": "e209bf3c6bed1a6aaf897fbdea8121ec2f3beca00cd6cc0b82879dd1d20baa9e",
       "signature": "fn setScanState(state: ScanState) -> void",
-      "params": [
-        { "name": "state", "type": "ScanState" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 42
@@ -69,7 +62,7 @@
     {
       "type": "fn_decl",
       "name": "getScanState",
-      "match_hash": "874d1ccc1a5106472b972c85278aeb3ac40894d850dd35afdcf52336880d312a",
+      "match_hash": "a10944defadb1df9efe6a416e69be9c1a482e1b5f45b078b8a0e536b8bbf89f9",
       "signature": "fn getScanState() -> ScanState",
       "returns": "ScanState",
       "is_pub": true,
@@ -85,12 +78,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "04eed43bc1dfc3e87d35a7b474d16cd9ed04b99eb11bf5c171941547c855a4bd",
+          "match_hash": "03e15740aeb156969b1f4287fb030dac53b56b1db0088e87c1dfa5c3bff85a5a",
           "signature": "fn init(allocator: std.mem.Allocator, idle_timeout_ms: u64) -> IdleWatchdog",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "idle_timeout_ms", "type": "u64" }
-          ],
           "returns": "IdleWatchdog",
           "is_pub": true,
           "line": 55
@@ -98,11 +87,8 @@
         {
           "type": "fn_decl",
           "name": "recordActivity",
-          "match_hash": "6267edab84983927d0649a76116b35b13fe5a470b9906b0b03eda4133d3b37e9",
+          "match_hash": "b1bd73ced9b833b8d0941df1b08781ecfd07640786fff57f4c140999e060e8e3",
           "signature": "fn recordActivity(self: *IdleWatchdog) -> void",
-          "params": [
-            { "name": "self", "type": "*IdleWatchdog" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 63
@@ -110,11 +96,8 @@
         {
           "type": "fn_decl",
           "name": "isIdle",
-          "match_hash": "902f8711be38e68af8f9041d662f363e697b4b08b12897f97034a4eac36265f4",
+          "match_hash": "105838d1bb2e1d752b768f6f69a281635e092871d400c2abaaa3fa3a3eecfae1",
           "signature": "fn isIdle(self: *IdleWatchdog) -> bool",
-          "params": [
-            { "name": "self", "type": "*IdleWatchdog" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 67
@@ -122,11 +105,8 @@
         {
           "type": "fn_decl",
           "name": "watchStdin",
-          "match_hash": "114ae9d86c6ba2eeeb26362ef2b78b36f8bd31711330f26afce5db4b0a113867",
+          "match_hash": "c524a86257baba892588a92aee05c1e17def9a255311a3b766a8f3f7914e7516",
           "signature": "fn watchStdin(self: *IdleWatchdog) -> bool",
-          "params": [
-            { "name": "self", "type": "*IdleWatchdog" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 73
@@ -145,12 +125,8 @@
     {
       "type": "fn_private",
       "name": "writeJsonString",
-      "match_hash": "2ad1dba9703441e3cf06563bdb74fe0e5cabed123c2b1d4ecafea4d4570e36c2",
+      "match_hash": "4a64bb567a9be6e2591ef7b3c32f662f6a2eabc99e914da36b4f214e91fef683",
       "signature": "fn writeJsonString(writer, s: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "s", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 104
@@ -158,13 +134,8 @@
     {
       "type": "fn_private",
       "name": "writeResult",
-      "match_hash": "2083e2e581120ff5fc660aa16e846b4ca9fda6e8afd4ab0edfaaa03dfc561ced",
+      "match_hash": "e42461b258b24b31f81b3847259e8dcc659ec83908a6bae04e033c2944f506dc",
       "signature": "fn writeResult(writer, id: ?std.json.Value, content: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "id", "type": "?std.json.Value" },
-        { "name": "content", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 121
@@ -172,14 +143,8 @@
     {
       "type": "fn_private",
       "name": "writeError",
-      "match_hash": "0e22cb9d5756e18cee1195eb3db99a9be2c884937bcd629cd1212e3dc89f46d5",
+      "match_hash": "0079accd53955164ecf019755f40d88e329ed529921b621b1cdc725f1dfaf7f4",
       "signature": "fn writeError(writer, id: ?std.json.Value, code: i32, msg: []const u8) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "id", "type": "?std.json.Value" },
-        { "name": "code", "type": "i32" },
-        { "name": "msg", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 133
@@ -187,13 +152,8 @@
     {
       "type": "fn_private",
       "name": "handleInitialize",
-      "match_hash": "abfb54b3efdcd7e801f9991536a44fa8c922e4fe2e45ac276c28d2a1d9cca6e0",
+      "match_hash": "2ce1355c14bde84688aa0cee59c2ce12de61c5af98adae3d8c14e266e319f745",
       "signature": "fn handleInitialize(allocator: std.mem.Allocator, writer, id: ?std.json.Value) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "writer" },
-        { "name": "id", "type": "?std.json.Value" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 152
@@ -201,12 +161,8 @@
     {
       "type": "fn_private",
       "name": "handleToolsList",
-      "match_hash": "719074dc194228853019bbc4f457928829265360663435ceba11215fef01e619",
+      "match_hash": "4bedca1ee43954353d71c1802b80d42b7390541cbae4102c6aebb0aa8d479abd",
       "signature": "fn handleToolsList(writer, id: ?std.json.Value) -> void",
-      "params": [
-        { "name": "writer" },
-        { "name": "id", "type": "?std.json.Value" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 163
@@ -214,15 +170,8 @@
     {
       "type": "fn_private",
       "name": "handleToolCall",
-      "match_hash": "9ce8b75471c13017a1173bd573bc93e94e04d33a7eb52f7d6fc7747d516005d4",
+      "match_hash": "e323caacf0b296d4eaea0f560bcef4d3bcdaa4964cabd85d81f29eb009ed96a6",
       "signature": "fn handleToolCall(allocator: std.mem.Allocator, writer, id: ?std.json.Value, name: []const u8, params: ?std.json.Value) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "writer" },
-        { "name": "id", "type": "?std.json.Value" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "params", "type": "?std.json.Value" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 178
@@ -230,12 +179,8 @@
     {
       "type": "fn_decl",
       "name": "serve",
-      "match_hash": "4a74ef7f434b9d6c95423b7da828cd1d33b65e8212ece4a04fbda6b702851f4b",
+      "match_hash": "28ede8ecc20e84ea6154bdeac37fd7a57bcb8fd4182cd15c2a6681e0427fdb52",
       "signature": "fn serve(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "args", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 259

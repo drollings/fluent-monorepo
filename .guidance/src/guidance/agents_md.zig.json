@@ -10,12 +10,8 @@
     {
       "type": "fn_decl",
       "name": "generateAgentsMdContent",
-      "match_hash": "8d7465fc339e7fac9eeed95e9bce26b42bc7bd23a1a57757957433a876e8a792",
+      "match_hash": "3a7753c2bd22e33591fdecaacf3d41a1b230e4a1485c7ffbe9b1923c186cb9c8",
       "signature": "fn generateAgentsMdContent(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "guidance_dir", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 19

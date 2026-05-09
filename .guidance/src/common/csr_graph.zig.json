@@ -30,14 +30,8 @@
         {
           "type": "fn_decl",
           "name": "build",
-          "match_hash": "0fd4f2366613063847a3971bf20952828cc1d8b5042c7046544800f3672f2e67",
+          "match_hash": "26caa632aa3ad335c9d8ace0554a6dd8ede195b2be28d6f13b7e9b1eded0af2e",
           "signature": "fn build(arena: Allocator, library, predicate_filter: ?[]const u8, with_weights: bool) -> Self",
-          "params": [
-            { "name": "arena", "type": "Allocator" },
-            { "name": "library" },
-            { "name": "predicate_filter", "type": "?[]const u8" },
-            { "name": "with_weights", "type": "bool" }
-          ],
           "returns": "Self",
           "patterns": [
             { "name": "Ring Buffer", "type": "Domain", "ref": "guidance/skills/domain_patterns/SKILL.md#ring-buffer" }
@@ -48,12 +42,8 @@
         {
           "type": "fn_decl",
           "name": "neighbors",
-          "match_hash": "6c4d7f6cad77eea394756409623879d33392af2b7cf6c4a88598b9cc612165a9",
+          "match_hash": "4aad5187c5d61f91b7598666670317f5db9a670a4bea0505250dbb47db838501",
           "signature": "fn neighbors(self: Self, node_idx: u32) -> []const u32",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "node_idx", "type": "u32" }
-          ],
           "returns": "[]const u32",
           "is_pub": true,
           "line": 166
@@ -61,12 +51,8 @@
         {
           "type": "fn_decl",
           "name": "degree",
-          "match_hash": "c450907a9d2c9b36a15bc9d396c9b2e67e186e06ebd6e2b7de5b48f43a56dba3",
+          "match_hash": "f47fe7ad826f2eaf1320e1918f88840b35e91487e6ced3ee7e2030dcb28452a5",
           "signature": "fn degree(self: Self, node_idx: u32) -> u32",
-          "params": [
-            { "name": "self", "type": "Self" },
-            { "name": "node_idx", "type": "u32" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 174
@@ -74,12 +60,8 @@
         {
           "type": "fn_decl",
           "name": "serialize",
-          "match_hash": "9e5b8a1e312965d8d2435fa7f1e81d68b03e94fe19a3afbf6af14354683464ca",
+          "match_hash": "221f09b5d02d9366127139a4991db356fba0ac34b054260f844d2746f19e14ce",
           "signature": "fn serialize(self: *const Self, allocator: Allocator) -> []u8",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "Allocator" }
-          ],
           "returns": "[]u8",
           "is_pub": true,
           "line": 185
@@ -87,12 +69,8 @@
         {
           "type": "fn_decl",
           "name": "deserialize",
-          "match_hash": "9978cfd409955e718fa2117e3249117f5e8952713c99015c75e9fbf7f5631a94",
+          "match_hash": "6478db3444bf019524a049c69ba15cd40fa8da19ead652151a1c624e90c61e91",
           "signature": "fn deserialize(allocator: Allocator, blob: []const u8) -> Self",
-          "params": [
-            { "name": "allocator", "type": "Allocator" },
-            { "name": "blob", "type": "[]const u8" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 224

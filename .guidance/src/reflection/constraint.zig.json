@@ -4,7 +4,6 @@
     "source": "src/reflection/constraint.zig",
     "language": "zig"
   },
-  "capabilities": ["reflection"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/sql_tests.zig", "src/reflection/typed.zig"],
   "members": [
     {
@@ -18,11 +17,8 @@
     {
       "type": "fn_decl",
       "name": "Constraint",
-      "match_hash": "bd6bd77f9257ffe9957dae3cb57cc21455cdae3762192fccc6dff55cba306c5b",
+      "match_hash": "ba951121ffa7fe4149a653d92bb82caaf60c604158cccd7ce692c6fd3450e790",
       "signature": "fn Constraint(T: type) -> ConstraintVTable",
-      "params": [
-        { "name": "T", "type": "type" }
-      ],
       "returns": "ConstraintVTable",
       "is_pub": true,
       "line": 108
@@ -30,14 +26,8 @@
     {
       "type": "fn_decl",
       "name": "constraintSet",
-      "match_hash": "305f3b61cc9d0a58fa60c036922e58fe93c753d4936e89db91071576ac3f7b6d",
+      "match_hash": "374fc95e1b786ab885399786ba7e6e855fa032df382336fb66f7eadf32a93308",
       "signature": "fn constraintSet(T: type, allocator: std.mem.Allocator, typed_ptr: *T, input: []const u8) -> anyerror!void",
-      "params": [
-        { "name": "T", "type": "type" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "typed_ptr", "type": "*T" },
-        { "name": "input", "type": "[]const u8" }
-      ],
       "returns": "anyerror!void",
       "is_pub": true,
       "line": 156
@@ -45,13 +35,8 @@
     {
       "type": "fn_decl",
       "name": "constraintGet",
-      "match_hash": "f6fa78a4c4c214eb4dcfcd52f7b93e52d177831b05677478b6190867095069fc",
+      "match_hash": "d9f4edaaedaa11102909cac735932fb5e4f715d20641bdee3befb02c576581ee",
       "signature": "fn constraintGet(T: type, allocator: std.mem.Allocator, typed_ptr: *const T) -> anyerror![]const u8",
-      "params": [
-        { "name": "T", "type": "type" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "typed_ptr", "type": "*const T" }
-      ],
       "returns": "anyerror![]const u8",
       "is_pub": true,
       "line": 220

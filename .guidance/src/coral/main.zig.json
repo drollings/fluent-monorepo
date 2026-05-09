@@ -4,17 +4,13 @@
     "source": "src/coral/main.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-mcp", "coral-ingestion", "coral-database", "coral-cache"],
   "used_by": ["src/coral/main_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "main",
-      "match_hash": "34188f5faac00b0c774daf23b1604d69cc527cc94dc5ce9c13e94a3e6a7321cc",
+      "match_hash": "ee1668816c8a4ff9465e5aefeb768c206176ff2bc01b1d6aa46d8fd188d098a0",
       "signature": "fn main(init: std.process.Init.Minimal) -> void",
-      "params": [
-        { "name": "init", "type": "std.process.Init.Minimal" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 49
@@ -22,11 +18,8 @@
     {
       "type": "fn_private",
       "name": "printHelp",
-      "match_hash": "7d8bab1e5fad33bd27b72b476652eb393c442c974629deac5917eb9fff389c2b",
+      "match_hash": "c129cbc6bd2ada0d253838b39744ed626a565f03a0ef8f87556303e19386f983",
       "signature": "fn printHelp(writer) -> void",
-      "params": [
-        { "name": "writer" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 653

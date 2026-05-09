@@ -4,7 +4,6 @@
     "source": "src/coral/batch.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/cli.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -33,12 +32,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "f3233a1a4b5a4f82e609e737474663c4c5c4db97fb223180b42e254df7fd454d",
+          "match_hash": "099af733739ce789e8c27552443296d47ff90ea0d8d87bddcae4f2ccda9e5be6",
           "signature": "fn init(allocator: std.mem.Allocator, config: BatchConfig) -> BatchIngestor",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "config", "type": "BatchConfig" }
-          ],
           "returns": "BatchIngestor",
           "is_pub": true,
           "line": 73
@@ -46,12 +41,8 @@
         {
           "type": "fn_decl",
           "name": "from",
-          "match_hash": "a04cf463bfe8e81cce0274ff3e4583d99d0aac7d44c90061e00240dab8ae3526",
+          "match_hash": "5e7364e52f7f14a7c1ac955722a4e45a43927ac355ec176b6c288b5acd6915be",
           "signature": "fn from(allocator: std.mem.Allocator, library: *Library) -> IngestBuilder",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "IngestBuilder",
           "is_pub": true,
           "line": 84
@@ -59,14 +50,8 @@
         {
           "type": "fn_private",
           "name": "flushBatch",
-          "match_hash": "f69c6d80ed9dac078eeebd12d8022cfc5ea7465ba7d87a377cad2cb975630109",
+          "match_hash": "8ff532fdd8401a245ce31ea9f47fdfaeb6f97b31efa11e4126c0fa52bf8c4096",
           "signature": "fn flushBatch(self: *BatchIngestor, mapper: *TripleMapper, library: *Library, stats: *IngestStats) -> void",
-          "params": [
-            { "name": "self", "type": "*BatchIngestor" },
-            { "name": "mapper", "type": "*TripleMapper" },
-            { "name": "library", "type": "*Library" },
-            { "name": "stats", "type": "*IngestStats" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 92
@@ -74,13 +59,8 @@
         {
           "type": "fn_private",
           "name": "resetMapper",
-          "match_hash": "c473a5b5ad053e6e66d4c0633194ab9d737c74902c1572d1cd515a4f7cad6597",
+          "match_hash": "5a500e06e004421557995929af43a4535d7e9166672fa9374e88a536041483f7",
           "signature": "fn resetMapper(self: *BatchIngestor, mapper: *TripleMapper, batch_arena: *std.heap.ArenaAllocator) -> void",
-          "params": [
-            { "name": "self", "type": "*BatchIngestor" },
-            { "name": "mapper", "type": "*TripleMapper" },
-            { "name": "batch_arena", "type": "*std.heap.ArenaAllocator" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 109
@@ -88,13 +68,8 @@
         {
           "type": "fn_decl",
           "name": "ingestSource",
-          "match_hash": "5c16e84f547f61a026e975446e7d8e7a5fa658712a2f6972b59841fa5fa5561e",
+          "match_hash": "8663eb1959d96b9fb6d3f7911abecb279683bae6f832ba6e983c12d16e073ec9",
           "signature": "fn ingestSource(self: *BatchIngestor, source: []const u8, library: *Library) -> IngestStats",
-          "params": [
-            { "name": "self", "type": "*BatchIngestor" },
-            { "name": "source", "type": "[]const u8" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 118
@@ -102,13 +77,8 @@
         {
           "type": "fn_decl",
           "name": "ingestFile",
-          "match_hash": "4ef4a5e8ba552c8cb6786ce8ef9f9910af2518679e2f6a3b4060acf14fd797db",
+          "match_hash": "3c0d744e424c168663ec16a2b2f674fc4568241c15bc975947d9fdb88644b127",
           "signature": "fn ingestFile(self: *BatchIngestor, path: []const u8, library: *Library) -> IngestStats",
-          "params": [
-            { "name": "self", "type": "*BatchIngestor" },
-            { "name": "path", "type": "[]const u8" },
-            { "name": "library", "type": "*Library" }
-          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 172
@@ -126,12 +96,8 @@
         {
           "type": "fn_decl",
           "name": "batchSize",
-          "match_hash": "6f419f3631210f0f0d817cb5e6e67a1763147d02c26333deafd57a7c993d7899",
+          "match_hash": "9205c5630d23aab96621565a0502597344168830459eb441f6cc3faa7f53d6da",
           "signature": "fn batchSize(self: *IngestBuilder, n: usize) -> *IngestBuilder",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "n", "type": "usize" }
-          ],
           "returns": "*IngestBuilder",
           "is_pub": true,
           "line": 201
@@ -139,12 +105,8 @@
         {
           "type": "fn_decl",
           "name": "skipErrors",
-          "match_hash": "b94941f9c7855fbdfa146692284c6481c1bec89e91cc93e990bdca9a596c1195",
+          "match_hash": "ab0a4f527e6e7b85e06469137ade39876fa3b48de9a14721ff2b6cbacaf73f10",
           "signature": "fn skipErrors(self: *IngestBuilder, v: bool) -> *IngestBuilder",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "v", "type": "bool" }
-          ],
           "returns": "*IngestBuilder",
           "is_pub": true,
           "line": 207
@@ -152,12 +114,8 @@
         {
           "type": "fn_decl",
           "name": "maxTriples",
-          "match_hash": "da78a52806942b8173c85b0e6c08523eae9eec5adfc796551723f8f85629d909",
+          "match_hash": "35842f3507b934aa99be5759ce3d62bf07ae2494dcfabe1fe12537322e127efb",
           "signature": "fn maxTriples(self: *IngestBuilder, n: usize) -> *IngestBuilder",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "n", "type": "usize" }
-          ],
           "returns": "*IngestBuilder",
           "is_pub": true,
           "line": 213
@@ -165,12 +123,8 @@
         {
           "type": "fn_decl",
           "name": "filter",
-          "match_hash": "46241cca09ec959f953392ddf1e9bc7d456fb33785d8e2e0eb432b197ed2efb1",
+          "match_hash": "8a50a96d304ed2b6afd03529bbb0a1dc097e74ebe5526e1c5eb86f9259d72989",
           "signature": "fn filter(self: *IngestBuilder, f: FilterFn) -> *IngestBuilder",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "f", "type": "FilterFn" }
-          ],
           "returns": "*IngestBuilder",
           "is_pub": true,
           "line": 219
@@ -178,12 +132,8 @@
         {
           "type": "fn_decl",
           "name": "onProgress",
-          "match_hash": "c1a7e12eacb88a6e0245bc727092b52231e76e95e36457dfd5e4fae6e45b9d4f",
+          "match_hash": "db8ac06a9fff3695cbc275b36bf461e6ac5cb39fbd60f2423a313064bb10f57b",
           "signature": "fn onProgress(self: *IngestBuilder, cb: ProgressCallback) -> *IngestBuilder",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "cb", "type": "ProgressCallback" }
-          ],
           "returns": "*IngestBuilder",
           "is_pub": true,
           "line": 225
@@ -191,12 +141,8 @@
         {
           "type": "fn_decl",
           "name": "ingestSource",
-          "match_hash": "04b897100e5d4026ef9964c2601ea66a15547ed637129fb911740de00364f596",
+          "match_hash": "b6dd96406404b4feaf296711e6d35eeba4d5c823453ab8fee2d154a97366f8a3",
           "signature": "fn ingestSource(self: *IngestBuilder, source: []const u8) -> IngestStats",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "source", "type": "[]const u8" }
-          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 231
@@ -204,12 +150,8 @@
         {
           "type": "fn_decl",
           "name": "ingestFile",
-          "match_hash": "f30cc0ec98f6621740c197d8d76bdcef45dc66e5c1d84d3431ccd58ca98589bf",
+          "match_hash": "f250f25cb1f0fb3c7dbe6abb5278a97efe65473159f818111c78ac274382c03f",
           "signature": "fn ingestFile(self: *IngestBuilder, path: []const u8) -> IngestStats",
-          "params": [
-            { "name": "self", "type": "*IngestBuilder" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 237

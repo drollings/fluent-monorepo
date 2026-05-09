@@ -10,13 +10,8 @@
     {
       "type": "fn_decl",
       "name": "tokenizeCapabilityWords",
-      "match_hash": "a26e70f91048f90c742c0e4696c2cf24f52fc22b0966d12b5d480bcb9651a18a",
+      "match_hash": "ecc1d915d1fc0ae347d4142731a1f8698a907efd45d47207ff562a41076fb102",
       "signature": "fn tokenizeCapabilityWords(allocator: std.mem.Allocator, text: []const u8, out: *std.ArrayList([]const u8)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "text", "type": "[]const u8" },
-        { "name": "out", "type": "*std.ArrayList([]const u8)" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 28
@@ -24,13 +19,8 @@
     {
       "type": "fn_decl",
       "name": "computeDriftFollowUps",
-      "match_hash": "e29a0e35efb7a551f1395a8ce14c029668749b6edb7766f8a6eb44b2a3ce485e",
+      "match_hash": "5f38da30734bf0e152ee606bdeecc1d60951fdac7fd6e614af7e23400960dd3c",
       "signature": "fn computeDriftFollowUps(allocator: std.mem.Allocator, query_text: []const u8, results: []const SearchResult) -> []const []const u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "query_text", "type": "[]const u8" },
-        { "name": "results", "type": "[]const SearchResult" }
-      ],
       "returns": "[]const []const u8",
       "is_pub": true,
       "line": 55

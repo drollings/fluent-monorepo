@@ -32,13 +32,8 @@
         {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "3746a88f655880c826ebf9111af62131ed09ac07694602d18355e1ccca446aed",
+          "match_hash": "bc900341dc7567015673c40e097be944030f7c3678abfdf1661a0ecfdf411ac0",
           "signature": "fn execute(self: DagCallbacks, node_id: i64, allocator: std.mem.Allocator) -> anyerror!DagResult",
-          "params": [
-            { "name": "self", "type": "DagCallbacks" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "anyerror!DagResult",
           "is_pub": true,
           "line": 64
@@ -46,12 +41,8 @@
         {
           "type": "fn_decl",
           "name": "onNodeStart",
-          "match_hash": "b463fc14b05f9ea76490abbd04c0cd33cc901d36f19261d050105490ba96540f",
+          "match_hash": "3822739568f3204146dcc12b11fdc602007f726a620541b946184e736ea6c37c",
           "signature": "fn onNodeStart(self: DagCallbacks, node_id: i64) -> void",
-          "params": [
-            { "name": "self", "type": "DagCallbacks" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 68
@@ -59,12 +50,8 @@
         {
           "type": "fn_decl",
           "name": "onNodeComplete",
-          "match_hash": "2560ae72312e72bb7cdcd47bfa15a0ea199eb1d249456f06293f2ed0b38953e2",
+          "match_hash": "d8736fb2c65343870ca1e0bb4d0fb918e0b5b3a507f5a2db6103128d8d543795",
           "signature": "fn onNodeComplete(self: DagCallbacks, result: DagResult) -> void",
-          "params": [
-            { "name": "self", "type": "DagCallbacks" },
-            { "name": "result", "type": "DagResult" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 72
@@ -82,13 +69,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "a537853f7c92ae62a3a86a0c703f875c33e1d2c9444853bc13a0b2667a08cb3e",
+          "match_hash": "f8e62049831de20e67fd291c97b7dbabca555300fa53e17343958ce172abd0df",
           "signature": "fn init(allocator: std.mem.Allocator, workers: usize, callbacks: DagCallbacks) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "workers", "type": "usize" },
-            { "name": "callbacks", "type": "DagCallbacks" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 100
@@ -96,11 +78,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 116
@@ -108,12 +87,8 @@
         {
           "type": "fn_decl",
           "name": "addNode",
-          "match_hash": "4fe7efaa6758b39fe044bed687889a381090d7914f0ab7cd764c538140fbae8f",
+          "match_hash": "bd181ed8fd518872f74d443755e9336015c1977b0cab9a073959bf023c8e7b64",
           "signature": "fn addNode(self: *Self, node: DagNode) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node", "type": "DagNode" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 132
@@ -121,11 +96,8 @@
         {
           "type": "fn_decl",
           "name": "execute",
-          "match_hash": "e893bd7296773b276a3384950b2f232d2df1aa7657386f19cd01be0edf436f3c",
+          "match_hash": "d28c3de72e0715c75aeb82b13367a98382b0446edba8c54aec75db15cdf52cde",
           "signature": "fn execute(self: *Self) -> []DagResult",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "[]DagResult",
           "is_pub": true,
           "line": 140
@@ -133,13 +105,8 @@
         {
           "type": "fn_private",
           "name": "dispatchNode",
-          "match_hash": "f5f99ca598628b4dd3f254780cac97d9c9c86c9e29e80ebe03b0c9449d5e96d0",
+          "match_hash": "c778f9b32da070448e42034f0527f29c55124d32f2899cc35cf86600b388cb87",
           "signature": "fn dispatchNode(self: *Self, pool: *std.Thread.Pool, node_id: i64) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "pool", "type": "*std.Thread.Pool" },
-            { "name": "node_id", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 218
@@ -147,11 +114,8 @@
         {
           "type": "fn_private",
           "name": "runTask",
-          "match_hash": "ed570ac212c9afa0a0ecd2495735139e8fc21bff5f4d19107257c99b4e7ac72c",
+          "match_hash": "0756c1c01f4d2954093e6a56c0be437469552b677bc78552c62715e8bf1e0326",
           "signature": "fn runTask(ctx: *TaskContext) -> void",
-          "params": [
-            { "name": "ctx", "type": "*TaskContext" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 228

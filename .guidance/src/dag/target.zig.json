@@ -7,7 +7,6 @@
   "skills": [
     { "ref": "skills/gof-patterns/SKILL.md", "context": "GoF patterns detected" }
   ],
-  "capabilities": ["target-registry"],
   "used_by": ["src/dag/context.zig", "src/dag/json_parser.zig", "src/dag/registry.zig", "src/dag/resolver.zig", "src/dag/root.zig", "src/dag/target_state.zig"],
   "members": [
     {
@@ -54,12 +53,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "1b93937cf6e2087dce0c0e4eaac1b175e112e67defb316aa49b51a09bdc1e7f9",
+          "match_hash": "6dcea0bebae505336dff4db2a43bb510b9bba84b1f9c5d80c947581090a4dd59",
           "signature": "fn deinit(self: *WasmExecutor, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*WasmExecutor" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 36
@@ -70,14 +65,8 @@
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "7ba7ab82f25f1d8ef3d168e73a5680a86b0193383275cb365475b7dfa201d2e2",
+      "match_hash": "196ea191552210d0da02ad94bb73d2d0520b7f07084e5d6596bcc7965edccd56",
       "signature": "fn init(allocator: std.mem.Allocator, interner: *StringInterner, name: []const u8, target_type: TargetType) -> Target",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "interner", "type": "*StringInterner" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "target_type", "type": "TargetType" }
-      ],
       "returns": "Target",
       "is_pub": true,
       "line": 59
@@ -85,12 +74,8 @@
     {
       "type": "fn_decl",
       "name": "deinit",
-      "match_hash": "5a328d2ff7b921955a02a274d43c60c31d0f03624df77d8e04813dfe3c90c8ac",
+      "match_hash": "cd832fedbc4a5f1274296e24824a042d48f0cba7facc1578e6bbfd5b24c93e5c",
       "signature": "fn deinit(self: *Target, allocator: std.mem.Allocator) -> void",
-      "params": [
-        { "name": "self", "type": "*Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 82
@@ -98,14 +83,8 @@
     {
       "type": "fn_decl",
       "name": "setDepends",
-      "match_hash": "e72ff639b018ad2deadd3db7941d78368c2fba6625b33b0efccb0c44c7fc08f9",
+      "match_hash": "ee86377d49f18b027a33f4b93e67fb9ff2f5704d7beb39b7ae9965339287c0be",
       "signature": "fn setDepends(self: *Target, allocator: std.mem.Allocator, interner: *StringInterner, depends: []const []const u8) -> void",
-      "params": [
-        { "name": "self", "type": "*Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "interner", "type": "*StringInterner" },
-        { "name": "depends", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 100
@@ -113,14 +92,8 @@
     {
       "type": "fn_decl",
       "name": "setProvides",
-      "match_hash": "b8219d749cbfa1aba55a2dfb9c1744ead8c4fac759e40b9c71e15e07cb5ad9a2",
+      "match_hash": "7326ed32067a8813b3ada2cb40bf0a1c8961d85f509c816529492618bd4ff343",
       "signature": "fn setProvides(self: *Target, allocator: std.mem.Allocator, interner: *StringInterner, provides: []const []const u8) -> void",
-      "params": [
-        { "name": "self", "type": "*Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "interner", "type": "*StringInterner" },
-        { "name": "provides", "type": "[]const []const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 111
@@ -128,13 +101,8 @@
     {
       "type": "fn_decl",
       "name": "addCommand",
-      "match_hash": "94b870aac7f7422a78b7d46de122f528c33c6e21fe37c77fb818284c8cceee5f",
+      "match_hash": "b4943d7b3fbabf2903f08a73fb3cdcc5d16994bb84627a944442f3e7f7fb9811",
       "signature": "fn addCommand(self: *Target, allocator: std.mem.Allocator, cmd: []const u8) -> void",
-      "params": [
-        { "name": "self", "type": "*Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cmd", "type": "[]const u8" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 122
@@ -142,11 +110,8 @@
     {
       "type": "fn_decl",
       "name": "isAbstract",
-      "match_hash": "6277b71442caeba6eb32e0d990fddf8a17b7ab358433dbd76bcff75e53e7ad61",
+      "match_hash": "c5c3ea2f1ede3c9765a387c180363b7ee7538575ba5de2df607c15a37361db1b",
       "signature": "fn isAbstract(self: *const Target) -> bool",
-      "params": [
-        { "name": "self", "type": "*const Target" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 127
@@ -154,13 +119,8 @@
     {
       "type": "fn_decl",
       "name": "dependsSatisfiedBy",
-      "match_hash": "5eeb1692874812ee98a6e00109d0ee78e1e469e9c0fb123d1a2d7256adbb9a76",
+      "match_hash": "c6de8389e32eb04e1800599da94c24a21bf5e99aa5f730b2db3a31eaf97a88e3",
       "signature": "fn dependsSatisfiedBy(self: *const Target, allocator: std.mem.Allocator, available: *const std.bit_set.DynamicBitSetUnmanaged) -> bool",
-      "params": [
-        { "name": "self", "type": "*const Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 134
@@ -168,13 +128,8 @@
     {
       "type": "fn_decl",
       "name": "missingDepends",
-      "match_hash": "bb7d38c877868d2dd5a1f802d3126b0662868b59692cf4d0cc1bf02a04821d65",
+      "match_hash": "e62482153527654a9783fb6879a197bf9a4f7d61c687c9c2799f999464bc5db5",
       "signature": "fn missingDepends(self: *const Target, allocator: std.mem.Allocator, available: *const std.bit_set.DynamicBitSetUnmanaged) -> std.bit_set.DynamicBitSetUnmanaged",
-      "params": [
-        { "name": "self", "type": "*const Target" },
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
-      ],
       "returns": "std.bit_set.DynamicBitSetUnmanaged",
       "is_pub": true,
       "line": 146
@@ -182,12 +137,8 @@
     {
       "type": "fn_decl",
       "name": "distanceFrom",
-      "match_hash": "9ba284c268ec6ee9024eb35c4193fb0e812968ec3b7e83829f9d4aa36b314454",
+      "match_hash": "eaf2e8502d984ffcdc083585c2a9f077c2351c765153e715c24957ec7f218979",
       "signature": "fn distanceFrom(self: *const Target, available: *const std.bit_set.DynamicBitSetUnmanaged) -> usize",
-      "params": [
-        { "name": "self", "type": "*const Target" },
-        { "name": "available", "type": "*const std.bit_set.DynamicBitSetUnmanaged" }
-      ],
       "returns": "usize",
       "is_pub": true,
       "line": 164
@@ -195,14 +146,8 @@
     {
       "type": "fn_decl",
       "name": "format",
-      "match_hash": "4760151d7487ef6ee0c8c876b70e9e8d28b623d17adad9ed112717bec02fb4cc",
+      "match_hash": "25e5b5e7fbb6ab0087af187eccf7b8e3dbc49e996848f77b5a7b9b56eee6e475",
       "signature": "fn format(self: *const Target, fmt: []const u8, options: std.fmt.Options, writer) -> void",
-      "params": [
-        { "name": "self", "type": "*const Target" },
-        { "name": "fmt", "type": "[]const u8" },
-        { "name": "options", "type": "std.fmt.Options" },
-        { "name": "writer" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 176
@@ -220,12 +165,8 @@
         {
           "type": "fn_decl",
           "name": "create",
-          "match_hash": "59d1ce27e6842f88b9cec9369c194070f8c45f4dbf19e5966c15192579f421a2",
+          "match_hash": "23c230f5bbe04ad533efcd6e39114aa831cdedc64965f51c5ef4f2c7d01491b6",
           "signature": "fn create(allocator: std.mem.Allocator, interner: *StringInterner) -> *Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "interner", "type": "*StringInterner" }
-          ],
           "returns": "*Self",
           "patterns": [
             { "name": "Factory (GoF)", "type": "GoF", "ref": "guidance/skills/gof-patterns/SKILL.md#factory" }
@@ -236,12 +177,8 @@
         {
           "type": "fn_decl",
           "name": "destroy",
-          "match_hash": "96823216b8864d893a77b6d9f576863355b07eab6cc3d797a74c053f35bad2e8",
+          "match_hash": "39e4acada8fa0e22379ab7c41c620387afc3a0156ce5d29a102219796a8e3ae2",
           "signature": "fn destroy(self: *Self, allocator: std.mem.Allocator) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 282
@@ -249,13 +186,8 @@
         {
           "type": "fn_decl",
           "name": "viewOf",
-          "match_hash": "94f5fb83a93c6607ed56fbf404b8bb4df2c936f9f36545ebe97a70fcbd917814",
+          "match_hash": "acb1b91f25af872c99af307472c658ee545032f22bfe04c8f28fb15072cfe389",
           "signature": "fn viewOf(self: *const Self, allocator: std.mem.Allocator, target: *Target) -> reflection.DynamicEditable",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "target", "type": "*Target" }
-          ],
           "returns": "reflection.DynamicEditable",
           "is_pub": true,
           "line": 289

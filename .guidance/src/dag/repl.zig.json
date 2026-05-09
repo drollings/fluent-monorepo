@@ -4,18 +4,13 @@
     "source": "src/dag/repl.zig",
     "language": "zig"
   },
-  "capabilities": ["target-registry"],
   "used_by": ["src/dag/root.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "init",
-      "match_hash": "5fe11cb9d5d51fc4d4a8e0c44494c5535e25532a7998d01b070a2d1a38f7d43c",
+      "match_hash": "aef800fb3bdac90edfebb90872e31a5715d634495bcc4268b641d76316feb9ab",
       "signature": "fn init(allocator: std.mem.Allocator, ctx: *BuildContext) -> Repl",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "ctx", "type": "*BuildContext" }
-      ],
       "returns": "Repl",
       "is_pub": true,
       "line": 15
@@ -23,11 +18,8 @@
     {
       "type": "fn_decl",
       "name": "deinit",
-      "match_hash": "48e322a15afd825a2f74779319d8289a984148490eda117d34b3f91ac99a95cd",
+      "match_hash": "7a48db017a1b0042d012aabfc5a6c058a9c86a73181da1a8783cddac86cccd38",
       "signature": "fn deinit(_: *Repl) -> void",
-      "params": [
-        { "name": "_", "type": "*Repl" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 23
@@ -35,11 +27,8 @@
     {
       "type": "fn_decl",
       "name": "run",
-      "match_hash": "9ab4f9974fd768f246034d3960f63ffa568a8d635d3a54f3a0103da074be9540",
+      "match_hash": "16bd94a5fca924ecad04281bfa290036fb6af629b415ac7dfe4dda7e89af46d9",
       "signature": "fn run(self: *Repl) -> void",
-      "params": [
-        { "name": "self", "type": "*Repl" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 26
@@ -47,13 +36,8 @@
     {
       "type": "fn_private",
       "name": "handleDotCommand",
-      "match_hash": "7090e29e73a37982ea5a382b05648478758fecc06f231927a8037c9a7e755d31",
+      "match_hash": "f05433caa1cb8895fb50dd7ef6dc38b8dcdf3da2f9ff83bf64965e104996a666",
       "signature": "fn handleDotCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> bool",
-      "params": [
-        { "name": "self", "type": "*Repl" },
-        { "name": "input", "type": "[]const u8" },
-        { "name": "writer", "type": "*std.Io.Writer" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 66
@@ -61,13 +45,8 @@
     {
       "type": "fn_private",
       "name": "handleBuildCommand",
-      "match_hash": "1074af0e306cd4d63f59a66a245a71f785ecb428efdeff90bd779584b9999c5f",
+      "match_hash": "e92ef158dcf1008b9c6fa4c975ac217bd6bc7df17a94def0d3f229e91435950a",
       "signature": "fn handleBuildCommand(self: *Repl, input: []const u8, writer: *std.Io.Writer) -> void",
-      "params": [
-        { "name": "self", "type": "*Repl" },
-        { "name": "input", "type": "[]const u8" },
-        { "name": "writer", "type": "*std.Io.Writer" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 132

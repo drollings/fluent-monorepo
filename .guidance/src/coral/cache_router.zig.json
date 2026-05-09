@@ -17,11 +17,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "0997a7fcbc5d9a65fb647cf2c54c73e49839f3270a9f92fc6e692264312cae15",
+          "match_hash": "56b758faef5fbeb8a42da317eaaeac1bb4a6b57ba6269a9d0ee0cb53e1412998",
           "signature": "fn init(reactor: *QueueReactor) -> Self",
-          "params": [
-            { "name": "reactor", "type": "*QueueReactor" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 13
@@ -29,13 +26,8 @@
         {
           "type": "fn_decl",
           "name": "routeBatch",
-          "match_hash": "d4b4eecd6fa26696b7fc350674ebb49209ba305dcf378989e5a4c4b6b0f21d80",
+          "match_hash": "9a2f1292e58a93d8a6b45790e738b2d74e0275c5ea9a61eaa8ca3659bab006dc",
           "signature": "fn routeBatch(self: *Self, allocator: std.mem.Allocator, queries: []const []const u8) -> []RoutingResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "queries", "type": "[]const []const u8" }
-          ],
           "returns": "[]RoutingResult",
           "is_pub": true,
           "line": 17

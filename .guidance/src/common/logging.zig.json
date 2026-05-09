@@ -17,11 +17,8 @@
         {
           "type": "fn_decl",
           "name": "set",
-          "match_hash": "c4930964ccf497d0fec1af7359003f678fc0d7a04ea6d9a5b175dba3ff810797",
+          "match_hash": "ca4c6ad19b58699e531c8324743f8919f77dd8cde8004a966771d7bb624378f0",
           "signature": "fn set(ctx: LogContext) -> void",
-          "params": [
-            { "name": "ctx", "type": "LogContext" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 53
@@ -29,7 +26,7 @@
         {
           "type": "fn_decl",
           "name": "get",
-          "match_hash": "1ac43d7e0964f77f3c5a762c032c385660e1e99fc85d5b7c07eaaa30222062f5",
+          "match_hash": "4e3caaf23d8d41f59eb019094623a0d9c14938fbf291c476d38d91892f2c70ec",
           "signature": "fn get() -> ?LogContext",
           "returns": "?LogContext",
           "is_pub": true,
@@ -38,7 +35,7 @@
         {
           "type": "fn_decl",
           "name": "clear",
-          "match_hash": "c68856862f999e021e2751886c1e9b7c112177922971150d3b8c383ffb9194eb",
+          "match_hash": "b541dcbfd2ce5952b6c7dc4ee590aa95d5b99681eeb5b775f6cf18b9c636e973",
           "signature": "fn clear() -> void",
           "returns": "void",
           "is_pub": true,
@@ -47,12 +44,8 @@
         {
           "type": "fn_decl",
           "name": "format",
-          "match_hash": "ae2d3dac206169875996d726dae1caca26de841fb2c8d5b1aa298d115d3c8729",
+          "match_hash": "99157a9a63c9b74923895a3894e6361e612e16568f2e02263b6fa033e8eb7e8d",
           "signature": "fn format(self: LogContext, writer) -> void",
-          "params": [
-            { "name": "self", "type": "LogContext" },
-            { "name": "writer" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 70
@@ -70,7 +63,7 @@
         {
           "type": "fn_private",
           "name": "nanoNow",
-          "match_hash": "40bedea2e9f3061526fefe52db2b22001036d4e1430a5086f74e8ef26ec686f4",
+          "match_hash": "730fe13bfade84e9d9d03853d9d141d4afe3ec3c48ffd45dc023756102d98610",
           "signature": "fn nanoNow() -> i96",
           "returns": "i96",
           "is_pub": false,
@@ -79,11 +72,8 @@
         {
           "type": "fn_decl",
           "name": "begin",
-          "match_hash": "7fe067cd4dfb279e55f34b5c0bdb1e88c7aa8cbf3194b14ffffaf0bc297cdd6f",
+          "match_hash": "eea8ae942419dbb0869235213fa587a9a29b938e75ac5b631b5adce956f00e32",
           "signature": "fn begin(name: []const u8) -> Scope",
-          "params": [
-            { "name": "name", "type": "[]const u8" }
-          ],
           "returns": "Scope",
           "is_pub": true,
           "line": 108
@@ -91,11 +81,8 @@
         {
           "type": "fn_decl",
           "name": "end",
-          "match_hash": "2f28e2f9865312619ad4a56e5546a068c04a4b6b7ac6ae147104cc530dcd9737",
+          "match_hash": "295379aeb01da5c14e762dbda7ac6e98df767ef9e23282e0ed5161ae30700435",
           "signature": "fn end(self: Scope) -> void",
-          "params": [
-            { "name": "self", "type": "Scope" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 122
@@ -106,13 +93,8 @@
     {
       "type": "fn_decl",
       "name": "callLogged",
-      "match_hash": "11cfcf8aad127b1e0496c9aad502790fceb0800512416349ed89d22e5c60a009",
+      "match_hash": "6d109548378e8488dc1d14afdf53a3246a233d4b7a3f3109aecb87baad74f985",
       "signature": "fn callLogged(name: []const u8, func, args) -> @typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
-      "params": [
-        { "name": "name", "type": "[]const u8" },
-        { "name": "func" },
-        { "name": "args" }
-      ],
       "returns": "@typeInfo(@TypeOf(func)).@\"fn\".return_type.?",
       "is_pub": true,
       "line": 137

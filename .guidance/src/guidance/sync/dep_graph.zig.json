@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " Forward+reverse @import dependency graph for the guidance sync pipeline.\n\n `DepGraph` records which source files import which other source files and\n provides O(1) reverse lookups (\"who imports this file?\").  Building the\n graph once per multi-file sync run replaces the O(N) directory walk that\n `findReverseDeps` performs per file, reducing full-sync time from O(N²)\n to O(N log N).\n\n ## Ownership model\n\n   - `forward` keys: owned strings (duped from the caller's `importer_rel`).\n   - `forward` value elements: owned strings (duped from each import target).\n   - `reverse` outer keys: owned strings (duped independently from targets).\n   - `reverse` inner map keys: NOT owned — they are the SAME pointers stored\n     as the forward outer keys (so no double-free in deinit/remove).\n\n This keeps ownership unambiguous: `forward` owns importer strings,\n `reverse` outer map owns target strings, and inner map keys borrow from\n `forward`.",
-  "capabilities": ["sync-pipeline"],
   "used_by": ["src/guidance/sync.zig", "src/guidance/sync/dep_graph_tests.zig"],
   "members": [
     {
@@ -18,11 +17,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "3f8994460cfd2d1771f9c6648380d17237836d7649fc1474e7bcb08e9c47c1ff",
+          "match_hash": "ddd671d7a58258396f96c76ae04f6d444da29b768d7a14d38a419c991d4eed05",
           "signature": "fn init(allocator: std.mem.Allocator) -> DepGraph",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "DepGraph",
           "is_pub": true,
           "line": 32
@@ -30,11 +26,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "d6f7c428e89eeddbcd072deff896ec5bdbbdf89690bae876e4e36afb0a930320",
+          "match_hash": "4c070299310c606681e260d526b464203e6f6909b8a702ecdef7373234bea894",
           "signature": "fn deinit(self: *DepGraph) -> void",
-          "params": [
-            { "name": "self", "type": "*DepGraph" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 40
@@ -42,13 +35,8 @@
         {
           "type": "fn_decl",
           "name": "setDeps",
-          "match_hash": "2acf27c539aedbe8d143c80a42194713589033792782625a6ad6a09573167dee",
+          "match_hash": "c865ad9c5e03db31fe8b732f2c963bf9f09edd989f43796a9914f0f4d543adc6",
           "signature": "fn setDeps(self: *DepGraph, importer_rel: []const u8, import_targets: [][]const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*DepGraph" },
-            { "name": "importer_rel", "type": "[]const u8" },
-            { "name": "import_targets", "type": "[][]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 70
@@ -56,13 +44,8 @@
         {
           "type": "fn_decl",
           "name": "getImportedBy",
-          "match_hash": "5e2bb3e372564b53c631476cd78b6af88965bbcd2bdb77729d1e6afd45f61507",
+          "match_hash": "d2179d7d298839ad383fde05cdbd8def40370e3e3c6a278b5facdf291ad0eb5c",
           "signature": "fn getImportedBy(self: *const DepGraph, target_rel: []const u8, allocator: std.mem.Allocator) -> [][]const u8",
-          "params": [
-            { "name": "self", "type": "*const DepGraph" },
-            { "name": "target_rel", "type": "[]const u8" },
-            { "name": "allocator", "type": "std.mem.Allocator" }
-          ],
           "returns": "[][]const u8",
           "is_pub": true,
           "line": 115
@@ -70,12 +53,8 @@
         {
           "type": "fn_decl",
           "name": "remove",
-          "match_hash": "dd63cb89e0a9964b22a4dc4797a66d2bfb84513e36702a6bbab3e4483947b1ec",
+          "match_hash": "55178adf89b65a5470822ffc3cc4ae4f1287e4bc822f4058ebdf62f279f29285",
           "signature": "fn remove(self: *DepGraph, path: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*DepGraph" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 172

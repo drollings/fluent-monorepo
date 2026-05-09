@@ -51,12 +51,8 @@
     {
       "type": "fn_decl",
       "name": "freeInferredCapability",
-      "match_hash": "d36335d74324b49499d3f90b9f51b726576a6f2a5fe8d91c9b2a897de7bb105e",
+      "match_hash": "e9e8417bf22e853691736ae9147f31a0ad6d018568599a631bd7a81ebc7721d4",
       "signature": "fn freeInferredCapability(allocator: std.mem.Allocator, cap: InferredCapability) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "cap", "type": "InferredCapability" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 45
@@ -64,12 +60,8 @@
     {
       "type": "fn_decl",
       "name": "freeInferredCapabilities",
-      "match_hash": "2021617bbbadd28139f8599ab46bed2d37bd395cfeac0e2c8c4eb6b44c01bfb8",
+      "match_hash": "df094d4dbb35d00f4f2f3cd432db76616dffd168671b15b13d0f29ed9d9ad50c",
       "signature": "fn freeInferredCapabilities(allocator: std.mem.Allocator, caps: []InferredCapability) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "caps", "type": "[]InferredCapability" }
-      ],
       "returns": "void",
       "is_pub": true,
       "line": 53
@@ -77,13 +69,8 @@
     {
       "type": "fn_decl",
       "name": "inferCapabilities",
-      "match_hash": "90eacef75e6a0e6c4b336591f8d6e271cc064f792763bff9dc3b65a01cf3f150",
+      "match_hash": "d384b9569bef2bbf296dc8606e4e39bd0abfd454f7b0539027e30921bf2add56",
       "signature": "fn inferCapabilities(allocator: std.mem.Allocator, map: *const CodebaseMap, db: *GuidanceDb) -> []InferredCapability",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "map", "type": "*const CodebaseMap" },
-        { "name": "db", "type": "*GuidanceDb" }
-      ],
       "returns": "[]InferredCapability",
       "is_pub": true,
       "line": 63
@@ -91,11 +78,8 @@
     {
       "type": "fn_private",
       "name": "extractPrefix",
-      "match_hash": "b96722c5b081ecaf3015a9616f68515a444b6bd82c4664d8049c71730a867d6b",
+      "match_hash": "c444ed2fb699c231603e7bf2e7c09e220aa3c8e0c160e3a1df9d965f8dc9ac08",
       "signature": "fn extractPrefix(stem: []const u8) -> []const u8",
-      "params": [
-        { "name": "stem", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 99
@@ -103,11 +87,8 @@
     {
       "type": "fn_private",
       "name": "pathStem",
-      "match_hash": "b74386e2a79330d6bd3dd9a6571377f3d7a4c9c42e17f9bfbcb1c498475b1243",
+      "match_hash": "bd71e32b543feb8d8d29e5652e140676f40c404e0907b743e1bf5a1fc2251a5f",
       "signature": "fn pathStem(path: []const u8) -> []const u8",
-      "params": [
-        { "name": "path", "type": "[]const u8" }
-      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 110
@@ -115,13 +96,8 @@
     {
       "type": "fn_private",
       "name": "generateDescription",
-      "match_hash": "342f39b8d91016f8e96d6914403d063db6fa4fb077f18689e57ce411127d98a1",
+      "match_hash": "2992f1167944579f6706b3793d3ff2c571bcb544299f03b733d4ab1ee4ac6357",
       "signature": "fn generateDescription(allocator: std.mem.Allocator, name: []const u8, files: []const []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "name", "type": "[]const u8" },
-        { "name": "files", "type": "[]const []const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 117
@@ -129,13 +105,8 @@
     {
       "type": "fn_private",
       "name": "inferFromNaming",
-      "match_hash": "76d40d61a5b4a15ffbbda7f65b813e6908a8bf2a1e92433d53dd961bf3ef8e0f",
+      "match_hash": "b6fb2bc6e6f31b74c9bb47464aa5ce29f355bb42933f9fce2d8e94e60fc4cb59",
       "signature": "fn inferFromNaming(allocator: std.mem.Allocator, map: *const CodebaseMap, caps: *std.ArrayList(InferredCapability)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "map", "type": "*const CodebaseMap" },
-        { "name": "caps", "type": "*std.ArrayList(InferredCapability)" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 126
@@ -143,13 +114,8 @@
     {
       "type": "fn_private",
       "name": "inferFromImportGraph",
-      "match_hash": "fd2fcb2661b2580a4ab9426c8e28c768df216de5da358c7fea835c2c2165b83c",
+      "match_hash": "514a0fc3b08a94e1e1128e3a14a8f87f37d9f4f13e8d4576afcbdc68cb7aae74",
       "signature": "fn inferFromImportGraph(allocator: std.mem.Allocator, db: *GuidanceDb, caps: *std.ArrayList(InferredCapability)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "caps", "type": "*std.ArrayList(InferredCapability)" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 189
@@ -157,13 +123,8 @@
     {
       "type": "fn_private",
       "name": "inferFromModuleComments",
-      "match_hash": "c11b66edd5131cd49b1dd35abc85d0d256edd0796a4683134957f020ddb383af",
+      "match_hash": "2616ff32dc134f497ce581c5d79e385173acb1acb2374cbedbd2432dd8911033",
       "signature": "fn inferFromModuleComments(allocator: std.mem.Allocator, db: *GuidanceDb, caps: *std.ArrayList(InferredCapability)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "caps", "type": "*std.ArrayList(InferredCapability)" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 264
@@ -171,13 +132,8 @@
     {
       "type": "fn_private",
       "name": "inferFromFileGrouping",
-      "match_hash": "32880a2095962e3758c246eeafda9a4b2201f6b88a6d7adc18ff8a578bb11736",
+      "match_hash": "7e370126e2532825d621e21e22950591556017f8e433bcf937308a2037ecb6ac",
       "signature": "fn inferFromFileGrouping(allocator: std.mem.Allocator, map: *const CodebaseMap, caps: *std.ArrayList(InferredCapability)) -> void",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "map", "type": "*const CodebaseMap" },
-        { "name": "caps", "type": "*std.ArrayList(InferredCapability)" }
-      ],
       "returns": "void",
       "is_pub": false,
       "line": 312
@@ -185,12 +141,8 @@
     {
       "type": "fn_private",
       "name": "deduplicateCapabilities",
-      "match_hash": "fdd417a29dadf60b51bfef80de853996aeea358057fe4b980c914ac87623aa30",
+      "match_hash": "3f0a4e07439a96b20cc18f54633e044a81805899a4c5cf7c1740883c1a2144b7",
       "signature": "fn deduplicateCapabilities(allocator: std.mem.Allocator, caps: []InferredCapability) -> []InferredCapability",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "caps", "type": "[]InferredCapability" }
-      ],
       "returns": "[]InferredCapability",
       "is_pub": false,
       "line": 375
@@ -198,12 +150,8 @@
     {
       "type": "fn_private",
       "name": "toCapabilityName",
-      "match_hash": "c776becfa2043601f1d24d25b723ac84a771614c225105bbea2f26eeacea0a88",
+      "match_hash": "dd307a616de30d523bf4cf01857c850b960407f6371fbd13b0b208366ccb480e",
       "signature": "fn toCapabilityName(allocator: std.mem.Allocator, raw: []const u8) -> []u8",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "raw", "type": "[]const u8" }
-      ],
       "returns": "[]u8",
       "is_pub": false,
       "line": 413
@@ -211,11 +159,8 @@
     {
       "type": "fn_private",
       "name": "isSupportedExtension",
-      "match_hash": "12988dbb9b82c66351e2166d9a16bc8ec074971947afb9d15ded3fa97f350f19",
+      "match_hash": "ad25f73b2218f224a1def9a944935cf01f01436f3428423030134a7d342c65f1",
       "signature": "fn isSupportedExtension(ext: []const u8) -> bool",
-      "params": [
-        { "name": "ext", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 432
@@ -223,11 +168,8 @@
     {
       "type": "fn_private",
       "name": "extractCapabilityFromComment",
-      "match_hash": "948420c356b401fd275845ab058c9274dd5327fd9134381f69e30c74f707f416",
+      "match_hash": "f48eda717db5cc84cc3161647a62ebffa0d492279c4df5e26a7f400fcb17e936",
       "signature": "fn extractCapabilityFromComment(comment: []const u8) -> ?[]const u8",
-      "params": [
-        { "name": "comment", "type": "[]const u8" }
-      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 441

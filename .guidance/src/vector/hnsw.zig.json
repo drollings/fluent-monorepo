@@ -4,7 +4,6 @@
     "source": "src/vector/hnsw.zig",
     "language": "zig"
   },
-  "capabilities": ["vector-search"],
   "used_by": ["src/vector/root.zig"],
   "members": [
     {
@@ -17,13 +16,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "634d0adc1eb1d599195ffa9e94b3168611fdc51d48380f4f62da635944180414",
+          "match_hash": "15378fdc02ef09dd9de948257fee5a1e51580e89d4d40b06253c3b17e48240f0",
           "signature": "fn init(allocator: std.mem.Allocator, dimensions: usize, max_elements: usize) -> Self",
-          "params": [
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "dimensions", "type": "usize" },
-            { "name": "max_elements", "type": "usize" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 50
@@ -31,12 +25,8 @@
         {
           "type": "fn_decl",
           "name": "withM",
-          "match_hash": "fc228cf5dcd7a735c3f40799d49f7f98b6d28af107b5f58ffa9c37274d1016e8",
+          "match_hash": "bf6938258390e87b60675eb9e79aec81f6ada78bf570aeb94569514df2e13b03",
           "signature": "fn withM(self: *Self, m: usize) -> *Self",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "m", "type": "usize" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 65
@@ -44,12 +34,8 @@
         {
           "type": "fn_decl",
           "name": "withEfConstruction",
-          "match_hash": "a8c4c17da872ab26d329b92df9a8ba50db3ed079fca2a4db5771e22861cf4799",
+          "match_hash": "b1df42e7e662cbefa4a2f3a25c6efe9df0319552aea684658b707676cb28cf32",
           "signature": "fn withEfConstruction(self: *Self, ef: usize) -> *Self",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "ef", "type": "usize" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 70
@@ -57,12 +43,8 @@
         {
           "type": "fn_decl",
           "name": "withEfSearch",
-          "match_hash": "c57c251f4e8cd46a8d0fa9c1d1f8a879575d7ac3381b553667a78304e4df9ad8",
+          "match_hash": "2ba39fcdbf426c05182cdb4bfcb502c63e06e9410cc00abf5b7163a1453d25d7",
           "signature": "fn withEfSearch(self: *Self, ef: usize) -> *Self",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "ef", "type": "usize" }
-          ],
           "returns": "*Self",
           "is_pub": true,
           "line": 75
@@ -70,11 +52,8 @@
         {
           "type": "fn_decl",
           "name": "deinit",
-          "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
+          "match_hash": "be92814edf1a681576bb29a7d2e90d22d27597bd53a72a0fe1a49ee774e80b33",
           "signature": "fn deinit(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 81
@@ -82,13 +61,8 @@
         {
           "type": "fn_decl",
           "name": "add",
-          "match_hash": "40996eddc0812cace7600a320d9a205717fd3db7c2cacd84b8f1921a45af90d9",
+          "match_hash": "941023de3b8bf7520aef094e8585ea3491ee99caede4482efe9811406a8f42ad",
           "signature": "fn add(self: *Self, id: i64, vector: []const f32) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id", "type": "i64" },
-            { "name": "vector", "type": "[]const f32" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 101
@@ -96,16 +70,8 @@
         {
           "type": "fn_private",
           "name": "searchLayer",
-          "match_hash": "c09838d41e159d87f2448d3d1f6235db54a512f1cae02c1ea38db906172302cd",
+          "match_hash": "761d2a26906211ad7b679c20cf32c24e1a7f83744672f577927229a0330a762d",
           "signature": "fn searchLayer(self: *Self, allocator: std.mem.Allocator, query: []const f32, entry_point: i64, layer: usize, ef: usize) -> []SearchResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "allocator", "type": "std.mem.Allocator" },
-            { "name": "query", "type": "[]const f32" },
-            { "name": "entry_point", "type": "i64" },
-            { "name": "layer", "type": "usize" },
-            { "name": "ef", "type": "usize" }
-          ],
           "returns": "[]SearchResult",
           "is_pub": false,
           "line": 214
@@ -113,14 +79,8 @@
         {
           "type": "fn_private",
           "name": "connectBidirectional",
-          "match_hash": "98611a7eba9c14e6b54b2c89be7d35f479be865bf3d071175655ec61345083ed",
+          "match_hash": "fb7892eb323c48e2cb91de36c8dd4c015f905ea77e97e550343c0476a8606a71",
           "signature": "fn connectBidirectional(self: *Self, id1: i64, id2: i64, layer: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id1", "type": "i64" },
-            { "name": "id2", "type": "i64" },
-            { "name": "layer", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 269
@@ -128,13 +88,8 @@
         {
           "type": "fn_decl",
           "name": "search",
-          "match_hash": "1bfa8d94afa46446e2029d13423b35a6a988eeaa70b5cbf89ab001a8ed516ed5",
+          "match_hash": "271b2353780ebf4ef0e2b272c4b6a1125ae70a46bacc2001e23d1eeb0c1bed43",
           "signature": "fn search(self: *Self, query: []const f32, k: usize) -> []SearchResult",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "query", "type": "[]const f32" },
-            { "name": "k", "type": "usize" }
-          ],
           "returns": "[]SearchResult",
           "is_pub": true,
           "line": 283
@@ -142,12 +97,8 @@
         {
           "type": "fn_decl",
           "name": "remove",
-          "match_hash": "49f480b560014b3aca06f8019ea9bec44c3769357d66a5e461ac36297fb83bd6",
+          "match_hash": "025140810d0aa6258a3ee09cfec3b6fe46d87ac4e334749049a27aef19833d44",
           "signature": "fn remove(self: *Self, id: i64) -> bool",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "id", "type": "i64" }
-          ],
           "returns": "bool",
           "is_pub": true,
           "line": 312
@@ -155,12 +106,8 @@
         {
           "type": "fn_private",
           "name": "writeU32",
-          "match_hash": "cb3f56f2e00cc868c51a0272143e48750a1044159a37398570a1911aedfab4d9",
+          "match_hash": "9d8a507ad28124015cb798c4019e36641c36a082caba4847f142e3d2a32308d9",
           "signature": "fn writeU32(w: *std.Io.Writer, v: u32) -> void",
-          "params": [
-            { "name": "w", "type": "*std.Io.Writer" },
-            { "name": "v", "type": "u32" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 331
@@ -168,12 +115,8 @@
         {
           "type": "fn_private",
           "name": "writeI64",
-          "match_hash": "b6cc2623be447e04cb625d8ee5c8d4a7cb7a3bbbc156af825ce326517ff44216",
+          "match_hash": "3833f627860415329b6e5081e376b2636b4f3f1c5b7fc85c2cd8ed4a01f5c5ed",
           "signature": "fn writeI64(w: *std.Io.Writer, v: i64) -> void",
-          "params": [
-            { "name": "w", "type": "*std.Io.Writer" },
-            { "name": "v", "type": "i64" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 336
@@ -181,12 +124,8 @@
         {
           "type": "fn_private",
           "name": "writeU64",
-          "match_hash": "86cc38df4e11ba7cf07df55b483033097ba23e98928bb73f78309660152ab1c0",
+          "match_hash": "bdf679dcf461e01de22aa72a8e982356ecd6d29343e0f14ce87acce684f717f2",
           "signature": "fn writeU64(w: *std.Io.Writer, v: u64) -> void",
-          "params": [
-            { "name": "w", "type": "*std.Io.Writer" },
-            { "name": "v", "type": "u64" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 341
@@ -194,11 +133,8 @@
         {
           "type": "fn_private",
           "name": "readU32",
-          "match_hash": "c25da1c39d6beae8f0896437da728c8ff9dcc404ca076a8f6ab5fc6e7e61450c",
+          "match_hash": "acb7afe72a3c299178cf717adbf9ebd5844deac0eeb1901af3395f7fd25d644e",
           "signature": "fn readU32(r: *std.Io.Reader) -> u32",
-          "params": [
-            { "name": "r", "type": "*std.Io.Reader" }
-          ],
           "returns": "u32",
           "is_pub": false,
           "line": 346
@@ -206,11 +142,8 @@
         {
           "type": "fn_private",
           "name": "readI64",
-          "match_hash": "1cf54cfa18a869870016784bed6b42b12c9e87b704cd350dbda6c76fa9b0fe6d",
+          "match_hash": "4364f26f25adc821a7340368e152a3a180ce4bcbf0337ebcfd878cf3bf7d6e5b",
           "signature": "fn readI64(r: *std.Io.Reader) -> i64",
-          "params": [
-            { "name": "r", "type": "*std.Io.Reader" }
-          ],
           "returns": "i64",
           "is_pub": false,
           "line": 351
@@ -218,11 +151,8 @@
         {
           "type": "fn_private",
           "name": "readU64",
-          "match_hash": "b461550a530ca1b169bd42d3c8a5b745f83ae090d3b1b8136aff5083d24288d6",
+          "match_hash": "05a32b1112fe126880b25d9b0d3097485e7be31ce2be3d17d18f60eae06b2c56",
           "signature": "fn readU64(r: *std.Io.Reader) -> u64",
-          "params": [
-            { "name": "r", "type": "*std.Io.Reader" }
-          ],
           "returns": "u64",
           "is_pub": false,
           "line": 356
@@ -230,12 +160,8 @@
         {
           "type": "fn_decl",
           "name": "save",
-          "match_hash": "726ca8029472f3cb12cc9fb96f91bf235733cd937042b25ec87f1fc539068d96",
+          "match_hash": "a0d45286432d674bf409e7762fd3835c00c225c80b5b2e9496eb69b1dd8a155a",
           "signature": "fn save(self: *const Self, path: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 363
@@ -243,12 +169,8 @@
         {
           "type": "fn_decl",
           "name": "load",
-          "match_hash": "2a4f1550e42766bf519e2155d6a869d10bf0e716fdb702001f6c0da264b3a555",
+          "match_hash": "b050225f8495f0d0f33d07c3d2e140074e7ba044c83bfa6ede3a3de6caa60038",
           "signature": "fn load(self: *Self, path: []const u8) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "path", "type": "[]const u8" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 391
@@ -256,11 +178,8 @@
         {
           "type": "fn_private",
           "name": "randomLevel",
-          "match_hash": "b917a8e8f61ae8849bc761112fcec4a3a093abdf333139bf280027315d433085",
+          "match_hash": "985741d66d8714e74e1ce6d27ba1515207787b5603810fc04475373387d42bd8",
           "signature": "fn randomLevel(self: *Self) -> usize",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "usize",
           "is_pub": false,
           "line": 425
@@ -268,13 +187,8 @@
         {
           "type": "fn_private",
           "name": "distance",
-          "match_hash": "36d8572ffef9f17adb6255657b3e248d23057d6f2cda71ecd859847f08901025",
+          "match_hash": "07099be7eba21147061949ae980b34bb2293807ba79c710a34894db44d37670e",
           "signature": "fn distance(self: *const Self, a: []const f32, b: []const f32) -> f32",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "a", "type": "[]const f32" },
-            { "name": "b", "type": "[]const f32" }
-          ],
           "returns": "f32",
           "is_pub": false,
           "line": 433
@@ -282,14 +196,8 @@
         {
           "type": "fn_private",
           "name": "connect",
-          "match_hash": "80b2e66268db148fd71169d3def6d2e15ec7abd381c3c0cb67426ad082cb666f",
+          "match_hash": "be7466ceff6e8b6184ec516674ca16af5ac3f94e7ec777bacdbe19b1f82428b2",
           "signature": "fn connect(self: *Self, from: i64, to: i64, layer: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "from", "type": "i64" },
-            { "name": "to", "type": "i64" },
-            { "name": "layer", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 447
@@ -297,14 +205,8 @@
         {
           "type": "fn_private",
           "name": "pruneConnections",
-          "match_hash": "266586b34be5e52f324c8fd3429ae35e98850d26adbd5e470c69aedd7d01e636",
+          "match_hash": "c86af3ea4467fa67173f991de72929a271a68c3b54d04064928de5f31d996c5c",
           "signature": "fn pruneConnections(self: *Self, node_id: i64, layer: usize, max_conn: usize) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "node_id", "type": "i64" },
-            { "name": "layer", "type": "usize" },
-            { "name": "max_conn", "type": "usize" }
-          ],
           "returns": "void",
           "is_pub": false,
           "line": 463
@@ -312,14 +214,8 @@
         {
           "type": "fn_private",
           "name": "selectNeighborsHeuristic",
-          "match_hash": "6016d5491dcdea326cb1be519f8aa66e87cc24c0fd14652e24c7a2850d62a1e8",
+          "match_hash": "f280bed617d360291a108b99a8b84198e2de26c9f18387a4104f34d236e77e75",
           "signature": "fn selectNeighborsHeuristic(self: *const Self, _: []const f32, candidates: []const SearchResult, m: usize) -> []SearchResult",
-          "params": [
-            { "name": "self", "type": "*const Self" },
-            { "name": "_", "type": "[]const f32" },
-            { "name": "candidates", "type": "[]const SearchResult" },
-            { "name": "m", "type": "usize" }
-          ],
           "returns": "[]SearchResult",
           "is_pub": false,
           "line": 505
@@ -327,11 +223,8 @@
         {
           "type": "fn_decl",
           "name": "verifyConnectivity",
-          "match_hash": "3f8ce2e5af2c9cbdce543f3d94722ca6a79e3f3aee888d54e890acf3c18d6a8a",
+          "match_hash": "d12a80b415fe215a58fc88d43c546745a3c0e68c844fabbd2ecd847c0e46d1d4",
           "signature": "fn verifyConnectivity(self: *const Self) -> struct { connected: usize, total: usize, percentage: f32 }",
-          "params": [
-            { "name": "self", "type": "*const Self" }
-          ],
           "returns": "struct { connected: usize, total: usize, percentage: f32 }",
           "is_pub": true,
           "line": 581

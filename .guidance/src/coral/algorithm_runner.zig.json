@@ -4,7 +4,6 @@
     "source": "src/coral/algorithm_runner.zig",
     "language": "zig"
   },
-  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/root.zig"],
   "members": [
     {
@@ -17,11 +16,8 @@
         {
           "type": "fn_decl",
           "name": "init",
-          "match_hash": "dc8193f2329de4cba062f9d4a39b8ef1b560544bd596feffb21e860f3de229be",
+          "match_hash": "633e466ef844e951581e0c9647b9a0959b071e419d6cabbeaf9989507c58b956",
           "signature": "fn init(config: AlgorithmRunnerConfig) -> Self",
-          "params": [
-            { "name": "config", "type": "AlgorithmRunnerConfig" }
-          ],
           "returns": "Self",
           "is_pub": true,
           "line": 42
@@ -29,11 +25,8 @@
         {
           "type": "fn_decl",
           "name": "markDirty",
-          "match_hash": "60bd812ee58e167fbbc2b7f0c7da877f52b2975589eb4e1ffc4cd06beb83b303",
+          "match_hash": "a95a24f07ca73a5fedd1a3e4b1e24b3a742f37e1d096c13dc3e0d5786dcd0620",
           "signature": "fn markDirty(self: *Self) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 51
@@ -41,13 +34,8 @@
         {
           "type": "fn_decl",
           "name": "computeDegrees",
-          "match_hash": "2c56fb1d89eaee2f997cbf47168c73e387c1d04a204663dc33a7d7d45c38a82b",
+          "match_hash": "934800953d0ef8f077d1f816e09b15c021b149a4887c96830c04db446f525f56",
           "signature": "fn computeDegrees(self: *Self, arena: Allocator, library) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "library" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 62
@@ -55,13 +43,8 @@
         {
           "type": "fn_decl",
           "name": "computePageRank",
-          "match_hash": "baf4fc332d1631bf8e1e08af92813da5b7eddeb7e042e49d04b4ef8672b4af6d",
+          "match_hash": "727aeaeffc897be40c3f64ec74963536cc9346824db68c940ec0561bc649f559",
           "signature": "fn computePageRank(self: *Self, arena: Allocator, library) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "library" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 71
@@ -69,13 +52,8 @@
         {
           "type": "fn_decl",
           "name": "computeCommunities",
-          "match_hash": "e0b9a55dc8fab1a790e43a11e239e8c97271efa5b4740549f408b9a42cdf9533",
+          "match_hash": "fe599460771a514a29fad56ecb3c274796933e60237a9bcb63453fc20ca13c33",
           "signature": "fn computeCommunities(self: *Self, arena: Allocator, library) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "library" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 80
@@ -83,13 +61,8 @@
         {
           "type": "fn_decl",
           "name": "serializeCSR",
-          "match_hash": "37e0a0ba4fdbb8ae45c0d0f38ec1005a26664301fc5721f3605b111ebe8768b6",
+          "match_hash": "137bc543bb135f3dc9a4dd31dc0fd5a20b19a86b8d19d8799e3b5d3b3c849366",
           "signature": "fn serializeCSR(self: *Self, arena: Allocator, library) -> void",
-          "params": [
-            { "name": "self", "type": "*Self" },
-            { "name": "arena", "type": "Allocator" },
-            { "name": "library" }
-          ],
           "returns": "void",
           "is_pub": true,
           "line": 89
@@ -97,12 +70,8 @@
         {
           "type": "fn_decl",
           "name": "getDegree",
-          "match_hash": "a9b8fb98ace71ece2c191e1f3fb91e564f374e511cb9cfcf9b57097c29698022",
+          "match_hash": "7d270353b405b33135d1d83dc4b489d0c845a56d8e09d04c41909f5cde87d2f4",
           "signature": "fn getDegree(_: Self, degree: u32) -> u32",
-          "params": [
-            { "name": "_", "type": "Self" },
-            { "name": "degree", "type": "u32" }
-          ],
           "returns": "u32",
           "is_pub": true,
           "line": 99
@@ -110,12 +79,8 @@
         {
           "type": "fn_decl",
           "name": "getPageRank",
-          "match_hash": "6a2da8aca751879de07c2a6798e28df3eac8c14147d0ac0ca8c6422200426876",
+          "match_hash": "90c2452a9f92aebef8e31d8fbe14c95e2678a7933f3df617036e3a90ac5cfbd8",
           "signature": "fn getPageRank(_: Self, pagerank: f32) -> f32",
-          "params": [
-            { "name": "_", "type": "Self" },
-            { "name": "pagerank", "type": "f32" }
-          ],
           "returns": "f32",
           "is_pub": true,
           "line": 104
@@ -123,12 +88,8 @@
         {
           "type": "fn_decl",
           "name": "getCommunity",
-          "match_hash": "261d4a3ae8ca3b7b2680e5dfdf7737897744b6b84080f1c0d0adf3ef34a40667",
+          "match_hash": "045efaf9cad500509e86b96ffc719c9e88526304d8403775e541d361b1122df0",
           "signature": "fn getCommunity(_: Self, community_id: ?i64) -> ?i64",
-          "params": [
-            { "name": "_", "type": "Self" },
-            { "name": "community_id", "type": "?i64" }
-          ],
           "returns": "?i64",
           "is_pub": true,
           "line": 109

@@ -5,7 +5,6 @@
     "language": "zig"
   },
   "comment": " query_strategy.zig — Query routing by intent.\n\n Strategy priority (lower = tried first):\n   0  identifier lookup  — single-token camelCase/PascalCase/snake_case\n   2  capability query    — query matches a known capability/alias\n   4  concept query       — fallback: hybrid search + LLM synthesis\n\n Anti-pattern fixed: all three execute() implementations were identical.\n Replaced with QueryMatch (matches-only function pointer) + single executeQuery.",
-  "capabilities": ["explain-query", "ast-indexing"],
   "used_by": ["src/guidance/query/strategy_tests.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig"],
   "members": [
     {
@@ -53,13 +52,8 @@
     {
       "type": "fn_private",
       "name": "queryMatch",
-      "match_hash": "d8bed36b7b3c77efc05e671a8434031d453407b7c97ccb16d86f909076709f7a",
+      "match_hash": "4713a63e042e1ed0b989da3a8996388c230777da8b874bf22a291bf8952a581b",
       "signature": "fn queryMatch(matches_fn: *const fn (query: []const u8, db: *GuidanceDb) bool, intent: QueryIntent, priority: u8) -> QueryMatch",
-      "params": [
-        { "name": "matches_fn", "type": "*const fn (query: []const u8, db: *GuidanceDb) bool" },
-        { "name": "intent", "type": "QueryIntent" },
-        { "name": "priority", "type": "u8" }
-      ],
       "returns": "QueryMatch",
       "is_pub": false,
       "line": 42
@@ -67,12 +61,8 @@
     {
       "type": "fn_private",
       "name": "identifierMatches",
-      "match_hash": "4f448a2193c1f4d9adb64d6dd463dc7d67aec27e1ceda71603b8409f24114892",
+      "match_hash": "b4248ce82931c9cda6dff23b1d1b41c78f0dd875ba1163f153665614352579f3",
       "signature": "fn identifierMatches(query: []const u8, db: *GuidanceDb) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "db", "type": "*GuidanceDb" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 58
@@ -80,12 +70,8 @@
     {
       "type": "fn_private",
       "name": "capabilityMatches",
-      "match_hash": "0879b4f91809088be5bda9a854e72132e3142a43815ed1c82641394738a8a156",
+      "match_hash": "0b170b97b615501568ec20990658c972c46eeeb4ffc968cc42db02d50ca51e43",
       "signature": "fn capabilityMatches(query: []const u8, db: *GuidanceDb) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "db", "type": "*GuidanceDb" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 63
@@ -93,12 +79,8 @@
     {
       "type": "fn_private",
       "name": "conceptMatches",
-      "match_hash": "554e54a6e38b6bb3b27909eea26498e3998b1fe3eebeab8956df05b350372b18",
+      "match_hash": "6f42605d14c6ad8c6316daec2874ab89742bb70058ee107caf9987838f6c261a",
       "signature": "fn conceptMatches(query: []const u8, db: *GuidanceDb) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" },
-        { "name": "db", "type": "*GuidanceDb" }
-      ],
       "returns": "bool",
       "is_pub": false,
       "line": 72
@@ -106,13 +88,8 @@
     {
       "type": "fn_decl",
       "name": "executeQuery",
-      "match_hash": "d8a0fd8dbb5e3038ab983c258d6972906da28e4edb380b153afe7a4718e9e893",
+      "match_hash": "84001ef6d438d83cd26163e4752b40bb0be2ea0eb16c5b768479f6342c69c08c",
       "signature": "fn executeQuery(allocator: std.mem.Allocator, db: *GuidanceDb, config: staged_mod.StagedConfig) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "config", "type": "staged_mod.StagedConfig" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 85
@@ -120,17 +97,8 @@
     {
       "type": "fn_decl",
       "name": "executeQueryWithMatch",
-      "match_hash": "7dc2115bc3acc4e133f9b6e5d023e9fd2268501ef09fcd8dfda4fd4e4bc25097",
+      "match_hash": "6427fc6477bd52b700df72fce9788a6a29f0f43a16aa5332600748b13192142b",
       "signature": "fn executeQueryWithMatch(allocator: std.mem.Allocator, db: *GuidanceDb, query: []const u8, original_query: []const u8, workspace: []const u8, aliases: ?vector_db_mod.SemanticAliases, matches: []const QueryMatch) -> []types.Stage",
-      "params": [
-        { "name": "allocator", "type": "std.mem.Allocator" },
-        { "name": "db", "type": "*GuidanceDb" },
-        { "name": "query", "type": "[]const u8" },
-        { "name": "original_query", "type": "[]const u8" },
-        { "name": "workspace", "type": "[]const u8" },
-        { "name": "aliases", "type": "?vector_db_mod.SemanticAliases" },
-        { "name": "matches", "type": "[]const QueryMatch" }
-      ],
       "returns": "[]types.Stage",
       "is_pub": true,
       "line": 93
@@ -138,11 +106,8 @@
     {
       "type": "fn_decl",
       "name": "looksLikeIdentifier",
-      "match_hash": "9599a60a845f4a9c12667a8f3b632524021279a756150c9fca06d3134e06cca9",
+      "match_hash": "135faa954ee592baafd157a29b4b80163c2964aa8ec8c847cd18d2124e83ca84",
       "signature": "fn looksLikeIdentifier(query: []const u8) -> bool",
-      "params": [
-        { "name": "query", "type": "[]const u8" }
-      ],
       "returns": "bool",
       "is_pub": true,
       "line": 118
@@ -150,7 +115,7 @@
     {
       "type": "fn_decl",
       "name": "buildDefaultStrategies",
-      "match_hash": "6420a6ef024b43049530827c0124016c7bf32869a2773402f3fab7792eb628ec",
+      "match_hash": "e6008476a605e8f298f42eb75032614d2f4af6e0a5f6c0d71155d0bb726d63e7",
       "signature": "fn buildDefaultStrategies() -> [3]QueryMatch",
       "returns": "[3]QueryMatch",
       "is_pub": true,
