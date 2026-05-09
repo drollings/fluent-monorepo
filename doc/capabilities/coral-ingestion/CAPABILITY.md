@@ -70,6 +70,7 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 | `src/ontology/mapper.zig` | 1.0 | defines_anchor |
 | `src/coral/cli.zig` | 0.9 | used_by |
 | `src/coral/root.zig` | 0.9 | used_by |
+| `src/coral/verify.zig` | 0.9 | used_by |
 | `src/ontology/root.zig` | 0.9 | used_by |
 | `src/rdf/parser.zig` | 0.7 | keyword_overlap |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
@@ -105,5 +106,4 @@ Each batch gets an `ArenaAllocator` (`batch_arena`) for all `TripleMapper` alloc
 | `src/coral/metrics.zig` | 0.4 | path_heuristic |
 | `src/coral/session.zig` | 0.4 | path_heuristic |
 | `src/coral/http_transport_test.zig` | 0.4 | path_heuristic |
-| `src/coral/verify.zig` | 0.4 | path_heuristic |
 

@@ -4,7 +4,8 @@
     "source": "src/dag/context.zig",
     "language": "zig"
   },
-  "used_by": ["src/concurrency/any_work_unit.zig", "src/concurrency/error_group.zig", "src/concurrency/root.zig", "src/concurrency/spawn.zig", "src/dag/repl.zig", "src/dag/root.zig"],
+  "capabilities": ["target-registry"],
+  "used_by": ["src/dag/repl.zig", "src/dag/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -18,6 +19,10 @@
           "name": "deinit",
           "match_hash": "6aefb924630bd248b5681c34026f7f549197d4bb2a8f7ea55c829ff4fd8f8042",
           "signature": "fn deinit(self: *BuildResult, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*BuildResult" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 23
@@ -30,6 +35,11 @@
       "name": "init",
       "match_hash": "97f020e34e93f12558d7fdf419f321ea50b1b4e0f4fa81e8aab2b8a8360ab6d7",
       "signature": "fn init(allocator: std.mem.Allocator, registry: *TargetRegistry, interner: *StringInterner) -> BuildContext",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "registry", "type": "*TargetRegistry" },
+        { "name": "interner", "type": "*StringInterner" }
+      ],
       "returns": "BuildContext",
       "is_pub": true,
       "line": 42
@@ -39,6 +49,10 @@
       "name": "build",
       "match_hash": "fbd69103c5534484f0c6369a6c56e33ce1e44d37c2dd693870432e8564e7e3b9",
       "signature": "fn build(self: *BuildContext, target_names: []const []const u8) -> BuildResult",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target_names", "type": "[]const []const u8" }
+      ],
       "returns": "BuildResult",
       "is_pub": true,
       "line": 56
@@ -48,6 +62,10 @@
       "name": "isUpToDate",
       "match_hash": "d5507bc1923434ef25aa2570f72077d74fae0643c33601a1b1990e08470f1beb",
       "signature": "fn isUpToDate(self: *BuildContext, target: *const Target) -> bool",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target", "type": "*const Target" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 157
@@ -57,6 +75,10 @@
       "name": "executeTarget",
       "match_hash": "0d284bb3fcbdf62fe381f0b174dbb268bd109e7ba736b9f9cfa2747a7a4607d5",
       "signature": "fn executeTarget(self: *BuildContext, target: *const Target) -> bool",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target", "type": "*const Target" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 184
@@ -66,6 +88,10 @@
       "name": "listTargets",
       "match_hash": "06fd4eefaf7add25e83b8e7b12de86a5a753ba93c8b2e689a7d8254b58d93ccd",
       "signature": "fn listTargets(self: *const BuildContext, writer: *std.Io.Writer) -> void",
+      "params": [
+        { "name": "self", "type": "*const BuildContext" },
+        { "name": "writer", "type": "*std.Io.Writer" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 238
@@ -75,6 +101,11 @@
       "name": "showGraph",
       "match_hash": "09fc317b670c96c04bb1110fe6cfc93232b04010e4fa7686e29f3287ed39dec3",
       "signature": "fn showGraph(self: *BuildContext, target_names: []const []const u8, writer: *std.Io.Writer) -> void",
+      "params": [
+        { "name": "self", "type": "*BuildContext" },
+        { "name": "target_names", "type": "[]const []const u8" },
+        { "name": "writer", "type": "*std.Io.Writer" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 278

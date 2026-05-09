@@ -542,7 +542,6 @@ pub fn cmdHealth(allocator: std.mem.Allocator, args_raw: []const []const u8) !vo
     defer {
         for (test_anomalies) |a| {
             allocator.free(a.source);
-            if (a.decl_name) |n| allocator.free(n);
         }
         allocator.free(test_anomalies);
     }

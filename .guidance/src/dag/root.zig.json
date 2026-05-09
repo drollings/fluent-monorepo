@@ -4,6 +4,5 @@
     "source": "src/dag/root.zig",
     "language": "zig"
   },
-  "comment": " dag — DAG execution engine for build systems.\n\n Provides:\n   Target       — Target/TargetType/ExecutorKind value types\n   TargetRegistry — DAG registry with TargetBuilder (fluent DSL)\n   DependencyResolver — Topological sort with cycle detection\n   DagExecutor  — Parallel DAG execution\n   BuildContext — Build execution context\n   Repl         — Interactive REPL\n   json_parser  — Target file parser",
-  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
+  "comment": " dag — DAG execution engine for build systems.\n\n Provides:\n   Target       — Target/TargetType/ExecutorKind value types\n   TargetRegistry — DAG registry with TargetBuilder (fluent DSL)\n   DependencyResolver — Topological sort with cycle detection\n   DagExecutor  — Parallel DAG execution\n   BuildContext — Build execution context\n   Repl         — Interactive REPL\n   json_parser  — Target file parser"
 }

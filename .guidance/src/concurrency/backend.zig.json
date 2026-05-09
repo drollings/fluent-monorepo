@@ -22,6 +22,10 @@
           "name": "submit",
           "match_hash": "b81a77be248f0e871f59b5fc3b4af6588c7aeaf6164628b42e0818742ebf22b4",
           "signature": "fn submit(self: ExecutionBackend, unit: AnyWorkUnit) -> anyerror!void",
+          "params": [
+            { "name": "self", "type": "ExecutionBackend" },
+            { "name": "unit", "type": "AnyWorkUnit" }
+          ],
           "returns": "anyerror!void",
           "is_pub": true,
           "line": 55
@@ -31,6 +35,9 @@
           "name": "flush",
           "match_hash": "8c64ef5e8b84cd2d08a4a3e5e580d52f73c0cf22a371e96e08351375678387e1",
           "signature": "fn flush(self: ExecutionBackend) -> anyerror!void",
+          "params": [
+            { "name": "self", "type": "ExecutionBackend" }
+          ],
           "returns": "anyerror!void",
           "is_pub": true,
           "line": 59
@@ -40,6 +47,9 @@
           "name": "deinit",
           "match_hash": "fcbcb467e1dd8edfced086fa4b0d639f073c20ff9d67edce552ee14b412b38bd",
           "signature": "fn deinit(self: ExecutionBackend) -> void",
+          "params": [
+            { "name": "self", "type": "ExecutionBackend" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 63
@@ -59,6 +69,9 @@
           "name": "backend",
           "match_hash": "e1b0c25142a7fc83209e52408b4066cdf2ffce57458acae17598f48cb2b42848",
           "signature": "fn backend(self: *SyncBackend) -> ExecutionBackend",
+          "params": [
+            { "name": "self", "type": "*SyncBackend" }
+          ],
           "returns": "ExecutionBackend",
           "is_pub": true,
           "line": 81
@@ -68,6 +81,10 @@
           "name": "submitFn",
           "match_hash": "b626073dadb27dd9e782f5937b43c82a28a0a2a8d273ba4f95f86759352c2dad",
           "signature": "fn submitFn(ptr: *anyopaque, unit: AnyWorkUnit) -> anyerror!void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" },
+            { "name": "unit", "type": "AnyWorkUnit" }
+          ],
           "returns": "anyerror!void",
           "is_pub": false,
           "line": 85
@@ -77,6 +94,9 @@
           "name": "flushFn",
           "match_hash": "13a49be41b559be66f034d8fd40763deeb3db20d5f2d097f38c7f35948ffbc45",
           "signature": "fn flushFn(ptr: *anyopaque) -> anyerror!void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" }
+          ],
           "returns": "anyerror!void",
           "is_pub": false,
           "line": 94
@@ -86,6 +106,9 @@
           "name": "deinitFn",
           "match_hash": "dca95b104754aafa1756acf63fe904763dfb371eb12b4be33777c0538cee5415",
           "signature": "fn deinitFn(_: *anyopaque) -> void",
+          "params": [
+            { "name": "_", "type": "*anyopaque" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 102
@@ -117,6 +140,9 @@
           "name": "backend",
           "match_hash": "3208ccdfe3fada4fbd9caff1d383625fa1c8fbbad71c45432063b1ed5b7fa1ea",
           "signature": "fn backend(self: *ZioBackend) -> ExecutionBackend",
+          "params": [
+            { "name": "self", "type": "*ZioBackend" }
+          ],
           "returns": "ExecutionBackend",
           "is_pub": true,
           "line": 163
@@ -126,6 +152,10 @@
           "name": "submitFn",
           "match_hash": "b626073dadb27dd9e782f5937b43c82a28a0a2a8d273ba4f95f86759352c2dad",
           "signature": "fn submitFn(ptr: *anyopaque, unit: AnyWorkUnit) -> anyerror!void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" },
+            { "name": "unit", "type": "AnyWorkUnit" }
+          ],
           "returns": "anyerror!void",
           "is_pub": false,
           "line": 167
@@ -135,6 +165,9 @@
           "name": "flushFn",
           "match_hash": "13a49be41b559be66f034d8fd40763deeb3db20d5f2d097f38c7f35948ffbc45",
           "signature": "fn flushFn(ptr: *anyopaque) -> anyerror!void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" }
+          ],
           "returns": "anyerror!void",
           "is_pub": false,
           "line": 175
@@ -144,6 +177,9 @@
           "name": "deinitFn",
           "match_hash": "2eb2943cfc7a3e08aca9cb9fd1ea13de0e2383ed40449f4867380e135a781adb",
           "signature": "fn deinitFn(ptr: *anyopaque) -> void",
+          "params": [
+            { "name": "ptr", "type": "*anyopaque" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 183
@@ -153,6 +189,10 @@
           "name": "runUnit",
           "match_hash": "9a8e103a90a55dd33e3abda705ac8e1f72acc49bb61326dfacd9e5c9b27cdd6b",
           "signature": "fn runUnit(sem: *zio.Semaphore, unit: AnyWorkUnit) -> void",
+          "params": [
+            { "name": "sem", "type": "*zio.Semaphore" },
+            { "name": "unit", "type": "AnyWorkUnit" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 192
@@ -172,6 +212,10 @@
           "name": "execute",
           "match_hash": "780b98b3aaf703b1cf25dfdcc269e50c73c0590f8e87965ecc2b92f132cc3525",
           "signature": "fn execute(self: *CountHandler, arena: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*CountHandler" },
+            { "name": "arena", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 211

@@ -18,6 +18,9 @@
           "name": "effectiveWidth",
           "match_hash": "66011068cbdcefa5f20062552adcd2bab7d77721ebe14f0cdb9cde90d2ea4738",
           "signature": "fn effectiveWidth(self: *const Column) -> usize",
+          "params": [
+            { "name": "self", "type": "*const Column" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 10
@@ -37,6 +40,11 @@
           "name": "init",
           "match_hash": "f942b4e4ea29a8cd4bc680750c327360e033885c52e2285d75ac049cdfa3ad65",
           "signature": "fn init(allocator: std.mem.Allocator, columns: []const Column, title: []const u8) -> Table",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "columns", "type": "[]const Column" },
+            { "name": "title", "type": "[]const u8" }
+          ],
           "returns": "Table",
           "is_pub": true,
           "line": 22
@@ -46,6 +54,10 @@
           "name": "withRows",
           "match_hash": "88c4e2a0b0dbabddb77750d44ae29562e5ef1053a9f6890c4b559ba59014a478",
           "signature": "fn withRows(self: *Table, rows: []const std.json.Value) -> void",
+          "params": [
+            { "name": "self", "type": "*Table" },
+            { "name": "rows", "type": "[]const std.json.Value" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 31
@@ -55,6 +67,10 @@
           "name": "render",
           "match_hash": "33f8c751209c3bf01b2d5f21bd6a68bb8e11e2471d7429eb30a6bd13e7b11c6f",
           "signature": "fn render(self: *const Table, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const Table" },
+            { "name": "writer" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 35
@@ -67,6 +83,10 @@
       "name": "valueToString",
       "match_hash": "def7693d6d3298be9cd28c9815755cbe66f4b834489630cf3b91e6bc9b724e64",
       "signature": "fn valueToString(allocator: std.mem.Allocator, val: std.json.Value) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "val", "type": "std.json.Value" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 86
@@ -76,6 +96,11 @@
       "name": "formatJson",
       "match_hash": "8d7d270fed04c799fa641224869b398eb6700a5825727548e60d740bfed883bf",
       "signature": "fn formatJson(allocator: std.mem.Allocator, value, indent: usize) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "value" },
+        { "name": "indent", "type": "usize" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 129
@@ -85,6 +110,12 @@
       "name": "stringify",
       "match_hash": "7e5b2b8ddbe3cc7e66b0f0a2321d2aa8e977e9218c1c1b0ea743aa2307f51c87",
       "signature": "fn stringify(value, indent: usize, level: usize, writer) -> void",
+      "params": [
+        { "name": "value" },
+        { "name": "indent", "type": "usize" },
+        { "name": "level", "type": "usize" },
+        { "name": "writer" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 137
@@ -94,6 +125,11 @@
       "name": "formatCsv",
       "match_hash": "5393cbb6a16366a48baec608a9cd8f1df266627c8bd46455ee2c3e527fccc775",
       "signature": "fn formatCsv(allocator: std.mem.Allocator, rows: []const std.json.Value, fieldnames: ?[]const []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "rows", "type": "[]const std.json.Value" },
+        { "name": "fieldnames", "type": "?[]const []const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 174
@@ -103,6 +139,10 @@
       "name": "writeCsvField",
       "match_hash": "9875b868161d0d9915e20f10b40f2b601c36273c0897988e7567c965d207757c",
       "signature": "fn writeCsvField(writer, field: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "field", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 220
@@ -112,6 +152,10 @@
       "name": "formatSize",
       "match_hash": "6501fbaa84addf76ccd09a4cab0ddfc4c983d5e5106fe8fead656c2aa10077c8",
       "signature": "fn formatSize(bytes: usize, buf: []u8) -> []const u8",
+      "params": [
+        { "name": "bytes", "type": "usize" },
+        { "name": "buf", "type": "[]u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 235
@@ -121,6 +165,9 @@
       "name": "parseSize",
       "match_hash": "4612b5ef86757538ac21a92de2f975da554a75d39e0a20c005ed33e01a1e6d59",
       "signature": "fn parseSize(size_str: []const u8) -> ?usize",
+      "params": [
+        { "name": "size_str", "type": "[]const u8" }
+      ],
       "returns": "?usize",
       "is_pub": true,
       "line": 253

@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " Vector operations — cosine similarity, normalization, hybrid merge.\n\n Used by guidance's SQLite vector search backend.",
+  "capabilities": ["vector-search"],
   "used_by": ["src/vector/math_tests.zig", "src/vector/root.zig"],
   "members": [
     {
@@ -12,6 +13,10 @@
       "name": "cosineSimilarity",
       "match_hash": "e01419a98c1718dd5b906848c4c4a1a669264c9a525d5ce32982596b99ec75ba",
       "signature": "fn cosineSimilarity(a: []const f32, b: []const f32) -> f32",
+      "params": [
+        { "name": "a", "type": "[]const f32" },
+        { "name": "b", "type": "[]const f32" }
+      ],
       "returns": "f32",
       "is_pub": true,
       "line": 10
@@ -21,6 +26,10 @@
       "name": "vecToBytes",
       "match_hash": "c7a62af54437d114c835892a5354e3256ad3f2c2489ff9780f0b340080338db0",
       "signature": "fn vecToBytes(allocator: std.mem.Allocator, v: []const f32) -> []u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "v", "type": "[]const f32" }
+      ],
       "returns": "[]u8",
       "is_pub": true,
       "line": 43
@@ -30,6 +39,10 @@
       "name": "bytesToVec",
       "match_hash": "37f64b423bf6b872ede6e2f7017ca5333d97c67f77d1e6880ea875dc67a507e8",
       "signature": "fn bytesToVec(allocator: std.mem.Allocator, bytes: []const u8) -> []f32",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "bytes", "type": "[]const u8" }
+      ],
       "returns": "[]f32",
       "is_pub": true,
       "line": 53
@@ -47,6 +60,14 @@
       "name": "hybridMerge",
       "match_hash": "9abda54f0df7afc9d3b52dc0fc8394b7d66ebd18b7ff559a1145ba84b16564bf",
       "signature": "fn hybridMerge(allocator: std.mem.Allocator, vector_results: []const IdScore, keyword_results: []const IdScore, vector_weight: f32, keyword_weight: f32, limit: usize) -> []ScoredResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "vector_results", "type": "[]const IdScore" },
+        { "name": "keyword_results", "type": "[]const IdScore" },
+        { "name": "vector_weight", "type": "f32" },
+        { "name": "keyword_weight", "type": "f32" },
+        { "name": "limit", "type": "usize" }
+      ],
       "returns": "[]ScoredResult",
       "is_pub": true,
       "line": 87
@@ -56,6 +77,16 @@
       "name": "hybridMergeThree",
       "match_hash": "bbf513be1fe646941fb20278bba4154369f0b0a7be3da1e4d49a1ce607282658",
       "signature": "fn hybridMergeThree(allocator: std.mem.Allocator, vector_results: []const IdScore, keyword_results: []const IdScore, capability_results: []const IdScore, cosine_w: f32, keyword_w: f32, cap_w: f32, limit: usize) -> []ScoredResult",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "vector_results", "type": "[]const IdScore" },
+        { "name": "keyword_results", "type": "[]const IdScore" },
+        { "name": "capability_results", "type": "[]const IdScore" },
+        { "name": "cosine_w", "type": "f32" },
+        { "name": "keyword_w", "type": "f32" },
+        { "name": "cap_w", "type": "f32" },
+        { "name": "limit", "type": "usize" }
+      ],
       "returns": "[]ScoredResult",
       "is_pub": true,
       "line": 168

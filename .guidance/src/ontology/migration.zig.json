@@ -4,6 +4,7 @@
     "source": "src/ontology/migration.zig",
     "language": "zig"
   },
+  "capabilities": ["ontology"],
   "used_by": ["src/ontology/root.zig"],
   "members": [
     {
@@ -27,6 +28,9 @@
       "name": "noopMigration",
       "match_hash": "57a812d3fb61b370c50980fb23fe608bacb47642b933a9d33febebd30dccaec3",
       "signature": "fn noopMigration(allocator: std.mem.Allocator) -> anyerror!void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
       "returns": "anyerror!void",
       "is_pub": false,
       "line": 35
@@ -43,6 +47,9 @@
           "name": "init",
           "match_hash": "adcdc676f506f79b02f9f0dab373f64bcb7e6339ee20b16e014af6380e7681c1",
           "signature": "fn init(allocator: std.mem.Allocator) -> VersionRegistry",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "VersionRegistry",
           "is_pub": true,
           "line": 56
@@ -52,6 +59,9 @@
           "name": "deinit",
           "match_hash": "fd87ff75aa2d8deeb981e50dc5e46b3687087076bfa9e8896edd57ba725c749d",
           "signature": "fn deinit(self: *VersionRegistry) -> void",
+          "params": [
+            { "name": "self", "type": "*VersionRegistry" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 63
@@ -61,6 +71,10 @@
           "name": "record",
           "match_hash": "ae70b04f9214d4ef7977bc1003eedd99eacae130cbe9a65b565bf0352870cec4",
           "signature": "fn record(self: *VersionRegistry, ver: OntologyVersion) -> void",
+          "params": [
+            { "name": "self", "type": "*VersionRegistry" },
+            { "name": "ver", "type": "OntologyVersion" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 71
@@ -70,6 +84,9 @@
           "name": "latest",
           "match_hash": "4ec18379e6505f5b73d8a883f44b56b48375a54f416ae3a1e55e87325af84225",
           "signature": "fn latest(self: *const VersionRegistry) -> ?OntologyVersion",
+          "params": [
+            { "name": "self", "type": "*const VersionRegistry" }
+          ],
           "returns": "?OntologyVersion",
           "is_pub": true,
           "line": 84

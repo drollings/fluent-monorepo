@@ -4,7 +4,8 @@
     "source": "src/coral/metrics.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/root.zig", "src/coral/main_tests.zig", "src/coral/root.zig"],
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
+  "used_by": ["src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "struct",
@@ -18,6 +19,9 @@
           "name": "l1Hits",
           "match_hash": "1dd46a868b3a57f07dfc0c644f41296fe82a699fd4d9ed271b3b4ace52a12171",
           "signature": "fn l1Hits(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 29
@@ -27,6 +31,9 @@
           "name": "l2Hits",
           "match_hash": "7871583ad308217e250e84cd6dad50b10378ba6fae405e80a5c06cd2ebba90a1",
           "signature": "fn l2Hits(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 32
@@ -36,6 +43,9 @@
           "name": "l3Hits",
           "match_hash": "0bd20dfe7fefc128cb49e860ebf7ec444e6880f9f70c28c75e786c423506ff7c",
           "signature": "fn l3Hits(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 35
@@ -45,6 +55,9 @@
           "name": "l4Hits",
           "match_hash": "e2654f2daadf44896cc2e4b3be133f78ff8036aad13f112cbb4ca6f3f2fc836e",
           "signature": "fn l4Hits(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 38
@@ -54,6 +67,9 @@
           "name": "l5Hits",
           "match_hash": "9131a86631b1dbc7e3097f0e92196a40fdd7034ab9f35fa88c1492bc021bb8a4",
           "signature": "fn l5Hits(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 41
@@ -63,6 +79,9 @@
           "name": "misses",
           "match_hash": "7a6b1125d9dbfc4772a80f32ef13c6c3cd331fb3a4d42197cb1591f1c4a4a975",
           "signature": "fn misses(self: *const CoralMetrics) -> u64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 44
@@ -72,6 +91,9 @@
           "name": "deterministicRate",
           "match_hash": "3a125e33fde646f63500f3dae059a03babaa626a96ed39484ad2eb5388789556",
           "signature": "fn deterministicRate(self: *const CoralMetrics) -> f64",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" }
+          ],
           "returns": "f64",
           "is_pub": true,
           "line": 50
@@ -81,6 +103,10 @@
           "name": "formatPrometheus",
           "match_hash": "c74a8827a1ce859256c63cc7a6060054fa229415aa6e7a7add8985746ee1e172",
           "signature": "fn formatPrometheus(self: *const CoralMetrics, writer) -> void",
+          "params": [
+            { "name": "self", "type": "*const CoralMetrics" },
+            { "name": "writer" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 66

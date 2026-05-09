@@ -7,6 +7,7 @@ const hash = @import("hash.zig");
 const enhancer_mod = @import("enhancer.zig");
 const common = @import("common");
 const core = @import("comments/core.zig");
+const dep_graph_mod = @import("sync/dep_graph.zig");
 
 /// Maps source file path (relative to project) to capability names.
 /// Owned by SyncProcessor and freed in deinit.
@@ -35,6 +36,11 @@ pub const SyncProcessor = struct {
     /// Key: relative source path (e.g., "src/common/embeddings.zig")
     /// Value: list of capability names (owned)
     capabilities_map: ?CapabilitiesMap = null,
+    /// Optional pre-built forward+reverse import graph for O(1) `used_by` lookup.
+    /// When non-null, processFile uses this instead of findReverseDeps.
+    /// Must be built via buildDepGraph() before the per-file loop starts.
+    /// Not built automatically in init — call buildDepGraph() explicitly.
+    dep_graph: ?dep_graph_mod.DepGraph = null,
 
     pub fn init(allocator: std.mem.Allocator, project_root: []const u8, output_dir: []const u8, dry_run: bool, debug: bool) SyncProcessor {
         return .{
@@ -50,6 +56,7 @@ pub const SyncProcessor = struct {
     pub fn deinit(self: *SyncProcessor) void {
         if (self.enhancer) |*e| e.deinit();
         if (self.thinking_enhancer) |*e| e.deinit();
+        if (self.dep_graph) |*dg| dg.deinit();
         if (self.capabilities_map) |*cm| {
             var it = cm.iterator();
             while (it.next()) |entry| {
@@ -508,7 +515,12 @@ pub const SyncProcessor = struct {
         // tracked by match_hash for staleness detection.
 
         // --- Reverse dependencies (used_by) ---
-        const used_by = try self.findReverseDeps(rel_path);
+        // Use O(1) dep graph lookup when available; fall back to O(N) walk for
+        // single-file mode (when dep_graph has not been built).
+        const used_by = if (self.dep_graph) |*dg|
+            try dg.getImportedBy(rel_path, self.allocator)
+        else
+            try self.findReverseDeps(rel_path);
         // used_by owned here; transferred to doc below.
 
         // --- Cross-language equivalents ---
@@ -1057,20 +1069,22 @@ pub const SyncProcessor = struct {
 
     /// Scan src/ directory for Zig files that @import the given module.
     /// rel_path is the relative path of the file being processed (e.g. "src/foo.zig").
+    ///
+    /// Each @import("...zig") found in a candidate file is resolved relative to
+    /// that file's own directory and compared against the target's absolute path.
+    /// This prevents stem-only matching from falsely linking files with the same
+    /// filename in different directories (e.g. src/coral/main.zig matching
+    /// src/guidance/main.zig).
     fn findReverseDeps(self: *SyncProcessor, rel_path: []const u8) ![]const []const u8 {
         const src_dir_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "src" });
         defer self.allocator.free(src_dir_path);
 
+        // Absolute path of the target file, used for resolved-import comparison.
+        const target_abs = try std.fs.path.resolve(self.allocator, &.{ self.project_root, rel_path });
+        defer self.allocator.free(target_abs);
+
         var src_dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_dir_path, .{ .iterate = true }) catch return &.{};
         defer src_dir.close(std.Io.Threaded.global_single_threaded.io());
-
-        // Derive the stem (filename without .zig) and @import pattern to search for.
-        const basename = std.fs.path.basename(rel_path);
-        const stem = if (std.mem.endsWith(u8, basename, ".zig")) basename[0 .. basename.len - 4] else basename;
-
-        // Build the import pattern: @import("stem.zig") or @import("../stem.zig")
-        const import_pattern = try std.fmt.allocPrint(self.allocator, "@import(\"{s}.zig\")", .{stem});
-        defer self.allocator.free(import_pattern);
 
         var found: std.ArrayList([]const u8) = .empty;
         errdefer {
@@ -1092,7 +1106,7 @@ pub const SyncProcessor = struct {
             defer self.allocator.free(full_path);
 
             // Skip the file itself.
-            if (std.mem.endsWith(u8, full_path, rel_path)) continue;
+            if (std.mem.eql(u8, full_path, target_abs)) continue;
 
             const content = blk: {
                 const io = std.Io.Threaded.global_single_threaded.io();
@@ -1100,7 +1114,10 @@ pub const SyncProcessor = struct {
             };
             defer self.allocator.free(content);
 
-            if (std.mem.indexOf(u8, content, import_pattern) != null) {
+            // Resolve each @import("...zig") relative to the importer's directory
+            // and check for an exact absolute-path match against the target.
+            const importer_dir = std.fs.path.dirname(full_path) orelse self.project_root;
+            if (try fileImportsTarget(self.allocator, content, importer_dir, target_abs)) {
                 const rel = try std.fmt.allocPrint(self.allocator, "src/{s}", .{entry.path});
                 try found.append(self.allocator, rel);
             }
@@ -1114,6 +1131,131 @@ pub const SyncProcessor = struct {
         }.lessThan);
 
         return found.toOwnedSlice(self.allocator);
+    }
+
+    /// Returns true if `content` contains any @import("...zig") that resolves to
+    /// `target_abs` when interpreted relative to `importer_dir`.
+    fn fileImportsTarget(
+        allocator: std.mem.Allocator,
+        content: []const u8,
+        importer_dir: []const u8,
+        target_abs: []const u8,
+    ) !bool {
+        const needle = "@import(\"";
+        var rest = content;
+        while (std.mem.indexOf(u8, rest, needle)) |start| {
+            rest = rest[start + needle.len ..];
+            const end = std.mem.indexOfScalar(u8, rest, '"') orelse break;
+            const import_path = rest[0..end];
+            rest = rest[end + 1 ..];
+
+            // Only resolve relative .zig imports; skip package names like "std".
+            if (!std.mem.endsWith(u8, import_path, ".zig")) continue;
+
+            const resolved = try std.fs.path.resolve(allocator, &.{ importer_dir, import_path });
+            defer allocator.free(resolved);
+
+            if (std.mem.eql(u8, resolved, target_abs)) return true;
+        }
+        return false;
+    }
+
+    /// Walk `src/` once and build an in-memory DepGraph of @import relationships.
+    ///
+    /// Call this once before a multi-file sync run.  The graph is then used by
+    /// `processFile` to answer "who imports this file?" in O(1) instead of
+    /// walking the directory tree per file.
+    ///
+    /// Returns an owned DepGraph; caller must call `.deinit()` when done
+    /// (or store it in `self.dep_graph` and rely on `deinit()`).
+    ///
+    /// Do NOT call from `init` — it must be called explicitly so single-file
+    /// mode can skip it and fall back to `findReverseDeps`.
+    pub fn buildDepGraph(self: *SyncProcessor) !dep_graph_mod.DepGraph {
+        const io = std.Io.Threaded.global_single_threaded.io();
+        const src_dir_path = try std.fs.path.join(self.allocator, &.{ self.project_root, "src" });
+        defer self.allocator.free(src_dir_path);
+
+        var dg = dep_graph_mod.DepGraph.init(self.allocator);
+        errdefer dg.deinit();
+
+        var src_dir = std.Io.Dir.openDirAbsolute(io, src_dir_path, .{ .iterate = true }) catch return dg;
+        defer src_dir.close(io);
+
+        var walker = src_dir.walk(self.allocator) catch return dg;
+        defer walker.deinit();
+
+        while (try walker.next(io)) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+            if (common.isTestPath(entry.path)) continue;
+
+            const full_path = try std.fs.path.join(self.allocator, &.{ src_dir_path, entry.path });
+            defer self.allocator.free(full_path);
+
+            // Repo-relative path for this importer (e.g. "src/foo/bar.zig").
+            const importer_rel = try std.fmt.allocPrint(self.allocator, "src/{s}", .{entry.path});
+            defer self.allocator.free(importer_rel);
+
+            const content = std.Io.Dir.cwd().readFileAlloc(
+                io,
+                full_path,
+                self.allocator,
+                .limited(1024 * 1024),
+            ) catch continue;
+            defer self.allocator.free(content);
+
+            // Extract all @import("...zig") literals and resolve to repo-relative paths.
+            var targets: std.ArrayList([]const u8) = .empty;
+            errdefer {
+                for (targets.items) |t| self.allocator.free(t);
+                targets.deinit(self.allocator);
+            }
+
+            const importer_dir = std.fs.path.dirname(full_path) orelse self.project_root;
+            const needle = "@import(\"";
+            var rest = content;
+            while (std.mem.indexOf(u8, rest, needle)) |start| {
+                rest = rest[start + needle.len ..];
+                const end = std.mem.indexOfScalar(u8, rest, '"') orelse break;
+                const import_literal = rest[0..end];
+                rest = rest[end + 1 ..];
+
+                if (!std.mem.endsWith(u8, import_literal, ".zig")) continue;
+
+                const resolved_abs = std.fs.path.resolve(
+                    self.allocator,
+                    &.{ importer_dir, import_literal },
+                ) catch continue;
+                defer self.allocator.free(resolved_abs);
+
+                // Convert to repo-relative path if it's inside the project root.
+                if (!std.mem.startsWith(u8, resolved_abs, self.project_root)) continue;
+                var rel = resolved_abs[self.project_root.len..];
+                // Strip leading separator.
+                if (rel.len > 0 and rel[0] == std.fs.path.sep) rel = rel[1..];
+                if (rel.len == 0) continue;
+
+                const owned_rel = self.allocator.dupe(u8, rel) catch continue;
+                targets.append(self.allocator, owned_rel) catch {
+                    self.allocator.free(owned_rel);
+                };
+            }
+
+            const targets_slice = targets.toOwnedSlice(self.allocator) catch {
+                for (targets.items) |t| self.allocator.free(t);
+                targets.deinit(self.allocator);
+                continue; // skip this file on allocation failure
+            };
+
+            // setDeps takes ownership of targets_slice and its elements.
+            dg.setDeps(importer_rel, targets_slice) catch {
+                for (targets_slice) |t| self.allocator.free(t);
+                self.allocator.free(targets_slice);
+            };
+        }
+
+        return dg;
     }
 
     /// Find cross-language equivalent files for `rel_path`.

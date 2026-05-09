@@ -5,6 +5,8 @@
     "language": "zig"
   },
   "comment": " TreeSitterPlugin — universal AST parser using tree-sitter for non-Zig languages.\n\n This plugin wraps the tree-sitter C library to parse Python, C++, Rust, Go,\n TypeScript, PHP, and JavaScript.\n\n Usage:\n   const ts = @import(\"plugins/treesitter_plugin.zig\");\n   try registry.register(allocator, ts.pythonPlugin());",
+  "capabilities": ["plugin-system", "ast-indexing"],
+  "used_by": ["src/guidance/plugin_registry.zig"],
   "members": [
     {
       "type": "fn_decl",

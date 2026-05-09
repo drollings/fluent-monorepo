@@ -4,13 +4,17 @@
     "source": "src/llm/token_budget.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/main_tests.zig", "src/coral/root.zig", "src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig", "src/llm/token_budget_tests.zig"],
+  "capabilities": ["llm-client"],
+  "used_by": ["src/llm/context_compressor.zig", "src/llm/context_packer.zig", "src/llm/root.zig", "src/llm/token_budget_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "estimate",
       "match_hash": "8407ac41a3da910db5b342e8869db6586df86fbbbec60eea278c22d3bfe8f255",
       "signature": "fn estimate(text: []const u8) -> usize",
+      "params": [
+        { "name": "text", "type": "[]const u8" }
+      ],
       "returns": "usize",
       "is_pub": true,
       "line": 27
@@ -27,6 +31,10 @@
           "name": "estimateTokens",
           "match_hash": "0d8b1eb7413f42161a5ebdbdf14b16d043ff821c5b6b1293c91707878e4800b7",
           "signature": "fn estimateTokens(_: Self, text: []const u8) -> usize",
+          "params": [
+            { "name": "_", "type": "Self" },
+            { "name": "text", "type": "[]const u8" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 43
@@ -36,6 +44,10 @@
           "name": "estimateSliceTokens",
           "match_hash": "468d10528d96aae811b9695dde715249d6e88f47d8f7be32807b22ead2c057e7",
           "signature": "fn estimateSliceTokens(self: Self, texts: []const []const u8) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" },
+            { "name": "texts", "type": "[]const []const u8" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 48
@@ -45,6 +57,11 @@
           "name": "fits",
           "match_hash": "02beafaa6a96a55d94938e6f196c1be00f8ee470fb1955f8bae9fda9a3e4268b",
           "signature": "fn fits(_: Self, text: []const u8, budget_tokens: usize) -> bool",
+          "params": [
+            { "name": "_", "type": "Self" },
+            { "name": "text", "type": "[]const u8" },
+            { "name": "budget_tokens", "type": "usize" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 55
@@ -64,6 +81,9 @@
           "name": "validate",
           "match_hash": "b580c0140ec9eada047dd7f969f40cdfaec57caf3a0ee2a2ffaa5fc921430672",
           "signature": "fn validate(self: Self) -> void",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 79
@@ -73,6 +93,9 @@
           "name": "communityTokens",
           "match_hash": "09dee3f868917935c6c4c7b681e9985a7c4145d6f4986e98dce5622fd536c24f",
           "signature": "fn communityTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 84
@@ -82,6 +105,9 @@
           "name": "textTokens",
           "match_hash": "5f26199bb8d7ebafb5408204c120bcf5eef7b8eb77ea30defbe0c17d687e546f",
           "signature": "fn textTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 88
@@ -91,6 +117,9 @@
           "name": "entityTokens",
           "match_hash": "d8dfea313a3256ae25e67aaf24ccc59090eac04063430c9edde2ef7d7a36213a",
           "signature": "fn entityTokens(self: Self) -> usize",
+          "params": [
+            { "name": "self", "type": "Self" }
+          ],
           "returns": "usize",
           "is_pub": true,
           "line": 92

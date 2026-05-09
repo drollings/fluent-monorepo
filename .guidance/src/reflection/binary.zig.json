@@ -18,6 +18,11 @@
           "name": "encodeField",
           "match_hash": "77a79737658f22c42d5c2cf5fc7f95c589998274e7df36cfb9ccc6becc62faeb",
           "signature": "fn encodeField(T: type, value: T, writer: *std.Io.Writer) -> void",
+          "params": [
+            { "name": "T", "type": "type" },
+            { "name": "value", "type": "T" },
+            { "name": "writer", "type": "*std.Io.Writer" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 5
@@ -27,6 +32,11 @@
           "name": "decodeField",
           "match_hash": "7ae3aba33bb2ddefc78dfa95f59b7750f3ab52c15073202eac91ba66c4e644d1",
           "signature": "fn decodeField(T: type, reader: *std.Io.Reader, allocator: std.mem.Allocator) -> T",
+          "params": [
+            { "name": "T", "type": "type" },
+            { "name": "reader", "type": "*std.Io.Reader" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "T",
           "is_pub": true,
           "line": 49
@@ -36,6 +46,9 @@
           "name": "fieldWireSize",
           "match_hash": "cd4dbaef51dd3c85ea41a6389ff30d31b4541b5890e6033ca0e5f414a799a323",
           "signature": "fn fieldWireSize(T: type) -> ?usize",
+          "params": [
+            { "name": "T", "type": "type" }
+          ],
           "returns": "?usize",
           "is_pub": true,
           "line": 107

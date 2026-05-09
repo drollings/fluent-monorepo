@@ -4,7 +4,8 @@
     "source": "src/common/types.zig",
     "language": "zig"
   },
-  "used_by": ["src/common/content_node.zig", "src/common/root.zig", "src/guidance/ast_parser.zig", "src/guidance/document_indexer.zig", "src/guidance/document_indexer_tests.zig", "src/guidance/hash.zig", "src/guidance/hash_tests.zig", "src/guidance/main.zig", "src/guidance/pattern.zig", "src/guidance/plugin.zig", "src/guidance/query_engine.zig", "src/guidance/ralph.zig", "src/guidance/scanner.zig", "src/guidance/schema_validator.zig", "src/guidance/skeleton.zig", "src/guidance/stage_builder.zig", "src/guidance/stage_builder_tests.zig", "src/guidance/staged.zig", "src/guidance/staged_tests.zig", "src/guidance/sync.zig", "src/guidance/sync_engine.zig", "src/guidance/types_tests.zig"],
+  "capabilities": ["coral-database"],
+  "used_by": ["src/common/content_node.zig", "src/common/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -59,6 +60,9 @@
       "name": "nodeIdFromInt",
       "match_hash": "da8ec643861ee8da6c0b7a159c97993f0df6ec68e694f50e84b5ca1edfe05be4",
       "signature": "fn nodeIdFromInt(i: i64) -> NodeId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
       "returns": "NodeId",
       "is_pub": true,
       "line": 17
@@ -68,6 +72,9 @@
       "name": "intFromNodeId",
       "match_hash": "2ce2dd243b59899c2e03589e9c3c13a5b7c179e63ab07cddabf927366a571ecf",
       "signature": "fn intFromNodeId(id: NodeId) -> i64",
+      "params": [
+        { "name": "id", "type": "NodeId" }
+      ],
       "returns": "i64",
       "is_pub": true,
       "line": 22
@@ -77,6 +84,9 @@
       "name": "sessionIdFromInt",
       "match_hash": "d8d7bc7408997d26feb83c178db569a18ca9bfee38861b67bcc81164c02260bc",
       "signature": "fn sessionIdFromInt(i: i64) -> SessionId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
       "returns": "SessionId",
       "is_pub": true,
       "line": 27
@@ -86,6 +96,9 @@
       "name": "intFromSessionId",
       "match_hash": "96e79a9b2013cc135d9df264c468d6fd4d1cafe26c3ac99265fd3d91df3cc84c",
       "signature": "fn intFromSessionId(id: SessionId) -> i64",
+      "params": [
+        { "name": "id", "type": "SessionId" }
+      ],
       "returns": "i64",
       "is_pub": true,
       "line": 32
@@ -95,6 +108,9 @@
       "name": "targetIdFromInt",
       "match_hash": "45457661b9c35ca6a7d4a821da6a0417391ff2df7b283830693c21776dcbbf29",
       "signature": "fn targetIdFromInt(i: i64) -> TargetId",
+      "params": [
+        { "name": "i", "type": "i64" }
+      ],
       "returns": "TargetId",
       "is_pub": true,
       "line": 37
@@ -104,6 +120,9 @@
       "name": "intFromTargetId",
       "match_hash": "5fb4af2f92867f0f56a38f1c327bb990e1ae6b948c629d376a33166610e60283",
       "signature": "fn intFromTargetId(id: TargetId) -> i64",
+      "params": [
+        { "name": "id", "type": "TargetId" }
+      ],
       "returns": "i64",
       "is_pub": true,
       "line": 42

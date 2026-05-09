@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " comments/core.zig — Merged doc comment processing for guidance.\n\n Consolidates parser, checker, and cache into a single module for\n clarity and to enforce the max_comment_len constant in one place.",
-  "used_by": ["src/guidance/comments/core_tests.zig", "src/guidance/comments/sync.zig"],
+  "used_by": ["src/guidance/comments/core_tests.zig", "src/guidance/comments/sync.zig", "src/guidance/sync.zig"],
   "members": [
     {
       "type": "struct",
@@ -19,6 +19,10 @@
           "name": "deinit",
           "match_hash": "3169f66bb3870bfbf531860a6d41ec37e949ceb27a2bd481862422a2475ba93a",
           "signature": "fn deinit(self: DocComment, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "DocComment" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 20
@@ -31,6 +35,10 @@
       "name": "parseDocComment",
       "match_hash": "f9f92e2e97fbd4eeaff1c6b53c0aa9508bc493a97d7f90973e09bc2ab2aa1646",
       "signature": "fn parseDocComment(allocator: std.mem.Allocator, raw: []const u8) -> DocComment",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "raw", "type": "[]const u8" }
+      ],
       "returns": "DocComment",
       "is_pub": true,
       "line": 27
@@ -40,6 +48,10 @@
       "name": "isWellFormedComment",
       "match_hash": "93731d94c2171be7f0655c1527fe1da86d64f4ab9188a795b09dedaa195e86fc",
       "signature": "fn isWellFormedComment(comment: []const u8, code_context: []const u8) -> bool",
+      "params": [
+        { "name": "comment", "type": "[]const u8" },
+        { "name": "code_context", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 49
@@ -49,6 +61,11 @@
       "name": "checkCommentStaleness",
       "match_hash": "37744bc224799b7a49a582d882442b485dc4058abdd6fcef231cabc10875cb6b",
       "signature": "fn checkCommentStaleness(existing_comment: []const u8, member: types.Member, source_context: []const u8) -> CheckResult",
+      "params": [
+        { "name": "existing_comment", "type": "[]const u8" },
+        { "name": "member", "type": "types.Member" },
+        { "name": "source_context", "type": "[]const u8" }
+      ],
       "returns": "CheckResult",
       "is_pub": true,
       "line": 83
@@ -58,6 +75,10 @@
       "name": "isHashStale",
       "match_hash": "b5c72a8c04c36d5a6cfeea7b281fc127c195ce018ca623db0a7a76bd0fb43be8",
       "signature": "fn isHashStale(stored_hash: ?[]const u8, current_hash: ?[]const u8) -> bool",
+      "params": [
+        { "name": "stored_hash", "type": "?[]const u8" },
+        { "name": "current_hash", "type": "?[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 100
@@ -82,6 +103,9 @@
           "name": "init",
           "match_hash": "f77a63b590f41f4792ad1c26b7a5913c1404430d53cb9916bbd23b066f7e86bf",
           "signature": "fn init(allocator: std.mem.Allocator) -> CommentCache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "CommentCache",
           "is_pub": true,
           "line": 125
@@ -91,6 +115,9 @@
           "name": "deinit",
           "match_hash": "109474b26570e353340963be8aec74404577659de45afbcbc486b5e291482ef6",
           "signature": "fn deinit(self: *CommentCache) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 129
@@ -100,6 +127,12 @@
           "name": "isValid",
           "match_hash": "24a4636e7116dc42648d2103d99cbe96b43ed5513f9fe39a5c96be8b88d6248d",
           "signature": "fn isValid(self: *const CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8) -> bool",
+          "params": [
+            { "name": "self", "type": "*const CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 139
@@ -109,6 +142,12 @@
           "name": "get",
           "match_hash": "89f702c6cda31ee6821a7345fa644b2e0b87a1db0d4c350e455469361464dbfa",
           "signature": "fn get(self: *const CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8) -> ?[]const u8",
+          "params": [
+            { "name": "self", "type": "*const CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" }
+          ],
           "returns": "?[]const u8",
           "is_pub": true,
           "line": 151
@@ -118,6 +157,13 @@
           "name": "put",
           "match_hash": "af3b0e45533c5ae513c70f5c3a06a6dafd9f3046a6c7e60e218559bc95fffbac",
           "signature": "fn put(self: *CommentCache, file_path: []const u8, member_name: []const u8, match_hash: []const u8, comment: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" },
+            { "name": "file_path", "type": "[]const u8" },
+            { "name": "member_name", "type": "[]const u8" },
+            { "name": "match_hash", "type": "[]const u8" },
+            { "name": "comment", "type": "[]const u8" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 164
@@ -127,6 +173,10 @@
           "name": "invalidateFile",
           "match_hash": "29be69d87c7ae14e6aad8a7441216d107a72caf129c85cd308a2dba6216f1a4b",
           "signature": "fn invalidateFile(self: *CommentCache, file_path: []const u8) -> void",
+          "params": [
+            { "name": "self", "type": "*CommentCache" },
+            { "name": "file_path", "type": "[]const u8" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 192

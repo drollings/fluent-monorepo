@@ -19,6 +19,11 @@
       "name": "parseCommonArgs",
       "match_hash": "477daa7c5586aea94d2fa1ad61b817bb0cb944838d403657117a800fdd26ce62",
       "signature": "fn parseCommonArgs(args: []const []const u8, positional_buf: *std.ArrayListUnmanaged([]const u8), allocator: std.mem.Allocator) -> CommonArgs",
+      "params": [
+        { "name": "args", "type": "[]const []const u8" },
+        { "name": "positional_buf", "type": "*std.ArrayListUnmanaged([]const u8)" },
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
       "returns": "CommonArgs",
       "is_pub": true,
       "line": 35

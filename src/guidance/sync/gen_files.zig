@@ -28,6 +28,7 @@ const json_store_mod = @import("json_store.zig");
 const comment_inserter_mod = @import("../comments/inserter.zig");
 const sync_mod = @import("../sync.zig");
 const marker_mod = @import("marker.zig");
+const fast_snapshot_mod = @import("fast_snapshot.zig");
 const llm = @import("llm");
 const query_engine_mod = @import("../query_engine.zig");
 const schema_validator_mod = @import("../schema_validator.zig");
@@ -852,6 +853,25 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
             // Note: `p` is now owned by `all_builtin`; `files` slice freed above.
         }
 
+        // Step 4.3: Load binary snapshot for hash-based skip optimization.
+        const snap_path = try std.fs.path.join(allocator, &.{ paths.json_dir, ".snap" });
+        defer allocator.free(snap_path);
+        const git_head_now = fast_snapshot_mod.getGitHead(paths.workspace, allocator);
+        var maybe_snap: ?fast_snapshot_mod.FastSnapshot = if (!ga.force)
+            fast_snapshot_mod.FastSnapshot.read(allocator, snap_path)
+        else
+            null;
+        defer if (maybe_snap) |*s| s.deinit();
+
+        // Step 4.5: Use hash-based skip only when git HEAD matches the snapshot.
+        const use_hash_skip: bool = blk: {
+            if (ga.force) break :blk false;
+            const s = maybe_snap orelse break :blk false;
+            const cur_head = git_head_now orelse break :blk false;
+            const stored_head = s.git_head orelse break :blk false;
+            break :blk std.mem.eql(u8, &cur_head, &stored_head);
+        };
+
         // Filter to stale only.
         var stale: std.ArrayList([]const u8) = .empty;
         defer stale.deinit(allocator);
@@ -865,7 +885,12 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
                 src_abs,
             );
             defer allocator.free(json_path);
-            const needs_processing = ga.force or marker_mod.fileNeedsProcessing(src_abs, json_path);
+            // Step 3.5 + 4.5: Use content-hash secondary gate when snapshot is available.
+            const stored_hash: u64 = if (use_hash_skip)
+                (maybe_snap orelse unreachable).lookupStoredHash(src_abs)
+            else
+                0;
+            const needs_processing = ga.force or marker_mod.fileNeedsProcessingHash(src_abs, json_path, stored_hash);
             if (needs_processing) {
                 try stale.append(allocator, src_abs);
                 // Classify reason: missing JSON or source newer than JSON
@@ -898,6 +923,24 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
             try runBuiltinLanguagePipeline(allocator, &cfg, &processor, "zig", stale.items, all_builtin.items, paths.json_dir, ga);
         } else {
             stepPrint("gen: all {d} zig files up to date\n", .{all_builtin.items.len});
+        }
+
+        // Step 4.4: Build and write updated snapshot after processing completes.
+        if (!ga.dry_run) {
+            var builder = fast_snapshot_mod.SnapshotBuilder.init(allocator);
+            defer builder.deinit();
+            for (all_builtin.items) |src_abs| {
+                if (marker_mod.fileRecord(src_abs)) |rec| {
+                    builder.addFile(src_abs, rec.src_mtime, rec.content_hash, &.{}) catch {};
+                }
+            }
+            var new_snap = builder.build(git_head_now) catch null;
+            if (new_snap) |*s| {
+                defer s.deinit();
+                s.write(snap_path) catch |err| {
+                    if (ga.verbose) std.debug.print("warning: snapshot write failed: {s}\n", .{@errorName(err)});
+                };
+            }
         }
     }
 
@@ -1436,6 +1479,14 @@ pub fn runBuiltinLanguagePipeline(
         } else {
             if (ga.verbose) std.debug.print("test:     skipped (no test command for {s})\n", .{language});
         }
+    }
+
+    // ── Build reverse-dependency index once for the full run ──────────────
+    // This converts per-file O(N) tree walks into O(1) map lookups.
+    // Only worthwhile for multi-file runs; single-file mode uses the
+    // findReverseDeps fallback inside processFile.
+    if (processor.dep_graph == null) {
+        processor.dep_graph = processor.buildDepGraph() catch null;
     }
 
     // ── Per-file phases ───────────────────────────────────────────────────

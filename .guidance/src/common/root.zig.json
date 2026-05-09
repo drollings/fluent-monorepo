@@ -4,6 +4,5 @@
     "source": "src/common/root.zig",
     "language": "zig"
   },
-  "comment": " common — Module umbrella root.\n\n This is the root of the `common` build module.  It re-exports all public\n symbols from internal files for convenient access.\n\n LLM types (LlmClient, LlmConfig, LlmError, etc.) have been moved to\n the `llm` module.  Import via `@import(\"llm\")` instead.\n\n Additional structured sub-module namespaces:\n   common.embeddings — EmbeddingProvider and backends",
-  "used_by": ["src/llm/root_tests.zig", "src/vector/vector_db.zig", "src/vector/vector_db_tests.zig"]
+  "comment": " common — Module umbrella root.\n\n This is the root of the `common` build module.  It re-exports all public\n symbols from internal files for convenient access.\n\n LLM types (LlmClient, LlmConfig, LlmError, etc.) have been moved to\n the `llm` module.  Import via `@import(\"llm\")` instead.\n\n Additional structured sub-module namespaces:\n   common.embeddings — EmbeddingProvider and backends"
 }

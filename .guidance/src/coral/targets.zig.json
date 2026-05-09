@@ -4,6 +4,7 @@
     "source": "src/coral/targets.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "target-registry", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/executor.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -19,6 +20,9 @@
       "name": "lookupTargetDef",
       "match_hash": "2260161376c2a9dda04e7ea620df236b63ce1599ccceaa9761cf58f4f9a845a5",
       "signature": "fn lookupTargetDef(name: []const u8) -> ?*const TargetDef",
+      "params": [
+        { "name": "name", "type": "[]const u8" }
+      ],
       "returns": "?*const TargetDef",
       "is_pub": true,
       "line": 127
@@ -37,6 +41,9 @@
       "name": "topoSort",
       "match_hash": "2a9badd3020aa7c85709325d4f589f1e00c6395be82586f71d626d8034f4a8ec",
       "signature": "fn topoSort(allocator: std.mem.Allocator) -> []const []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" }
+      ],
       "returns": "[]const []const u8",
       "is_pub": true,
       "line": 145

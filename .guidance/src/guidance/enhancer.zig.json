@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " AI Docstring Enhancer for Zig guidance generation.\n\n Mirrors Python's AIDocstringEnhancer class in guidance.py.\n Generates descriptions (≤240 chars) for functions, structs, and files\n by calling the configured LLM endpoint.  The enhancer is opt-in: sync\n runs without it by default; pass --upgrade-comments or --regen_comments\n to activate.\n\n Behaviour mirrors Python AIDocstringEnhancer:\n   - infill_comments: enhance only new members or those whose API hash changed.\n   - regen_comments: exhaustive mode — regenerate for all members, keep best score.\n   - File-level documentation is generated from the module name + member list.\n   - Tags (e.g. #ring-buffer) are extracted from the last line \"Tags: #a #b\".\n   - Hallucination guard: responses containing terms absent from source are rejected.\n\n ## Memory Ownership\n\n   - Enhancer: Owns client (LlmClient) and owned_url; call deinit() to release.\n   - Enhancer.init(): Allocates LlmClient internally; caller must call enhancer.deinit().\n   - EnrichmentResult: Caller-owns comment and tags; free with result.deinit().\n   - SemanticPhrasesResult: Caller-owns phrases; free with result.deinit().\n   - All enhance* methods: Return owned strings (caller must free with allocator).",
-  "used_by": ["src/guidance/enhancer_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig"],
+  "used_by": ["src/guidance/comments/sync.zig", "src/guidance/enhancer_tests.zig", "src/guidance/query_engine.zig", "src/guidance/sync.zig", "src/guidance/sync/gen_files.zig"],
   "members": [
     {
       "type": "struct",

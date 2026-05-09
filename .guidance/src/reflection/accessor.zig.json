@@ -4,6 +4,7 @@
     "source": "src/reflection/accessor.zig",
     "language": "zig"
   },
+  "capabilities": ["reflection"],
   "used_by": ["src/reflection/root.zig", "src/reflection/sql.zig", "src/reflection/validate.zig"],
   "members": [
     {
@@ -164,6 +165,9 @@
           "name": "fromTypeTag",
           "match_hash": "3c808e335ddf27b2fdd30a034248cbd8d4ec0a53dcedcc95511db3e57f6cbb74",
           "signature": "fn fromTypeTag(tag: TypeTag) -> SqlType",
+          "params": [
+            { "name": "tag", "type": "TypeTag" }
+          ],
           "returns": "SqlType",
           "is_pub": true,
           "line": 63
@@ -173,6 +177,9 @@
           "name": "toString",
           "match_hash": "ff496a08fbd50a1675f351dc20d967790c2508d8f875ee8136843f1f1dd63755",
           "signature": "fn toString(self: SqlType) -> []const u8",
+          "params": [
+            { "name": "self", "type": "SqlType" }
+          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 81
@@ -200,6 +207,10 @@
           "name": "isPresentIn",
           "match_hash": "1b27df02713cd4a68571cd4fc8fc8dc45d8680711d33dcb72684d877f60cb679",
           "signature": "fn isPresentIn(self: *const Accessor, stored: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "*const Accessor" },
+            { "name": "stored", "type": "SchemaVersion" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 237
@@ -212,6 +223,9 @@
       "name": "Editable",
       "match_hash": "05b17cb454d4881e95ba4a472ded9dd68d4fa1f9bb3019c9a0a909f8aff5c266",
       "signature": "fn Editable(Host: type) -> type",
+      "params": [
+        { "name": "Host", "type": "type" }
+      ],
       "returns": "type",
       "is_pub": true,
       "line": 259
@@ -221,6 +235,11 @@
       "name": "describeSchemaFromAccessors",
       "match_hash": "84bf637500d1e205b5815874f9f9da16d7d559ba7c6cbe63a74da5a3706a28bf",
       "signature": "fn describeSchemaFromAccessors(allocator: std.mem.Allocator, type_name: []const u8, accessors_slice: []const Accessor) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "type_name", "type": "[]const u8" },
+        { "name": "accessors_slice", "type": "[]const Accessor" }
+      ],
       "returns": "[]const u8",
       "is_pub": true,
       "line": 546
@@ -230,6 +249,11 @@
       "name": "describeFieldToJson",
       "match_hash": "05f043eb9625bdf99421a56d2c44cfc59c13eee7d195b8afd09883e1517ec822",
       "signature": "fn describeFieldToJson(writer, accessor: Accessor, indent: usize) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "accessor", "type": "Accessor" },
+        { "name": "indent", "type": "usize" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 610
@@ -239,6 +263,9 @@
       "name": "typeTagToJsonSchema",
       "match_hash": "87015b364c8feae0bc0f637a7d1a609f510ff537c4243c9914e429cbf49d2bdf",
       "signature": "fn typeTagToJsonSchema(tag: TypeTag) -> []const u8",
+      "params": [
+        { "name": "tag", "type": "TypeTag" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 791
@@ -248,6 +275,11 @@
       "name": "describeRoleSet",
       "match_hash": "0b80af0cd4add009e7fd1b3ac436dbc06d9f6ec8a87444ddb1304f6fc88e438c",
       "signature": "fn describeRoleSet(writer, perms: RolePermissions, operation: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "perms", "type": "RolePermissions" },
+        { "name": "operation", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 810
@@ -257,6 +289,10 @@
       "name": "writeEscapedJsonString",
       "match_hash": "f5606b0ed6fc1642e7992b5b438afa99c202ab1267122b284b04815ce87e08a6",
       "signature": "fn writeEscapedJsonString(writer, s: []const u8) -> void",
+      "params": [
+        { "name": "writer" },
+        { "name": "s", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 830
@@ -273,6 +309,11 @@
           "name": "init",
           "match_hash": "d3ca03aeaa32e9b1ae0655cb2c874de4e28e8d918bb493caec18875d2f3e33fe",
           "signature": "fn init(allocator: std.mem.Allocator, buffer: []u8, accessors: []const Accessor) -> DynamicEditable",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "buffer", "type": "[]u8" },
+            { "name": "accessors", "type": "[]const Accessor" }
+          ],
           "returns": "DynamicEditable",
           "is_pub": true,
           "line": 856
@@ -282,6 +323,9 @@
           "name": "deinit",
           "match_hash": "7e769d44cb8e82658b3388befeff470033ae86ca7f6a733531cdeec46df9da01",
           "signature": "fn deinit(self: *DynamicEditable) -> void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 874
@@ -291,6 +335,9 @@
           "name": "releaseAll",
           "match_hash": "7e913a64647eb61804335d133274c5f027f4c563e6320869c8903c135428af04",
           "signature": "fn releaseAll(self: *DynamicEditable) -> void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 879
@@ -300,6 +347,12 @@
           "name": "set",
           "match_hash": "c227b6629f1bd4c77acaca903164c2c2df6d0981a0485f3509e762d592ca27c8",
           "signature": "fn set(self: *DynamicEditable, key: []const u8, value: []const u8, role: Role) -> anyerror!void",
+          "params": [
+            { "name": "self", "type": "*DynamicEditable" },
+            { "name": "key", "type": "[]const u8" },
+            { "name": "value", "type": "[]const u8" },
+            { "name": "role", "type": "Role" }
+          ],
           "returns": "anyerror!void",
           "is_pub": true,
           "line": 889
@@ -309,6 +362,11 @@
           "name": "get",
           "match_hash": "6dcb2ee44137747884f5a739d0867c2fd8dc3ba519d3756d239c8729674b7c8f",
           "signature": "fn get(self: *const DynamicEditable, key: []const u8, role: Role) -> anyerror![]const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "key", "type": "[]const u8" },
+            { "name": "role", "type": "Role" }
+          ],
           "returns": "anyerror![]const u8",
           "is_pub": true,
           "line": 901
@@ -318,6 +376,11 @@
           "name": "describeSchema",
           "match_hash": "efde8665034dff047a317ae01e54078d633297a3fb0933bb3370942e5d60cf45",
           "signature": "fn describeSchema(self: *const DynamicEditable, allocator: std.mem.Allocator, type_name: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "type_name", "type": "[]const u8" }
+          ],
           "returns": "[]const u8",
           "is_pub": true,
           "line": 913
@@ -327,6 +390,10 @@
           "name": "fieldNames",
           "match_hash": "caec772724e22998e5ce0c2652ae9e405c0bca2423a80ba15152f69781626ca2",
           "signature": "fn fieldNames(self: *const DynamicEditable, allocator: std.mem.Allocator) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 918
@@ -336,6 +403,10 @@
           "name": "getFieldMeta",
           "match_hash": "1a2cd8b19edc37dcc1ed8ee6aa5092403c9b003975f7d49cdb11fff9c85f80ca",
           "signature": "fn getFieldMeta(self: *const DynamicEditable, key: []const u8) -> ?FieldMeta",
+          "params": [
+            { "name": "self", "type": "*const DynamicEditable" },
+            { "name": "key", "type": "[]const u8" }
+          ],
           "returns": "?FieldMeta",
           "is_pub": true,
           "line": 927

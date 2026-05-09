@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " union_find.zig — Union-Find with path compression and union by size.\n\n Used by:\n - Connected component detection (before Louvain community detection)\n - Kruskal's MST (future)\n - Deduplication during graph construction\n\n §Implementation:\n - Path compression: `find()` flattens the tree in one traversal.\n - Union by size: attaches smaller tree under larger tree root.\n - Together these give amortised O(α(n)) per operation (near-constant).\n\n All memory is caller-managed via the provided allocator (typically an arena).",
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "members": [
     {
       "type": "struct",
@@ -18,6 +19,10 @@
           "name": "init",
           "match_hash": "32c29b12c57fa24ddac77890f9c1cae35997cb2b42118e47b6883266ce7e6775",
           "signature": "fn init(allocator: Allocator, n: u32) -> Self",
+          "params": [
+            { "name": "allocator", "type": "Allocator" },
+            { "name": "n", "type": "u32" }
+          ],
           "returns": "Self",
           "is_pub": true,
           "line": 28
@@ -27,6 +32,10 @@
           "name": "deinit",
           "match_hash": "7db69084248c2047dbdf43d95a36788c3ecb4e098b39a6efbc7b3d91fd28da2d",
           "signature": "fn deinit(self: *Self, allocator: Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "allocator", "type": "Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 37
@@ -36,6 +45,10 @@
           "name": "find",
           "match_hash": "0d6d024d96c62bbf63c5df47b6540d85a27342d1997bcad2db082fb1ae2676df",
           "signature": "fn find(self: *Self, x: u32) -> u32",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "x", "type": "u32" }
+          ],
           "returns": "u32",
           "is_pub": true,
           "line": 44
@@ -45,6 +58,11 @@
           "name": "@\"union\"",
           "match_hash": "2927e525eb9ab0e00a0cb98e06e19452d5bd9e31fb8092c393922a232d78fef6",
           "signature": "fn @\"union\"(self: *Self, a: u32, b: u32) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "a", "type": "u32" },
+            { "name": "b", "type": "u32" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 56
@@ -54,6 +72,11 @@
           "name": "connected",
           "match_hash": "2052e172efd11fa241e4ebd0a24448e2bebefc71d04b7d209932eb3276c4fc1b",
           "signature": "fn connected(self: *Self, a: u32, b: u32) -> bool",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "a", "type": "u32" },
+            { "name": "b", "type": "u32" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 74

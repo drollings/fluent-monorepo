@@ -60,6 +60,9 @@
           "name": "parse",
           "match_hash": "5ea319d85654798beaf464394649a0dd968a72f49fe633b61f2838b833cf6cb2",
           "signature": "fn parse(args: []const []const u8) -> IngestArgs",
+          "params": [
+            { "name": "args", "type": "[]const []const u8" }
+          ],
           "returns": "IngestArgs",
           "is_pub": true,
           "line": 53
@@ -69,6 +72,9 @@
           "name": "toBatchConfig",
           "match_hash": "5bb121dabc01f1cfda7503c574996e94215ab6678ad5a5acff370f61ce1eec95",
           "signature": "fn toBatchConfig(self: IngestArgs) -> BatchConfig",
+          "params": [
+            { "name": "self", "type": "IngestArgs" }
+          ],
           "returns": "BatchConfig",
           "is_pub": true,
           "line": 85
@@ -88,6 +94,9 @@
           "name": "init",
           "match_hash": "085217bef3f4e4b0ecba06dc7bde6e9417e629116b6df83f35616b4dfb74496b",
           "signature": "fn init(allocator: std.mem.Allocator) -> CheckpointStore",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "CheckpointStore",
           "is_pub": true,
           "line": 107
@@ -97,6 +106,9 @@
           "name": "deinit",
           "match_hash": "c8baec5b30c2b93433d10824461b0a4481eccd91a29976b51e3fed6ead2ae0c4",
           "signature": "fn deinit(self: *CheckpointStore) -> void",
+          "params": [
+            { "name": "self", "type": "*CheckpointStore" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 114
@@ -106,6 +118,10 @@
           "name": "save",
           "match_hash": "c0b9afbda523134af538e822869a44737c28a734b3ac184671c82d7f74a1a4d4",
           "signature": "fn save(self: *CheckpointStore, cp: Checkpoint) -> void",
+          "params": [
+            { "name": "self", "type": "*CheckpointStore" },
+            { "name": "cp", "type": "Checkpoint" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 122
@@ -115,6 +131,10 @@
           "name": "findLatest",
           "match_hash": "8e7ce320be5e58bf581150b27759109b6ad78d0c75cf8ae79974dbfd5d82e49d",
           "signature": "fn findLatest(self: *const CheckpointStore, source: []const u8) -> ?Checkpoint",
+          "params": [
+            { "name": "self", "type": "*const CheckpointStore" },
+            { "name": "source", "type": "[]const u8" }
+          ],
           "returns": "?Checkpoint",
           "is_pub": true,
           "line": 137

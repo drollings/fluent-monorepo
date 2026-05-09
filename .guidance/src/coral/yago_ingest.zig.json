@@ -4,6 +4,7 @@
     "source": "src/coral/yago_ingest.zig",
     "language": "zig"
   },
+  "capabilities": ["coral-ingestion", "coral-database", "coral-mcp", "coral-cache"],
   "used_by": ["src/coral/main.zig", "src/coral/main_tests.zig", "src/coral/root.zig"],
   "members": [
     {
@@ -11,6 +12,9 @@
       "name": "yagoNamespaceFilter",
       "match_hash": "cbf22e6673130cbfac124a0fc75902f1ae827668468f23a178920a9bd9021f4b",
       "signature": "fn yagoNamespaceFilter(triple: Triple) -> bool",
+      "params": [
+        { "name": "triple", "type": "Triple" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 34
@@ -35,6 +39,10 @@
           "name": "init",
           "match_hash": "31856b00ebb557a5a2bb3baee38551819aeb36dbb6b76d6b4ff3994dbb683d5f",
           "signature": "fn init(allocator: std.mem.Allocator, config: YagoConfig) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "config", "type": "YagoConfig" }
+          ],
           "returns": "Self",
           "is_pub": true,
           "line": 89
@@ -44,6 +52,12 @@
           "name": "ingestSource",
           "match_hash": "a200a0d80b6aa1237ccde914cfac686d585cb6cd94878777270ff8f2d68688fb",
           "signature": "fn ingestSource(self: *Self, source: []const u8, library: *Library, capability_inference: ?*CapabilityInference) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "source", "type": "[]const u8" },
+            { "name": "library", "type": "*Library" },
+            { "name": "capability_inference", "type": "?*CapabilityInference" }
+          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 99
@@ -53,6 +67,12 @@
           "name": "ingestFile",
           "match_hash": "a11dcb26aaeac95df157bb620029eabb61789ccd7d16067877f46ca13d90df3a",
           "signature": "fn ingestFile(self: *Self, path: []const u8, library: *Library, capability_inference: ?*CapabilityInference) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "path", "type": "[]const u8" },
+            { "name": "library", "type": "*Library" },
+            { "name": "capability_inference", "type": "?*CapabilityInference" }
+          ],
           "returns": "IngestStats",
           "is_pub": true,
           "line": 115
@@ -62,6 +82,12 @@
           "name": "runIngest",
           "match_hash": "176ca5e0e6967c1fd81adce5a9c8950798c47aac010f24d802e1a56e31c82db3",
           "signature": "fn runIngest(self: *Self, library: *Library, source: ?[]const u8, path: ?[]const u8) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "library", "type": "*Library" },
+            { "name": "source", "type": "?[]const u8" },
+            { "name": "path", "type": "?[]const u8" }
+          ],
           "returns": "IngestStats",
           "is_pub": false,
           "line": 132
@@ -71,6 +97,11 @@
           "name": "runDryRun",
           "match_hash": "c422116c96412fb4793564c29494c97ad4ecf340796219d0df7277f880225ff7",
           "signature": "fn runDryRun(self: *Self, source: ?[]const u8, path: ?[]const u8) -> IngestStats",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "source", "type": "?[]const u8" },
+            { "name": "path", "type": "?[]const u8" }
+          ],
           "returns": "IngestStats",
           "is_pub": false,
           "line": 149
@@ -83,6 +114,9 @@
       "name": "buildBaselineHierarchy",
       "match_hash": "8c98ee473b1a59771fe17bf29ed39ec05c3b7e03e043e384a46cb532eec6ddd8",
       "signature": "fn buildBaselineHierarchy(ci: *CapabilityInference) -> void",
+      "params": [
+        { "name": "ci", "type": "*CapabilityInference" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 184

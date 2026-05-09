@@ -73,10 +73,10 @@ The hybrid search combines:
 | `src/guidance/staged.zig` | 1.0 | defines_anchor |
 | `src/guidance/query_engine.zig` | 1.0 | defines_anchor |
 | `src/guidance/core/format.zig` | 1.0 | defines_anchor |
-| `src/common/root.zig` | 0.9 | used_by |
 | `src/guidance/main.zig` | 0.9 | used_by |
 | `src/guidance/mcp.zig` | 0.9 | used_by |
-| `src/guidance/scanner.zig` | 0.9 | used_by |
+| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
+| `src/guidance/query/strategy.zig` | 0.9 | used_by |
 | `src/guidance/staged_tests.zig` | 0.9 | used_by |
 | `src/vector/vector_db.zig` | 0.7 | keyword_overlap |
 

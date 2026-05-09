@@ -18,6 +18,10 @@
           "name": "acquire",
           "match_hash": "fb1d072ba08c6f5ffb60e82daadf4ffb12ca449a08e4be49d611d7a44747c796",
           "signature": "fn acquire(source_file: []const u8, allocator: std.mem.Allocator) -> FileLock",
+          "params": [
+            { "name": "source_file", "type": "[]const u8" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "FileLock",
           "is_pub": true,
           "line": 10
@@ -27,6 +31,9 @@
           "name": "release",
           "match_hash": "46fc075175fd5dcaddde5a9d37bd9109edaa0754f3ea82d9e281cbe47dc91b1d",
           "signature": "fn release(self: *FileLock) -> void",
+          "params": [
+            { "name": "self", "type": "*FileLock" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 42
@@ -36,6 +43,9 @@
           "name": "posixLock",
           "match_hash": "3b3547051112362092707f4c45b75f579c4c71b15a35649e387883d2515d7205",
           "signature": "fn posixLock(f: std.Io.File) -> bool",
+          "params": [
+            { "name": "f", "type": "std.Io.File" }
+          ],
           "returns": "bool",
           "is_pub": false,
           "line": 54
@@ -45,6 +55,9 @@
           "name": "posixUnlock",
           "match_hash": "b26a72ac484d4a6efaf12324c24a68f869cff43b77c1e6749d22be746ac8b7ee",
           "signature": "fn posixUnlock(f: std.Io.File) -> void",
+          "params": [
+            { "name": "f", "type": "std.Io.File" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 59

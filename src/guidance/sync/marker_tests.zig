@@ -195,3 +195,145 @@ test "testsCanBeSkipped: source newer than marker → false" {
     const files = [_][]const u8{src};
     try std.testing.expect(!marker_mod.testsCanBeSkipped(marker, &files));
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: contentHash, fileRecord, fileNeedsProcessingHash
+// ---------------------------------------------------------------------------
+
+test "contentHash: same content returns same hash" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+    const file_path = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "test.zig" });
+    defer std.testing.allocator.free(file_path);
+
+    const content = "pub fn hello() void {}";
+    try tmp.dir.writeFile(io, .{ .sub_path = "test.zig", .data = content });
+
+    const h1 = marker_mod.contentHash(file_path, 1024 * 1024);
+    const h2 = marker_mod.contentHash(file_path, 1024 * 1024);
+    try std.testing.expect(h1 != null);
+    try std.testing.expectEqual(h1.?, h2.?);
+}
+
+test "contentHash: different content returns different hash" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+
+    const path1 = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "a.zig" });
+    defer std.testing.allocator.free(path1);
+    const path2 = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "b.zig" });
+    defer std.testing.allocator.free(path2);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = "a.zig", .data = "pub fn foo() void {}" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "b.zig", .data = "pub fn bar() void {}" });
+
+    const h1 = marker_mod.contentHash(path1, 1024 * 1024);
+    const h2 = marker_mod.contentHash(path2, 1024 * 1024);
+    try std.testing.expect(h1 != null);
+    try std.testing.expect(h2 != null);
+    try std.testing.expect(h1.? != h2.?);
+}
+
+test "contentHash: missing file returns null" {
+    const h = marker_mod.contentHash("/nonexistent/path/file.zig", 1024 * 1024);
+    try std.testing.expect(h == null);
+}
+
+test "fileNeedsProcessingHash: returns false when mtime advanced but content unchanged" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "src.zig" });
+    defer std.testing.allocator.free(src_abs);
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "src.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+
+    const content = "pub fn stable() void {}";
+    try tmp.dir.writeFile(io, .{ .sub_path = "src.zig", .data = content });
+    const stored_hash = marker_mod.contentHash(src_abs, 1024 * 1024).?;
+
+    // Create JSON with mtime > src mtime initially.
+    try tmp.dir.writeFile(io, .{ .sub_path = "src.zig.json", .data = "{}" });
+    try marker_mod.touchFileNowPlusOne(json_abs);
+
+    // Now advance src mtime (same bytes — simulates git checkout).
+    try marker_mod.touchFileNow(src_abs);
+
+    // mtime says stale, but hash is unchanged — should return false.
+    try std.testing.expect(!marker_mod.fileNeedsProcessingHash(src_abs, json_abs, stored_hash));
+}
+
+test "fileNeedsProcessingHash: returns true when both mtime and hash changed" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "changed.zig" });
+    defer std.testing.allocator.free(src_abs);
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "changed.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = "changed.zig", .data = "pub fn old() void {}" });
+    const stored_hash = marker_mod.contentHash(src_abs, 1024 * 1024).?;
+    try tmp.dir.writeFile(io, .{ .sub_path = "changed.zig.json", .data = "{}" });
+
+    { const req = std.os.linux.timespec{ .sec = 0, .nsec = 50_000_000 }; _ = std.os.linux.nanosleep(&req, null); }
+    try tmp.dir.writeFile(io, .{ .sub_path = "changed.zig", .data = "pub fn new() void {}" });
+
+    try std.testing.expect(marker_mod.fileNeedsProcessingHash(src_abs, json_abs, stored_hash));
+}
+
+test "fileNeedsProcessingHash: returns true when stored_hash == 0 regardless of content" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "zero.zig" });
+    defer std.testing.allocator.free(src_abs);
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "zero.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = "zero.zig.json", .data = "{}" });
+    { const req = std.os.linux.timespec{ .sec = 0, .nsec = 50_000_000 }; _ = std.os.linux.nanosleep(&req, null); }
+    try tmp.dir.writeFile(io, .{ .sub_path = "zero.zig", .data = "pub fn foo() void {}" });
+
+    try std.testing.expect(marker_mod.fileNeedsProcessingHash(src_abs, json_abs, 0));
+}
+
+test "fileNeedsProcessingHash: returns false when mtime says fresh (fast path)" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.Io.Threaded.global_single_threaded.io();
+
+    const path_buf = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(path_buf);
+
+    const src_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "fresh.zig" });
+    defer std.testing.allocator.free(src_abs);
+    const json_abs = try std.fs.path.join(std.testing.allocator, &.{ path_buf, "fresh.zig.json" });
+    defer std.testing.allocator.free(json_abs);
+
+    try tmp.dir.writeFile(io, .{ .sub_path = "fresh.zig", .data = "pub fn foo() void {}" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "fresh.zig.json", .data = "{}" });
+    try marker_mod.touchFileNowPlusOne(json_abs);
+
+    try std.testing.expect(!marker_mod.fileNeedsProcessingHash(src_abs, json_abs, 0));
+}

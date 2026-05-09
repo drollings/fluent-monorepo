@@ -5,13 +5,17 @@
     "language": "zig"
   },
   "comment": " todo.zig — Work item lifecycle tracking for guidance.\n\n Directory layout:\n   .guidance/todo/\n   ├── YYYYMMDD_HHMMSS_<slug>/\n   │   ├── TODO.md        — human-written goal + acceptance criteria\n   │   ├── TRIAGE.md      — LLM-generated risk + steps + dependencies\n   │   ├── CHECKLIST.md   — LLM-generated checkboxes from TODO.md\n   │   ├── DIARY.md       — timestamped manual entries\n   │   └── COMMITTED.md   — auto-generated on successful commit\n   └── archive/           — abandoned work items",
-  "used_by": ["src/guidance/sync_engine.zig", "src/guidance/todo_tests.zig"],
+  "used_by": ["src/guidance/sync/commit.zig", "src/guidance/sync_engine.zig", "src/guidance/todo_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
       "name": "findCurrentWorkItem",
       "match_hash": "5c9548426490747014c31d099494859ed16a5ed6cd061e85c348a465b447218f",
       "signature": "fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 21
@@ -21,6 +25,10 @@
       "name": "slugify",
       "match_hash": "828aca300e0dea36f99a766e5072f29e19d911f3bae8e2224bdc47e3351917ea",
       "signature": "fn slugify(allocator: std.mem.Allocator, s: []const u8) -> []const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "s", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 63
@@ -30,6 +38,10 @@
       "name": "readFileOpt",
       "match_hash": "438041877dfdd0f436f3359427a905811e7522f833a2ec9f8266ca7159509c30",
       "signature": "fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "path", "type": "[]const u8" }
+      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 86
@@ -39,6 +51,11 @@
       "name": "cmdTodoNew",
       "match_hash": "bedd9754bd5857286aca1903a0d5d43742099bbc27ee0f7e04128d9443539fb1",
       "signature": "fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "description", "type": "[]const u8" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 98
@@ -48,6 +65,12 @@
       "name": "cmdTodoTriage",
       "match_hash": "421a0decb0decd6b402581681d55003e9504315f08ee9852bac90fab6f685f83",
       "signature": "fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" },
+        { "name": "api_url", "type": "[]const u8" },
+        { "name": "model", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 187
@@ -57,6 +80,12 @@
       "name": "cmdTodoChecklist",
       "match_hash": "55c66570f53240dfe83b3fe8f429863221d29cd7918fe94be2bea728573c52ff",
       "signature": "fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" },
+        { "name": "api_url", "type": "[]const u8" },
+        { "name": "model", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 284
@@ -66,6 +95,10 @@
       "name": "cmdTodoStatus",
       "match_hash": "41557f5feabe57e0f31a7ea2f8ba74ff73578055fdad25add62007cde7b4df30",
       "signature": "fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 374
@@ -75,6 +108,10 @@
       "name": "cmdTodoList",
       "match_hash": "1a5a6741ab9edae91df4ebf890dc2c64215da8dfaca2576137fef9e67bdd6aea",
       "signature": "fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 466
@@ -84,6 +121,10 @@
       "name": "cmdTodoAbandon",
       "match_hash": "8a897b00dbce7a96fe34ae3c2f8e39fd4209b0e5feb3408305dd6289f4ba4a26",
       "signature": "fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 524
@@ -93,6 +134,12 @@
       "name": "cmdDiaryEntry",
       "match_hash": "cd3b533f406fc148b6658ab879efc5415ad932c5ff4fc07bbb0349726e1a7868",
       "signature": "fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir: []const u8, author: []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "message", "type": "[]const u8" },
+        { "name": "todo_dir", "type": "[]const u8" },
+        { "name": "author", "type": "[]const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 554
@@ -110,6 +157,10 @@
       "name": "queryChecklistStatus",
       "match_hash": "51944ca54f0373ae5b43f4ff90d5540871869ed9167ddbb086b91d23d0445559",
       "signature": "fn queryChecklistStatus(allocator: std.mem.Allocator, todo_dir: []const u8) -> ChecklistStatus",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "todo_dir", "type": "[]const u8" }
+      ],
       "returns": "ChecklistStatus",
       "is_pub": true,
       "line": 607
@@ -119,6 +170,13 @@
       "name": "writeCommittedMd",
       "match_hash": "6787ec067c80b247c9070e8ef0d7215dd717e30675923da051059fe2d99a8d60",
       "signature": "fn writeCommittedMd(allocator: std.mem.Allocator, item_dir: []const u8, commit_hash: []const u8, summary: []const u8, changed_files: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "item_dir", "type": "[]const u8" },
+        { "name": "commit_hash", "type": "[]const u8" },
+        { "name": "summary", "type": "[]const u8" },
+        { "name": "changed_files", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 635
@@ -128,6 +186,14 @@
       "name": "callLlm",
       "match_hash": "2e39e2fff696a400c752c7308af96c49bd3c2746cbd8082201ffb984f27fc92e",
       "signature": "fn callLlm(allocator: std.mem.Allocator, api_url: []const u8, model: []const u8, prompt: []const u8, system: []const u8, max_tokens: usize) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "api_url", "type": "[]const u8" },
+        { "name": "model", "type": "[]const u8" },
+        { "name": "prompt", "type": "[]const u8" },
+        { "name": "system", "type": "[]const u8" },
+        { "name": "max_tokens", "type": "usize" }
+      ],
       "returns": "?[]const u8",
       "is_pub": false,
       "line": 696

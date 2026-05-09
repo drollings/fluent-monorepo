@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " schema_version.zig — Versioning primitives for the reflection schema.\n\n ## Purpose\n\n `SchemaVersion` labels each schema with a (major, minor) pair so that\n stored configurations, database rows, and WASM IPC payloads can be\n compared against the version that generated them.\n\n Compatibility semantics:\n   - **Same major** → compatible.  Fields added/removed with defaults are\n     backward-compatible within the same major version.\n   - **Different major** → breaking change.  Callers must run migration code\n     before reading or writing schema data.\n\n ## Usage in Accessor\n\n Each `Accessor` carries a `version_added` field (defaults to v1.0):\n\n   const my_accessor = Accessor{\n       .name = \"port\",\n       .version_added = SchemaVersion{ .major = 2 },\n       // ...\n   };\n\n Before reading a field, callers check `SchemaVersion.compatible`:\n\n   if (!accessor.version_added.compatible(stored_version)) return error.SchemaMismatch;\n\n Fields with a non-null `version_removed` should be treated as absent for\n schema versions >= `version_removed`.\n\n ## Usage in ConstraintVTable\n\n `ConstraintVTable.version` identifies the schema version the constraint was\n compiled for.  `ConstraintVTable.migrateFn`, if non-null, transforms data\n from an older schema to the current one:\n\n   if (vtable.migrateFn) |migrate| {\n       try migrate(from_version, to_version, allocator, field_ptr);\n   }",
+  "capabilities": ["reflection"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/constraint.zig", "src/reflection/root.zig", "src/reflection/schema_version_tests.zig"],
   "members": [
     {
@@ -19,6 +20,10 @@
           "name": "compatible",
           "match_hash": "30edc5ac9ae48c60a9bd595b22ae36d6c18ebf0ed597810fd6d89f43c16dfc3e",
           "signature": "fn compatible(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 55
@@ -28,6 +33,10 @@
           "name": "isNewerThan",
           "match_hash": "b7d5ec51daa48c8870d9ba6a89b2621a5c019d61a4a27b16e7cb3aa986d3f53e",
           "signature": "fn isNewerThan(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 60
@@ -37,6 +46,10 @@
           "name": "eql",
           "match_hash": "15b1b5087ea49b816e79d96bf2af6d6d8487a5dfda48e938b497695058b1598f",
           "signature": "fn eql(self: SchemaVersion, other: SchemaVersion) -> bool",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "other", "type": "SchemaVersion" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 66
@@ -46,6 +59,10 @@
           "name": "format",
           "match_hash": "5e8ce5fcb00bc1ecd38738b1eb8de7cba51692bf525cc4f620aa770e4d719f14",
           "signature": "fn format(self: SchemaVersion, writer) -> void",
+          "params": [
+            { "name": "self", "type": "SchemaVersion" },
+            { "name": "writer" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 71
@@ -58,6 +75,10 @@
       "name": "checkCompatible",
       "match_hash": "194f410bb9942fa06c4db647fb2bb705d1f4d569bb9b52bbc56b5437c40f0b57",
       "signature": "fn checkCompatible(stored: SchemaVersion, current: SchemaVersion) -> error{SchemaMismatch}!void",
+      "params": [
+        { "name": "stored", "type": "SchemaVersion" },
+        { "name": "current", "type": "SchemaVersion" }
+      ],
       "returns": "error{SchemaMismatch}!void",
       "is_pub": true,
       "line": 83

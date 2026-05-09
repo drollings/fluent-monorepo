@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " guidance — AST-guided SQLite vector search database generator.\n\n Produces:\n   .guidance/src/**/*.json  — Per-file structured metadata mirror\n   .guidance.db              — SQLite cosine-similarity database consumed by NullClaw's explain tool\n\n Usage:\n   guidance <command> [options]\n   guidance --help | --version\n\n ## Memory Ownership\n\n   - main() creates a DebugAllocator and passes the allocator to all subcommands.\n     All subcommand allocations are scoped to the command lifetime.\n   - No module-level state; all data flows through function parameters.\n   - stdout writes use buffered std.Io.Writer with explicit flush before return.",
-  "used_by": ["src/coral/main_tests.zig"],
+  "capabilities": ["explain-query", "config-system", "ast-indexing"],
   "members": [
     {
       "type": "enum",

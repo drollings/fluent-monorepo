@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " TreeSitterLoader — loads and manages tree-sitter language grammars.\n\n Each language grammar is exposed as a C function returning TSLanguage*.\n This module provides Zig wrappers for those functions.\n\n Grammars are loaded from tree-sitter-grammars/ directory, which contains\n submodules for each language parser.",
+  "capabilities": ["plugin-system"],
   "used_by": ["src/guidance/plugins/treesitter_loader_tests.zig", "src/guidance/plugins/treesitter_plugin.zig"],
   "members": [
     {

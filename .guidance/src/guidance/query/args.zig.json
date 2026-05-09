@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "comment": " query/args.zig — Argument parsing for explain and related query commands.\n\n Extracted from query_engine.zig (M2.2) to keep argument types separate from\n command dispatch logic.\n\n ## Memory Ownership\n\n   - ExplainArgs: Holds borrowed string slices from CLI argv; no deinit needed.\n   - QueryContext: Owns workspace, guidance_dir, db_path strings, and the ProjectConfig;\n     call deinit() to release all owned memory.\n   - FilterMode: Value type enum; no allocation.\n   - parseExplainArgs(): Returns ExplainArgs by value; no allocation.",
-  "used_by": ["src/common/cli.zig", "src/common/root.zig"],
+  "capabilities": ["config-system"],
+  "used_by": ["src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "enum",
@@ -55,6 +56,10 @@
           "name": "deinit",
           "match_hash": "2d7e071f651d501df3e4d0c45bca750e8a5aba97128d69b9841f75cb1ecae6c6",
           "signature": "fn deinit(self: *QueryContext, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "*QueryContext" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 60
@@ -67,6 +72,9 @@
       "name": "parseExplainArgs",
       "match_hash": "e5525e6e025d0ff38b5d295f14fed141e6ae8bae90b6ecc6a92f66e86e7a3140",
       "signature": "fn parseExplainArgs(args: []const []const u8) -> error{MissingArg}!ExplainArgs",
+      "params": [
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "error{MissingArg}!ExplainArgs",
       "is_pub": true,
       "line": 69

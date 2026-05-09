@@ -75,7 +75,7 @@ Graph edges between nodes are typed via `EdgeType`:
 - `src/coral/context_node_schema.zig` — Binary IPC schema, `BINARY_SCHEMA_VERSION`, `BinaryHeader`, `PayloadType`
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (60 files, auto-discovered)
+## Sources (40 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
@@ -83,26 +83,6 @@ Graph edges between nodes are typed via `EdgeType`:
 | `src/coral/db.zig` | 1.0 | defines_anchor |
 | `src/common/content_node.zig` | 0.9 | used_by |
 | `src/common/root.zig` | 0.9 | used_by |
-| `src/guidance/ast_parser.zig` | 0.9 | used_by |
-| `src/guidance/document_indexer.zig` | 0.9 | used_by |
-| `src/guidance/document_indexer_tests.zig` | 0.9 | used_by |
-| `src/guidance/hash.zig` | 0.9 | used_by |
-| `src/guidance/hash_tests.zig` | 0.9 | used_by |
-| `src/guidance/main.zig` | 0.9 | used_by |
-| `src/guidance/pattern.zig` | 0.9 | used_by |
-| `src/guidance/plugin.zig` | 0.9 | used_by |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/ralph.zig` | 0.9 | used_by |
-| `src/guidance/scanner.zig` | 0.9 | used_by |
-| `src/guidance/schema_validator.zig` | 0.9 | used_by |
-| `src/guidance/skeleton.zig` | 0.9 | used_by |
-| `src/guidance/stage_builder.zig` | 0.9 | used_by |
-| `src/guidance/stage_builder_tests.zig` | 0.9 | used_by |
-| `src/guidance/staged.zig` | 0.9 | used_by |
-| `src/guidance/staged_tests.zig` | 0.9 | used_by |
-| `src/guidance/sync.zig` | 0.9 | used_by |
-| `src/guidance/sync_engine.zig` | 0.9 | used_by |
-| `src/guidance/types_tests.zig` | 0.9 | used_by |
 | `src/coral/root.zig` | 0.9 | used_by |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/cli.zig` | 0.4 | path_heuristic |

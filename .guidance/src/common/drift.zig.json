@@ -19,6 +19,12 @@
           "name": "generateFollowUps",
           "match_hash": "e4fdbced20d5204c336e4d13475876e0e83cf92611ba045c63aa3790db83bb2f",
           "signature": "fn generateFollowUps(self: *const Self, arena: Allocator, needed: *const DynamicBitSet, available: *const DynamicBitSet) -> []const []const u8",
+          "params": [
+            { "name": "self", "type": "*const Self" },
+            { "name": "arena", "type": "Allocator" },
+            { "name": "needed", "type": "*const DynamicBitSet" },
+            { "name": "available", "type": "*const DynamicBitSet" }
+          ],
           "returns": "[]const []const u8",
           "is_pub": true,
           "line": 38
@@ -28,6 +34,10 @@
           "name": "isResolved",
           "match_hash": "57322d7938866a207f3606c225e17625fc92bfe1d4ae445bf0bbbf287566c4c3",
           "signature": "fn isResolved(needed: *const DynamicBitSet, available: *const DynamicBitSet) -> bool",
+          "params": [
+            { "name": "needed", "type": "*const DynamicBitSet" },
+            { "name": "available", "type": "*const DynamicBitSet" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 70

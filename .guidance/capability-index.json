@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "1778324568367866448",
+  "generated": "1778333505329540211",
   "capabilities": [
     {
       "name": "config-system",
@@ -1254,6 +1254,7 @@
         "searching",
         "parseFile",
         "functions",
+        "path_heuristic",
         "tree",
         "corresponding",
         "Query",

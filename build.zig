@@ -1039,6 +1039,8 @@ pub fn build(b: *std.Build) void {
 
     // -- src/guidance/sync: no named module imports --
     const guidance_sync_marker_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/marker_tests.zig"), .target = target, .optimize = optimize, .imports = &.{ .{ .name = "common", .module = common_module } } }) });
+    const guidance_sync_dep_graph_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/dep_graph_tests.zig"), .target = target, .optimize = optimize }) });
+    const guidance_sync_fast_snapshot_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/guidance/sync/fast_snapshot_tests.zig"), .target = target, .optimize = optimize }) });
 
     // -- src/llm: no named module imports --
     const llm_token_budget_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/llm/token_budget_tests.zig"), .target = target, .optimize = optimize }) });
@@ -1467,6 +1469,8 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_health_orphan_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_health_test_audit_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_sync_marker_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_sync_dep_graph_tests).step);
+    test_step.dependOn(&b.addRunArtifact(guidance_sync_fast_snapshot_tests).step);
     test_step.dependOn(&b.addRunArtifact(llm_token_budget_tests).step);
     test_step.dependOn(&b.addRunArtifact(rdf_lexer_tests).step);
     test_step.dependOn(&b.addRunArtifact(reflection_schema_version_tests).step);

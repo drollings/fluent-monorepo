@@ -143,5 +143,49 @@ pub fn touchFileNowPlusOne(target_path: []const u8) !void {
 }
 
 // ---------------------------------------------------------------------------
+// Content-hash helpers (Phase 3)
+// ---------------------------------------------------------------------------
+
+/// Return Wyhash of the file's content, or null if the file cannot be read.
+/// Reads up to `max_bytes` to bound memory usage on large generated files.
+pub fn contentHash(path: []const u8, max_bytes: usize) ?u64 {
+    const allocator = std.heap.smp_allocator;
+    const io = std.Io.Threaded.global_single_threaded.io();
+    const content = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(max_bytes)) catch return null;
+    defer allocator.free(content);
+    return std.hash.Wyhash.hash(0, content);
+}
+
+/// Compact per-file record used by the binary snapshot (Phase 4).
+pub const FileRecord = struct {
+    src_mtime: i128, // nanoseconds
+    content_hash: u64, // Wyhash(content)
+};
+
+/// Return a FileRecord for the given path, or null if stat or read fails.
+pub fn fileRecord(path: []const u8) ?FileRecord {
+    const mtime = fileMtime(path) orelse return null;
+    const h = contentHash(path, 10 * 1024 * 1024) orelse return null;
+    return .{ .src_mtime = mtime, .content_hash = h };
+}
+
+/// Like fileNeedsProcessing but also compares content hashes when mtime
+/// indicates a change.  If mtime advanced but hash is unchanged, the file
+/// is treated as up-to-date (e.g. `git checkout` restored original content).
+///
+/// `stored_hash` is the hash recorded at last successful sync (from snapshot
+/// or sidecar).  Pass 0 if unknown — falls back to mtime-only.
+pub fn fileNeedsProcessingHash(
+    src_abs: []const u8,
+    json_abs: []const u8,
+    stored_hash: u64,
+) bool {
+    if (!fileNeedsProcessing(src_abs, json_abs)) return false; // fast path
+    if (stored_hash == 0) return true; // no stored hash → assume stale
+    const current_hash = contentHash(src_abs, 10 * 1024 * 1024) orelse return true;
+    return current_hash != stored_hash;
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

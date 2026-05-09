@@ -4,7 +4,8 @@
     "source": "src/coral/mcp.zig",
     "language": "zig"
   },
-  "used_by": ["src/coral/main.zig", "src/coral/root.zig", "src/guidance/query_engine.zig"],
+  "capabilities": ["coral-mcp", "coral-ingestion", "coral-database", "coral-cache"],
+  "used_by": ["src/coral/main.zig", "src/coral/root.zig"],
   "members": [
     {
       "type": "enum",

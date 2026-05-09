@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " doc_parser.zig — Unified parser for SKILL.md and CAPABILITY.md frontmatter.\n\n Extracts YAML frontmatter (name, description, anchors) and the first paragraph\n from Markdown documentation files. Shared by:\n   - staged.zig (skill excerpts)\n   - query_engine.zig (skill loading)\n   - sync_engine.zig (capability index generation)",
-  "used_by": ["src/guidance/doc_parser_tests.zig", "src/guidance/staged.zig", "src/guidance/sync_engine.zig"],
+  "used_by": ["src/guidance/core/skill_loader.zig", "src/guidance/doc_parser_tests.zig", "src/guidance/staged.zig", "src/guidance/sync_engine.zig"],
   "members": [
     {
       "type": "struct",
@@ -20,6 +20,10 @@
       "name": "freeDocExcerpt",
       "match_hash": "9649cec5d1651c5b737ac86ef5d04760f7076ba454238cbcc2cb31a94273f017",
       "signature": "fn freeDocExcerpt(allocator: std.mem.Allocator, excerpt: DocExcerpt) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "excerpt", "type": "DocExcerpt" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 23
@@ -29,6 +33,11 @@
       "name": "parseDocContent",
       "match_hash": "da0d80a49f1c25452c4127fe81da920291b813cb596ffeddeb11b9f1c4e1f2d1",
       "signature": "fn parseDocContent(allocator: std.mem.Allocator, content: []const u8, verbose: bool) -> DocExcerpt",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "content", "type": "[]const u8" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "DocExcerpt",
       "is_pub": true,
       "line": 32
@@ -38,6 +47,10 @@
       "name": "parseSkillDocContent",
       "match_hash": "64451ca4a6636d27c055c1742efe8e4038fac8c27f28fbe852fb6a55319d2a68",
       "signature": "fn parseSkillDocContent(allocator: std.mem.Allocator, content: []const u8) -> ?[]const u8",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "content", "type": "[]const u8" }
+      ],
       "returns": "?[]const u8",
       "is_pub": true,
       "line": 143
@@ -47,6 +60,11 @@
       "name": "parseCapabilityDocContent",
       "match_hash": "b8982e36f64a5990254639cd9caa7dec4e74d410723f2264fef2ce1585f4eaf1",
       "signature": "fn parseCapabilityDocContent(allocator: std.mem.Allocator, content: []const u8, verbose: bool) -> DocExcerpt",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "content", "type": "[]const u8" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "DocExcerpt",
       "is_pub": true,
       "line": 153

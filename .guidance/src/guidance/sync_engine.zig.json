@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " sync_engine.zig — init, commit, gen, status, clean, pipeline, and utility commands.\n\n Extracted from main.zig (M1.6) to keep file sizes navigable.\n M2.1: gen/check/pipeline helpers extracted to sync/gen_files.zig and sync/ralph.zig.\n All public functions are called from main.zig's command dispatch switch.\n\n ## Memory Ownership\n\n   - cmdGen(): Delegates to gen_files.cmdGenImpl(); all allocations scoped to the command.\n   - cmdCheck(): Delegates to ralph.cmdCheck(); arena-backed for phase orchestration.\n   - cmdCommit(): Delegates to commit_mod.cmdCommit(); LlmClient is ephemeral.\n   - cmdSyncCapabilities() / cmdDiscoverCapabilitySources(): Own CapabilityEntry results;\n     freed with allocator.free() at end of function.\n   - cmdStatus() / cmdClean() / cmdInit(): Minimal allocation, all scoped.\n   - Delegation re-exports (GenArgs, cmdCommit, cmdCheck, etc.) delegate ownership\n     to their respective sub-modules (gen_files.zig, commit.zig, ralph.zig).",
+  "capabilities": ["config-system", "sync-pipeline", "ast-indexing"],
   "used_by": ["src/guidance/main.zig", "src/guidance/mcp.zig"],
   "members": [
     {
@@ -19,6 +20,9 @@
           "name": "parse",
           "match_hash": "d74c512a43d9f684e6ded80a465ff8c3a015d5a6bf7e15cf0f1db14b1c6c0fa1",
           "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!InitArgs",
+          "params": [
+            { "name": "args", "type": "[]const []const u8" }
+          ],
           "returns": "error{MissingValue}!InitArgs",
           "is_pub": false,
           "line": 45
@@ -31,6 +35,10 @@
       "name": "cmdInit",
       "match_hash": "013ac002b98ecd63f213045bfa9cc7a8591ed9131e7ebbdb866d8727159aee16",
       "signature": "fn cmdInit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 65
@@ -40,6 +48,10 @@
       "name": "cmdGen",
       "match_hash": "c804a181469e902480f87de434549a1630737d4783b9457d5498f0967d120be8",
       "signature": "fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 189
@@ -49,6 +61,13 @@
       "name": "syncCapabilitiesIfStale",
       "match_hash": "3d5c432af0e42cb60433db499eb3906713f814e658f86d7c12f1f0b1252ce9c1",
       "signature": "fn syncCapabilitiesIfStale(allocator: std.mem.Allocator, json_dir: []const u8, db_path: []const u8, capabilities_dir: []const u8, verbose: bool) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "db_path", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 198
@@ -58,6 +77,10 @@
       "name": "cmdStatus",
       "match_hash": "e229101fd38d0485a2504f714f608d04729408c3ab9db69e8b12809de49db189",
       "signature": "fn cmdStatus(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 266
@@ -67,6 +90,10 @@
       "name": "cmdClean",
       "match_hash": "e09bde7a88b330a6e2079fd9354a333f8eba320f5bbb14fc831a9fd1ce74a87b",
       "signature": "fn cmdClean(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 348
@@ -76,6 +103,10 @@
       "name": "cmdMapCapabilities",
       "match_hash": "81974bad8a210e497cfb836ef0fc15de1be601597a03238cc3a2376eb9283489",
       "signature": "fn cmdMapCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 396
@@ -85,6 +116,9 @@
       "name": "isStopword",
       "match_hash": "44617372fd3eb20dea850971115881edc06989100c9503bdd55200a9622888fe",
       "signature": "fn isStopword(tok: []const u8) -> bool",
+      "params": [
+        { "name": "tok", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 610
@@ -94,6 +128,9 @@
       "name": "isCapabilityKeywordToken",
       "match_hash": "aa337edc5674c996b574d340870e7b0f973889af37109c2fc45e3c26e5e01086",
       "signature": "fn isCapabilityKeywordToken(tok: []const u8) -> bool",
+      "params": [
+        { "name": "tok", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": false,
       "line": 618
@@ -111,6 +148,10 @@
       "name": "cmdSyncCapabilities",
       "match_hash": "b09f653338e2076c15568bc484d69f10555beaf39ad973a101a4414b9b0f7592",
       "signature": "fn cmdSyncCapabilities(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 652
@@ -120,6 +161,12 @@
       "name": "reportCapabilityLifecycle",
       "match_hash": "4d029224317529ba2ba24c539338b8ac07d4ac79c7c62bd7487756edbb0ead54",
       "signature": "fn reportCapabilityLifecycle(allocator: std.mem.Allocator, prev_index_path: []const u8, current_caps: []const CapabilityEntry, verbose: bool) -> struct {\n    new_count: usize,\n    updated_count: usize,\n    removed_count: usize,\n    unchanged_count: usize,\n}",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "prev_index_path", "type": "[]const u8" },
+        { "name": "current_caps", "type": "[]const CapabilityEntry" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "struct {\n    new_count: usize,\n    updated_count: usize,\n    removed_count: usize,\n    unchanged_count: usize,\n}",
       "is_pub": true,
       "line": 895
@@ -137,6 +184,12 @@
       "name": "pruneCapabilitySources",
       "match_hash": "78d557f3249181f804367be3f322dd95be329d63276061a6d0c47723bceb54c0",
       "signature": "fn pruneCapabilitySources(allocator: std.mem.Allocator, json_dir: []const u8, capabilities_dir: []const u8, verbose: bool) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "json_dir", "type": "[]const u8" },
+        { "name": "capabilities_dir", "type": "[]const u8" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 1038
@@ -146,6 +199,10 @@
       "name": "pruneCapabilitySourcesDedup",
       "match_hash": "7be578cae2423a26fd23d22c1b2195a0e0e199ed66d7564a9b6089eedb643cdb",
       "signature": "fn pruneCapabilitySourcesDedup(allocator: std.mem.Allocator, rows: []const ParsedSourceRow) -> []const DiscoveredSource",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "rows", "type": "[]const ParsedSourceRow" }
+      ],
       "returns": "[]const DiscoveredSource",
       "is_pub": false,
       "line": 1138
@@ -171,6 +228,12 @@
       "name": "updateCapabilitySourcesSection",
       "match_hash": "557ca805016f58bbfe882f09c9d9b6fb503d0210b959d928ac4c300d2d37ae2e",
       "signature": "fn updateCapabilitySourcesSection(allocator: std.mem.Allocator, cap_md_path: []const u8, sources: []const DiscoveredSource, verbose: bool) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "cap_md_path", "type": "[]const u8" },
+        { "name": "sources", "type": "[]const DiscoveredSource" },
+        { "name": "verbose", "type": "bool" }
+      ],
       "returns": "void",
       "is_pub": false,
       "line": 1174
@@ -180,6 +243,10 @@
       "name": "cmdDiscoverCapabilitySources",
       "match_hash": "5a3f246fef8e7148350a312aeecdc7e61bca199fbbba51e639aefd403b5e1d48",
       "signature": "fn cmdDiscoverCapabilitySources(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 1237
@@ -189,6 +256,10 @@
       "name": "cmdSyncComments",
       "match_hash": "284760802c500679ced658ce8a3b7e7466da09aca6400c208b1a05d617cae450",
       "signature": "fn cmdSyncComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 1684
@@ -198,6 +269,10 @@
       "name": "cmdMigrateComments",
       "match_hash": "b87871750be96814f7f89a39aef41dc13bcbff86c40feed487e5e35560936d71",
       "signature": "fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 1856
@@ -207,6 +282,10 @@
       "name": "cmdTodo",
       "match_hash": "4df5f69ded4008c52e9b96601bb67f7a2564874d1334c4fb118f2e8f2839828a",
       "signature": "fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 2018
@@ -216,6 +295,10 @@
       "name": "cmdDiary",
       "match_hash": "f0763cb6fb2391953d50caee9329b7c68436fe05ccc13704d46cdbbe9ab84cb8",
       "signature": "fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "params": [
+        { "name": "allocator", "type": "std.mem.Allocator" },
+        { "name": "args", "type": "[]const []const u8" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 2081

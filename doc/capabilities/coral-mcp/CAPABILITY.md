@@ -55,14 +55,13 @@ Each incoming request gets its own `ArenaAllocator`. All intermediate parsing an
 - `src/coral/main.zig` — `coral mcp` subcommand entry point
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (38 files, auto-discovered)
+## Sources (37 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/coral/mcp.zig` | 1.0 | defines_anchor |
 | `src/coral/main.zig` | 0.9 | used_by |
 | `src/coral/root.zig` | 0.9 | used_by |
-| `src/guidance/query_engine.zig` | 0.9 | used_by |
 | `src/coral/agent_loop.zig` | 0.4 | path_heuristic |
 | `src/coral/cli.zig` | 0.4 | path_heuristic |
 | `src/coral/http_transport.zig` | 0.4 | path_heuristic |

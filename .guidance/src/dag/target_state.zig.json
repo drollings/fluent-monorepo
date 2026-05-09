@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " target_state.zig — Execution-only view of a Target for a single DAG run.\n\n TargetState is ephemeral: one instance per Target per run.  It tracks\n execution status without duplicating the structural metadata (name, deps,\n commands) that lives in the Target.\n\n ## Relationship to Target\n\n   Target        — structural, persistent, owned by the DAG graph\n   TargetState   — runtime, ephemeral, owned by the DAG walker for one run\n\n ## Usage (DAG walker sketch)\n\n   var states = try allocator.alloc(TargetState, targets.len);\n   for (targets, 0..) |*t, i| states[i] = TargetState.init(t);\n\n   // Mark a target ready when all deps complete:\n   states[i].transition(.running);\n\n   // On completion:\n   states[i].transition(.succeeded);  // or .failed",
+  "capabilities": ["target-registry"],
   "members": [
     {
       "type": "enum",
@@ -58,6 +59,9 @@
           "name": "init",
           "match_hash": "6c6117d151e64e3684639da8235738b25db10a46327929476aa10a51a9bb555e",
           "signature": "fn init(target: *const Target) -> TargetState",
+          "params": [
+            { "name": "target", "type": "*const Target" }
+          ],
           "returns": "TargetState",
           "is_pub": true,
           "line": 43
@@ -67,6 +71,10 @@
           "name": "transition",
           "match_hash": "077bb1ef2c430833af46b5481b4048453344e652aadbb151e2e7ed9cd8c8de1f",
           "signature": "fn transition(self: *TargetState, next: Status) -> void",
+          "params": [
+            { "name": "self", "type": "*TargetState" },
+            { "name": "next", "type": "Status" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 48
@@ -76,6 +84,9 @@
           "name": "isDone",
           "match_hash": "0da2c852888853a04a5a4f46c443eaf30cdd18f93b1324d3ae256533d4b84489",
           "signature": "fn isDone(self: TargetState) -> bool",
+          "params": [
+            { "name": "self", "type": "TargetState" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 65

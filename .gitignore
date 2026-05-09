@@ -21,6 +21,7 @@ doc/Legacy
 
 # guidance test_passed marker (auto-generated)
 .guidance/.marks/
+.guidance/.snap
 .guidance-cpp-build/
 .guidance/bin/
 .guidance/capabilities

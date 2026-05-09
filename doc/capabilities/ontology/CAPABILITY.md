@@ -54,11 +54,12 @@ Rules are applied before `flush()` writes to the Library, so inferred triples ar
 - `src/ontology/root.zig` — umbrella re-exports
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (5 files, auto-discovered)
+## Sources (6 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/ontology/mapper.zig` | 1.0 | defines_anchor |
+| `src/coral/verify.zig` | 0.9 | used_by |
 | `src/ontology/root.zig` | 0.9 | used_by |
 | `src/ontology/migration.zig` | 0.4 | path_heuristic |
 | `src/ontology/inference.zig` | 0.4 | path_heuristic |

@@ -50,15 +50,17 @@ Model names use the format `"provider:modelname"`, e.g. `"local:code:latest"`. T
 - `.guidance/guidance-config.json` — project configuration file
 
 <!-- AUTO-SOURCES: do not edit below this line. Updated by `guidance gen`. -->
-## Sources (7 files, auto-discovered)
+## Sources (9 files, auto-discovered)
 
 | File | Confidence | Reason |
 |------|-----------|--------|
 | `src/guidance/config.zig` | 1.0 | defines_anchor |
-| `src/coral/root.zig` | 0.9 | used_by |
+| `src/guidance/health/health.zig` | 0.9 | used_by |
 | `src/guidance/main.zig` | 0.9 | used_by |
+| `src/guidance/query/args.zig` | 0.9 | used_by |
 | `src/guidance/query_engine.zig` | 0.9 | used_by |
-| `src/guidance/scanner.zig` | 0.9 | used_by |
+| `src/guidance/sync/commit.zig` | 0.9 | used_by |
+| `src/guidance/sync/gen_files.zig` | 0.9 | used_by |
 | `src/guidance/sync_engine.zig` | 0.9 | used_by |
 | `src/coral/config.zig` | 0.7 | keyword_overlap |
 

@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "comment": " codehealth — detect unused modules, redundant code, and dead code candidates.\n\n Usage:\n   guidance codehealth [options]\n\n Phase 0:  Orphaned file detection (files not imported anywhere).\n Phase 1:  Module-level detection (zero-importer files from DB).\n Phase 1.5: build.zig validation (references to missing files).\n Phase 2a: Redundancy detection via SimHash Hamming distance.\n Phase 2b: Symbol-level call graph analysis (--extract-calls).\n Phase 2:  Test organisation enforcement.\n\n This command is expensive and meant for periodic audits, not the RALPH loop.",
-  "used_by": ["src/guidance/health/health_tests.zig"],
+  "capabilities": ["config-system"],
+  "used_by": ["src/guidance/health/health_tests.zig", "src/guidance/main.zig"],
   "members": [
     {
       "type": "struct",
@@ -229,13 +230,13 @@
       ],
       "returns": "void",
       "is_pub": false,
-      "line": 624
+      "line": 623
     },
     {
       "type": "test_decl",
       "name": "codehealth: isGenericName recognises common names",
       "is_pub": false,
-      "line": 640
+      "line": 639
     }
   ]
 }

@@ -4,7 +4,8 @@
     "source": "src/rdf/parser.zig",
     "language": "zig"
   },
-  "used_by": ["src/rdf/normalize.zig", "src/rdf/nquads.zig", "src/rdf/root.zig"],
+  "capabilities": ["rdf-parsing", "coral-ingestion"],
+  "used_by": ["src/coral/verify.zig", "src/rdf/normalize.zig", "src/rdf/nquads.zig", "src/rdf/root.zig"],
   "members": [
     {
       "type": "enum",
@@ -46,6 +47,10 @@
           "name": "deinit",
           "match_hash": "52e501af82ee7bfdbf54eaea64eec8c7dd970e732acae3e16333e02a28c30bb3",
           "signature": "fn deinit(self: Literal, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Literal" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 35
@@ -65,6 +70,10 @@
           "name": "deinit",
           "match_hash": "6e8f46f40448598140a60ac663f39245880fefcd16e73cd6df1f8405315b1cf5",
           "signature": "fn deinit(self: Term, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Term" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 48
@@ -84,6 +93,10 @@
           "name": "deinit",
           "match_hash": "1a68b0484f849dce6e27c14713e7ef77b6a12ffed49580df43bb0f8d172622a2",
           "signature": "fn deinit(self: Triple, allocator: std.mem.Allocator) -> void",
+          "params": [
+            { "name": "self", "type": "Triple" },
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 63
@@ -103,6 +116,10 @@
           "name": "init",
           "match_hash": "b7c2537749e5384a14a5183564846f186a84af5eadcbe422cab428a416e9d9a0",
           "signature": "fn init(allocator: std.mem.Allocator, source: []const u8) -> Parser",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "source", "type": "[]const u8" }
+          ],
           "returns": "Parser",
           "is_pub": true,
           "line": 94
@@ -112,6 +129,9 @@
           "name": "deinit",
           "match_hash": "bb82753be8d9bff5a117ecd3f8ad2cc2c2a8641798efe6956d1d624e8ecebe67",
           "signature": "fn deinit(self: *Parser) -> void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 106
@@ -121,6 +141,9 @@
           "name": "peekTok",
           "match_hash": "19cc30f38726d9bd912cc3f9baf18bc9a398ef5cc946ef875e7a6a48f72f6189",
           "signature": "fn peekTok(self: *Parser) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 122
@@ -130,6 +153,9 @@
           "name": "consumeTok",
           "match_hash": "f3a62265654258afc00c3b4f4e7601a976be9ef2305073003fad0180a0af9cf3",
           "signature": "fn consumeTok(self: *Parser) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 127
@@ -139,6 +165,10 @@
           "name": "expectTok",
           "match_hash": "f946360c6ed080f51155eb40513b3b2bde44b2a85508fba965698ab8c02cf204",
           "signature": "fn expectTok(self: *Parser, tt: TokenType) -> ParseError!Token",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "tt", "type": "TokenType" }
+          ],
           "returns": "ParseError!Token",
           "is_pub": false,
           "line": 135
@@ -148,6 +178,9 @@
           "name": "next",
           "match_hash": "c3376c2e5fd149bbffc1d2cf70f3df930dacb2f6b06860d3c7d601dcf40e3701",
           "signature": "fn next(self: *Parser) -> ParseError!?Triple",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!?Triple",
           "is_pub": true,
           "line": 145
@@ -157,6 +190,9 @@
           "name": "parsePrefix",
           "match_hash": "d58fea3cd5f63446c6a3f277a68d548a72ca59c4259d6c8797a1fbb8df5a36d5",
           "signature": "fn parsePrefix(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 180
@@ -166,6 +202,9 @@
           "name": "parseBase",
           "match_hash": "2894b53e3c2c9b4aa89b6ad088af9f1785d3689c8bf61a2f5c32ff0a5976670c",
           "signature": "fn parseBase(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 204
@@ -175,6 +214,9 @@
           "name": "parseStatement",
           "match_hash": "72532149f672aa7dba9344b531206ca3d486c8c6a7f2ea917a906aac3a77495d",
           "signature": "fn parseStatement(self: *Parser) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 216
@@ -184,6 +226,10 @@
           "name": "collectPredicateObjectList",
           "match_hash": "31128bdd8d5c3aab73bf406c3de8e8f924fdbde3579164f8371b4c5fb7f897e7",
           "signature": "fn collectPredicateObjectList(self: *Parser, subj: Term) -> ParseError!void",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "subj", "type": "Term" }
+          ],
           "returns": "ParseError!void",
           "is_pub": false,
           "line": 228
@@ -193,6 +239,9 @@
           "name": "parseVerb",
           "match_hash": "07649ad5e66cfe38d6bac98f3e4d2b8a7caa08ddfde4b45390f75fc3a9a9a82b",
           "signature": "fn parseVerb(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 264
@@ -202,6 +251,9 @@
           "name": "parseTerm",
           "match_hash": "2763d92db6c5ad0af0d8f1b611b6c379f248d955717b98a60822bacfbfa8a317",
           "signature": "fn parseTerm(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 274
@@ -211,6 +263,10 @@
           "name": "parseLiteralTerm",
           "match_hash": "763e981e969e3c6ef90e84b21a445984111c22dfbcce6fa09d34085b76caece1",
           "signature": "fn parseLiteralTerm(self: *Parser, lit_tok: Token) -> ParseError!Term",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "lit_tok", "type": "Token" }
+          ],
           "returns": "ParseError!Term",
           "is_pub": false,
           "line": 312
@@ -220,6 +276,9 @@
           "name": "parseInlineBlankNode",
           "match_hash": "ca3b5febc2a9a0959ef9d9183eb21b6f494426542b24d38330a4d551c9828cda",
           "signature": "fn parseInlineBlankNode(self: *Parser) -> ParseError!?Term",
+          "params": [
+            { "name": "self", "type": "*Parser" }
+          ],
           "returns": "ParseError!?Term",
           "is_pub": false,
           "line": 354
@@ -229,6 +288,10 @@
           "name": "extractIRI",
           "match_hash": "3ed99984dd88c05da661607361d90233bf23c591f494f3c4dd68f6e5084d286b",
           "signature": "fn extractIRI(self: *Parser, raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "raw", "type": "[]const u8" }
+          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 377
@@ -238,6 +301,10 @@
           "name": "expandPrefixedName",
           "match_hash": "5ffff5c0efa83b00f1fbdf6d9dc7da34274fd7213d072769451d478a3a0f187e",
           "signature": "fn expandPrefixedName(self: *Parser, raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "raw", "type": "[]const u8" }
+          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 384
@@ -247,6 +314,10 @@
           "name": "cloneTerm",
           "match_hash": "007e6c100eac32358f9ddcb3dc1f30c4dc5dcf773667c600f01e6799c5483d4a",
           "signature": "fn cloneTerm(self: *Parser, t: Term) -> Term",
+          "params": [
+            { "name": "self", "type": "*Parser" },
+            { "name": "t", "type": "Term" }
+          ],
           "returns": "Term",
           "is_pub": false,
           "line": 397
@@ -256,6 +327,9 @@
           "name": "extractLiteralContent",
           "match_hash": "b5e8be2ff15c5690b926a9b01109e637e4da05e8ccd093ad7050b9c70661ab03",
           "signature": "fn extractLiteralContent(raw: []const u8) -> []const u8",
+          "params": [
+            { "name": "raw", "type": "[]const u8" }
+          ],
           "returns": "[]const u8",
           "is_pub": false,
           "line": 409

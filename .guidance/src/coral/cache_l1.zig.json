@@ -73,6 +73,9 @@
           "name": "init",
           "match_hash": "1bee82e8d023538183b7f1f7d243799abf0c3c0a097b57c728c0a9b30efd6828",
           "signature": "fn init(allocator: std.mem.Allocator) -> L1Cache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" }
+          ],
           "returns": "L1Cache",
           "is_pub": true,
           "line": 49
@@ -82,6 +85,10 @@
           "name": "initWithCapacity",
           "match_hash": "2510eb3298e16f2c01b34a70aa541d1c28109637d0bb31b78e9c39a214409302",
           "signature": "fn initWithCapacity(allocator: std.mem.Allocator, max_entries: usize) -> L1Cache",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "max_entries", "type": "usize" }
+          ],
           "returns": "L1Cache",
           "is_pub": true,
           "line": 53
@@ -91,6 +98,9 @@
           "name": "deinit",
           "match_hash": "94ffa6929ce639ef8a919b91bfff2ccb40b9d5e363a1b2dad872e55fa76d03f4",
           "signature": "fn deinit(self: *L1Cache) -> void",
+          "params": [
+            { "name": "self", "type": "*L1Cache" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 61
@@ -100,6 +110,10 @@
           "name": "get",
           "match_hash": "485df743db8aa5cc211c61c3f8d9b94dfea0d3f812f7e804126369edc064a999",
           "signature": "fn get(self: *L1Cache, query_hash: []const u8) -> ?RoutingResult",
+          "params": [
+            { "name": "self", "type": "*L1Cache" },
+            { "name": "query_hash", "type": "[]const u8" }
+          ],
           "returns": "?RoutingResult",
           "is_pub": true,
           "line": 72
@@ -109,6 +123,11 @@
           "name": "put",
           "match_hash": "45590ad41740f6994c0fb66ff1821e36fbfadf707c040768eb51f4ffa6546d58",
           "signature": "fn put(self: *L1Cache, query_hash: []const u8, result: RoutingResult) -> void",
+          "params": [
+            { "name": "self", "type": "*L1Cache" },
+            { "name": "query_hash", "type": "[]const u8" },
+            { "name": "result", "type": "RoutingResult" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 82
@@ -118,6 +137,10 @@
           "name": "freeRoutingResult",
           "match_hash": "7e336dc678a63e205ace12002283f1b8963398d24b82e3362fe9f1863d602707",
           "signature": "fn freeRoutingResult(allocator: std.mem.Allocator, result: *RoutingResult) -> void",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "result", "type": "*RoutingResult" }
+          ],
           "returns": "void",
           "is_pub": false,
           "line": 125
@@ -127,6 +150,10 @@
           "name": "dupeRoutingResult",
           "match_hash": "ee53726bda1f3a624f443566d95ac441df2c1d8bc6936c472568d53860c506a2",
           "signature": "fn dupeRoutingResult(allocator: std.mem.Allocator, result: RoutingResult) -> RoutingResult",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "result", "type": "RoutingResult" }
+          ],
           "returns": "RoutingResult",
           "is_pub": false,
           "line": 138
@@ -146,6 +173,10 @@
           "name": "init",
           "match_hash": "38ffb445c909c9a4b9a958790c4937cd23270ffbbedf0713436723f76c3d4937",
           "signature": "fn init(allocator: std.mem.Allocator, max_entries: usize) -> Self",
+          "params": [
+            { "name": "allocator", "type": "std.mem.Allocator" },
+            { "name": "max_entries", "type": "usize" }
+          ],
           "returns": "Self",
           "is_pub": true,
           "line": 184
@@ -155,6 +186,9 @@
           "name": "deinit",
           "match_hash": "b1fed8bd8f6fbbb89fe229b3f385a27a00f8b03829d24a4600d63bc36b3926a9",
           "signature": "fn deinit(self: *Self) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 192
@@ -164,6 +198,10 @@
           "name": "get",
           "match_hash": "f930d5e687c82ac5949c67e8386e3921054fd714d4b6ed0561a7009826a403bf",
           "signature": "fn get(self: *Self, query_hash: u64) -> ?RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query_hash", "type": "u64" }
+          ],
           "returns": "?RoutingResult",
           "is_pub": true,
           "line": 202
@@ -173,6 +211,10 @@
           "name": "getWithPromotion",
           "match_hash": "a6a13bda1a87a4f54cf5d31db834684812dc6cfc0457066729e78e7804e8ba04",
           "signature": "fn getWithPromotion(self: *Self, query_hash: u64) -> ?RoutingResult",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query_hash", "type": "u64" }
+          ],
           "returns": "?RoutingResult",
           "is_pub": true,
           "line": 210
@@ -182,6 +224,11 @@
           "name": "put",
           "match_hash": "56b454dabff420758a49ba104354ac649f02347447ed9285b35c9784d50c84e3",
           "signature": "fn put(self: *Self, query_hash: u64, result: RoutingResult) -> void",
+          "params": [
+            { "name": "self", "type": "*Self" },
+            { "name": "query_hash", "type": "u64" },
+            { "name": "result", "type": "RoutingResult" }
+          ],
           "returns": "void",
           "is_pub": true,
           "line": 220
@@ -191,6 +238,9 @@
           "name": "hashQuery",
           "match_hash": "3f2c1c889515de60c2ea7f5a4e961db6b1d0e11518620ece7202b1210b17f2e6",
           "signature": "fn hashQuery(query: []const u8) -> u64",
+          "params": [
+            { "name": "query", "type": "[]const u8" }
+          ],
           "returns": "u64",
           "is_pub": true,
           "line": 257

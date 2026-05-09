@@ -4,6 +4,7 @@
     "source": "src/reflection/permissions.zig",
     "language": "zig"
   },
+  "capabilities": ["reflection"],
   "used_by": ["src/reflection/accessor.zig", "src/reflection/root.zig", "src/reflection/sql_tests.zig", "src/reflection/typed.zig"],
   "members": [
     {
@@ -64,6 +65,10 @@
           "name": "canRead",
           "match_hash": "490652e9f6431d13b07c69d3f0044e4e5a80d7318d737415b259c3135f6b2dda",
           "signature": "fn canRead(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 41
@@ -73,6 +78,10 @@
           "name": "canWrite",
           "match_hash": "1241dc71e09080b867e8dbd49205c8fabe5cacb35f557d5b3d50ff19df6be353",
           "signature": "fn canWrite(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 52
@@ -82,6 +91,10 @@
           "name": "canDerive",
           "match_hash": "47daf732b0a5e2601dda9634481234ca76b86b43ed6ec3c578e91f19ac34eeae",
           "signature": "fn canDerive(self: RolePermissions, role: Role) -> bool",
+          "params": [
+            { "name": "self", "type": "RolePermissions" },
+            { "name": "role", "type": "Role" }
+          ],
           "returns": "bool",
           "is_pub": true,
           "line": 63

@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " core/ranking.zig — Unified result ranking and scoring.\n\n Consolidates:\n   - query_engine.zig:isExactNameMatch() sort\n   - staged.zig capability boosting via cap_confidence HashMap\n   - vector_db.zig RRF merge weighting",
-  "used_by": ["src/guidance/core/drift.zig", "src/guidance/core/format.zig"],
+  "used_by": ["src/guidance/core/drift.zig", "src/guidance/core/format.zig", "src/guidance/main.zig"],
   "members": [
     {
       "type": "struct",
@@ -20,6 +20,10 @@
       "name": "rankResults",
       "match_hash": "676c331f1e53b0062019ab9d23252254f82a2d7fef2573d41131bb66df685736",
       "signature": "fn rankResults(results: []SearchResult, params: RankParams) -> void",
+      "params": [
+        { "name": "results", "type": "[]SearchResult" },
+        { "name": "params", "type": "RankParams" }
+      ],
       "returns": "void",
       "is_pub": true,
       "line": 30
@@ -29,6 +33,10 @@
       "name": "isExactNameMatch",
       "match_hash": "eb28e3747669297948649ee1c1c572666ff84a63cb67d32ad021da3298a7a7a2",
       "signature": "fn isExactNameMatch(name: []const u8, terms: []const []const u8) -> bool",
+      "params": [
+        { "name": "name", "type": "[]const u8" },
+        { "name": "terms", "type": "[]const []const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 60

@@ -5,6 +5,7 @@
     "language": "zig"
   },
   "comment": " core/intent.zig — Deterministic query intent classification.\n\n Replaces five overlapping classifiers:\n   - query_engine.zig:isShortQuery()\n   - query/identifier.zig:detectIdentifierPattern()\n   - query/identifier.zig:shouldSkipLLMSynthesis()\n   - query/strategy.zig:looksLikeNaturalLanguageQuestion()\n   - skeleton.zig:classifyQuery() TIER classification\n\n classifyIntent is allocation-free for the skip_llm=true fast path.\n For slow paths it arena-allocates the token slice for callers.",
+  "used_by": ["src/guidance/main.zig", "src/guidance/query/strategy.zig", "src/guidance/query_engine.zig"],
   "members": [
     {
       "type": "enum",
@@ -54,6 +55,9 @@
           "name": "from",
           "match_hash": "0d278cfe3e97b3a455283d54c30657fc111859a3d4c977685c42f3206858a3c1",
           "signature": "fn from(intent: QueryIntent) -> QueryTier",
+          "params": [
+            { "name": "intent", "type": "QueryIntent" }
+          ],
           "returns": "QueryTier",
           "is_pub": true,
           "line": 33
@@ -120,6 +124,10 @@
       "name": "classifyIntent",
       "match_hash": "03bf6dba305ddc045d1601d9faf2dc7562c3b09f5f517fb2bdb5e8f399d345e1",
       "signature": "fn classifyIntent(arena: *std.heap.ArenaAllocator, query: []const u8) -> Classification",
+      "params": [
+        { "name": "arena", "type": "*std.heap.ArenaAllocator" },
+        { "name": "query", "type": "[]const u8" }
+      ],
       "returns": "Classification",
       "is_pub": true,
       "line": 77
@@ -129,6 +137,9 @@
       "name": "isShortQuery",
       "match_hash": "738288e22354c1741e7a41d591883375f3c73f0c3102bfad0920f76af4b2fc41",
       "signature": "fn isShortQuery(query: []const u8) -> bool",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 154
@@ -138,6 +149,9 @@
       "name": "isNaturalLanguageQuery",
       "match_hash": "b3bcc3f2e6f391a7c890d5f7ddfacca0433ee728e48f709253f286b0501bf7dc",
       "signature": "fn isNaturalLanguageQuery(query: []const u8) -> bool",
+      "params": [
+        { "name": "query", "type": "[]const u8" }
+      ],
       "returns": "bool",
       "is_pub": true,
       "line": 186

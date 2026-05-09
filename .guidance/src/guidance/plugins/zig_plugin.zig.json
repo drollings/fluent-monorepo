@@ -5,7 +5,8 @@
     "language": "zig"
   },
   "comment": " ZigPlugin — wraps ast_parser.zig as a LanguagePlugin.\n\n Handles .zig and .zon files.  Parses with Zig's stdlib AST, extracting\n top-level declarations and imports.",
-  "used_by": ["src/guidance/plugins/zig_plugin_tests.zig"],
+  "capabilities": ["plugin-system", "ast-indexing"],
+  "used_by": ["src/guidance/plugin_registry.zig", "src/guidance/plugins/zig_plugin_tests.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -21,6 +22,11 @@
       "name": "parseZig",
       "match_hash": "32862f573a0475a724b3afca9d32458b2baf79de6755a70388c46055cbb1b32d",
       "signature": "fn parseZig(arena: std.mem.Allocator, source: [:0]const u8, file_path: []const u8) -> anyerror!ParsedFile",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "anyerror!ParsedFile",
       "is_pub": false,
       "line": 32
@@ -30,6 +36,10 @@
       "name": "extractZigImports",
       "match_hash": "9cdfa287400d9ed53de18139035ff13bf09f9d0305f6231c8074bb48a843dffa",
       "signature": "fn extractZigImports(arena: std.mem.Allocator, source: [:0]const u8) -> anyerror![]const []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "source", "type": "[:0]const u8" }
+      ],
       "returns": "anyerror![]const []const u8",
       "is_pub": false,
       "line": 61
@@ -39,6 +49,10 @@
       "name": "deriveModule",
       "match_hash": "dde488651bb94a70bdce05fde1db577df1ecc6c45e1a3e63c81a0ad6543d08ac",
       "signature": "fn deriveModule(arena: std.mem.Allocator, file_path: []const u8) -> []const u8",
+      "params": [
+        { "name": "arena", "type": "std.mem.Allocator" },
+        { "name": "file_path", "type": "[]const u8" }
+      ],
       "returns": "[]const u8",
       "is_pub": false,
       "line": 74
