@@ -24,7 +24,7 @@ const todo_mod = @import("../todo.zig");
 
 /// Compares two directories, returning differences in a Zig slice.
 fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) ![]u8 {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const argv: []const []const u8 = if (staged)
         &.{ "git", "diff", "--staged" }
     else
@@ -34,11 +34,9 @@ fn gitDiff(allocator: std.mem.Allocator, cwd: []const u8, staged: bool) ![]u8 {
         .argv = argv,
         .cwd = .{ .path = cwd },
     });
-    defer {
-        allocator.free(result.stdout);
-        allocator.free(result.stderr);
-    }
+    defer allocator.free(result.stderr);
     if (result.term != .exited or result.term.exited != 0) {
+        allocator.free(result.stdout);
         return error.GitDiffFailed;
     }
     return result.stdout;
@@ -459,7 +457,7 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         }
     }
 
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
+    const cwd = try std.process.currentPathAlloc(common.io.singleIo(), allocator);
     defer allocator.free(cwd);
 
     const default_guidance_dir: []const u8 = config_mod.DEFAULT_GUIDANCE_DIR;
@@ -547,7 +545,7 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         allocator.free(tmp_path);
     }
 
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const mtime_before: i128 = blk: {
         const f = std.Io.Dir.openFileAbsolute(io, tmp_path, .{}) catch break :blk 0;
         defer f.close(io);
@@ -562,7 +560,9 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     };
     defer allocator.free(editor);
 
-    _ = try std.process.run(allocator, io, .{ .argv = &.{ editor, tmp_path }, .cwd = .{ .path = cwd } });
+    const editor_result = try std.process.run(allocator, io, .{ .argv = &.{ editor, tmp_path }, .cwd = .{ .path = cwd } });
+    allocator.free(editor_result.stdout);
+    allocator.free(editor_result.stderr);
 
     const mtime_after: i128 = blk: {
         const f = std.Io.Dir.openFileAbsolute(io, tmp_path, .{}) catch break :blk 0;
@@ -611,15 +611,19 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
         );
     }
 
-    const commit_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
+    const commit_result = try std.process.run(allocator, io, .{
         .argv = &.{ "git", "commit", "-m", final_msg },
         .cwd = .{ .path = cwd },
     });
+    defer {
+        allocator.free(commit_result.stdout);
+        allocator.free(commit_result.stderr);
+    }
     if (commit_result.term == .exited and commit_result.term.exited == 0) {
         std.debug.print("Committed successfully.\n", .{});
 
         if (cl_status.item_dir) |item_dir| {
-            const hash_result = try std.process.run(allocator, std.Io.Threaded.global_single_threaded.io(), .{
+            const hash_result = try std.process.run(allocator, io, .{
                 .argv = &.{ "git", "rev-parse", "HEAD" },
                 .cwd = .{ .path = cwd },
             });
