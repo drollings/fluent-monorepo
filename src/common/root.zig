@@ -151,12 +151,6 @@ pub const error_context = @import("error_context.zig");
 pub const ErrorContext = error_context.ErrorContext;
 pub const ArenaErrorContext = error_context.ArenaErrorContext;
 
-// ── Structured logging context (M8) ──────────────────────────────────────────
-pub const logging = @import("logging.zig");
-pub const LogContext = logging.LogContext;
-pub const LogScope = logging.Scope;
-pub const callLogged = logging.callLogged;
-
 // ── URL utilities ─────────────────────────────────────────────────────────────
 pub const isLocalHost = url_mod.isLocalHost;
 pub const isPrivateIp = url_mod.isPrivateIp;
@@ -227,10 +221,6 @@ pub const TrigramHit = trigram_index.TrigramHit;
 pub const freq_table = @import("freq_table.zig");
 pub const FrequencyTable = freq_table.FrequencyTable;
 pub const pairWeight = freq_table.pairWeight;
-
-// ── Snapshot persistence (git-aware index snapshots) ───────────────────────────
-pub const snapshot = @import("snapshot.zig");
-pub const GuidanceSnapshot = snapshot.GuidanceSnapshot;
 
 // ── Entity extraction (with stoplist) ────────────────────────────────────────
 pub const entity = @import("entity.zig");
