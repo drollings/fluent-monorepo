@@ -547,52 +547,6 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
 }
 
 // ---------------------------------------------------------------------------
-// guidance diary
-// ---------------------------------------------------------------------------
-
-/// Processes a diary entry message using an allocator, storing it in the specified directory for the author.
-pub fn cmdDiaryEntry(allocator: std.mem.Allocator, message: []const u8, todo_dir: []const u8, author: []const u8) !void {
-    const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
-        std.debug.print("diary: no current work item in {s}\n", .{todo_dir});
-        return;
-    };
-    defer allocator.free(item_dir);
-
-    const diary_path = try std.fmt.allocPrint(allocator, "{s}/DIARY.md", .{item_dir});
-    defer allocator.free(diary_path);
-
-    // Get HH:MM timestamp.
-    const io = std.Io.Threaded.global_single_threaded.io();
-    const ts = @divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s);
-    const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
-    const day = epoch.getDaySeconds();
-    const hh = day.getHoursIntoDay();
-    const mm = day.getMinutesIntoHour();
-
-    const entry = try std.fmt.allocPrint(allocator, "[{d:0>2}:{d:0>2}] ({s}) {s}\n", .{ hh, mm, author, message });
-    defer allocator.free(entry);
-
-    // Create DIARY.md header if new, then append entry.
-    const diary_exists = if (std.Io.Dir.accessAbsolute(io, diary_path, .{})) |_| true else |_| false;
-    const df = std.Io.Dir.openFileAbsolute(io, diary_path, .{ .mode = .read_write }) catch
-        try std.Io.Dir.createFileAbsolute(io, diary_path, .{});
-    defer df.close(io);
-
-    if (!diary_exists) {
-        const basename = std.fs.path.basename(item_dir);
-        const header = try std.fmt.allocPrint(allocator, "# Diary: {s}\n\n", .{basename});
-        defer allocator.free(header);
-        try std.Io.File.writePositionalAll(df, io, header, 0);
-    }
-
-    {
-        const end_pos = try df.stat(io);
-        try std.Io.File.writePositionalAll(df, io, entry, end_pos.size);
-    }
-    std.debug.print("diary: {s}", .{entry});
-}
-
-// ---------------------------------------------------------------------------
 // Checklist query (used by cmdCommit)
 // ---------------------------------------------------------------------------
 

@@ -57,7 +57,6 @@ const Command = enum {
     commit,
     @"test",
     todo,
-    diary,
     telemetry,
     serve,
     health,
@@ -154,7 +153,6 @@ pub fn main(init: std.process.Init) !void {
         .commit => sync_engine_mod.cmdCommit(allocator, subcmd_args),
         .@"test" => query_engine_mod.cmdTest(allocator, subcmd_args),
         .todo => sync_engine_mod.cmdTodo(allocator, subcmd_args),
-        .diary => sync_engine_mod.cmdDiary(allocator, subcmd_args),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, subcmd_args),
         .serve => query_engine_mod.cmdServe(allocator, subcmd_args),
         .health => health_mod.cmdHealth(allocator, subcmd_args),
@@ -187,7 +185,6 @@ fn printHelp() !void {
         \\  commit     Generate AI commit message from staged diff + guidance
         \\  test       Benchmark explain queries against module-level comments
         \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon)
-        \\  diary      Append a timestamped entry to the current work item DIARY.md
         \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
         \\Examples:
@@ -338,19 +335,6 @@ fn printSubcommandHelp(command: Command) !void {
             \\  guidance todo new "implement zig-clap integration"
             \\  guidance todo status
             \\  guidance todo list
-            \\
-        ),
-        .diary => try stdout.writeAll(
-            \\Usage: guidance diary <entry>
-            \\
-            \\Append a timestamped entry to the current work item DIARY.md.
-            \\
-            \\Options:
-            \\  -h, --help               Show this help
-            \\  --guidance-dir DIR       Guidance directory (default: .guidance)
-            \\
-            \\Example:
-            \\  guidance diary "fixed the mtime comparison bug"
             \\
         ),
         .telemetry => try stdout.writeAll(

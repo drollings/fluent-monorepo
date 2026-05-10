@@ -210,15 +210,6 @@
       "returns": "void",
       "is_pub": true,
       "line": 2029
-    },
-    {
-      "type": "fn_decl",
-      "name": "cmdDiary",
-      "match_hash": "0d5cfe46efcaf327284d4ee3e30eff4671c28d5ab2d8ffc433d8bc2b5e4fb87c",
-      "signature": "fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 2092
     }
   ]
 }

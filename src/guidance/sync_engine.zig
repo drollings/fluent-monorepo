@@ -2084,55 +2084,6 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
-// ---------------------------------------------------------------------------
-// diary — append timestamped entry to current work item DIARY.md
-// ---------------------------------------------------------------------------
-
-/// Processes a Zig command string, validates arguments, and executes the command.
-pub fn cmdDiary(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len == 0) {
-        std.debug.print("Usage: guidance diary \"<message>\"\n", .{});
-        return;
-    }
-
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
-    defer allocator.free(cwd);
-
-    const todo_dir = try std.fs.path.join(allocator, &.{ cwd, config_mod.DEFAULT_GUIDANCE_DIR, "todo" });
-    defer allocator.free(todo_dir);
-
-    // Collect message from remaining args (join with space).
-    var msg_buf: std.ArrayList(u8) = .empty;
-    defer msg_buf.deinit(allocator);
-    for (args, 0..) |a, idx| {
-        if (idx > 0) try msg_buf.append(allocator, ' ');
-        try msg_buf.appendSlice(allocator, a);
-    }
-
-    // Get author from git config.
-    var author: []const u8 = "unknown";
-    const git_author = blk: {
-        const io = std.Io.Threaded.global_single_threaded.io();
-        const result = std.process.run(allocator, io, .{
-            .argv = &.{ "git", "config", "user.name" },
-            .cwd = .{ .path = cwd },
-        }) catch break :blk null;
-        allocator.free(result.stderr);
-        const trimmed = std.mem.trim(u8, result.stdout, " \t\r\n");
-        if (trimmed.len == 0) {
-            allocator.free(result.stdout);
-            break :blk null;
-        }
-        break :blk trimmed;
-    };
-    defer if (git_author) |a| allocator.free(a);
-    if (git_author) |a| if (a.len > 0) {
-        author = a;
-    };
-
-    return todo_mod.cmdDiaryEntry(allocator, msg_buf.items, todo_dir, author);
-}
-
 // =============================================================================
 // Public wrappers for testing (commit helpers) — delegated to sync/commit.zig
 // =============================================================================

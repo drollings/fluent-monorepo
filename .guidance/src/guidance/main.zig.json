@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "d95bdad7d64e5dd7589e2d22fa1bb5df1248d54520b6110a0863c7c7fd9c6495",
+      "match_hash": "b55f5a464c4459841e65ab804dca3f5a10bc8e30a7eab4406120ba6f809f64bb",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -57,27 +57,21 @@
         },
         {
           "type": "enum_field",
-          "name": "diary",
+          "name": "telemetry",
           "is_pub": false,
           "line": 60
         },
         {
           "type": "enum_field",
-          "name": "telemetry",
+          "name": "serve",
           "is_pub": false,
           "line": 61
         },
         {
           "type": "enum_field",
-          "name": "serve",
-          "is_pub": false,
-          "line": 62
-        },
-        {
-          "type": "enum_field",
           "name": "health",
           "is_pub": false,
-          "line": 63
+          "line": 62
         }
       ],
       "line": 52
@@ -89,7 +83,7 @@
       "signature": "fn main(init: std.process.Init) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 74
+      "line": 73
     },
     {
       "type": "fn_private",
@@ -98,7 +92,7 @@
       "signature": "fn printHelp() -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 169
+      "line": 167
     },
     {
       "type": "fn_private",
@@ -107,7 +101,7 @@
       "signature": "fn printSubcommandHelp(command: Command) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 208
+      "line": 205
     }
   ]
 }
