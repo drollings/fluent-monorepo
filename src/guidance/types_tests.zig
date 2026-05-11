@@ -173,6 +173,7 @@ test "jsonifyMember: member comment NOT written to JSON" {
 test "jsonifyGuidanceDoc: minimal doc with just meta" {
     const allocator = std.testing.allocator;
     const doc = types_mod.GuidanceDoc{
+        .arena = undefined,
         .meta = .{
             .module = "mymod",
             .source = "src/mymod.zig",
@@ -190,6 +191,7 @@ test "jsonifyGuidanceDoc: doc with comment and keywords" {
     const allocator = std.testing.allocator;
     const kws = [_][]const u8{ "alpha", "beta" };
     const doc = types_mod.GuidanceDoc{
+        .arena = undefined,
         .meta = .{
             .module = "things",
             .source = "src/things.zig",

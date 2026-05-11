@@ -7,7 +7,6 @@ const json_store = @import("sync/json_store.zig");
 const main = @import("main.zig");
 const sync_mod = @import("sync.zig");
 const config_mod = @import("config.zig");
-
 // Pull in inline tests from new source-code-first comment management modules.
 comptime {
     _ = @import("sync/line_verify.zig");
@@ -130,11 +129,10 @@ test "loadChangedMembers returns empty for missing JSON file" {
     const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(tmp_path);
 
-    const members = try main.loadChangedMembersPub(allocator, tmp_path, "src/nonexistent.zig", &.{});
-    defer {
-        for (members) |m| m.deinit(allocator);
-        allocator.free(members);
-    }
+    // Pass arena allocator so result (slice + strings) are freed by arena.deinit().
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const members = try main.loadChangedMembersPub(arena.allocator(), tmp_path, "src/nonexistent.zig", &.{});
     try std.testing.expect(members.len == 0);
 }
 
@@ -170,12 +168,10 @@ test "loadChangedMembers returns all members when hunk_ranges is empty" {
     const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
     defer allocator.free(guidance_root);
 
-    // rel_path is just "foo.zig" (without src prefix), function adds src/
-    const members = try main.loadChangedMembersPub(allocator, guidance_root, "foo.zig", &.{});
-    defer {
-        for (members) |m| m.deinit(allocator);
-        allocator.free(members);
-    }
+    // Arena allocator: result (slice + strings) freed by arena.deinit() — no per-member cleanup.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const members = try main.loadChangedMembersPub(arena.allocator(), guidance_root, "foo.zig", &.{});
 
     try std.testing.expect(members.len == 2);
     try std.testing.expectEqualStrings("alpha", members[0].name);
@@ -216,14 +212,195 @@ test "loadChangedMembers filters by hunk range with context window" {
 
     // Hunk touches new-file lines 25–35 → "near" (line 20) is within ±15 context, "far" (200) is not.
     const hunk_ranges = [_][2]u32{.{ 25, 35 }};
-    const members = try main.loadChangedMembersPub(allocator, guidance_root, "bar.zig", &hunk_ranges);
-    defer {
-        for (members) |m| m.deinit(allocator);
-        allocator.free(members);
-    }
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const members = try main.loadChangedMembersPub(arena.allocator(), guidance_root, "bar.zig", &hunk_ranges);
 
     try std.testing.expect(members.len == 1);
     try std.testing.expectEqualStrings("near", members[0].name);
+}
+
+// ---------------------------------------------------------------------------
+// loadChangedMembers arena (T1.1, T1.2) — M1
+// ---------------------------------------------------------------------------
+
+test "loadChangedMembers arena: result survives without per-member free" {
+    // T1.1 — strings allocated on arena; GPA must report no leak.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.createDirPath(std.testing.io, ".guidance/src");
+    const json_content =
+        \\{
+        \\  "meta": {"module": "t11", "source": "src/t11.zig", "language": "zig"},
+        \\  "members": [
+        \\    {"type": "fn_decl", "name": "alpha", "line": 5, "is_pub": true,
+        \\     "comment": "Alpha fn.", "signature": "fn alpha() void",
+        \\     "tags": [], "patterns": [], "members": []},
+        \\    {"type": "fn_decl", "name": "beta", "line": 15, "is_pub": true,
+        \\     "comment": "Beta fn.", "signature": "fn beta() void",
+        \\     "tags": [], "patterns": [], "members": []}
+        \\  ]
+        \\}
+    ;
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/src/t11.zig.json", .data = json_content });
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
+    defer allocator.free(guidance_root);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit(); // frees slice + all string fields — no per-member cleanup
+    const members = try main.loadChangedMembersPub(arena.allocator(), guidance_root, "t11.zig", &.{});
+
+    try std.testing.expect(members.len == 2);
+    try std.testing.expectEqualStrings("alpha", members[0].name);
+    try std.testing.expectEqualStrings("Alpha fn.", members[0].comment);
+    try std.testing.expectEqualStrings("fn alpha() void", members[0].signature);
+    try std.testing.expectEqualStrings("beta", members[1].name);
+}
+
+test "loadChangedMembers arena: nested members included" {
+    // T1.2 — struct member containing nested members[]; both top-level and nested returned.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    try tmp.dir.createDirPath(std.testing.io, ".guidance/src");
+    const json_content =
+        \\{
+        \\  "meta": {"module": "t12", "source": "src/t12.zig", "language": "zig"},
+        \\  "members": [
+        \\    {"type": "struct", "name": "Outer", "line": 1, "is_pub": true,
+        \\     "comment": "Outer struct.", "signature": "const Outer = struct",
+        \\     "tags": [], "patterns": [], "members": [
+        \\       {"type": "fn_decl", "name": "inner", "line": 3, "is_pub": true,
+        \\        "comment": "Inner fn.", "signature": "fn inner() void",
+        \\        "tags": [], "patterns": [], "members": []}
+        \\     ]}
+        \\  ]
+        \\}
+    ;
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = ".guidance/src/t12.zig.json", .data = json_content });
+    const guidance_root = try std.fs.path.join(allocator, &.{ tmp_path, ".guidance" });
+    defer allocator.free(guidance_root);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const members = try main.loadChangedMembersPub(arena.allocator(), guidance_root, "t12.zig", &.{});
+
+    // Both the top-level "Outer" and nested "inner" should appear.
+    try std.testing.expect(members.len == 2);
+    try std.testing.expectEqualStrings("Outer", members[0].name);
+    try std.testing.expectEqualStrings("inner", members[1].name);
+    try std.testing.expectEqualStrings("Inner fn.", members[1].comment);
+}
+
+// ---------------------------------------------------------------------------
+// generateCommitMessage (T1.3) — M1
+// ---------------------------------------------------------------------------
+
+test "generateCommitMessage: no leak with empty diff" {
+    // T1.3 — empty diff, no LLM, fallback path; GPA must report no leak.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    // Use a non-existent model so LlmClient.init fails fast (no network call).
+    const msg = try main.generateCommitMessagePub(
+        allocator,
+        "", // empty diff
+        &.{}, // no changed files
+        ".guidance",
+        tmp_path,
+        "http://127.0.0.1:1", // unreachable URL — fast failure
+        "nonexistent-model",
+        false,
+    );
+    defer allocator.free(msg);
+    // Fallback produces a non-empty message (e.g., "* Update codebase").
+    try std.testing.expect(msg.len > 0);
+}
+
+// ---------------------------------------------------------------------------
+// guidanceDbIsUpToDate (T2.1, T2.2, T2.3) — M2
+// ---------------------------------------------------------------------------
+
+test "guidanceDbIsUpToDate: returns false when db absent" {
+    // T2.1 — db_path does not exist; must return false cleanly.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    const db_path = try std.fs.path.join(allocator, &.{ tmp_path, "nonexistent.db" });
+    defer allocator.free(db_path);
+
+    const result = main.guidanceDbIsUpToDatePub(allocator, db_path, tmp_path, tmp_path);
+    try std.testing.expect(!result);
+}
+
+test "guidanceDbIsUpToDate: returns false when JSON src dir absent" {
+    // T2.2 — db exists (stub) but json_dir/src/ does not.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    // Create a stub db file (empty).
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "stub.db", .data = "" });
+    const db_path = try std.fs.path.join(allocator, &.{ tmp_path, "stub.db" });
+    defer allocator.free(db_path);
+
+    // guidanceDbIsUpToDate checks databaseHasTables which returns false for empty file.
+    // That's fine — it still returns false without leaking.
+    const result = main.guidanceDbIsUpToDatePub(allocator, db_path, tmp_path, tmp_path);
+    try std.testing.expect(!result);
+}
+
+test "guidanceDbIsUpToDate: no leak across walker paths" {
+    // T2.3 — verifies arena frees all path allocations from both walker loops.
+    // We use empty json_dir/src/ and empty capabilities_dir so walker loops run
+    // without finding any JSON files, exercising the path-join code path.
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const tmp_path = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(tmp_path);
+
+    // databaseHasTables on a stub file returns false → function exits early after arena,
+    // which is sufficient to verify no path-join allocations leak.
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "stub.db", .data = "" });
+    const db_path = try std.fs.path.join(allocator, &.{ tmp_path, "stub.db" });
+    defer allocator.free(db_path);
+
+    _ = main.guidanceDbIsUpToDatePub(allocator, db_path, tmp_path, tmp_path);
+    // GPA deinit at end of test verifies no leaks from path allocations.
 }
 
 // ---------------------------------------------------------------------------
@@ -860,30 +1037,29 @@ test "mergeMembers preserves tags when hash unchanged" {
 }
 
 // ---------------------------------------------------------------------------
-// freeGuidanceDoc: smoke test (no double-free with GPA)
+// GuidanceDoc arena: smoke test (no double-free with GPA) — replaces old freeGuidanceDoc test
 // ---------------------------------------------------------------------------
 
-test "freeGuidanceDoc frees all fields without double-free" {
+test "GuidanceDoc arena owns all fields; deinit frees without double-free" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer if (gpa.deinit() == .leak) @panic("leak");
     const allocator = gpa.allocator();
 
-    var store = json_store.JsonStore.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    const a = arena.allocator();
 
-    const doc = types.GuidanceDoc{
+    var doc: types.GuidanceDoc = .{
+        .arena = undefined, // set below
         .meta = .{
-            .module = try allocator.dupe(u8, "my.module"),
-            .source = try allocator.dupe(u8, "src/my.zig"),
+            .module = try a.dupe(u8, "my.module"),
+            .source = try a.dupe(u8, "src/my.zig"),
         },
-        .comment = try allocator.dupe(u8, "Module docs."),
-        .skills = try store.dupeSkills(&.{
-            .{ .ref = "zig-current", .context = "relevant" },
-        }),
-        .hashtags = try store.dupeStrings(&.{"#zig"}),
+        .comment = try a.dupe(u8, "Module docs."),
     };
+    doc.arena = arena;
 
     // Should not crash, no leaks reported by GPA.
-    store.freeGuidanceDoc(doc);
+    doc.arena.deinit();
 }
 
 // ---------------------------------------------------------------------------
@@ -1704,6 +1880,7 @@ test "extractMemberCommentsFromSource: extracts comment from source" {
     ;
 
     var doc = types.GuidanceDoc{
+        .arena = std.heap.ArenaAllocator.init(allocator),
         .meta = .{
             .module = "test",
             .source = "test.zig",
@@ -1723,6 +1900,7 @@ test "extractMemberCommentsFromSource: extracts comment from source" {
             },
         },
     };
+    defer doc.arena.deinit();
 
     store.extractMemberCommentsFromSource(&doc, source);
 
@@ -1733,9 +1911,7 @@ test "extractMemberCommentsFromSource: extracts comment from source" {
 
     // otherFunc has no doc comment before it
     try std.testing.expect(doc.members[1].comment == null);
-
-    // Cleanup
-    if (doc.members[0].comment) |c| allocator.free(c);
+    // Extracted comments freed by doc.arena.deinit() above.
 }
 
 test "extractMemberCommentsFromSource: preserves existing comments" {
@@ -1751,6 +1927,7 @@ test "extractMemberCommentsFromSource: preserves existing comments" {
     ;
 
     var doc = types.GuidanceDoc{
+        .arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
         .meta = .{
             .module = "test",
             .source = "test.zig",
@@ -1787,6 +1964,7 @@ test "extractMemberCommentsFromSource: handles nested members" {
     ;
 
     var doc = types.GuidanceDoc{
+        .arena = std.heap.ArenaAllocator.init(allocator),
         .meta = .{
             .module = "test",
             .source = "test.zig",
@@ -1808,13 +1986,87 @@ test "extractMemberCommentsFromSource: handles nested members" {
             },
         },
     };
+    defer doc.arena.deinit();
 
     store.extractMemberCommentsFromSource(&doc, source);
 
     // Nested method comment should be extracted
     try std.testing.expect(doc.members[0].members[0].comment != null);
     try std.testing.expectEqualStrings("Method comment.", doc.members[0].members[0].comment.?);
+    // Extracted comment freed by doc.arena.deinit() above.
+}
 
-    // Cleanup
-    if (doc.members[0].members[0].comment) |c| allocator.free(c);
+// ---------------------------------------------------------------------------
+// T8 — SyncProcessorBuilder and CommentSyncProcessorBuilder (M8)
+// ---------------------------------------------------------------------------
+
+const comment_sync_mod = @import("comments/sync.zig");
+
+test "T8.1 SyncProcessorBuilder.build: fields propagated correctly" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var processor = try sync_mod.SyncProcessorBuilder.init(allocator)
+        .workspace("/tmp/ws")
+        .outputDir("/tmp/out")
+        .dryRun(true)
+        .withDebug(false)
+        .regenComments(true)
+        .build();
+    defer processor.deinit();
+
+    try std.testing.expectEqualStrings("/tmp/ws", processor.project_root);
+    try std.testing.expectEqualStrings("/tmp/out", processor.output_dir);
+    try std.testing.expect(processor.dry_run == true);
+    try std.testing.expect(processor.debug == false);
+    try std.testing.expect(processor.regen_comments == true);
+    try std.testing.expect(processor.enhancer == null);
+    try std.testing.expect(processor.thinking_enhancer == null);
+}
+
+test "T8.2 SyncProcessorBuilder.build: returns error when workspace missing" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const result = sync_mod.SyncProcessorBuilder.init(allocator)
+        .outputDir("/tmp/out")
+        .build();
+    try std.testing.expectError(error.MissingWorkspace, result);
+}
+
+test "T8.3 CommentSyncProcessorBuilder.build: fields propagated correctly" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    var csp = try comment_sync_mod.CommentSyncProcessorBuilder.init(allocator)
+        .withWorkspace("/tmp/ws")
+        .jsonDir("/tmp/json")
+        .withDebug(true)
+        .dryRun(false)
+        .generateHeaders(true)
+        .incremental(true)
+        .build();
+    defer csp.deinit();
+
+    try std.testing.expectEqualStrings("/tmp/ws", csp.project_root);
+    try std.testing.expectEqualStrings("/tmp/json", csp.output_dir);
+    try std.testing.expect(csp.debug == true);
+    try std.testing.expect(csp.dry_run == false);
+    try std.testing.expect(csp.generate_headers == true);
+    try std.testing.expect(csp.incremental == true);
+    try std.testing.expect(csp.enhancer == null);
+}
+
+test "T8.4 CommentSyncProcessorBuilder.build: returns error when workspace missing" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    defer if (gpa.deinit() == .leak) @panic("leak");
+    const allocator = gpa.allocator();
+
+    const result = comment_sync_mod.CommentSyncProcessorBuilder.init(allocator)
+        .jsonDir("/tmp/json")
+        .build();
+    try std.testing.expectError(error.MissingWorkspace, result);
 }

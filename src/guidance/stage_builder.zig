@@ -166,6 +166,7 @@ const testing = std.testing;
 test "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail" {
     const allocator = testing.allocator;
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "A comprehensive test module that does many interesting things.",
         .keywords = &.{"test"},
@@ -179,6 +180,7 @@ test "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail"
 test "GuidanceJsonStageBuilder: buildStages produces prose stage from detail" {
     const allocator = testing.allocator;
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "A comprehensive test module that does many interesting things.",
         .keywords = &.{"test"},
@@ -199,6 +201,7 @@ test "GuidanceJsonStageBuilder: buildStages produces prose stage from detail" {
 test "GuidanceJsonStageBuilder: isRelevant matches source path token" {
     const allocator = testing.allocator;
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "Test detail",
         .keywords = &.{"test"},

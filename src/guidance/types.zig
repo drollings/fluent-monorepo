@@ -137,6 +137,12 @@ pub const CapabilityEval = struct {
 };
 
 pub const GuidanceDoc = struct {
+    /// Arena that owns all string fields parsed from JSON (comment, detail, keywords,
+    /// skills, members, etc.).  Call `arena.deinit()` to release the entire doc.
+    /// For JSON-loaded docs (via JsonStore.loadGuidance), the arena is always
+    /// initialised.  For scratch-built docs (processFile), the arena covers all
+    /// doc-bound string fields assembled during the build step.
+    arena: std.heap.ArenaAllocator,
     meta: Meta,
     /// Module-level one-line description.
     ///

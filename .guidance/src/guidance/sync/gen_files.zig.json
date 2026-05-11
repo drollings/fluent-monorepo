@@ -4,7 +4,7 @@
     "source": "src/guidance/sync/gen_files.zig",
     "language": "zig"
   },
-  "comment": " sync/gen_files.zig — Gen command, file pipeline, and DB sync logic.\n\n Extracted from sync_engine.zig (M2.1) to keep file sizes navigable.\n Public API: GenArgs, cmdGen, cmdGenImpl, and all internal helpers used by them.\n\n ## Memory Ownership\n\n   - GenArgs: Holds borrowed CLI string slices (no deinit needed); parsed from argv.\n   - ResolvedGenPaths: Owns resolved absolute-path strings; free with deinit().\n   - cmdGen()/cmdGenImpl(): Orchestrates file processing; creates an Enhancer internally\n     (which owns the LlmClient) and tears it down at function exit.\n   - processFiles(): Allocates per-file results; arena-backed for batch processing.\n   - setupEnhancer()/teardownCspEnhancer(): Create/destroy an LlmClient-based Enhancer;\n     caller owns the returned Enhancer and must call teardownCspEnhancer() to deinit.\n   - CapabilitiesSyncFn: Function pointer to avoid circular imports; ownership of\n     capability sync is delegated to sync_engine.zig.",
+  "comment": " sync/gen_files.zig — Gen command, file pipeline, and DB sync logic.\n\n Extracted from sync_engine.zig (M2.1) to keep file sizes navigable.\n Public API: GenArgs, cmdGen, cmdGenImpl, and all internal helpers used by them.\n\n ## Memory Ownership\n\n   - GenArgs: Holds borrowed CLI string slices (no deinit needed); parsed from argv.\n   - ResolvedGenPaths: Owns resolved absolute-path strings; free with deinit() when\n     allocated from a non-arena allocator. In cmdGenImpl, strings are arena-backed.\n   - cmdGen()/cmdGenImpl(): Orchestrates file processing; uses an arena for all path\n     temporaries (cwd, paths, cfg, snap_path, json_path). Long-lived state (processor,\n     csp, cap_evaluator_opt, created_list) stays on the caller's allocator.\n   - processFiles(): Allocates per-file results; arena-backed for batch processing.\n   - SyncProcessorBuilder / CommentSyncProcessorBuilder: Fluent builders that replace\n     the old setupEnhancer/setupCspEnhancer/teardownCspEnhancer two-act construction.\n   - CapabilitiesSyncFn: Function pointer to avoid circular imports; ownership of\n     capability sync is delegated to sync_engine.zig.",
   "used_by": ["src/guidance/sync_engine.zig"],
   "members": [
     {
@@ -21,10 +21,10 @@
           "signature": "fn parse(args: []const []const u8) -> error{MissingValue}!GenArgs",
           "returns": "error{MissingValue}!GenArgs",
           "is_pub": true,
-          "line": 105
+          "line": 107
         }
       ],
-      "line": 56
+      "line": 58
     },
     {
       "type": "struct",
@@ -40,10 +40,10 @@
           "signature": "fn deinit(self: *@This(), allocator: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 202
+          "line": 210
         }
       ],
-      "line": 197
+      "line": 202
     },
     {
       "type": "fn_decl",
@@ -52,34 +52,34 @@
       "signature": "fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u8) -> ResolvedGenPaths",
       "returns": "ResolvedGenPaths",
       "is_pub": true,
-      "line": 210
+      "line": 218
     },
     {
-      "type": "fn_decl",
-      "name": "setupCspEnhancer",
-      "match_hash": "2a8999ffcca9d06adbdf4ba52d25be367371fddf6cbd521369dd13137d2c813a",
-      "signature": "fn setupCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 226
+      "type": "fn_private",
+      "name": "buildEnhancer",
+      "match_hash": "b177c3f722b91a483fad037a973ef8be495248b1311784ac30811254505b9db0",
+      "signature": "fn buildEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) -> ?enhancer_mod.Enhancer",
+      "returns": "?enhancer_mod.Enhancer",
+      "is_pub": false,
+      "line": 235
     },
     {
-      "type": "fn_decl",
-      "name": "teardownCspEnhancer",
-      "match_hash": "82c9969dd60f854c9daf98317d72399726d5302ba704cb92948b955c63f05d6e",
-      "signature": "fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 283
+      "type": "fn_private",
+      "name": "buildThinkingEnhancer",
+      "match_hash": "29cb044e189c2d77f59b580fe467732e5eef2f06e87a86700d63dbf44f69f09f",
+      "signature": "fn buildThinkingEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) -> ?enhancer_mod.Enhancer",
+      "returns": "?enhancer_mod.Enhancer",
+      "is_pub": false,
+      "line": 277
     },
     {
-      "type": "fn_decl",
-      "name": "setupEnhancer",
-      "match_hash": "2f3cc9d002f0f0a23b63fcdd3dfd18bf825871c7e28c200d19bf02a931be5bbf",
-      "signature": "fn setupEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor) -> void",
-      "returns": "void",
-      "is_pub": true,
-      "line": 296
+      "type": "fn_private",
+      "name": "buildCspEnhancer",
+      "match_hash": "1fb6e7d24d416ae0f4db95b0aa5d7a23b1d06e0726a2b80cd0ec4ded4a48aeb8",
+      "signature": "fn buildCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) -> ?*enhancer_mod.Enhancer",
+      "returns": "?*enhancer_mod.Enhancer",
+      "is_pub": false,
+      "line": 307
     },
     {
       "type": "fn_decl",
@@ -88,7 +88,7 @@
       "signature": "fn processFiles(allocator: std.mem.Allocator, processor: *sync_mod.SyncProcessor, ga: GenArgs, paths: ResolvedGenPaths) -> usize",
       "returns": "usize",
       "is_pub": true,
-      "line": 393
+      "line": 356
     },
     {
       "type": "fn_decl",
@@ -97,7 +97,7 @@
       "signature": "fn databaseHasTables(db_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 433
+      "line": 396
     },
     {
       "type": "fn_decl",
@@ -106,7 +106,7 @@
       "signature": "fn guidanceDbIsUpToDate(allocator: std.mem.Allocator, db_path: []const u8, json_dir: []const u8, capabilities_dir: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 468
+      "line": 435
     },
     {
       "type": "fn_decl",
@@ -115,7 +115,7 @@
       "signature": "fn syncGuidanceDb(allocator: std.mem.Allocator, json_dir: []const u8, guidance_db_path: []const u8, cfg: *const config_mod.ProjectConfig, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 536
+      "line": 504
     },
     {
       "type": "fn_decl",
@@ -124,7 +124,7 @@
       "signature": "fn clearSynthesisCacheAt(allocator: std.mem.Allocator, db_path: []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 619
+      "line": 587
     },
     {
       "type": "fn_decl",
@@ -133,7 +133,7 @@
       "signature": "fn generateSemanticAliases(guidance_dir: []const u8, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 632
+      "line": 600
     },
     {
       "type": "fn_decl",
@@ -142,7 +142,7 @@
       "signature": "fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 658
+      "line": 626
     },
     {
       "type": "fn_decl",
@@ -151,7 +151,7 @@
       "signature": "fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?CapabilitiesSyncFn) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 667
+      "line": 635
     },
     {
       "type": "fn_decl",
@@ -160,7 +160,7 @@
       "signature": "fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8, verbose: bool) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1127
+      "line": 1101
     },
     {
       "type": "fn_decl",
@@ -169,7 +169,7 @@
       "signature": "fn postProcessCommentSync(allocator: std.mem.Allocator, json_dir: []const u8, workspace: []const u8, cfg: *const config_mod.ProjectConfig, dry_run: bool, verbose: bool) -> usize",
       "returns": "usize",
       "is_pub": true,
-      "line": 1169
+      "line": 1143
     },
     {
       "type": "fn_decl",
@@ -178,7 +178,7 @@
       "signature": "fn guidanceJsonPath(allocator: std.mem.Allocator, workspace: []const u8, json_dir: []const u8, src_abs: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 1368
+      "line": 1318
     },
     {
       "type": "fn_decl",
@@ -187,7 +187,7 @@
       "signature": "fn runPhaseCommand(allocator: std.mem.Allocator, argv_template: []const []const u8, file_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 1386
+      "line": 1336
     },
     {
       "type": "fn_decl",
@@ -196,7 +196,7 @@
       "signature": "fn collectFilesWithExts(allocator: std.mem.Allocator, dir_abs: []const u8, exts: []const []const u8) -> [][]const u8",
       "returns": "[][]const u8",
       "is_pub": true,
-      "line": 1400
+      "line": 1350
     },
     {
       "type": "fn_decl",
@@ -205,7 +205,7 @@
       "signature": "fn runBuiltinFilePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, src_abs: []const u8, ga: GenArgs, evaluator: ?*cap_eval_mod.CapabilityEvaluator, created_list: *std.ArrayList([]const u8)) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 1437
+      "line": 1387
     },
     {
       "type": "fn_private",
@@ -214,7 +214,7 @@
       "signature": "fn recordCapabilityMatch(allocator: std.mem.Allocator, json_path: []const u8, match: cap_eval_mod.CapabilityMatch) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1526
+      "line": 1476
     },
     {
       "type": "fn_private",
@@ -223,7 +223,7 @@
       "signature": "fn recordNovelCapability(allocator: std.mem.Allocator, json_path: []const u8, novel: cap_eval_mod.NovelCapability, caps_dir: []const u8, created_list: *std.ArrayList([]const u8)) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1583
+      "line": 1533
     },
     {
       "type": "fn_decl",
@@ -232,7 +232,7 @@
       "signature": "fn runBuiltinLanguagePipeline(allocator: std.mem.Allocator, cfg: *const config_mod.ProjectConfig, processor: *sync_mod.SyncProcessor, language: []const u8, stale_files: []const []const u8, all_files: []const []const u8, guidance_root: []const u8, ga: GenArgs, evaluator: ?*cap_eval_mod.CapabilityEvaluator, created_list: *std.ArrayList([]const u8)) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1602
+      "line": 1552
     }
   ]
 }

@@ -5,7 +5,7 @@ const document_indexer_mod = @import("document_indexer.zig");
 
 test "GuidanceJsonIndexer: docType returns guidance_json" {
     const allocator = std.testing.allocator;
-    const doc = types.GuidanceDoc{
+    const doc = types.GuidanceDoc{ .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .comment = "Test module",
         .detail = "A comprehensive test module with many features.",
@@ -20,7 +20,7 @@ test "GuidanceJsonIndexer: docType returns guidance_json" {
 
 test "GuidanceJsonIndexer: produceStages includes detail prose" {
     const allocator = std.testing.allocator;
-    const doc = types.GuidanceDoc{
+    const doc = types.GuidanceDoc{ .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "A comprehensive test module that does many interesting things and has lots of content.",
         .keywords = &.{"test"},

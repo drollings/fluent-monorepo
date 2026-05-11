@@ -6,12 +6,14 @@
 //! ## Memory Ownership
 //!
 //!   - GenArgs: Holds borrowed CLI string slices (no deinit needed); parsed from argv.
-//!   - ResolvedGenPaths: Owns resolved absolute-path strings; free with deinit().
-//!   - cmdGen()/cmdGenImpl(): Orchestrates file processing; creates an Enhancer internally
-//!     (which owns the LlmClient) and tears it down at function exit.
+//!   - ResolvedGenPaths: Owns resolved absolute-path strings; free with deinit() when
+//!     allocated from a non-arena allocator. In cmdGenImpl, strings are arena-backed.
+//!   - cmdGen()/cmdGenImpl(): Orchestrates file processing; uses an arena for all path
+//!     temporaries (cwd, paths, cfg, snap_path, json_path). Long-lived state (processor,
+//!     csp, cap_evaluator_opt, created_list) stays on the caller's allocator.
 //!   - processFiles(): Allocates per-file results; arena-backed for batch processing.
-//!   - setupEnhancer()/teardownCspEnhancer(): Create/destroy an LlmClient-based Enhancer;
-//!     caller owns the returned Enhancer and must call teardownCspEnhancer() to deinit.
+//!   - SyncProcessorBuilder / CommentSyncProcessorBuilder: Fluent builders that replace
+//!     the old setupEnhancer/setupCspEnhancer/teardownCspEnhancer two-act construction.
 //!   - CapabilitiesSyncFn: Function pointer to avoid circular imports; ownership of
 //!     capability sync is delegated to sync_engine.zig.
 
@@ -194,11 +196,17 @@ pub const GenArgs = struct {
 // ResolvedGenPaths + resolveGenPaths
 // =============================================================================
 
+/// Resolved absolute paths for the gen command.
+/// In cmdGenImpl all string fields are arena-allocated; no deinit call is needed there.
+/// deinit() is retained for callers that use a non-arena allocator (e.g., tests).
 pub const ResolvedGenPaths = struct {
     workspace: []const u8,
     json_dir: []const u8,
     db_path: []const u8,
 
+    /// Free the three owned strings.  Only needed when the strings were NOT
+    /// allocated from an arena.  In cmdGenImpl the function-scoped arena covers
+    /// all ResolvedGenPaths strings, so deinit is not called there.
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         allocator.free(self.workspace);
         allocator.free(self.json_dir);
@@ -219,22 +227,17 @@ pub fn resolveGenPaths(allocator: std.mem.Allocator, ga: GenArgs, cwd: []const u
 }
 
 // =============================================================================
-// CSP enhancer setup / teardown (comment sync pre-pass)
+// Private enhancer build helpers (used by cmdGenImpl via builders)
 // =============================================================================
 
-/// Initializes a CSP enhancer configuration using provided allocator, arguments, and project settings.
-pub fn setupCspEnhancer(
-    allocator: std.mem.Allocator,
-    ga: GenArgs,
-    cfg: *const config_mod.ProjectConfig,
-    csp: *comment_sync_mod.CommentSyncProcessor,
-) void {
+/// Build a SyncProcessor Enhancer from CLI/config.  Returns null on failure
+/// (LLM unavailable) so the processor works without AI in degraded mode.
+fn buildEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) ?enhancer_mod.Enhancer {
     const model = if (!std.mem.eql(u8, ga.model, config_mod.DEFAULT_MODEL) or ga.model_override)
         ga.model
     else
         cfg.infillModel();
 
-    var resolved_url_to_free: ?[]const u8 = null;
     const llm_config = query_engine_mod.resolveLlmConfigForThinking(
         allocator,
         cfg,
@@ -248,15 +251,12 @@ pub fn setupCspEnhancer(
             .debug = ga.debug,
             .show_prompts = ga.show_prompts,
         };
-        const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return;
-        enh_ptr.* = enhancer_mod.Enhancer.init(allocator, fallback_config) catch {
-            allocator.destroy(enh_ptr);
-            return;
+        return enhancer_mod.Enhancer.init(allocator, fallback_config) catch |init_err| {
+            std.debug.print("warning: could not init LLM enhancer: {any}\n", .{init_err});
+            return null;
         };
-        csp.enhancer = enh_ptr;
-        return;
     };
-    resolved_url_to_free = llm_config.resolved_url;
+    defer if (llm_config.resolved_url) |url| allocator.free(url);
 
     const final_config: llm.LlmConfig = .{
         .api_url = llm_config.api_url,
@@ -265,55 +265,57 @@ pub fn setupCspEnhancer(
         .debug = ga.debug,
         .show_prompts = ga.show_prompts,
     };
-
-    const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch {
-        if (resolved_url_to_free) |url| allocator.free(url);
-        return;
+    if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?any}\n", .{ final_config.api_url, final_config.model, final_config.think });
+    return enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
+        std.debug.print("warning: could not init LLM enhancer: {any}\n", .{err});
+        return null;
     };
-    enh_ptr.* = enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
-        std.debug.print("warning: could not init LLM enhancer for comment sync: {any}\n", .{err});
-        allocator.destroy(enh_ptr);
-        return;
-    };
-    if (resolved_url_to_free) |url| allocator.free(url);
-    csp.enhancer = enh_ptr;
 }
 
-/// Cleans up the CSP enhancer by releasing allocated resources.
-pub fn teardownCspEnhancer(allocator: std.mem.Allocator, csp: *comment_sync_mod.CommentSyncProcessor) void {
-    if (csp.enhancer) |enh_ptr| {
-        enh_ptr.deinit();
-        allocator.destroy(enh_ptr);
-        csp.enhancer = null;
-    }
+/// Build the optional thinking-model Enhancer.  Returns null when no thinking
+/// model is configured or on failure.
+fn buildThinkingEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) ?enhancer_mod.Enhancer {
+    const thinking_model = cfg.thinkingModel();
+    if (thinking_model.len == 0) return null;
+
+    const thinking_config = query_engine_mod.resolveLlmConfigForThinking(
+        allocator,
+        cfg,
+        thinking_model,
+        if (ga.api_url_set) ga.api_url else null,
+    ) catch {
+        if (ga.verbose) std.debug.print("warning: could not resolve thinking model config\n", .{});
+        return null;
+    };
+    defer if (thinking_config.resolved_url) |url| allocator.free(url);
+
+    const thinking_llm_config: llm.LlmConfig = .{
+        .api_url = thinking_config.api_url,
+        .model = thinking_config.model,
+        .think = true,
+        .debug = ga.debug,
+        .show_prompts = ga.show_prompts,
+    };
+    return enhancer_mod.Enhancer.init(allocator, thinking_llm_config) catch |err| {
+        if (ga.verbose) std.debug.print("warning: could not init thinking enhancer: {any}\n", .{err});
+        return null;
+    };
 }
 
-// =============================================================================
-// SyncProcessor enhancer setup (main gen pipeline)
-// =============================================================================
-
-/// Initializes a sync enhancer with allocator, configuration, and processor parameters.
-pub fn setupEnhancer(
-    allocator: std.mem.Allocator,
-    ga: GenArgs,
-    cfg: *const config_mod.ProjectConfig,
-    processor: *sync_mod.SyncProcessor,
-) void {
-    // CLI -m flag overrides config; otherwise resolve from fast/default slots.
+/// Build a heap-allocated Enhancer for CommentSyncProcessor.  Returns null on
+/// failure.  Ownership transfers to the caller (typically via the builder).
+fn buildCspEnhancer(allocator: std.mem.Allocator, ga: GenArgs, cfg: *const config_mod.ProjectConfig) ?*enhancer_mod.Enhancer {
     const model = if (!std.mem.eql(u8, ga.model, config_mod.DEFAULT_MODEL) or ga.model_override)
         ga.model
     else
         cfg.infillModel();
 
-    // Use centralized helper to resolve URL and thinking model settings
-    var resolved_url_to_free: ?[]const u8 = null;
     const llm_config = query_engine_mod.resolveLlmConfigForThinking(
         allocator,
         cfg,
         model,
         if (ga.api_url_set) ga.api_url else null,
     ) catch {
-        // Fallback to defaults
         const fallback_config: llm.LlmConfig = .{
             .api_url = ga.api_url,
             .model = model,
@@ -321,68 +323,29 @@ pub fn setupEnhancer(
             .debug = ga.debug,
             .show_prompts = ga.show_prompts,
         };
-        processor.enhancer = enhancer_mod.Enhancer.init(allocator, fallback_config) catch |init_err| {
-            std.debug.print("warning: could not init LLM enhancer: {any}\n", .{init_err});
-            return;
+        const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return null;
+        enh_ptr.* = enhancer_mod.Enhancer.init(allocator, fallback_config) catch {
+            allocator.destroy(enh_ptr);
+            return null;
         };
-        processor.regen_comments = ga.regen_comments;
-        return;
+        return enh_ptr;
     };
-    resolved_url_to_free = llm_config.resolved_url;
+    defer if (llm_config.resolved_url) |url| allocator.free(url);
 
-    // The returned api_url points to either resolved_url_to_free (if allocated) or a static string
-    // Enhancer.init will dupe the api_url, so we can free resolved_url_to_free after init
-    const api_url: []const u8 = llm_config.api_url;
-
-    // Build final config with debug setting
     const final_config: llm.LlmConfig = .{
-        .api_url = api_url,
+        .api_url = llm_config.api_url,
         .model = llm_config.model,
         .think = llm_config.think,
         .debug = ga.debug,
         .show_prompts = ga.show_prompts,
     };
-
-    if (ga.verbose) std.debug.print("DEBUG: LLM config - api_url: {s}, model: {s}, think: {?any}\n", .{ api_url, final_config.model, final_config.think });
-    processor.enhancer = enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
-        std.debug.print("warning: could not init LLM enhancer: {any}\n", .{err});
-        if (resolved_url_to_free) |url| allocator.free(url);
-        processor.regen_comments = ga.regen_comments;
-        return;
+    const enh_ptr = allocator.create(enhancer_mod.Enhancer) catch return null;
+    enh_ptr.* = enhancer_mod.Enhancer.init(allocator, final_config) catch |err| {
+        std.debug.print("warning: could not init LLM enhancer for comment sync: {any}\n", .{err});
+        allocator.destroy(enh_ptr);
+        return null;
     };
-    // Enhancer.init makes its own copy of api_url, so we can free our temp copy now.
-    if (resolved_url_to_free) |url| allocator.free(url);
-    processor.regen_comments = ga.regen_comments;
-
-    // --- Set up thinking enhancer for module detail generation ---
-    const thinking_model = cfg.thinkingModel();
-    if (thinking_model.len > 0) {
-        const thinking_config = query_engine_mod.resolveLlmConfigForThinking(
-            allocator,
-            cfg,
-            thinking_model,
-            if (ga.api_url_set) ga.api_url else null,
-        ) catch {
-            if (ga.verbose) std.debug.print("warning: could not resolve thinking model config\n", .{});
-            return;
-        };
-
-        // Thinking model should use Ollama /api/chat endpoint with think=true
-        const thinking_llm_config: llm.LlmConfig = .{
-            .api_url = thinking_config.api_url,
-            .model = thinking_config.model,
-            .think = true, // Always enable thinking for detail generation
-            .debug = ga.debug,
-            .show_prompts = ga.show_prompts,
-        };
-        processor.thinking_enhancer = enhancer_mod.Enhancer.init(allocator, thinking_llm_config) catch |err| {
-            if (ga.verbose) std.debug.print("warning: could not init thinking enhancer: {any}\n", .{err});
-            return;
-        };
-
-        // Free resolved URL if allocated
-        if (thinking_config.resolved_url) |url| allocator.free(url);
-    }
+    return enh_ptr;
 }
 
 // =============================================================================
@@ -465,6 +428,10 @@ pub fn databaseHasTables(db_path: []const u8) bool {
 }
 
 /// Checks if the guidance database is up-to-date using provided storage, paths, and capabilities.
+///
+/// All path allocations inside this function use a function-scoped arena so
+/// that a single `arena.deinit()` replaces ~8 individual `defer allocator.free`
+/// calls across the two walker loops.
 pub fn guidanceDbIsUpToDate(
     allocator: std.mem.Allocator,
     db_path: []const u8,
@@ -475,6 +442,11 @@ pub fn guidanceDbIsUpToDate(
 
     if (!databaseHasTables(db_path)) return false;
 
+    // Arena for all path joins inside this function.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
     // Top-level config and data files in json_dir.
     const top_level = [_][]const u8{
         "semantic-aliases.json",
@@ -483,26 +455,23 @@ pub fn guidanceDbIsUpToDate(
         "guidance-config.json",
     };
     for (top_level) |name| {
-        const p = std.fs.path.join(allocator, &.{ json_dir, name }) catch return false;
-        defer allocator.free(p);
+        const p = std.fs.path.join(a, &.{ json_dir, name }) catch return false;
         const m = marker_mod.fileMtime(p) orelse continue; // absent → not a dep
         if (m > db_mtime) return false;
     }
 
     // Walk json_dir/src/ for newest JSON mtime.
     {
-        const src_dir_path = std.fs.path.join(allocator, &.{ json_dir, "src" }) catch return false;
-        defer allocator.free(src_dir_path);
+        const src_dir_path = std.fs.path.join(a, &.{ json_dir, "src" }) catch return false;
         const io = std.Io.Threaded.global_single_threaded.io();
         var src_dir = std.Io.Dir.openDirAbsolute(io, src_dir_path, .{ .iterate = true }) catch return false;
         defer src_dir.close(io);
-        var walker = src_dir.walk(allocator) catch return false;
+        var walker = src_dir.walk(a) catch return false;
         defer walker.deinit();
         while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch return false) |entry| {
             if (entry.kind != .file) continue;
             if (!std.mem.endsWith(u8, entry.basename, ".json")) continue;
-            const full = std.fs.path.join(allocator, &.{ src_dir_path, entry.path }) catch continue;
-            defer allocator.free(full);
+            const full = std.fs.path.join(a, &.{ src_dir_path, entry.path }) catch continue;
             const m = marker_mod.fileMtime(full) orelse continue;
             if (m > db_mtime) return false;
         }
@@ -514,12 +483,11 @@ pub fn guidanceDbIsUpToDate(
         const io = std.Io.Threaded.global_single_threaded.io();
         var cap_dir = std.Io.Dir.openDirAbsolute(io, capabilities_dir, .{ .iterate = true }) catch return true;
         defer cap_dir.close(io);
-        var walker = cap_dir.walk(allocator) catch return true;
+        var walker = cap_dir.walk(a) catch return true;
         defer walker.deinit();
         while (walker.next(std.Io.Threaded.global_single_threaded.io()) catch return true) |entry| {
             if (entry.kind != .file) continue;
-            const full = std.fs.path.join(allocator, &.{ capabilities_dir, entry.path }) catch continue;
-            defer allocator.free(full);
+            const full = std.fs.path.join(a, &.{ capabilities_dir, entry.path }) catch continue;
             const m = marker_mod.fileMtime(full) orelse continue;
             if (m > db_mtime) return false;
         }
@@ -665,11 +633,17 @@ pub fn cmdGen(allocator: std.mem.Allocator, args: []const []const u8, caps_sync_
 
 /// Generates a Zig implementation for the sync engine using an allocator and provided generation arguments.
 pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?CapabilitiesSyncFn) !void {
-    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
-    defer allocator.free(cwd);
+    // Arena for all orchestration temporaries: cwd, paths, cfg, per-file paths, snap_path.
+    // Long-lived state (processor, csp, cap_evaluator_opt, created_list) stays on allocator.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
 
-    var paths = try resolveGenPaths(allocator, ga, cwd);
-    defer paths.deinit(allocator);
+    const cwd = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), a);
+    // No defer — arena covers cwd.
+
+    const paths = try resolveGenPaths(a, ga, cwd);
+    // No defer paths.deinit — arena covers all path strings.
 
     if (ga.verbose) {
         std.debug.print("guidance gen:\n  workspace: {s}\n  json_dir:  {s}\n  db_path:   {s}\n", .{
@@ -678,9 +652,9 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     }
 
     // Load config for test/lint/fmt commands.
-    var cfg = config_mod.loadConfig(allocator, paths.workspace) catch
-        try config_mod.loadConfig(allocator, cwd);
-    defer cfg.deinit();
+    var cfg = config_mod.loadConfig(a, paths.workspace) catch
+        try config_mod.loadConfig(a, cwd);
+    // No defer cfg.deinit — arena covers all config strings.
 
     // ── Optional comment sync pre-pass ────────────────────────────────────────
     // Run CommentSyncProcessor over the target file(s) before JSON generation.
@@ -691,51 +665,55 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     // not explicitly disabled (--no-llm).  When the LLM is unreachable,
     // generateMemberComment returns null and no changes are made (no-op).
     if (ga.sync_comments or !ga.no_llm) {
-        var csp = comment_sync_mod.CommentSyncProcessor.init(
-            allocator,
-            paths.workspace,
-            paths.json_dir,
-            ga.debug,
-            ga.dry_run,
-        );
-        csp.generate_headers = ga.sync_headers;
-        csp.incremental = !ga.force;
-        setupCspEnhancer(allocator, ga, &cfg, &csp);
-        defer teardownCspEnhancer(allocator, &csp);
+        var csp_b = comment_sync_mod.CommentSyncProcessorBuilder.init(allocator)
+            .withWorkspace(paths.workspace)
+            .jsonDir(paths.json_dir)
+            .withDebug(ga.debug)
+            .dryRun(ga.dry_run)
+            .generateHeaders(ga.sync_headers)
+            .incremental(!ga.force);
+        if (!ga.no_llm) {
+            if (buildCspEnhancer(allocator, ga, &cfg)) |ep| csp_b = csp_b.withEnhancer(ep);
+        }
+        var csp = try csp_b.build();
+        defer csp.deinit();
 
         if (ga.file) |file_arg| {
-            const src_abs = try common.resolvePath(allocator, paths.workspace, file_arg);
-            defer allocator.free(src_abs);
+            const src_abs = try common.resolvePath(a, paths.workspace, file_arg);
+            // No defer — arena covers src_abs.
             _ = csp.processFile(src_abs) catch |err| {
                 if (ga.verbose) std.debug.print("[sync-comments] {s}: {s}\n", .{ src_abs, @errorName(err) });
             };
         } else {
-            const src_scan_dir = try std.fs.path.join(allocator, &.{ paths.workspace, "src" });
-            defer allocator.free(src_scan_dir);
+            const src_scan_dir = try std.fs.path.join(a, &.{ paths.workspace, "src" });
+            // No defer — arena covers src_scan_dir.
             var dir = std.Io.Dir.openDirAbsolute(std.Io.Threaded.global_single_threaded.io(), src_scan_dir, .{ .iterate = true }) catch null;
             if (dir) |*d| {
-                var walker = try d.walk(allocator);
+                var walker = try d.walk(a);
                 defer walker.deinit();
                 while (try walker.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
                     if (entry.kind != .file) continue;
                     if (!std.mem.endsWith(u8, entry.path, ".zig")) continue;
-                    const abs = try std.fs.path.join(allocator, &.{ src_scan_dir, entry.path });
-                    defer allocator.free(abs);
+                    const abs = try std.fs.path.join(a, &.{ src_scan_dir, entry.path });
+                    // No defer — arena covers abs.
                     _ = csp.processFile(abs) catch continue;
                 }
             }
         }
     }
 
-    var processor = sync_mod.SyncProcessor.init(
-        allocator,
-        paths.workspace,
-        paths.json_dir,
-        ga.dry_run,
-        ga.debug,
-    );
+    var proc_b = sync_mod.SyncProcessorBuilder.init(allocator)
+        .workspace(paths.workspace)
+        .outputDir(paths.json_dir)
+        .dryRun(ga.dry_run)
+        .withDebug(ga.debug)
+        .regenComments(ga.regen_comments);
+    if (!ga.no_llm) {
+        if (buildEnhancer(allocator, ga, &cfg)) |e| proc_b = proc_b.withEnhancer(e);
+        if (buildThinkingEnhancer(allocator, ga, &cfg)) |e| proc_b = proc_b.withThinkingEnhancer(e);
+    }
+    var processor = try proc_b.build();
     defer processor.deinit();
-    setupEnhancer(allocator, ga, &cfg, &processor);
 
     // M4: Load capabilities from database before processing files.
     // This enables back-propagation of capabilities into guidance JSON.
@@ -753,17 +731,17 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     if (!ga.no_llm and !ga.dry_run) {
         const thinking_model = cfg.thinkingModel();
         if (thinking_model.len > 0) {
-            const index_path = std.fs.path.join(allocator, &.{ paths.json_dir, "capability-index.json" }) catch null;
+            const index_path = std.fs.path.join(a, &.{ paths.json_dir, "capability-index.json" }) catch null;
+            // No defer allocator.free(ip) — arena covers index_path.
             if (index_path) |ip| {
-                defer allocator.free(ip);
                 const thinking_cfg = query_engine_mod.resolveLlmConfigForThinking(
-                    allocator,
+                    a,
                     &cfg,
                     thinking_model,
                     if (ga.api_url_set) ga.api_url else null,
                 ) catch null;
+                // No defer for tc.resolved_url — arena covers it.
                 if (thinking_cfg) |tc| {
-                    defer if (tc.resolved_url) |url| allocator.free(url);
                     const llm_config: llm.LlmConfig = .{
                         .api_url = tc.api_url,
                         .model = tc.model,
@@ -789,11 +767,11 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
 
     // ── Single-file mode ──────────────────────────────────────────────────────
     if (ga.file) |file_arg| {
-        const src_abs = try common.resolvePath(allocator, paths.workspace, file_arg);
-        defer allocator.free(src_abs);
+        const src_abs = try common.resolvePath(a, paths.workspace, file_arg);
+        // No defer — arena covers src_abs.
 
-        const json_path = try guidanceJsonPath(allocator, paths.workspace, paths.json_dir, src_abs);
-        defer allocator.free(json_path);
+        const json_path = try guidanceJsonPath(a, paths.workspace, paths.json_dir, src_abs);
+        // No defer — arena covers json_path.
 
         if (!ga.force and !marker_mod.fileNeedsProcessing(src_abs, json_path)) {
             if (ga.verbose) std.debug.print("gen: {s} is up to date\n", .{src_abs});
@@ -841,8 +819,8 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
 
     // ── Explicit scan-dir mode  (--scan) ─────────────────────────────────────
     if (ga.scan) |scan_arg| {
-        const scan_abs = try common.resolvePath(allocator, paths.workspace, scan_arg);
-        defer allocator.free(scan_abs);
+        const scan_abs = try common.resolvePath(a, paths.workspace, scan_arg);
+        // No defer — arena covers scan_abs.
 
         // Only collect .zig files for the built-in Zig AST pipeline.
         // .md files use the MarkdownPlugin path, not the Zig AST parser.
@@ -894,22 +872,18 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
     const builtin_exts = [_][]const u8{".zig"};
     {
         var all_builtin: std.ArrayList([]const u8) = .empty;
-        defer {
-            for (all_builtin.items) |p| allocator.free(p);
-            all_builtin.deinit(allocator);
-        }
+        // No compound defer — arena covers ArrayList backing array and all string items.
         for (cfg.src_dirs) |src_rel| {
-            const src_abs = try common.resolvePath(allocator, paths.workspace, src_rel);
-            defer allocator.free(src_abs);
-            const files = try collectFilesWithExts(allocator, src_abs, &builtin_exts);
-            defer allocator.free(files);
-            for (files) |p| try all_builtin.append(allocator, p);
-            // Note: `p` is now owned by `all_builtin`; `files` slice freed above.
+            const src_abs = try common.resolvePath(a, paths.workspace, src_rel);
+            // No defer — arena covers src_abs.
+            const files = try collectFilesWithExts(a, src_abs, &builtin_exts);
+            // No defer — arena covers files slice and all string items.
+            for (files) |p| try all_builtin.append(a, p);
         }
 
         // Step 4.3: Load binary snapshot for hash-based skip optimization.
-        const snap_path = try std.fs.path.join(allocator, &.{ paths.json_dir, ".snap" });
-        defer allocator.free(snap_path);
+        const snap_path = try std.fs.path.join(a, &.{ paths.json_dir, ".snap" });
+        // No defer — arena covers snap_path.
         const git_head_now = fast_snapshot_mod.getGitHead(paths.workspace, allocator);
         var maybe_snap: ?fast_snapshot_mod.FastSnapshot = if (!ga.force)
             fast_snapshot_mod.FastSnapshot.read(allocator, snap_path)
@@ -928,17 +902,17 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
 
         // Filter to stale only.
         var stale: std.ArrayList([]const u8) = .empty;
-        defer stale.deinit(allocator);
+        // No defer stale.deinit — arena covers ArrayList backing array; items borrow from all_builtin.
         var missing_count: usize = 0;
         var newer_count: usize = 0;
         for (all_builtin.items) |src_abs| {
             const json_path = try guidanceJsonPath(
-                allocator,
+                a,
                 paths.workspace,
                 paths.json_dir,
                 src_abs,
             );
-            defer allocator.free(json_path);
+            // No defer — arena covers json_path.
             // Step 3.5 + 4.5: Use content-hash secondary gate when snapshot is available.
             const stored_hash: u64 = if (use_hash_skip)
                 (maybe_snap orelse unreachable).lookupStoredHash(src_abs)
@@ -946,7 +920,7 @@ pub fn cmdGenImpl(allocator: std.mem.Allocator, ga: GenArgs, caps_sync_fn: ?Capa
                 0;
             const needs_processing = ga.force or marker_mod.fileNeedsProcessingHash(src_abs, json_path, stored_hash);
             if (needs_processing) {
-                try stale.append(allocator, src_abs);
+                try stale.append(a, src_abs);
                 // Classify reason: missing JSON or source newer than JSON
                 if (!ga.force) {
                     if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), json_path, .{})) {
@@ -1145,8 +1119,8 @@ pub fn validateAllJsonSchema(allocator: std.mem.Allocator, json_dir: []const u8,
         const full = std.fs.path.join(allocator, &.{ src_dir_path, entry.path }) catch continue;
         defer allocator.free(full);
 
-        const doc = store.loadGuidance(full) catch continue orelse continue;
-        defer store.freeGuidanceDoc(doc);
+        var doc = store.loadGuidance(full) catch continue orelse continue;
+        defer doc.arena.deinit();
 
         schema_validator_mod.validateGuidanceDoc(allocator, &doc) catch |err| {
             std.debug.print("schema violation in {s}: {s}\n", .{ entry.path, @errorName(err) });
@@ -1197,15 +1171,14 @@ pub fn postProcessCommentSync(
         defer allocator.free(json_path);
 
         var doc = store.loadGuidance(json_path) catch continue orelse continue;
+        defer doc.arena.deinit();
 
         // Milestone 3.2: Extract member comments from source file.
         // Member comments are NOT stored in JSON per Milestone 3.1, so we need to
         // extract them from source to find members with generated comments.
         const src_rel = entry.path[0 .. entry.path.len - 5]; // strip .json
-        const src_abs = std.fs.path.join(allocator, &.{ workspace, "src", src_rel }) catch {
-            store.freeGuidanceDoc(doc);
-            continue;
-        };
+        const src_abs = std.fs.path.join(allocator, &.{ workspace, "src", src_rel }) catch continue;
+        defer allocator.free(src_abs);
 
         const source = std.Io.Dir.cwd().readFileAlloc(io, src_abs, allocator, .limited(10 * 1024 * 1024)) catch |err| {
             if (err == error.FileNotFound) {
@@ -1219,11 +1192,9 @@ pub fn postProcessCommentSync(
             } else {
                 std.debug.print("post-process: WARN: cannot read {s}: {s}\n", .{ src_abs, @errorName(err) });
             }
-            allocator.free(src_abs);
-            store.freeGuidanceDoc(doc);
             continue;
         };
-        // Note: source will be freed at the end of the loop iteration
+        defer allocator.free(source);
 
         store.extractMemberCommentsFromSource(&doc, source);
 
@@ -1236,33 +1207,19 @@ pub fn postProcessCommentSync(
             }
         }
 
-        if (!has_generated) {
-            allocator.free(src_abs);
-            allocator.free(source);
-            store.freeGuidanceDoc(doc);
-            continue;
-        }
+        if (!has_generated) continue;
 
         if (verbose) {
             std.debug.print("post-process: {s}: writing generated comments to source\n", .{src_abs});
         }
 
         if (dry_run) {
-            allocator.free(src_abs);
-            allocator.free(source);
-            store.freeGuidanceDoc(doc);
             modified_count += 1;
             continue;
         }
 
-        // Use the already-loaded source (avoid re-reading the file)
-        // Note: can't defer source here, will be freed manually
-
         // Process members in descending line order to avoid shifting.
-        const sorted_members = comment_sync_mod.sortMembersByLineDesc(allocator, doc.members) catch {
-            store.freeGuidanceDoc(doc);
-            continue;
-        };
+        const sorted_members = comment_sync_mod.sortMembersByLineDesc(allocator, doc.members) catch continue;
         defer allocator.free(sorted_members);
 
         var current_source: []const u8 = try allocator.dupe(u8, source);
@@ -1321,9 +1278,6 @@ pub fn postProcessCommentSync(
             // Write modified source.
             const file = std.Io.Dir.createFileAbsolute(std.Io.Threaded.global_single_threaded.io(), src_abs, .{ .truncate = true }) catch |err| {
                 std.debug.print("post-process: WARN: cannot write {s}: {s}\n", .{ src_abs, @errorName(err) });
-                allocator.free(src_abs);
-                allocator.free(source);
-                store.freeGuidanceDoc(doc);
                 continue;
             };
             defer file.close(io);
@@ -1347,10 +1301,6 @@ pub fn postProcessCommentSync(
                 std.debug.print("post-process: WARN: failed to correct lines for {s}: {s}\n", .{ src_abs, @errorName(err) });
             };
         }
-
-        allocator.free(src_abs);
-        allocator.free(source);
-        store.freeGuidanceDoc(doc);
     }
 
     if (modified_count > 0 and verbose) {
@@ -1532,7 +1482,7 @@ fn recordCapabilityMatch(
 
     var store = json_store_mod.JsonStore.init(allocator);
     var doc = (try store.loadGuidance(json_path)) orelse return;
-    defer store.freeGuidanceDoc(doc);
+    defer doc.arena.deinit();
 
     // Deduplicate: only append when not already present.
     for (doc.capabilities) |existing| {
@@ -1545,7 +1495,7 @@ fn recordCapabilityMatch(
         var caps: std.ArrayList([]const u8) = .empty;
         defer {
             // Free only the newly allocated strings; the existing slice items
-            // are owned by the doc and freed via freeGuidanceDoc.
+            // are owned by the doc arena and freed via doc.arena.deinit().
             caps.deinit(allocator);
         }
         for (doc.capabilities) |c| try caps.append(allocator, c);

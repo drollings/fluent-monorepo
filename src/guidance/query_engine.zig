@@ -386,16 +386,22 @@ fn cmdExplainStaged(
         std.debug.print("[DEBUG]   query_text = \"{s}\"\n", .{query_text});
     }
 
-    const skills_dir = try std.fs.path.join(allocator, &.{ guidance_dir, "skills" });
-    defer allocator.free(skills_dir);
+    // Per-query arena: owns all temporary allocations for the duration of this query.
+    // session_cache, client_opt, and fast_client_opt stay on `allocator` because they
+    // either accumulate across queries (session_cache) or hold external resources (clients).
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const skills_dir = try std.fs.path.join(a, &.{ guidance_dir, "skills" });
 
     // Session-level in-memory cache: avoids repeating synthesis for identical queries
     // within the same process lifetime (e.g. guidance serve). Bypassed by --no-cache.
     var session_cache = common.QueryCache.init(allocator);
     defer session_cache.deinit();
 
-    var aliases_opt: ?vector_db_mod.SemanticAliases = loadAliases(allocator, guidance_dir);
-    defer if (aliases_opt) |*a| a.deinit();
+    // aliases_opt internal strings are arena-allocated; no explicit deinit needed.
+    const aliases_opt: ?vector_db_mod.SemanticAliases = loadAliases(a, guidance_dir);
 
     // use_llm: always on unless --no-llm is specified
     // use_filter: depends on --filter mode (auto enables filter for long queries only)
@@ -459,15 +465,10 @@ fn cmdExplainStaged(
 
     // For long queries, extract key terms to improve search recall.
     var expanded_query: ?[]const u8 = null;
-    defer if (expanded_query) |q| allocator.free(q);
 
     if (use_filter) {
         if (client_opt) |*client| {
-            if (llmExtractKeyTerms(allocator, client, query_text) catch null) |terms| {
-                defer {
-                    for (terms) |t| allocator.free(t);
-                    allocator.free(terms);
-                }
+            if (llmExtractKeyTerms(a, client, query_text) catch null) |terms| {
                 if (ea.debug) {
                     std.debug.print("[DEBUG] Key term extraction:\n", .{});
                     std.debug.print("[DEBUG]   terms extracted: {d}\n", .{terms.len});
@@ -476,13 +477,12 @@ fn cmdExplainStaged(
                     }
                 }
                 var buf: std.ArrayList(u8) = .empty;
-                defer buf.deinit(allocator);
-                try buf.appendSlice(allocator, query_text);
+                try buf.appendSlice(a, query_text);
                 for (terms) |t| {
-                    try buf.append(allocator, ' ');
-                    try buf.appendSlice(allocator, t);
+                    try buf.append(a, ' ');
+                    try buf.appendSlice(a, t);
                 }
-                expanded_query = try buf.toOwnedSlice(allocator);
+                expanded_query = try buf.toOwnedSlice(a);
             }
         }
     }
@@ -513,7 +513,7 @@ fn cmdExplainStaged(
 
     // Pass original query for deterministic matching, effective query for vector search
     const stages_raw = try query_strategy_mod.executeQueryWithMatch(
-        allocator,
+        a,
         db,
         effective_query,
         query_text,
@@ -521,14 +521,9 @@ fn cmdExplainStaged(
         aliases_opt,
         &matches,
     );
-    defer {
-        types.freeStages(allocator, stages_raw);
-        allocator.free(stages_raw);
-    }
 
     if (stages_raw.len == 0) {
-        const lower_q = try std.ascii.allocLowerString(allocator, effective_query);
-        defer allocator.free(lower_q);
+        const lower_q = try std.ascii.allocLowerString(a, effective_query);
         std.debug.print("# Explain: {s}\n\nNot indexed for '{s}'. Search the source directly:\n\n", .{ query_text, effective_query });
         std.debug.print("    grep -ri '{s}' src/ | head -n 20\n\n", .{lower_q});
         std.debug.print("Run 'guidance gen' after finding the file to index it.\n", .{});
@@ -562,14 +557,10 @@ fn cmdExplainStaged(
     const client = &client_opt.?;
 
     // M6: LLM relevance filter (only when filter mode enables it).
-    const stages_filtered: ?[]types.Stage = if (use_filter) llm_filter_mod.filterStages(allocator, client, query_text, stages_raw) catch blk: {
+    const stages_filtered: ?[]types.Stage = if (use_filter) llm_filter_mod.filterStages(a, client, query_text, stages_raw) catch blk: {
         if (ea.verbose) std.debug.print("llm_filter failed, using unfiltered stages\n", .{});
         break :blk null;
     } else null;
-    defer if (stages_filtered) |sf| {
-        types.freeStages(allocator, sf);
-        allocator.free(sf);
-    };
 
     const working_stages: []const types.Stage = stages_filtered orelse stages_raw;
 
@@ -591,11 +582,7 @@ fn cmdExplainStaged(
         std.debug.print("[DEBUG]   aliases_loaded: {any}\n", .{aliases_opt != null});
     }
 
-    const expansion_results = db.searchWithAliases(allocator, effective_query, 5, aliases_opt) catch &.{};
-    defer {
-        for (expansion_results) |r| freeSearchResult(allocator, r);
-        allocator.free(expansion_results);
-    }
+    const expansion_results = db.searchWithAliases(a, effective_query, 5, aliases_opt) catch &.{};
 
     if (ea.debug) {
         std.debug.print("[DEBUG] Expansion results:\n", .{});
@@ -612,28 +599,24 @@ fn cmdExplainStaged(
     for (expansion_results) |r| db.incrementQueryCountForFile(r.source);
 
     var fp_list: std.ArrayList([]const u8) = .empty;
-    defer fp_list.deinit(allocator);
     var src_list: std.ArrayList([]const u8) = .empty;
-    defer src_list.deinit(allocator);
     var ub_list: std.ArrayList([]const []const u8) = .empty;
-    defer ub_list.deinit(allocator);
 
     // M4: Only include results with score >= SEE_ALSO_MIN_SCORE, up to SEE_ALSO_TOP_N
     for (expansion_results[0..@min(SEE_ALSO_TOP_N, expansion_results.len)]) |r| {
         if (r.score < SEE_ALSO_MIN_SCORE) continue;
-        try fp_list.append(allocator, r.file_path);
-        try src_list.append(allocator, r.source);
-        try ub_list.append(allocator, r.used_by);
+        try fp_list.append(a, r.file_path);
+        try src_list.append(a, r.source);
+        try ub_list.append(a, r.used_by);
     }
 
     var existing_srcs: std.ArrayList([]const u8) = .empty;
-    defer existing_srcs.deinit(allocator);
     for (working_stages) |s| {
-        if (s.kind == .code or s.kind == .prose) try existing_srcs.append(allocator, s.source);
+        if (s.kind == .code or s.kind == .prose) try existing_srcs.append(a, s.source);
     }
 
     const extra_stages: ?[]types.Stage = staged_mod.expandFollowUps(
-        allocator,
+        a,
         fp_list.items,
         src_list.items,
         ub_list.items,
@@ -643,21 +626,15 @@ fn cmdExplainStaged(
         existing_srcs.items,
         6,
     ) catch null;
-    defer if (extra_stages) |es| {
-        types.freeStages(allocator, es);
-        allocator.free(es);
-    };
 
     // Combine working + extra stages (borrows — no new string copies).
     var combined: std.ArrayList(types.Stage) = .empty;
-    defer combined.deinit(allocator); // only frees the ArrayList spine; strings owned by above slices
-    for (working_stages) |s| try combined.append(allocator, s);
-    if (extra_stages) |es| for (es) |s| try combined.append(allocator, s);
+    for (working_stages) |s| try combined.append(a, s);
+    if (extra_stages) |es| for (es) |s| try combined.append(a, s);
 
     // M8: LLM synthesis (use fast model if available, else default).
     // Check LLM synthesis cache before calling the model.
-    const query_hash = common.sha256Hex(allocator, query_text) catch null;
-    defer if (query_hash) |qh| allocator.free(qh);
+    const query_hash = common.sha256Hex(a, query_text) catch null;
 
     if (ea.debug) {
         std.debug.print("[DEBUG] Synthesis:\n", .{});
@@ -665,10 +642,9 @@ fn cmdExplainStaged(
     }
 
     const cached_summary: ?[]const u8 = if (query_hash) |qh|
-        db.loadCachedSynthesis(allocator, qh) catch null
+        db.loadCachedSynthesis(a, qh) catch null
     else
         null;
-    defer if (cached_summary) |cs| allocator.free(cs);
 
     if (ea.debug) {
         std.debug.print("[DEBUG]   cache_hit: {any}\n", .{cached_summary != null});
@@ -680,35 +656,25 @@ fn cmdExplainStaged(
     }
 
     const synth_result = if (cached_summary == null)
-        synthesize_mod.synthesize(allocator, synth_client, query_text, combined.items) catch {
+        synthesize_mod.synthesize(a, synth_client, query_text, combined.items) catch {
             return emitStagedOutput(allocator, query_text, combined.items, null, workspace);
         }
     else
         synthesize_mod.SynthesisResult{ .summary = null, .followup_keywords = null };
-    defer {
-        if (cached_summary == null) {
-            if (synth_result.summary) |s| allocator.free(s);
-            if (synth_result.followup_keywords) |kw| {
-                for (kw) |k| allocator.free(k);
-                allocator.free(kw);
-            }
-        }
-    }
 
     // Store successful synthesis in cache (best-effort, no error propagation).
+    // sig_buf and sig_hash are temporaries; arena owns them.
     if (cached_summary == null) {
         if (synth_result.summary) |summary| {
             if (query_hash) |qh| {
                 // Compute signature_hash from stage file paths for future invalidation.
-                var sig_buf_aw: std.Io.Writer.Allocating = .init(allocator);
-                defer sig_buf_aw.deinit();
+                var sig_buf_aw: std.Io.Writer.Allocating = .init(a);
                 const sig_writer = &sig_buf_aw.writer;
                 for (combined.items) |s| {
                     sig_writer.writeAll(s.source) catch {};
                     sig_writer.writeAll(&.{0}) catch {};
                 }
-                const sig_hash = common.sha256Hex(allocator, sig_buf_aw.written()) catch null;
-                defer if (sig_hash) |sh| allocator.free(sh);
+                const sig_hash = common.sha256Hex(a, sig_buf_aw.written()) catch null;
                 db.storeSynthesisCache(qh, summary, sig_hash orelse qh);
             }
         }
@@ -719,13 +685,9 @@ fn cmdExplainStaged(
 
     // M8.5: DRIFT follow-ups — deterministic, no LLM required.
     const drift_followups: []const []const u8 = if (!ea.no_drift)
-        computeDriftFollowUps(allocator, query_text, expansion_results) catch &.{}
+        computeDriftFollowUps(a, query_text, expansion_results) catch &.{}
     else
         &.{};
-    defer {
-        for (drift_followups) |q| allocator.free(q);
-        allocator.free(drift_followups);
-    }
 
     // Merge LLM-generated and DRIFT follow-ups into a single slice.
     // The merged slice borrows string pointers from both sources; only its
@@ -734,14 +696,15 @@ fn cmdExplainStaged(
         synth_result.followup_keywords
     else blk: {
         const synth_len = if (synth_result.followup_keywords) |sk| sk.len else 0;
-        var all = try allocator.alloc([]const u8, synth_len + drift_followups.len);
+        var all = try a.alloc([]const u8, synth_len + drift_followups.len);
         if (synth_result.followup_keywords) |sk| @memcpy(all[0..synth_len], sk);
         @memcpy(all[synth_len..], drift_followups);
         break :blk all;
     };
-    defer if (drift_followups.len > 0) {
-        if (merged_followups) |mf| allocator.free(mf);
-    };
+
+    // merged_followups is computed for future wiring (see-also / follow-up display);
+    // not yet passed to emitStagedOutput. Arena owns the spine; no explicit free needed.
+    _ = merged_followups;
 
     // Store synthesis result in session cache for future repeated queries (best-effort).
     if (!ea.no_cache) {

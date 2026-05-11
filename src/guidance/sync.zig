@@ -13,6 +13,9 @@ const dep_graph_mod = @import("sync/dep_graph.zig");
 /// Owned by SyncProcessor and freed in deinit.
 const CapabilitiesMap = std.StringHashMapUnmanaged([][]const u8);
 
+/// Public alias for test fixtures that need to hand-construct a CapabilitiesMap.
+pub const CapabilitiesMapPub = CapabilitiesMap;
+
 pub const SyncProcessor = struct {
     allocator: std.mem.Allocator,
     project_root: []const u8,
@@ -89,6 +92,12 @@ pub const SyncProcessor = struct {
         };
         defer db.deinit();
 
+        // Arena for the temporary entries slice — freed when this scope exits.
+        // Map keys/values are duped onto self.allocator because they outlive this function.
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const a = arena.allocator();
+
         // Clear existing map
         if (self.capabilities_map) |*cm| {
             var it = cm.iterator();
@@ -112,18 +121,12 @@ pub const SyncProcessor = struct {
             cm.deinit(self.allocator);
         }
 
-        // Query all capability-source mappings
-        const entries = db.getAllCapabilitySources(self.allocator) catch |err| {
+        // Query all capability-source mappings; entries are temporary (arena-owned).
+        const entries = db.getAllCapabilitySources(a) catch |err| {
             if (self.debug) std.debug.print("[sync] warning: cannot query capability sources: {s}\n", .{@errorName(err)});
             return;
         };
-        defer {
-            for (entries) |e| {
-                self.allocator.free(e.source_path);
-                self.allocator.free(e.capability_name);
-            }
-            self.allocator.free(entries);
-        }
+        // No defer needed — arena covers the entries slice and its strings.
 
         // Build map: source_path -> []capability_name
         for (entries) |entry| {
@@ -192,23 +195,29 @@ pub const SyncProcessor = struct {
     pub fn processFile(self: *SyncProcessor, filepath: []const u8, timeout_seconds: u64) !types.SyncResult {
         var result: types.SyncResult = .{ .filepath = filepath };
 
+        // Per-file arena: owns all intermediate and doc-field strings for this call.
+        // Single deinit replaces ~6 individual defer/free pairs.
+        var doc_arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer doc_arena.deinit();
+        const da = doc_arena.allocator();
+
         const io = std.Io.Threaded.global_single_threaded.io();
         const file = std.Io.Dir.openFileAbsolute(io, filepath, .{}) catch {
             return error.FileNotFound;
         };
         defer file.close(io);
 
-        const source_slice = std.Io.Dir.cwd().readFileAlloc(io, filepath, self.allocator, .limited(10 * 1024 * 1024)) catch {
+        const source_slice = std.Io.Dir.cwd().readFileAlloc(io, filepath, da, .limited(10 * 1024 * 1024)) catch {
             return error.ReadError;
         };
-        defer self.allocator.free(source_slice);
+        // No defer — da.deinit() covers source_slice.
 
-        // Ensure null-terminated for AstParser
+        // Ensure null-terminated for AstParser; da owns both forms.
         const source: [:0]const u8 = if (source_slice[source_slice.len - 1] == 0)
             source_slice[0 .. source_slice.len - 1 :0]
         else
-            try self.allocator.dupeZ(u8, source_slice);
-        defer if (source.ptr != source_slice.ptr) self.allocator.free(source);
+            try da.dupeZ(u8, source_slice);
+        // No defer — da.deinit() covers source whether or not it was duped.
 
         var parser = ast_parser.AstParser.init(self.allocator, source) catch {
             return error.ParseError;
@@ -224,10 +233,7 @@ pub const SyncProcessor = struct {
 
         const source_members = try parser.extractMembers();
         // mergeMembers deep-copies what it needs; free source_members after.
-        defer {
-            for (source_members) |m| self.store.freeMember(m);
-            self.allocator.free(source_members);
-        }
+        defer self.store.freeMembers(source_members);
 
         // For Zig source files, comments live in source code (/// and //!) and are
         // NOT stored in JSON.  We still extract them from the AST so they are
@@ -236,11 +242,11 @@ pub const SyncProcessor = struct {
 
         const rel_path = relPath(filepath, self.project_root);
 
-        const guidance_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.output_dir, rel_path });
-        defer self.allocator.free(guidance_path);
+        const guidance_path = try std.fmt.allocPrint(da, "{s}/{s}.json", .{ self.output_dir, rel_path });
+        // No defer — da.deinit() covers guidance_path.
 
         const existing_doc = try self.store.loadGuidance(guidance_path);
-        defer if (existing_doc) |ed| self.store.freeGuidanceDoc(ed);
+        defer if (existing_doc) |ed| ed.arena.deinit();
 
         const existing_members = if (existing_doc) |doc| doc.members else &.{};
 
@@ -250,6 +256,8 @@ pub const SyncProcessor = struct {
         // are handled inside mergeMembers regardless of this flag.
         const preserve_comments = self.regen_comments;
         const merge_result = try self.store.mergeMembers(source_members, existing_members, preserve_comments);
+        // merge_result.members are on self.allocator; freed below after doc is saved.
+        defer self.store.freeMembers(merge_result.members);
 
         result.members_added = merge_result.members_added;
         result.members_updated = merge_result.members_updated;
@@ -365,18 +373,18 @@ pub const SyncProcessor = struct {
         var module_comment: ?[]const u8 = blk: {
             // Use source module doc if present
             if (raw_module_doc) |d| {
-                break :blk try self.allocator.dupe(u8, d);
+                break :blk try da.dupe(u8, d);
             }
             // Preserve existing comment from JSON.
             // --regen still calls the LLM and passes the existing comment for comparison.
             if (existing_doc) |ed| {
                 if (ed.comment) |d| {
-                    if (d.len > 0) break :blk try self.allocator.dupe(u8, d);
+                    if (d.len > 0) break :blk try da.dupe(u8, d);
                 }
             }
             break :blk null; // Leave null so AI infill can fill it
         };
-        // module_comment is owned here; transferred to doc below (freed by freeGuidanceDoc).
+        // module_comment is in doc_arena; transferred to doc.arena below.
 
         // --- AI Enhancement: file-level comment ---
         // Automatically generate module comment when LLM is available and missing.
@@ -398,8 +406,8 @@ pub const SyncProcessor = struct {
                 const src_preview = source[0..@min(source.len, 3000)];
                 const ai_doc = enh.enhanceFile(rel_path, module_comment, src_preview) catch null;
                 if (ai_doc) |new_doc| {
-                    if (module_comment) |old| self.allocator.free(old);
-                    module_comment = new_doc;
+                    defer self.allocator.free(new_doc);
+                    module_comment = try da.dupe(u8, new_doc);
                     result.has_changes = true;
                 }
             }
@@ -408,38 +416,32 @@ pub const SyncProcessor = struct {
         // --- Skills: add skills when relevant patterns are detected ---
         const has_gof = hasGofPatterns(merge_result.members);
         const has_domain = hasDomainPatterns(merge_result.members);
-        const skills = try self.buildSkills(existing_doc, has_gof, has_domain);
-        // skills owned here; transferred to doc below.
+        const skills = try self.buildSkills(da, existing_doc, has_gof, has_domain);
+        // skills are in doc_arena; transferred to doc.arena below.
 
         // --- Prepend skills prefix to module comment deterministically ---
         // Format: "[skill1, skill2] description text"
         // Skills are computed from the AST; strip any existing prefix before re-adding.
         if (module_comment != null or skills.len > 0) {
-            const prefixed = try self.buildCommentWithSkills(module_comment, skills);
-            if (module_comment) |old| self.allocator.free(old);
-            module_comment = prefixed;
+            module_comment = try self.buildCommentWithSkills(da, module_comment, skills);
         }
 
         // --- Module detail generation (thinking model) ---
         // Generate comprehensive module documentation using the thinking model.
         // Only when thinking_enhancer is available and detail is missing or --regen-detail.
+        // module_detail and module_keywords are in doc_arena (da).
         var module_detail: ?[]const u8 = null;
         var module_keywords: []const []const u8 = &.{};
-        errdefer {
-            if (module_detail) |d| self.allocator.free(d);
-            for (module_keywords) |kw| self.allocator.free(kw);
-            self.allocator.free(module_keywords);
-        }
 
         // Preserve existing detail from JSON if not regenerating
         if (existing_doc) |ed| {
             if (ed.detail) |d| {
                 if (d.len > 0) {
-                    module_detail = try self.allocator.dupe(u8, d);
+                    module_detail = try da.dupe(u8, d);
                 }
             }
             if (ed.keywords.len > 0) {
-                module_keywords = try self.store.dupeStrings(ed.keywords);
+                module_keywords = try common.dupeStrings(da, ed.keywords);
             }
         }
 
@@ -453,25 +455,21 @@ pub const SyncProcessor = struct {
                 break :blk missing;
             };
             if (do_detail_llm) {
-                // Build member signatures for context
+                // Build member signatures for context (temporary, arena-scoped).
                 var member_sigs: std.ArrayList([]const u8) = .empty;
-                defer {
-                    for (member_sigs.items) |s| self.allocator.free(s);
-                    member_sigs.deinit(self.allocator);
-                }
+                // No defer — da.deinit() covers member_sigs and its string items.
                 for (merge_result.members) |m| {
                     if (m.signature) |sig| {
-                        try member_sigs.append(self.allocator, try self.allocator.dupe(u8, sig));
+                        try member_sigs.append(da, try da.dupe(u8, sig));
                     }
                 }
 
-                // Build newline-joined skill ref string (passed as both
-                // capabilities and skills context to the thinking model).
+                // Build newline-joined skill ref string (temporary, arena-scoped).
                 var skills_buf: std.ArrayList(u8) = .empty;
-                defer skills_buf.deinit(self.allocator);
+                // No defer — da.deinit() covers skills_buf.
                 for (skills) |s| {
-                    if (skills_buf.items.len > 0) try skills_buf.append(self.allocator, '\n');
-                    try skills_buf.appendSlice(self.allocator, s.ref);
+                    if (skills_buf.items.len > 0) try skills_buf.append(da, '\n');
+                    try skills_buf.appendSlice(da, s.ref);
                 }
 
                 const detail_result = th.enhanceModuleDetail(
@@ -488,15 +486,9 @@ pub const SyncProcessor = struct {
 
                 if (detail_result) |dr| {
                     defer dr.deinit(self.allocator);
-
-                    // Free old values
-                    if (module_detail) |d| self.allocator.free(d);
-                    for (module_keywords) |kw| self.allocator.free(kw);
-                    self.allocator.free(module_keywords);
-
-                    // Store new values
-                    module_detail = try self.allocator.dupe(u8, dr.detail);
-                    module_keywords = try self.store.dupeStrings(dr.keywords);
+                    // Old da values need no explicit free (arena handles it).
+                    module_detail = try da.dupe(u8, dr.detail);
+                    module_keywords = try common.dupeStrings(da, dr.keywords);
                     result.has_changes = true;
 
                     if (self.debug) {
@@ -517,30 +509,36 @@ pub const SyncProcessor = struct {
         // --- Reverse dependencies (used_by) ---
         // Use O(1) dep graph lookup when available; fall back to O(N) walk for
         // single-file mode (when dep_graph has not been built).
-        const used_by = if (self.dep_graph) |*dg|
+        const used_by_raw = if (self.dep_graph) |*dg|
             try dg.getImportedBy(rel_path, self.allocator)
         else
             try self.findReverseDeps(rel_path);
-        // used_by owned here; transferred to doc below.
+        // Move result into doc_arena; free originals from self.allocator.
+        const used_by = try common.dupeStrings(da, used_by_raw);
+        for (used_by_raw) |s| self.allocator.free(s);
+        self.allocator.free(used_by_raw);
 
         // --- Cross-language equivalents ---
-        const equivalents = try self.findEquivalents(rel_path);
-        // equivalents owned here; transferred to doc below.
+        const equivalents_raw = try self.findEquivalents(rel_path);
+        // Move result into doc_arena; free originals from self.allocator.
+        const equivalents = try common.dupeStrings(da, equivalents_raw);
+        for (equivalents_raw) |s| self.allocator.free(s);
+        self.allocator.free(equivalents_raw);
 
         // --- M4: Capabilities from discover-capability-sources ---
         // Look up capabilities for this file from the loaded map.
         const file_caps = self.findCapabilitiesForFile(rel_path);
-        var capabilities: []const []const u8 = &.{};
-        if (file_caps.len > 0) {
-            // Dupe strings for ownership transfer to doc
-            capabilities = try self.store.dupeStrings(file_caps);
-        }
-        // capabilities owned here; transferred to doc below.
+        const capabilities: []const []const u8 = if (file_caps.len > 0)
+            try common.dupeStrings(da, file_caps)
+        else
+            &.{};
+        // capabilities are in doc_arena; transferred to doc.arena below.
 
         var doc: types.GuidanceDoc = .{
+            .arena = undefined, // assigned below
             .meta = .{
-                .module = try self.pathToModule(rel_path),
-                .source = try self.allocator.dupe(u8, rel_path),
+                .module = try self.pathToModule(da, rel_path),
+                .source = try da.dupe(u8, rel_path),
             },
             .comment = module_comment,
             .detail = module_detail,
@@ -551,11 +549,13 @@ pub const SyncProcessor = struct {
             .equivalents = equivalents,
             .members = merge_result.members,
         };
-        defer self.store.freeGuidanceDoc(doc);
+        // Set doc.arena for type compatibility; doc_arena (above) is the actual cleanup owner.
+        // merge_result.members are on self.allocator and freed by the defer above.
+        doc.arena = doc_arena;
 
         if (existing_doc) |existing| {
             if (existing.hashtags.len > 0) {
-                doc.hashtags = try self.store.dupeStrings(existing.hashtags);
+                doc.hashtags = try common.dupeStrings(da, existing.hashtags);
             }
         }
 
@@ -662,14 +662,15 @@ pub const SyncProcessor = struct {
         return common.stripPathPrefix(abs, root);
     }
 
-    fn pathToModule(self: *SyncProcessor, rel_path: []const u8) ![]const u8 {
+    fn pathToModule(self: *SyncProcessor, alloc: std.mem.Allocator, rel_path: []const u8) ![]const u8 {
+        _ = self;
         var result: std.ArrayList(u8) = .empty;
-        defer result.deinit(self.allocator);
+        defer result.deinit(alloc);
 
         var parts = std.mem.splitScalar(u8, rel_path, std.fs.path.sep);
         var first = true;
         while (parts.next()) |part| {
-            if (!first) try result.append(self.allocator, '.');
+            if (!first) try result.append(alloc, '.');
             first = false;
 
             const without_ext = if (std.mem.endsWith(u8, part, ".zig"))
@@ -677,10 +678,10 @@ pub const SyncProcessor = struct {
             else
                 part;
 
-            try result.appendSlice(self.allocator, without_ext);
+            try result.appendSlice(alloc, without_ext);
         }
 
-        return result.toOwnedSlice(self.allocator);
+        return result.toOwnedSlice(alloc);
     }
 
     /// Build auto-generated module comment: "module_name: N structs, M functions (name1, name2, ...)"
@@ -759,14 +760,15 @@ pub const SyncProcessor = struct {
     /// Build the skills slice: add domain-patterns only when domain patterns are detected;
     /// add gof-patterns when GoF patterns are detected.
     /// Preserves any extra skills that were already in the existing guidance.
-    fn buildSkills(self: *SyncProcessor, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) ![]const types.Skill {
+    fn buildSkills(self: *SyncProcessor, alloc: std.mem.Allocator, existing_doc: ?types.GuidanceDoc, has_gof: bool, has_domain: bool) ![]const types.Skill {
+        _ = self;
         var skills: std.ArrayList(types.Skill) = .empty;
         errdefer {
             for (skills.items) |s| {
-                self.allocator.free(s.ref);
-                if (s.context) |c| self.allocator.free(c);
+                alloc.free(s.ref);
+                if (s.context) |c| alloc.free(c);
             }
-            skills.deinit(self.allocator);
+            skills.deinit(alloc);
         }
 
         const domain_ref = "skills/domain-patterns/SKILL.md";
@@ -785,30 +787,30 @@ pub const SyncProcessor = struct {
                     s.ref;
                 // Skip baseline refs — we will re-add them below conditionally.
                 if (std.mem.eql(u8, normalised, domain_ref) or std.mem.eql(u8, normalised, gof_ref)) continue;
-                try skills.append(self.allocator, .{
-                    .ref = try self.allocator.dupe(u8, normalised),
-                    .context = if (s.context) |c| try self.allocator.dupe(u8, c) else null,
+                try skills.append(alloc, .{
+                    .ref = try alloc.dupe(u8, normalised),
+                    .context = if (s.context) |c| try alloc.dupe(u8, c) else null,
                 });
             }
         }
 
         // Add domain-patterns only when domain patterns are detected.
         if (has_domain) {
-            try skills.append(self.allocator, .{
-                .ref = try self.allocator.dupe(u8, domain_ref),
-                .context = try self.allocator.dupe(u8, "Domain patterns detected"),
+            try skills.append(alloc, .{
+                .ref = try alloc.dupe(u8, domain_ref),
+                .context = try alloc.dupe(u8, "Domain patterns detected"),
             });
         }
 
         // Add gof-patterns only when GoF patterns are detected.
         if (has_gof) {
-            try skills.append(self.allocator, .{
-                .ref = try self.allocator.dupe(u8, gof_ref),
-                .context = try self.allocator.dupe(u8, "GoF patterns detected"),
+            try skills.append(alloc, .{
+                .ref = try alloc.dupe(u8, gof_ref),
+                .context = try alloc.dupe(u8, "GoF patterns detected"),
             });
         }
 
-        return skills.toOwnedSlice(self.allocator);
+        return skills.toOwnedSlice(alloc);
     }
 
     /// Prepend a `[skill1, skill2] ` prefix to the module comment using the
@@ -819,9 +821,11 @@ pub const SyncProcessor = struct {
     /// are NOT a valid comment - they should only annotate real descriptions).
     fn buildCommentWithSkills(
         self: *SyncProcessor,
+        alloc: std.mem.Allocator,
         comment: ?[]const u8,
         skills: []const types.Skill,
     ) !?[]const u8 {
+        _ = self;
         // Strip any existing `[...]` prefix from the comment.
         const bare: []const u8 = blk: {
             const c = comment orelse break :blk "";
@@ -839,12 +843,12 @@ pub const SyncProcessor = struct {
 
         // If no skills to prepend, return the bare comment as-is.
         if (skills.len == 0) {
-            return try self.allocator.dupe(u8, bare);
+            return try alloc.dupe(u8, bare);
         }
 
         // Extract skill names from refs like "skills/gof-patterns/SKILL.md"
         // or short refs like "zig-current".
-        var aw: std.Io.Writer.Allocating = .init(self.allocator);
+        var aw: std.Io.Writer.Allocating = .init(alloc);
         errdefer aw.deinit();
         const w = &aw.writer;
 
@@ -901,7 +905,7 @@ pub const SyncProcessor = struct {
         if (!self.enhancer.?.available()) return false;
 
         var doc = (try self.store.loadGuidance(json_path)) orelse return false;
-        defer self.store.freeGuidanceDoc(doc);
+        defer doc.arena.deinit();
 
         var file_changed = false;
 
@@ -941,7 +945,7 @@ pub const SyncProcessor = struct {
 
             // Prepend skills prefix deterministically after LLM update.
             if (file_changed) {
-                const prefixed = try self.buildCommentWithSkills(doc.comment, doc.skills);
+                const prefixed = try self.buildCommentWithSkills(self.allocator, doc.comment, doc.skills);
                 if (doc.comment) |old| self.allocator.free(old);
                 doc.comment = prefixed;
             }
@@ -1329,5 +1333,113 @@ pub const SyncProcessor = struct {
         }
 
         return found.toOwnedSlice(self.allocator);
+    }
+};
+
+// =============================================================================
+// SyncProcessorBuilder — Fluent Builder for SyncProcessor
+// =============================================================================
+//
+// Eliminates the "construction in two acts" pattern where SyncProcessor.init()
+// was followed by a separate setupEnhancer() mutation call.  All configuration
+// is accumulated through chained setters; build() is the single terminal that
+// either succeeds or surfaces the first error.
+//
+// Usage:
+//   var processor = try sync_mod.SyncProcessorBuilder.init(allocator)
+//       .workspace(paths.workspace)
+//       .outputDir(paths.json_dir)
+//       .dryRun(ga.dry_run)
+//       .withDebug(ga.debug)
+//       .regenComments(ga.regen_comments)
+//       .build();
+//   defer processor.deinit();
+//
+// Rules:
+//   - Every setter short-circuits when err is already set.
+//   - build() is the only call site that uses `try`.
+//   - SyncProcessor.init() is unchanged and remains valid for direct use.
+
+pub const SyncProcessorBuilder = struct {
+    allocator: std.mem.Allocator,
+    workspace_path: ?[]const u8 = null,
+    output_dir_path: ?[]const u8 = null,
+    dry_run_flag: bool = false,
+    debug_flag: bool = false,
+    regen_comments_flag: bool = false,
+    enhancer_val: ?enhancer_mod.Enhancer = null,
+    thinking_enhancer_val: ?enhancer_mod.Enhancer = null,
+    /// First error encountered in a setter; surfaced by build().
+    err: ?anyerror = null,
+
+    pub fn init(allocator: std.mem.Allocator) SyncProcessorBuilder {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn workspace(self: SyncProcessorBuilder, path: []const u8) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.workspace_path = path;
+        return b;
+    }
+
+    pub fn outputDir(self: SyncProcessorBuilder, path: []const u8) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.output_dir_path = path;
+        return b;
+    }
+
+    pub fn dryRun(self: SyncProcessorBuilder, v: bool) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.dry_run_flag = v;
+        return b;
+    }
+
+    pub fn withDebug(self: SyncProcessorBuilder, v: bool) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.debug_flag = v;
+        return b;
+    }
+
+    pub fn regenComments(self: SyncProcessorBuilder, v: bool) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.regen_comments_flag = v;
+        return b;
+    }
+
+    /// Attach a pre-built Enhancer (by value).  The SyncProcessor returned by
+    /// build() owns the enhancer and deinits it in SyncProcessor.deinit().
+    pub fn withEnhancer(self: SyncProcessorBuilder, enhancer: enhancer_mod.Enhancer) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.enhancer_val = enhancer;
+        return b;
+    }
+
+    /// Attach a pre-built thinking-model Enhancer (by value).
+    pub fn withThinkingEnhancer(self: SyncProcessorBuilder, enhancer: enhancer_mod.Enhancer) SyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.thinking_enhancer_val = enhancer;
+        return b;
+    }
+
+    /// Terminal: construct and return the SyncProcessor.
+    /// Returns error.MissingWorkspace / error.MissingOutputDir when the required
+    /// path setters were not called.  Surfaces any earlier setter error.
+    /// Caller owns the returned SyncProcessor and must call processor.deinit().
+    pub fn build(self: SyncProcessorBuilder) !SyncProcessor {
+        if (self.err) |e| return e;
+        const ws = self.workspace_path orelse return error.MissingWorkspace;
+        const od = self.output_dir_path orelse return error.MissingOutputDir;
+        var processor = SyncProcessor.init(self.allocator, ws, od, self.dry_run_flag, self.debug_flag);
+        processor.enhancer = self.enhancer_val;
+        processor.thinking_enhancer = self.thinking_enhancer_val;
+        processor.regen_comments = self.regen_comments_flag;
+        return processor;
     }
 };

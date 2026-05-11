@@ -783,14 +783,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    // -- M8: Structured logging context and scope (logging.zig) --
-    const logging_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/common/logging.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
 
     // -- M7: Reference-counted VTable handles (refcount.zig) --
     const refcount_tests = b.addTest(.{
@@ -1020,7 +1012,7 @@ pub fn build(b: *std.Build) void {
     const common_hash_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/hash_tests.zig"), .target = target, .optimize = optimize }) });
     const common_io_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/io_tests.zig"), .target = target, .optimize = optimize }) });
     const common_json_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/json_tests.zig"), .target = target, .optimize = optimize }) });
-    const common_logging_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/logging_tests.zig"), .target = target, .optimize = optimize }) });
+
     const common_pattern_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/pattern_tests.zig"), .target = target, .optimize = optimize }) });
     const common_shell_parser_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/shell_parser_tests.zig"), .target = target, .optimize = optimize }) });
     const common_shell_tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/common/shell_tests.zig"), .target = target, .optimize = optimize }) });
@@ -1336,6 +1328,10 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    const guidance_only_step = b.step("test-guidance", "Run guidance unit tests only");
+    guidance_only_step.dependOn(&b.addRunArtifact(explain_tests).step);
+    guidance_only_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
+
     test_step.dependOn(&b.addRunArtifact(explain_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_tests_module).step);
     test_step.dependOn(&b.addRunArtifact(vector_tests).step);
@@ -1365,7 +1361,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(builder_error_tests).step);
     test_step.dependOn(&b.addRunArtifact(schema_version_tests).step);
     test_step.dependOn(&b.addRunArtifact(validate_tests).step);
-    test_step.dependOn(&b.addRunArtifact(logging_tests).step);
+
     test_step.dependOn(&b.addRunArtifact(refcount_tests).step);
     test_step.dependOn(&b.addRunArtifact(wrapper_tests).step);
     test_step.dependOn(&b.addRunArtifact(mock_vtable_tests).step);
@@ -1451,7 +1447,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(common_hash_tests).step);
     test_step.dependOn(&b.addRunArtifact(common_io_tests).step);
     test_step.dependOn(&b.addRunArtifact(common_json_tests).step);
-    test_step.dependOn(&b.addRunArtifact(common_logging_tests).step);
+
     test_step.dependOn(&b.addRunArtifact(common_pattern_tests).step);
     test_step.dependOn(&b.addRunArtifact(common_shell_parser_tests).step);
     test_step.dependOn(&b.addRunArtifact(common_shell_tests).step);

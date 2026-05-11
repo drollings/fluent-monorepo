@@ -86,6 +86,17 @@ pub const CommentSyncProcessor = struct {
         };
     }
 
+    /// Free resources owned by this processor.
+    /// Specifically: the heap-allocated Enhancer (if set via setups or builder).
+    /// Call this once when the processor is no longer needed.
+    pub fn deinit(self: *CommentSyncProcessor) void {
+        if (self.enhancer) |enh_ptr| {
+            enh_ptr.deinit();
+            self.allocator.destroy(enh_ptr);
+            self.enhancer = null;
+        }
+    }
+
     /// Return true when `filepath` has not been modified since its corresponding
     /// guidance JSON was last written.  Requires `incremental = true`.
     pub fn isUpToDate(self: *const CommentSyncProcessor, filepath: []const u8) bool {
@@ -129,10 +140,7 @@ pub const CommentSyncProcessor = struct {
         if (parser.hasErrors()) return error.ParseError;
 
         const members = try parser.extractMembers();
-        defer {
-            for (members) |m| self.store.freeMember(m);
-            self.allocator.free(members);
-        }
+        defer self.store.freeMembers(members);
 
         if (members.len == 0) return result;
 
@@ -148,7 +156,7 @@ pub const CommentSyncProcessor = struct {
         defer self.allocator.free(guidance_path);
 
         const stored_doc = try self.store.loadGuidance(guidance_path);
-        defer if (stored_doc) |sd| self.store.freeGuidanceDoc(sd);
+        defer if (stored_doc) |sd| sd.arena.deinit();
 
         // Build a name→stored_match_hash lookup map.
         var stored_hash_map = std.StringHashMap(?[]const u8).init(self.allocator);
@@ -361,20 +369,14 @@ pub const CommentSyncProcessor = struct {
         if (parser.hasErrors()) return;
 
         const new_members = try parser.extractMembers();
-        defer {
-            for (new_members) |m| self.store.freeMember(m);
-            self.allocator.free(new_members);
-        }
+        defer self.store.freeMembers(new_members);
 
         const existing_doc = try self.store.loadGuidance(guidance_path);
-        defer if (existing_doc) |ed| self.store.freeGuidanceDoc(ed);
+        defer if (existing_doc) |ed| ed.arena.deinit();
 
         const existing_members = if (existing_doc) |doc| doc.members else &.{};
         const merge = try self.store.mergeMembers(new_members, existing_members, true);
-        defer {
-            for (merge.members) |m| self.store.freeMember(m);
-            self.allocator.free(merge.members);
-        }
+        defer self.store.freeMembers(merge.members);
 
         if (existing_doc) |ed| {
             var updated = ed;
@@ -537,10 +539,10 @@ pub fn syncCommentsToSource(
         const json_path = try std.fmt.allocPrint(allocator, "{s}/{s}.json", .{ json_dir, rel });
         defer allocator.free(json_path);
 
-        const existing_doc = store.loadGuidance(json_path) catch null;
-        if (existing_doc == null) continue;
-        const doc = existing_doc.?;
-        defer store.freeGuidanceDoc(doc);
+        const opt_doc = store.loadGuidance(json_path) catch null;
+        if (opt_doc == null) continue;
+        var doc = opt_doc.?;
+        defer doc.arena.deinit();
 
         // Find members with generated comments that need to be written to source.
         var has_generated = false;
@@ -558,7 +560,6 @@ pub fn syncCommentsToSource(
 
         if (dry_run) {
             try modified_files.append(allocator, try allocator.dupe(u8, result.filepath));
-            store.freeGuidanceDoc(doc);
             continue;
         }
 
@@ -566,7 +567,6 @@ pub fn syncCommentsToSource(
         const io = std.Io.Threaded.global_single_threaded.io();
         const source = std.Io.Dir.cwd().readFileAlloc(io, result.filepath, allocator, .limited(10 * 1024 * 1024)) catch |err| {
             std.debug.print("[comment-sync] WARN: cannot read {s}: {s}\n", .{ result.filepath, @errorName(err) });
-            store.freeGuidanceDoc(doc);
             continue;
         };
         defer allocator.free(source);
@@ -651,9 +651,8 @@ pub fn correctLineNumbers(
     var store = json_store.JsonStore.init(allocator);
     // JsonStore has no deinit method - memory is managed per-call
 
-    const existing_doc = store.loadGuidance(json_path) catch null orelse return;
-    var doc = existing_doc;
-    defer store.freeGuidanceDoc(doc);
+    var doc = store.loadGuidance(json_path) catch null orelse return;
+    defer doc.arena.deinit();
 
     // Re-parse source.
     const io = std.Io.Threaded.global_single_threaded.io();
@@ -672,10 +671,7 @@ pub fn correctLineNumbers(
     if (parser.hasErrors()) return;
 
     const new_members = try parser.extractMembers();
-    defer {
-        for (new_members) |m| store.freeMember(m);
-        allocator.free(new_members);
-    }
+    defer store.freeMembers(new_members);
 
     // Merge: keep comments and match_hash, update line numbers.
     var merged_members: std.ArrayList(types.Member) = .empty;
@@ -707,6 +703,115 @@ pub fn correctLineNumbers(
 
     try store.saveGuidance(json_path, doc);
 }
+
+// ---------------------------------------------------------------------------
+// CommentSyncProcessorBuilder — Fluent Builder for CommentSyncProcessor
+// ---------------------------------------------------------------------------
+//
+// Eliminates the "construction in two acts" pattern where CommentSyncProcessor.init()
+// was followed by field mutations (generate_headers, incremental) and a separate
+// setupCspEnhancer() call + matching teardownCspEnhancer() defer.
+//
+// The builder accumulates configuration through chained setters.  build() is
+// the single terminal.  The returned CommentSyncProcessor owns the enhancer and
+// frees it via deinit().
+//
+// Usage:
+//   var csp = try CommentSyncProcessorBuilder.init(allocator)
+//       .withWorkspace(paths.workspace)
+//       .jsonDir(paths.json_dir)
+//       .withDebug(ga.debug)
+//       .dryRun(ga.dry_run)
+//       .generateHeaders(ga.sync_headers)
+//       .incremental(!ga.force)
+//       .withEnhancer(enh_ptr)   // optional: pass a heap-allocated Enhancer
+//       .build();
+//   defer csp.deinit();
+
+pub const CommentSyncProcessorBuilder = struct {
+    allocator: std.mem.Allocator,
+    workspace_path: ?[]const u8 = null,
+    json_dir_path: ?[]const u8 = null,
+    debug_flag: bool = false,
+    dry_run_flag: bool = false,
+    generate_headers_flag: bool = false,
+    incremental_flag: bool = false,
+    /// Heap-allocated enhancer.  Ownership transfers to the built CSP on build().
+    /// Must have been allocated with the same allocator passed to init().
+    enhancer_ptr: ?*enhancer_mod.Enhancer = null,
+    /// First error from a setter; surfaced by build().
+    err: ?anyerror = null,
+
+    pub fn init(allocator: std.mem.Allocator) CommentSyncProcessorBuilder {
+        return .{ .allocator = allocator };
+    }
+
+    pub fn withWorkspace(self: CommentSyncProcessorBuilder, path: []const u8) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.workspace_path = path;
+        return b;
+    }
+
+    pub fn jsonDir(self: CommentSyncProcessorBuilder, path: []const u8) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.json_dir_path = path;
+        return b;
+    }
+
+    pub fn withDebug(self: CommentSyncProcessorBuilder, v: bool) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.debug_flag = v;
+        return b;
+    }
+
+    pub fn dryRun(self: CommentSyncProcessorBuilder, v: bool) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.dry_run_flag = v;
+        return b;
+    }
+
+    pub fn generateHeaders(self: CommentSyncProcessorBuilder, v: bool) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.generate_headers_flag = v;
+        return b;
+    }
+
+    pub fn incremental(self: CommentSyncProcessorBuilder, v: bool) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.incremental_flag = v;
+        return b;
+    }
+
+    /// Attach a heap-allocated Enhancer.  The builder takes ownership; if build()
+    /// is never called (programmer error), the enhancer leaks — document this.
+    /// Typically the caller creates the enhancer with allocator.create(Enhancer) and
+    /// passes the pointer here.
+    pub fn withEnhancer(self: CommentSyncProcessorBuilder, enh_ptr: *enhancer_mod.Enhancer) CommentSyncProcessorBuilder {
+        if (self.err != null) return self;
+        var b = self;
+        b.enhancer_ptr = enh_ptr;
+        return b;
+    }
+
+    /// Terminal: construct and return a CommentSyncProcessor.
+    /// Caller owns the returned processor and must call csp.deinit() when done.
+    pub fn build(self: CommentSyncProcessorBuilder) !CommentSyncProcessor {
+        if (self.err) |e| return e;
+        const ws = self.workspace_path orelse return error.MissingWorkspace;
+        const jd = self.json_dir_path orelse return error.MissingJsonDir;
+        var csp = CommentSyncProcessor.init(self.allocator, ws, jd, self.debug_flag, self.dry_run_flag);
+        csp.generate_headers = self.generate_headers_flag;
+        csp.incremental = self.incremental_flag;
+        csp.enhancer = self.enhancer_ptr;
+        return csp;
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tests

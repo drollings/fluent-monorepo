@@ -40,10 +40,16 @@ pub const JsonStore = struct {
         const module = meta_obj.object.get("module") orelse return null;
         const source = meta_obj.object.get("source") orelse return null;
 
+        // Arena owns all doc strings; caller releases with doc.arena.deinit().
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        errdefer arena.deinit();
+        const a = arena.allocator();
+
         var doc = types.GuidanceDoc{
+            .arena = undefined, // assigned below after all fields are populated
             .meta = .{
-                .module = try self.allocator.dupe(u8, module.string),
-                .source = try self.allocator.dupe(u8, source.string),
+                .module = try a.dupe(u8, module.string),
+                .source = try a.dupe(u8, source.string),
             },
         };
 
@@ -55,7 +61,7 @@ pub const JsonStore = struct {
                 if (isLeakedPrompt(d.string)) {
                     self.leaked_prompts_found = true;
                 } else {
-                    doc.comment = try self.allocator.dupe(u8, d.string);
+                    doc.comment = try a.dupe(u8, d.string);
                 }
             }
         }
@@ -63,7 +69,7 @@ pub const JsonStore = struct {
         // Parse detail (comprehensive module documentation)
         if (root.object.get("detail")) |d| {
             if (d == .string and d.string.len > 0) {
-                doc.detail = try self.allocator.dupe(u8, d.string);
+                doc.detail = try a.dupe(u8, d.string);
             }
         }
 
@@ -73,10 +79,10 @@ pub const JsonStore = struct {
                 var keywords: std.ArrayList([]const u8) = .empty;
                 for (kw_val.array.items) |kw| {
                     if (kw == .string and kw.string.len > 0) {
-                        try keywords.append(self.allocator, try self.allocator.dupe(u8, kw.string));
+                        try keywords.append(a, try a.dupe(u8, kw.string));
                     }
                 }
-                doc.keywords = try keywords.toOwnedSlice(self.allocator);
+                doc.keywords = try keywords.toOwnedSlice(a);
             }
         }
 
@@ -87,17 +93,17 @@ pub const JsonStore = struct {
                     if (skill_val == .object) {
                         const ref = skill_val.object.get("ref") orelse continue;
                         if (ref == .string) {
-                            var skill: types.Skill = .{ .ref = try self.allocator.dupe(u8, ref.string) };
+                            var skill: types.Skill = .{ .ref = try a.dupe(u8, ref.string) };
                             if (skill_val.object.get("context")) |ctx| {
                                 if (ctx == .string) {
-                                    skill.context = try self.allocator.dupe(u8, ctx.string);
+                                    skill.context = try a.dupe(u8, ctx.string);
                                 }
                             }
-                            try skills.append(self.allocator, skill);
+                            try skills.append(a, skill);
                         }
                     }
                 }
-                doc.skills = try skills.toOwnedSlice(self.allocator);
+                doc.skills = try skills.toOwnedSlice(a);
             }
         }
 
@@ -106,10 +112,10 @@ pub const JsonStore = struct {
                 var caps: std.ArrayList([]const u8) = .empty;
                 for (cap_val.array.items) |c_val| {
                     if (c_val == .string) {
-                        try caps.append(self.allocator, try self.allocator.dupe(u8, c_val.string));
+                        try caps.append(a, try a.dupe(u8, c_val.string));
                     }
                 }
-                doc.capabilities = try caps.toOwnedSlice(self.allocator);
+                doc.capabilities = try caps.toOwnedSlice(a);
             }
         }
 
@@ -125,9 +131,9 @@ pub const JsonStore = struct {
                                     else => 0.0,
                                 };
                                 doc.capability_eval = .{
-                                    .capability_name = try self.allocator.dupe(u8, cap_name_v.string),
+                                    .capability_name = try a.dupe(u8, cap_name_v.string),
                                     .confidence = conf,
-                                    .evaluated_at_hash = try self.allocator.dupe(u8, hash_v.string),
+                                    .evaluated_at_hash = try a.dupe(u8, hash_v.string),
                                 };
                             }
                         }
@@ -141,10 +147,10 @@ pub const JsonStore = struct {
                 var tags: std.ArrayList([]const u8) = .empty;
                 for (tags_val.array.items) |tag_val| {
                     if (tag_val == .string) {
-                        try tags.append(self.allocator, try self.allocator.dupe(u8, tag_val.string));
+                        try tags.append(a, try a.dupe(u8, tag_val.string));
                     }
                 }
-                doc.hashtags = try tags.toOwnedSlice(self.allocator);
+                doc.hashtags = try tags.toOwnedSlice(a);
             }
         }
 
@@ -153,32 +159,34 @@ pub const JsonStore = struct {
                 var used: std.ArrayList([]const u8) = .empty;
                 for (used_val.array.items) |u_val| {
                     if (u_val == .string) {
-                        try used.append(self.allocator, try self.allocator.dupe(u8, u_val.string));
+                        try used.append(a, try a.dupe(u8, u_val.string));
                     }
                 }
-                doc.used_by = try used.toOwnedSlice(self.allocator);
+                doc.used_by = try used.toOwnedSlice(a);
             }
         }
 
         if (root.object.get("members")) |members_val| {
-            doc.members = try self.parseMembers(members_val);
+            doc.members = try self.parseMembers(a, members_val);
         }
 
+        // Transfer arena ownership to the doc; caller calls doc.arena.deinit().
+        doc.arena = arena;
         return doc;
     }
 
-    fn parseMembers(self: *JsonStore, members_val: std.json.Value) std.mem.Allocator.Error![]types.Member {
+    fn parseMembers(self: *JsonStore, a: std.mem.Allocator, members_val: std.json.Value) std.mem.Allocator.Error![]types.Member {
         if (members_val != .array) return &.{};
 
         var members: std.ArrayList(types.Member) = .empty;
         for (members_val.array.items) |member_val| {
             if (member_val == .object) {
-                if (try self.parseMember(member_val)) |member| {
-                    try members.append(self.allocator, member);
+                if (try self.parseMember(a, member_val)) |member| {
+                    try members.append(a, member);
                 }
             }
         }
-        return members.toOwnedSlice(self.allocator);
+        return members.toOwnedSlice(a);
     }
 
     /// Returns true when a stored comment is a leaked LLM reasoning preamble rather
@@ -204,7 +212,7 @@ pub const JsonStore = struct {
         return false;
     }
 
-    fn parseMember(self: *JsonStore, member_val: std.json.Value) std.mem.Allocator.Error!?types.Member {
+    fn parseMember(self: *JsonStore, a: std.mem.Allocator, member_val: std.json.Value) std.mem.Allocator.Error!?types.Member {
         const name_val = member_val.object.get("name") orelse return null;
         const type_val = member_val.object.get("type") orelse return null;
 
@@ -212,18 +220,18 @@ pub const JsonStore = struct {
 
         var member = types.Member{
             .type = std.meta.stringToEnum(types.MemberType, type_val.string) orelse .fn_decl,
-            .name = try self.allocator.dupe(u8, name_val.string),
+            .name = try a.dupe(u8, name_val.string),
         };
 
         if (member_val.object.get("match_hash")) |h| {
             if (h == .string) {
-                member.match_hash = try self.allocator.dupe(u8, h.string);
+                member.match_hash = try a.dupe(u8, h.string);
             }
         }
 
         if (member_val.object.get("signature")) |s| {
             if (s == .string) {
-                member.signature = try self.allocator.dupe(u8, s.string);
+                member.signature = try a.dupe(u8, s.string);
             }
         }
 
@@ -237,14 +245,14 @@ pub const JsonStore = struct {
                 if (isLeakedPrompt(d.string)) {
                     self.leaked_prompts_found = true;
                 } else {
-                    member.comment = try self.allocator.dupe(u8, d.string);
+                    member.comment = try a.dupe(u8, d.string);
                 }
             }
         }
 
         if (member_val.object.get("returns")) |r| {
             if (r == .string) {
-                member.returns = try self.allocator.dupe(u8, r.string);
+                member.returns = try a.dupe(u8, r.string);
             }
         }
 
@@ -265,10 +273,10 @@ pub const JsonStore = struct {
                 var tags: std.ArrayList([]const u8) = .empty;
                 for (tags_val.array.items) |tag_val| {
                     if (tag_val == .string) {
-                        try tags.append(self.allocator, try self.allocator.dupe(u8, tag_val.string));
+                        try tags.append(a, try a.dupe(u8, tag_val.string));
                     }
                 }
-                member.tags = try tags.toOwnedSlice(self.allocator);
+                member.tags = try tags.toOwnedSlice(a);
             }
         }
 
@@ -280,7 +288,7 @@ pub const JsonStore = struct {
                         const pat_name = pat_val.object.get("name") orelse continue;
                         if (pat_name == .string) {
                             var pat: types.Pattern = .{
-                                .name = try self.allocator.dupe(u8, pat_name.string),
+                                .name = try a.dupe(u8, pat_name.string),
                                 .type = .Domain,
                             };
                             if (pat_val.object.get("type")) |pt| {
@@ -290,19 +298,19 @@ pub const JsonStore = struct {
                             }
                             if (pat_val.object.get("ref")) |pr| {
                                 if (pr == .string) {
-                                    pat.ref = try self.allocator.dupe(u8, pr.string);
+                                    pat.ref = try a.dupe(u8, pr.string);
                                 }
                             }
-                            try patterns.append(self.allocator, pat);
+                            try patterns.append(a, pat);
                         }
                     }
                 }
-                member.patterns = try patterns.toOwnedSlice(self.allocator);
+                member.patterns = try patterns.toOwnedSlice(a);
             }
         }
 
         if (member_val.object.get("members")) |nested_val| {
-            member.members = try self.parseMembers(nested_val);
+            member.members = try self.parseMembers(a, nested_val);
         }
 
         return member;
@@ -429,39 +437,22 @@ pub const JsonStore = struct {
         self.allocator.free(member.members);
     }
 
-    /// Free all heap memory owned by a GuidanceDoc.
-    pub fn freeGuidanceDoc(self: *JsonStore, doc: types.GuidanceDoc) void {
-        self.allocator.free(doc.meta.module);
-        self.allocator.free(doc.meta.source);
-        if (doc.comment) |d| self.allocator.free(d);
-        if (doc.detail) |d| self.allocator.free(d);
-        for (doc.keywords) |kw| self.allocator.free(kw);
-        self.allocator.free(doc.keywords);
-        for (doc.skills) |s| {
-            self.allocator.free(s.ref);
-            if (s.context) |c| self.allocator.free(c);
-        }
-        self.allocator.free(doc.skills);
-        for (doc.capabilities) |c| self.allocator.free(c);
-        self.allocator.free(doc.capabilities);
-        for (doc.hashtags) |h| self.allocator.free(h);
-        self.allocator.free(doc.hashtags);
-        for (doc.used_by) |u| self.allocator.free(u);
-        self.allocator.free(doc.used_by);
-        for (doc.equivalents) |e| self.allocator.free(e);
-        self.allocator.free(doc.equivalents);
-        for (doc.members) |m| self.freeMember(m);
-        self.allocator.free(doc.members);
-        if (doc.capability_eval) |ev| {
-            self.allocator.free(ev.capability_name);
-            self.allocator.free(ev.evaluated_at_hash);
-        }
+    /// Free a slice of Members (and the slice itself) owned by this store's allocator.
+    /// Used for members returned by parser.extractMembers() and mergeMembers() results
+    /// that are not covered by a doc arena.  Will be removed in M5 when processFile
+    /// uses a per-file arena for merge results.
+    pub fn freeMembers(self: *JsonStore, members: []const types.Member) void {
+        for (members) |m| self.freeMember(m);
+        self.allocator.free(members);
     }
 
     /// Milestone 3.2: Extract member comments from source file.
     /// For each member with null comment, extract the /// doc comment from source
     /// using the member's line number. This ensures comments are available in memory
     /// even when not stored in JSON per Milestone 3.1.
+    ///
+    /// Extracted comments are allocated from doc.arena so that doc.arena.deinit()
+    /// frees them along with the rest of the doc's data.
     ///
     /// This is used by postProcessCommentSync and other code paths that load JSON
     /// without parsing source files.
@@ -470,22 +461,24 @@ pub const JsonStore = struct {
         doc: *types.GuidanceDoc,
         source: []const u8,
     ) void {
+        _ = self;
+        const a = doc.arena.allocator();
         // Cast away const to modify members; doc is passed as mutable pointer
         const members = @as([*]types.Member, @constCast(doc.members.ptr))[0..doc.members.len];
         for (members) |*member| {
-            self.extractCommentsForMemberRecursive(source, member);
+            extractCommentsForMemberRecursive(a, source, member);
         }
     }
 
     fn extractCommentsForMemberRecursive(
-        self: *JsonStore,
+        a: std.mem.Allocator,
         source: []const u8,
         member: *types.Member,
     ) void {
         // Only extract if comment is null and we have a line number
         if (member.comment == null) {
             if (member.line) |line| {
-                if (comment_inserter.extractCommentAtLine(self.allocator, source, line)) |opt_comment| {
+                if (comment_inserter.extractCommentAtLine(a, source, line)) |opt_comment| {
                     if (opt_comment) |comment| {
                         member.comment = comment;
                     }
@@ -498,7 +491,7 @@ pub const JsonStore = struct {
         // Recursively process nested members
         const nested_members = @as([*]types.Member, @constCast(member.members.ptr))[0..member.members.len];
         for (nested_members) |*nested| {
-            self.extractCommentsForMemberRecursive(source, nested);
+            extractCommentsForMemberRecursive(a, source, nested);
         }
     }
 

@@ -259,8 +259,8 @@ pub const StructureGenerator = struct {
         const json_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}.json", .{ self.guidance_dir, rel_path });
         defer self.allocator.free(json_path);
 
-        const doc = (try self.store.loadGuidance(json_path)) orelse return null;
-        defer self.store.freeGuidanceDoc(doc);
+        var doc = (try self.store.loadGuidance(json_path)) orelse return null;
+        defer doc.arena.deinit();
 
         const comment = doc.comment orelse return null;
         if (comment.len == 0) return null;

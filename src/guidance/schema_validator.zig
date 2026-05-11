@@ -133,6 +133,7 @@ const testing = std.testing;
 
 test "validateGuidanceDoc: valid minimal doc passes" {
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "foo", .source = "src/foo.zig", .language = "zig" },
     };
     try validateGuidanceDoc(testing.allocator, &doc);
@@ -140,6 +141,7 @@ test "validateGuidanceDoc: valid minimal doc passes" {
 
 test "validateGuidanceDoc: missing module → MissingModule" {
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "", .source = "src/foo.zig", .language = "zig" },
     };
     try testing.expectError(error.MissingModule, validateGuidanceDoc(testing.allocator, &doc));
@@ -147,6 +149,7 @@ test "validateGuidanceDoc: missing module → MissingModule" {
 
 test "validateGuidanceDoc: missing source → MissingSource" {
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "foo", .source = "", .language = "zig" },
     };
     try testing.expectError(error.MissingSource, validateGuidanceDoc(testing.allocator, &doc));
@@ -154,6 +157,7 @@ test "validateGuidanceDoc: missing source → MissingSource" {
 
 test "validateGuidanceDoc: unknown language → UnknownLanguage" {
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "foo", .source = "src/foo.zig", .language = "cobol" },
     };
     try testing.expectError(error.UnknownLanguage, validateGuidanceDoc(testing.allocator, &doc));
@@ -162,6 +166,7 @@ test "validateGuidanceDoc: unknown language → UnknownLanguage" {
 test "validateGuidanceDoc: member with empty name → MemberMissingName" {
     const bad_member = types.Member{ .type = .fn_decl, .name = "" };
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "foo", .source = "src/foo.zig", .language = "zig" },
         .members = &.{bad_member},
     };
@@ -170,6 +175,7 @@ test "validateGuidanceDoc: member with empty name → MemberMissingName" {
 
 test "validateGuidanceDoc: python language is valid" {
     const doc = types.GuidanceDoc{
+        .arena = undefined,
         .meta = .{ .module = "foo", .source = "bin/foo.py", .language = "python" },
     };
     try validateGuidanceDoc(testing.allocator, &doc);

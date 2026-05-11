@@ -181,6 +181,7 @@ pub const cmdCommit = commit_mod.cmdCommit;
 
 pub const GenArgs = gen_files_mod.GenArgs;
 pub const guidanceJsonPath = gen_files_mod.guidanceJsonPath;
+pub const guidanceDbIsUpToDatePub = gen_files_mod.guidanceDbIsUpToDate;
 
 // =============================================================================
 // gen — delegates to sync/gen_files.zig (M2.1 extraction)
@@ -1924,8 +1925,8 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
         const json_path = try std.fs.path.join(allocator, &.{ src_json_dir, entry.path });
         defer allocator.free(json_path);
 
-        const doc = (try store.loadGuidance(json_path)) orelse continue;
-        defer store.freeGuidanceDoc(doc);
+        var doc = (try store.loadGuidance(json_path)) orelse continue;
+        defer doc.arena.deinit();
 
         // Only process Zig files.
         if (!std.mem.endsWith(u8, doc.meta.source, ".zig")) continue;
@@ -2090,6 +2091,7 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 pub const parseHunkRangesPub = commit_mod.parseHunkRangesPub;
 pub const loadChangedMembersPub = commit_mod.loadChangedMembersPub;
+pub const generateCommitMessagePub = commit_mod.generateCommitMessagePub;
 pub const chunkIsIgnoredPub = commit_mod.chunkIsIgnoredPub;
 pub const chunkFilePathPub = commit_mod.chunkFilePathPub;
 pub const splitDiffByFilePub = commit_mod.splitDiffByFilePub;

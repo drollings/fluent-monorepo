@@ -5,7 +5,7 @@ const stage_builder_mod = @import("stage_builder.zig");
 
 test "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail" {
     const allocator = std.testing.allocator;
-    const doc = types.GuidanceDoc{
+    const doc = types.GuidanceDoc{ .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "A comprehensive module with many features and functions.",
         .comment = "Short comment.",
@@ -19,7 +19,7 @@ test "GuidanceJsonStageBuilder: stageCount returns non-zero for doc with detail"
 
 test "GuidanceJsonStageBuilder: buildStages produces prose stage from detail" {
     const allocator = std.testing.allocator;
-    const doc = types.GuidanceDoc{
+    const doc = types.GuidanceDoc{ .arena = undefined,
         .meta = .{ .module = "test", .source = "src/test.zig" },
         .detail = "A comprehensive module that provides many interesting features for testing.",
         .keywords = &.{"test"},
@@ -39,7 +39,7 @@ test "GuidanceJsonStageBuilder: buildStages produces prose stage from detail" {
 
 test "GuidanceJsonStageBuilder: isRelevant matches source path token" {
     const allocator = std.testing.allocator;
-    const doc = types.GuidanceDoc{
+    const doc = types.GuidanceDoc{ .arena = undefined,
         .meta = .{ .module = "src.vector.hnsw", .source = "src/vector/hnsw.zig" },
     };
     const builder = try stage_builder_mod.createStageBuilder(allocator, &doc, "/tmp");

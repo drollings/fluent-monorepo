@@ -72,8 +72,8 @@ fn chunkFilePath(chunk: []const u8) []const u8 {
 /// Checks if a chunk is valid JSON format for guidance processing.
 fn chunkIsExplainGenJson(chunk: []const u8, guidance_dir: []const u8) bool {
     const path = chunkFilePath(chunk);
-    const prefix = std.fmt.allocPrint(std.heap.page_allocator, "{s}/", .{guidance_dir}) catch return false;
-    defer std.heap.page_allocator.free(prefix);
+    var buf: [std.fs.max_path_bytes + 2]u8 = undefined;
+    const prefix = std.fmt.bufPrint(&buf, "{s}/", .{guidance_dir}) catch return false;
     return std.mem.startsWith(u8, path, prefix) and std.mem.endsWith(u8, path, ".json");
 }
 
@@ -99,17 +99,16 @@ fn parseHunkRanges(allocator: std.mem.Allocator, chunk: []const u8) ![][2]u32 {
     return ranges.toOwnedSlice(allocator);
 }
 
+/// Holds name/line/comment/signature for a changed member.
+///
+/// String fields (`name`, `comment`, `signature`) are owned by the allocator
+/// that was passed to `loadChangedMembers`.  Pass an arena allocator so the
+/// entire result (slice + strings) is freed by a single `arena.deinit()` call.
 pub const CommitMemberInfo = struct {
     name: []const u8,
     line: ?u32,
     comment: []const u8,
     signature: []const u8,
-
-    pub fn deinit(self: CommitMemberInfo, allocator: std.mem.Allocator) void {
-        allocator.free(self.name);
-        allocator.free(self.comment);
-        allocator.free(self.signature);
-    }
 };
 
 /// Determines the line number of a JSON object, returning a u32 value.
@@ -160,24 +159,36 @@ fn appendMemberIfInRange(
 }
 
 /// Loads changed member information from a Zig source file using allocator and path details.
+///
+/// All string fields in the returned `[]CommitMemberInfo` are allocated on
+/// `allocator`.  Pass an arena allocator to collapse the entire result (slice +
+/// strings) into a single `arena.deinit()` call with no per-member cleanup.
 fn loadChangedMembers(
     allocator: std.mem.Allocator,
     guidance_root: []const u8,
     rel_path: []const u8,
     hunk_ranges: []const [2]u32,
 ) ![]CommitMemberInfo {
-    const json_path = try std.fmt.allocPrint(allocator, "{s}/src/{s}.json", .{ guidance_root, rel_path });
-    defer allocator.free(json_path);
+    // Arena for internal temporaries (json_path, parsed JSON).
+    // Does NOT own the returned slice or its string fields — those go to `allocator`.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
 
-    var parsed = common.parseJsonFile(allocator, json_path, 256 * 1024) orelse return &.{};
-    defer parsed.deinit();
+    const json_path = try std.fmt.allocPrint(a, "{s}/src/{s}.json", .{ guidance_root, rel_path });
+    var parsed = common.parseJsonFile(a, json_path, 256 * 1024) orelse return &.{};
+    // parsed lives in arena — no separate defer needed
 
     const members_val = parsed.value.object.get("members") orelse return &.{};
     if (members_val != .array) return &.{};
 
     var result: std.ArrayList(CommitMemberInfo) = .empty;
     errdefer {
-        for (result.items) |m| m.deinit(allocator);
+        for (result.items) |m| {
+            allocator.free(m.name);
+            allocator.free(m.comment);
+            allocator.free(m.signature);
+        }
         result.deinit(allocator);
     }
 
@@ -198,6 +209,10 @@ fn loadChangedMembers(
 }
 
 /// Generates a commit message string using provided file diffs and metadata for version control.
+///
+/// Returns a caller-owned `[]u8` on `allocator`. All intermediate allocations
+/// (parsed diff chunks, member lists, prompt, LLM response) use a function-scoped
+/// arena and are freed before this function returns.
 fn generateCommitMessage(
     allocator: std.mem.Allocator,
     diff: []const u8,
@@ -208,8 +223,13 @@ fn generateCommitMessage(
     model: []const u8,
     debug: bool,
 ) ![]u8 {
-    const guidance_prefix = std.fmt.allocPrint(allocator, "{s}/", .{guidance_dir}) catch return error.OutOfMemory;
-    defer allocator.free(guidance_prefix);
+    // All intermediates live here; only the returned []u8 escapes to `allocator`.
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var buf: [std.fs.max_path_bytes + 2]u8 = undefined;
+    const guidance_prefix = std.fmt.bufPrint(&buf, "{s}/", .{guidance_dir}) catch return error.OutOfMemory;
     var guidance_json_count: usize = 0;
     for (changed_files) |f| {
         if (std.mem.startsWith(u8, f, guidance_prefix) and std.mem.endsWith(u8, f, ".json"))
@@ -222,13 +242,11 @@ fn generateCommitMessage(
         defer client.deinit();
         if (client.available()) {
             var all_chunks: std.ArrayList([]const u8) = .empty;
-            defer all_chunks.deinit(allocator);
-            try splitDiffByFile(diff, &all_chunks, allocator);
+            try splitDiffByFile(diff, &all_chunks, a);
 
             var code_chunks: std.ArrayList([]const u8) = .empty;
-            defer code_chunks.deinit(allocator);
             for (all_chunks.items) |chunk| {
-                if (!chunkIsExplainGenJson(chunk, guidance_dir)) try code_chunks.append(allocator, chunk);
+                if (!chunkIsExplainGenJson(chunk, guidance_dir)) try code_chunks.append(a, chunk);
             }
 
             if (debug) {
@@ -243,7 +261,6 @@ fn generateCommitMessage(
                 const per_file_cap: usize = @max(800, TOTAL_CAP / n_code);
 
                 var combined: std.ArrayList(u8) = .empty;
-                defer combined.deinit(allocator);
 
                 for (code_chunks.items) |chunk| {
                     if (combined.items.len >= TOTAL_CAP) break;
@@ -251,61 +268,56 @@ fn generateCommitMessage(
                     const rel_path = chunkFilePath(chunk);
 
                     if (guidance_root.len > 0 and rel_path.len > 0) {
-                        const hunk_ranges = parseHunkRanges(allocator, chunk) catch &.{};
-                        defer allocator.free(hunk_ranges);
-
-                        const members = loadChangedMembers(allocator, guidance_root, rel_path, hunk_ranges) catch &.{};
-                        defer {
-                            for (members) |m| m.deinit(allocator);
-                            allocator.free(members);
-                        }
+                        // hunk_ranges and member strings both land on `a`
+                        const hunk_ranges = parseHunkRanges(a, chunk) catch &.{};
+                        const members = loadChangedMembers(a, guidance_root, rel_path, hunk_ranges) catch &.{};
 
                         if (members.len > 0) {
-                            try combined.appendSlice(allocator, "### Functions in ");
-                            try combined.appendSlice(allocator, rel_path);
-                            try combined.appendSlice(allocator, ":\n");
+                            try combined.appendSlice(a, "### Functions in ");
+                            try combined.appendSlice(a, rel_path);
+                            try combined.appendSlice(a, ":\n");
                             for (members) |m| {
                                 if (m.line) |ln| {
-                                    try combined.appendSlice(allocator, "- ");
-                                    try combined.appendSlice(allocator, m.name);
-                                    try combined.appendSlice(allocator, " (line ");
-                                    try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 10) % 10 + '0')));
+                                    try combined.appendSlice(a, "- ");
+                                    try combined.appendSlice(a, m.name);
+                                    try combined.appendSlice(a, " (line ");
+                                    try combined.append(a, @as(u8, @intCast(@divTrunc(ln, 10) % 10 + '0')));
                                     if (ln >= 10) {
-                                        try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 100) % 10 + '0')));
+                                        try combined.append(a, @as(u8, @intCast(@divTrunc(ln, 100) % 10 + '0')));
                                         if (ln >= 100) {
-                                            try combined.append(allocator, @as(u8, @intCast(@divTrunc(ln, 1000) % 10 + '0')));
+                                            try combined.append(a, @as(u8, @intCast(@divTrunc(ln, 1000) % 10 + '0')));
                                         }
                                     }
-                                    try combined.appendSlice(allocator, ")\n");
+                                    try combined.appendSlice(a, ")\n");
                                 } else {
-                                    try combined.appendSlice(allocator, "- ");
-                                    try combined.appendSlice(allocator, m.name);
-                                    try combined.append(allocator, '\n');
+                                    try combined.appendSlice(a, "- ");
+                                    try combined.appendSlice(a, m.name);
+                                    try combined.append(a, '\n');
                                 }
                                 if (m.comment.len > 0) {
                                     const end = std.mem.indexOfScalar(u8, m.comment, '.') orelse m.comment.len;
                                     const snippet = m.comment[0..@min(end + 1, @min(m.comment.len, 120))];
-                                    try combined.appendSlice(allocator, ": ");
-                                    try combined.appendSlice(allocator, snippet);
-                                    try combined.append(allocator, '\n');
+                                    try combined.appendSlice(a, ": ");
+                                    try combined.appendSlice(a, snippet);
+                                    try combined.append(a, '\n');
                                 } else if (m.signature.len > 0) {
                                     const snippet = m.signature[0..@min(m.signature.len, 80)];
-                                    try combined.appendSlice(allocator, ": `");
-                                    try combined.appendSlice(allocator, snippet);
-                                    try combined.appendSlice(allocator, "`\n");
+                                    try combined.appendSlice(a, ": `");
+                                    try combined.appendSlice(a, snippet);
+                                    try combined.appendSlice(a, "`\n");
                                 }
                             }
-                            try combined.append(allocator, '\n');
+                            try combined.append(a, '\n');
                         }
                     }
 
                     const budget = @min(chunk.len, per_file_cap);
-                    try combined.appendSlice(allocator, chunk[0..budget]);
-                    try combined.append(allocator, '\n');
+                    try combined.appendSlice(a, chunk[0..budget]);
+                    try combined.append(a, '\n');
                 }
 
                 const prompt = try std.fmt.allocPrint(
-                    allocator,
+                    a,
                     \\TASK: Write a git commit message as a bullet list.
                     \\
                     \\Rules:
@@ -326,21 +338,16 @@ fn generateCommitMessage(
                 ,
                     .{combined.items},
                 );
-                defer allocator.free(prompt);
 
                 if (debug) std.debug.print("[commit] prompt ({d} chars):\n{s}\n---\n", .{ prompt.len, prompt });
 
                 const result = client.completeOrNull(prompt, 8192, 0.1, null);
 
                 if (result) |raw| {
-                    defer allocator.free(raw);
+                    defer allocator.free(raw); // raw comes from LlmClient on `allocator`
                     if (debug) std.debug.print("[commit] response:\n{s}\n---\n", .{raw});
 
                     var bullets: std.ArrayList([]const u8) = .empty;
-                    defer {
-                        for (bullets.items) |b| allocator.free(b);
-                        bullets.deinit(allocator);
-                    }
                     var resp_lines = std.mem.splitScalar(u8, raw, '\n');
                     while (resp_lines.next()) |line| {
                         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -348,25 +355,25 @@ fn generateCommitMessage(
                             std.mem.startsWith(u8, trimmed, "- ");
                         if (is_bullet) {
                             const text = std.mem.trim(u8, trimmed[2..], " \t");
-                            if (text.len > 0) try bullets.append(allocator, try allocator.dupe(u8, text));
+                            if (text.len > 0) try bullets.append(a, try a.dupe(u8, text));
                         }
                     }
 
                     if (bullets.items.len > 0) {
                         var out: std.ArrayList(u8) = .empty;
                         for (bullets.items) |b| {
-                            try out.appendSlice(allocator, "* ");
-                            try out.appendSlice(allocator, b);
-                            try out.append(allocator, '\n');
+                            try out.appendSlice(a, "* ");
+                            try out.appendSlice(a, b);
+                            try out.append(a, '\n');
                         }
                         if (guidance_json_count > 0) {
-                            const line = try std.fmt.allocPrint(allocator, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
-                            try out.appendSlice(allocator, line);
-                            allocator.free(line);
+                            const line = try std.fmt.allocPrint(a, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+                            try out.appendSlice(a, line);
                         }
                         if (out.items.len > 0 and out.items[out.items.len - 1] == '\n')
                             out.items.len -= 1;
-                        return out.toOwnedSlice(allocator);
+                        // Escape to caller-owned memory before arena deinits
+                        return try allocator.dupe(u8, out.items);
                     }
                 }
             }
@@ -376,25 +383,23 @@ fn generateCommitMessage(
     std.debug.print("warning: LLM unavailable or returned no bullets; using filename fallback\n", .{});
 
     var fallback: std.ArrayList(u8) = .empty;
-    defer fallback.deinit(allocator);
     var any = false;
     for (changed_files) |f| {
         if (std.mem.startsWith(u8, f, guidance_prefix) and std.mem.endsWith(u8, f, ".json")) continue;
-        try fallback.appendSlice(allocator, "* Update ");
-        try fallback.appendSlice(allocator, f);
-        try fallback.append(allocator, '\n');
+        try fallback.appendSlice(a, "* Update ");
+        try fallback.appendSlice(a, f);
+        try fallback.append(a, '\n');
         any = true;
     }
     if (guidance_json_count > 0) {
-        const line = try std.fmt.allocPrint(allocator, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
-        try fallback.appendSlice(allocator, line);
-        allocator.free(line);
+        const line = try std.fmt.allocPrint(a, "* guidance: updated {d} JSON file(s) in {s}/src/\n", .{ guidance_json_count, guidance_dir });
+        try fallback.appendSlice(a, line);
         any = true;
     }
     if (any) {
         if (fallback.items.len > 0 and fallback.items[fallback.items.len - 1] == '\n')
             fallback.items.len -= 1;
-        return fallback.toOwnedSlice(allocator);
+        return try allocator.dupe(u8, fallback.items);
     }
     return try allocator.dupe(u8, "* Update codebase");
 }
@@ -678,4 +683,19 @@ pub fn chunkFilePathPub(chunk: []const u8) []const u8 {
 
 pub fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
     return splitDiffByFile(diff, out, allocator);
+}
+
+/// Test wrapper — exposes generateCommitMessage for integration testing.
+/// Returns caller-owned []u8; caller must free with the same allocator.
+pub fn generateCommitMessagePub(
+    allocator: std.mem.Allocator,
+    diff: []const u8,
+    changed_files: []const []const u8,
+    guidance_dir: []const u8,
+    guidance_root: []const u8,
+    api_url: []const u8,
+    model: []const u8,
+    debug: bool,
+) ![]u8 {
+    return generateCommitMessage(allocator, diff, changed_files, guidance_dir, guidance_root, api_url, model, debug);
 }

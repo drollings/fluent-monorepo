@@ -392,8 +392,10 @@ fn printSubcommandHelp(command: Command) !void {
 // Re-exports for tests.zig (public wrapper surface)
 // =============================================================================
 
+pub const guidanceDbIsUpToDatePub = sync_engine_mod.guidanceDbIsUpToDatePub;
 pub const parseHunkRangesPub = sync_engine_mod.parseHunkRangesPub;
 pub const loadChangedMembersPub = sync_engine_mod.loadChangedMembersPub;
+pub const generateCommitMessagePub = sync_engine_mod.generateCommitMessagePub;
 pub const chunkIsIgnoredPub = sync_engine_mod.chunkIsIgnoredPub;
 pub const chunkFilePathPub = sync_engine_mod.chunkFilePathPub;
 pub const splitDiffByFilePub = sync_engine_mod.splitDiffByFilePub;
