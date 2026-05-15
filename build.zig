@@ -1191,7 +1191,10 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/guidance/todo_tests.zig"),
             .target = target, .optimize = optimize,
-            .imports = &.{ .{ .name = "llm", .module = llm_module } },
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
+            },
         }),
     });
 
@@ -1517,6 +1520,19 @@ pub fn build(b: *std.Build) void {
         }),
     });
     test_step.dependOn(&b.addRunArtifact(subagent_tests).step);
+
+    // -- subagent todo tests (tests src/subagent/todo.zig) --
+    const subagent_todo_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/subagent/todo_tests.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(subagent_todo_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)
