@@ -139,13 +139,6 @@ pub fn runSubagent(
     defer action_map.deinit();
 
     var evidence_list: std.ArrayList(types.Evidence) = .empty;
-    defer {
-        for (evidence_list.items) |e| {
-            allocator.free(e.item_text);
-            allocator.free(e.summary);
-        }
-        evidence_list.deinit(allocator);
-    }
 
     var completed_count: usize = 0;
     var items: []types.ChecklistItem = &[_]types.ChecklistItem{};
@@ -160,9 +153,12 @@ pub fn runSubagent(
         switch (state) {
             .intake => {
                 if (!items_loaded) {
-                    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{config.workspace});
+                    const cl_dir = if (config.checklist_dir.len > 0) config.checklist_dir else config.workspace;
+                    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{cl_dir});
                     defer allocator.free(checklist_path);
-                    const content = @import("common").io.readFileAlloc(allocator, checklist_path, 10 * 1024 * 1024) orelse "";
+                    const content_alloc = @import("common").io.readFileAlloc(allocator, checklist_path, 10 * 1024 * 1024);
+                    defer if (content_alloc) |c| allocator.free(c);
+                    const content = content_alloc orelse "";
                     if (content.len == 0) {
                         state = .done;
                         break;
@@ -245,6 +241,7 @@ pub fn runSubagent(
                     config.workspace,
                     config.command_allowlist,
                 );
+                defer route_result.params.deinit(allocator);
 
                 if (route_result.source == .llm) llm_calls_total += 1;
 
@@ -346,6 +343,7 @@ pub fn runSubagent(
                     null,
                     200,
                 );
+                defer synthesis.context.deinit(allocator);
 
                 var scratchpad_ctx: ?[]const u8 = null;
                 if (scratchpad.count > 0) {
@@ -392,7 +390,7 @@ pub fn runSubagent(
         .summary = try allocator.dupe(u8, if (state == .done) "Subagent completed" else "Subagent escalated"),
         .completed_items = completed_count,
         .total_items = if (items_loaded) items.len else 0,
-        .evidence = evidence_list.items,
+        .evidence = try evidence_list.toOwnedSlice(allocator),
         .iterations = iteration,
         .llm_calls = llm_calls_total,
         .deterministic_calls = deterministic_calls_total,
@@ -439,13 +437,6 @@ pub fn runSubagentWithBackend(
     }
 
     var evidence_list: std.ArrayList(types.Evidence) = .empty;
-    defer {
-        for (evidence_list.items) |e| {
-            allocator.free(e.item_text);
-            allocator.free(e.summary);
-        }
-        evidence_list.deinit(allocator);
-    }
 
     var profile_list: std.ArrayList(types.IterationProfile) = .empty;
     defer profile_list.deinit(allocator);
@@ -470,9 +461,12 @@ pub fn runSubagentWithBackend(
         switch (state) {
             .intake => {
                 if (!items_loaded) {
-                    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{config.workspace});
+                    const cl_dir = if (config.checklist_dir.len > 0) config.checklist_dir else config.workspace;
+                    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{cl_dir});
                     defer allocator.free(checklist_path);
-                    const content = @import("common").io.readFileAlloc(allocator, checklist_path, 10 * 1024 * 1024) orelse "";
+                    const content_alloc = @import("common").io.readFileAlloc(allocator, checklist_path, 10 * 1024 * 1024);
+                    defer if (content_alloc) |c| allocator.free(c);
+                    const content = content_alloc orelse "";
                     if (content.len == 0) {
                         state = .done;
                         break;
@@ -579,6 +573,7 @@ pub fn runSubagentWithBackend(
                 if (route_result.source == .guidance) used_cache = true;
 
                 if (!route_result.params.isComplete()) {
+                    route_result.params.deinit(allocator);
                     if (action == .unknown) {
                         state = .escalate;
                     } else {
@@ -690,6 +685,7 @@ pub fn runSubagentWithBackend(
                     null,
                     200,
                 );
+                defer synthesis.context.deinit(allocator);
 
                 var scratchpad_ctx: ?[]const u8 = null;
                 if (scratchpad.count > 0) {
@@ -745,7 +741,7 @@ pub fn runSubagentWithBackend(
         .summary = try allocator.dupe(u8, if (state == .done) "Subagent completed" else "Subagent escalated"),
         .completed_items = completed_count,
         .total_items = if (items_loaded) items.len else 0,
-        .evidence = evidence_list.items,
+        .evidence = try evidence_list.toOwnedSlice(allocator),
         .iterations = iteration,
         .llm_calls = llm_calls_total,
         .deterministic_calls = deterministic_calls_total,

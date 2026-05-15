@@ -13,6 +13,7 @@
 const std = @import("std");
 const common = @import("common");
 const llm = @import("llm");
+const marker = @import("sync/marker.zig");
 
 // ---------------------------------------------------------------------------
 // Directory helpers
@@ -89,6 +90,17 @@ fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
     const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
     defer f.close(io);
     return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(1 * 1024 * 1024)) catch null;
+}
+
+/// Checks whether `target_path` needs regeneration because any of the
+/// `source_paths` are newer.  Mirrors the mtime-based pattern from marker.zig.
+fn needsRegeneration(target_path: []const u8, source_paths: []const []const u8) bool {
+    const target_mtime = marker.fileMtime(target_path) orelse return true;
+    for (source_paths) |src| {
+        const src_mtime = marker.fileMtime(src) orelse continue;
+        if (src_mtime > target_mtime) return true;
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,14 +215,20 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
     defer allocator.free(todo_path);
 
+    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
+    defer allocator.free(triage_path);
+
+    // Incremental: skip if TODO.md is not newer than existing TRIAGE.md.
+    if (!needsRegeneration(triage_path, &.{todo_path})) {
+        std.debug.print("todo triage: {s} is up to date\n", .{triage_path});
+        return;
+    }
+
     const todo_content = readFileOpt(allocator, todo_path) orelse {
         std.debug.print("todo triage: cannot read {s}\n", .{todo_path});
         return;
     };
     defer allocator.free(todo_content);
-
-    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
-    defer allocator.free(triage_path);
 
     const system_prompt =
         \\You are a senior software engineer reviewing a work item.
@@ -300,14 +318,23 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
     defer allocator.free(todo_path);
 
+    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
+    defer allocator.free(triage_path);
+
+    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_dir});
+    defer allocator.free(checklist_path);
+
+    // Incremental: skip if neither TODO.md nor TRIAGE.md is newer than CHECKLIST.md.
+    if (!needsRegeneration(checklist_path, &.{ todo_path, triage_path })) {
+        std.debug.print("todo checklist: {s} is up to date\n", .{checklist_path});
+        return;
+    }
+
     const todo_content = readFileOpt(allocator, todo_path) orelse {
         std.debug.print("todo checklist: cannot read {s}\n", .{todo_path});
         return;
     };
     defer allocator.free(todo_content);
-
-    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_dir});
-    defer allocator.free(checklist_path);
 
     const system_prompt =
         \\You are a software engineer generating an implementation checklist.
@@ -459,13 +486,13 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
         }
 
         const status_str: []const u8 = if (is_committed) "committed" else if (is_current) "► current" else "pending";
-        const marker: []const u8 = if (is_current) "* " else "  ";
+        const status_marker: []const u8 = if (is_current) "* " else "  ";
 
         if (total_items > 0) {
             const pct = done_items * 100 / total_items;
-            std.debug.print("{s}[{s}] {s} ({d}%)\n", .{ marker, status_str, title, pct });
+            std.debug.print("{s}[{s}] {s} ({d}%)\n", .{ status_marker, status_str, title, pct });
         } else {
-            std.debug.print("{s}[{s}] {s}\n", .{ marker, status_str, title });
+            std.debug.print("{s}[{s}] {s}\n", .{ status_marker, status_str, title });
         }
     }
 

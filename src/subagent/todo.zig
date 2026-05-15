@@ -94,6 +94,26 @@ fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
     return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(1 * 1024 * 1024)) catch null;
 }
 
+/// Returns the mtime of a file in nanoseconds, or null if stat fails.
+fn fileMtime(path: []const u8) ?i128 {
+    const io = common.io.singleIo();
+    const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
+    defer f.close(io);
+    const stat = f.stat(io) catch return null;
+    return @as(i128, stat.mtime.nanoseconds);
+}
+
+/// Checks whether `target_path` needs regeneration because any of the
+/// `source_paths` are newer.  Mirrors the mtime-based pattern from marker.zig.
+fn needsRegeneration(target_path: []const u8, source_paths: []const []const u8) bool {
+    const target_mtime = fileMtime(target_path) orelse return true;
+    for (source_paths) |src| {
+        const src_mtime = fileMtime(src) orelse continue;
+        if (src_mtime > target_mtime) return true;
+    }
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // guidance todo new
 // ---------------------------------------------------------------------------
@@ -206,14 +226,20 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
     defer allocator.free(todo_path);
 
+    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
+    defer allocator.free(triage_path);
+
+    // Incremental: skip if TODO.md is not newer than existing TRIAGE.md.
+    if (!needsRegeneration(triage_path, &.{todo_path})) {
+        std.debug.print("todo triage: {s} is up to date\n", .{triage_path});
+        return;
+    }
+
     const todo_content = readFileOpt(allocator, todo_path) orelse {
         std.debug.print("todo triage: cannot read {s}\n", .{todo_path});
         return;
     };
     defer allocator.free(todo_content);
-
-    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
-    defer allocator.free(triage_path);
 
     const system_prompt =
         \\You are a senior software engineer reviewing a work item.
@@ -303,14 +329,23 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
     defer allocator.free(todo_path);
 
+    const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
+    defer allocator.free(triage_path);
+
+    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_dir});
+    defer allocator.free(checklist_path);
+
+    // Incremental: skip if neither TODO.md nor TRIAGE.md is newer than CHECKLIST.md.
+    if (!needsRegeneration(checklist_path, &.{ todo_path, triage_path })) {
+        std.debug.print("todo checklist: {s} is up to date\n", .{checklist_path});
+        return;
+    }
+
     const todo_content = readFileOpt(allocator, todo_path) orelse {
         std.debug.print("todo checklist: cannot read {s}\n", .{todo_path});
         return;
     };
     defer allocator.free(todo_content);
-
-    const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_dir});
-    defer allocator.free(checklist_path);
 
     const system_prompt =
         \\You are a software engineer generating an implementation checklist.
@@ -693,10 +728,18 @@ pub fn cmdTodoRun(
     max_iterations: u16,
     allow_edit: bool,
 ) !subagent_types.SubagentResult {
+    // Derive checklist_dir from the current work item.
+    const todo_dir = try std.fmt.allocPrint(allocator, "{s}/.guidance/todo", .{workspace});
+    defer allocator.free(todo_dir);
+    const item_dir = try findCurrentWorkItem(allocator, todo_dir);
+    const checklist_dir = item_dir orelse "";
+    defer if (item_dir) |d| allocator.free(d);
+
     var b = subagent_builder.builder(allocator);
     _ = b.workspace(workspace);
     _ = b.dbPath(db_path);
     _ = b.guidanceDir(guidance_dir);
+    _ = b.checklistDir(checklist_dir);
     _ = b.apiUrl(api_url);
     _ = b.model(model);
     _ = b.maxIterations(max_iterations);
@@ -706,6 +749,7 @@ pub fn cmdTodoRun(
         allocator.free(config.workspace);
         allocator.free(config.db_path);
         allocator.free(config.guidance_dir);
+        if (config.checklist_dir.len > 0) allocator.free(config.checklist_dir);
         allocator.free(config.api_url);
         allocator.free(config.model);
     }

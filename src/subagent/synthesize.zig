@@ -88,7 +88,13 @@ fn synthesizeStructured(
         facts_list.deinit(allocator);
     }
     var citations_list: std.ArrayList(types.Citation) = .empty;
-    errdefer citations_list.deinit(allocator);
+    errdefer {
+        for (citations_list.items) |c| {
+            if (c.file) |f| allocator.free(f);
+            if (c.member) |m| allocator.free(m);
+        }
+        citations_list.deinit(allocator);
+    }
 
     if (result.stages) |stages| {
         const packer = context_packer.ContextPacker{ .config = .{
@@ -138,12 +144,14 @@ fn synthesizeStructured(
             }
         }
 
+        const owned_facts = try facts_list.toOwnedSlice(allocator);
+        const owned_citations = try citations_list.toOwnedSlice(allocator);
         const token_cost: u32 = @intCast(token_budget.estimate(summary));
         return .{
             .context = .{
                 .summary = summary,
-                .facts = facts_list.items,
-                .citations = citations_list.items,
+                .facts = owned_facts,
+                .citations = owned_citations,
                 .token_cost = token_cost,
             },
             .used_llm = false,
@@ -151,13 +159,15 @@ fn synthesizeStructured(
     }
 
     const summary = try allocator.dupe(u8, result.structured orelse item.text);
+    const owned_facts = try facts_list.toOwnedSlice(allocator);
+    const owned_citations = try citations_list.toOwnedSlice(allocator);
     const token_cost: u32 = @intCast(token_budget.estimate(summary));
 
     return .{
         .context = .{
             .summary = summary,
-            .facts = facts_list.items,
-            .citations = citations_list.items,
+            .facts = owned_facts,
+            .citations = owned_citations,
             .token_cost = token_cost,
         },
         .used_llm = false,
@@ -186,6 +196,7 @@ fn synthesizeViaLlm(
     try prompt_buf.appendSlice(allocator, "\n\nResult:\n");
     const truncated_raw = string_mod.truncateAtSentence(allocator, raw, 2000) catch raw;
     try prompt_buf.appendSlice(allocator, truncated_raw);
+    if (truncated_raw.ptr != raw.ptr) allocator.free(truncated_raw);
 
     if (scratchpad_ctx) |ctx| {
         const compressor = context_compressor.ContextCompressor{ .max_context_tokens = 1000, .protect_tail = 20 };

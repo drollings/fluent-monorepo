@@ -192,7 +192,7 @@ fn routeRead(
 
     if (extractPath(text)) |path| {
         return .{
-            .params = .{ .action = .read, .path = allocator.dupe(u8, path) catch path },
+            .params = .{ .action = .read, .path = allocator.dupe(u8, path) catch null },
             .source = .template,
         };
     }
@@ -212,7 +212,7 @@ fn routeRead(
         }
     }
 
-    return .{ .params = .{ .action = .read, .query = allocator.dupe(u8, text) catch text }, .source = .template };
+    return .{ .params = .{ .action = .read, .query = allocator.dupe(u8, text) catch null }, .source = .template };
 }
 
 fn routeExplain(
@@ -238,7 +238,7 @@ fn routeExplain(
     }
 
     return .{
-        .params = .{ .action = .explain, .query = allocator.dupe(u8, text) catch text },
+        .params = .{ .action = .explain, .query = allocator.dupe(u8, text) catch null },
         .source = .template,
     };
 }
@@ -258,8 +258,8 @@ fn routeEdit(
         return .{
             .params = .{
                 .action = .edit,
-                .path = allocator.dupe(u8, path) catch path,
-                .content = allocator.dupe(u8, text) catch text,
+                .path = allocator.dupe(u8, path) catch null,
+                .content = allocator.dupe(u8, text) catch null,
             },
             .source = .template,
         };
@@ -273,7 +273,7 @@ fn routeEdit(
                 .params = .{
                     .action = .edit,
                     .path = result.path,
-                    .content = allocator.dupe(u8, text) catch text,
+                    .content = allocator.dupe(u8, text) catch null,
                 },
                 .source = .guidance,
             };
@@ -283,7 +283,7 @@ fn routeEdit(
     return .{
         .params = .{
             .action = .edit,
-            .content = allocator.dupe(u8, text) catch text,
+            .content = allocator.dupe(u8, text) catch null,
         },
         .source = .template,
     };
@@ -293,7 +293,7 @@ fn routeDiary(allocator: std.mem.Allocator, item: types.ChecklistItem) RouteResu
     return .{
         .params = .{
             .action = .diary,
-            .content = allocator.dupe(u8, item.text) catch item.text,
+            .content = allocator.dupe(u8, item.text) catch null,
         },
         .source = .template,
     };

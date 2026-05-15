@@ -97,16 +97,13 @@ pub fn appendObservation(
     success: bool,
 ) !void {
     const truncated = string_mod.truncateAtSentence(allocator, raw_output, 300) catch raw_output;
-    const owned_obs = if (truncated.ptr != raw_output.ptr) truncated else try allocator.dupe(u8, raw_output);
-    const owned_text = try allocator.dupe(u8, item_text);
-    const owned_reasoning = try allocator.dupe(u8, "");
-
+    defer if (truncated.ptr != raw_output.ptr) allocator.free(truncated);
     try scratchpad.append(.{
         .iteration = iteration,
-        .item_text = owned_text,
+        .item_text = item_text,
         .action = action,
-        .observation = owned_obs,
-        .reasoning = owned_reasoning,
+        .observation = truncated,
+        .reasoning = "",
         .success = success,
     });
 }

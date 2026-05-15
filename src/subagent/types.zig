@@ -61,6 +61,13 @@ pub const ToolParams = struct {
             .unknown => false,
         };
     }
+
+    pub fn deinit(self: *const ToolParams, allocator: std.mem.Allocator) void {
+        if (self.command) |c| allocator.free(c);
+        if (self.path) |p| allocator.free(p);
+        if (self.content) |c| allocator.free(c);
+        if (self.query) |q| allocator.free(q);
+    }
 };
 
 pub const BatchClassifyEntry = struct {
@@ -140,6 +147,7 @@ pub const SubagentConfig = struct {
     workspace: []const u8,
     db_path: []const u8,
     guidance_dir: []const u8,
+    checklist_dir: []const u8 = "",
     api_url: []const u8,
     model: []const u8,
     max_iterations: u16 = 20,
@@ -161,6 +169,17 @@ pub const SummarizedContext = struct {
     citations: []const Citation,
     followup: ?ActionType = null,
     token_cost: u32,
+
+    pub fn deinit(self: *const SummarizedContext, allocator: std.mem.Allocator) void {
+        allocator.free(self.summary);
+        for (self.facts) |f| allocator.free(f);
+        if (self.facts.len > 0) allocator.free(@constCast(self.facts));
+        for (self.citations) |c| {
+            if (c.file) |f| allocator.free(f);
+            if (c.member) |m| allocator.free(m);
+        }
+        if (self.citations.len > 0) allocator.free(@constCast(self.citations));
+    }
 };
 
 pub const Evidence = struct {
@@ -188,6 +207,11 @@ pub const SubagentResult = struct {
         for (self.evidence) |e| {
             allocator.free(e.item_text);
             allocator.free(e.summary);
+            for (e.citations) |c| {
+                if (c.file) |f| allocator.free(f);
+                if (c.member) |m| allocator.free(m);
+            }
+            if (e.citations.len > 0) allocator.free(@constCast(e.citations));
         }
         allocator.free(self.evidence);
         if (self.profiles.len > 0) {

@@ -53,6 +53,7 @@ pub const SubagentBuilder = struct {
     workspace_val: ?[]const u8 = null,
     db_path_val: ?[]const u8 = null,
     guidance_dir_val: ?[]const u8 = null,
+    checklist_dir_val: ?[]const u8 = null,
     api_url_val: ?[]const u8 = null,
     model_val: ?[]const u8 = null,
     max_iterations: u16 = 20,
@@ -111,6 +112,16 @@ pub const SubagentBuilder = struct {
         const arena_alloc = self.arena.allocator();
         self.guidance_dir_val = arena_alloc.dupe(u8, dir) catch |e| {
             self.setError(.guidance_dir, "guidance_dir", "invalid_path", e);
+            return self;
+        };
+        return self;
+    }
+
+    pub fn checklistDir(self: *SubagentBuilder, dir: []const u8) *SubagentBuilder {
+        if (self.hasError()) return self;
+        const arena_alloc = self.arena.allocator();
+        self.checklist_dir_val = arena_alloc.dupe(u8, dir) catch |e| {
+            self.setError(.guidance_dir, "checklist_dir", "invalid_path", e);
             return self;
         };
         return self;
@@ -180,6 +191,10 @@ pub const SubagentBuilder = struct {
             .workspace = try allocator.dupe(u8, ws),
             .db_path = try allocator.dupe(u8, self.db_path_val orelse try std.fmt.allocPrint(allocator, "{s}/.guidance.db", .{ws})),
             .guidance_dir = try allocator.dupe(u8, self.guidance_dir_val orelse try std.fmt.allocPrint(allocator, "{s}/.guidance", .{ws})),
+            .checklist_dir = if (self.checklist_dir_val) |cd|
+                try allocator.dupe(u8, cd)
+            else
+                try allocator.dupe(u8, ""),
             .api_url = try allocator.dupe(u8, api),
             .model = try allocator.dupe(u8, mdl),
             .max_iterations = self.max_iterations,
