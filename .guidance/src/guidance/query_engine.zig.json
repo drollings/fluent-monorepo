@@ -240,9 +240,9 @@
     },
     {
       "type": "fn_decl",
-      "name": "cmdTest",
-      "match_hash": "e24d23503425da20410a4a2b70196b5b1997408609a133668166d09b5f884f98",
-      "signature": "fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) -> void",
+      "name": "cmdBenchmark",
+      "match_hash": "fea510f4ddc1020acdf02693d75a814bbc988fbeb4531e49a78928e131ac2870",
+      "signature": "fn cmdBenchmark(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
       "line": 1355

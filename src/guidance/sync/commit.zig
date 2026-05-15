@@ -442,6 +442,7 @@ fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) ![]c
 pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var dry_run = false;
     var debug = false;
+    var force = false;
     var api_url: []const u8 = config_mod.DEFAULT_API_URL;
     var model: []const u8 = config_mod.DEFAULT_MODEL;
     var i: usize = 0;
@@ -451,6 +452,8 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
             dry_run = true;
         } else if (std.mem.eql(u8, arg, "--debug") or std.mem.eql(u8, arg, "--verbose")) {
             debug = true;
+        } else if (std.mem.eql(u8, arg, "--force") or std.mem.eql(u8, arg, "-f")) {
+            force = true;
         } else if (std.mem.eql(u8, arg, "--api-url")) {
             i += 1;
             if (i >= args.len) return;
@@ -609,9 +612,16 @@ pub fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     const cl_status = try todo_mod.queryChecklistStatus(allocator, todo_dir);
     defer if (cl_status.item_dir) |d| allocator.free(d);
-    if (cl_status.incomplete > 0) {
+    if (cl_status.incomplete > 0 and !force) {
         std.debug.print(
-            "Warning: {d}/{d} checklist items incomplete in current work item.\n",
+            "Error: {d}/{d} checklist items incomplete in current work item. Use --force to commit anyway.\n",
+            .{ cl_status.incomplete, cl_status.total },
+        );
+        return;
+    }
+    if (cl_status.incomplete > 0 and force) {
+        std.debug.print(
+            "Warning: {d}/{d} checklist items incomplete (forced).\n",
             .{ cl_status.incomplete, cl_status.total },
         );
     }

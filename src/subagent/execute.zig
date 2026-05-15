@@ -181,6 +181,8 @@ pub const ReadTool = struct {
 
 pub const ExplainTool = struct {
     explain_fn: ?*const types.ExplainFn = null,
+    db_path: []const u8 = "",
+    workspace: []const u8 = "",
 
     const vtable: ToolVTable = .{
         .name = name,
@@ -207,7 +209,7 @@ pub const ExplainTool = struct {
         const query = params.query orelse return error.MissingQuery;
 
         if (self.explain_fn) |fn_ptr| {
-            if (fn_ptr(allocator, query)) |result| {
+            if (fn_ptr(allocator, query, self.db_path, self.workspace)) |result| {
                 var stages: std.ArrayList(types.ExplainStage) = .empty;
                 if (result.content) |content| {
                     stages.append(allocator, .{
@@ -460,7 +462,6 @@ pub const ChecklistTool = struct {
     }
 
     fn executeImpl(self: *ChecklistTool, allocator: std.mem.Allocator, params: *const types.ToolParams, io: *std.Io) anyerror!types.ToolResult {
-        _ = io;
         const item_index = params.item_index orelse return error.MissingItemIndex;
 
         const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{self.workspace});
@@ -473,6 +474,23 @@ pub const ChecklistTool = struct {
             return .{ .action = .checklist, .success = false, .raw = try allocator.dupe(u8, content) };
         defer allocator.free(toggled);
         allocator.free(content);
+
+        const tmp_path = try std.fmt.allocPrint(allocator, "{s}.tmp", .{checklist_path});
+        defer allocator.free(tmp_path);
+
+        const new_file = std.Io.Dir.createFileAbsolute(io, tmp_path, .{}) catch {
+            return .{ .action = .checklist, .success = false, .raw = try allocator.dupe(u8, "failed to create CHECKLIST.md temp") };
+        };
+        defer new_file.close(io);
+        var wbuf: [4096]u8 = undefined;
+        var writer = new_file.writer(io, &wbuf);
+        try writer.interface.writeAll(toggled);
+        try writer.interface.flush();
+
+        std.Io.Dir.renameAbsolute(io, tmp_path, checklist_path) catch {
+            std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+            return .{ .action = .checklist, .success = false, .raw = try allocator.dupe(u8, "failed to rename CHECKLIST.md") };
+        };
 
         return .{
             .action = .checklist,

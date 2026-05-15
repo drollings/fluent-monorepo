@@ -54,11 +54,11 @@ const Command = enum {
     gen,
     clean,
     explain,
-    commit,
-    @"test",
     todo,
-    telemetry,
+    commit,
     serve,
+    telemetry,
+    benchmark,
     health,
 };
 
@@ -150,9 +150,9 @@ pub fn main(init: std.process.Init) !void {
         .gen => sync_engine_mod.cmdGen(allocator, subcmd_args),
         .clean => sync_engine_mod.cmdClean(allocator, subcmd_args),
         .explain => query_engine_mod.cmdExplain(allocator, subcmd_args),
-        .commit => sync_engine_mod.cmdCommit(allocator, subcmd_args),
-        .@"test" => query_engine_mod.cmdTest(allocator, subcmd_args),
         .todo => sync_engine_mod.cmdTodo(allocator, subcmd_args),
+        .commit => sync_engine_mod.cmdCommit(allocator, subcmd_args),
+        .benchmark => query_engine_mod.cmdBenchmark(allocator, subcmd_args),
         .telemetry => query_engine_mod.cmdTelemetry(allocator, subcmd_args),
         .serve => query_engine_mod.cmdServe(allocator, subcmd_args),
         .health => health_mod.cmdHealth(allocator, subcmd_args),
@@ -182,9 +182,9 @@ fn printHelp() !void {
         \\  gen        Generate .guidance/ JSON mirror and .guidance.db
         \\  clean      Remove .guidance/src and .guidance.db
         \\  explain    Search codebase with optional LLM-synthesized summary
-        \\  commit     Generate AI commit message from staged diff + guidance
-        \\  test       Benchmark explain queries against module-level comments
         \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon|run)
+        \\  commit     Generate AI commit message from staged diff + guidance
+        \\  benchmark  Benchmark explain queries against module-level comments
         \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
         \\Examples:
@@ -301,8 +301,8 @@ fn printSubcommandHelp(command: Command) !void {
             \\  -m, --model NAME         Model for synthesis
             \\
         ),
-        .@"test" => try stdout.writeAll(
-            \\Usage: guidance test [options]
+        .benchmark => try stdout.writeAll(
+            \\Usage: guidance benchmark [options]
             \\
             \\Benchmark explain queries against module-level comments.
             \\

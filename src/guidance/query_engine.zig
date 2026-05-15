@@ -1352,7 +1352,7 @@ const BenchmarkResult = struct {
 };
 
 /// Validates command arguments and processes them in the Zig engine.
-pub fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) !void {
+pub fn cmdBenchmark(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var no_llm = false;
     var db_path: ?[]const u8 = null;
     var workspace: ?[]const u8 = null;

@@ -32,19 +32,19 @@
       "signature": "fn synthesizeViaLlm(allocator: std.mem.Allocator, raw: []const u8, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, llm_fn: *const LlmFn, max_summary_tokens: u32) -> SynthesizeResult",
       "returns": "SynthesizeResult",
       "is_pub": false,
-      "line": 167
+      "line": 177
     },
     {
       "type": "test_decl",
       "name": "synthesize: pass-through for short bash output",
       "is_pub": false,
-      "line": 231
+      "line": 242
     },
     {
       "type": "test_decl",
       "name": "synthesize: structured explain result",
       "is_pub": false,
-      "line": 245
+      "line": 256
     }
   ]
 }

@@ -727,6 +727,7 @@ pub fn cmdTodoRun(
     model: []const u8,
     max_iterations: u16,
     allow_edit: bool,
+    callbacks: subagent_fsm.RunCallbacks,
 ) !subagent_types.SubagentResult {
     // Derive checklist_dir from the current work item.
     const todo_dir = try std.fmt.allocPrint(allocator, "{s}/.guidance/todo", .{workspace});
@@ -754,7 +755,6 @@ pub fn cmdTodoRun(
         allocator.free(config.model);
     }
 
-    const callbacks: subagent_fsm.RunCallbacks = .{};
     return subagent_fsm.runSubagent(allocator, config, callbacks);
 }
 

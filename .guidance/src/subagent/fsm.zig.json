@@ -8,13 +8,22 @@
   "used_by": ["src/subagent/execute.zig", "src/subagent/root.zig", "src/subagent/todo.zig"],
   "members": [
     {
+      "type": "fn_private",
+      "name": "dispatchTool",
+      "match_hash": "27d0857067bd70080593c737b08075acedc8d5265550d32c3f7eb3b53684ea27",
+      "signature": "fn dispatchTool(allocator: std.mem.Allocator, config: types.SubagentConfig, params: *const types.ToolParams, io: std.Io) -> anyerror!types.ToolResult",
+      "returns": "anyerror!types.ToolResult",
+      "is_pub": false,
+      "line": 24
+    },
+    {
       "type": "fn_decl",
       "name": "parseChecklistItems",
       "match_hash": "4789f8ffc58c144c332c26bc1ae153e33135fcca53eae5ce6219bfbe7af21741",
       "signature": "fn parseChecklistItems(allocator: std.mem.Allocator, content: []const u8) -> []types.ChecklistItem",
       "returns": "[]types.ChecklistItem",
       "is_pub": true,
-      "line": 23
+      "line": 260
     },
     {
       "type": "fn_decl",
@@ -23,7 +32,7 @@
       "signature": "fn toggleChecklistItem(allocator: std.mem.Allocator, content: []const u8, item_index: usize, mark_completed: bool) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 62
+      "line": 299
     },
     {
       "type": "fn_decl",
@@ -32,7 +41,7 @@
       "signature": "fn findFirstIncomplete(items: []const types.ChecklistItem) -> ?usize",
       "returns": "?usize",
       "is_pub": true,
-      "line": 107
+      "line": 344
     },
     {
       "type": "struct",
@@ -40,7 +49,7 @@
       "match_hash": "47c6540b384d298c4e4825604a80bedc8d543c96150407d152f32892fb64125c",
       "signature": "keyword_struct RunCallbacks { ... }",
       "is_pub": true,
-      "line": 114
+      "line": 351
     },
     {
       "type": "fn_decl",
@@ -49,7 +58,7 @@
       "signature": "fn runSubagent(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks) -> types.SubagentResult",
       "returns": "types.SubagentResult",
       "is_pub": true,
-      "line": 121
+      "line": 358
     },
     {
       "type": "fn_decl",
@@ -58,49 +67,49 @@
       "signature": "fn runSubagentWithBackend(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks, backend: concurrency.ExecutionBackend) -> types.SubagentResult",
       "returns": "types.SubagentResult",
       "is_pub": true,
-      "line": 404
+      "line": 643
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: basic",
       "is_pub": false,
-      "line": 760
+      "line": 1008
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: empty",
       "is_pub": false,
-      "line": 793
+      "line": 1041
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark complete",
       "is_pub": false,
-      "line": 803
+      "line": 1051
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark incomplete",
       "is_pub": false,
-      "line": 816
+      "line": 1064
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: finds first unchecked item",
       "is_pub": false,
-      "line": 828
+      "line": 1076
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: returns null when all complete",
       "is_pub": false,
-      "line": 837
+      "line": 1085
     },
     {
       "type": "test_decl",
       "name": "fsm: state transitions through happy path",
       "is_pub": false,
-      "line": 845
+      "line": 1093
     }
   ]
 }

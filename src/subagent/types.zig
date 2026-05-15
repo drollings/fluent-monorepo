@@ -126,11 +126,13 @@ pub const ToolResult = struct {
             }
             allocator.free(stages);
         }
-        for (self.citations) |c| {
-            if (c.file) |f| allocator.free(f);
-            if (c.member) |m| allocator.free(m);
+        if (self.citations.len > 0) {
+            for (self.citations) |c| {
+                if (c.file) |f| allocator.free(f);
+                if (c.member) |m| allocator.free(m);
+            }
+            allocator.free(self.citations);
         }
-        allocator.free(self.citations);
     }
 };
 

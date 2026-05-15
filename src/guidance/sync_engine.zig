@@ -31,6 +31,8 @@ const commit_mod = @import("sync/commit.zig");
 const agents_md_mod = @import("agents_md.zig");
 const gen_files_mod = @import("sync/gen_files.zig");
 const GuidanceDb = vector_db_mod.GuidanceDb;
+const subagent_route = @import("subagent").route;
+const subagent_fsm = @import("subagent").fsm;
 const stepPrint = types.stepPrint;
 
 // =============================================================================
@@ -2023,6 +2025,59 @@ pub fn cmdMigrateComments(allocator: std.mem.Allocator, args: []const []const u8
 }
 
 // ---------------------------------------------------------------------------
+// Subagent callback adapters — bridge guidance explain/LLM to FSM callbacks
+// ---------------------------------------------------------------------------
+
+var llm_bridge_api_url: []const u8 = "";
+var llm_bridge_model: []const u8 = "";
+
+fn explainFnAdapter(allocator: std.mem.Allocator, query: []const u8, db_path: []const u8, workspace: []const u8) ?subagent_route.ExplainResult {
+    const staged_mod = @import("staged.zig");
+    const gtypes = @import("types.zig");
+    var noop_embedder = common.NoopEmbedding{};
+    const provider = noop_embedder.provider();
+    var db = GuidanceDb.init(allocator, db_path, provider) catch return null;
+    defer db.deinit();
+    const stages = staged_mod.executeStagedConfig(allocator, &db, .{
+        .query = query,
+        .workspace = workspace,
+    }) catch return null;
+    defer {
+        gtypes.freeStages(allocator, stages);
+        allocator.free(stages);
+    }
+    if (stages.len == 0) return null;
+    const first = stages[0];
+    var result: subagent_route.ExplainResult = .{
+        .query = allocator.dupe(u8, query) catch return null,
+    };
+    if (first.source.len > 0) {
+        result.path = allocator.dupe(u8, first.source) catch null;
+    }
+    result.line = first.line;
+    return result;
+}
+
+fn llmInfillFnAdapter(allocator: std.mem.Allocator, prompt: []const u8, system_prompt: []const u8, grammar: ?[]const u8, max_tokens: u32) ?[]const u8 {
+    const llm_mod = @import("llm");
+    if (llm_bridge_api_url.len == 0 or llm_bridge_model.len == 0) return null;
+    var client = llm_mod.LlmClient.init(allocator, .{
+        .api_url = llm_bridge_api_url,
+        .model = llm_bridge_model,
+    }) catch return null;
+    defer client.deinit();
+    const response = client.completeOrNull(prompt, max_tokens, 0.0, system_prompt) orelse return null;
+    if (grammar) |g| {
+        _ = g;
+    }
+    return response;
+}
+
+fn llmSynthFnAdapter(allocator: std.mem.Allocator, prompt: []const u8, system: []const u8, max_tokens: u32) ?[]const u8 {
+    return llmInfillFnAdapter(allocator, prompt, system, null, max_tokens);
+}
+
+// ---------------------------------------------------------------------------
 // todo — work item lifecycle
 // ---------------------------------------------------------------------------
 
@@ -2095,7 +2150,14 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
                 allow_edit = true;
             }
         }
-        var result = try subagent_mod.cmdTodoRun(allocator, workspace, db_path, guidance_dir, api_url, if (model_fast.len > 0) model_fast else model_thinking, max_iterations, allow_edit);
+        llm_bridge_api_url = api_url;
+        llm_bridge_model = if (model_fast.len > 0) model_fast else model_thinking;
+        const callbacks: subagent_fsm.RunCallbacks = .{
+            .explain_fn = explainFnAdapter,
+            .llm_batch_fn = llmInfillFnAdapter,
+            .llm_fn = llmSynthFnAdapter,
+        };
+        var result = try subagent_mod.cmdTodoRun(allocator, workspace, db_path, guidance_dir, api_url, llm_bridge_model, max_iterations, allow_edit, callbacks);
         defer result.deinit(allocator);
         std.debug.print("Subagent {s}: {d}/{d} items completed in {d} iterations ({d} LLM calls, {d} deterministic)\n", .{
             @tagName(result.status),

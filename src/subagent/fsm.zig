@@ -19,6 +19,243 @@ const synthesize_mod = @import("synthesize.zig");
 const guardrails_mod = @import("guardrails.zig");
 const reflect_mod = @import("reflect.zig");
 const concurrency = @import("concurrency");
+const common_io = @import("common").io;
+
+fn dispatchTool(
+    allocator: std.mem.Allocator,
+    config: types.SubagentConfig,
+    params: *const types.ToolParams,
+    io: std.Io,
+) anyerror!types.ToolResult {
+    const action = params.action;
+    switch (action) {
+        .bash => {
+            const command = params.command orelse return error.MissingCommand;
+            var parsed: std.ArrayList([]const u8) = .empty;
+            defer {
+                for (parsed.items) |arg| allocator.free(arg);
+                parsed.deinit(allocator);
+            }
+            const shell_parser = @import("common").shell_parser;
+            const argv = shell_parser.parseCommand(allocator, command) catch
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to parse command") };
+            defer {
+                for (argv) |arg| allocator.free(arg);
+                allocator.free(argv);
+            }
+            var allowed = false;
+            for (config.command_allowlist) |allowed_cmd| {
+                if (argv.len > 0 and std.mem.eql(u8, argv[0], allowed_cmd)) {
+                    allowed = true;
+                    break;
+                }
+            }
+            if (!allowed) {
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "command not in allowlist") };
+            }
+            const result = std.process.run(allocator, io, .{
+                .argv = argv.ptr[0..argv.len],
+                .stdout_limit = .limited(1024 * 1024),
+                .stderr_limit = .limited(256 * 1024),
+            }) catch {
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "command execution failed") };
+            };
+            defer {
+                allocator.free(result.stdout);
+                allocator.free(result.stderr);
+            }
+            const success = switch (result.term) {
+                .exited => |code| code == 0,
+                else => false,
+            };
+            return types.ToolResult{
+                .action = action,
+                .success = success,
+                .raw = try allocator.dupe(u8, result.stdout),
+                .token_estimate = @intCast((result.stdout.len + 3) / 4),
+            };
+        },
+        .read => {
+            const path = params.path orelse return error.MissingPath;
+            const content = common_io.readFileAlloc(allocator, path, 1024 * 1024) orelse
+                return types.ToolResult{ .action = action, .success = false, .raw = try std.fmt.allocPrint(allocator, "file not found: {s}", .{path}) };
+            defer allocator.free(content);
+            const line_start = params.line_start orelse 1;
+            const line_end = params.line_end orelse line_start + 50;
+            var excerpt_buf: std.ArrayList(u8) = .empty;
+            errdefer excerpt_buf.deinit(allocator);
+            var line_it = std.mem.splitScalar(u8, content, '\n');
+            var line_num: u32 = 1;
+            while (line_it.next()) |line| : (line_num += 1) {
+                if (line_num > line_end) break;
+                if (line_num >= line_start) {
+                    try excerpt_buf.appendSlice(allocator, line);
+                    try excerpt_buf.append(allocator, '\n');
+                }
+            }
+            return types.ToolResult{
+                .action = action,
+                .success = true,
+                .raw = try excerpt_buf.toOwnedSlice(allocator),
+                .token_estimate = @intCast((excerpt_buf.items.len + 3) / 4),
+            };
+        },
+        .explain => {
+            const query = params.query orelse return error.MissingQuery;
+            return types.ToolResult{
+                .action = action,
+                .success = true,
+                .raw = try allocator.dupe(u8, query),
+                .token_estimate = @intCast((query.len + 3) / 4),
+            };
+        },
+        .edit => {
+            if (!config.allow_edit) {
+                return types.ToolResult{
+                    .action = action,
+                    .success = true,
+                    .raw = try std.fmt.allocPrint(allocator, "edit not allowed; would edit {s}", .{params.path orelse "unknown"}),
+                    .token_estimate = 20,
+                };
+            }
+            const path = params.path orelse return error.MissingPath;
+            const edit_content = params.content orelse return error.MissingContent;
+            const resolved = common_io.resolvePath(allocator, config.workspace, path) catch path;
+            defer if (resolved.ptr != path.ptr) allocator.free(resolved);
+            const existing = common_io.readFileAlloc(allocator, resolved, 10 * 1024 * 1024) orelse
+                return types.ToolResult{ .action = action, .success = false, .raw = try std.fmt.allocPrint(allocator, "file not found: {s}", .{path}) };
+            defer allocator.free(existing);
+            const line_start = params.line_start orelse 1;
+            const line_end = params.line_end orelse 0;
+            var lines: std.ArrayList([]const u8) = .empty;
+            defer lines.deinit(allocator);
+            var line_it = std.mem.splitScalar(u8, existing, '\n');
+            while (line_it.next()) |line| {
+                try lines.append(allocator, line);
+            }
+            const effective_end = if (line_end > 0) line_end else @min(lines.items.len, line_start + 20);
+            var result_buf: std.ArrayList(u8) = .empty;
+            errdefer result_buf.deinit(allocator);
+            var written_edit = false;
+            for (lines.items, 0..) |line, i| {
+                const line_num: u32 = @intCast(i + 1);
+                if (line_num == line_start) {
+                    try result_buf.appendSlice(allocator, edit_content);
+                    try result_buf.append(allocator, '\n');
+                    written_edit = true;
+                } else if (line_num < line_start or line_num > effective_end) {
+                    try result_buf.appendSlice(allocator, line);
+                    try result_buf.append(allocator, '\n');
+                }
+            }
+            if (!written_edit) {
+                try result_buf.appendSlice(allocator, edit_content);
+                try result_buf.append(allocator, '\n');
+            }
+            const tmp_path = try std.fmt.allocPrint(allocator, "{s}.tmp", .{resolved});
+            defer allocator.free(tmp_path);
+            const new_file = std.Io.Dir.createFileAbsolute(io, tmp_path, .{}) catch {
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to create temp file") };
+            };
+            defer new_file.close(io);
+            var wbuf: [4096]u8 = undefined;
+            var writer = new_file.writer(io, &wbuf);
+            try writer.interface.writeAll(result_buf.items);
+            try writer.interface.flush();
+            std.Io.Dir.renameAbsolute(tmp_path, resolved, io) catch {
+                std.Io.Dir.deleteFileAbsolute(io, tmp_path) catch {};
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to rename temp file") };
+            };
+            return types.ToolResult{
+                .action = action,
+                .success = true,
+                .raw = try std.fmt.allocPrint(allocator, "edited {s} lines {d}-{d}", .{ path, line_start, effective_end }),
+                .token_estimate = 30,
+            };
+        },
+        .diary => {
+            const diary_content = params.content orelse return error.MissingContent;
+            const diary_path = try std.fmt.allocPrint(allocator, "{s}/DIARY.md", .{config.checklist_dir});
+            defer allocator.free(diary_path);
+            const timestamp_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+            const timestamp_s: i64 = @intCast(@divTrunc(timestamp_ns, std.time.ns_per_s));
+            var entry_buf: std.ArrayList(u8) = .empty;
+            errdefer entry_buf.deinit(allocator);
+            const existing = common_io.readFileAlloc(allocator, diary_path, 10 * 1024 * 1024);
+            if (existing) |content_inner| {
+                try entry_buf.appendSlice(allocator, content_inner);
+                allocator.free(content_inner);
+            }
+            var aw: std.Io.Writer.Allocating = .init(allocator);
+            errdefer aw.deinit();
+            try aw.writer.print("\n## Entry {d}\n\n{s}\n", .{ timestamp_s, diary_content });
+            try entry_buf.appendSlice(allocator, aw.written());
+            aw.deinit();
+            const tmp_path2 = try std.fmt.allocPrint(allocator, "{s}.tmp", .{diary_path});
+            defer allocator.free(tmp_path2);
+            const df = std.Io.Dir.createFileAbsolute(io, tmp_path2, .{}) catch {
+                entry_buf.deinit(allocator);
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to create DIARY.md temp") };
+            };
+            defer df.close(io);
+            var dwbuf: [4096]u8 = undefined;
+            var dwriter = df.writer(io, &dwbuf);
+            try dwriter.interface.writeAll(entry_buf.items);
+            try dwriter.interface.flush();
+            entry_buf.deinit(allocator);
+            std.Io.Dir.renameAbsolute(tmp_path2, diary_path, io) catch {
+                std.Io.Dir.deleteFileAbsolute(io, tmp_path2) catch {};
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to rename DIARY.md") };
+            };
+            return types.ToolResult{
+                .action = action,
+                .success = true,
+                .raw = try allocator.dupe(u8, "diary entry appended"),
+                .token_estimate = 5,
+            };
+        },
+        .checklist => {
+            const item_index = params.item_index orelse return error.MissingItemIndex;
+            const cl_dir = if (config.checklist_dir.len > 0) config.checklist_dir else config.workspace;
+            const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{cl_dir});
+            defer allocator.free(checklist_path);
+            const content = common_io.readFileAlloc(allocator, checklist_path, 10 * 1024 * 1024) orelse
+                return types.ToolResult{ .action = action, .success = false, .raw = try std.fmt.allocPrint(allocator, "CHECKLIST.md not found: {s}", .{checklist_path}) };
+            const toggled = toggleChecklistItem(allocator, content, item_index, true) catch
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, content) };
+            defer allocator.free(toggled);
+            allocator.free(content);
+            const tmp_path3 = try std.fmt.allocPrint(allocator, "{s}.tmp", .{checklist_path});
+            defer allocator.free(tmp_path3);
+            const cf = std.Io.Dir.createFileAbsolute(io, tmp_path3, .{}) catch {
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to create CHECKLIST.md temp") };
+            };
+            defer cf.close(io);
+            var cwbuf: [4096]u8 = undefined;
+            var cwriter = cf.writer(io, &cwbuf);
+            try cwriter.interface.writeAll(toggled);
+            try cwriter.interface.flush();
+            std.Io.Dir.renameAbsolute(tmp_path3, checklist_path, io) catch {
+                std.Io.Dir.deleteFileAbsolute(io, tmp_path3) catch {};
+                return types.ToolResult{ .action = action, .success = false, .raw = try allocator.dupe(u8, "failed to rename CHECKLIST.md") };
+            };
+            return types.ToolResult{
+                .action = action,
+                .success = true,
+                .raw = try std.fmt.allocPrint(allocator, "marked item {d} complete", .{item_index}),
+                .token_estimate = 5,
+            };
+        },
+        .unknown => {
+            return types.ToolResult{
+                .action = action,
+                .success = false,
+                .raw = try allocator.dupe(u8, "unknown action type"),
+                .token_estimate = 0,
+            };
+        },
+    }
+}
 
 pub fn parseChecklistItems(allocator: std.mem.Allocator, content: []const u8) ![]types.ChecklistItem {
     var items: std.ArrayList(types.ChecklistItem) = .empty;
@@ -123,6 +360,7 @@ pub fn runSubagent(
     config: types.SubagentConfig,
     callbacks: RunCallbacks,
 ) !types.SubagentResult {
+    const io = common_io.singleIo();
     var scratchpad = reflect_mod.Scratchpad.init(allocator, config.scratchpad_max_entries);
     defer scratchpad.deinit();
     var guardrails_state = types.GuardrailState.init(allocator, 5, 5, config.max_iterations);
@@ -281,15 +519,19 @@ pub fn runSubagent(
                 const current_item = items[item_idx];
                 const action = action_map.get(current_item.index) orelse .explain;
 
-                var default_result: types.ToolResult = .{
-                    .action = action,
-                    .success = true,
-                    .raw = "executed",
+                var tool_result = dispatchTool(allocator, config, &types.ToolParams{ .action = action }, io) catch |err| blk: {
+                    const err_name = @errorName(err);
+                    break :blk types.ToolResult{
+                        .action = action,
+                        .success = false,
+                        .raw = allocator.dupe(u8, err_name) catch err_name,
+                    };
                 };
+                defer tool_result.deinit(allocator);
 
                 const guardrail_check = guardrails_mod.checkGuardrails(
                     &guardrails_state,
-                    &default_result,
+                    &tool_result,
                     iteration,
                     config.max_iterations,
                 );
@@ -301,7 +543,7 @@ pub fn runSubagent(
                     state = .escalate;
                     continue;
                 }
-                if (hash_tracker.recordAndCheck(&default_result)) {
+                if (hash_tracker.recordAndCheck(&tool_result)) {
                     state = .escalate;
                     continue;
                 }
@@ -329,7 +571,6 @@ pub fn runSubagent(
             .synth => {
                 const current_item = items[item_idx];
                 const action = action_map.get(current_item.index) orelse .explain;
-
                 var default_result: types.ToolResult = .{
                     .action = action,
                     .success = true,
@@ -406,6 +647,7 @@ pub fn runSubagentWithBackend(
     backend: concurrency.ExecutionBackend,
 ) !types.SubagentResult {
     _ = backend;
+    const io = common_io.singleIo();
     var scratchpad = reflect_mod.Scratchpad.init(allocator, config.scratchpad_max_entries);
     defer scratchpad.deinit();
     var guardrails_state = types.GuardrailState.init(allocator, 5, 5, config.max_iterations);
@@ -612,22 +854,32 @@ pub fn runSubagentWithBackend(
                 const action = action_map.get(current_item.index) orelse .explain;
                 const params = params_map.get(current_item.index) orelse types.ToolParams{ .action = action };
 
-                var result: types.ToolResult = if (config.tool_fn) |tool_fn| blk: {
-                    const io = std.Io.Threaded.global_single_threaded.io();
-                    break :blk tool_fn(allocator, &params, io) catch |err| .{
-                        .action = action,
-                        .success = false,
-                        .raw = @errorName(err),
-                    };
-                } else .{
-                    .action = action,
-                    .success = true,
-                    .raw = @tagName(action),
+                var tool_result: types.ToolResult = blk: {
+                    if (config.tool_fn) |tool_fn| {
+                        break :blk tool_fn(allocator, &params, io) catch |err| blk2: {
+                            const err_name = @errorName(err);
+                            break :blk2 types.ToolResult{
+                                .action = action,
+                                .success = false,
+                                .raw = allocator.dupe(u8, err_name) catch err_name,
+                            };
+                        };
+                    } else {
+                        break :blk dispatchTool(allocator, config, &params, io) catch |err| blk2: {
+                            const err_name = @errorName(err);
+                            break :blk2 types.ToolResult{
+                                .action = action,
+                                .success = false,
+                                .raw = allocator.dupe(u8, err_name) catch err_name,
+                            };
+                        };
+                    }
                 };
+                defer tool_result.deinit(allocator);
 
                 const guardrail_check = guardrails_mod.checkGuardrails(
                     &guardrails_state,
-                    &result,
+                    &tool_result,
                     iteration,
                     config.max_iterations,
                 );
@@ -639,7 +891,7 @@ pub fn runSubagentWithBackend(
                     state = .escalate;
                     continue;
                 }
-                if (hash_tracker.recordAndCheck(&result)) {
+                if (hash_tracker.recordAndCheck(&tool_result)) {
                     state = .escalate;
                     continue;
                 }

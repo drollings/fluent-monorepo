@@ -9,7 +9,7 @@
     {
       "type": "enum",
       "name": "Command",
-      "match_hash": "b55f5a464c4459841e65ab804dca3f5a10bc8e30a7eab4406120ba6f809f64bb",
+      "match_hash": "07565b838f1214afb59d4bda03f0e9b067c7c6ecda2868bbb655d94d9fe19b55",
       "signature": "keyword_enum Command { ... }",
       "is_pub": false,
       "members": [
@@ -39,19 +39,19 @@
         },
         {
           "type": "enum_field",
-          "name": "commit",
+          "name": "todo",
           "is_pub": false,
           "line": 57
         },
         {
           "type": "enum_field",
-          "name": "@\"test\"",
+          "name": "commit",
           "is_pub": false,
           "line": 58
         },
         {
           "type": "enum_field",
-          "name": "todo",
+          "name": "serve",
           "is_pub": false,
           "line": 59
         },
@@ -63,7 +63,7 @@
         },
         {
           "type": "enum_field",
-          "name": "serve",
+          "name": "benchmark",
           "is_pub": false,
           "line": 61
         },
