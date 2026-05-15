@@ -51,7 +51,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
     // Return the first (newest) without COMMITTED.md.
     for (names.items) |name| {
         const committed = try std.fmt.allocPrint(allocator, "{s}/{s}/COMMITTED.md", .{ todo_dir, name });
-        defer allocator.free(committed);
+        defer client.allocator.free(committed);
         std.Io.Dir.accessAbsolute(common.io.singleIo(), committed, .{}) catch {
             // COMMITTED.md not found — this is the current item.
             const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, name });
@@ -124,7 +124,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     const month_day = year_day.calculateMonthDay();
 
     const slug = try slugify(allocator, if (description.len > 0) description else "work-item");
-    defer allocator.free(slug);
+    defer client.allocator.free(slug);
 
     const dir_name = try std.fmt.allocPrint(allocator, "{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}_{s}", .{
         year_day.year,
@@ -135,16 +135,16 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
         day.getSecondsIntoMinute(),
         slug,
     });
-    defer allocator.free(dir_name);
+    defer client.allocator.free(dir_name);
 
     const item_dir = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, dir_name });
-    defer allocator.free(item_dir);
+    defer client.allocator.free(item_dir);
 
     try std.Io.Dir.createDirAbsolute(io, item_dir, .default_dir);
 
     // Write TODO.md template.
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
-    defer allocator.free(todo_path);
+    defer client.allocator.free(todo_path);
 
     const title = if (description.len > 0) description else "Describe the work item";
     const template = try std.fmt.allocPrint(allocator,
@@ -161,7 +161,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
         \\- [ ] <criterion 2>
         \\
     , .{title});
-    defer allocator.free(template);
+    defer client.allocator.free(template);
 
     const f = try std.Io.Dir.createFileAbsolute(io, todo_path, .{});
     {
@@ -176,7 +176,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
 
     // Open $EDITOR.
     const cwd_val = try std.process.currentPathAlloc(common.io.singleIo(), allocator);
-    defer allocator.free(cwd_val);
+    defer client.allocator.free(cwd_val);
 
     const editor = blk: {
         if (std.c.getenv("EDITOR")) |e| {
@@ -187,7 +187,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
         }
         break :blk try allocator.dupe(u8, "vi");
     };
-    defer allocator.free(editor);
+    defer client.allocator.free(editor);
 
     const editor_result = std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } }) catch |err| {
         std.debug.print("todo: could not open editor ({s}): edit {s} manually\n", .{ @errorName(err), todo_path });
@@ -210,13 +210,13 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
         std.debug.print("todo triage: no current work item found in {s}\n", .{todo_dir});
         return;
     };
-    defer allocator.free(item_dir);
+    defer client.allocator.free(item_dir);
 
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
-    defer allocator.free(todo_path);
+    defer client.allocator.free(todo_path);
 
     const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
-    defer allocator.free(triage_path);
+    defer client.allocator.free(triage_path);
 
     // Incremental: skip if TODO.md is not newer than existing TRIAGE.md.
     if (!needsRegeneration(triage_path, &.{todo_path})) {
@@ -228,7 +228,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
         std.debug.print("todo triage: cannot read {s}\n", .{todo_path});
         return;
     };
-    defer allocator.free(todo_content);
+    defer client.allocator.free(todo_content);
 
     const system_prompt =
         \\You are a senior software engineer reviewing a work item.
@@ -259,7 +259,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
         \\
         \\{s}
     , .{todo_content});
-    defer allocator.free(prompt);
+    defer client.allocator.free(prompt);
 
     const response = callLlm(allocator, api_url, model, prompt, system_prompt, 2000) orelse {
         std.debug.print("todo triage: LLM unavailable — writing stub TRIAGE.md\n", .{});
@@ -278,7 +278,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
             \\- None
             \\
         , .{});
-        defer allocator.free(stub);
+        defer client.allocator.free(stub);
         const wf = try std.Io.Dir.createFileAbsolute(io, triage_path, .{});
         defer wf.close(io);
         var wbuf: [4096]u8 = undefined;
@@ -287,7 +287,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
         try writer.interface.flush();
         return;
     };
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const wf = try std.Io.Dir.createFileAbsolute(io, triage_path, .{});
@@ -313,16 +313,16 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
         std.debug.print("todo checklist: no current work item found\n", .{});
         return;
     };
-    defer allocator.free(item_dir);
+    defer client.allocator.free(item_dir);
 
     const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_dir});
-    defer allocator.free(todo_path);
+    defer client.allocator.free(todo_path);
 
     const triage_path = try std.fmt.allocPrint(allocator, "{s}/TRIAGE.md", .{item_dir});
-    defer allocator.free(triage_path);
+    defer client.allocator.free(triage_path);
 
     const checklist_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_dir});
-    defer allocator.free(checklist_path);
+    defer client.allocator.free(checklist_path);
 
     // Incremental: skip if neither TODO.md nor TRIAGE.md is newer than CHECKLIST.md.
     if (!needsRegeneration(checklist_path, &.{ todo_path, triage_path })) {
@@ -334,7 +334,7 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
         std.debug.print("todo checklist: cannot read {s}\n", .{todo_path});
         return;
     };
-    defer allocator.free(todo_content);
+    defer client.allocator.free(todo_content);
 
     const system_prompt =
         \\You are a software engineer generating an implementation checklist.
@@ -362,7 +362,7 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
         \\
         \\{s}
     , .{todo_content});
-    defer allocator.free(prompt);
+    defer client.allocator.free(prompt);
 
     const response = callLlm(allocator, api_url, model, prompt, system_prompt, 1500) orelse {
         std.debug.print("todo checklist: LLM unavailable — writing stub CHECKLIST.md\n", .{});
@@ -386,7 +386,7 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
         }
         return;
     };
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const wf = try std.Io.Dir.createFileAbsolute(io, checklist_path, .{});
@@ -439,22 +439,22 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
     std.debug.print("Work items in {s}:\n\n", .{todo_dir});
     for (names.items) |name| {
         const item_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, name });
-        defer allocator.free(item_path);
+        defer client.allocator.free(item_path);
 
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
-        defer allocator.free(committed_path);
+        defer client.allocator.free(committed_path);
 
         const is_committed = if (std.Io.Dir.accessAbsolute(common.io.singleIo(), committed_path, .{})) |_| true else |_| false;
         const is_current = if (current) |c| std.mem.eql(u8, c, item_path) else false;
 
         // Read CHECKLIST.md for completion %.
         const cl_path = try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{item_path});
-        defer allocator.free(cl_path);
+        defer client.allocator.free(cl_path);
 
         var total_items: usize = 0;
         var done_items: usize = 0;
         if (readFileOpt(allocator, cl_path)) |cl| {
-            defer allocator.free(cl);
+            defer client.allocator.free(cl);
             var lines = std.mem.splitScalar(u8, cl, '\n');
             while (lines.next()) |line| {
                 if (std.mem.startsWith(u8, line, "- [x]") or std.mem.startsWith(u8, line, "- [X]")) {
@@ -471,9 +471,9 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
         var title_owned: ?[]const u8 = null;
         defer if (title_owned) |t| allocator.free(t);
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
-        defer allocator.free(todo_path);
+        defer client.allocator.free(todo_path);
         if (readFileOpt(allocator, todo_path)) |td| {
-            defer allocator.free(td);
+            defer client.allocator.free(td);
             var tlines = std.mem.splitScalar(u8, td, '\n');
             if (tlines.next()) |first| {
                 const stripped = std.mem.trim(u8, first, "# \t");
@@ -532,19 +532,19 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
     for (names.items) |name| {
         const item_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, name });
-        defer allocator.free(item_path);
+        defer client.allocator.free(item_path);
 
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
-        defer allocator.free(committed_path);
+        defer client.allocator.free(committed_path);
         const is_committed = if (std.Io.Dir.accessAbsolute(common.io.singleIo(), committed_path, .{})) |_| true else |_| false;
 
         var title: []const u8 = name;
         var title_owned: ?[]const u8 = null;
         defer if (title_owned) |t| allocator.free(t);
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
-        defer allocator.free(todo_path);
+        defer client.allocator.free(todo_path);
         if (readFileOpt(allocator, todo_path)) |td| {
-            defer allocator.free(td);
+            defer client.allocator.free(td);
             var lines = std.mem.splitScalar(u8, td, '\n');
             if (lines.next()) |first| {
                 const stripped = std.mem.trim(u8, first, "# \t");
@@ -573,10 +573,10 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
         std.debug.print("todo abandon: no current work item to abandon\n", .{});
         return;
     };
-    defer allocator.free(item_dir);
+    defer client.allocator.free(item_dir);
 
     const archive_dir = try std.fmt.allocPrint(allocator, "{s}/archive", .{todo_dir});
-    defer allocator.free(archive_dir);
+    defer client.allocator.free(archive_dir);
 
     const io = common.io.singleIo();
     std.Io.Dir.createDirAbsolute(io, archive_dir, .default_dir) catch |e| switch (e) {
@@ -587,7 +587,7 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     // item_dir ends in /YYYYMMDD_HHMMSS_slug; extract basename.
     const basename = std.fs.path.basename(item_dir);
     const dest = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ archive_dir, basename });
-    defer allocator.free(dest);
+    defer client.allocator.free(dest);
 
     _ = std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } }) catch |err| {
         std.debug.print("todo abandon: could not move to archive ({s}), manual: mv {s} {s}\n", .{ @errorName(err), item_dir, dest });
@@ -615,11 +615,11 @@ pub fn queryChecklistStatus(allocator: std.mem.Allocator, todo_dir: []const u8) 
         try std.fmt.allocPrint(allocator, "{s}/CHECKLIST.md", .{d})
     else
         return .{ .total = 0, .incomplete = 0, .item_dir = null };
-    defer allocator.free(cl_path);
+    defer client.allocator.free(cl_path);
 
     const content = readFileOpt(allocator, cl_path) orelse
         return .{ .total = 0, .incomplete = 0, .item_dir = item_dir };
-    defer allocator.free(content);
+    defer client.allocator.free(content);
 
     var total: usize = 0;
     var incomplete: usize = 0;
@@ -645,7 +645,7 @@ pub fn writeCommittedMd(
 ) !void {
     const io = common.io.singleIo();
     const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_dir});
-    defer allocator.free(committed_path);
+    defer client.allocator.free(committed_path);
 
     const ts: i64 = @intCast(@divTrunc(std.Io.Timestamp.now(io, .real).nanoseconds, std.time.ns_per_s));
     const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(ts) };
@@ -722,7 +722,7 @@ test "slugify: basic" {
     const allocator = t.allocator;
 
     const s = try slugify(allocator, "Fix memory leak in cache");
-    defer allocator.free(s);
+    defer client.allocator.free(s);
     try t.expectEqualStrings("fix-memory-leak-in-cache", s);
 }
 
@@ -731,7 +731,7 @@ test "slugify: special chars stripped" {
     const allocator = t.allocator;
 
     const s = try slugify(allocator, "Add --flag support!");
-    defer allocator.free(s);
+    defer client.allocator.free(s);
     try t.expectEqualStrings("add-flag-support", s);
 }
 
@@ -740,6 +740,6 @@ test "slugify: empty becomes work-item" {
     const allocator = t.allocator;
 
     const s = try slugify(allocator, "");
-    defer allocator.free(s);
+    defer client.allocator.free(s);
     try t.expectEqualStrings("work-item", s);
 }

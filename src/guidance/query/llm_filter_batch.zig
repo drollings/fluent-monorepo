@@ -176,7 +176,7 @@ fn askRelevantBatch(
     const max_response_tokens: u32 = @intCast(@min(stages.len * 4 + 20, 200));
     const response_opt = try client.complete(prompt_buf.items, max_response_tokens, 0.0, null);
     const response = response_opt orelse return error.NoResponse;
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const trimmed = std.mem.trim(u8, stripped, " \t\r\n");

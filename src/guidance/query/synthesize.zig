@@ -153,7 +153,7 @@ pub fn synthesize(
         // Use lower max_tokens for brief output
         const raw_opt = client.complete(full_prompt_aw.written(), 300, 0.2, null) catch return .{ .summary = null, .followup_keywords = null };
         const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
-        defer allocator.free(raw);
+        defer client.allocator.free(raw);
 
         const stripped = llm.stripThinkBlock(raw);
         const cleaned = try stripAbsenceSentences(allocator, stripped);
@@ -295,7 +295,7 @@ pub fn synthesize(
     // Use fast model with moderate max_tokens for concise output
     const raw_opt = client.complete(full_prompt_aw.written(), 600, 0.3, null) catch return .{ .summary = null, .followup_keywords = null };
     const raw = raw_opt orelse return .{ .summary = null, .followup_keywords = null };
-    defer allocator.free(raw);
+    defer client.allocator.free(raw);
 
     const stripped = llm.stripThinkBlock(raw);
     const cleaned = try stripAbsenceSentences(allocator, stripped);

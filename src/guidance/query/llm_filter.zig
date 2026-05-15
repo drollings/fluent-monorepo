@@ -89,7 +89,7 @@ pub fn filterSeeAlso(
 
     const response_opt = client.complete(prompt, 200, 0.1, null) catch return try keepAll(allocator, entries);
     const response = response_opt orelse return try keepAll(allocator, entries);
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     var lines = std.mem.splitScalar(u8, stripped, '\n');
@@ -173,7 +173,7 @@ fn askRelevant(
 
     const response_opt = client.complete(prompt, 5, 0.0, null) catch return true; // fail-open
     const response = response_opt orelse return true;
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const trimmed = std.mem.trim(u8, stripped, " \t\r\n");

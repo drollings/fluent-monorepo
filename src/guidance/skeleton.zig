@@ -783,7 +783,7 @@ pub fn renderCapabilityDocument(
         }
         return try allocator.dupe(u8, content);
     };
-    defer if (response) |r| allocator.free(r);
+    defer if (response) |r| client.allocator.free(r);
 
     const raw = response orelse fallback: {
         if (std.mem.indexOf(u8, content, "\n---\n")) |end_fm| {

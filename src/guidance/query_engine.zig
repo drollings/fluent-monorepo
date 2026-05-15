@@ -331,7 +331,7 @@ fn llmExtractKeyTerms(allocator: std.mem.Allocator, client: *llm.LlmClient, quer
 
     const response_opt = client.complete(prompt, 50, 0.0, null) catch return null;
     const response = response_opt orelse return null;
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
@@ -827,7 +827,7 @@ fn summarizeCapabilityDescription(
 
     const raw = client.complete(prompt, 100, 0.0, null) catch return null;
     const response = raw orelse return null;
-    defer allocator.free(response);
+    defer client.allocator.free(response);
 
     const stripped = llm.stripThinkBlock(response);
     const trimmed = std.mem.trim(u8, stripped, " \t\n\r");
@@ -1070,7 +1070,7 @@ fn handleCapabilityQuery(
 
             const response = client.complete(prompt, 800, 0.1, null) catch null;
             if (response) |raw| {
-                defer allocator.free(raw);
+                defer client.allocator.free(raw);
                 const stripped = llm.stripThinkBlock(raw);
                 try stdout.print("# {s}\n\n{s}\n", .{ cap_name, std.mem.trim(u8, stripped, " \t\n\r") });
                 try stdout.print("\n---\n\nSource: `{s}`\n", .{cap_path});
@@ -1618,7 +1618,7 @@ pub fn cmdBenchmark(allocator: std.mem.Allocator, args: []const []const u8) !voi
                 break :blk null;
             };
             if (response_opt) |response| {
-                defer allocator.free(response);
+                defer client.allocator.free(response);
                 const stripped = llm.stripThinkBlock(response);
 
                 // Parse scores from response

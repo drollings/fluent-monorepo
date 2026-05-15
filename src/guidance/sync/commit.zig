@@ -344,7 +344,7 @@ fn generateCommitMessage(
                 const result = client.completeOrNull(prompt, 8192, 0.1, null);
 
                 if (result) |raw| {
-                    defer allocator.free(raw); // raw comes from LlmClient on `allocator`
+                    defer client.allocator.free(raw); // raw comes from LlmClient
                     if (debug) std.debug.print("[commit] response:\n{s}\n---\n", .{raw});
 
                     var bullets: std.ArrayList([]const u8) = .empty;
