@@ -11,6 +11,7 @@
 //!   └── archive/           — abandoned work items
 
 const std = @import("std");
+const common = @import("common");
 const llm = @import("llm");
 const subagent_types = @import("types.zig");
 const subagent_fsm = @import("fsm.zig");
@@ -22,7 +23,7 @@ const subagent_builder = @import("builder.zig");
 
 /// Fetches the current work item from a directory, returning its slice of data.
 pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !?[]const u8 {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch return null;
     defer dir.close(io);
 
@@ -34,7 +35,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
     }
 
     var it = dir.iterate();
-    while (try it.next(std.Io.Threaded.global_single_threaded.io())) |entry| {
+    while (try it.next(common.io.singleIo())) |entry| {
         if (entry.kind != .directory) continue;
         if (std.mem.eql(u8, entry.name, "archive")) continue;
         // Must start with digits (YYYYMMDD).
@@ -53,7 +54,7 @@ pub fn findCurrentWorkItem(allocator: std.mem.Allocator, todo_dir: []const u8) !
     for (names.items) |name| {
         const committed = try std.fmt.allocPrint(allocator, "{s}/{s}/COMMITTED.md", .{ todo_dir, name });
         defer allocator.free(committed);
-        std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed, .{}) catch {
+        std.Io.Dir.accessAbsolute(common.io.singleIo(), committed, .{}) catch {
             // COMMITTED.md not found — this is the current item.
             const path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ todo_dir, name });
             return path;
@@ -87,7 +88,7 @@ fn slugify(allocator: std.mem.Allocator, s: []const u8) ![]const u8 {
 
 /// Reads a file path into a Zig-safe slice, returning the contents or an error.
 fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const f = std.Io.Dir.openFileAbsolute(io, path, .{}) catch return null;
     defer f.close(io);
     return std.Io.Dir.cwd().readFileAlloc(io, path, allocator, .limited(1 * 1024 * 1024)) catch null;
@@ -100,7 +101,7 @@ fn readFileOpt(allocator: std.mem.Allocator, path: []const u8) ?[]const u8 {
 /// Creates a new todo entry with the given description and todo directory.
 pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_dir: []const u8) !void {
     // Ensure todo directory exists.
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     std.Io.Dir.createDirAbsolute(io, todo_dir, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
@@ -165,7 +166,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     std.debug.print("todo: created {s}\n", .{item_dir});
 
     // Open $EDITOR.
-    const cwd_val = try std.process.currentPathAlloc(std.Io.Threaded.global_single_threaded.io(), allocator);
+    const cwd_val = try std.process.currentPathAlloc(common.io.singleIo(), allocator);
     defer allocator.free(cwd_val);
 
     const editor = blk: {
@@ -179,7 +180,14 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     };
     defer allocator.free(editor);
 
-    _ = try std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } });
+    const editor_result = std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } }) catch |err| {
+        std.debug.print("todo: could not open editor ({s}): edit {s} manually\n", .{ @errorName(err), todo_path });
+        return;
+    };
+    defer {
+        allocator.free(editor_result.stdout);
+        allocator.free(editor_result.stderr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +196,7 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
 
 /// Processes a list of todo items using an allocator, returning a processed result.
 pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo triage: no current work item found in {s}\n", .{todo_dir});
         return;
@@ -285,7 +293,7 @@ pub fn cmdTodoTriage(allocator: std.mem.Allocator, todo_dir: []const u8, api_url
 
 /// Processes a todo list file by allocating memory and validating its contents.
 pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_url: []const u8, model: []const u8) !void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const item_dir = (try findCurrentWorkItem(allocator, todo_dir)) orelse {
         std.debug.print("todo checklist: no current work item found\n", .{});
         return;
@@ -375,7 +383,7 @@ pub fn cmdTodoChecklist(allocator: std.mem.Allocator, todo_dir: []const u8, api_
 
 /// Updates todo status based on allocation and directory data.
 pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo status: no todo directory at {s}\n", .{todo_dir});
         return;
@@ -412,7 +420,7 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
         defer allocator.free(committed_path);
 
-        const is_committed = if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed_path, .{})) |_| true else |_| false;
+        const is_committed = if (std.Io.Dir.accessAbsolute(common.io.singleIo(), committed_path, .{})) |_| true else |_| false;
         const is_current = if (current) |c| std.mem.eql(u8, c, item_path) else false;
 
         // Read CHECKLIST.md for completion %.
@@ -467,7 +475,7 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
 /// Processes a list of todo strings and returns a modified allocation.
 pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     var dir = std.Io.Dir.openDirAbsolute(io, todo_dir, .{ .iterate = true }) catch {
         std.debug.print("todo list: no todo directory at {s}\n", .{todo_dir});
         return;
@@ -498,7 +506,7 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
         const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_path});
         defer allocator.free(committed_path);
-        const is_committed = if (std.Io.Dir.accessAbsolute(std.Io.Threaded.global_single_threaded.io(), committed_path, .{})) |_| true else |_| false;
+        const is_committed = if (std.Io.Dir.accessAbsolute(common.io.singleIo(), committed_path, .{})) |_| true else |_| false;
 
         var title: []const u8 = name;
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
@@ -534,7 +542,7 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     const archive_dir = try std.fmt.allocPrint(allocator, "{s}/archive", .{todo_dir});
     defer allocator.free(archive_dir);
 
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     std.Io.Dir.createDirAbsolute(io, archive_dir, .default_dir) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
@@ -545,7 +553,10 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     const dest = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ archive_dir, basename });
     defer allocator.free(dest);
 
-    _ = try std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } });
+    _ = std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } }) catch |err| {
+        std.debug.print("todo abandon: could not move to archive ({s}), manual: mv {s} {s}\n", .{ @errorName(err), item_dir, dest });
+        return;
+    };
     std.debug.print("todo abandon: moved {s} to archive/\n", .{basename});
 }
 
@@ -596,7 +607,7 @@ pub fn writeCommittedMd(
     summary: []const u8,
     changed_files: []const []const u8,
 ) !void {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
     const committed_path = try std.fmt.allocPrint(allocator, "{s}/COMMITTED.md", .{item_dir});
     defer allocator.free(committed_path);
 

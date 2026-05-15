@@ -31,7 +31,7 @@
 //!     hash      [hash_len]u8   (hex SHA-256)
 
 const std = @import("std");
-
+const common = @import("common");
 const MAGIC = "GFS\x01";
 const VERSION: u16 = 1;
 const HEADER_SIZE: usize = 64;
@@ -461,7 +461,7 @@ fn cleanStaleTmp(allocator: std.mem.Allocator, dir_path: []const u8) void {
 /// Returns null if not a git repo or git is unavailable.
 /// Result is a [40]u8 value (no free needed).
 pub fn getGitHead(project_root: []const u8, allocator: std.mem.Allocator) ?[40]u8 {
-    const io = std.Io.Threaded.global_single_threaded.io();
+    const io = common.io.singleIo();
 
     const argv = [_][]const u8{ "git", "-C", project_root, "rev-parse", "HEAD" };
     const result = std.process.run(allocator, io, .{ .argv = &argv }) catch return null;

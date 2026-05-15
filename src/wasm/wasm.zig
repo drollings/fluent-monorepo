@@ -760,7 +760,7 @@ pub const ToolGenerator = struct {
         const temp_path = try std.fs.path.join(arena, &[_][]const u8{ self.config.temp_dir, src_filename });
         const wasm_path = try std.fs.path.join(arena, &[_][]const u8{ self.config.temp_dir, "tool.wasm" });
 
-        const _wasm_io = std.Io.Threaded.global_single_threaded.io();
+        const _wasm_io = common.io.singleIo();
         std.Io.Dir.cwd().createDirPath(_wasm_io, self.config.temp_dir) catch |e| switch (e) {
             error.PathAlreadyExists => {},
             else => return e,

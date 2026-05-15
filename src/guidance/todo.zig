@@ -177,7 +177,14 @@ pub fn cmdTodoNew(allocator: std.mem.Allocator, description: []const u8, todo_di
     };
     defer allocator.free(editor);
 
-    _ = try std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } });
+    const editor_result = std.process.run(allocator, io, .{ .argv = &.{ editor, todo_path }, .cwd = .{ .path = cwd_val } }) catch |err| {
+        std.debug.print("todo: could not open editor ({s}): edit {s} manually\n", .{ @errorName(err), todo_path });
+        return;
+    };
+    defer {
+        allocator.free(editor_result.stdout);
+        allocator.free(editor_result.stderr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -543,7 +550,10 @@ pub fn cmdTodoAbandon(allocator: std.mem.Allocator, todo_dir: []const u8) !void 
     const dest = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ archive_dir, basename });
     defer allocator.free(dest);
 
-    _ = try std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } });
+    _ = std.process.run(allocator, io, .{ .argv = &.{ "mv", item_dir, dest } }) catch |err| {
+        std.debug.print("todo abandon: could not move to archive ({s}), manual: mv {s} {s}\n", .{ @errorName(err), item_dir, dest });
+        return;
+    };
     std.debug.print("todo abandon: moved {s} to archive/\n", .{basename});
 }
 

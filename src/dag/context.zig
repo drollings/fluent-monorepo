@@ -202,7 +202,7 @@ fn executeTarget(self: *BuildContext, target: *const Target) !bool {
             self.allocator.free(argv);
         }
 
-        const io = std.Io.Threaded.global_single_threaded.io();
+        const io = common.io.singleIo();
         var child = std.process.spawn(io, .{ .argv = @as([]const []const u8, argv) }) catch |err| {
             std.log.err("Failed to spawn command: {}", .{err});
             return false;

@@ -72,7 +72,7 @@ pub const GitignoreFilter = struct {
     /// Must be called before isTracked() can return meaningful results.
     /// Returns true on success, false if git command fails or not a git repo.
     pub fn loadTrackedFiles(self: *GitignoreFilter) !void {
-        const io = std.Io.Threaded.global_single_threaded.io();
+        const io = common.io.singleIo();
         const result = std.process.run(self.allocator, io, .{
             .argv = &.{ "git", "ls-files", "--cached" },
         }) catch return error.GitCommandFailed;
