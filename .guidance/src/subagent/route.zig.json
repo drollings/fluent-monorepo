@@ -4,7 +4,7 @@
     "source": "src/subagent/route.zig",
     "language": "zig"
   },
-  "comment": " route.zig — Deterministic parameter resolution for the subagent FSM.\n\n Resolves tool parameters through three strategies:\n   1. Template expansion (command patterns for bash, path patterns for read)\n   2. In-process guidance explain (via ExplainFn callback — no subprocess)\n   3. LLM infill with scratchpad context (via LlmInfillFn callback)\n\n Follows the dependency injection pattern to avoid circular imports.",
+  "comment": " route.zig — Deterministic parameter resolution for the subagent FSM.\n\n Resolves tool parameters through three strategies:\n   1. Template expansion (command patterns for bash, path patterns for read)\n   2. In-process guidance explain (via ExplainFn callback — no subprocess)\n   3. LLM infill with scratchpad context (via LlmInfillFn callback)\n\n M10: ExplainCache integration for deduplication of repeated queries.\n Uses common/hash.QueryCache for session-scoped explain result caching.",
   "used_by": ["src/subagent/fsm.zig", "src/subagent/root.zig"],
   "members": [
     {
@@ -18,22 +18,22 @@
           "type": "enum_field",
           "name": "template",
           "is_pub": false,
-          "line": 15
+          "line": 17
         },
         {
           "type": "enum_field",
           "name": "guidance",
           "is_pub": false,
-          "line": 16
+          "line": 18
         },
         {
           "type": "enum_field",
           "name": "llm",
           "is_pub": false,
-          "line": 17
+          "line": 19
         }
       ],
-      "line": 14
+      "line": 16
     },
     {
       "type": "struct",
@@ -41,7 +41,62 @@
       "match_hash": "caa80c7835c7c38c3906be36818d3cb0fa02fb7756c4893e0307d8b0634cb7c2",
       "signature": "keyword_struct ExplainResult { ... }",
       "is_pub": true,
-      "line": 25
+      "line": 27
+    },
+    {
+      "type": "struct",
+      "name": "ExplainCache",
+      "match_hash": "e64bf5b6dbfa479a69915e789eeaf14d6d2e991be683ab03ef40789ae1251323",
+      "signature": "keyword_struct ExplainCache { ... }",
+      "is_pub": true,
+      "members": [
+        {
+          "type": "fn_decl",
+          "name": "init",
+          "match_hash": "eede7e25af4c2227ae46ca21b03393efa3d4a89728b781f817dae32dc0006aa8",
+          "signature": "fn init(allocator: std.mem.Allocator) -> ExplainCache",
+          "returns": "ExplainCache",
+          "is_pub": true,
+          "line": 45
+        },
+        {
+          "type": "fn_decl",
+          "name": "deinit",
+          "match_hash": "d7e0dce4131af73216a6334f40645ffe968c0d31387bb8bc3577a659b8690283",
+          "signature": "fn deinit(self: *ExplainCache) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 51
+        },
+        {
+          "type": "fn_decl",
+          "name": "get",
+          "match_hash": "b1f85d6a5e2a70023bda0e2d854a10934cb1d7b1c6765c3108f3fc75f7ff3622",
+          "signature": "fn get(self: *ExplainCache, query: []const u8) -> ?RouteResult",
+          "returns": "?RouteResult",
+          "is_pub": true,
+          "line": 55
+        },
+        {
+          "type": "fn_decl",
+          "name": "put",
+          "match_hash": "a407b21a47e36ace45e455ddebabf2a674c60e74e01a38ec42e523bb8cd090e6",
+          "signature": "fn put(self: *ExplainCache, query: []const u8, result: RouteResult) -> void",
+          "returns": "void",
+          "is_pub": true,
+          "line": 72
+        },
+        {
+          "type": "fn_decl",
+          "name": "stats",
+          "match_hash": "3bfe3918e4305fb784cb9e26a2628ba561e04cc8d2a958788c4dcaec53c2de26",
+          "signature": "fn stats(self: *const ExplainCache) -> struct { hits: usize, misses: usize }",
+          "returns": "struct { hits: usize, misses: usize }",
+          "is_pub": true,
+          "line": 77
+        }
+      ],
+      "line": 40
     },
     {
       "type": "fn_decl",
@@ -50,7 +105,25 @@
       "signature": "fn routeParams(allocator: std.mem.Allocator, item: types.ChecklistItem, action: types.ActionType, scratchpad_ctx: ?[]const u8, explain_fn: ?*const ExplainFn, llm_fn: ?*const LlmInfillFn, db_path: []const u8, workspace: []const u8, config_command_allowlist: []const []const u8) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": true,
-      "line": 36
+      "line": 82
+    },
+    {
+      "type": "fn_decl",
+      "name": "routeParamsCached",
+      "match_hash": "31c928a9b767f22b89157aa5232f9c586eaeb8e4b12b92081fd77e0e3cdd8469",
+      "signature": "fn routeParamsCached(allocator: std.mem.Allocator, item: types.ChecklistItem, action: types.ActionType, scratchpad_ctx: ?[]const u8, explain_fn: ?*const ExplainFn, llm_fn: ?*const LlmInfillFn, db_path: []const u8, workspace: []const u8, config_command_allowlist: []const []const u8, cache: ?*ExplainCache) -> RouteResult",
+      "returns": "RouteResult",
+      "is_pub": true,
+      "line": 96
+    },
+    {
+      "type": "fn_private",
+      "name": "routeParamsInner",
+      "match_hash": "0ba852d9e1676c45dfaf5be370aa464fa7cef4e3e29813718337a838c1a39d13",
+      "signature": "fn routeParamsInner(allocator: std.mem.Allocator, item: types.ChecklistItem, action: types.ActionType, scratchpad_ctx: ?[]const u8, explain_fn: ?*const ExplainFn, llm_fn: ?*const LlmInfillFn, db_path: []const u8, workspace: []const u8, config_command_allowlist: []const []const u8) -> RouteResult",
+      "returns": "RouteResult",
+      "is_pub": false,
+      "line": 127
     },
     {
       "type": "fn_private",
@@ -59,7 +132,7 @@
       "signature": "fn routeBash(allocator: std.mem.Allocator, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, llm_fn: ?*const LlmInfillFn, allowlist: []const []const u8) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 58
+      "line": 149
     },
     {
       "type": "fn_private",
@@ -68,7 +141,7 @@
       "signature": "fn routeRead(allocator: std.mem.Allocator, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, explain_fn: ?*const ExplainFn, db_path: []const u8, workspace: []const u8) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 92
+      "line": 183
     },
     {
       "type": "fn_private",
@@ -77,7 +150,7 @@
       "signature": "fn routeExplain(allocator: std.mem.Allocator, item: types.ChecklistItem, explain_fn: ?*const ExplainFn, db_path: []const u8, workspace: []const u8) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 127
+      "line": 218
     },
     {
       "type": "fn_private",
@@ -86,7 +159,7 @@
       "signature": "fn routeEdit(allocator: std.mem.Allocator, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, explain_fn: ?*const ExplainFn, llm_fn: ?*const LlmInfillFn, db_path: []const u8, workspace: []const u8) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 155
+      "line": 246
     },
     {
       "type": "fn_private",
@@ -95,7 +168,7 @@
       "signature": "fn routeDiary(allocator: std.mem.Allocator, item: types.ChecklistItem) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 201
+      "line": 292
     },
     {
       "type": "fn_private",
@@ -104,7 +177,7 @@
       "signature": "fn routeChecklist(_: std.mem.Allocator, item: types.ChecklistItem) -> RouteResult",
       "returns": "RouteResult",
       "is_pub": false,
-      "line": 211
+      "line": 302
     },
     {
       "type": "fn_private",
@@ -113,7 +186,7 @@
       "signature": "fn tryExtractCommand(allocator: std.mem.Allocator, text: []const u8, allowlist: []const []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 221
+      "line": 312
     },
     {
       "type": "fn_private",
@@ -122,7 +195,7 @@
       "signature": "fn extractPath(text: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 247
+      "line": 338
     },
     {
       "type": "fn_private",
@@ -131,37 +204,43 @@
       "signature": "fn textHasPath(text: []const u8) -> ?[]const u8",
       "returns": "?[]const u8",
       "is_pub": false,
-      "line": 262
+      "line": 353
     },
     {
       "type": "test_decl",
       "name": "routeParams: bash action with command template",
       "is_pub": false,
-      "line": 268
+      "line": 359
     },
     {
       "type": "test_decl",
       "name": "routeParams: explain action without explain_fn",
       "is_pub": false,
-      "line": 283
+      "line": 374
     },
     {
       "type": "test_decl",
       "name": "routeParams: read action with path detection",
       "is_pub": false,
-      "line": 296
+      "line": 387
     },
     {
       "type": "test_decl",
       "name": "routeParams: diary action always completes",
       "is_pub": false,
-      "line": 308
+      "line": 399
     },
     {
       "type": "test_decl",
-      "name": "routeParams: checklist action always completes",
+      "name": "ExplainCache: put and get",
       "is_pub": false,
-      "line": 320
+      "line": 411
+    },
+    {
+      "type": "test_decl",
+      "name": "ExplainCache: stats tracking",
+      "is_pub": false,
+      "line": 433
     }
   ]
 }

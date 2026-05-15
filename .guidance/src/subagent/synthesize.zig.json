@@ -4,7 +4,7 @@
     "source": "src/subagent/synthesize.zig",
     "language": "zig"
   },
-  "comment": " synthesize.zig — Context-isolated summarization for the subagent FSM.\n\n Uses context packing to produce bounded-token SummarizedContext from tool\n results. Structured results (bash output, explain stages) pass through\n directly when they fit the budget. Unstructured or too-long results are\n compressed via an LLM synthesis call with scratchpad context.",
+  "comment": " synthesize.zig — Context-isolated summarization for the subagent FSM.\n\n Uses context packing to produce bounded-token SummarizedContext from tool\n results. Structured results (bash output, explain stages) pass through\n directly when they fit the budget. Unstructured or too-long results are\n compressed via an LLM synthesis call with scratchpad context.\n\n M7 integration: ContextPacker for budget-aware stage assembly and\n ContextCompressor for scratchpad → LLM context compression.",
   "used_by": ["src/subagent/fsm.zig", "src/subagent/root.zig"],
   "members": [
     {
@@ -14,7 +14,7 @@
       "signature": "fn synthesize(allocator: std.mem.Allocator, result: *const types.ToolResult, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, llm_fn: ?*const LlmFn, max_summary_tokens: u32) -> SynthesizeResult",
       "returns": "SynthesizeResult",
       "is_pub": true,
-      "line": 20
+      "line": 25
     },
     {
       "type": "fn_private",
@@ -23,7 +23,7 @@
       "signature": "fn synthesizeStructured(allocator: std.mem.Allocator, result: *const types.ToolResult, item: types.ChecklistItem, max_summary_tokens: u32) -> SynthesizeResult",
       "returns": "SynthesizeResult",
       "is_pub": false,
-      "line": 73
+      "line": 78
     },
     {
       "type": "fn_private",
@@ -32,19 +32,19 @@
       "signature": "fn synthesizeViaLlm(allocator: std.mem.Allocator, raw: []const u8, item: types.ChecklistItem, scratchpad_ctx: ?[]const u8, llm_fn: *const LlmFn, max_summary_tokens: u32) -> SynthesizeResult",
       "returns": "SynthesizeResult",
       "is_pub": false,
-      "line": 113
+      "line": 167
     },
     {
       "type": "test_decl",
       "name": "synthesize: pass-through for short bash output",
       "is_pub": false,
-      "line": 168
+      "line": 231
     },
     {
       "type": "test_decl",
       "name": "synthesize: structured explain result",
       "is_pub": false,
-      "line": 182
+      "line": 245
     }
   ]
 }

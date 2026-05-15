@@ -113,7 +113,7 @@ pub fn routeParamsCached(
         }
     }
 
-    const result = routeParamsInner(allocator, item, action, scratchpad_ctx, explain_fn, llm_fn, db_path, workspace, config_command_allowlist);
+    const result = try routeParamsInner(allocator, item, action, scratchpad_ctx, explain_fn, llm_fn, db_path, workspace, config_command_allowlist);
 
     // Cache explain results for future deduplication
     if (cache != null and action == .explain and result.source == .guidance) {

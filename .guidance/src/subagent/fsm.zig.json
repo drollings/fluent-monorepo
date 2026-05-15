@@ -4,8 +4,8 @@
     "source": "src/subagent/fsm.zig",
     "language": "zig"
   },
-  "comment": " fsm.zig — Main FSM loop for the deterministic-first subagent.\n\n Implements state-driven switch dispatch for the INTAKE→CLASSIFY→ROUTE→\n VALIDATE→EXECUTE→REFLECT→SYNTH→INTAKE cycle. Uses SyncBackend for\n deterministic tests and ZioBackend for production concurrent execution.\n\n Integration points are provided via dependency injection (ExplainFn,\n LlmFn callbacks) to avoid circular imports with the guidance module.",
-  "used_by": ["src/subagent/execute.zig", "src/subagent/root.zig"],
+  "comment": " fsm.zig — Main FSM loop for the deterministic-first subagent.\n\n Implements state-driven switch dispatch for the INTAKE→CLASSIFY→ROUTE→\n VALIDATE→EXECUTE→REFLECT→SYNTH→INTAKE cycle. Uses SyncBackend for\n deterministic tests and ZioBackend for production concurrent execution.\n\n Integration points are provided via dependency injection (ExplainFn,\n LlmFn callbacks) to avoid circular imports with the guidance module.\n\n M10: Per-iteration arena reset, profiling, and backend selection.",
+  "used_by": ["src/subagent/execute.zig", "src/subagent/root.zig", "src/subagent/todo.zig"],
   "members": [
     {
       "type": "fn_decl",
@@ -14,7 +14,7 @@
       "signature": "fn parseChecklistItems(allocator: std.mem.Allocator, content: []const u8) -> []types.ChecklistItem",
       "returns": "[]types.ChecklistItem",
       "is_pub": true,
-      "line": 20
+      "line": 23
     },
     {
       "type": "fn_decl",
@@ -23,7 +23,7 @@
       "signature": "fn toggleChecklistItem(allocator: std.mem.Allocator, content: []const u8, item_index: usize, mark_completed: bool) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 59
+      "line": 62
     },
     {
       "type": "fn_decl",
@@ -32,7 +32,7 @@
       "signature": "fn findFirstIncomplete(items: []const types.ChecklistItem) -> ?usize",
       "returns": "?usize",
       "is_pub": true,
-      "line": 104
+      "line": 107
     },
     {
       "type": "struct",
@@ -40,7 +40,7 @@
       "match_hash": "d5126929b40574cca75360651091b766ef64e474b24f4f5b52a10cd40e25a08c",
       "signature": "keyword_struct RunCallbacks { ... }",
       "is_pub": true,
-      "line": 111
+      "line": 114
     },
     {
       "type": "fn_decl",
@@ -49,49 +49,58 @@
       "signature": "fn runSubagent(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks) -> types.SubagentResult",
       "returns": "types.SubagentResult",
       "is_pub": true,
-      "line": 117
+      "line": 120
+    },
+    {
+      "type": "fn_decl",
+      "name": "runSubagentWithBackend",
+      "match_hash": "8ce4eb0cdb636d9716e9c8053505bdfcf0618094ef7882840cf11c1567d60c4c",
+      "signature": "fn runSubagentWithBackend(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks, backend: concurrency.ExecutionBackend) -> types.SubagentResult",
+      "returns": "types.SubagentResult",
+      "is_pub": true,
+      "line": 403
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: basic",
       "is_pub": false,
-      "line": 369
+      "line": 750
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: empty",
       "is_pub": false,
-      "line": 402
+      "line": 783
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark complete",
       "is_pub": false,
-      "line": 412
+      "line": 793
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark incomplete",
       "is_pub": false,
-      "line": 425
+      "line": 806
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: finds first unchecked item",
       "is_pub": false,
-      "line": 437
+      "line": 818
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: returns null when all complete",
       "is_pub": false,
-      "line": 446
+      "line": 827
     },
     {
       "type": "test_decl",
       "name": "fsm: state transitions through happy path",
       "is_pub": false,
-      "line": 454
+      "line": 835
     }
   ]
 }

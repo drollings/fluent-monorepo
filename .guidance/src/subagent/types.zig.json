@@ -5,7 +5,7 @@
     "language": "zig"
   },
   "comment": " types.zig — Core type definitions for the subagent FSM.\n\n Defines FsmState, ActionType, ChecklistItem, ToolParams, ToolResult,\n Scratchpad, SummarizedContext, Evidence, SubagentResult, IterationState,\n and GuardrailState.",
-  "used_by": ["src/subagent/builder.zig", "src/subagent/classify.zig", "src/subagent/execute.zig", "src/subagent/fsm.zig", "src/subagent/guardrails.zig", "src/subagent/reflect.zig", "src/subagent/root.zig", "src/subagent/route.zig", "src/subagent/synthesize.zig", "src/subagent/validate.zig"],
+  "used_by": ["src/subagent/builder.zig", "src/subagent/classify.zig", "src/subagent/execute.zig", "src/subagent/fsm.zig", "src/subagent/guardrails.zig", "src/subagent/reflect.zig", "src/subagent/root.zig", "src/subagent/route.zig", "src/subagent/synthesize.zig", "src/subagent/todo.zig", "src/subagent/validate.zig"],
   "members": [
     {
       "type": "enum",
@@ -229,7 +229,7 @@
     {
       "type": "enum",
       "name": "ExplainStageKind",
-      "match_hash": "f73db4db0a4d568df3bca511b8136e90a1737f5b9dcecca5e75dd30883592748",
+      "match_hash": "ffa88dd1ab554e62995876623e84055984655b3d231197f338db6c9245661a75",
       "signature": "keyword_enum ExplainStageKind { ... }",
       "is_pub": true,
       "members": [
@@ -262,6 +262,18 @@
           "name": "skill_doc",
           "is_pub": false,
           "line": 98
+        },
+        {
+          "type": "enum_field",
+          "name": "capability_doc",
+          "is_pub": false,
+          "line": 99
+        },
+        {
+          "type": "enum_field",
+          "name": "not_found",
+          "is_pub": false,
+          "line": 100
         }
       ],
       "line": 93
@@ -280,10 +292,10 @@
           "signature": "fn deinit(self: *ToolResult, allocator: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 110
+          "line": 112
         }
       ],
-      "line": 101
+      "line": 103
     },
     {
       "type": "struct",
@@ -291,15 +303,15 @@
       "match_hash": "452ad9eb0c73994758a8df362e545d5859181ffc09abff2a35fca6e634dd242a",
       "signature": "keyword_struct ScratchpadEntry { ... }",
       "is_pub": true,
-      "line": 128
+      "line": 130
     },
     {
       "type": "struct",
       "name": "SubagentConfig",
-      "match_hash": "9c621610f30f09d19fbba19483715c2debbaa6ff734dc348c0d8420c8abfc5c3",
+      "match_hash": "8246f69981ebd0f656ef6ee21b55e5ab4ecb03a3732762c2e2d859dc6a49e497",
       "signature": "keyword_struct SubagentConfig { ... }",
       "is_pub": true,
-      "line": 137
+      "line": 139
     },
     {
       "type": "struct",
@@ -307,7 +319,7 @@
       "match_hash": "a3ec9e5c0c0ac522e9a4c099164bc28d529fde7d535a654e4c007099377f3c5d",
       "signature": "keyword_struct SummarizedContext { ... }",
       "is_pub": true,
-      "line": 154
+      "line": 157
     },
     {
       "type": "struct",
@@ -315,12 +327,12 @@
       "match_hash": "549257efc4e455a596913da7de236847cbbe7de9546d039c2ed1d2a686c9652c",
       "signature": "keyword_struct Evidence { ... }",
       "is_pub": true,
-      "line": 162
+      "line": 165
     },
     {
       "type": "struct",
       "name": "SubagentResult",
-      "match_hash": "fb5ad9d624a2777945e0208271c390f1b800135006544cb3b5440da9c949a401",
+      "match_hash": "35311e3c1d491b577f665b5321e70ff3d080717018f3cc607301a6222ff35be4",
       "signature": "keyword_struct SubagentResult { ... }",
       "is_pub": true,
       "members": [
@@ -331,10 +343,10 @@
           "signature": "fn deinit(self: *SubagentResult, allocator: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 181
+          "line": 185
         }
       ],
-      "line": 171
+      "line": 174
     },
     {
       "type": "struct",
@@ -342,7 +354,7 @@
       "match_hash": "b13f9b927118cc95b3bb3e01bae84536145c7ab0b429fe51512c7e2a95f1ab2c",
       "signature": "keyword_struct IterationState { ... }",
       "is_pub": true,
-      "line": 191
+      "line": 198
     },
     {
       "type": "struct",
@@ -358,7 +370,7 @@
           "signature": "fn init(allocator: std.mem.Allocator, max_consecutive_failures: u16, max_no_progress: u16, max_iterations: u16) -> GuardrailState",
           "returns": "GuardrailState",
           "is_pub": true,
-          "line": 208
+          "line": 215
         },
         {
           "type": "fn_decl",
@@ -367,7 +379,7 @@
           "signature": "fn deinit(self: *GuardrailState) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 218
+          "line": 225
         },
         {
           "type": "fn_decl",
@@ -376,7 +388,7 @@
           "signature": "fn recordFailure(self: *GuardrailState, key: []const u8) -> ?void",
           "returns": "?void",
           "is_pub": true,
-          "line": 223
+          "line": 230
         },
         {
           "type": "fn_decl",
@@ -385,7 +397,7 @@
           "signature": "fn recordNoProgress(self: *GuardrailState, key: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 234
+          "line": 241
         },
         {
           "type": "fn_decl",
@@ -394,10 +406,10 @@
           "signature": "fn clearFailure(self: *GuardrailState, key: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 245
+          "line": 252
         }
       ],
-      "line": 201
+      "line": 208
     },
     {
       "type": "struct",
@@ -405,7 +417,15 @@
       "match_hash": "9aa2b56686fde80c174ed29be0958234c8a5965c6910b57ade3a6b48b0cd3f66",
       "signature": "keyword_struct ExplainResult { ... }",
       "is_pub": true,
-      "line": 252
+      "line": 259
+    },
+    {
+      "type": "struct",
+      "name": "IterationProfile",
+      "match_hash": "2f35e48ff5f57730dbea240d3f7e7b54f071b9feee2a880aa2c74d8b14928b6b",
+      "signature": "keyword_struct IterationProfile { ... }",
+      "is_pub": true,
+      "line": 275
     }
   ]
 }

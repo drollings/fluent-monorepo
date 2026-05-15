@@ -115,64 +115,73 @@
       "line": 183
     },
     {
+      "type": "fn_decl",
+      "name": "classifyBatchViaLlm",
+      "match_hash": "f77bce921c69c0bea66b6198cc8d8fdcde041988e99756329925e6cbdb03df57",
+      "signature": "fn classifyBatchViaLlm(allocator: std.mem.Allocator, items: []const types.ChecklistItem, unknown_indices: []const usize, llm_fn: *const LlmClassifyFn) -> []types.BatchClassifyEntry",
+      "returns": "[]types.BatchClassifyEntry",
+      "is_pub": true,
+      "line": 199
+    },
+    {
       "type": "test_decl",
       "name": "classifyDeterministic: bash patterns",
       "is_pub": false,
-      "line": 199
+      "line": 244
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: explain patterns",
       "is_pub": false,
-      "line": 206
+      "line": 251
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: read patterns",
       "is_pub": false,
-      "line": 212
+      "line": 257
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: edit patterns",
       "is_pub": false,
-      "line": 218
+      "line": 263
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: diary patterns",
       "is_pub": false,
-      "line": 224
+      "line": 269
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: file extension detection",
       "is_pub": false,
-      "line": 229
+      "line": 274
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: unknown patterns",
       "is_pub": false,
-      "line": 234
+      "line": 279
     },
     {
       "type": "test_decl",
       "name": "classifyDeterministic: priority ordering",
       "is_pub": false,
-      "line": 239
+      "line": 284
     },
     {
       "type": "test_decl",
       "name": "batchClassifyDeterministic: separates known and unknown",
       "is_pub": false,
-      "line": 243
+      "line": 288
     },
     {
       "type": "test_decl",
       "name": "constitutionallyValidate: downgrades LLM misclassification",
       "is_pub": false,
-      "line": 266
+      "line": 311
     }
   ]
 }
