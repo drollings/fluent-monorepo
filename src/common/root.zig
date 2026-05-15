@@ -19,6 +19,7 @@ const source_mod = @import("source.zig");
 const hash_mod = @import("hash.zig");
 const json_mod = @import("json.zig");
 const string_mod = @import("string.zig");
+pub const string = string_mod;
 const url_mod = @import("url.zig");
 const builder_error_mod = @import("builder_error.zig");
 

@@ -182,7 +182,7 @@
     {
       "type": "struct",
       "name": "GuidanceDoc",
-      "match_hash": "ce78da282ad4faefc70d5d01fadd071c192802e017a573f6ab2eb4e65045bc6a",
+      "match_hash": "b28ecc6f87d239cc4f32c00eba5cd57ec4f0ffa30217b648b5d39688cc9910bc",
       "signature": "keyword_struct GuidanceDoc { ... }",
       "is_pub": true,
       "line": 139
@@ -193,7 +193,7 @@
       "match_hash": "61ac8aec264632b0af58170f3b421122ceb0d7a8e8cecb3fd37ec958b909a4f5",
       "signature": "keyword_struct FileMatch { ... }",
       "is_pub": true,
-      "line": 167
+      "line": 173
     },
     {
       "type": "struct",
@@ -201,7 +201,7 @@
       "match_hash": "f4375b0b717de4704b40cecbc6f4ca3f2650e1c61425a155ba720f95b46353be",
       "signature": "keyword_struct GuidanceInfo { ... }",
       "is_pub": true,
-      "line": 174
+      "line": 180
     },
     {
       "type": "struct",
@@ -209,7 +209,7 @@
       "match_hash": "1f43542cb3c0fe29f92158ea70fe8094cac3c1b0cc2ca18956b301766931e93e",
       "signature": "keyword_struct ASTAnalysis { ... }",
       "is_pub": true,
-      "line": 184
+      "line": 190
     },
     {
       "type": "struct",
@@ -217,7 +217,7 @@
       "match_hash": "5980246eb3bab94cf3948ca5138db07067d07a620289cde7701e9a18c473be89",
       "signature": "keyword_struct QueryResult { ... }",
       "is_pub": true,
-      "line": 195
+      "line": 201
     },
     {
       "type": "enum",
@@ -230,46 +230,46 @@
           "type": "enum_field",
           "name": "prose",
           "is_pub": false,
-          "line": 214
+          "line": 220
         },
         {
           "type": "enum_field",
           "name": "code",
           "is_pub": false,
-          "line": 216
+          "line": 222
         },
         {
           "type": "enum_field",
           "name": "metadata",
           "is_pub": false,
-          "line": 218
+          "line": 224
         },
         {
           "type": "enum_field",
           "name": "insight",
           "is_pub": false,
-          "line": 220
+          "line": 226
         },
         {
           "type": "enum_field",
           "name": "skill_doc",
           "is_pub": false,
-          "line": 222
+          "line": 228
         },
         {
           "type": "enum_field",
           "name": "capability_doc",
           "is_pub": false,
-          "line": 224
+          "line": 230
         },
         {
           "type": "enum_field",
           "name": "not_found",
           "is_pub": false,
-          "line": 227
+          "line": 233
         }
       ],
-      "line": 212
+      "line": 218
     },
     {
       "type": "struct",
@@ -277,7 +277,7 @@
       "match_hash": "0809af19b88b6a54020fccf75095e64d8d10be26165c9c9f57c6ae555286a964",
       "signature": "keyword_struct Stage { ... }",
       "is_pub": true,
-      "line": 231
+      "line": 237
     },
     {
       "type": "fn_decl",
@@ -286,7 +286,7 @@
       "signature": "fn freeStage(allocator: std.mem.Allocator, s: Stage) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 242
+      "line": 248
     },
     {
       "type": "fn_decl",
@@ -295,7 +295,7 @@
       "signature": "fn freeStages(allocator: std.mem.Allocator, stages: []const Stage) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 248
+      "line": 254
     },
     {
       "type": "struct",
@@ -303,7 +303,7 @@
       "match_hash": "060cce40007a9a221e1f855b72c28790a64d8a0874e4d2b5978e8893aab8bc7b",
       "signature": "keyword_struct SyncResult { ... }",
       "is_pub": true,
-      "line": 253
+      "line": 259
     },
     {
       "type": "fn_decl",
@@ -312,7 +312,7 @@
       "signature": "fn stepPrint(fmt: []const u8, args) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 266
+      "line": 272
     }
   ]
 }

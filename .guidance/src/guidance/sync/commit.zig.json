@@ -58,18 +58,7 @@
       "match_hash": "6019dd5770b81fce562320627ed1bfaa2a1e0fe0f263c0416bae3310c49c08a6",
       "signature": "keyword_struct CommitMemberInfo { ... }",
       "is_pub": true,
-      "members": [
-        {
-          "type": "fn_decl",
-          "name": "deinit",
-          "match_hash": "a45b65069d5f9e588425f1bf0380a87386c914fe90c359a3ade24b6e7ddd5b4b",
-          "signature": "fn deinit(self: CommitMemberInfo, allocator: std.mem.Allocator) -> void",
-          "returns": "void",
-          "is_pub": true,
-          "line": 108
-        }
-      ],
-      "line": 102
+      "line": 107
     },
     {
       "type": "fn_private",
@@ -78,7 +67,7 @@
       "signature": "fn memberLineNum(obj: std.json.ObjectMap) -> ?u32",
       "returns": "?u32",
       "is_pub": false,
-      "line": 116
+      "line": 115
     },
     {
       "type": "fn_private",
@@ -87,7 +76,7 @@
       "signature": "fn lineInRanges(line: u32, hunk_ranges: []const [2]u32, context: u32) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 126
+      "line": 125
     },
     {
       "type": "fn_private",
@@ -96,7 +85,7 @@
       "signature": "fn appendMemberIfInRange(allocator: std.mem.Allocator, member: std.json.Value, hunk_ranges: []const [2]u32, context: u32, out: *std.ArrayList(CommitMemberInfo)) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 136
+      "line": 135
     },
     {
       "type": "fn_private",
@@ -105,7 +94,7 @@
       "signature": "fn loadChangedMembers(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
       "returns": "[]CommitMemberInfo",
       "is_pub": false,
-      "line": 163
+      "line": 166
     },
     {
       "type": "fn_private",
@@ -114,7 +103,7 @@
       "signature": "fn generateCommitMessage(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_dir: []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 201
+      "line": 216
     },
     {
       "type": "fn_private",
@@ -123,7 +112,7 @@
       "signature": "fn writeTmpCommitMsg(allocator: std.mem.Allocator, msg: []const u8) -> []u8",
       "returns": "[]u8",
       "is_pub": false,
-      "line": 403
+      "line": 408
     },
     {
       "type": "fn_private",
@@ -132,7 +121,7 @@
       "signature": "fn loadCommitModelFromConfig(allocator: std.mem.Allocator, cwd: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": false,
-      "line": 418
+      "line": 423
     },
     {
       "type": "fn_decl",
@@ -141,7 +130,7 @@
       "signature": "fn cmdCommit(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 437
+      "line": 442
     },
     {
       "type": "fn_decl",
@@ -150,7 +139,7 @@
       "signature": "fn parseHunkRangesPub(allocator: std.mem.Allocator, chunk: []const u8) -> [][2]u32",
       "returns": "[][2]u32",
       "is_pub": true,
-      "line": 657
+      "line": 668
     },
     {
       "type": "fn_decl",
@@ -159,7 +148,7 @@
       "signature": "fn loadChangedMembersPub(allocator: std.mem.Allocator, guidance_root: []const u8, rel_path: []const u8, hunk_ranges: []const [2]u32) -> []CommitMemberInfo",
       "returns": "[]CommitMemberInfo",
       "is_pub": true,
-      "line": 661
+      "line": 672
     },
     {
       "type": "fn_decl",
@@ -168,7 +157,7 @@
       "signature": "fn chunkIsIgnoredPub(chunk: []const u8, guidance_dir: []const u8) -> bool",
       "returns": "bool",
       "is_pub": true,
-      "line": 665
+      "line": 676
     },
     {
       "type": "fn_decl",
@@ -177,7 +166,7 @@
       "signature": "fn chunkFilePathPub(chunk: []const u8) -> []const u8",
       "returns": "[]const u8",
       "is_pub": true,
-      "line": 669
+      "line": 680
     },
     {
       "type": "fn_decl",
@@ -186,7 +175,16 @@
       "signature": "fn splitDiffByFilePub(diff: []const u8, out: *std.ArrayList([]const u8), allocator: std.mem.Allocator) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 673
+      "line": 684
+    },
+    {
+      "type": "fn_decl",
+      "name": "generateCommitMessagePub",
+      "match_hash": "cb48a5819deaf89cc4f0131837727603cae08c35f616f80ea38c7832db997b23",
+      "signature": "fn generateCommitMessagePub(allocator: std.mem.Allocator, diff: []const u8, changed_files: []const []const u8, guidance_dir: []const u8, guidance_root: []const u8, api_url: []const u8, model: []const u8, debug: bool) -> []u8",
+      "returns": "[]u8",
+      "is_pub": true,
+      "line": 690
     }
   ]
 }

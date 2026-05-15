@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "module": "src.subagent.root",
+    "source": "src/subagent/root.zig",
+    "language": "zig"
+  },
+  "comment": " root.zig — Public re-exports for the subagent module.\n\n The subagent implements a deterministic-first FSM that orchestrates\n tool calls for `guidance todo run`. It resolves 70%+ of iterations\n without any LLM call by pattern-matching checklist items to tool\n actions, filling parameters via in-process `guidance explain`, and\n routing unknown items through a single grammar-constrained batch\n LLM call.",
+  "members": [
+    {
+      "type": "test_decl",
+      "name": "types: FsmState transitions",
+      "is_pub": false,
+      "line": 97
+    },
+    {
+      "type": "test_decl",
+      "name": "types: ActionType round trips",
+      "is_pub": false,
+      "line": 129
+    },
+    {
+      "type": "test_decl",
+      "name": "types: ToolParams.isComplete",
+      "is_pub": false,
+      "line": 139
+    },
+    {
+      "type": "test_decl",
+      "name": "types: GuardrailState failure counting",
+      "is_pub": false,
+      "line": 167
+    },
+    {
+      "type": "test_decl",
+      "name": "types: GuardrailState no-progress detection",
+      "is_pub": false,
+      "line": 186
+    },
+    {
+      "type": "test_decl",
+      "name": "reflect: Scratchpad append and ring eviction",
+      "is_pub": false,
+      "line": 202
+    },
+    {
+      "type": "test_decl",
+      "name": "reflect: Scratchpad formatContext",
+      "is_pub": false,
+      "line": 221
+    }
+  ]
+}

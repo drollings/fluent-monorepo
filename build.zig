@@ -101,6 +101,20 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // `subagent` — deterministic-first FSM subagent for edge LLMs.
+    // Orchestrates tool calls for `guidance todo run` using pattern matching,
+    // in-process explain, batch LLM classification, and WorkUnit execution.
+    const subagent_module = b.createModule(.{
+        .root_source_file = b.path("src/subagent/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "common", .module = common_module },
+            .{ .name = "llm", .module = llm_module },
+            .{ .name = "concurrency", .module = concurrency_module },
+        },
+    });
+
     // `dag` — DAG execution engine (Target, Registry, Resolver, Executor).
     // Uses named module imports for common (interner, builder_error).
     const dag_module = b.createModule(.{
@@ -323,6 +337,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "llm", .module = llm_module },
                 .{ .name = "vector", .module = vector_module },
                 .{ .name = "clap", .module = clap_module },
+                .{ .name = "subagent", .module = subagent_module },
             },
         }),
     });
@@ -1487,6 +1502,21 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(guidance_plugin_registry_tests).step);
     test_step.dependOn(&b.addRunArtifact(guidance_subdirectory_tests).step);
     test_step.dependOn(&b.addRunArtifact(work_unit_tests).step);
+
+    // -- subagent tests --
+    const subagent_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/subagent/root.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "common", .module = common_module },
+                .{ .name = "llm", .module = llm_module },
+                .{ .name = "concurrency", .module = concurrency_module },
+            },
+        }),
+    });
+    test_step.dependOn(&b.addRunArtifact(subagent_tests).step);
 
     // -------------------------------------------------------------------------
     // 4. Benchmark step (G5)

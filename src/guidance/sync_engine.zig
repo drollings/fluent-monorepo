@@ -2079,9 +2079,38 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return todo_mod.cmdTodoList(allocator, todo_dir);
     } else if (std.mem.eql(u8, subcmd, "abandon")) {
         return todo_mod.cmdTodoAbandon(allocator, todo_dir);
+    } else if (std.mem.eql(u8, subcmd, "run")) {
+        const subagent_mod = @import("subagent");
+        const workspace = cwd;
+        const db_path = try std.fs.path.join(allocator, &.{ cwd, ".guidance.db" });
+        defer allocator.free(db_path);
+        var max_iterations: u16 = 20;
+        var allow_edit = false;
+        var i: usize = 0;
+        while (i < sub_args.len) : (i += 1) {
+            if (std.mem.eql(u8, sub_args[i], "--max-iterations") and i + 1 < sub_args.len) {
+                i += 1;
+                max_iterations = std.fmt.parseInt(u16, sub_args[i], 10) catch 20;
+            } else if (std.mem.eql(u8, sub_args[i], "--allow-edit")) {
+                allow_edit = true;
+            }
+        }
+        var result = try subagent_mod.cmdTodoRun(allocator, workspace, db_path, guidance_dir, api_url, if (model_fast.len > 0) model_fast else model_thinking, max_iterations, allow_edit);
+        defer result.deinit(allocator);
+        std.debug.print("Subagent {s}: {d}/{d} items completed in {d} iterations ({d} LLM calls, {d} deterministic)\n", .{
+            @tagName(result.status),
+            result.completed_items,
+            result.total_items,
+            result.iterations,
+            result.llm_calls,
+            result.deterministic_calls,
+        });
+        if (result.summary.len > 0) {
+            std.debug.print("{s}\n", .{result.summary});
+        }
     } else {
         std.debug.print("Unknown todo subcommand: {s}\n", .{subcmd});
-        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon>\n", .{});
+        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon|run>\n", .{});
     }
 }
 

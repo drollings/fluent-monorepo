@@ -113,7 +113,7 @@
       "signature": "fn emitStagedOutput(allocator: std.mem.Allocator, query_text: []const u8, stages: []const types.Stage, summary: ?[]const u8, workspace: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 757
+      "line": 720
     },
     {
       "type": "fn_private",
@@ -122,7 +122,7 @@
       "signature": "fn parseCapabilityFrontmatter(allocator: std.mem.Allocator, cap_path: []const u8) -> ?IndexCapability",
       "returns": "?IndexCapability",
       "is_pub": false,
-      "line": 783
+      "line": 746
     },
     {
       "type": "fn_private",
@@ -131,7 +131,7 @@
       "signature": "fn isIndexStale(allocator: std.mem.Allocator, index_path: []const u8, capabilities_dir: []const u8, structure_path: []const u8) -> bool",
       "returns": "bool",
       "is_pub": false,
-      "line": 818
+      "line": 781
     },
     {
       "type": "fn_private",
@@ -140,7 +140,7 @@
       "signature": "fn summarizeCapabilityDescription(allocator: std.mem.Allocator, client: *llm.LlmClient, name: []const u8, description: []const u8, intended_len: u16) -> anyerror!?[]const u8",
       "returns": "anyerror!?[]const u8",
       "is_pub": false,
-      "line": 850
+      "line": 813
     },
     {
       "type": "fn_private",
@@ -149,7 +149,7 @@
       "signature": "fn generateIndexMd(allocator: std.mem.Allocator, guidance_dir: []const u8, capabilities_dir: []const u8, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 884
+      "line": 847
     },
     {
       "type": "fn_private",
@@ -158,7 +158,7 @@
       "signature": "fn showIndexIntro(allocator: std.mem.Allocator, _: []const u8, guidance_dir: []const u8, capabilities_dir: []const u8, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1009
+      "line": 972
     },
     {
       "type": "fn_private",
@@ -167,7 +167,7 @@
       "signature": "fn handleCapabilityQuery(allocator: std.mem.Allocator, cap_name: []const u8, capabilities_dir: []const u8, query_text: []const u8, natural_lang: bool, cfg: *const config_mod.ProjectConfig) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1039
+      "line": 1002
     },
     {
       "type": "fn_private",
@@ -176,7 +176,7 @@
       "signature": "fn handleFileSkeletonQuery(allocator: std.mem.Allocator, file_path: []const u8, workspace: []const u8, guidance_dir: []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1126
+      "line": 1089
     },
     {
       "type": "fn_private",
@@ -185,7 +185,7 @@
       "signature": "fn handleDisambiguationQuery(allocator: std.mem.Allocator, paths: []const []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1164
+      "line": 1127
     },
     {
       "type": "fn_private",
@@ -194,7 +194,7 @@
       "signature": "fn handleStructSkeletonQuery(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8, query_text: []const u8) -> void",
       "returns": "void",
       "is_pub": false,
-      "line": 1185
+      "line": 1148
     },
     {
       "type": "fn_private",
@@ -203,7 +203,7 @@
       "signature": "fn findStructEndLine(src: []const u8, start_line: u32) -> u32",
       "returns": "u32",
       "is_pub": false,
-      "line": 1267
+      "line": 1230
     },
     {
       "type": "struct",
@@ -211,7 +211,7 @@
       "match_hash": "663e28f78b928ac316219cd29e7ed7efefd03917e9e1d304fc181c1374cf89cd",
       "signature": "keyword_struct StructInfo { ... }",
       "is_pub": false,
-      "line": 1296
+      "line": 1259
     },
     {
       "type": "fn_private",
@@ -220,7 +220,7 @@
       "signature": "fn findStructInfo(allocator: std.mem.Allocator, struct_name: []const u8, guidance_dir: []const u8) -> ?StructInfo",
       "returns": "?StructInfo",
       "is_pub": false,
-      "line": 1302
+      "line": 1265
     },
     {
       "type": "struct",
@@ -228,7 +228,7 @@
       "match_hash": "70092d64ea89bc6e0cfeb48203c27ba78b9699e10bfb7566c88a67599c76a916",
       "signature": "keyword_struct TestQuery { ... }",
       "is_pub": false,
-      "line": 1374
+      "line": 1337
     },
     {
       "type": "struct",
@@ -236,7 +236,7 @@
       "match_hash": "8b98f9b06de25cb647bd41de130e3dcbe87d2514b7d4620e0882e77a80c8fd4e",
       "signature": "keyword_struct BenchmarkResult { ... }",
       "is_pub": false,
-      "line": 1383
+      "line": 1346
     },
     {
       "type": "fn_decl",
@@ -245,7 +245,7 @@
       "signature": "fn cmdTest(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1392
+      "line": 1355
     },
     {
       "type": "fn_private",
@@ -254,7 +254,7 @@
       "signature": "fn parseScoreFromLine(line: []const u8) -> ?u8",
       "returns": "?u8",
       "is_pub": false,
-      "line": 1801
+      "line": 1764
     },
     {
       "type": "fn_private",
@@ -263,7 +263,7 @@
       "signature": "fn loadBenchmarkQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1816
+      "line": 1779
     },
     {
       "type": "fn_private",
@@ -272,7 +272,7 @@
       "signature": "fn generateTestQueries(allocator: std.mem.Allocator, guidance_dir: []const u8) -> []TestQuery",
       "returns": "[]TestQuery",
       "is_pub": false,
-      "line": 1894
+      "line": 1857
     },
     {
       "type": "fn_decl",
@@ -281,7 +281,7 @@
       "signature": "fn cmdTelemetry(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 1975
+      "line": 1938
     },
     {
       "type": "fn_decl",
@@ -290,55 +290,55 @@
       "signature": "fn cmdServe(allocator: std.mem.Allocator, args: []const []const u8) -> void",
       "returns": "void",
       "is_pub": true,
-      "line": 2038
+      "line": 2001
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: empty string is short",
       "is_pub": false,
-      "line": 2045
+      "line": 2008
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: one word is short",
       "is_pub": false,
-      "line": 2050
+      "line": 2013
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: two words is not short",
       "is_pub": false,
-      "line": 2055
+      "line": 2018
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: three words is not short",
       "is_pub": false,
-      "line": 2060
+      "line": 2023
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question mark makes it not short",
       "is_pub": false,
-      "line": 2065
+      "line": 2028
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question word prefixes make it not short",
       "is_pub": false,
-      "line": 2070
+      "line": 2033
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: question words case insensitive",
       "is_pub": false,
-      "line": 2080
+      "line": 2043
     },
     {
       "type": "test_decl",
       "name": "isShortQuery: regular two-word queries are not short",
       "is_pub": false,
-      "line": 2086
+      "line": 2049
     }
   ]
 }

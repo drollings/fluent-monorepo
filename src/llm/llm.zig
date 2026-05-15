@@ -52,6 +52,9 @@ pub const LlmConfig = struct {
     /// true: print raw prompt text to stderr/stdout.
     /// false: hide prompts even when debug=true.
     show_prompts: bool = false,
+    /// Grammar constraint for structured LLM output (Ollama GBNF grammar name).
+    /// When set, forces the model to output valid JSON matching the grammar.
+    grammar: ?[]const u8 = null,
 
     /// Returns true when thinking is explicitly enabled for this config.
     pub fn isThinkingModel(self: LlmConfig) bool {
@@ -177,6 +180,11 @@ pub const LlmClient = struct {
         }
         try body.appendSlice(self.allocator, ",\"temperature\":");
         try body.appendSlice(self.allocator, temp_str);
+        if (self.config.grammar) |g| {
+            try body.appendSlice(self.allocator, ",\"grammar\":\"");
+            try common.jsonAppendEscaped(&body, self.allocator, g);
+            try body.appendSlice(self.allocator, "\"");
+        }
         try body.appendSlice(self.allocator, ",\"stream\":false}");
 
         const url = if (self.is_openai_format) self.config.api_url else self.chat_url;
@@ -736,4 +744,22 @@ test "extractCommentTag: returns null when no tag present" {
 
 test "extractCommentTag: returns null for empty tag" {
     try std.testing.expect(extractCommentTag("<comment>   </comment>") == null);
+}
+
+test "LlmConfig: grammar field defaults to null" {
+    const config: LlmConfig = .{
+        .api_url = "http://localhost:11434/api/chat",
+        .model = "test-model",
+    };
+    try std.testing.expect(config.grammar == null);
+}
+
+test "LlmConfig: grammar field can be set" {
+    const config: LlmConfig = .{
+        .api_url = "http://localhost:11434/api/chat",
+        .model = "test-model",
+        .grammar = "classification_grammar",
+    };
+    try std.testing.expect(config.grammar != null);
+    try std.testing.expectEqualStrings("classification_grammar", config.grammar.?);
 }
