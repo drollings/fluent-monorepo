@@ -441,6 +441,8 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
 
         // Read title from TODO.md first line.
         var title: []const u8 = name;
+        var title_owned: ?[]const u8 = null;
+        defer if (title_owned) |t| allocator.free(t);
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
         defer allocator.free(todo_path);
         if (readFileOpt(allocator, todo_path)) |td| {
@@ -448,7 +450,11 @@ pub fn cmdTodoStatus(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
             var tlines = std.mem.splitScalar(u8, td, '\n');
             if (tlines.next()) |first| {
                 const stripped = std.mem.trim(u8, first, "# \t");
-                if (stripped.len > 0) title = stripped;
+                if (stripped.len > 0) {
+                    const duped = try allocator.dupe(u8, stripped);
+                    title = duped;
+                    title_owned = duped;
+                }
             }
         }
 
@@ -506,6 +512,8 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
         const is_committed = if (std.Io.Dir.accessAbsolute(common.io.singleIo(), committed_path, .{})) |_| true else |_| false;
 
         var title: []const u8 = name;
+        var title_owned: ?[]const u8 = null;
+        defer if (title_owned) |t| allocator.free(t);
         const todo_path = try std.fmt.allocPrint(allocator, "{s}/TODO.md", .{item_path});
         defer allocator.free(todo_path);
         if (readFileOpt(allocator, todo_path)) |td| {
@@ -513,7 +521,11 @@ pub fn cmdTodoList(allocator: std.mem.Allocator, todo_dir: []const u8) !void {
             var lines = std.mem.splitScalar(u8, td, '\n');
             if (lines.next()) |first| {
                 const stripped = std.mem.trim(u8, first, "# \t");
-                if (stripped.len > 0) title = stripped;
+                if (stripped.len > 0) {
+                    const duped = try allocator.dupe(u8, stripped);
+                    title = duped;
+                    title_owned = duped;
+                }
             }
         }
 
