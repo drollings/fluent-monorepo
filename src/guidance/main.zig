@@ -184,7 +184,7 @@ fn printHelp() !void {
         \\  explain    Search codebase with optional LLM-synthesized summary
         \\  commit     Generate AI commit message from staged diff + guidance
         \\  test       Benchmark explain queries against module-level comments
-        \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon)
+        \\  todo       Work item lifecycle (new|triage|checklist|status|list|abandon|run)
         \\  health     Detect unused modules, redundant code, and dead code candidates
         \\
         \\Examples:
@@ -324,17 +324,22 @@ fn printSubcommandHelp(command: Command) !void {
             \\  status              Show current work item status
             \\  list                List all work items
             \\  abandon             Abandon the current work item
+            \\  run                 Execute subagent FSM to resolve checklist items
             \\
             \\Options:
             \\  -h, --help               Show this help
             \\  --guidance-dir DIR       Guidance directory (default: .guidance)
             \\  --api-url URL            LLM endpoint
             \\  -m, --model NAME         Model for AI actions
+            \\  --max-iterations N       Max subagent iterations (default: 20)
+            \\  --allow-edit             Permit subagent to edit files
             \\
             \\Examples:
             \\  guidance todo new "implement zig-clap integration"
             \\  guidance todo status
             \\  guidance todo list
+            \\  guidance todo run
+            \\  guidance todo run --max-iterations 50 --allow-edit
             \\
         ),
         .telemetry => try stdout.writeAll(

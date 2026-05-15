@@ -2057,7 +2057,7 @@ pub fn cmdTodo(allocator: std.mem.Allocator, args: []const []const u8) !void {
     defer if (!std.mem.eql(u8, api_url, config_mod.DEFAULT_API_URL)) allocator.free(api_url);
 
     if (args.len == 0) {
-        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon>\n", .{});
+        std.debug.print("Usage: guidance todo <new|triage|checklist|status|list|abandon|run>\n", .{});
         return;
     }
 

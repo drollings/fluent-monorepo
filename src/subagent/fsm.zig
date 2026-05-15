@@ -115,6 +115,7 @@ pub const RunCallbacks = struct {
     explain_fn: ?*const route_mod.ExplainFn = null,
     llm_fn: ?*const synthesize_mod.LlmFn = null,
     llm_batch_fn: ?*const route_mod.LlmInfillFn = null,
+    tool_fn: ?*const types.ToolFn = null,
 };
 
 pub fn runSubagent(
@@ -406,11 +407,6 @@ pub fn runSubagentWithBackend(
     callbacks: RunCallbacks,
     backend: concurrency.ExecutionBackend,
 ) !types.SubagentResult {
-    // Backend is reserved for M10.1+ production mode where tool execution
-    // and batch LLM classification dispatch through ZioBackend concurrently.
-    // Currently the FSM runs synchronously; callers should pass SyncBackend
-    // for deterministic tests. The backend handle is kept for future use
-    // when integrateWorkUnitDispatch() is wired in.
     _ = backend;
     var scratchpad = reflect_mod.Scratchpad.init(allocator, config.scratchpad_max_entries);
     defer scratchpad.deinit();
@@ -419,7 +415,6 @@ pub fn runSubagentWithBackend(
     var hash_tracker = guardrails_mod.OutputHashTracker.init(allocator);
     defer hash_tracker.deinit();
 
-    // Per-iteration arena: reset between iterations instead of deinit/init
     var iter_arena = std.heap.ArenaAllocator.init(allocator);
     defer iter_arena.deinit();
 
@@ -430,6 +425,18 @@ pub fn runSubagentWithBackend(
     var deterministic_calls_total: u16 = 0;
     var action_map = std.AutoHashMap(usize, types.ActionType).init(allocator);
     defer action_map.deinit();
+    var params_map = std.AutoHashMap(usize, types.ToolParams).init(allocator);
+    defer {
+        var it = params_map.iterator();
+        while (it.next()) |entry| {
+            const p = entry.value_ptr.*;
+            if (p.command) |c| allocator.free(c);
+            if (p.path) |pt| allocator.free(pt);
+            if (p.content) |co| allocator.free(co);
+            if (p.query) |q| allocator.free(q);
+        }
+        params_map.deinit();
+    }
 
     var evidence_list: std.ArrayList(types.Evidence) = .empty;
     defer {
@@ -453,9 +460,7 @@ pub fn runSubagentWithBackend(
             break;
         }
 
-        // Reset per-iteration arena for zero-leak intermediate allocations
-        const arena_snapshot = iter_arena.reset(.retain_capacity);
-        _ = arena_snapshot;
+        _ = iter_arena.reset(.retain_capacity);
 
         const iter_start_ns = std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds;
         var llm_time_us: u64 = 0;
@@ -480,7 +485,6 @@ pub fn runSubagentWithBackend(
                         break;
                     }
 
-                    // Batch deterministic classification at intake
                     const batch_result = classify_mod.batchClassifyDeterministic(allocator, items) catch {
                         state = .done;
                         break;
@@ -491,7 +495,6 @@ pub fn runSubagentWithBackend(
                         try action_map.put(entry.item_index, entry.action);
                     }
 
-                    // Batch LLM classification for unknowns if callback available
                     if (batch_result.unknown_indices.len > 0 and callbacks.llm_batch_fn != null) {
                         const llm_start_ns = std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds;
                         const llm_classified = classify_mod.classifyBatchViaLlm(
@@ -541,7 +544,6 @@ pub fn runSubagentWithBackend(
                 }
             },
             .batch_classify => {
-                // Fallback: any still-unknown items default to explain
                 for (items) |item| {
                     if (item.completed) continue;
                     if (action_map.get(item.index) == null) {
@@ -605,6 +607,7 @@ pub fn runSubagentWithBackend(
                     continue;
                 }
 
+                try params_map.put(current_item.index, route_result.params);
                 deterministic_calls_total += 1;
                 det_time_us += 1;
                 state = .execute;
@@ -612,16 +615,24 @@ pub fn runSubagentWithBackend(
             .execute => {
                 const current_item = items[item_idx];
                 const action = action_map.get(current_item.index) orelse .explain;
+                const params = params_map.get(current_item.index) orelse types.ToolParams{ .action = action };
 
-                var default_result: types.ToolResult = .{
+                var result: types.ToolResult = if (config.tool_fn) |tool_fn| blk: {
+                    const io = std.Io.Threaded.global_single_threaded.io();
+                    break :blk tool_fn(allocator, &params, io) catch |err| .{
+                        .action = action,
+                        .success = false,
+                        .raw = @errorName(err),
+                    };
+                } else .{
                     .action = action,
                     .success = true,
-                    .raw = "executed",
+                    .raw = @tagName(action),
                 };
 
                 const guardrail_check = guardrails_mod.checkGuardrails(
                     &guardrails_state,
-                    &default_result,
+                    &result,
                     iteration,
                     config.max_iterations,
                 );
@@ -633,7 +644,7 @@ pub fn runSubagentWithBackend(
                     state = .escalate;
                     continue;
                 }
-                if (hash_tracker.recordAndCheck(&default_result)) {
+                if (hash_tracker.recordAndCheck(&result)) {
                     state = .escalate;
                     continue;
                 }
@@ -645,6 +656,11 @@ pub fn runSubagentWithBackend(
             .reflect => {
                 const current_item = items[item_idx];
                 const action = action_map.get(current_item.index) orelse .explain;
+                const result: types.ToolResult = .{
+                    .action = action,
+                    .success = true,
+                    .raw = "completed",
+                };
 
                 reflect_mod.appendObservation(
                     allocator,
@@ -652,8 +668,8 @@ pub fn runSubagentWithBackend(
                     iteration,
                     current_item.text,
                     action,
-                    "observation",
-                    true,
+                    result.raw orelse "completed",
+                    result.success,
                 ) catch {};
 
                 state = .synth;
@@ -661,15 +677,14 @@ pub fn runSubagentWithBackend(
             .synth => {
                 const current_item = items[item_idx];
                 const action = action_map.get(current_item.index) orelse .explain;
-
-                var default_result: types.ToolResult = .{
+                const result: types.ToolResult = .{
                     .action = action,
                     .success = true,
                     .raw = "completed",
                 };
                 const synthesis = try synthesize_mod.synthesize(
                     allocator,
-                    &default_result,
+                    &result,
                     current_item,
                     null,
                     null,
@@ -693,7 +708,6 @@ pub fn runSubagentWithBackend(
                     .citations = synthesis.context.citations,
                 });
 
-                // Record iteration profile
                 const iter_end_ns = std.Io.Timestamp.now(std.Io.Threaded.global_single_threaded.io(), .real).nanoseconds;
                 const total_us: u64 = @intCast(@divTrunc(iter_end_ns - iter_start_ns, 1000));
                 try profile_list.append(allocator, .{
@@ -715,12 +729,8 @@ pub fn runSubagentWithBackend(
             .validate => {
                 state = .execute;
             },
-            .escalate => {
-                // Will exit the loop
-            },
-            .done => {
-                // Will exit the loop
-            },
+            .escalate => {},
+            .done => {},
         }
     }
 

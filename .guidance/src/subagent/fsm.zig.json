@@ -37,7 +37,7 @@
     {
       "type": "struct",
       "name": "RunCallbacks",
-      "match_hash": "d5126929b40574cca75360651091b766ef64e474b24f4f5b52a10cd40e25a08c",
+      "match_hash": "47c6540b384d298c4e4825604a80bedc8d543c96150407d152f32892fb64125c",
       "signature": "keyword_struct RunCallbacks { ... }",
       "is_pub": true,
       "line": 114
@@ -49,7 +49,7 @@
       "signature": "fn runSubagent(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks) -> types.SubagentResult",
       "returns": "types.SubagentResult",
       "is_pub": true,
-      "line": 120
+      "line": 121
     },
     {
       "type": "fn_decl",
@@ -58,49 +58,49 @@
       "signature": "fn runSubagentWithBackend(allocator: std.mem.Allocator, config: types.SubagentConfig, callbacks: RunCallbacks, backend: concurrency.ExecutionBackend) -> types.SubagentResult",
       "returns": "types.SubagentResult",
       "is_pub": true,
-      "line": 403
+      "line": 404
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: basic",
       "is_pub": false,
-      "line": 750
+      "line": 760
     },
     {
       "type": "test_decl",
       "name": "parseChecklistItems: empty",
       "is_pub": false,
-      "line": 783
+      "line": 793
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark complete",
       "is_pub": false,
-      "line": 793
+      "line": 803
     },
     {
       "type": "test_decl",
       "name": "toggleChecklistItem: mark incomplete",
       "is_pub": false,
-      "line": 806
+      "line": 816
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: finds first unchecked item",
       "is_pub": false,
-      "line": 818
+      "line": 828
     },
     {
       "type": "test_decl",
       "name": "findFirstIncomplete: returns null when all complete",
       "is_pub": false,
-      "line": 827
+      "line": 837
     },
     {
       "type": "test_decl",
       "name": "fsm: state transitions through happy path",
       "is_pub": false,
-      "line": 835
+      "line": 845
     }
   ]
 }

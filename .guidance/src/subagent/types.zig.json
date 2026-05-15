@@ -308,7 +308,7 @@
     {
       "type": "struct",
       "name": "SubagentConfig",
-      "match_hash": "8246f69981ebd0f656ef6ee21b55e5ab4ecb03a3732762c2e2d859dc6a49e497",
+      "match_hash": "fcdbaeaad85f7eded92c5c9bdefceb1c6de1890cbc86c7f22d27792b567de5f0",
       "signature": "keyword_struct SubagentConfig { ... }",
       "is_pub": true,
       "line": 139
@@ -319,7 +319,7 @@
       "match_hash": "a3ec9e5c0c0ac522e9a4c099164bc28d529fde7d535a654e4c007099377f3c5d",
       "signature": "keyword_struct SummarizedContext { ... }",
       "is_pub": true,
-      "line": 157
+      "line": 158
     },
     {
       "type": "struct",
@@ -327,7 +327,7 @@
       "match_hash": "549257efc4e455a596913da7de236847cbbe7de9546d039c2ed1d2a686c9652c",
       "signature": "keyword_struct Evidence { ... }",
       "is_pub": true,
-      "line": 165
+      "line": 166
     },
     {
       "type": "struct",
@@ -343,10 +343,10 @@
           "signature": "fn deinit(self: *SubagentResult, allocator: std.mem.Allocator) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 185
+          "line": 186
         }
       ],
-      "line": 174
+      "line": 175
     },
     {
       "type": "struct",
@@ -354,7 +354,7 @@
       "match_hash": "b13f9b927118cc95b3bb3e01bae84536145c7ab0b429fe51512c7e2a95f1ab2c",
       "signature": "keyword_struct IterationState { ... }",
       "is_pub": true,
-      "line": 198
+      "line": 199
     },
     {
       "type": "struct",
@@ -370,7 +370,7 @@
           "signature": "fn init(allocator: std.mem.Allocator, max_consecutive_failures: u16, max_no_progress: u16, max_iterations: u16) -> GuardrailState",
           "returns": "GuardrailState",
           "is_pub": true,
-          "line": 215
+          "line": 216
         },
         {
           "type": "fn_decl",
@@ -379,7 +379,7 @@
           "signature": "fn deinit(self: *GuardrailState) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 225
+          "line": 226
         },
         {
           "type": "fn_decl",
@@ -388,7 +388,7 @@
           "signature": "fn recordFailure(self: *GuardrailState, key: []const u8) -> ?void",
           "returns": "?void",
           "is_pub": true,
-          "line": 230
+          "line": 231
         },
         {
           "type": "fn_decl",
@@ -397,7 +397,7 @@
           "signature": "fn recordNoProgress(self: *GuardrailState, key: []const u8) -> bool",
           "returns": "bool",
           "is_pub": true,
-          "line": 241
+          "line": 242
         },
         {
           "type": "fn_decl",
@@ -406,10 +406,10 @@
           "signature": "fn clearFailure(self: *GuardrailState, key: []const u8) -> void",
           "returns": "void",
           "is_pub": true,
-          "line": 252
+          "line": 253
         }
       ],
-      "line": 208
+      "line": 209
     },
     {
       "type": "struct",
@@ -417,7 +417,7 @@
       "match_hash": "9aa2b56686fde80c174ed29be0958234c8a5965c6910b57ade3a6b48b0cd3f66",
       "signature": "keyword_struct ExplainResult { ... }",
       "is_pub": true,
-      "line": 259
+      "line": 262
     },
     {
       "type": "struct",
@@ -425,7 +425,7 @@
       "match_hash": "2f35e48ff5f57730dbea240d3f7e7b54f071b9feee2a880aa2c74d8b14928b6b",
       "signature": "keyword_struct IterationProfile { ... }",
       "is_pub": true,
-      "line": 275
+      "line": 278
     }
   ]
 }

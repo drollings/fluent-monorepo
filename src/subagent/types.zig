@@ -146,6 +146,7 @@ pub const SubagentConfig = struct {
     scratchpad_max_entries: u16 = 10,
     allow_edit: bool = false,
     backend_mode: BackendMode = .sync,
+    tool_fn: ?*const ToolFn = null,
     command_allowlist: []const []const u8 = &.{
         "make", "zig build", "cargo", "npm",  "git",
         "ls",   "cat",       "head",  "tail", "grep",
@@ -254,7 +255,9 @@ pub const GuardrailState = struct {
     }
 };
 
-pub const ExplainFn = fn (allocator: std.mem.Allocator, query: []const u8) ?ExplainResult;
+pub const ExplainFn = fn (allocator: std.mem.Allocator, query: []const u8, db_path: []const u8, workspace: []const u8) ?ExplainResult;
+
+pub const ToolFn = fn (allocator: std.mem.Allocator, params: *const ToolParams, io: *std.Io) anyerror!ToolResult;
 
 pub const ExplainResult = struct {
     path: ?[]const u8 = null,

@@ -40,6 +40,7 @@ pub const ExplainStage = types.ExplainStage;
 pub const ExplainStageKind = types.ExplainStageKind;
 pub const GuardrailState = types.GuardrailState;
 pub const ExplainFn = types.ExplainFn;
+pub const ToolFn = types.ToolFn;
 pub const ExplainResultType = types.ExplainResult;
 pub const BackendMode = types.BackendMode;
 pub const IterationProfile = types.IterationProfile;
