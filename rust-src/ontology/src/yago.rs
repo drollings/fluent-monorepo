@@ -121,11 +121,11 @@ pub fn lookup_class(iri: &str) -> Option<&'static OntologyClass> {
     ALL_CLASSES.iter().copied().find(|cls| cls.iri == iri)
 }
 
-pub fn superclass_chain(iri: &str) -> Vec<&'static str> {
-    let mut chain: Vec<&'static str> = Vec::new();
+pub fn superclass_chain(iri: &str) -> Vec<String> {
+    let mut chain: Vec<String> = Vec::new();
     let mut current: Option<&str> = Some(iri);
     while let Some(cur) = current {
-        chain.push(cur);
+        chain.push(cur.to_string());
         match lookup_class(cur) {
             Some(cls) => current = cls.superclass,
             None => break,
@@ -165,6 +165,13 @@ pub const WHITELIST_IRIS: &[&str] = &[
 pub fn is_whitelisted(iri: &str) -> bool {
     WHITELIST_IRIS.contains(&iri)
 }
+
+pub fn is_whitelisted_hash(hash: i64) -> bool {
+    let whitelist_hashes: std::collections::HashSet<i64> =
+        WHITELIST_IRIS.iter().map(|iri| guidance_rdf::normalize::hash_iri(iri)).collect();
+    whitelist_hashes.contains(&hash)
+}
+
 
 pub const PROP_LABEL: OntologyProperty = OntologyProperty {
     iri: "http://www.w3.org/2000/01/rdf-schema#label",
@@ -327,7 +334,7 @@ mod tests {
     #[test]
     fn test_superclass_chain_person() {
         let chain = superclass_chain("http://schema.org/Person");
-        assert!(chain.len() >= 2);
+        assert!(chain.len() >= 2, "chain length: {}", chain.len());
         assert_eq!(chain[0], "http://schema.org/Person");
         assert_eq!(chain[1], "http://yago-knowledge.org/resource/Entity");
     }

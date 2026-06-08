@@ -1748,6 +1748,7 @@ dependencies = [
  "extism",
  "guidance-common",
  "guidance-llm",
+ "guidance-ontology",
  "guidance-wasm-ipc",
  "internment",
  "regex",
@@ -1817,6 +1818,17 @@ dependencies = [
  "tokio",
  "tracing",
  "ureq",
+]
+
+[[package]]
+name = "guidance-ontology"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "guidance-common",
+ "guidance-rdf",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -8,6 +8,7 @@ members = [
     "llm",
     "wasm_ipc",
     "rdf",
+    "ontology",
     "bin/guidance",
 ]
 

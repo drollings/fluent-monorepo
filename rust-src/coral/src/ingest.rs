@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use guidance_common::error::DbError;
 use guidance_common::types::ContextNode;
+use guidance_common::types::NodeId;
+use guidance_ontology::mapper::PendingNode;
+use guidance_ontology::yago;
 use thiserror::Error;
 
 use crate::db::Library;
@@ -18,10 +21,28 @@ pub enum IngestError {
     Parse(String),
 }
 
+#[derive(Debug, Clone)]
+pub struct IngestionConfig {
+    pub yago_whitelist_only: bool,
+    pub batch_size: usize,
+    pub preferred_lang: String,
+}
+
+impl Default for IngestionConfig {
+    fn default() -> Self {
+        Self {
+            yago_whitelist_only: false,
+            batch_size: 10000,
+            preferred_lang: "en".to_string(),
+        }
+    }
+}
+
 pub struct BatchIngestor {
     library: Arc<Library>,
     batch: Vec<ContextNode>,
     batch_size: usize,
+    config: IngestionConfig,
 }
 
 impl BatchIngestor {
@@ -30,10 +51,21 @@ impl BatchIngestor {
             library,
             batch: Vec::with_capacity(batch_size),
             batch_size,
+            config: IngestionConfig::default(),
         }
     }
 
-    pub fn add(&mut self, node: ContextNode) -> Result<Option<guidance_common::types::NodeId>, IngestError> {
+    pub fn with_config(library: Arc<Library>, config: IngestionConfig) -> Self {
+        let batch_size = config.batch_size;
+        Self {
+            library,
+            batch: Vec::with_capacity(batch_size),
+            batch_size,
+            config,
+        }
+    }
+
+    pub fn add(&mut self, node: ContextNode) -> Result<Option<NodeId>, IngestError> {
         let has_embedding = node.embedding.is_some();
         self.batch.push(node);
 
@@ -42,6 +74,26 @@ impl BatchIngestor {
         }
 
         Ok(None)
+    }
+
+    pub fn add_pending_nodes(&mut self, pending_nodes: Vec<PendingNode>) -> Result<usize, IngestError> {
+        let mut added = 0;
+        for pn in pending_nodes {
+            if self.config.yago_whitelist_only {
+                let has_whitelisted = pn.types.iter().any(|&type_id| yago::is_whitelisted_hash(type_id));
+                if !has_whitelisted {
+                    continue;
+                }
+            }
+            let cn = pn.to_context_node();
+            added += 1;
+            let has_embedding = cn.embedding.is_some();
+            self.batch.push(cn);
+            if has_embedding || self.batch.len() >= self.batch_size {
+                self.flush()?;
+            }
+        }
+        Ok(added)
     }
 
     pub fn flush(&mut self) -> Result<(), IngestError> {

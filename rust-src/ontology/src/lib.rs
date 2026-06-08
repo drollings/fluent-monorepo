@@ -11,6 +11,4 @@ pub enum OntologyError {
     Mapping(String),
     #[error("inference error: {0}")]
     Inference(String),
-    #[error("library error: {0}")]
-    Library(#[from] guidance_coral::db::LibraryError),
 }
