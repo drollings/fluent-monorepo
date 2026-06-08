@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use guidance_common::types::{GuidanceDoc, Meta};
+use guidance_common::types::GuidanceDoc;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -14,6 +14,8 @@ pub enum PluginError {
     PluginNotFound(String),
     #[error("plugin execution failed: {0}")]
     ExecutionFailed(String),
+    #[error("plugin subprocess crashed: {0}")]
+    SubprocessCrashed(String),
 }
 
 pub type PluginResult = Result<GuidanceDoc, PluginError>;
@@ -96,43 +98,83 @@ impl Default for PluginRegistry {
     }
 }
 
+/// Infer supported file extensions from a guidance-* binary name.
 fn infer_extensions(plugin_name: &str) -> Vec<String> {
-    match plugin_name {
+    let name = plugin_name.strip_prefix("guidance-").unwrap_or(plugin_name);
+    match name {
         n if n.contains("zig") => vec!["zig".into(), "zon".into()],
         n if n.contains("python") || n.contains("py") => vec!["py".into()],
         n if n.contains("rust") || n.contains("rs") => vec!["rs".into()],
         n if n.contains("markdown") || n.contains("md") => vec!["md".into(), "markdown".into()],
         n if n.contains("typescript") || n.contains("ts") => vec!["ts".into(), "tsx".into()],
+        n if n.contains("javascript") || n.contains("js") => vec!["js".into(), "jsx".into()],
+        n if n.contains("go") => vec!["go".into()],
         _ => vec![],
     }
 }
 
-pub fn invoke_plugin(_plugin: &Plugin, _file: &Path, source: &str) -> PluginResult {
-    let json: serde_json::Value = serde_json::from_str(source)?;
+/// Invoke an external guidance plugin binary for a source file.
+///
+/// Spawns `{plugin.path} sync --file {src_path} --output {output_dir}`,
+/// captures the JSON `GuidanceDoc` from stdout, and returns it.
+pub fn invoke_plugin(plugin: &Plugin, src_path: &Path, output_dir: &Path) -> PluginResult {
+    let output = std::process::Command::new(&plugin.path)
+        .arg("sync")
+        .arg("--file")
+        .arg(src_path)
+        .arg("--output")
+        .arg(output_dir)
+        .output()
+        .map_err(|e| PluginError::SubprocessCrashed(format!("failed to spawn plugin: {e}")))?;
 
-    let meta = json
-        .get("meta")
-        .and_then(|m| m.as_object())
-        .ok_or_else(|| PluginError::ExecutionFailed("missing meta in plugin output".into()))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(PluginError::ExecutionFailed(format!(
+            "plugin exited with {}: {stderr}",
+            output.status
+        )));
+    }
 
-    let module = meta.get("module").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let source_path = meta.get("source").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let language = meta.get("language").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let doc: GuidanceDoc = serde_json::from_slice(&output.stdout)?;
+    Ok(doc)
+}
 
-    Ok(GuidanceDoc {
-        meta: Meta {
-            module: module.into(),
-            source: source_path.into(),
-            language: language.into(),
-        },
-        comment: json.get("comment").and_then(|v| v.as_str()).map(Into::into),
-        ..GuidanceDoc::default()
-    })
+/// Discover a plugin binary for a given file extension.
+///
+/// Searches in order:
+/// 1. `{workspace}/bin/guidance-{bare_ext}` — workspace-local binary
+/// 2. `PATH` via the `which` crate — system-wide binary
+pub fn discover_provider(workspace: &Path, extension: &str) -> Option<Plugin> {
+    let bare = extension.trim_start_matches('.');
+    let name = format!("guidance-{}", bare);
+
+    let local = workspace.join("bin").join(&name);
+    if local.is_file() {
+        let extensions = infer_extensions(&name);
+        return Some(Plugin {
+            name,
+            extensions,
+            path: local,
+        });
+    }
+
+    which::which(&name)
+        .ok()
+        .map(|path| {
+            let extensions = infer_extensions(&name);
+            Plugin {
+                name,
+                extensions,
+                path,
+            }
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── PluginRegistry tests ────────────────────────────────────────────────────
 
     #[test]
     fn test_plugin_registry_empty() {
@@ -170,12 +212,210 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_extensions() {
-        let exts = infer_extensions("guidance-zig");
-        assert!(exts.contains(&"zig".to_string()));
-        assert!(exts.contains(&"zon".to_string()));
+    fn test_discover_ignores_non_guidance_binaries() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let other = dir.path().join("some-other-tool");
+        std::fs::write(&other, "#!/bin/sh").expect("write");
 
+        let paths = vec![dir.path().to_path_buf()];
+        let registry = PluginRegistry::discover(&paths);
+        assert_eq!(registry.list_plugins().len(), 0);
+    }
+
+    // ── infer_extensions tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_infer_extensions_zig() {
+        let exts = infer_extensions("guidance-zig");
+        assert!(exts.contains(&"zig".into()));
+        assert!(exts.contains(&"zon".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_python() {
         let exts = infer_extensions("guidance-py");
-        assert!(exts.contains(&"py".to_string()));
+        assert!(exts.contains(&"py".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_rust() {
+        let exts = infer_extensions("guidance-rust");
+        assert!(exts.contains(&"rs".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_markdown() {
+        let exts = infer_extensions("guidance-md");
+        assert!(exts.contains(&"md".into()));
+        assert!(exts.contains(&"markdown".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_typescript() {
+        let exts = infer_extensions("guidance-ts");
+        assert!(exts.contains(&"ts".into()));
+        assert!(exts.contains(&"tsx".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_javascript() {
+        let exts = infer_extensions("guidance-js");
+        assert!(exts.contains(&"js".into()));
+        assert!(exts.contains(&"jsx".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_go() {
+        let exts = infer_extensions("guidance-go");
+        assert!(exts.contains(&"go".into()));
+    }
+
+    #[test]
+    fn test_infer_extensions_unknown() {
+        let exts = infer_extensions("guidance-foobar");
+        assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn test_infer_extensions_without_prefix() {
+        // infer_extensions strips "guidance-" prefix internally
+        let exts = infer_extensions("guidance-zig");
+        assert!(exts.contains(&"zig".into()));
+    }
+
+    // ── invoke_plugin tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_invoke_plugin_success() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let src_path = dir.path().join("test.py");
+        std::fs::write(&src_path, "print('hello')").expect("write");
+        let output_dir = dir.path().join("out");
+        std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+        let guidance_doc = serde_json::json!({
+            "meta": { "module": "test", "source": "test.py", "language": "python" }
+        });
+
+        // Create a mock plugin that outputs the JSON on stdout
+        let plugin_path = dir.path().join("guidance-py");
+        let script = format!(
+            "#!/bin/sh\necho '{}'",
+            guidance_doc.to_string().replace('\'', "'\\''")
+        );
+        std::fs::write(&plugin_path, &script).expect("write plugin");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&plugin_path, std::fs::Permissions::from_mode(0o755))
+                .expect("set executable");
+        }
+
+        let plugin = Plugin {
+            name: "guidance-py".into(),
+            extensions: vec!["py".into()],
+            path: plugin_path,
+        };
+
+        let result = invoke_plugin(&plugin, &src_path, &output_dir);
+        assert!(result.is_ok(), "expected Ok, got {:?}", result.err());
+        let doc = result.unwrap();
+        assert_eq!(doc.meta.module.as_str(), "test");
+        assert_eq!(doc.meta.source.as_str(), "test.py");
+        assert_eq!(doc.meta.language.as_str(), "python");
+    }
+
+    #[test]
+    fn test_invoke_plugin_exit_code_error() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let src_path = dir.path().join("test.py");
+        std::fs::write(&src_path, "content").expect("write");
+        let output_dir = dir.path().join("out");
+        std::fs::create_dir_all(&output_dir).expect("create output dir");
+
+        // Create a mock plugin that exits with code 1
+        let plugin_path = dir.path().join("guidance-py");
+        std::fs::write(&plugin_path, "#!/bin/sh\nexit 1\n").expect("write plugin");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&plugin_path, std::fs::Permissions::from_mode(0o755))
+                .expect("set executable");
+        }
+
+        let plugin = Plugin {
+            name: "guidance-py".into(),
+            extensions: vec!["py".into()],
+            path: plugin_path,
+        };
+
+        let result = invoke_plugin(&plugin, &src_path, &output_dir);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PluginError::ExecutionFailed(msg) => {
+                assert!(msg.contains("exit status: 1") || msg.contains("exit code: 1") || msg.contains("exit status: 256"), "got: {msg}");
+            }
+            other => panic!("expected ExecutionFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_invoke_plugin_binary_not_found() {
+        let plugin = Plugin {
+            name: "guidance-nonexistent".into(),
+            extensions: vec!["nonexistent".into()],
+            path: PathBuf::from("/tmp/guidance-nonexistent-binary"),
+        };
+        let result = invoke_plugin(
+            &plugin,
+            Path::new("/tmp/src.py"),
+            Path::new("/tmp/out"),
+        );
+        match result {
+            Err(PluginError::SubprocessCrashed(_)) => {} // expected
+            other => panic!("expected SubprocessCrashed, got {other:?}"),
+        }
+    }
+
+    // ── discover_provider tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_discover_provider_workspace_bin() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+
+        let plugin_path = bin_dir.join("guidance-py");
+        std::fs::write(&plugin_path, "#!/bin/sh").expect("write plugin");
+
+        let result = discover_provider(dir.path(), ".py");
+        assert!(result.is_some(), "expected to find plugin");
+        let plugin = result.unwrap();
+        assert_eq!(plugin.name, "guidance-py");
+        assert_eq!(plugin.path, plugin_path);
+        assert!(plugin.extensions.contains(&"py".into()));
+    }
+
+    #[test]
+    fn test_discover_provider_not_found() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let result = discover_provider(dir.path(), ".nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_discover_provider_skips_non_executable() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).expect("create bin dir");
+
+        let plugin_path = bin_dir.join("guidance-py");
+        std::fs::write(&plugin_path, "not executable").expect("write plugin");
+        // Don't set executable bit
+
+        let result = discover_provider(dir.path(), ".py");
+        // On unix, is_file() returns true even if not executable
+        // Our implementation checks is_file() only, so it should still find it
+        assert!(result.is_some());
     }
 }

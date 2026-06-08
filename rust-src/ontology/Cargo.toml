@@ -1,0 +1,12 @@
+[package]
+name = "guidance-ontology"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+guidance-common = { path = "../common" }
+guidance-rdf = { path = "../rdf" }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+bon = { workspace = true }
