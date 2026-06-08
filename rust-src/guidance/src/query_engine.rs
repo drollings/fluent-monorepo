@@ -8,7 +8,16 @@ use crate::query::identifier;
 use crate::query::llm_filter::{LlmFilter, LlmFilterBackend, NoopLlmFilter};
 use crate::query::strategy::{self, QueryIntent};
 use crate::query::synthesize::{Stage, Synthesizer};
+use crate::vector::semantic_aliases::SemanticAliases;
 use crate::vector::vector_db::GuidanceDb;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OutputFormat {
+    Markdown,
+    Json,
+    Compact,
+    Debug,
+}
 
 #[derive(Error, Debug)]
 pub enum QueryEngineError {
@@ -25,6 +34,8 @@ pub enum QueryEngineError {
 pub struct QueryEngine {
     pub llm_filter: LlmFilter,
     pub word_index: Option<WordIndex>,
+    pub aliases: Option<SemanticAliases>,
+    pub no_llm: bool,
 }
 
 impl Default for QueryEngine {
@@ -38,6 +49,8 @@ impl QueryEngine {
         Self {
             llm_filter: LlmFilter::new(Some(Box::new(NoopLlmFilter))),
             word_index: None,
+            aliases: None,
+            no_llm: false,
         }
     }
 
@@ -45,11 +58,23 @@ impl QueryEngine {
         Self {
             llm_filter: LlmFilter::new(Some(backend)),
             word_index: None,
+            aliases: None,
+            no_llm: false,
         }
+    }
+
+    pub fn with_no_llm(mut self) -> Self {
+        self.no_llm = true;
+        self
     }
 
     pub fn with_word_index(mut self, wi: WordIndex) -> Self {
         self.word_index = Some(wi);
+        self
+    }
+
+    pub fn with_aliases(mut self, aliases: SemanticAliases) -> Self {
+        self.aliases = Some(aliases);
         self
     }
 
@@ -99,18 +124,27 @@ impl QueryEngine {
     }
 
     pub fn explain(&self, query: &str, doc: &GuidanceDoc) -> Result<Vec<Stage>, QueryEngineError> {
-        let intent = strategy::classify_query(query);
+        // Expand query with semantic aliases if available
+        let expanded_query = if let Some(ref aliases) = self.aliases {
+            let expansions = aliases.expand_query(query);
+            // Use the first expansion (original or first alias set)
+            expansions.into_iter().next().unwrap_or_else(|| query.to_string())
+        } else {
+            query.to_string()
+        };
+
+        let intent = strategy::classify_query(&expanded_query);
 
         match intent {
             QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier => {
-                self.explain_identifier(query, doc)
+                self.explain_identifier(&expanded_query, doc)
             }
             QueryIntent::CapabilityQuery | QueryIntent::MultiKeyword => {
-                self.explain_capability(query, doc)
+                self.explain_capability(&expanded_query, doc)
             }
-            QueryIntent::Conceptual | QueryIntent::HowTo => self.explain_concept(query, doc),
-            QueryIntent::FilePath => self.explain_file_path(query, doc),
-            QueryIntent::GeneralSearch => self.explain_general(query, doc),
+            QueryIntent::Conceptual | QueryIntent::HowTo => self.explain_concept(&expanded_query, doc),
+            QueryIntent::FilePath => self.explain_file_path(&expanded_query, doc),
+            QueryIntent::GeneralSearch => self.explain_general(&expanded_query, doc),
         }
     }
 
@@ -287,6 +321,113 @@ impl QueryEngine {
         }
 
         Err(QueryEngineError::NoResults)
+    }
+
+    /// Format stages into the specified output format.
+    pub fn format_stages(stages: &[Stage], format: OutputFormat) -> String {
+        match format {
+            OutputFormat::Markdown => Self::format_markdown(stages),
+            OutputFormat::Json => Self::format_json(stages),
+            OutputFormat::Compact => Self::format_compact(stages),
+            OutputFormat::Debug => Self::format_debug(stages),
+        }
+    }
+
+    fn format_markdown(stages: &[Stage]) -> String {
+        let mut out = String::new();
+        for stage in stages {
+            let kind = match stage.kind {
+                guidance_common::types::StageKind::Prose => "💬 Prose",
+                guidance_common::types::StageKind::Code => "📝 Code",
+                guidance_common::types::StageKind::Metadata => "📋 Metadata",
+                guidance_common::types::StageKind::Insight => "💡 Insight",
+                guidance_common::types::StageKind::SkillDoc => "🔧 Skill",
+                _ => "❓",
+            };
+            out.push_str(&format!("## {kind}\n\n"));
+            out.push_str(&format!("*Source: {}:{}*\n\n", stage.source, stage.line.unwrap_or(0)));
+            out.push_str(&stage.content);
+            out.push_str("\n\n---\n\n");
+        }
+        out
+    }
+
+    fn format_json(stages: &[Stage]) -> String {
+        serde_json::json!({
+            "stages": stages,
+            "count": stages.len(),
+        })
+        .to_string()
+    }
+
+    fn format_compact(stages: &[Stage]) -> String {
+        let summaries: Vec<serde_json::Value> = stages
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "kind": format!("{:?}", s.kind),
+                    "source": s.source,
+                    "line": s.line,
+                    "preview": s.content.chars().take(80).collect::<String>(),
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "stages": summaries,
+            "count": stages.len(),
+        })
+        .to_string()
+    }
+
+    fn format_debug(stages: &[Stage]) -> String {
+        let mut out = String::new();
+        out.push_str("=== Query Debug ===\n");
+        out.push_str(&format!("No LLM: {}\n", true));
+        out.push_str(&format!("Stages: {}\n\n", stages.len()));
+        for (i, stage) in stages.iter().enumerate() {
+            let kind_str = format!("{:?}", stage.kind);
+            out.push_str(&format!("[{}. {}]\n", i + 1, kind_str));
+            out.push_str(&format!("  Source: {}:{}\n", stage.source, stage.line.unwrap_or(0)));
+            let preview: String = stage.content.chars().take(120).collect();
+            out.push_str(&format!("  Content ({} chars): {}\n", stage.content.len(), preview));
+        }
+        out
+    }
+
+    /// Explain with no-llm support: when no_llm is set, skip LLM filter phase
+    /// and return raw structural stages.
+    pub fn explain_with_mode(&self, query: &str, doc: &GuidanceDoc, format: OutputFormat) -> Result<String, QueryEngineError> {
+        if self.no_llm {
+            // Skip LLM filter: use keyword matching only
+            let intent = strategy::classify_query(query);
+            let stages = match intent {
+                QueryIntent::IdentifierLookup | QueryIntent::SingleIdentifier => {
+                    let names: Vec<String> = identifier::find_members_by_name(doc, query).iter().map(|s| s.to_string()).collect();
+                    if !names.is_empty() {
+                        Synthesizer::synthesize(query, doc, &names)
+                    } else {
+                        vec![Stage::new_not_found(query, doc)]
+                    }
+                }
+                _ => {
+                    let lower = query.to_lowercase();
+                    let names: Vec<String> = doc.members.iter()
+                        .filter(|m| m.name.as_str().to_lowercase().contains(&lower))
+                        .map(|m| m.name.as_str().to_string())
+                        .collect();
+                    if names.is_empty() {
+                        vec![Stage::new_not_found(query, doc)]
+                    } else {
+                        Synthesizer::synthesize(query, doc, &names)
+                    }
+                }
+            };
+            Ok(Self::format_stages(&stages, format))
+        } else {
+            // Normal path with LLM filter
+            let stages = self.explain(query, doc)?;
+            Ok(Self::format_stages(&stages, format))
+        }
     }
 
     pub fn vector_explain(

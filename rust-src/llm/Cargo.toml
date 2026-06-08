@@ -13,3 +13,4 @@ tokio = { workspace = true }
 regex = { workspace = true }
 async-openai = { workspace = true }
 ureq = { workspace = true }
+bon = { workspace = true }

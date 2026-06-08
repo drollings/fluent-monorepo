@@ -162,6 +162,35 @@ impl WorkUnit for WasmComponent {
     }
 }
 
+/// Decode a base64-encoded WASM binary using the extism-compatible simple decoder.
+pub fn decode_wasm_base64(b64: &str) -> Result<Vec<u8>, WasmError> {
+    // Simple base64 decode without external crate dependency
+    let bytes = b64.as_bytes();
+    let mut result = Vec::with_capacity(bytes.len() * 3 / 4);
+    let mut buf: u32 = 0;
+    let mut bits = 0;
+    for &c in bytes {
+        let val = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => break,
+            b'\n' | b'\r' | b' ' | b'\t' => continue,
+            _ => return Err(WasmError::InvalidPayload(format!("invalid base64 char: {}", c as char))),
+        };
+        buf = (buf << 6) | val as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            result.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

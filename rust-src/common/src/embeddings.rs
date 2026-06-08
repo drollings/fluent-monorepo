@@ -101,6 +101,12 @@ impl OllamaEmbedding {
             dims,
         })
     }
+
+    /// Embed without any caching layer (direct API call).
+    /// Used by QueueReactor for L4 semantic search.
+    pub fn embed_without_cache(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        self.embed(text)
+    }
 }
 
 #[async_trait]

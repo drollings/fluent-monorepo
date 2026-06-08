@@ -4,7 +4,7 @@ use std::sync::Arc;
 use guidance_common::error::CacheError;
 use guidance_common::types::GraphNode;
 
-use crate::cache_l1::RoutingResult;
+use crate::cache_l1::{CacheTier, RoutingResult};
 use crate::db::Library;
 
 pub struct ParallelRouter {
@@ -36,7 +36,7 @@ impl ParallelRouter {
                     return Ok(RoutingResult {
                         query: query.to_string(),
                         result: serde_json::to_string(&results).unwrap_or_default(),
-                        tier: "L3".into(),
+                        tier: CacheTier::L3Graph,
                     });
                 }
             }
@@ -51,7 +51,7 @@ impl ParallelRouter {
                         nodes.len(),
                         nodes.iter().map(|n| n.depth).max().unwrap_or(0)
                     ),
-                    tier: "L3".into(),
+                    tier: CacheTier::L3Graph,
                 });
             }
         }
@@ -66,7 +66,7 @@ impl ParallelRouter {
                     return Ok(RoutingResult {
                         query: query.to_string(),
                         result: format!("KNN hit: {}", hits[0].name.as_str()),
-                        tier: "L4".into(),
+                        tier: CacheTier::L4Semantic,
                     });
                 }
             }
@@ -123,7 +123,7 @@ impl ParallelRouter {
             return Ok(RoutingResult {
                 query: query_owned,
                 result: format!("KNN hit: {}", knn_result[0].name.as_str()),
-                tier: "L4".into(),
+                tier: CacheTier::L4Semantic,
             });
         }
 
@@ -137,7 +137,7 @@ impl ParallelRouter {
                         traverse_result.len(),
                         traverse_result.iter().map(|n| n.depth).max().unwrap_or(0)
                     ),
-                    tier: "L3".into(),
+                    tier: CacheTier::L3Graph,
                 });
             }
         }
@@ -180,6 +180,7 @@ mod tests {
     use guidance_common::types::ContextNode;
 
     use super::*;
+    use crate::cache_l1::CacheTier;
 
     fn make_router() -> ParallelRouter {
         let lib = Arc::new(Library::open_in_memory().expect("db"));
@@ -257,7 +258,7 @@ mod tests {
         let query_emb = vec![0.1, 0.2, 0.3, 0.4];
         let result = router.route_with_embedding("target", &query_emb);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().tier, "L4");
+        assert_eq!(result.unwrap().tier, CacheTier::L4Semantic);
     }
 
     #[tokio::test]

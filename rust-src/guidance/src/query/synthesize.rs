@@ -1,6 +1,6 @@
 use guidance_common::types::{GuidanceDoc, StageKind};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Stage {
     pub kind: StageKind,
     pub content: String,
@@ -9,6 +9,17 @@ pub struct Stage {
 }
 
 pub struct Synthesizer;
+
+impl Stage {
+    pub fn new_not_found(query: &str, doc: &GuidanceDoc) -> Self {
+        Self {
+            kind: StageKind::NotFound,
+            content: format!("No results found for query: {query}"),
+            source: doc.meta.source.as_str().to_string(),
+            line: None,
+        }
+    }
+}
 
 impl Synthesizer {
     pub fn synthesize(query: &str, doc: &GuidanceDoc, matched_names: &[String]) -> Vec<Stage> {

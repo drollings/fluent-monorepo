@@ -1747,6 +1747,7 @@ dependencies = [
  "dashmap 6.2.1",
  "extism",
  "guidance-common",
+ "guidance-llm",
  "guidance-wasm-ipc",
  "internment",
  "regex",
@@ -1806,6 +1807,7 @@ name = "guidance-llm"
 version = "0.1.0"
 dependencies = [
  "async-openai",
+ "bon",
  "guidance-common",
  "regex",
  "serde",
